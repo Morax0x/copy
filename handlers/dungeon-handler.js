@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, ChannelType, Colors } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, ChannelType, Colors } = require('discord.js');
 const path = require('path');
 
 // تحميل الإعدادات
@@ -48,16 +48,33 @@ function buildHpBar(currentHp, maxHp, shield = 0) {
     return bar;
 }
 
-function getUserRace(member, sql) {
-    if (!member || !member.guild) return null;
-    const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(member.guild.id);
-    if (!member.roles || !member.roles.cache) return null;
-    const userRoleIDs = member.roles.cache.map(r => r.id);
-    return allRaceRoles.find(r => userRoleIDs.includes(r.roleID)) || null;
-}
+function getRealPlayerData(member, sql) {
+    const guildID = member.guild.id;
+    const userID = member.id;
+    const userData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
+    const level = userData ? userData.level : 1;
+    const maxHp = BASE_HP + (level * HP_PER_LEVEL);
 
-function getAllSkillData(sql, member) {
-    const userRace = getUserRace(member, sql);
+    let damage = 15;
+    let weaponName = "قبضة اليد";
+    
+    // جلب العرق والسلاح
+    const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(member.guild.id);
+    const userRoleIDs = member.roles.cache.map(r => r.id);
+    const userRace = allRaceRoles.find(r => userRoleIDs.includes(r.roleID));
+
+    if (userRace) {
+        const weaponConfig = weaponsConfig.find(w => w.race === userRace.raceName);
+        if (weaponConfig) {
+            const userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(userID, guildID, userRace.raceName);
+            if (userWeapon && userWeapon.weaponLevel > 0) {
+                damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
+                weaponName = `${weaponConfig.name} (Lv.${userWeapon.weaponLevel})`;
+            }
+        }
+    }
+
+    // جلب المهارات
     const skillsOutput = {};
     const userSkillsData = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(member.id, member.guild.id);
     
@@ -78,29 +95,6 @@ function getAllSkillData(sql, member) {
             skillsOutput[raceSkillId] = { ...raceSkillConfig, currentLevel: 1, effectValue: raceSkillConfig.base_value };
         }
     }
-    return skillsOutput;
-}
-
-function getRealPlayerData(member, sql) {
-    const guildID = member.guild.id;
-    const userID = member.id;
-    const userData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
-    const level = userData ? userData.level : 1;
-    const maxHp = BASE_HP + (level * HP_PER_LEVEL);
-
-    let damage = 15;
-    let weaponName = "قبضة اليد";
-    const userRace = getUserRace(member, sql);
-    if (userRace) {
-        const weaponConfig = weaponsConfig.find(w => w.race === userRace.raceName);
-        if (weaponConfig) {
-            const userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(userID, guildID, userRace.raceName);
-            if (userWeapon && userWeapon.weaponLevel > 0) {
-                damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
-                weaponName = `${weaponConfig.name} (Lv.${userWeapon.weaponLevel})`;
-            }
-        }
-    }
 
     return {
         id: userID,
@@ -111,7 +105,7 @@ function getRealPlayerData(member, sql) {
         maxHp: maxHp,
         atk: damage,
         weaponName: weaponName,
-        skills: getAllSkillData(sql, member),
+        skills: skillsOutput,
         isDead: false,
         defending: false,
         potions: 3,
@@ -131,7 +125,35 @@ function getRandomMonster(type, theme) {
     return { name, emoji: theme.emoji };
 }
 
-// --- معالجة منطق المهارات (Skill Logic) ---
+// ✅ دالة بناء قائمة المهارات (تم نقلها للأعلى لتكون مرئية)
+function buildSkillSelector(player) {
+    const userSkills = player.skills || {};
+    const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
+    
+    if (availableSkills.length === 0) return null;
+
+    const options = availableSkills.map(skill => {
+        const cooldown = player.skillCooldowns[skill.id] || 0;
+        const description = cooldown > 0 ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
+        return new StringSelectMenuOptionBuilder()
+            .setLabel(skill.name)
+            .setValue(skill.id)
+            .setDescription(description.substring(0, 100))
+            .setEmoji(skill.emoji || '✨');
+    });
+
+    const slicedOptions = options.slice(0, 25);
+
+    const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('skill_select_menu')
+            .setPlaceholder('اختر مهارة لاستخدامها...')
+            .addOptions(slicedOptions)
+    );
+    return row;
+}
+
+// --- معالجة منطق المهارات ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const value = skill.effectValue; 
@@ -261,7 +283,7 @@ function handleSkillUsage(player, skill, monster, log) {
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
-    // ⛔ منع السبام: إذا كان اللاعب لديه طلب نشط
+    // ⛔ منع السبام
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ 
             content: "🚫 **لديك طلب دانجون نشط بالفعل!** أكمل السابق أو انتظر انتهاءه.", 
@@ -269,18 +291,15 @@ async function startDungeon(interaction, sql) {
         });
     }
 
-    // إضافة اللاعب للقائمة النشطة
     activeDungeonRequests.add(user.id);
 
-    // فحص الكولداون (فقط للقائد)
+    // فحص الكولداون
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         if (lastRun && lastRun.last_dungeon) {
             const timeLeft = DUNGEON_COOLDOWN - (Date.now() - lastRun.last_dungeon);
             if (timeLeft > 0) {
-                // إزالة من القائمة النشطة لأنه لم يبدأ
                 activeDungeonRequests.delete(user.id);
-                
                 const hours = Math.floor(timeLeft / (1000 * 60 * 60));
                 const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
                 return interaction.reply({ 
@@ -291,7 +310,6 @@ async function startDungeon(interaction, sql) {
         }
     }
 
-    // إعداد أزرار اختيار الدانجون (2 فوق و 2 تحت)
     const themes = Object.keys(dungeonConfig.themes);
     const buttons = themes.map(key => {
         const theme = dungeonConfig.themes[key];
@@ -302,7 +320,6 @@ async function startDungeon(interaction, sql) {
             .setStyle(ButtonStyle.Secondary);
     });
 
-    // تقسيم الأزرار لصفين
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
     
@@ -331,7 +348,7 @@ async function startDungeon(interaction, sql) {
 
     collector.on('end', (c, reason) => {
         if (reason === 'time') {
-            activeDungeonRequests.delete(user.id); // إزالة من النشطين
+            activeDungeonRequests.delete(user.id); 
             if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
         }
     });
@@ -355,7 +372,6 @@ async function lobbyPhase(interaction, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    // تحديث الرسالة السابقة لتصبح اللوبي
     await interaction.update({ content: null, embeds: [updateEmbed()], components: [row] });
     const msg = await interaction.message;
     
@@ -366,13 +382,17 @@ async function lobbyPhase(interaction, theme, sql) {
             if (party.includes(i.user.id)) return i.reply({ content: "⚠️ أنت منضم بالفعل.", ephemeral: true });
             if (party.length >= 5) return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
             
-            // فحص المورا الصحيح
             const userData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
             const userMora = userData ? userData.mora : 0;
             if (userMora < 100) return i.reply({ content: `❌ ليس لديك 100 ${EMOJI_MORA}.`, ephemeral: true });
             
             party.push(i.user.id);
             await i.update({ embeds: [updateEmbed()] });
+
+            // 🔥 بدء تلقائي عند اكتمال العدد 🔥
+            if (party.length >= 5) {
+                collector.stop('start');
+            }
 
         } else if (i.customId === 'start') {
             if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
@@ -382,10 +402,8 @@ async function lobbyPhase(interaction, theme, sql) {
 
     collector.on('end', async (c, reason) => {
         if (reason === 'start') {
-            // 🔥 خصم المورا وتطبيق الكولداون (فقط عند الانطلاق) 🔥
             party.forEach(id => {
                 const now = Date.now();
-                // فقط القائد يحصل على كولداون، إلا إذا كان الأونر
                 if (id === host.id && id !== OWNER_ID) {
                     sql.prepare("UPDATE levels SET mora = mora - 100, last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
                 } else {
@@ -393,36 +411,31 @@ async function lobbyPhase(interaction, theme, sql) {
                 }
             });
 
-            // ✅ إنشاء الثريد وبدء المعركة داخله
             try {
+                // 🔥 ثريد عام الآن 🔥
                 const thread = await msg.channel.threads.create({
                     name: `⚔️ دانجون ${host.username}`,
                     autoArchiveDuration: 60,
-                    type: ChannelType.PrivateThread, // ثريد خاص
+                    type: ChannelType.PublicThread, // ✅ تم التعديل
                     reason: 'Start Dungeon Battle'
                 });
 
-                // إضافة الأعضاء للثريد
-                for (const memberId of party) {
-                    await thread.members.add(memberId).catch(() => {});
-                }
-
+                // لا داعي لإضافة الأعضاء يدوياً في الثريد العام، يمكنهم الرؤية
+                
                 await thread.send({ content: `🔔 **بدأت المعركة!** استعدوا يا أبطال: ${party.map(id => `<@${id}>`).join(' ')}` });
                 
-                // تحديث رسالة اللوبي الأصلية
                 if (msg.editable) await msg.edit({ content: `✅ **انطلقت المعركة في الثريد!** <#${thread.id}>`, components: [] });
 
-                // تشغيل الدانجون داخل الثريد (نمرر القناة الأصلية للنتائج النهائية)
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id);
 
             } catch (err) {
                 console.error("Error creating thread:", err);
-                activeDungeonRequests.delete(host.id); // تنظيف في حال الخطأ
+                activeDungeonRequests.delete(host.id); 
                 interaction.channel.send("❌ حدث خطأ أثناء إنشاء ساحة المعركة (Thread). تأكد من صلاحيات البوت.");
             }
 
         } else {
-            activeDungeonRequests.delete(host.id); // تنظيف عند انتهاء الوقت دون بدء
+            activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون (انتهى الوقت).", components: [], embeds: [] });
         }
     });
@@ -477,7 +490,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             let actedPlayers = [];
 
             await new Promise(resolve => {
-                const turnTimeout = setTimeout(() => { collector.stop('turn_end'); }, 20000); 
+                // 🔥 تخطي الدور التلقائي بعد 45 ثانية 🔥
+                const turnTimeout = setTimeout(() => { 
+                    threadChannel.send("⏰ **انتهى الوقت!** تم تخطي أدوار من لم يهاجم.");
+                    collector.stop('turn_end'); 
+                }, 45000); 
 
                 collector.on('collect', async i => {
                     const p = players.find(pl => pl.id === i.user.id);
@@ -534,7 +551,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                 });
 
-                collector.on('end', resolve);
+                collector.on('end', () => {
+                    clearTimeout(turnTimeout); // إلغاء المؤقت في حال انتهى الجميع قبل الوقت
+                    resolve();
+                });
             });
 
             // نهاية الجولة
@@ -566,7 +586,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 let floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
                 let floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
 
-                // 🔥 تقسيم الجوائز إذا الطابق فوق 5 🔥
                 if (floor > 5) {
                     floorXp = Math.floor(floorXp / players.length);
                     floorMora = Math.floor(floorMora / players.length);
@@ -639,11 +658,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
 // دالة إرسال النتيجة النهائية وحذف الثريد
 async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, status, sql, guildId, hostId) {
-    // 🔥 توزيع الجوائز على الجميع (أحياء وأموات) 🔥
     players.forEach(p => {
         if (status === 'win' || status === 'retreat') {
             sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guildId);
-            // إضافة البف عند الفوز الكامل
             if (status === 'win') {
                 const expire = Date.now() + (15 * 60 * 1000);
                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
@@ -652,7 +669,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, st
         }
     });
 
-    // إزالة القائد من قائمة النشطين (للسماح له بطلب جديد إذا انتهى الكولداون)
+    // إزالة القائد من قائمة النشطين
     activeDungeonRequests.delete(hostId);
 
     const embed = new EmbedBuilder()
@@ -672,10 +689,8 @@ async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, st
 
     embed.setDescription(desc);
 
-    // إرسال الرسالة للقناة الأساسية
     await mainChannel.send({ content: `📢 **انتهت معركة الدانجون!**`, embeds: [embed] });
 
-    // حذف الثريد
     setTimeout(() => {
         thread.delete().catch(e => console.log("Could not delete thread:", e));
     }, 5000); 
@@ -688,7 +703,8 @@ function generateBattleEmbed(players, monster, floor, theme, log, color = '#2F31
 
     let monsterStatus = "";
     if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
-    
+    if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
+
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
     embed.addFields({ 
         name: `👹 **${monster.name}** ${monsterStatus}`, 
