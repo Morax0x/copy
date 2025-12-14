@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, ChannelType, Colors } = require('discord.js');
 const path = require('path');
 
 // تحميل الإعدادات
@@ -14,21 +14,19 @@ const HP_PER_LEVEL = 4;
 const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; // 3 ساعات
 const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
 
+// تتبع اللاعبين النشطين (لمنع السبام)
+const activeDungeonRequests = new Set();
+
 // صور الفوز والخسارة
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
-    'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif',
-    'https://i.postimg.cc/4ygk8q3G/tumblr-nmao11Zm-Bx1r3rdh2o2-500-gif-500-281.gif',
-    'https://i.postimg.cc/05dLktNF/download-5.gif',
-    'https://i.postimg.cc/sXRVMwhZ/download-2.gif'
+    'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif'
 ];
 
 const LOSE_IMAGES = [
     'https://i.postimg.cc/xd8msjxk/escapar-a-toda-velocidad.gif',
-    'https://i.postimg.cc/1zb8JGVC/download.gif',
-    'https://i.postimg.cc/rmSwjvkV/download-1.gif',
-    'https://i.postimg.cc/8PyPZRqt/download.jpg'
+    'https://i.postimg.cc/1zb8JGVC/download.gif'
 ];
 
 // --- دوال مساعدة ---
@@ -263,41 +261,80 @@ function handleSkillUsage(player, skill, monster, log) {
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
-    // 🔥🔥 1. التحقق من الكولداون (للشخص الذي يطلب الدانجون فقط) 🔥🔥
+    // ⛔ منع السبام: إذا كان اللاعب لديه طلب نشط
+    if (activeDungeonRequests.has(user.id)) {
+        return interaction.reply({ 
+            content: "🚫 **لديك طلب دانجون نشط بالفعل!** أكمل السابق أو انتظر انتهاءه.", 
+            ephemeral: true 
+        });
+    }
+
+    // إضافة اللاعب للقائمة النشطة
+    activeDungeonRequests.add(user.id);
+
+    // فحص الكولداون (فقط للقائد)
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         if (lastRun && lastRun.last_dungeon) {
             const timeLeft = DUNGEON_COOLDOWN - (Date.now() - lastRun.last_dungeon);
             if (timeLeft > 0) {
+                // إزالة من القائمة النشطة لأنه لم يبدأ
+                activeDungeonRequests.delete(user.id);
+                
                 const hours = Math.floor(timeLeft / (1000 * 60 * 60));
                 const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
                 return interaction.reply({ 
-                    content: `⏳ **استرح قليلاً!**\nيمكنك طلب دانجون جديد بعد **${hours} ساعة و ${minutes} دقيقة**.\n*(يمكنك الانضمام لفريق شخص آخر في أي وقت)*`, 
+                    content: `⏳ **يجب عليك الانتظار!**\nيمكنك طلب دانجون جديد بعد **${hours} ساعة و ${minutes} دقيقة**.\n*(يمكنك الانضمام لفريق شخص آخر)*`, 
                     ephemeral: true 
                 });
             }
         }
     }
 
-    const themeOptions = Object.keys(dungeonConfig.themes).map(key => ({
-        label: dungeonConfig.themes[key].name, value: key, emoji: dungeonConfig.themes[key].emoji
-    }));
+    // إعداد أزرار اختيار الدانجون (2 فوق و 2 تحت)
+    const themes = Object.keys(dungeonConfig.themes);
+    const buttons = themes.map(key => {
+        const theme = dungeonConfig.themes[key];
+        return new ButtonBuilder()
+            .setCustomId(`dungeon_theme_${key}`)
+            .setLabel(theme.name)
+            .setEmoji(theme.emoji)
+            .setStyle(ButtonStyle.Secondary);
+    });
 
-    const row = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId('dungeon_theme').setPlaceholder('🌍 اختر عالم الدانجون...').addOptions(themeOptions)
-    );
+    // تقسيم الأزرار لصفين
+    const row1 = new ActionRowBuilder();
+    const row2 = new ActionRowBuilder();
+    
+    if (buttons.length > 0) row1.addComponents(buttons.slice(0, 2));
+    if (buttons.length > 2) row2.addComponents(buttons.slice(2, 4));
 
-    const msg = await interaction.reply({ content: `👋 مرحباً **${user.username}**! اختر البوابة للدخول:`, components: [row], fetchReply: true });
+    const components = [row1];
+    if (row2.components.length > 0) components.push(row2);
 
-    const filter = i => i.user.id === user.id && i.customId === 'dungeon_theme';
-    try {
-        const selection = await msg.awaitMessageComponent({ filter, time: 30000 });
-        const themeKey = selection.values[0];
+    const embed = new EmbedBuilder()
+        .setTitle('⚔️ بوابة الدانجون')
+        .setDescription(`مرحباً **${user.username}**!\nاختر المنطقة التي تريد استكشافها:`)
+        .setColor('#2B2D31')
+        .setImage('https://i.postimg.cc/NMkWVyLV/line.png');
+
+    const msg = await interaction.reply({ embeds: [embed], components: components, fetchReply: true });
+
+    const filter = i => i.user.id === user.id && i.customId.startsWith('dungeon_theme_');
+    const collector = msg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
+
+    collector.on('collect', async i => {
+        const themeKey = i.customId.replace('dungeon_theme_', '');
         const theme = dungeonConfig.themes[themeKey];
-        await lobbyPhase(selection, theme, sql);
-    } catch (e) {
-        if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
-    }
+        await lobbyPhase(i, theme, sql); 
+    });
+
+    collector.on('end', (c, reason) => {
+        if (reason === 'time') {
+            activeDungeonRequests.delete(user.id); // إزالة من النشطين
+            if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
+        }
+    });
 }
 
 async function lobbyPhase(interaction, theme, sql) {
@@ -308,18 +345,20 @@ async function lobbyPhase(interaction, theme, sql) {
         const memberList = party.map((id, i) => `\`${i+1}.\` <@${id}> ${id === host.id ? '👑' : ''}`).join('\n');
         return new EmbedBuilder()
             .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
-            .setDescription(`**القائد:** ${host}\n**التكلفة:** 💰 100 مورا\n\n👥 **المغامرون:**\n${memberList}`)
+            .setDescription(`**القائد:** ${host}\n**التكلفة:** 100 ${EMOJI_MORA}\n\n👥 **الفريق:**\n${memberList}`)
             .setColor('DarkRed')
             .setThumbnail(host.displayAvatarURL());
     };
 
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'),
+        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
+    // تحديث الرسالة السابقة لتصبح اللوبي
     await interaction.update({ content: null, embeds: [updateEmbed()], components: [row] });
     const msg = await interaction.message;
+    
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
@@ -327,14 +366,14 @@ async function lobbyPhase(interaction, theme, sql) {
             if (party.includes(i.user.id)) return i.reply({ content: "⚠️ أنت منضم بالفعل.", ephemeral: true });
             if (party.length >= 5) return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
             
-            // ✅ تم إزالة شرط الكولداون هنا! 
-            // يمكن لأي شخص الانضمام حتى لو كان لديه وقت انتظار على "طلب" الدانجون.
-
-            const userData = sql.prepare("SELECT mora FROM levels WHERE user = ?").get(i.user.id);
-            if (!userData || userData.mora < 100) return i.reply({ content: "❌ ليس لديك 100 مورا.", ephemeral: true });
+            // فحص المورا الصحيح
+            const userData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+            const userMora = userData ? userData.mora : 0;
+            if (userMora < 100) return i.reply({ content: `❌ ليس لديك 100 ${EMOJI_MORA}.`, ephemeral: true });
             
             party.push(i.user.id);
             await i.update({ embeds: [updateEmbed()] });
+
         } else if (i.customId === 'start') {
             if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
             collector.stop('start');
@@ -343,50 +382,55 @@ async function lobbyPhase(interaction, theme, sql) {
 
     collector.on('end', async (c, reason) => {
         if (reason === 'start') {
-            // 🔥🔥 تسجيل وقت الدخول للجميع (ليصبح لديهم كولداون على الطلب لاحقاً) 🔥🔥
+            // 🔥 خصم المورا وتطبيق الكولداون (فقط عند الانطلاق) 🔥
             party.forEach(id => {
-                // يمكنك استثناء الأونر هنا أيضاً إذا أردت، لكن الشرط في البداية كافٍ
-                sql.prepare("UPDATE levels SET mora = mora - 100, last_dungeon = ? WHERE user = ? AND guild = ?").run(Date.now(), id, interaction.guild.id);
+                const now = Date.now();
+                // فقط القائد يحصل على كولداون، إلا إذا كان الأونر
+                if (id === host.id && id !== OWNER_ID) {
+                    sql.prepare("UPDATE levels SET mora = mora - 100, last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
+                } else {
+                    sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
+                }
             });
-            await runDungeon(interaction, party, theme, sql);
+
+            // ✅ إنشاء الثريد وبدء المعركة داخله
+            try {
+                const thread = await msg.channel.threads.create({
+                    name: `⚔️ دانجون ${host.username}`,
+                    autoArchiveDuration: 60,
+                    type: ChannelType.PrivateThread, // ثريد خاص
+                    reason: 'Start Dungeon Battle'
+                });
+
+                // إضافة الأعضاء للثريد
+                for (const memberId of party) {
+                    await thread.members.add(memberId).catch(() => {});
+                }
+
+                await thread.send({ content: `🔔 **بدأت المعركة!** استعدوا يا أبطال: ${party.map(id => `<@${id}>`).join(' ')}` });
+                
+                // تحديث رسالة اللوبي الأصلية
+                if (msg.editable) await msg.edit({ content: `✅ **انطلقت المعركة في الثريد!** <#${thread.id}>`, components: [] });
+
+                // تشغيل الدانجون داخل الثريد (نمرر القناة الأصلية للنتائج النهائية)
+                await runDungeon(thread, msg.channel, party, theme, sql, host.id);
+
+            } catch (err) {
+                console.error("Error creating thread:", err);
+                activeDungeonRequests.delete(host.id); // تنظيف في حال الخطأ
+                interaction.channel.send("❌ حدث خطأ أثناء إنشاء ساحة المعركة (Thread). تأكد من صلاحيات البوت.");
+            }
+
         } else {
-            if (msg.editable) msg.edit({ content: "❌ تم الإلغاء.", components: [], embeds: [] });
+            activeDungeonRequests.delete(host.id); // تنظيف عند انتهاء الوقت دون بدء
+            if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون (انتهى الوقت).", components: [], embeds: [] });
         }
     });
 }
 
-function buildSkillSelector(player) {
-    const userSkills = player.skills || {};
-    const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
-    
-    if (availableSkills.length === 0) return null;
-
-    const options = availableSkills.map(skill => {
-        const cooldown = player.skillCooldowns[skill.id] || 0;
-        const description = cooldown > 0 ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
-        return new StringSelectMenuOptionBuilder()
-            .setLabel(skill.name)
-            .setValue(skill.id)
-            .setDescription(description.substring(0, 100))
-            .setEmoji(skill.emoji || '✨');
-    });
-
-    const slicedOptions = options.slice(0, 25);
-
-    const row = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId('skill_select_menu')
-            .setPlaceholder('اختر مهارة لاستخدامها...')
-            .addOptions(slicedOptions)
-    );
-    return row;
-}
-
-// ⚔️⚔️ تشغيل الدانجون (المنطق الأساسي) ⚔️⚔️
-async function runDungeon(interaction, partyIDs, theme, sql) {
-    const channel = interaction.channel;
-    const guild = interaction.guild;
-    const hostId = partyIDs[0]; 
+// ⚔️⚔️ تشغيل الدانجون ⚔️⚔️
+async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
+    const guild = threadChannel.guild;
     
     let players = [];
     for (const id of partyIDs) {
@@ -394,14 +438,17 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
         if (m) players.push(getRealPlayerData(m, sql));
     }
 
-    if (players.length === 0) return channel.send("❌ خطأ في البيانات.");
+    if (players.length === 0) {
+        activeDungeonRequests.delete(hostId);
+        return threadChannel.send("❌ خطأ في البيانات.");
+    }
 
     let totalLoot = { mora: 0, xp: 0 };
 
     for (let floor = 1; floor <= 10; floor++) {
         if (players.every(p => p.isDead)) break; 
 
-        players.forEach(p => { p.shield = 0; p.effects = []; });
+        players.forEach(p => { if (!p.isDead) { p.shield = 0; p.effects = []; } });
 
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[0];
         const randomMob = getRandomMonster(floorConfig.type, theme);
@@ -419,11 +466,12 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
         let log = [`⚠️ **الطابق ${floor}**: ظهر **${monster.name}**! (HP: ${monster.maxHp})`];
         let ongoing = true;
 
-        const battleMsg = await channel.send({ 
+        const battleMsg = await threadChannel.send({ 
             embeds: [generateBattleEmbed(players, monster, floor, theme, log)], 
             components: [generateBattleRow()] 
         });
 
+        // حلقة المعركة
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 60000 });
             let actedPlayers = [];
@@ -434,31 +482,25 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                 collector.on('collect', async i => {
                     const p = players.find(pl => pl.id === i.user.id);
                     if (!p || p.isDead || actedPlayers.includes(p.id)) {
-                        if (!i.replied) await i.reply({ content: "⏳ انتظر الجولة القادمة.", ephemeral: true });
+                        if (!i.replied) await i.reply({ content: "⏳ انتظر دورك/أنت ميت.", ephemeral: true });
                         return;
                     }
 
+                    // ... (المهارات)
                     if (i.customId === 'skill') {
                         const skillRow = buildSkillSelector(p);
                         if (!skillRow) return i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
                         const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
-                        
                         try {
                             const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 10000 });
                             const skillId = selection.values[0];
                             const skill = p.skills[skillId];
-
                             if ((p.skillCooldowns[skillId] || 0) > 0) return await selection.reply({ content: `⏳ كولداون (${p.skillCooldowns[skillId]}).`, ephemeral: true });
-
                             actedPlayers.push(p.id);
-                            
                             handleSkillUsage(p, skill, monster, log);
-
                             p.skillCooldowns[skillId] = 3; 
                             await selection.update({ content: `✅ تم: ${skill.name}`, components: [] });
-                            
                             if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
-
                         } catch (err) { await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }); }
                         return;
                     }
@@ -466,6 +508,7 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                     actedPlayers.push(p.id);
                     await i.deferUpdate();
 
+                    // الهجوم العادي
                     let atkMultiplier = 1.0;
                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                     const currentAtk = Math.floor(p.atk * atkMultiplier);
@@ -476,18 +519,15 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                         if (isCrit) dmg = Math.floor(dmg * 1.5);
                         monster.hp -= dmg;
                         log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
-                    } 
-                    else if (i.customId === 'heal') {
+                    } else if (i.customId === 'heal') {
                         if (p.potions > 0) {
-                            const heal = Math.floor(p.maxHp * 0.35);
-                            p.hp = Math.min(p.hp + heal, p.maxHp);
+                            p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.35), p.maxHp);
                             p.potions--;
-                            log.push(`🧪 **${p.name}** شرب جرعة (+${heal} HP).`);
-                        } else { log.push(`⚠️ **${p.name}** نفذت جرعاته!`); }
-                    } 
-                    else if (i.customId === 'def') {
+                            log.push(`🧪 **${p.name}** تعالج.`);
+                        }
+                    } else if (i.customId === 'def') {
                         p.defending = true;
-                        p.shield += Math.floor(p.maxHp * 0.1); 
+                        p.shield += Math.floor(p.maxHp * 0.1);
                         log.push(`🛡️ **${p.name}** يدافع.`);
                     }
 
@@ -497,6 +537,7 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                 collector.on('end', resolve);
             });
 
+            // نهاية الجولة
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 p.effects = p.effects.filter(e => { e.turns--; return e.turns > 0; });
@@ -513,6 +554,7 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                 });
             }
 
+            // موت الوحش (فوز بالطابق)
             if (monster.hp <= 0) {
                 ongoing = false;
                 await battleMsg.edit({ components: [] });
@@ -521,141 +563,122 @@ async function runDungeon(interaction, partyIDs, theme, sql) {
                 const gateLevel = hostData?.dungeon_gate_level || 1;
                 const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1);
                 
-                const floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
-                const floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
+                let floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
+                let floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
+
+                // 🔥 تقسيم الجوائز إذا الطابق فوق 5 🔥
+                if (floor > 5) {
+                    floorXp = Math.floor(floorXp / players.length);
+                    floorMora = Math.floor(floorMora / players.length);
+                }
 
                 totalLoot.mora += floorMora;
                 totalLoot.xp += floorXp;
 
                 if (floor === 10) {
-                     players.filter(p => !p.isDead).forEach(p => {
-                        sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guild.id);
-                        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, 15, Date.now() + 900000, 'xp', 0.15);
-                        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, 15, Date.now() + 900000, 'mora', 0.15);
-                        sql.prepare("UPDATE levels SET max_dungeon_floor = 10 WHERE user = ? AND guild = ?").run(p.id, guild.id);
-                    });
-
-                    const winEmbed = new EmbedBuilder()
-                        .setTitle("🏆 أبطال الدانجون!")
-                        .setDescription(`**تهانينا!** لقد قهرتم جميع الطوابق.\n\n💰 **مجموع الغنيمة:** ${totalLoot.mora.toLocaleString()} ${EMOJI_MORA}\n✨ **مجموع الخبرة:** ${totalLoot.xp} XP\n🎁 **المكافأة الكبرى:** Buff (+15% XP/Mora) لمدة 15 دقيقة!`)
-                        .setColor('Gold')
-                        .setImage(WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)]);
-                    
-                    await channel.send({ embeds: [winEmbed] });
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "win", sql, guild.id, hostId);
                     return; 
                 }
-                
-                 const decisionEmbed = new EmbedBuilder()
-                    .setTitle(`🎉 تم القضاء على ${monster.name}!`)
-                    .setColor(Colors.Blue)
-                    .setDescription(`لقد حصلتم من هذا الطابق على:\n💰 **${floorMora}** مورا | ✨ **${floorXp}** XP\n\n📦 **إجمالي ما جمعتموه حتى الآن:**\n💰 **${totalLoot.mora.toLocaleString()}** مورا\n✨ **${totalLoot.xp.toLocaleString()}** XP\n\n❤️ **حالة الفريق:**\n${players.map(p => `${p.isDead ? '💀' : '💚'} ${p.name}: ${p.hp}/${p.maxHp}`).join('\n')}\n\n**هل تريدون الاستمرار للطابق التالي (مخاطرة) أم الانسحاب بالجوائز؟**`)
-                    .setFooter({ text: 'القرار للقائد فقط' });
 
-                const decisionRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('dungeon_continue').setLabel('استمرار ⚔️').setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId('dungeon_retreat').setLabel('انسحاب 🏃‍♂️').setStyle(ButtonStyle.Secondary)
+                const decisionEmbed = new EmbedBuilder()
+                    .setTitle(`🎉 انتصار في الطابق ${floor}!`)
+                    .setDescription(`الجوائز المضافة: ${floorMora} ${EMOJI_MORA} | ${floorXp} XP\nلكل عضو (حتى الأموات).`)
+                    .setColor(Colors.Green);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('dungeon_continue').setLabel('استمرار').setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId('dungeon_retreat').setLabel('انسحاب').setStyle(ButtonStyle.Danger)
                 );
 
-                const decisionMsg = await channel.send({ embeds: [decisionEmbed], components: [decisionRow] });
-
+                const dMsg = await threadChannel.send({ embeds: [decisionEmbed], components: [row] });
+                
                 try {
-                    const decision = await decisionMsg.awaitMessageComponent({ 
-                        filter: i => i.user.id === hostId && (i.customId === 'dungeon_continue' || i.customId === 'dungeon_retreat'), 
-                        time: 60000 
-                    });
-                    await decision.deferUpdate();
-
-                    if (decision.customId === 'dungeon_retreat') {
-                         players.filter(p => !p.isDead).forEach(p => {
-                            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guild.id);
-                            const currentMax = sql.prepare("SELECT max_dungeon_floor FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id)?.max_dungeon_floor || 0;
-                            if (floor > currentMax) sql.prepare("UPDATE levels SET max_dungeon_floor = ? WHERE user = ? AND guild = ?").run(floor, p.id, guild.id);
-                            
-                            // 🌟 إضافة المعزز بناءً على الطابق 🌟
-                            const buffPercent = floor; 
-                            const multiplier = floor / 100;
-                            const duration = 15 * 60 * 1000; 
-                            const expireTime = Date.now() + duration;
-
-                            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, buffPercent, expireTime, 'xp', multiplier);
-                            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, buffPercent, expireTime, 'mora', multiplier);
-                        });
-
-                        const retreatEmbed = new EmbedBuilder()
-                            .setTitle("🏃‍♂️ انسحاب ناجح!")
-                            .setDescription(`قرر الفريق الانسحاب والعودة بالغنائم.\n\n💰 **حصلتم على:** ${totalLoot.mora.toLocaleString()} ${EMOJI_MORA}\n✨ **حصلتم على:** ${totalLoot.xp.toLocaleString()} XP\n💪 **حصلتم على معزز:** +${floor}% XP/Mora (15 دقيقة)`)
-                            .setColor('Green');
-                        
-                        await decisionMsg.edit({ embeds: [retreatEmbed], components: [] });
-                        return; 
-                    } else {
-                        await decisionMsg.edit({ components: [] }); 
-                        await channel.send("⚔️ **يتقدم الفريق نحو الظلام...**");
-                        players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.2), p.maxHp); p.defending = false; });
-                        await new Promise(r => setTimeout(r, 2000));
-                        continue; 
+                    const i = await dMsg.awaitMessageComponent({ filter: idx => idx.user.id === hostId, time: 60000 });
+                    if (i.customId === 'dungeon_retreat') {
+                        await i.update({ components: [] });
+                        await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "retreat", sql, guild.id, hostId);
+                        return;
                     }
+                    await i.update({ content: "⚔️ **نحو الطابق التالي...**", components: [], embeds: [] });
+                    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + 20, p.maxHp); });
                 } catch (e) {
-                     players.filter(p => !p.isDead).forEach(p => { sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guild.id); });
-                    await decisionMsg.edit({ content: "⏰ انتهى الوقت، تم الانسحاب تلقائياً.", components: [] });
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "retreat", sql, guild.id, hostId);
                     return;
                 }
-            }
-
-            const alivePlayers = players.filter(p => !p.isDead);
-            if (alivePlayers.length > 0) {
-                const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-                
-                let monsterDmg = monster.atk;
-                const isWeak = monster.effects.some(e => e.type === 'weakness');
-                if (isWeak) monsterDmg = Math.floor(monsterDmg * 0.75);
-
-                let actionText = `👹 **${monster.name}** ضرب **${target.name}** بـ ${monsterDmg} ضرر!`;
-                if (Math.random() < 0.3) { 
-                    monsterDmg = Math.floor(monsterDmg * 1.5); 
-                    actionText = `🔥 **${monster.name}** هجوم ساحق على **${target.name}** (${monsterDmg})!`; 
-                }
-
-                if (target.defending) monsterDmg = Math.floor(monsterDmg * 0.5);
-
-                if (target.shield > 0) {
-                    if (monsterDmg >= target.shield) {
-                        monsterDmg -= target.shield;
-                        target.shield = 0;
-                        actionText += ` (تم تحطيم الدرع 🛡️)`;
-                    } else {
-                        target.shield -= monsterDmg;
-                        monsterDmg = 0;
-                        actionText += ` (الدرع امتص الضربة 🛡️)`;
+            } else {
+                // هجوم الوحش
+                const alivePlayers = players.filter(p => !p.isDead);
+                if (alivePlayers.length > 0) {
+                    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                    let dmg = monster.atk;
+                    if (target.defending) dmg = Math.floor(dmg * 0.5);
+                    if (target.shield > 0) {
+                        if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; }
+                        else { target.shield -= dmg; dmg = 0; }
                     }
+                    target.hp -= dmg;
+                    log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
+                    if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
                 }
 
-                target.hp -= monsterDmg;
-                log.push(actionText);
-                if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
-            }
+                // خسارة الفريق
+                if (players.every(p => p.isDead)) {
+                    ongoing = false;
+                    await battleMsg.edit({ components: [] });
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "lose", sql, guild.id, hostId);
+                    return;
+                }
 
-            if (players.every(p => p.isDead)) {
-                ongoing = false;
-                await battleMsg.edit({ components: [] });
-                const expireTime = Date.now() + (15 * 60 * 1000);
-                players.forEach(p => {
-                    sql.prepare(`INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)`).run(guild.id, p.id, -15, expireTime, 'mora', -0.15);
-                    sql.prepare(`INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)`).run(guild.id, p.id, 0, expireTime, 'pvp_wounded', 0);
-                });
-                const randomLoseImage = LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)];
-                const loseEmbed = new EmbedBuilder().setTitle("☠️ هُزم الفريق...").setDescription(`سقط جميع المغامرين في الطابق ${floor}.\n\n🚫 **فقدتم جميع الجوائز المجمعة!** (${totalLoot.mora} مورا)\n🩹 **العقوبة:** إصابة خطيرة (-15% كسب مورا) لمدة 15 دقيقة.`).setColor('DarkRed').setImage(randomLoseImage);
-                let teamStatus = players.map(p => `${p.isDead ? '💀' : '🛡️'} ${p.name}`).join('\n');
-                loseEmbed.addFields({ name: `🛡️ **حالة الفريق النهائية**`, value: teamStatus, inline: false });
-                await channel.send({ embeds: [loseEmbed] });
-                return;
+                players.forEach(p => p.defending = false);
+                if (log.length > 5) log = log.slice(-5);
+                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log)] });
             }
-
-            players.forEach(p => p.defending = false);
-            if (log.length > 5) log = log.slice(-5);
-            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log)] });
         }
     }
+}
+
+// دالة إرسال النتيجة النهائية وحذف الثريد
+async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, status, sql, guildId, hostId) {
+    // 🔥 توزيع الجوائز على الجميع (أحياء وأموات) 🔥
+    players.forEach(p => {
+        if (status === 'win' || status === 'retreat') {
+            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guildId);
+            // إضافة البف عند الفوز الكامل
+            if (status === 'win') {
+                const expire = Date.now() + (15 * 60 * 1000);
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'mora', 0.15);
+            }
+        }
+    });
+
+    // إزالة القائد من قائمة النشطين (للسماح له بطلب جديد إذا انتهى الكولداون)
+    activeDungeonRequests.delete(hostId);
+
+    const embed = new EmbedBuilder()
+        .setTitle(status === 'win' ? "🏆 نـصـر أسـطـوري!" : (status === 'lose' ? "☠️ هـزيمـة سـاحقـة" : "🏳️ انـسحـاب تـكـتـيـكـي"))
+        .setColor(status === 'win' ? Colors.Gold : (status === 'lose' ? Colors.DarkRed : Colors.Orange))
+        .setImage(status === 'win' ? WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)] : LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)])
+        .setFooter({ text: `وصلتم للطابق: ${floor}` });
+
+    let desc = `**تقرير المعركة النهائي:**\n\n`;
+    desc += `💰 **الغنيمة لكل عضو:** ${totalLoot.mora.toLocaleString()} ${EMOJI_MORA}\n`;
+    desc += `✨ **الخبرة لكل عضو:** ${totalLoot.xp.toLocaleString()} XP\n\n`;
+    
+    desc += `**حالة الأبطال:**\n`;
+    players.forEach(p => {
+        desc += `${p.isDead ? '💀' : '💚'} **${p.name}** - ${p.hp}/${p.maxHp} HP\n`;
+    });
+
+    embed.setDescription(desc);
+
+    // إرسال الرسالة للقناة الأساسية
+    await mainChannel.send({ content: `📢 **انتهت معركة الدانجون!**`, embeds: [embed] });
+
+    // حذف الثريد
+    setTimeout(() => {
+        thread.delete().catch(e => console.log("Could not delete thread:", e));
+    }, 5000); 
 }
 
 function generateBattleEmbed(players, monster, floor, theme, log, color = '#2F3136') {
@@ -665,8 +688,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, color = '#2F31
 
     let monsterStatus = "";
     if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
-    if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
-
+    
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
     embed.addFields({ 
         name: `👹 **${monster.name}** ${monsterStatus}`, 
@@ -677,10 +699,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, color = '#2F31
     let teamStatus = players.map(p => {
         const icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '❤️');
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
-        let buffs = "";
-        if (p.effects.some(e => e.type === 'atk_buff')) buffs += " 💪";
-        
-        return `${icon} **${p.name}** ${buffs}\n${hpBar}`;
+        return `${icon} **${p.name}**\n${hpBar}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false });
