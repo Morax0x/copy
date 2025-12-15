@@ -3,7 +3,7 @@ const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
 const { handlePvpInteraction } = require('./handlers/pvp-handler.js'); 
-const { getUserWeight, endGiveaway, createRandomDropGiveaway } = require('./handlers/giveaway-handler.js');
+const { getUserWeight, endGiveaway, createRandomDropGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); // ✅ تم إضافة handleGiveawayInteraction
 const { handleReroll } = require('./handlers/reroll-handler.js'); 
 const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
@@ -158,6 +158,14 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (!i.replied && !i.deferred) await i.deferUpdate(); 
                 }
 
+                // 🔥 معالجة أزرار القيف اواي العامة (التي يديرها الهاندلر) 🔥
+                if (id.startsWith('giveaway_')) {
+                    if (handleGiveawayInteraction) {
+                        await handleGiveawayInteraction(client, i);
+                    }
+                    return; // إنهاء لتجنب التعارض
+                }
+
                 // رتب خاصة
                 if (id.startsWith('customrole_')) {
                     await handleCustomRoleInteraction(i, client, sql);
@@ -182,10 +190,10 @@ module.exports = (client, sql, antiRolesCache) => {
                 else if (
                     id.startsWith('buy_') || id.startsWith('upgrade_') || id.startsWith('shop_') || 
                     id.startsWith('replace_') || id === 'cancel_purchase' || id === 'open_xp_modal' ||
-                    id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' || // تمت الإضافة
+                    id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' || 
                     id === 'cast_rod' || id.startsWith('pull_rod') || 
                     id.startsWith('sell_') || id.startsWith('mem_') || 
-                    id === 'replace_guard' || id === 'confirm_dungeon_upgrade' // تمت الإضافة
+                    id === 'replace_guard' || id === 'confirm_dungeon_upgrade' 
                 ) {
                     await handleShopInteractions(i, client, sql);
                 }
