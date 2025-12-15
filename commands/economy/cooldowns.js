@@ -13,8 +13,6 @@ try {
     fishingConfig.boats = [{ level: 1, speed_bonus: 0 }];
 }
 
-// const sql = new SQLite('./mainDB.sqlite'); // يفضل استخدام client.sql الممرر، لكن لا بأس هنا
-
 const EMOJI_READY = '🟢';
 const EMOJI_WAIT = '🔴';
 
@@ -54,9 +52,11 @@ const COMMANDS_TO_CHECK = [
     { name: 'guess', db_column: 'lastGuess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
     { name: 'roulette', db_column: 'lastRoulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
     { name: 'emoji', db_column: 'lastMemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
-    { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' }, // ✅ تم التعديل إلى "ترتيب"
+    { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
     { name: 'pvp', db_column: 'lastPVP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
-    { name: 'dungeon', db_column: 'lastDungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' } // ✅ تم إضافة الدانجون (3 ساعات)
+    
+    // ✅ التعديل هنا: تم تغيير lastDungeon إلى last_dungeon ليطابق الداتابيس
+    { name: 'dungeon', db_column: 'last_dungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
 module.exports = {
