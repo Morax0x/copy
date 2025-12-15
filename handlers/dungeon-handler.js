@@ -17,16 +17,22 @@ const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
 // تتبع اللاعبين النشطين (لمنع السبام)
 const activeDungeonRequests = new Set();
 
-// صور الفوز والخسارة
+// --- صور النتائج ---
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
-    'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif'
+    'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif',
+    'https://i.postimg.cc/4ygk8q3G/tumblr-nmao11Zm-Bx1r3rdh2o2-500-gif-500-281.gif',
+    'https://i.postimg.cc/pL6NNpdC/Epic7-Epic-Seven-GIF-Epic7-Epic-Seven-Tensura-Discover-Share-GIFs.gif',
+    'https://i.postimg.cc/05dLktNF/download-5.gif',
+    'https://i.postimg.cc/sXRVMwhZ/download-2.gif'
 ];
 
 const LOSE_IMAGES = [
     'https://i.postimg.cc/xd8msjxk/escapar-a-toda-velocidad.gif',
-    'https://i.postimg.cc/1zb8JGVC/download.gif'
+    'https://i.postimg.cc/1zb8JGVC/download.gif',
+    'https://i.postimg.cc/rmSwjvkV/download-1.gif',
+    'https://i.postimg.cc/8PyPZRqt/download.jpg'
 ];
 
 // --- دوال مساعدة ---
@@ -113,7 +119,8 @@ function getRealPlayerData(member, sql) {
         shield: 0,
         tempAtkMultiplier: 1.0,
         effects: [],
-        totalDamage: 0 // <--- تعديل 1: إضافة عداد الضرر
+        totalDamage: 0,
+        loot: { mora: 0, xp: 0 } // تتبع الغنائم الخاصة بكل لاعب
     };
 }
 
@@ -158,7 +165,6 @@ function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const value = skill.effectValue; 
 
-    // <--- تعديل 2: حساب الضرر وإضافته لعداد اللاعب في كل حالة هجومية
     switch (skill.id) {
         case 'skill_healing':
         case 'skill_cleanse':
@@ -194,7 +200,7 @@ function handleSkillUsage(player, skill, monster, log) {
              skillDmg = Math.floor(player.atk * 0.5); 
              monster.effects.push({ type: 'poison', val: Math.floor(player.atk * (value/100)), turns: 3 });
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg} + سم مستمر).`);
              break;
 
@@ -208,14 +214,14 @@ function handleSkillUsage(player, skill, monster, log) {
                  log.push(`🎲 **${player.name}** خسر المقامرة... خدش بسيط **${skillDmg}**.`);
              }
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              break;
         
         case 'race_dragon_skill':
         case 'race_spirit_skill':
              skillDmg = Math.floor(player.atk * 1.5) + value;
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              log.push(`🔥 **${player.name}** أطلق ${skill.name} مخترقاً الدفاع بـ **${skillDmg}** ضرر!`);
              break;
 
@@ -224,7 +230,7 @@ function handleSkillUsage(player, skill, monster, log) {
              skillDmg = Math.floor(player.atk * 1.2) + value;
              const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.5 : 0.3));
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              player.hp = Math.min(player.maxHp, player.hp + lifesteal);
              log.push(`${skill.emoji} **${player.name}** امتص حياة الخصم! (**${skillDmg}** ضرر / **+${lifesteal}** HP).`);
              break;
@@ -234,7 +240,7 @@ function handleSkillUsage(player, skill, monster, log) {
              skillDmg = Math.floor(player.atk * 2.0) + value;
              player.hp -= selfDmg;
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              log.push(`🩸 **${player.name}** ضحى بدمه (**-${selfDmg}**) ليسبب دماراً شاملاً **${skillDmg}**!`);
              break;
 
@@ -243,7 +249,7 @@ function handleSkillUsage(player, skill, monster, log) {
              const hit2 = Math.floor(player.atk * 0.8);
              skillDmg = hit1 + hit2;
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              log.push(`🏹 **${player.name}** أطلق سهمين سريعين! (**${hit1}** + **${hit2}** = **${skillDmg}**).`);
              break;
         
@@ -252,7 +258,7 @@ function handleSkillUsage(player, skill, monster, log) {
              skillDmg = Math.floor(player.atk * 0.5);
              monster.effects.push({ type: 'weakness', val: 0.25, turns: 2 }); 
              monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; // تحديث الضرر
+             player.totalDamage += skillDmg; 
              log.push(`📉 **${player.name}** أضعف هجوم الوحش وسبب **${skillDmg}** ضرر.`);
              break;
         
@@ -281,7 +287,7 @@ function handleSkillUsage(player, skill, monster, log) {
             let multiplier = skill.stat_type === '%' ? (1 + (value/100)) : 1;
             skillDmg = Math.floor((player.atk * multiplier) + (skill.stat_type !== '%' ? value : 0));
             monster.hp -= skillDmg;
-            player.totalDamage += skillDmg; // تحديث الضرر
+            player.totalDamage += skillDmg; 
             log.push(`💥 **${player.name}** استخدم ${skill.name} مسبباً **${skillDmg}** ضرر!`);
             break;
     }
@@ -479,8 +485,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    let totalLoot = { mora: 0, xp: 0 };
-
     for (let floor = 1; floor <= 10; floor++) {
         if (players.every(p => p.isDead)) break; 
 
@@ -513,8 +517,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             let actedPlayers = [];
 
             await new Promise(resolve => {
+                // مؤقت تخطي الدور (AFK)
                 const turnTimeout = setTimeout(() => { 
-                    threadChannel.send("⏰ **انتهى الوقت!** تم تخطي أدوار من لم يهاجم.");
+                    // تحديد من لم يهاجم
+                    const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
+                    const afkMentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
+                    
+                    let skipMsg = "⏰ **انتهى الوقت!** تم تخطي الدور تلقائياً.";
+                    if (afkMentions) {
+                        skipMsg += `\n😴 **النائمون:** ${afkMentions} (لم يهاجموا)`;
+                    }
+
+                    threadChannel.send(skipMsg);
                     collector.stop('turn_end'); 
                 }, 45000); 
 
@@ -555,7 +569,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                         if (isCrit) dmg = Math.floor(dmg * 1.5);
                         monster.hp -= dmg;
-                        p.totalDamage += dmg; // <--- تعديل 3: إضافة الضرر للعداد
+                        p.totalDamage += dmg; 
                         log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
                     } else if (i.customId === 'heal') {
                         if (p.potions > 0) {
@@ -612,19 +626,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     floorXp = Math.floor(floorXp / players.length);
                     floorMora = Math.floor(floorMora / players.length);
                 }
-                // (تحت الطابق 5: تضاف كاملة دون تقسيم)
-
-                totalLoot.mora += floorMora;
-                totalLoot.xp += floorXp;
+                
+                // --- توزيع الغنائم الفردية (الأحياء فقط) ---
+                players.forEach(p => {
+                    if (!p.isDead) {
+                        // الحي يحصل على الجائزة في رصيده المؤقت
+                        p.loot.mora += floorMora;
+                        p.loot.xp += floorXp;
+                    }
+                    // الميت لا يتم إضافة شيء له (توقف رصيده عند موته)
+                });
 
                 if (floor === 10) {
-                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "win", sql, guild.id, hostId);
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId);
                     return; 
                 }
 
                 const decisionEmbed = new EmbedBuilder()
                     .setTitle(`🎉 انتصار في الطابق ${floor}!`)
-                    .setDescription(`الجوائز المكتسبة: ${floorMora} ${EMOJI_MORA} | ${floorXp} XP\n(تمت الإضافة لرصيدك النهائي)`)
+                    .setDescription(`الجوائز المكتسبة: ${floorMora} ${EMOJI_MORA} | ${floorXp} XP\n(تمت إضافتها لمحفظة الفريق)`)
                     .setColor(Colors.Green);
 
                 const row = new ActionRowBuilder().addComponents(
@@ -638,13 +658,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     const i = await dMsg.awaitMessageComponent({ filter: idx => idx.user.id === hostId, time: 60000 });
                     if (i.customId === 'dungeon_retreat') {
                         await i.update({ components: [] });
-                        await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "retreat", sql, guild.id, hostId);
+                        await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                         return;
                     }
                     await i.update({ content: "⚔️ **نحو الطابق التالي...**", components: [], embeds: [] });
                     players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + 20, p.maxHp); });
                 } catch (e) {
-                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "retreat", sql, guild.id, hostId);
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                     return;
                 }
             } else {
@@ -667,7 +687,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 if (players.every(p => p.isDead)) {
                     ongoing = false;
                     await battleMsg.edit({ components: [] });
-                    await sendEndMessage(mainChannel, threadChannel, players, floor, totalLoot, "lose", sql, guild.id, hostId);
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "lose", sql, guild.id, hostId);
                     return;
                 }
 
@@ -680,24 +700,47 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 }
 
 // دالة إرسال النتيجة النهائية وحذف الثريد
-async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, status, sql, guildId, hostId) {
+async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId) {
     let extraLootMsg = "";
 
     // ✅ منطق توزيع الجوائز أو الخسارة
     players.forEach(p => {
+        const expire = Date.now() + (15 * 60 * 1000); // 15 دقيقة
+
         if (status === 'win' || status === 'retreat') {
-            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(totalLoot.xp, totalLoot.mora, p.id, guildId);
             
-            // إضافة بافات عند الفوز الكامل
+            // حساب الجائزة النهائية
+            let finalMora = p.loot.mora;
+            let finalXp = p.loot.xp;
+
+            // عقوبة الموت: 50% من المكتسبات
+            if (p.isDead) {
+                finalMora = Math.floor(finalMora * 0.5);
+                finalXp = Math.floor(finalXp * 0.5);
+            }
+
+            // إضافة الجوائز للداتابيس
+            if (finalMora > 0 || finalXp > 0) {
+                sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
+            }
+            
+            // إضافة بافات (تعزيز) عند الفوز الكامل فقط
             if (status === 'win') {
-                const expire = Date.now() + (15 * 60 * 1000);
+                // باف +15% XP و Mora
                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'mora', 0.15);
             }
+
+            // تحديث قيمة العرض في الـ Embed
+            p.loot.mora = finalMora;
+            p.loot.xp = finalXp;
+
         } else if (status === 'lose') {
-            // ✅ 4. عقوبة الخسارة (النيرف)
-            const xpPenalty = 50 * floor; 
-            sql.prepare("UPDATE levels SET xp = MAX(0, xp - ?) WHERE user = ? AND guild = ?").run(xpPenalty, p.id, guildId);
+            // ✅ 4. عقوبة الخسارة (النيرف - Debuff)
+            // نيرف XP (-15%)
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'xp', -0.15);
+            // نيرف Mora (-15%)
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'mora', -0.15);
         }
     });
 
@@ -712,7 +755,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, st
     // إزالة القائد من قائمة النشطين
     activeDungeonRequests.delete(hostId);
 
-    // <--- تعديل 4: حساب وتحديد الـ MVP (الأعلى ضرراً)
+    // حساب MVP
     let mvpPlayer = null;
     let maxDamage = -1;
 
@@ -731,22 +774,29 @@ async function sendEndMessage(mainChannel, thread, players, floor, totalLoot, st
 
     let desc = `**تقرير المعركة النهائي:**\n\n`;
 
-    // عرض الـ MVP في بداية الوصف
     if (mvpPlayer && mvpPlayer.totalDamage > 0) {
         desc += `👑 **نجم المعركة (MVP):** ${mvpPlayer.name}\n💥 **إجمالي الضرر:** ${mvpPlayer.totalDamage.toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━\n`;
     }
 
     if (status === 'lose') {
-        desc += `💀 **العقوبة:** تم خصم خبرة (XP) من الجميع لضعف الأداء.\n\n`;
+        desc += `💀 **لعنة الهزيمة:** أصيب الفريق بالوهن!\n🔻 **-15%** كسب XP و Mora لمدة 15 دقيقة.\n\n`;
     } else {
-        desc += `💰 **الغنيمة لكل عضو:** ${totalLoot.mora.toLocaleString()} ${EMOJI_MORA}\n`;
-        desc += `✨ **الخبرة لكل عضو:** ${totalLoot.xp.toLocaleString()} XP\n`;
-        if (extraLootMsg) desc += `${extraLootMsg}\n\n`;
+        if (status === 'win') desc += `🆙 **مكافأة النصر:** +15% كسب XP و Mora لمدة 15 دقيقة!\n`;
+        if (extraLootMsg) desc += `${extraLootMsg}\n`;
+        desc += `\n**توزيع الغنائم:**\n`;
     }
     
-    desc += `**حالة الأبطال:**\n`;
     players.forEach(p => {
-        desc += `${p.isDead ? '💀' : '💚'} **${p.name}** - ${p.hp}/${p.maxHp} HP (ضرر: ${p.totalDamage})\n`;
+        let lootText = "";
+        if (status !== 'lose') {
+            if (p.isDead) {
+                lootText = ` (💀 ميت: ${p.loot.mora} ${EMOJI_MORA} | ${p.loot.xp} XP) *نصف المكافأة*`;
+            } else {
+                lootText = ` (💰 ${p.loot.mora} ${EMOJI_MORA} | ✨ ${p.loot.xp} XP)`;
+            }
+        }
+        
+        desc += `${p.isDead ? '💀' : '💚'} **${p.name}** - ${p.hp}/${p.maxHp} HP${lootText}\n`;
     });
 
     embed.setDescription(desc);
