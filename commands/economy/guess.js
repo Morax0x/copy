@@ -4,7 +4,7 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 25;
 const MAX_BET_SOLO = 100; // 🔒 الحد الأقصى ضد البوت
-const SOLO_ATTEMPTS = 5; // ✅ تم تعديل عدد المحاولات هنا إلى 5
+const MAX_ATTEMPTS = 5; // ✅ عدد المحاولات المسموحة (للفردي والجماعي)
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 const MAX_LOAN_BET = 500; // 🔒 الحد الأقصى للمقترضين في اللعب الجماعي
 const OWNER_ID = "1145327691772481577";
@@ -251,26 +251,26 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
 
     const startingPrize = bet * 7;
     let currentWinnings = startingPrize;
-    const penaltyPerGuess = Math.floor(startingPrize / SOLO_ATTEMPTS);
+    const penaltyPerGuess = Math.floor(startingPrize / MAX_ATTEMPTS); // ✅ استخدام المتغير الموحد
 
     const embed = new EmbedBuilder()
         .setTitle('🎲 لعبة التخـمـين')
-        .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة الحالية: **${currentWinnings}** ${EMOJI_MORA}\nاختر رقماً سريــاً بين 1 و 100.\nلديك **${SOLO_ATTEMPTS}** محاولات.\n\nاكتب تخمينك في الشات!`)
+        .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة الحالية: **${currentWinnings}** ${EMOJI_MORA}\nاختر رقماً سريــاً بين 1 و 100.\nلديك **${MAX_ATTEMPTS}** محاولات.\n\nاكتب تخمينك في الشات!`)
         .setColor("Random")
         .setImage('https://i.postimg.cc/Vs9bp19q/download-3.gif')
-        .setFooter({ text: `المحاولات المتبقية: ${SOLO_ATTEMPTS}` });
+        .setFooter({ text: `المحاولات المتبقية: ${MAX_ATTEMPTS}` });
 
     await replyFunction({ embeds: [embed] });
 
     const filter = (m) => m.author.id === author.id && !m.author.bot;
-    const collector = channel.createMessageCollector({ filter, time: 60000, max: SOLO_ATTEMPTS });
+    const collector = channel.createMessageCollector({ filter, time: 60000, max: MAX_ATTEMPTS }); // ✅ الحد الأقصى مفعل هنا
 
     collector.on('collect', (msg) => {
         const guess = parseInt(msg.content);
         if (isNaN(guess)) return;
 
         attempts++;
-        const attemptsLeft = SOLO_ATTEMPTS - attempts;
+        const attemptsLeft = MAX_ATTEMPTS - attempts;
 
         if (guess === targetNumber) {
             const moraMultiplier = calculateMoraBuff(author, sql);
@@ -394,12 +394,16 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
         opponents.forEach(o => finalPlayers.push(o));
         const finalPlayerIDs = finalPlayers.map(p => p.id);
 
+        // ✅ سجل لتتبع عدد محاولات كل لاعب
+        const playerAttempts = new Map();
+
         for (const player of finalPlayers) {
             let data = getScore.get(player.id, channel.guild.id);
             if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
             data.mora -= bet;
             if (player.id !== OWNER_ID && player.id !== author.id) data.lastGuess = Date.now();
             setScore.run(data);
+            playerAttempts.set(player.id, 0); // تهيئة العداد
         }
         
         if (author.id !== OWNER_ID) {
@@ -411,7 +415,7 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
 
         const gameEmbed = new EmbedBuilder()
             .setTitle('🏁 بدأ السباق!')
-            .setDescription(`✶ قبل الجميع التـحدي! ابـدأوا التـخمـين!\n\nالرقم السري بين 1 و 100. أول من يخمنه يربح **${totalPot.toLocaleString()}** ${EMOJI_MORA}!\n(لديكم 60 ثانية)`)
+            .setDescription(`✶ قبل الجميع التـحدي! ابـدأوا التـخمـين!\n\nالرقم السري بين 1 و 100. أول من يخمنه يربح **${totalPot.toLocaleString()}** ${EMOJI_MORA}!\n(لديكم **${MAX_ATTEMPTS}** محاولات لكل شخص 🔒)`)
             .setColor("Blue")
             .setImage('https://i.postimg.cc/Vs9bp19q/download-3.gif');
 
@@ -423,6 +427,13 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
         gameCollector.on('collect', (msg) => {
             const guess = parseInt(msg.content);
             if (isNaN(guess)) return;
+
+            // ✅ التحقق من عدد المحاولات للاعب
+            const currentAttempts = playerAttempts.get(msg.author.id) || 0;
+            if (currentAttempts >= MAX_ATTEMPTS) {
+                return msg.reply({ content: `🚫 لقد استهلكت جميع محاولاتك (${MAX_ATTEMPTS})!`, ephemeral: true });
+            }
+            playerAttempts.set(msg.author.id, currentAttempts + 1);
 
             if (guess === targetNumber) {
                 let winnerData = getScore.get(msg.author.id, channel.guild.id);
@@ -443,9 +454,9 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
                 gameCollector.stop('win');
 
             } else if (guess > targetNumber) {
-                channel.send(`**${msg.member.displayName}**: أصغر 🔽!`);
+                channel.send(`**${msg.member.displayName}**: أصغر 🔽! (${MAX_ATTEMPTS - (currentAttempts + 1)} محاولات باقية)`);
             } else if (guess < targetNumber) {
-                channel.send(`**${msg.member.displayName}**: أكبر 🔼!`);
+                channel.send(`**${msg.member.displayName}**: أكبر 🔼! (${MAX_ATTEMPTS - (currentAttempts + 1)} محاولات باقية)`);
             }
         });
 
