@@ -92,10 +92,11 @@ module.exports = {
             return message.channel.send(payload);
         };
 
-        if (!client.activeGames) client.activeGames = new Set();
+        // تم إزالة تعريف activeGames لأنه لم يعد مستخدمًا
         if (!client.activePlayers) client.activePlayers = new Set(); 
-        if (client.activePlayers.has(user.id)) return reply({ content: "🚫 لديك لعبة نشطة!", ephemeral: true });
-        if (client.activeGames.has(channel.id)) return reply({ content: "🚫 القناة مشغولة.", ephemeral: true });
+        
+        // التحقق فقط من اللاعب، وليس القناة
+        if (client.activePlayers.has(user.id)) return reply({ content: "🚫 لديك لعبة نشطة! أكملها أولاً.", ephemeral: true });
 
         const sql = client.sql;
         let userData = client.getLevel.get(user.id, guild.id) || { ...client.defaultData, user: user.id, guild: guild.id };
@@ -117,23 +118,24 @@ module.exports = {
             );
             const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
             
-            client.activeGames.add(channel.id); client.activePlayers.add(user.id);
+            // قفل اللاعب فقط
+            client.activePlayers.add(user.id);
             const filter = i => i.user.id === user.id && ['rl_auto_confirm', 'rl_auto_cancel'].includes(i.customId);
             
             try {
                 const conf = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
                 if (conf.customId === 'rl_auto_cancel') {
                     await conf.update({ content: '❌ ألغيت.', embeds: [], components: [] });
-                    client.activeGames.delete(channel.id); client.activePlayers.delete(user.id);
+                    client.activePlayers.delete(user.id); // تحرير اللاعب
                     return;
                 }
                 await conf.deferUpdate();
                 if (!isSlash) await confirmMsg.delete().catch(() => {}); else await conf.editReply({ content: '✅', embeds: [], components: [] });
                 
-                client.activeGames.delete(channel.id); client.activePlayers.delete(user.id);
+                client.activePlayers.delete(user.id); // تحرير مؤقت للدخول في الدالة الرئيسية
                 return startRoulette(channel, user, member, opponents, proposedBet, client, guild, sql, isSlash ? interaction : null);
             } catch (e) {
-                client.activeGames.delete(channel.id); client.activePlayers.delete(user.id);
+                client.activePlayers.delete(user.id); // تحرير اللاعب عند انتهاء الوقت
                 if (!isSlash) await confirmMsg.delete().catch(() => {}); else await interaction.editReply({ content: '⏰ الوقت انتهى.', embeds: [], components: [] });
             }
         } else {
@@ -143,12 +145,9 @@ module.exports = {
 };
 
 async function startRoulette(channel, user, member, opponents, bet, client, guild, sql, interaction) {
-    if (client.activeGames.has(channel.id)) {
-        const msg = "🚫 هناك لعبة جارية.";
-        if (interaction) await interaction.followUp({ content: msg, ephemeral: true }); else channel.send(msg);
-        return;
-    }
-    if (client.activePlayers.has(user.id)) return;
+    // تم إزالة التحقق من القناة (client.activeGames)
+
+    if (client.activePlayers.has(user.id)) return; // حماية إضافية
 
     let userData = client.getLevel.get(user.id, guild.id);
     if (!userData || userData.mora < bet) {
@@ -182,7 +181,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             }
 
             if (client.activePlayers.has(opp.id)) {
-                const msg = `🚫 اللاعب ${opp} مشغول.`;
+                const msg = `🚫 اللاعب ${opp} مشغول في لعبة أخرى.`;
                 if (interaction) await interaction.followUp(msg); else channel.send(msg);
                 return;
             }
@@ -195,7 +194,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             }
         }
         
-        client.activeGames.add(channel.id);
+        // إضافة جميع اللاعبين لقائمة النشطين
         client.activePlayers.add(user.id);
         opponents.forEach(o => client.activePlayers.add(o.id));
 
@@ -235,7 +234,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
 
         collector.on('end', async (c, reason) => {
             if (reason !== 'start') {
-                client.activeGames.delete(channel.id);
+                // تحرير اللاعبين عند انتهاء/إلغاء اللعبة
                 players.forEach(p => client.activePlayers.delete(p.id));
                 if (reason !== 'declined') inviteMsg.edit({ content: "⏰ انتهى الوقت.", embeds: [], components: [] });
                 return;
@@ -257,7 +256,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             return;
         }
 
-        client.activeGames.add(channel.id);
+        // قفل اللاعب فقط
         client.activePlayers.add(user.id);
         userData.mora -= bet;
         if (user.id !== OWNER_ID) userData.lastRoulette = Date.now();
@@ -342,7 +341,7 @@ async function playSoloRound(message, user, member, bet, userData, client, sql) 
     });
 
     collector.on('end', async (collected, reason) => {
-        client.activeGames.delete(message.channel.id);
+        // تحرير اللاعب فقط
         client.activePlayers.delete(user.id);
         if (reason === 'time') message.edit({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
     });
@@ -384,7 +383,7 @@ async function playMultiplayerGame(msg, players, bet, totalPot, client, guild) {
     });
 
     collector.on('end', () => {
-        client.activeGames.delete(msg.channel.id);
+        // تحرير جميع اللاعبين
         players.forEach(p => client.activePlayers.delete(p.id));
         
         let winner = null, maxMult = 0;
