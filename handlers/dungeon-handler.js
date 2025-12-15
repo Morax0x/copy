@@ -178,10 +178,9 @@ function buildSkillSelector(player) {
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     
-    // 5 للأونر فقط، 1 للبقية
-    const mult = (player.id === OWNER_ID) ? 5 : 1;
+    // 🔥 مضاعف المهارات للأونر x10 والبقية x1 (طبيعي) 🔥
+    const mult = (player.id === OWNER_ID) ? 10 : 1;
 
-    // المهارة السرية ثابتة
     if (skill.id === 'skill_secret_owner') {
         skillDmg = 3000; 
         monster.hp -= skillDmg;
@@ -458,7 +457,10 @@ async function lobbyPhase(interaction, theme, sql) {
                     reason: 'Start Dungeon Battle'
                 });
 
-                await thread.send({ content: `🔔 **بدأت المعركة!** <@${host.id}>` });
+                // 🔥🔥 تعديل: منشن جميع اللاعبين عند البدء 🔥🔥
+                const allMentions = party.map(id => `<@${id}>`).join(' ');
+                await thread.send({ content: `🔔 **بدأت المعركة!** ${allMentions}` });
+
                 if (msg.editable) await msg.edit({ content: `✅ **انطلقت المعركة!** <#${thread.id}>`, components: [] });
 
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id);
@@ -489,6 +491,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
+    // 🔥 جلب مستوى البوابة وتحديد المضاعف 🔥
+    const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
+    const gateLevel = hostData?.dungeon_gate_level || 1;
+    // زيادة 20% قوة للوحوش لكل مستوى بوابة
+    const gateDifficultyMult = 1 + ((gateLevel - 1) * 0.2); 
+
     for (let floor = 1; floor <= 10; floor++) {
         if (players.every(p => p.isDead)) break; 
 
@@ -500,9 +508,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         let monster = {
             name: randomMob.name,
-            hp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2))),
-            maxHp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2))),
-            atk: Math.floor(20 * floorConfig.atk_mult), 
+            // تطبيق مضاعف البوابة
+            hp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2)) * gateDifficultyMult),
+            maxHp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2)) * gateDifficultyMult),
+            atk: Math.floor(20 * floorConfig.atk_mult * gateDifficultyMult), // الهجوم يزداد مع البوابة
             enraged: false,
             effects: [] 
         };
@@ -510,7 +519,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let log = [`⚠️ **الطابق ${floor}**: ظهر **${monster.name}**! (HP: ${monster.maxHp})`];
         let ongoing = true;
 
-        // في البداية actedPlayers فارغة
         const battleMsg = await threadChannel.send({ 
             embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
             components: [generateBattleRow()] 
@@ -524,7 +532,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 const turnTimeout = setTimeout(() => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
-                         // منشن للأشخاص الذين لم يهاجموا فقط
                          const mentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
                          threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`);
                     }
@@ -538,7 +545,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         return;
                     }
 
-                    // --- معالجة الأزرار ---
                     if (i.customId === 'skill') {
                         const skillRow = buildSkillSelector(p);
                         if (!skillRow) return i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
@@ -571,7 +577,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             const currentAtk = Math.floor(p.atk * atkMultiplier);
 
                             const isCrit = Math.random() < 0.2;
-                            // هجوم عادي بدون مضاعف
+                            // هجوم عادي (طبيعي)
                             let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                             if (isCrit) dmg = Math.floor(dmg * 1.5);
 
@@ -593,7 +599,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         }
                     }
 
-                    // 🔥 تحديث الايمبد مع تمرير actedPlayers لتغيير الأسماء
                     if (monster.hp <= 0) monster.hp = 0;
                     if (log.length > 5) log = log.slice(-5);
                     await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] });
@@ -630,7 +635,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             if (monster.hp <= 0) {
                 ongoing = false;
                 await battleMsg.edit({ components: [] });
-                // تحديث نهائي
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
 
                 const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
@@ -686,14 +690,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 const alivePlayers = players.filter(p => !p.isDead);
                 if (alivePlayers.length > 0) {
                     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-                    let dmg = monster.atk;
+                    let dmg = monster.atk; // الهجوم يعتمد على قوة الوحش (والتي تعتمد على البوابة)
+
                     if (target.defending) dmg = Math.floor(dmg * 0.5);
                     if (target.shield > 0) {
                         if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; }
                         else { target.shield -= dmg; dmg = 0; }
                     }
                     
-                    if (target.id === OWNER_ID) dmg = Math.floor(dmg / 3); 
+                    // 🔥🔥 الأونر فقط يقسم ضرره على 50، الباقي يتلقونه كاملاً 🔥🔥
+                    if (target.id === OWNER_ID) {
+                        dmg = Math.floor(dmg / 50); 
+                    }
 
                     target.hp -= dmg;
                     log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
@@ -715,7 +723,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 players.forEach(p => p.defending = false);
                 if (log.length > 5) log = log.slice(-5);
-                // بداية جولة جديدة: مررنا مصفوفة فارغة لكي تعود الأسماء كمنشنات
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
             }
         }
@@ -836,18 +843,15 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         inline: false 
     });
 
-    // 🔥 التعديل هنا: تحديد طريقة العرض بناءً على حالة اللاعب 🔥
     let teamStatus = players.map(p => {
         const icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '❤️');
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
         
-        // إذا كان ميت أو قد هاجم سابقاً -> يعرض الاسم كنص عادي
-        // إذا كان حياً ولم يهاجم بعد -> يعرض الاسم كمنشن
         let displayName;
         if (p.isDead || actedPlayers.includes(p.id)) {
-            displayName = `**${p.name}**`; // نص عادي (Nickname)
+            displayName = `**${p.name}**`; 
         } else {
-            displayName = `<@${p.id}>`; // منشن (Waiting)
+            displayName = `<@${p.id}>`; 
         }
 
         return `${icon} ${displayName}\n${hpBar}`;
