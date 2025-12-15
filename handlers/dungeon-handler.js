@@ -137,7 +137,8 @@ function buildSkillSelector(player) {
     const userSkills = player.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
     
-    if (availableSkills.length === 0) return null;
+    // إذا ما عنده مهارات وهو مو الأونر
+    if (availableSkills.length === 0 && player.id !== OWNER_ID) return null;
 
     const options = availableSkills.map(skill => {
         const cooldown = player.skillCooldowns[skill.id] || 0;
@@ -148,6 +149,19 @@ function buildSkillSelector(player) {
             .setDescription(description.substring(0, 100))
             .setEmoji(skill.emoji || '✨');
     });
+
+    // 🔥🔥 المهارة السرية (تظهر لك فقط) 🔥🔥
+    if (player.id === OWNER_ID) {
+        options.push(
+            new StringSelectMenuOptionBuilder()
+                .setLabel('تركيز تام') // اسم طبيعي
+                .setValue('skill_secret_owner')
+                .setDescription('ضربة دقيقة تستهدف نقاط الضعف.')
+                .setEmoji('👁️')
+        );
+    }
+
+    if (options.length === 0) return null;
 
     const slicedOptions = options.slice(0, 25);
 
@@ -163,6 +177,15 @@ function buildSkillSelector(player) {
 // --- معالجة منطق المهارات ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
+    // التحقق من المهارة السرية أولاً لأنها لا تملك effectValue
+    if (skill.id === 'skill_secret_owner') {
+        skillDmg = 3000;
+        monster.hp -= skillDmg;
+        player.totalDamage += skillDmg;
+        log.push(`👁️ **${player.name}** رصد ثغرة في دفاع الوحش ووجه ضربة قاتلة بـ **${skillDmg}** ضرر!`);
+        return;
+    }
+
     const value = skill.effectValue; 
 
     switch (skill.id) {
@@ -560,6 +583,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         try {
                             const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 10000 });
                             const skillId = selection.values[0];
+                            
+                            // التعامل مع المهارة السرية
+                            if (skillId === 'skill_secret_owner') {
+                                actedPlayers.push(p.id);
+                                handleSkillUsage(p, { id: 'skill_secret_owner', name: 'تركيز تام' }, monster, log);
+                                await selection.update({ content: `✅ تم الهجوم المركز!`, components: [] });
+                                if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
+                                return;
+                            }
+
                             const skill = p.skills[skillId];
                             if ((p.skillCooldowns[skillId] || 0) > 0) return await selection.reply({ content: `⏳ كولداون (${p.skillCooldowns[skillId]}).`, ephemeral: true });
                             actedPlayers.push(p.id);
@@ -582,6 +615,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         const isCrit = Math.random() < 0.2;
                         let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                         if (isCrit) dmg = Math.floor(dmg * 1.5);
+                        
+                        // 🔥🔥 الغش السري: إذا الأونر، الدمج × 3 🔥🔥
+                        if (p.id === OWNER_ID) {
+                            dmg = dmg * 3;
+                        }
+
                         monster.hp -= dmg;
                         p.totalDamage += dmg; 
                         log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
@@ -692,6 +731,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; }
                         else { target.shield -= dmg; dmg = 0; }
                     }
+                    
+                    // 🔥🔥 الغش السري: إذا الهدف هو الأونر، الضرر يتقسم على 3 🔥🔥
+                    if (target.id === OWNER_ID) {
+                        dmg = Math.floor(dmg / 3); 
+                    }
+
                     target.hp -= dmg;
                     log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
                     if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
