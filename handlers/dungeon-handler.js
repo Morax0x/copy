@@ -153,9 +153,9 @@ function buildSkillSelector(player) {
 
     const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-            .setCustomId('skill_select_menu')
-            .setPlaceholder('اختر مهارة لاستخدامها...')
-            .addOptions(slicedOptions)
+        .setCustomId('skill_select_menu')
+        .setPlaceholder('اختر مهارة لاستخدامها...')
+        .addOptions(slicedOptions)
     );
     return row;
 }
@@ -317,18 +317,32 @@ async function startDungeon(interaction, sql) {
 
     activeDungeonRequests.add(user.id);
 
-    // فحص الكولداون
+    // 🔥 فحص الكولداون (المعدل) 🔥
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-        if (lastRun && lastRun.last_dungeon) {
-            const timeLeft = DUNGEON_COOLDOWN - (Date.now() - lastRun.last_dungeon);
-            if (timeLeft > 0) {
-                activeDungeonRequests.delete(user.id);
-                const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-                const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+        const lastDungeon = lastRun?.last_dungeon || 0;
+        const now = Date.now();
+        const expirationTime = lastDungeon + DUNGEON_COOLDOWN;
+
+        if (now < expirationTime) {
+            const finishTimeUnix = Math.floor(expirationTime / 1000); // تحويل الوقت لنظام ديسكورد
+
+            const cooldownEmbed = new EmbedBuilder()
+                .setTitle('❖ استـراحـة مـحـارب ..')
+                .setDescription(`✶ استـرح قليلاً ايـهـا المحـارب \n✶ يمكنـك غـزو الـدانجون مجدداً: \n<t:${finishTimeUnix}:R>`)
+                .setColor("Random")
+                .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png');
+
+            activeDungeonRequests.delete(user.id); // تنظيف السبام ليست
+
+            // التحقق من نوع الرسالة للرد المناسب
+            const isSlash = !!interaction.isChatInputCommand;
+            if (isSlash) {
+                return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
+            } else {
                 return interaction.reply({ 
-                    content: `⏳ **يجب عليك الانتظار!**\nيمكنك طلب دانجون جديد بعد **${hours} ساعة و ${minutes} دقيقة**.\n*(يمكنك الانضمام لفريق شخص آخر)*`, 
-                    ephemeral: true 
+                    embeds: [cooldownEmbed], 
+                    allowedMentions: { repliedUser: false } // 🔕 رد بدون منشن
                 });
             }
         }
