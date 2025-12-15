@@ -15,9 +15,10 @@ const EMOJI_NERF = '<a:Nerf:1438795685280612423>';
 
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
-const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
+const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; // 3 ساعات
 const OWNER_ID = "1145327691772481577"; 
 
+// تتبع اللاعبين النشطين (لمنع فتح أكثر من دانجون بنفس الوقت)
 const activeDungeonRequests = new Set();
 
 // --- صور النتائج ---
@@ -178,7 +179,7 @@ function buildSkillSelector(player) {
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     
-    // 🔥 مضاعف المهارات للأونر x10 والبقية x1 (طبيعي) 🔥
+    // مضاعف المهارات للأونر x10
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
     if (skill.id === 'skill_secret_owner') {
@@ -322,6 +323,7 @@ function handleSkillUsage(player, skill, monster, log) {
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
+    // ⛔ منع فتح أكثر من دانجون بنفس الوقت
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", ephemeral: true });
     }
@@ -331,8 +333,10 @@ async function startDungeon(interaction, sql) {
         return interaction.reply({ content: "مـا زلـت رحالاً يا غـلام يجب ان تصل للمستوى 10", ephemeral: true });
     }
 
+    // إضافة اللاعب للقائمة النشطة
     activeDungeonRequests.add(user.id);
 
+    // 🔥 فحص الكولداون للقائد (استراحة محارب) 🔥
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
@@ -347,7 +351,8 @@ async function startDungeon(interaction, sql) {
                 .setColor("Random")
                 .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png');
 
-            activeDungeonRequests.delete(user.id);
+            activeDungeonRequests.delete(user.id); // إزالة من النشطين لأنه لم يبدأ
+            
             const isSlash = !!interaction.isChatInputCommand;
             if (isSlash) return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
             else return interaction.reply({ embeds: [cooldownEmbed], allowedMentions: { repliedUser: false } });
@@ -391,7 +396,7 @@ async function startDungeon(interaction, sql) {
 
     collector.on('end', (c, reason) => {
         if (reason === 'time') {
-            activeDungeonRequests.delete(user.id); 
+            activeDungeonRequests.delete(user.id); // تنظيف إذا انتهى الوقت
             if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
         }
     });
@@ -424,6 +429,27 @@ async function lobbyPhase(interaction, theme, sql) {
             if (party.includes(i.user.id)) return i.reply({ content: "⚠️ أنت منضم بالفعل.", ephemeral: true });
             if (party.length >= 5) return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
             
+            // ✅ فحص كولداون الانضمام (3 مرات كل 3 ساعات) ✅
+            if (i.user.id !== OWNER_ID) {
+                const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+                const now = Date.now();
+                const resetTime = (joinData?.last_join_reset || 0);
+                
+                // إذا مر 3 ساعات على آخر تصفير، نعتبره مسموح له (التحديث الفعلي سيتم عند الانطلاق)
+                // إذا لم يمر 3 ساعات، نتحقق من العدد
+                if (now - resetTime < DUNGEON_COOLDOWN) {
+                    if ((joinData?.dungeon_join_count || 0) >= 3) {
+                        const finishTimeUnix = Math.floor((resetTime + DUNGEON_COOLDOWN) / 1000);
+                        const cooldownEmbed = new EmbedBuilder()
+                            .setTitle('❖ استـراحـة مـحـارب ..')
+                            .setDescription(`✶ لقد انضممت لـ 3 فرق بالفعل!\n✶ يمكنك الانضمام مجدداً: \n<t:${finishTimeUnix}:R>`)
+                            .setColor("Random")
+                            .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png');
+                        return i.reply({ embeds: [cooldownEmbed], ephemeral: true });
+                    }
+                }
+            }
+
             const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
             if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 مستواك أقل من 5.", ephemeral: true });
             if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك 100 ${EMOJI_MORA}.`, ephemeral: true });
@@ -439,13 +465,34 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 
     collector.on('end', async (c, reason) => {
+        // 🔥🔥 التحديث يحدث فقط هنا عند الانطلاق (reason === start) 🔥🔥
         if (reason === 'start') {
+            const now = Date.now();
+
             party.forEach(id => {
-                const now = Date.now();
-                if (id === host.id && id !== OWNER_ID) {
-                    sql.prepare("UPDATE levels SET mora = mora - 100, last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
+                // 1. خصم المورا من الجميع
+                sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
+                
+                // 2. تحديث الكولداون
+                if (id === host.id) {
+                    // القائد: تحديث last_dungeon
+                    if (id !== OWNER_ID) {
+                        sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
+                    }
                 } else {
-                    sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
+                    // المنضمون: تحديث عداد الانضمام
+                    if (id !== OWNER_ID) {
+                        const jData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, interaction.guild.id);
+                        const lastReset = jData?.last_join_reset || 0;
+
+                        if (now - lastReset > DUNGEON_COOLDOWN) {
+                            // فترة جديدة: تصفير وتعيين 1
+                            sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
+                        } else {
+                            // نفس الفترة: زيادة العداد
+                            sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
+                        }
+                    }
                 }
             });
 
@@ -457,7 +504,6 @@ async function lobbyPhase(interaction, theme, sql) {
                     reason: 'Start Dungeon Battle'
                 });
 
-                // 🔥🔥 تعديل: منشن جميع اللاعبين عند البدء 🔥🔥
                 const allMentions = party.map(id => `<@${id}>`).join(' ');
                 await thread.send({ content: `🔔 **بدأت المعركة!** ${allMentions}` });
 
@@ -471,6 +517,8 @@ async function lobbyPhase(interaction, theme, sql) {
                 interaction.channel.send("❌ حدث خطأ أثناء إنشاء الثريد.");
             }
         } else {
+            // إذا انتهى الوقت أو ألغي، نحذف القائد من القائمة النشطة ليتمكن من المحاولة مجدداً
+            // ولن يتم تحديث الكولداون في الداتابيس
             activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون.", components: [], embeds: [] });
         }
@@ -491,10 +539,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    // 🔥 جلب مستوى البوابة وتحديد المضاعف 🔥
     const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
     const gateLevel = hostData?.dungeon_gate_level || 1;
-    // زيادة 20% قوة للوحوش لكل مستوى بوابة
     const gateDifficultyMult = 1 + ((gateLevel - 1) * 0.2); 
 
     for (let floor = 1; floor <= 10; floor++) {
@@ -508,10 +554,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         let monster = {
             name: randomMob.name,
-            // تطبيق مضاعف البوابة
             hp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2)) * gateDifficultyMult),
             maxHp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.2)) * gateDifficultyMult),
-            atk: Math.floor(20 * floorConfig.atk_mult * gateDifficultyMult), // الهجوم يزداد مع البوابة
+            atk: Math.floor(20 * floorConfig.atk_mult * gateDifficultyMult), 
             enraged: false,
             effects: [] 
         };
@@ -577,7 +622,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             const currentAtk = Math.floor(p.atk * atkMultiplier);
 
                             const isCrit = Math.random() < 0.2;
-                            // هجوم عادي (طبيعي)
                             let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                             if (isCrit) dmg = Math.floor(dmg * 1.5);
 
@@ -690,7 +734,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 const alivePlayers = players.filter(p => !p.isDead);
                 if (alivePlayers.length > 0) {
                     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-                    let dmg = monster.atk; // الهجوم يعتمد على قوة الوحش (والتي تعتمد على البوابة)
+                    let dmg = monster.atk;
 
                     if (target.defending) dmg = Math.floor(dmg * 0.5);
                     if (target.shield > 0) {
@@ -698,7 +742,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else { target.shield -= dmg; dmg = 0; }
                     }
                     
-                    // 🔥🔥 الأونر فقط يقسم ضرره على 50، الباقي يتلقونه كاملاً 🔥🔥
                     if (target.id === OWNER_ID) {
                         dmg = Math.floor(dmg / 50); 
                     }
