@@ -9,6 +9,10 @@ const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
 // --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
+const EMOJI_XP = '<a:levelup:1437805366048985290>'; // ايموجي الاكس بي
+const EMOJI_BUFF = '<a:buff:1438796257522094081>';
+const EMOJI_NERF = '<a:Nerf:1438795685280612423>';
+
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
 const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; // 3 ساعات
@@ -120,7 +124,7 @@ function getRealPlayerData(member, sql) {
         tempAtkMultiplier: 1.0,
         effects: [],
         totalDamage: 0,
-        loot: { mora: 0, xp: 0 } // تتبع الغنائم الخاصة بكل لاعب
+        loot: { mora: 0, xp: 0 }
     };
 }
 
@@ -137,7 +141,6 @@ function buildSkillSelector(player) {
     const userSkills = player.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
     
-    // إذا ما عنده مهارات وهو مو الأونر
     if (availableSkills.length === 0 && player.id !== OWNER_ID) return null;
 
     const options = availableSkills.map(skill => {
@@ -150,11 +153,10 @@ function buildSkillSelector(player) {
             .setEmoji(skill.emoji || '✨');
     });
 
-    // 🔥🔥 المهارة السرية (تظهر لك فقط) 🔥🔥
     if (player.id === OWNER_ID) {
         options.push(
             new StringSelectMenuOptionBuilder()
-                .setLabel('تركيز تام') // اسم طبيعي
+                .setLabel('تركيز تام')
                 .setValue('skill_secret_owner')
                 .setDescription('ضربة دقيقة تستهدف نقاط الضعف.')
                 .setEmoji('👁️')
@@ -175,11 +177,15 @@ function buildSkillSelector(player) {
 }
 
 // --- معالجة منطق المهارات ---
+// 🔥🔥 تم ضرب جميع قيم المهارات في 5 كما طلبت 🔥🔥
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
-    // التحقق من المهارة السرية أولاً لأنها لا تملك effectValue
+    
+    // مضاعف المهارات العام
+    const SKILL_MULTIPLIER = 5;
+
     if (skill.id === 'skill_secret_owner') {
-        skillDmg = 3000;
+        skillDmg = 3000 * SKILL_MULTIPLIER;
         monster.hp -= skillDmg;
         player.totalDamage += skillDmg;
         log.push(`👁️ **${player.name}** رصد ثغرة في دفاع الوحش ووجه ضربة قاتلة بـ **${skillDmg}** ضرر!`);
@@ -191,7 +197,8 @@ function handleSkillUsage(player, skill, monster, log) {
     switch (skill.id) {
         case 'skill_healing':
         case 'skill_cleanse':
-            let healAmount = Math.floor(player.maxHp * (value / 100));
+            // الشفاء أيضاً يتضاعف 5 مرات
+            let healAmount = Math.floor(player.maxHp * (value / 100)) * SKILL_MULTIPLIER;
             if (skill.id === 'skill_cleanse') {
                 player.effects = []; 
                 log.push(`✨ **${player.name}** تطهر من السموم وشفى **${healAmount}** HP.`);
@@ -204,7 +211,8 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'skill_shielding':
         case 'race_dwarf_skill':
         case 'race_human_skill':
-             let shieldAmount = Math.floor(player.maxHp * (value / 100));
+             // الدرع يتضاعف 5 مرات
+             let shieldAmount = Math.floor(player.maxHp * (value / 100)) * SKILL_MULTIPLIER;
              player.shield += shieldAmount;
              log.push(`${skill.emoji} **${player.name}** اكتسب درعاً بقوة **${shieldAmount}**.`);
              if (skill.id === 'race_human_skill') {
@@ -214,27 +222,28 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
 
         case 'skill_buffing':
-             player.effects.push({ type: 'atk_buff', val: (value / 100), turns: 3 });
-             log.push(`💪 **${player.name}** رفع قوته الهجومية بنسبة **${value}%** لـ 3 جولات!`);
+             // البافات عادة نسبة مئوية، مضاعفتها 5 مرات قد تكون كاسرة، لكن سنطبقها
+             player.effects.push({ type: 'atk_buff', val: (value / 100) * SKILL_MULTIPLIER, turns: 3 });
+             log.push(`💪 **${player.name}** رفع قوته الهجومية بشكل هائل!`);
              break;
 
         case 'skill_poison':
         case 'race_dark_elf_skill':
-             skillDmg = Math.floor(player.atk * 0.5); 
-             monster.effects.push({ type: 'poison', val: Math.floor(player.atk * (value/100)), turns: 3 });
+             skillDmg = Math.floor(player.atk * 0.5) * SKILL_MULTIPLIER; 
+             monster.effects.push({ type: 'poison', val: Math.floor(player.atk * (value/100)) * SKILL_MULTIPLIER, turns: 3 });
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
-             log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg} + سم مستمر).`);
+             log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg} + سم فتاك).`);
              break;
 
         case 'skill_gamble':
              const roll = Math.random();
              if (roll > 0.5) {
-                 skillDmg = Math.floor(player.atk * 2.5); 
+                 skillDmg = Math.floor(player.atk * 2.5) * SKILL_MULTIPLIER; 
                  log.push(`🎲 **${player.name}** ربح المقامرة! ضربة هائلة **${skillDmg}**!`);
              } else {
-                 skillDmg = Math.floor(player.atk * 0.25); 
-                 log.push(`🎲 **${player.name}** خسر المقامرة... خدش بسيط **${skillDmg}**.`);
+                 skillDmg = Math.floor(player.atk * 0.25) * SKILL_MULTIPLIER; 
+                 log.push(`🎲 **${player.name}** خسر المقامرة... لكنها مؤلمة **${skillDmg}**.`);
              }
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -242,7 +251,7 @@ function handleSkillUsage(player, skill, monster, log) {
         
         case 'race_dragon_skill':
         case 'race_spirit_skill':
-             skillDmg = Math.floor(player.atk * 1.5) + value;
+             skillDmg = (Math.floor(player.atk * 1.5) + value) * SKILL_MULTIPLIER;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`🔥 **${player.name}** أطلق ${skill.name} مخترقاً الدفاع بـ **${skillDmg}** ضرر!`);
@@ -250,7 +259,7 @@ function handleSkillUsage(player, skill, monster, log) {
 
         case 'race_seraphim_skill':
         case 'race_vampire_skill':
-             skillDmg = Math.floor(player.atk * 1.2) + value;
+             skillDmg = (Math.floor(player.atk * 1.2) + value) * SKILL_MULTIPLIER;
              const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.5 : 0.3));
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -259,8 +268,8 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
 
         case 'race_demon_skill':
-             const selfDmg = Math.floor(player.maxHp * 0.10);
-             skillDmg = Math.floor(player.atk * 2.0) + value;
+             const selfDmg = Math.floor(player.maxHp * 0.10); // ضرر النفس يبقى كما هو
+             skillDmg = (Math.floor(player.atk * 2.0) + value) * SKILL_MULTIPLIER;
              player.hp -= selfDmg;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -268,8 +277,8 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
 
         case 'race_elf_skill':
-             const hit1 = Math.floor(player.atk * 0.8);
-             const hit2 = Math.floor(player.atk * 0.8);
+             const hit1 = Math.floor(player.atk * 0.8) * SKILL_MULTIPLIER;
+             const hit2 = Math.floor(player.atk * 0.8) * SKILL_MULTIPLIER;
              skillDmg = hit1 + hit2;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -278,7 +287,7 @@ function handleSkillUsage(player, skill, monster, log) {
         
         case 'skill_weaken':
         case 'race_ghoul_skill':
-             skillDmg = Math.floor(player.atk * 0.5);
+             skillDmg = Math.floor(player.atk * 0.5) * SKILL_MULTIPLIER;
              monster.effects.push({ type: 'weakness', val: 0.25, turns: 2 }); 
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -293,22 +302,22 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'race_hybrid_skill':
             const rand = Math.random();
             if (rand < 0.33) {
-                let h = Math.floor(player.maxHp * 0.2);
+                let h = Math.floor(player.maxHp * 0.2) * SKILL_MULTIPLIER;
                 player.hp = Math.min(player.maxHp, player.hp + h);
                 log.push(`🌀 **${player.name}** تكيف (شفاء **${h}**).`);
             } else if (rand < 0.66) {
-                let s = Math.floor(player.maxHp * 0.2);
+                let s = Math.floor(player.maxHp * 0.2) * SKILL_MULTIPLIER;
                 player.shield += s;
                 log.push(`🌀 **${player.name}** تكيف (درع **${s}**).`);
             } else {
-                player.effects.push({ type: 'atk_buff', val: 0.15, turns: 2 });
+                player.effects.push({ type: 'atk_buff', val: 0.15 * SKILL_MULTIPLIER, turns: 2 });
                 log.push(`🌀 **${player.name}** تكيف (قوة هجومية).`);
             }
             break;
 
         default:
             let multiplier = skill.stat_type === '%' ? (1 + (value/100)) : 1;
-            skillDmg = Math.floor((player.atk * multiplier) + (skill.stat_type !== '%' ? value : 0));
+            skillDmg = Math.floor((player.atk * multiplier) + (skill.stat_type !== '%' ? value : 0)) * SKILL_MULTIPLIER;
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg; 
             log.push(`💥 **${player.name}** استخدم ${skill.name} مسبباً **${skillDmg}** ضرر!`);
@@ -321,7 +330,6 @@ function handleSkillUsage(player, skill, monster, log) {
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
-    // ⛔ منع السبام
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ 
             content: "🚫 **لديك طلب دانجون نشط بالفعل!** أكمل السابق أو انتظر انتهاءه.", 
@@ -329,7 +337,6 @@ async function startDungeon(interaction, sql) {
         });
     }
 
-    // ✅ 1. التحقق من مستوى القائد (مطلوب 10+)
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 10) {
         return interaction.reply({ 
@@ -340,7 +347,6 @@ async function startDungeon(interaction, sql) {
 
     activeDungeonRequests.add(user.id);
 
-    // 🔥 فحص الكولداون (المعدل) 🔥
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
@@ -348,7 +354,7 @@ async function startDungeon(interaction, sql) {
         const expirationTime = lastDungeon + DUNGEON_COOLDOWN;
 
         if (now < expirationTime) {
-            const finishTimeUnix = Math.floor(expirationTime / 1000); // تحويل الوقت لنظام ديسكورد
+            const finishTimeUnix = Math.floor(expirationTime / 1000);
 
             const cooldownEmbed = new EmbedBuilder()
                 .setTitle('❖ استـراحـة مـحـارب ..')
@@ -356,16 +362,15 @@ async function startDungeon(interaction, sql) {
                 .setColor("Random")
                 .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png');
 
-            activeDungeonRequests.delete(user.id); // تنظيف السبام ليست
+            activeDungeonRequests.delete(user.id);
 
-            // التحقق من نوع الرسالة للرد المناسب
             const isSlash = !!interaction.isChatInputCommand;
             if (isSlash) {
                 return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
             } else {
                 return interaction.reply({ 
                     embeds: [cooldownEmbed], 
-                    allowedMentions: { repliedUser: false } // 🔕 رد بدون منشن
+                    allowedMentions: { repliedUser: false } 
                 });
             }
         }
@@ -443,7 +448,6 @@ async function lobbyPhase(interaction, theme, sql) {
             if (party.includes(i.user.id)) return i.reply({ content: "⚠️ أنت منضم بالفعل.", ephemeral: true });
             if (party.length >= 5) return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
             
-            // ✅ 2. التحقق من مستوى المنضم (مطلوب 5+)
             const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
             if (!joinerData || joinerData.level < 5) {
                 return i.reply({ 
@@ -457,7 +461,6 @@ async function lobbyPhase(interaction, theme, sql) {
             party.push(i.user.id);
             await i.update({ embeds: [updateEmbed()] });
 
-            // 🔥 بدء تلقائي عند اكتمال العدد 🔥
             if (party.length >= 5) {
                 collector.stop('start');
             }
@@ -480,7 +483,6 @@ async function lobbyPhase(interaction, theme, sql) {
             });
 
             try {
-                // 🔥 ثريد عام الآن 🔥
                 const thread = await msg.channel.threads.create({
                     name: `⚔️ دانجون ${host.username}`,
                     autoArchiveDuration: 60,
@@ -554,9 +556,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             let actedPlayers = [];
 
             await new Promise(resolve => {
-                // مؤقت تخطي الدور (AFK)
                 const turnTimeout = setTimeout(() => { 
-                    // تحديد من لم يهاجم
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     const afkMentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
                     
@@ -584,7 +584,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 10000 });
                             const skillId = selection.values[0];
                             
-                            // التعامل مع المهارة السرية
                             if (skillId === 'skill_secret_owner') {
                                 actedPlayers.push(p.id);
                                 handleSkillUsage(p, { id: 'skill_secret_owner', name: 'تركيز تام' }, monster, log);
@@ -613,10 +612,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                     if (i.customId === 'atk') {
                         const isCrit = Math.random() < 0.2;
-                        let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
+                        // 🔥🔥 مضاعفة الهجوم العادي × 2 🔥🔥
+                        let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2)) * 2;
                         if (isCrit) dmg = Math.floor(dmg * 1.5);
                         
-                        // 🔥🔥 الغش السري: إذا الأونر، الدمج × 3 🔥🔥
+                        // الغش السري للأونر (اختياري، يمكنك إزالته اذا المضاعفات كافية)
                         if (p.id === OWNER_ID) {
                             dmg = dmg * 3;
                         }
@@ -662,7 +662,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 });
             }
 
-            // موت الوحش (فوز بالطابق)
             if (monster.hp <= 0) {
                 ongoing = false;
                 await battleMsg.edit({ components: [] });
@@ -674,20 +673,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 let floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
                 let floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
 
-                // ✅ 3. تطبيق شرط التقسيم (طابق 5 وما فوق)
                 if (floor >= 5) {
                     floorXp = Math.floor(floorXp / players.length);
                     floorMora = Math.floor(floorMora / players.length);
                 }
                 
-                // --- توزيع الغنائم الفردية (الأحياء فقط) ---
                 players.forEach(p => {
                     if (!p.isDead) {
-                        // الحي يحصل على الجائزة في رصيده المؤقت
                         p.loot.mora += floorMora;
                         p.loot.xp += floorXp;
                     }
-                    // الميت لا يتم إضافة شيء له (توقف رصيده عند موته)
                 });
 
                 if (floor === 10) {
@@ -732,20 +727,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else { target.shield -= dmg; dmg = 0; }
                     }
                     
-                    // 🔥🔥 الغش السري: إذا الهدف هو الأونر، الضرر يتقسم على 3 🔥🔥
                     if (target.id === OWNER_ID) {
                         dmg = Math.floor(dmg / 3); 
                     }
 
                     target.hp -= dmg;
                     log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
-                    if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                    if (target.hp <= 0) { 
+                        target.hp = 0; 
+                        target.isDead = true; 
+                        log.push(`💀 **${target.name}** سقط في أرض المعركة!`); 
+                    }
                 }
 
                 // خسارة الفريق
                 if (players.every(p => p.isDead)) {
                     ongoing = false;
                     await battleMsg.edit({ components: [] });
+                    // 🔥🔥 تحديث الايمبد للمرة الأخيرة ليظهر الـ HP صفر والعلامة 💀 🔥🔥
+                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log)] });
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "lose", sql, guild.id, hostId);
                     return;
                 }
@@ -760,111 +760,125 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
 // دالة إرسال النتيجة النهائية وحذف الثريد
 async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId) {
-    let extraLootMsg = "";
+    
+    // 1. تحديد العنوان واللون والصورة
+    let title = "";
+    let color = "";
+    
+    // صورة عشوائية
+    const allImages = [...WIN_IMAGES, ...LOSE_IMAGES]; // يمكنك دمجهم أو اختيار حسب الفوز/الخسارة
+    let randomImage = null;
 
-    // ✅ منطق توزيع الجوائز أو الخسارة
+    if (status === 'win') {
+        title = "❖ تـمـت تصـفيـة الـدانجـون !";
+        color = "#00FF00"; // Green
+        randomImage = WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)];
+    } else if (status === 'retreat') {
+        title = "❖ انـسـحـاب تـكـتيـكـي !";
+        color = "#FFFF00"; // Yellow
+        randomImage = LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)];
+    } else {
+        title = "❖ مـوت محـتـوم ...";
+        color = "#FF0000"; // Red
+        randomImage = LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)];
+    }
+
+    // 2. تحديد نجم المعركة MVP
+    let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
+    const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
+
+    // 3. معالجة الجوائز والبفات
+    let lootString = "";
+    let buffText = "";
+    const expire = Date.now() + (15 * 60 * 1000); // 15 دقيقة
+
+    // تحديد البف والنيرف
+    if (status === 'win') {
+        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 15% ${EMOJI_BUFF}`;
+    } else if (status === 'lose') {
+        buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: - 15% ${EMOJI_NERF}`;
+    } else {
+        buffText = "- تـعـزيـز مكاسـب المـورا والاكس بـي: 0% (انسحاب)";
+    }
+
     players.forEach(p => {
-        const expire = Date.now() + (15 * 60 * 1000); // 15 دقيقة
+        let finalMora = p.loot.mora;
+        let finalXp = p.loot.xp;
 
-        if (status === 'win' || status === 'retreat') {
-            
-            // حساب الجائزة النهائية
-            let finalMora = p.loot.mora;
-            let finalXp = p.loot.xp;
+        // تطبيق الخصم عند الموت
+        if (p.isDead) {
+            finalMora = Math.floor(finalMora * 0.5);
+            finalXp = Math.floor(finalXp * 0.5);
+        }
 
-            // عقوبة الموت: 50% من المكتسبات
-            if (p.isDead) {
-                finalMora = Math.floor(finalMora * 0.5);
-                finalXp = Math.floor(finalXp * 0.5);
-            }
-
-            // إضافة الجوائز للداتابيس
+        // حفظ الداتا
+        if (status !== 'lose') {
             if (finalMora > 0 || finalXp > 0) {
                 sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
             }
-            
-            // إضافة بافات (تعزيز) عند الفوز الكامل فقط
-            if (status === 'win') {
-                // باف +15% XP و Mora
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'mora', 0.15);
-            }
-
-            // تحديث قيمة العرض في الـ Embed
-            p.loot.mora = finalMora;
-            p.loot.xp = finalXp;
-
-        } else if (status === 'lose') {
-            // ✅ 4. عقوبة الخسارة (النيرف - Debuff)
-            // نيرف XP (-15%)
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'xp', -0.15);
-            // نيرف Mora (-15%)
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'mora', -0.15);
-        }
-    });
-
-    // ✅ 5. احتمالية سقوط مواد تعزيز عند الفوز
-    if (status === 'win') {
-        const dropChance = 0.3 + (floor * 0.05); 
-        if (Math.random() < dropChance) {
-            extraLootMsg = "\n💎 **غنائم إضافية:** حصل الفريق على **حجر تعزيز**!";
-        }
-    }
-
-    // إزالة القائد من قائمة النشطين
-    activeDungeonRequests.delete(hostId);
-
-    // حساب MVP
-    let mvpPlayer = null;
-    let maxDamage = -1;
-
-    players.forEach(p => {
-        if (p.totalDamage > maxDamage) {
-            maxDamage = p.totalDamage;
-            mvpPlayer = p;
-        }
-    });
-
-    const embed = new EmbedBuilder()
-        .setTitle(status === 'win' ? "🏆 نـصـر أسـطـوري!" : (status === 'lose' ? "☠️ هـزيمـة سـاحقـة" : "🏳️ انـسحـاب تـكـتـيـكـي"))
-        .setColor(status === 'win' ? Colors.Gold : (status === 'lose' ? Colors.DarkRed : Colors.Orange))
-        .setImage(status === 'win' ? WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)] : LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)])
-        .setFooter({ text: `وصلتم للطابق: ${floor}` });
-
-    let desc = `**تقرير المعركة النهائي:**\n\n`;
-
-    if (mvpPlayer && mvpPlayer.totalDamage > 0) {
-        desc += `👑 **نجم المعركة (MVP):** ${mvpPlayer.name}\n💥 **إجمالي الضرر:** ${mvpPlayer.totalDamage.toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━\n`;
-    }
-
-    if (status === 'lose') {
-        desc += `💀 **لعنة الهزيمة:** أصيب الفريق بالوهن!\n🔻 **-15%** كسب XP و Mora لمدة 15 دقيقة.\n\n`;
-    } else {
-        if (status === 'win') desc += `🆙 **مكافأة النصر:** +15% كسب XP و Mora لمدة 15 دقيقة!\n`;
-        if (extraLootMsg) desc += `${extraLootMsg}\n`;
-        desc += `\n**توزيع الغنائم:**\n`;
-    }
-    
-    players.forEach(p => {
-        let lootText = "";
-        if (status !== 'lose') {
-            if (p.isDead) {
-                lootText = ` (💀 ميت: ${p.loot.mora} ${EMOJI_MORA} | ${p.loot.xp} XP) *نصف المكافأة*`;
-            } else {
-                lootText = ` (💰 ${p.loot.mora} ${EMOJI_MORA} | ✨ ${p.loot.xp} XP)`;
-            }
         }
         
-        desc += `${p.isDead ? '💀' : '💚'} **${p.name}** - ${p.hp}/${p.maxHp} HP${lootText}\n`;
+        // تطبيق البف/النيرف في الداتا
+        if (status === 'win') {
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'mora', 0.15);
+        } else if (status === 'lose') {
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'xp', -0.15);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'mora', -0.15);
+        }
+
+        // تنسيق نص الغنائم
+        if (p.isDead) {
+            lootString += `✬ **${p.name}** (💀 مـات - نـصـف الغنائـم): Mora: ${finalMora} ${EMOJI_MORA} XP: ${finalXp} ${EMOJI_XP}\n`;
+        } else {
+            lootString += `✬ **${p.name}**: Mora: ${finalMora} ${EMOJI_MORA} XP: ${finalXp} ${EMOJI_XP}\n`;
+        }
     });
 
-    embed.setDescription(desc);
+    const embedDescription = `
+**✶ تقـريـر المعـركـة:**
 
-    await mainChannel.send({ content: `📢 **انتهت معركة الدانجون!**`, embeds: [embed] });
+- وصلـتـم للطـابـق: **${floor}**
 
-    setTimeout(() => {
-        thread.delete().catch(e => console.log("Could not delete thread:", e));
-    }, 5000); 
+- نـجـم المعـركـة MVP: <@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})
+- اجـمـالـي الـضـرر: **${totalDmg.toLocaleString()}**
+
+**✶ مكـافـأة النـصـر**
+
+${buffText}
+
+- تـوزيـع الغـنائـم:
+${lootString}
+    `;
+
+    const embed = new EmbedBuilder()
+        .setTitle(title)
+        .setDescription(embedDescription)
+        .setColor(color)
+        .setTimestamp();
+
+    if (randomImage) embed.setImage(randomImage);
+
+    // منشن اللاعبين
+    const mentions = players.map(p => `<@${p.id}>`).join('\n✬ ');
+
+    // إرسال رسالة النهاية في الثريد
+    await thread.send({ content: `✬ ${mentions}\n`, embeds: [embed] });
+
+    // إزالة القائد من النشطين
+    activeDungeonRequests.delete(hostId);
+
+    // رسالة الإغلاق والمؤقت
+    await thread.send({ content: `**✶ بـوابـة الدانـجون عـلـى وشـك الاغـلاق غـادروا بـسرعـة !!**` });
+
+    // إغلاق الثريد بعد 10 ثواني
+    setTimeout(async () => {
+        try {
+            await thread.delete();
+        } catch (err) {
+            console.error("Error closing dungeon thread:", err);
+        }
+    }, 10000);
 }
 
 function generateBattleEmbed(players, monster, floor, theme, log, color = '#2F3136') {
