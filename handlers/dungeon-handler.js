@@ -15,10 +15,9 @@ const EMOJI_NERF = '<a:Nerf:1438795685280612423>';
 
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
-const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; // 3 ساعات
+const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
 const OWNER_ID = "1145327691772481577"; 
 
-// تتبع اللاعبين النشطين (لمنع فتح أكثر من دانجون بنفس الوقت)
 const activeDungeonRequests = new Set();
 
 // --- صور النتائج ---
@@ -351,7 +350,7 @@ async function startDungeon(interaction, sql) {
                 .setColor("Random")
                 .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png');
 
-            activeDungeonRequests.delete(user.id); // إزالة من النشطين لأنه لم يبدأ
+            activeDungeonRequests.delete(user.id); 
             
             const isSlash = !!interaction.isChatInputCommand;
             if (isSlash) return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
@@ -396,7 +395,7 @@ async function startDungeon(interaction, sql) {
 
     collector.on('end', (c, reason) => {
         if (reason === 'time') {
-            activeDungeonRequests.delete(user.id); // تنظيف إذا انتهى الوقت
+            activeDungeonRequests.delete(user.id); 
             if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
         }
     });
@@ -435,8 +434,6 @@ async function lobbyPhase(interaction, theme, sql) {
                 const now = Date.now();
                 const resetTime = (joinData?.last_join_reset || 0);
                 
-                // إذا مر 3 ساعات على آخر تصفير، نعتبره مسموح له (التحديث الفعلي سيتم عند الانطلاق)
-                // إذا لم يمر 3 ساعات، نتحقق من العدد
                 if (now - resetTime < DUNGEON_COOLDOWN) {
                     if ((joinData?.dungeon_join_count || 0) >= 3) {
                         const finishTimeUnix = Math.floor((resetTime + DUNGEON_COOLDOWN) / 1000);
@@ -465,31 +462,24 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 
     collector.on('end', async (c, reason) => {
-        // 🔥🔥 التحديث يحدث فقط هنا عند الانطلاق (reason === start) 🔥🔥
         if (reason === 'start') {
             const now = Date.now();
 
             party.forEach(id => {
-                // 1. خصم المورا من الجميع
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
                 
-                // 2. تحديث الكولداون
                 if (id === host.id) {
-                    // القائد: تحديث last_dungeon
                     if (id !== OWNER_ID) {
                         sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
                     }
                 } else {
-                    // المنضمون: تحديث عداد الانضمام
                     if (id !== OWNER_ID) {
                         const jData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, interaction.guild.id);
                         const lastReset = jData?.last_join_reset || 0;
 
                         if (now - lastReset > DUNGEON_COOLDOWN) {
-                            // فترة جديدة: تصفير وتعيين 1
                             sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
                         } else {
-                            // نفس الفترة: زيادة العداد
                             sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
                         }
                     }
@@ -517,8 +507,6 @@ async function lobbyPhase(interaction, theme, sql) {
                 interaction.channel.send("❌ حدث خطأ أثناء إنشاء الثريد.");
             }
         } else {
-            // إذا انتهى الوقت أو ألغي، نحذف القائد من القائمة النشطة ليتمكن من المحاولة مجدداً
-            // ولن يتم تحديث الكولداون في الداتابيس
             activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون.", components: [], embeds: [] });
         }
@@ -772,6 +760,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     }
 }
 
+// 🔥 دالة النهاية (المحدثة بنظام البفات الجديد) 🔥
 async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId) {
     let title = "";
     let color = "";
@@ -794,13 +783,37 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
     const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
 
-    let lootString = "";
-    let buffText = "";
-    const expire = Date.now() + (15 * 60 * 1000); 
+    // --- حساب البف/النيرف بناءً على الطابق ---
+    let buffPercent = 0;
+    let buffDurationMinutes = 0;
 
-    if (status === 'win') buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 15% ${EMOJI_BUFF}`;
-    else if (status === 'lose') buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: - 15% ${EMOJI_NERF}`;
-    else buffText = "- تـعـزيـز مكاسـب المـورا والاكس بـي: 0% (انسحاب)";
+    if (floor <= 4) {
+        buffPercent = 4;
+        buffDurationMinutes = 5;
+    } else if (floor >= 5 && floor <= 8) {
+        buffPercent = 15;
+        buffDurationMinutes = 15;
+    } else { // 9 or 10
+        buffPercent = 20;
+        buffDurationMinutes = 30;
+    }
+
+    const durationMs = buffDurationMinutes * 60 * 1000;
+    const expire = Date.now() + durationMs;
+
+    let buffText = "";
+
+    if (status === 'win') {
+        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: +${buffPercent}% ${buffDurationMinutes}د ${EMOJI_BUFF}`;
+    } else if (status === 'lose') {
+        buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: -${buffPercent}% ${buffDurationMinutes}د ${EMOJI_NERF}`;
+    } else {
+        // الانسحاب (تم إزالة كلمة "انسحاب" من النص)
+        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 0%`; 
+    }
+
+    // تطبيق القيم على اللاعبين في قاعدة البيانات
+    let lootString = "";
 
     players.forEach(p => {
         let finalMora = p.loot.mora;
@@ -817,12 +830,13 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
             }
         }
         
+        // تطبيق البف/النيرف
         if (status === 'win') {
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'xp', 0.15);
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, 15, expire, 'mora', 0.15);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'xp', buffPercent / 100);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'mora', buffPercent / 100);
         } else if (status === 'lose') {
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'xp', -0.15);
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expire, 'mora', -0.15);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -buffPercent, expire, 'xp', -buffPercent / 100);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -buffPercent, expire, 'mora', -buffPercent / 100);
         }
 
         if (p.isDead) {
@@ -835,7 +849,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     const embedDescription = `
 **✶ تقـريـر المعـركـة:**
 - وصلـتـم للطـابـق: **${floor}**
-- نـجـم المعـركـة MVP: <@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})
+- نـجـم المعـركـة MVP: <@${mvpPlayer.id}>
 - اجـمـالـي الـضـرر: **${totalDmg.toLocaleString()}**
 
 **✶ مكـافـأة النـصـر**
@@ -859,7 +873,7 @@ ${lootString}
 
     activeDungeonRequests.delete(hostId);
 
-    await thread.send({ content: `**✶ بـوابـة الدانـجون عـلـى وشـك الاغـلاق غـادروا بـسرعـة !!**` });
+    await thread.send({ content: `**✶ بـوابـة الدانـجون عـلـى وشـك الاغـلاق غـادروا بـسرعـة <:2BCrikka:1437806481071411391> !!**` });
 
     setTimeout(async () => {
         try {
@@ -903,7 +917,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
     if (log.length > 0) {
-        embed.addFields({ name: "📝 سجل المعركة:", value: log.join('\n'), inline: false });
+        embed.addFields({ name: "احـداث المعركة:", value: log.join('\n'), inline: false });
     }
 
     return embed;
