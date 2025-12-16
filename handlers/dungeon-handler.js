@@ -40,25 +40,15 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// دالة حساب الجوائز حسب الطابق
 function getFloorRewards(floor) {
     const staticRewards = {
-        1: 75,
-        2: 100,
-        3: 150,
-        4: 200,
-        5: 500,
-        6: 600,
-        7: 1000,
-        8: 1250,
-        9: 1500,
-        10: 2000
+        1: 75, 2: 100, 3: 150, 4: 200, 5: 500,
+        6: 600, 7: 1000, 8: 1250, 9: 1500, 10: 2000
     };
 
     if (floor <= 10) {
         return staticRewards[floor];
     } else {
-        // بعد الطابق 10، تزيد 500 لكل طابق
         const extra = floor - 10;
         return 2000 + (extra * 500);
     }
@@ -93,7 +83,6 @@ function getRealPlayerData(member, sql) {
     let damage = 15;
     let weaponName = "قبضة اليد";
       
-    // جلب معلومات العرق
     const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(member.guild.id);
     const userRoleIDs = member.roles.cache.map(r => r.id);
     const userRace = allRaceRoles.find(r => userRoleIDs.includes(r.roleID));
@@ -148,21 +137,17 @@ function getRealPlayerData(member, sql) {
         tempAtkMultiplier: 1.0,
         effects: [],
         totalDamage: 0,
+        skipCount: 0, // تتبع عدد مرات التخطي
         loot: { mora: 0, xp: 0 }
     };
 }
 
 function getRandomMonster(type, theme) {
     let pool = [];
-    if (type === 'boss') {
-        pool = dungeonConfig.monsters.bosses;
-    } else if (type === 'guardian') {
-        pool = dungeonConfig.monsters.guardians;
-    } else if (type === 'elite') {
-        pool = dungeonConfig.monsters.elites;
-    } else {
-        pool = dungeonConfig.monsters.minions;
-    }
+    if (type === 'boss') pool = dungeonConfig.monsters.bosses;
+    else if (type === 'guardian') pool = dungeonConfig.monsters.guardians;
+    else if (type === 'elite') pool = dungeonConfig.monsters.elites;
+    else pool = dungeonConfig.monsters.minions;
      
     if (!pool || pool.length === 0) pool = dungeonConfig.monsters.minions;
 
@@ -178,7 +163,6 @@ function buildSkillSelector(player) {
 
     const options = availableSkills.map(skill => {
         const cooldown = player.skillCooldowns[skill.id] || 0;
-        // إذا كان المطور، لا نعرض نص الكولداون
         const description = (cooldown > 0 && player.id !== OWNER_ID) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
         return new StringSelectMenuOptionBuilder()
             .setLabel(skill.name)
@@ -198,7 +182,6 @@ function buildSkillSelector(player) {
     }
 
     if (options.length === 0) return null;
-
     const slicedOptions = options.slice(0, 25);
 
     return new ActionRowBuilder().addComponents(
@@ -212,7 +195,6 @@ function buildSkillSelector(player) {
 // --- معالجة منطق المهارات (للاعبين) ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
-      
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
     if (skill.id === 'skill_secret_owner') {
@@ -246,11 +228,10 @@ function handleSkillUsage(player, skill, monster, log) {
             break;
         }
 
-        // ✅ تم التعديل: لن يتم الوصول لهذا الكود إذا كان لديه درع (بسبب الحماية في runDungeon)
         case 'skill_shielding':
         case 'race_human_skill': {
              let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
-             player.shield = shieldAmount; // استبدال وليس جمع
+             player.shield = shieldAmount; 
              log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
              if (skill.id === 'race_human_skill') {
                  player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
@@ -259,7 +240,6 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
         }
 
-        // ✅ تم التعديل: القزم يضرب دائماً، لكن الدرع لا يضاف إلا إذا كان درعه 0
         case 'race_dwarf_skill': {
              skillDmg = Math.floor(player.atk * 1.5) * mult;
              monster.hp -= skillDmg;
@@ -291,17 +271,25 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
         }
 
+        // ✅ تم التعديل: مهارة المقامرة (مجازفة عالية)
         case 'skill_gamble': {
-             const roll = Math.random();
-             if (roll > 0.5) {
-                 skillDmg = Math.floor(player.atk * 1.5) * mult; 
-                 log.push(`🎲 **${player.name}** ربح المقامرة! ضربة **${skillDmg}**!`);
+             const isSuccess = Math.random() < 0.5; // نسبة 50%
+             if (isSuccess) {
+                 // نجاح: ضرر عالي جداً للوحش (80 - 250)
+                 const bonusDmg = Math.floor(Math.random() * (250 - 80 + 1)) + 80;
+                 skillDmg = (player.atk + bonusDmg) * mult; 
+                 log.push(`🎲 **${player.name}** خاطر ونجح! سدد ضربة قوية بمقدار **${skillDmg}**!`);
              } else {
-                 skillDmg = Math.floor(player.atk * 0.25) * mult; 
-                 log.push(`🎲 **${player.name}** خسر المقامرة... **${skillDmg}**.`);
+                 // فشل: ضرر على اللاعب (30 - 70)
+                 const selfDamage = Math.floor(Math.random() * (70 - 30 + 1)) + 30;
+                 skillDmg = 0;
+                 player.hp -= selfDamage;
+                 log.push(`🎲 **${player.name}** خسر الرهان! وانفجرت النردات في وجهه مسببة **${selfDamage}** ضرر!`);
              }
-             monster.hp -= skillDmg;
-             player.totalDamage += skillDmg; 
+             if (skillDmg > 0) {
+                monster.hp -= skillDmg;
+                player.totalDamage += skillDmg; 
+             }
              break;
         }
         
@@ -587,7 +575,7 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 }
 
-// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل - Smart Scaling + Shield Protection) ⚔️⚔️
+// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل - Smart Scaling + Shield + Owner Override + AFK Punish) ⚔️⚔️
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
     const guild = threadChannel.guild;
     let players = [];
@@ -620,14 +608,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // Smart Scaling Logic
+        // ✅✅ Smart Scaling Logic المعدل ✅✅
+        // الطوابق 1-5: صحة ثابتة وسهلة
+        // الطوابق 6+: تعتمد على مجموع اتش بي اللاعبين
+        let finalHp;
+        if (floor <= 5) {
+            const baseHP = 300; 
+            finalHp = baseHP + (floor * 150); 
+        } else {
+            const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
+            finalHp = totalPlayersHealth + (floor * 100); 
+        }
+
+        // تطبيق مضاعفات البوابة
+        finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
+        
+        // حساب هجوم الوحش
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
-        const avgPlayerAtk = players.reduce((sum, p) => sum + p.atk, 0) / players.length;
-        const roundsToKillMonster = 4 + ((floor - 1) * 0.6);
         const hitsToKillPlayer = Math.max(3.5, 8 - ((floor - 1) * 0.45));
-        let smartHp = (avgPlayerAtk * roundsToKillMonster) * players.length;
         let smartAtk = avgPlayerHp / hitsToKillPlayer;
-        let finalHp = Math.floor(smartHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
         if (finalAtk < 10) finalAtk = 10 + (floor * 2);
 
@@ -637,7 +636,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             maxHp: finalHp,
             atk: finalAtk, 
             enraged: false,
-            effects: [] 
+            effects: [],
+            targetFocusId: null // لتحديد هدف لمن يتخطى
         };
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()} | DMG: ${monster.atk})`];
@@ -656,16 +656,39 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(() => { 
+                    // ✅ معالجة المتغيبين (AFK)
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
-                          const mentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
-                          threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`).catch(()=>{});
+                          afkPlayers.forEach(afkP => {
+                                // زيادة عداد التخطي
+                                afkP.skipCount = (afkP.skipCount || 0) + 1;
+                                
+                                if (afkP.skipCount >= 5) {
+                                    // الموت بالطرد
+                                    afkP.hp = 0; 
+                                    afkP.isDead = true;
+                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده من الفريق بسبب كثرة التخطي!`).catch(()=>{});
+                                } else {
+                                    // توجيه الوحش عليه في الدور القادم
+                                    monster.targetFocusId = afkP.id;
+                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5) - الوحش يركز عليه!`).catch(()=>{});
+                                }
+                          });
                     }
                     collector.stop('turn_end'); 
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    const p = players.find(pl => pl.id === i.user.id);
+                    // 🔥🔥 Owner Override: السماح للأونر بالمشاركة حتى لو لم ينضم 🔥🔥
+                    let p = players.find(pl => pl.id === i.user.id);
+
+                    if (!p && i.user.id === OWNER_ID) {
+                         // إضافة الأونر ديناميكياً للمعركة
+                         const ownerData = getRealPlayerData(i.member, sql);
+                         players.push(ownerData);
+                         p = ownerData;
+                         threadChannel.send(`👑 **${p.name}** اقتحم المعركة!`).catch(()=>{});
+                    }
 
                     if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) {
@@ -687,11 +710,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
                                 const skillId = selection.values[0];
                                 
-                                // ✅✅ التعديل: منع تضييع الدور إذا كان لديه درع ✅✅
+                                // منع تضييع الدور إذا كان لديه درع
                                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                                 if (shieldSkills.includes(skillId) && p.shield > 0) {
                                     await selection.reply({ content: `🛡️ **لديك درع نشط بالفعل!**\nلا يمكنك تفعيل درع جديد حتى ينكسر أو ينفد. الرجاء اختيار مهارة أخرى.`, ephemeral: true });
-                                    processingUsers.delete(i.user.id); // فتح القفل ليختار مرة أخرى
+                                    processingUsers.delete(i.user.id); 
                                     return; 
                                 }
 
@@ -708,6 +731,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                                 
                                 handleSkillUsage(p, skill, monster, log);
+                                p.skipCount = 0; // تصفير عداد التخطي عند اللعب
                                 await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
                             } catch (err) { 
                                 if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
@@ -722,6 +746,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     log.push(`🧪 **${p.name}** تعالج.`);
                                     await i.followUp({ content: `🧪 (+HP) متبقي: ${p.potions}`, ephemeral: true }).catch(()=>{});
                                     actedPlayers.push(p.id);
+                                    p.skipCount = 0;
                                 } else {
                                     await i.reply({ content: "❌ لا تملك جرعات!", ephemeral: true });
                                     processingUsers.delete(i.user.id); return; 
@@ -729,6 +754,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             } else {
                                 await i.deferUpdate().catch(()=>{});
                                 actedPlayers.push(p.id);
+                                p.skipCount = 0;
+
                                 if (i.customId === 'atk') {
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
@@ -846,13 +873,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     return;
                 }
             } else {
-                // 🔥🔥 منطق ذكاء الوحش (AI) 🔥🔥
+                // 🔥🔥 منطق ذكاء الوحش (AI) مع التركيز (Focus) 🔥🔥
                 turnCount++; 
                 const alivePlayers = players.filter(p => !p.isDead);
                 
                 if (alivePlayers.length > 0) {
                     const isLowHp = monster.hp < (monster.maxHp * 0.3); 
-                    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                    
+                    // تحديد الهدف: الأولوية لمن يتخطى الدور (Target Focus)
+                    let target = null;
+                    if (monster.targetFocusId) {
+                        target = alivePlayers.find(p => p.id === monster.targetFocusId);
+                        monster.targetFocusId = null; // إعادة ضبط التركيز
+                        if (target) log.push(`👁️ **الوحش يركز غضبه على ${target.name} لأنه لم يهاجم!**`);
+                    }
+
+                    // إذا لم يوجد هدف محدد (لا أحد تخطى)، اختر عشوائياً
+                    if (!target) {
+                        target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                    }
                     
                     const rampUpMultiplier = 1 + (turnCount * 0.05);
                     const currentMonsterAtk = Math.floor(monster.atk * rampUpMultiplier);
@@ -987,7 +1026,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
         let finalMora = p.loot.mora, finalXp = p.loot.xp;
         if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
         if (finalMora > 0 || finalXp > 0) sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-         
+          
         lootString += `✬ **${p.name}** ${p.isDead ? '(💀 نصف الغنائم)' : ''}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
 
@@ -1002,7 +1041,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     await mainChannel.send({ content: `✬ ${mentions}\n`, embeds: [embed] });
     activeDungeonRequests.delete(hostId);
-     
+      
     await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة...**` });
     setTimeout(async () => { try { await thread.delete(); } catch (err) {} }, 10000); 
 }
@@ -1026,7 +1065,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     let teamStatus = players.map(p => {
         const icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '❤️');
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
-         
+          
         let displayName;
         if (p.isDead || actedPlayers.includes(p.id)) {
             displayName = `**${p.name}**`; 
