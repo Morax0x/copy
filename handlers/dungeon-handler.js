@@ -271,16 +271,13 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
         }
 
-        // ✅ تم التعديل: مهارة المقامرة (مجازفة عالية)
         case 'skill_gamble': {
-             const isSuccess = Math.random() < 0.5; // نسبة 50%
+             const isSuccess = Math.random() < 0.5; 
              if (isSuccess) {
-                 // نجاح: ضرر عالي جداً للوحش (80 - 250)
                  const bonusDmg = Math.floor(Math.random() * (250 - 80 + 1)) + 80;
                  skillDmg = (player.atk + bonusDmg) * mult; 
                  log.push(`🎲 **${player.name}** خاطر ونجح! سدد ضربة قوية بمقدار **${skillDmg}**!`);
              } else {
-                 // فشل: ضرر على اللاعب (30 - 70)
                  const selfDamage = Math.floor(Math.random() * (70 - 30 + 1)) + 30;
                  skillDmg = 0;
                  player.hp -= selfDamage;
@@ -575,12 +572,11 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 }
 
-// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل - Smart Scaling + Shield + Owner Override + AFK Punish) ⚔️⚔️
+// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل) ⚔️⚔️
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
     const guild = threadChannel.guild;
     let players = [];
     
-    // جلب بيانات اللاعبين
     for (const id of partyIDs) {
         const m = await guild.members.fetch(id).catch(()=>null);
         if (m) players.push(getRealPlayerData(m, sql));
@@ -591,7 +587,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    // 🔥 1. إعدادات البوابة والحد الأقصى 🔥
     const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
     const gateLevel = hostData?.dungeon_gate_level || 1;
     const maxFloors = Math.min(gateLevel * 10, 100); 
@@ -608,24 +603,38 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅✅ Smart Scaling Logic المعدل ✅✅
-        // تم تعميم المعادلة لتبدأ من الطابق الأول
-        // الطوابق 1-7: سهلة (تعتمد على 35% من صحة اللاعبين)
-        // الطوابق 8+: أصعب (تعتمد على 60% من صحة اللاعبين)
-        
+        // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
+        let hpPercent;
+        // من الطابق 1 إلى 4: 10% فقط من صحة الفريق
+        if (floor <= 4) {
+            hpPercent = 0.10;
+        } 
+        // من الطابق 5 إلى 10: 20%
+        else if (floor <= 10) {
+            hpPercent = 0.20;
+        } 
+        // من الطابق 11 وما فوق
+        else {
+            // يبدأ من 35% عند الطابق 11
+            // وكل 10 طوابق إضافية تزيد النسبة 10%
+            const tiersAbove10 = Math.floor((floor - 11) / 10); // 0 عند طوابق 11-20، 1 عند 21-30...
+            hpPercent = 0.35 + (tiersAbove10 * 0.10);
+        }
+
         const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        const hpPercent = floor <= 7 ? 0.35 : 0.60;
-        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 50); 
+        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 15); // زيادة بسيطة جداً مع الطابق
 
         // تطبيق مضاعفات البوابة
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
         
-        // حساب هجوم الوحش
+        // ✅✅ تعديل قوة هجوم الوحش لتكون أضعف قليلاً في البداية ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
-        const hitsToKillPlayer = Math.max(3.5, 8 - ((floor - 1) * 0.45));
+        // زيادة عدد الضربات المطلوبة لقتل اللاعب (كلما زاد الرقم، قل هجوم الوحش)
+        // كان 8 في البداية، الآن 12 (أسهل)
+        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); 
         let smartAtk = avgPlayerHp / hitsToKillPlayer;
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
-        if (finalAtk < 10) finalAtk = 10 + (floor * 2);
+        if (finalAtk < 5) finalAtk = 5 + floor;
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
@@ -634,7 +643,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             atk: finalAtk, 
             enraged: false,
             effects: [],
-            targetFocusId: null // لتحديد هدف لمن يتخطى
+            targetFocusId: null 
         };
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()} | DMG: ${monster.atk})`];
@@ -653,20 +662,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(() => { 
-                    // ✅ معالجة المتغيبين (AFK)
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
                           afkPlayers.forEach(afkP => {
-                                // زيادة عداد التخطي
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
-                                
                                 if (afkP.skipCount >= 5) {
-                                    // الموت بالطرد
                                     afkP.hp = 0; 
                                     afkP.isDead = true;
                                     threadChannel.send(`💀 **${afkP.name}** تم استبعاده من الفريق بسبب كثرة التخطي!`).catch(()=>{});
                                 } else {
-                                    // توجيه الوحش عليه في الدور القادم
                                     monster.targetFocusId = afkP.id;
                                     threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5) - الوحش يركز عليه!`).catch(()=>{});
                                 }
@@ -676,11 +680,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥🔥 Owner Override: السماح للأونر بالمشاركة حتى لو لم ينضم 🔥🔥
                     let p = players.find(pl => pl.id === i.user.id);
 
                     if (!p && i.user.id === OWNER_ID) {
-                         // إضافة الأونر ديناميكياً للمعركة
                          const ownerData = getRealPlayerData(i.member, sql);
                          players.push(ownerData);
                          p = ownerData;
@@ -707,7 +709,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
                                 const skillId = selection.values[0];
                                 
-                                // منع تضييع الدور إذا كان لديه درع
                                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                                 if (shieldSkills.includes(skillId) && p.shield > 0) {
                                     await selection.reply({ content: `🛡️ **لديك درع نشط بالفعل!**\nلا يمكنك تفعيل درع جديد حتى ينكسر أو ينفد. الرجاء اختيار مهارة أخرى.`, ephemeral: true });
@@ -728,7 +729,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                                 
                                 handleSkillUsage(p, skill, monster, log);
-                                p.skipCount = 0; // تصفير عداد التخطي عند اللعب
+                                p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
                             } catch (err) { 
                                 if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
@@ -827,7 +828,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
 
                 // ================================================================
-                // 🔥🔥🔥 إيمبد الاستراحة بين الطوابق المعدل 🔥🔥🔥
+                // 🔥🔥🔥 إيمبد الاستراحة بين الطوابق  🔥🔥🔥
                 // ================================================================
                 
                 let buffPercentDisplay = Math.min(5 + Math.floor(floor / 2), 50);
@@ -855,40 +856,33 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 const dMsg = await threadChannel.send({ embeds: [decisionEmbed], components: [row] });
                 
-                // ✅✅ تعديل منطق الانسحاب ليكون فردياً لمن يقتحم المعركة ✅✅
                 const floorDecision = await new Promise(resolve => {
                     const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
                     
                     decisionCollector.on('collect', async i => {
-                         // التحقق من أن الضغط من شخص مشارك
                          const clicker = players.find(p => p.id === i.user.id);
                          
                          if (i.customId === 'dungeon_retreat') {
                              if (i.user.id === hostId) {
-                                 // إذا القائد انسحب -> إنهاء للكل
                                  await i.update({ components: [] });
                                  resolve('retreat');
                                  decisionCollector.stop();
                              } else if (clicker) {
-                                 // إذا عضو آخر (مثل الأونر) انسحب -> يخرج لوحده وتستمر المعركة
-                                 // 1. حفظ جوائزه
+                                 // انسحاب فردي
                                  let pMora = clicker.loot.mora;
                                  let pXp = clicker.loot.xp;
                                  if (pMora > 0 || pXp > 0) {
                                      sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
                                  }
                                  
-                                 // 2. إزالة اللاعب من القائمة
                                  players = players.filter(p => p.id !== clicker.id);
                                  
                                  await i.reply({ content: `👋 **${clicker.name}** قرر الانسحاب والاكتفاء بالغنائم!`, ephemeral: false });
                                  
-                                 // إذا لم يتبق أحد، ننهي الدانجون
                                  if (players.length === 0) {
                                      resolve('retreat');
                                      decisionCollector.stop();
                                  }
-                                 // لا نوقف الكوليكتور، ننتظر قرار القائد
                              } else {
                                  i.reply({ content: "لست مشاركاً في المعركة.", ephemeral: true });
                              }
@@ -904,7 +898,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     });
 
                     decisionCollector.on('end', (c, reason) => {
-                        if (reason !== 'user') resolve('retreat'); // انتهى الوقت = انسحاب
+                        if (reason !== 'user') resolve('retreat'); 
                     });
                 });
 
@@ -913,26 +907,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     return;
                 }
                 
-                // تعافي بسيط لمن استمر
                 players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.3), p.maxHp); });
 
             } else {
-                // 🔥🔥 منطق ذكاء الوحش (AI) مع التركيز (Focus) 🔥🔥
                 turnCount++; 
                 const alivePlayers = players.filter(p => !p.isDead);
                 
                 if (alivePlayers.length > 0) {
                     const isLowHp = monster.hp < (monster.maxHp * 0.3); 
                     
-                    // تحديد الهدف: الأولوية لمن يتخطى الدور (Target Focus)
                     let target = null;
                     if (monster.targetFocusId) {
                         target = alivePlayers.find(p => p.id === monster.targetFocusId);
-                        monster.targetFocusId = null; // إعادة ضبط التركيز
+                        monster.targetFocusId = null; 
                         if (target) log.push(`👁️ **الوحش يركز غضبه على ${target.name} لأنه لم يهاجم!**`);
                     }
 
-                    // إذا لم يوجد هدف محدد (لا أحد تخطى)، اختر عشوائياً
                     if (!target) {
                         target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
                     }
