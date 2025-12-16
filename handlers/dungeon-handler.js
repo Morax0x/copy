@@ -40,12 +40,12 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// دالة حساب الجوائز (مورا)
+// ✅✅ دالة حساب الجوائز (مورا) - 100 مورا لكل طابق ✅✅
+// طابق 1 = 100
+// طابق 10 = 1000
+// طابق 100 = 10000
 function getBaseFloorMora(floor) {
-    if (floor <= 5) return 50 + (floor * 20); 
-    if (floor <= 20) return 200 + ((floor - 5) * 50); 
-    if (floor <= 50) return 1000 + ((floor - 20) * 100); 
-    return 4000 + ((floor - 50) * 200); 
+    return floor * 100; 
 }
 
 // دالة تحديد قوة التعزيز (Buff)
@@ -603,20 +603,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // 🔥🔥🔥🔥 نظام HP الوحش (ثابت ومنطقي ولا يعتمد على قوة اللاعب) 🔥🔥🔥🔥
-        
-        // 1. حساب HP الأساسي بناءً على الطابق (Exponential/Polynomial growth)
-        // طابق 1 = 500
-        // طابق 10 = 3,500
-        // طابق 50 = 30,000
-        // طابق 100 = 100,000+
-        let baseFloorHP = 500 + (floor * 200) + (Math.pow(floor, 2) * 8);
+        // 🔥🔥🔥🔥 نظام HP الوحش (ثابت تربيعي) 🔥🔥🔥🔥
+        // معادلة: 500 + (طابق * 200) + (طابق^2 * 10)
+        // طابق 1 = 710
+        // طابق 10 = 3500
+        // طابق 50 = 35500
+        // طابق 100 = 120500
+        let baseFloorHP = 500 + (floor * 200) + (Math.pow(floor, 2) * 10);
 
-        // 2. زيادة بسيطة حسب عدد اللاعبين (عشان ما يكون سهل للفريق الكامل)
-        // كل لاعب إضافي يزيد دم الوحش 50%
-        let partyMultiplier = 1 + ((players.length - 1) * 0.5); 
-
-        let finalHp = Math.floor(baseFloorHP * partyMultiplier);
+        let finalHp = Math.floor(baseFloorHP);
 
         // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
@@ -803,7 +798,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅✅ حساب الجوائز ✅✅
+                // ✅✅ حساب الجوائز النهائي (100 مورا لكل طابق، بدون تقسيم) ✅✅
                 let baseMora = getBaseFloorMora(floor);
                 
                 // الجائزة المالية الكاملة للطابق
@@ -812,13 +807,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // حساب الاكس بي (ثلث المورا)
                 let floorXp = Math.floor(floorMora / 3); 
 
-                // تقسيم الجائزة إذا كانوا فريق (طابق 5 وفوق)
-                if (floor >= 5) { 
-                    floorXp = Math.floor(floorXp / players.length); 
-                    floorMora = Math.floor(floorMora / players.length); 
-                }
+                // تم إزالة كود التقسيم على عدد الفريق
                 
-                players.forEach(p => { if (!p.isDead) { p.loot.mora += floorMora; p.loot.xp += floorXp; } });
+                players.forEach(p => { 
+                    if (!p.isDead) { // الأحياء فقط يجمعون الجوائز في الصندوق
+                        p.loot.mora += floorMora; 
+                        p.loot.xp += floorXp; 
+                    }
+                });
 
                 totalAccumulatedCoins += floorMora;
                 totalAccumulatedXP += floorXp;
