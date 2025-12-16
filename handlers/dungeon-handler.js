@@ -205,7 +205,6 @@ function handleSkillUsage(player, skill, monster, log) {
             break;
 
         case 'skill_shielding':
-        case 'race_dwarf_skill':
         case 'race_human_skill':
              let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
              player.shield += shieldAmount;
@@ -214,6 +213,16 @@ function handleSkillUsage(player, skill, monster, log) {
                  player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
                  log.push(`⚔️ **${player.name}** زادت عزيمته (ATK UP)!`);
              }
+             break;
+
+        // 🔥🔥 تعديل: القزم - ضربة + درع 🔥🔥
+        case 'race_dwarf_skill':
+             skillDmg = Math.floor(player.atk * 1.5) * mult;
+             let addedShield = Math.floor(player.maxHp * 0.15) * mult;
+             player.shield += addedShield;
+             monster.hp -= skillDmg;
+             player.totalDamage += skillDmg;
+             log.push(`🛡️ **${player.name}** ضرب بترسه (${skillDmg}) واكتسب درعاً (${addedShield})!`);
              break;
 
         case 'skill_buffing':
@@ -244,7 +253,6 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
         
         case 'race_dragon_skill':
-        case 'race_spirit_skill':
              skillDmg = (Math.floor(player.atk * 1.5) + value) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -254,7 +262,7 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'race_seraphim_skill':
         case 'race_vampire_skill':
              skillDmg = (Math.floor(player.atk * 1.2) + value) * mult;
-             const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.5 : 0.3));
+             const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.6 : 0.4)); // زيادة الامتصاص لمصاص الدماء
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              player.hp = Math.min(player.maxHp, player.hp + lifesteal);
@@ -263,7 +271,7 @@ function handleSkillUsage(player, skill, monster, log) {
 
         case 'race_demon_skill':
              const selfDmg = Math.floor(player.maxHp * 0.10); 
-             skillDmg = (Math.floor(player.atk * 2.0) + value) * mult;
+             skillDmg = (Math.floor(player.atk * 2.5) + value) * mult; // زيادة الضرر
              player.hp -= selfDmg;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -271,21 +279,39 @@ function handleSkillUsage(player, skill, monster, log) {
              break;
 
         case 'race_elf_skill':
-             const hit1 = Math.floor(player.atk * 0.8) * mult;
-             const hit2 = Math.floor(player.atk * 0.8) * mult;
+             const hit1 = Math.floor(player.atk * 0.9) * mult;
+             const hit2 = Math.floor(player.atk * 0.9) * mult;
              skillDmg = hit1 + hit2;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
-             log.push(`🏹 **${player.name}** أطلق سهمين! (**${skillDmg}**).`);
+             log.push(`🏹 **${player.name}** أطلق سهمين دقيقين! (**${skillDmg}**).`);
              break;
         
         case 'skill_weaken':
-        case 'race_ghoul_skill':
              skillDmg = Math.floor(player.atk * 0.5) * mult;
              monster.effects.push({ type: 'weakness', val: 0.25, turns: 2 }); 
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
+             break;
+        
+        // 🔥🔥 تعديل: الغول (كلما قلت الصحة زاد الضرر) 🔥🔥
+        case 'race_ghoul_skill':
+             let missingHpPercent = 1 - (player.hp / player.maxHp);
+             let rageMult = 1.5 + (missingHpPercent * 2.5); // يصل لـ 4 أضعاف عند الموت
+             skillDmg = Math.floor(player.atk * rageMult) * mult;
+             monster.hp -= skillDmg;
+             player.totalDamage += skillDmg; 
+             log.push(`🧟 **${player.name}** هاج بجنون (HP ${(player.hp/player.maxHp*100).toFixed(0)}%) وسبب **${skillDmg}** ضرر!`);
+             break;
+
+        // 🔥🔥 تعديل: الروح (ضرر + مراوغة) 🔥🔥
+        case 'race_spirit_skill':
+             skillDmg = Math.floor(player.atk * 1.8) * mult;
+             monster.hp -= skillDmg;
+             player.totalDamage += skillDmg; 
+             player.effects.push({ type: 'evasion', val: 0.5, turns: 1 }); // 50% مراوغة
+             log.push(`👻 **${player.name}** ضرب بطيفية (${skillDmg}) وأصبح مراوغاً!`);
              break;
         
         case 'skill_dispel':
@@ -294,19 +320,11 @@ function handleSkillUsage(player, skill, monster, log) {
             break;
 
         case 'race_hybrid_skill':
-            const rand = Math.random();
-            if (rand < 0.33) {
-                let h = Math.floor(player.maxHp * 0.2) * mult;
-                player.hp = Math.min(player.maxHp, player.hp + h);
-                log.push(`🌀 **${player.name}** تكيف (شفاء **${h}**).`);
-            } else if (rand < 0.66) {
-                let s = Math.floor(player.maxHp * 0.2) * mult;
-                player.shield += s;
-                log.push(`🌀 **${player.name}** تكيف (درع **${s}**).`);
-            } else {
-                player.effects.push({ type: 'atk_buff', val: 0.15 * mult, turns: 2 });
-                log.push(`🌀 **${player.name}** تكيف (قوة هجومية).`);
-            }
+            // سرقة القوة (بدلاً من الراندوم)
+            skillDmg = Math.floor(player.atk * 1.2) * mult;
+            monster.hp -= skillDmg;
+            player.effects.push({ type: 'atk_buff', val: 0.2 * mult, turns: 2 });
+            log.push(`🌀 **${player.name}** سرق قوة الخصم (+ATK) وسبب **${skillDmg}** ضرر!`);
             break;
 
         default:
@@ -572,9 +590,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
+                    // 👇👇👇 Safe Defer Logic 👇👇👇
+                    try {
+                        if (i.customId !== 'skill' && !i.customId.startsWith('skill_select')) {
+                             await i.deferUpdate(); 
+                        }
+                    } catch (e) { }
+
                     const p = players.find(pl => pl.id === i.user.id);
                     if (!p || p.isDead || actedPlayers.includes(p.id)) {
-                        if (!i.replied) await i.reply({ content: "⏳ انتظر دورك/أنت ميت.", ephemeral: true });
+                        if (!i.replied && !i.deferred) await i.reply({ content: "⏳ انتظر دورك/أنت ميت.", ephemeral: true });
                         return;
                     }
 
@@ -582,27 +607,37 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         const skillRow = buildSkillSelector(p);
                         if (!skillRow) return i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
                         
-                        const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
                         try {
+                            const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
+                            
                             const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 10000 });
                             const skillId = selection.values[0];
                             
+                            await selection.deferUpdate().catch(()=>{}); // Defer فوري بعد الاختيار
+
                             actedPlayers.push(p.id);
                             
                             const skill = (skillId === 'skill_secret_owner') ? { id: 'skill_secret_owner', name: 'تركيز تام' } : p.skills[skillId];
                             
                             if (skillId !== 'skill_secret_owner') {
-                                if ((p.skillCooldowns[skillId] || 0) > 0) return await selection.reply({ content: `⏳ كولداون.`, ephemeral: true });
+                                if ((p.skillCooldowns[skillId] || 0) > 0) {
+                                    await selection.editReply({ content: `⏳ المهارة في وضع الكولداون.`, components: [] }).catch(()=>{});
+                                    return;
+                                }
                                 p.skillCooldowns[skillId] = 3;
                             }
 
                             handleSkillUsage(p, skill, monster, log);
-                            await selection.update({ content: `✅ تم استخدام ${skill.name}`, components: [] });
-                        } catch (err) { await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }); return; }
+                            await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
+
+                        } catch (err) { 
+                            if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
+                            return; 
+                        }
                     } 
                     else {
                         actedPlayers.push(p.id);
-                        await i.deferUpdate(); 
+                        // No need for defer here, done at start
 
                         if (i.customId === 'atk') {
                             let atkMultiplier = 1.0;
@@ -734,13 +769,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         dmg = Math.floor(dmg / 50); 
                     }
 
-                    target.hp -= dmg;
-                    log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
-                    
-                    if (target.hp <= 0) { 
-                        target.hp = 0; 
-                        target.isDead = true; 
-                        log.push(`💀 **${target.name}** سقط!`); 
+                    // 🔥 التحقق من المراوغة (Spirit Skill) 🔥
+                    let isEvaded = false;
+                    const evasionEffect = target.effects.find(e => e.type === 'evasion');
+                    if (evasionEffect) {
+                        if (Math.random() < evasionEffect.val) isEvaded = true;
+                    }
+
+                    if (isEvaded) {
+                        log.push(`👻 **${target.name}** تفادى هجوم الوحش ببراعة!`);
+                    } else {
+                        target.hp -= dmg;
+                        log.push(`👹 **${monster.name}** هاجم **${target.name}** (${dmg} ضرر)`);
+                        
+                        if (target.hp <= 0) { 
+                            target.hp = 0; 
+                            target.isDead = true; 
+                            log.push(`💀 **${target.name}** سقط!`); 
+                        }
                     }
                 }
 
@@ -760,7 +806,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     }
 }
 
-// 🔥 دالة النهاية (المحدثة بنظام البفات الجديد) 🔥
 async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId) {
     let title = "";
     let color = "";
@@ -783,7 +828,6 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
     const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
 
-    // --- حساب البف/النيرف بناءً على الطابق ---
     let buffPercent = 0;
     let buffDurationMinutes = 0;
 
@@ -793,7 +837,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     } else if (floor >= 5 && floor <= 8) {
         buffPercent = 15;
         buffDurationMinutes = 15;
-    } else { // 9 or 10
+    } else { 
         buffPercent = 20;
         buffDurationMinutes = 30;
     }
@@ -808,11 +852,9 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     } else if (status === 'lose') {
         buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: -${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_NERF}`;
     } else {
-        // الانسحاب (تم إزالة كلمة "انسحاب" من النص)
         buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 0%`; 
     }
 
-    // تطبيق القيم على اللاعبين في قاعدة البيانات
     let lootString = "";
 
     players.forEach(p => {
@@ -830,7 +872,6 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
             }
         }
         
-        // تطبيق البف/النيرف
         if (status === 'win') {
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'xp', buffPercent / 100);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'mora', buffPercent / 100);
@@ -917,7 +958,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
     if (log.length > 0) {
-        embed.addFields({ name: "احـداث المعركة:", value: log.join('\n'), inline: false });
+        embed.addFields({ name: "📝 سجل المعركة:", value: log.join('\n'), inline: false });
     }
 
     return embed;
