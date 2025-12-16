@@ -40,6 +40,30 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
+// دالة حساب الجوائز حسب الطابق
+function getFloorRewards(floor) {
+    const staticRewards = {
+        1: 75,
+        2: 100,
+        3: 150,
+        4: 200,
+        5: 500,
+        6: 600,
+        7: 1000,
+        8: 1250,
+        9: 1500,
+        10: 2000
+    };
+
+    if (floor <= 10) {
+        return staticRewards[floor];
+    } else {
+        // بعد الطابق 10، تزيد 500 لكل طابق
+        const extra = floor - 10;
+        return 2000 + (extra * 500);
+    }
+}
+
 function cleanDisplayName(name) {
     if (!name) return "لاعب";
     let clean = name.replace(/<a?:.+?:\d+>/g, '');
@@ -154,7 +178,8 @@ function buildSkillSelector(player) {
 
     const options = availableSkills.map(skill => {
         const cooldown = player.skillCooldowns[skill.id] || 0;
-        const description = cooldown > 0 ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
+        // إذا كان المطور، لا نعرض نص الكولداون
+        const description = (cooldown > 0 && player.id !== OWNER_ID) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
         return new StringSelectMenuOptionBuilder()
             .setLabel(skill.name)
             .setValue(skill.id)
@@ -576,6 +601,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = Math.min(gateLevel * 10, 100); 
     const gateDifficultyMult = 1 + ((gateLevel - 1) * 0.1); 
 
+    // متغيرات لتجميع الغنائم
+    let totalAccumulatedCoins = 0;
+    let totalAccumulatedXP = 0;
+
     for (let floor = 1; floor <= maxFloors; floor++) {
         if (players.every(p => p.isDead)) break; 
 
@@ -655,13 +684,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{}); 
                                 actedPlayers.push(p.id);
                                 const skill = (skillId === 'skill_secret_owner') ? { id: 'skill_secret_owner', name: 'تركيز تام' } : p.skills[skillId];
+                                
+                                // ✅✅ تعديل الكولداون للمطور ✅✅
                                 if (skillId !== 'skill_secret_owner') {
-                                    if ((p.skillCooldowns[skillId] || 0) > 0) {
+                                    // إذا كان المستخدم ليس المطور ولديه كولداون
+                                    if (p.id !== OWNER_ID && (p.skillCooldowns[skillId] || 0) > 0) {
                                         await selection.editReply({ content: `⏳ كولداون.`, components: [] }).catch(()=>{});
                                         processingUsers.delete(i.user.id); actedPlayers.pop(); return;
                                     }
-                                    p.skillCooldowns[skillId] = 3;
+                                    // وضع الكولداون فقط إذا لم يكن المطور
+                                    if (p.id !== OWNER_ID) {
+                                        p.skillCooldowns[skillId] = 3;
+                                    }
                                 }
+                                
                                 handleSkillUsage(p, skill, monster, log);
                                 await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
                             } catch (err) { 
@@ -739,23 +775,29 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // 🔥 تعديل الجوائز: نظام تقشفي لأول 10 طوابق 🔥
+                // 🔥 تعديل الجوائز: نظام القيم الثابتة للطوابق 1-10 🔥
                 const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1); 
                 
-                // المعادلة الجديدة: تبدأ قليلة وتزيد مع الطوابق
-                let baseMora = Math.floor(5 * Math.pow(floor, 1.3));
-                let baseXp = Math.floor(3 * Math.pow(floor, 1.3));
+                // استخدام دالة الجوائز الجديدة
+                const baseReward = getFloorRewards(floor);
 
-                // إذا كان بوس (كل 5 طوابق مثلاً أو الطابق 10) ضاعف الجائزة
-                if (floor % 10 === 0) { baseMora *= 10; baseXp *= 10; }
-                else if (floor % 5 === 0) { baseMora *= 5; baseXp *= 5; }
+                // فصل الجوائز (يمكنك جعل XP مختلفة عن الـ Coin اذا اردت، حاليا نفس القيمة)
+                let baseMora = baseReward;
+                let baseXp = baseReward;
 
                 let floorXp = Math.floor(baseXp * bonusMultiplier);
                 let floorMora = Math.floor(baseMora * bonusMultiplier);
 
+                // توزيع الجوائز
+                // ملاحظة: بما ان القيم صغيرة الآن، ربما لا تريد تقسيمها على عدد اللاعبين في الطوابق الاولى
+                // سأبقي التقسيم للطوابق العليا فقط (فوق 5) أو الغيه كما تفضل. سأبقيه كما كان في كودك:
                 if (floor >= 5) { floorXp = Math.floor(floorXp / players.length); floorMora = Math.floor(floorMora / players.length); }
                 
                 players.forEach(p => { if (!p.isDead) { p.loot.mora += floorMora; p.loot.xp += floorXp; } });
+
+                // ✅✅ تجميع الجوائز للعرض ✅✅
+                totalAccumulatedCoins += floorMora;
+                totalAccumulatedXP += floorXp;
 
                 if (floor === maxFloors) {
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId);
@@ -764,8 +806,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 const decisionEmbed = new EmbedBuilder()
                     .setTitle(`🎉 انتصار في الطابق ${floor}!`)
-                    .setDescription(`الجوائز: ${floorMora} ${EMOJI_MORA} | ${floorXp} XP\n\n**هل تريد الاستمرار للطابق ${floor+1}؟**`)
-                    .setColor(Colors.Green);
+                    .setDescription(`تم القضاء على الوحش بنجاح!\n\n**جوائز هذا الطابق:**\n💰 **${floorMora}** عملة\n✨ **${floorXp}** خبرة (XP)`)
+                    .setColor(Colors.Green)
+                    .addFields(
+                        { 
+                            name: '📊 مجموع غنائم الفريق (حتى الآن)', 
+                            value: `💰 **${totalAccumulatedCoins}** عملة\n✨ **${totalAccumulatedXP}** خبرة`,
+                            inline: false 
+                        },
+                        { 
+                            name: 'ما هي خطوتك التالية؟', 
+                            value: '🛑 **انسحاب:** تحصلون على الجوائز وتخرجون.\n⚔️ **استمرار:** تنتقلون للطابق التالي (خطر أكبر وجوائز أكثر).',
+                            inline: false 
+                        }
+                    );
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('dungeon_continue').setLabel('استمرار').setStyle(ButtonStyle.Success),
