@@ -40,18 +40,28 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-function getFloorRewards(floor) {
+// دالة حساب الجوائز الأساسية (مورا) بناءً على الطابق
+function getBaseFloorMora(floor) {
+    // تم تعديل الأرقام لتكون معقولة كبداية قبل الضرب في العوامل الأخرى
     const staticRewards = {
-        1: 75, 2: 100, 3: 150, 4: 200, 5: 500,
-        6: 600, 7: 1000, 8: 1250, 9: 1500, 10: 2000
+        1: 50, 2: 75, 3: 100, 4: 150, 5: 300,
+        6: 400, 7: 600, 8: 800, 9: 1000, 10: 1200
     };
 
     if (floor <= 10) {
         return staticRewards[floor];
     } else {
         const extra = floor - 10;
-        return 2000 + (extra * 500);
+        return 1200 + (extra * 250);
     }
+}
+
+// دالة تحديد قوة التعزيز (Buff) بناءً على الطابق
+function getDungeonBuff(floor) {
+    if (floor >= 15) return { percent: 20, minutes: 30 };
+    if (floor >= 9) return { percent: 10, minutes: 10 };
+    if (floor >= 5) return { percent: 5, minutes: 5 };
+    return { percent: 0, minutes: 0 };
 }
 
 function cleanDisplayName(name) {
@@ -137,7 +147,7 @@ function getRealPlayerData(member, sql) {
         tempAtkMultiplier: 1.0,
         effects: [],
         totalDamage: 0,
-        skipCount: 0, // تتبع عدد مرات التخطي
+        skipCount: 0, 
         loot: { mora: 0, xp: 0 }
     };
 }
@@ -577,6 +587,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const guild = threadChannel.guild;
     let players = [];
     
+    // جلب بيانات اللاعبين
     for (const id of partyIDs) {
         const m = await guild.members.fetch(id).catch(()=>null);
         if (m) players.push(getRealPlayerData(m, sql));
@@ -587,10 +598,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
-    const gateLevel = hostData?.dungeon_gate_level || 1;
-    const maxFloors = Math.min(gateLevel * 10, 100); 
-    const gateDifficultyMult = 1 + ((gateLevel - 1) * 0.1); 
+    // 🔥 1. تم فك القفل: الطوابق من 1 إلى 100 متاحة للجميع 🔥
+    const maxFloors = 100; // ثابت للجميع
+    const gateDifficultyMult = 1.0; // لا يوجد تأثير لبوابة التطوير حالياً
 
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
@@ -605,7 +615,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
         let hpPercent;
-        // من الطابق 1 إلى 4: 10% فقط من صحة الفريق
+        // من الطابق 1 إلى 4: 10% فقط من صحة الفريق (سهل جداً)
         if (floor <= 4) {
             hpPercent = 0.10;
         } 
@@ -615,23 +625,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         } 
         // من الطابق 11 وما فوق
         else {
-            // يبدأ من 35% عند الطابق 11
-            // وكل 10 طوابق إضافية تزيد النسبة 10%
-            const tiersAbove10 = Math.floor((floor - 11) / 10); // 0 عند طوابق 11-20، 1 عند 21-30...
+            // يبدأ من 35% عند الطابق 11 ويزيد 10% كل 10 طوابق
+            const tiersAbove10 = Math.floor((floor - 11) / 10); 
             hpPercent = 0.35 + (tiersAbove10 * 0.10);
         }
 
         const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 15); // زيادة بسيطة جداً مع الطابق
+        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 15); 
 
-        // تطبيق مضاعفات البوابة
+        // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
         
         // ✅✅ تعديل قوة هجوم الوحش لتكون أضعف قليلاً في البداية ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
-        // زيادة عدد الضربات المطلوبة لقتل اللاعب (كلما زاد الرقم، قل هجوم الوحش)
-        // كان 8 في البداية، الآن 12 (أسهل)
-        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); 
+        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); // زيادة عدد الضربات لقتل اللاعب في البداية
         let smartAtk = avgPlayerHp / hitsToKillPlayer;
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
         if (finalAtk < 5) finalAtk = 5 + floor;
@@ -810,12 +817,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
                 const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1); 
-                const baseReward = getFloorRewards(floor);
+                let baseMora = getBaseFloorMora(floor);
 
-                let floorXp = Math.floor(baseReward * bonusMultiplier);
-                let floorMora = Math.floor(baseReward * bonusMultiplier);
+                // 🔥 تقليل الجائزة للوحوش الضعيفة (طوابق 1-10) 🔥
+                // إذا كان الوحش ضعيفاً جداً (10% HP)، نقلل الجائزة بنسبة كبيرة
+                let weakMonsterPenalty = 1.0;
+                if (floor <= 4) weakMonsterPenalty = 0.4;      // 60% خصم لأن الوحش دمه 10%
+                else if (floor <= 10) weakMonsterPenalty = 0.7; // 30% خصم لأن الوحش دمه 20%
+                // من طابق 11+ الجائزة كاملة
 
-                if (floor >= 5) { floorXp = Math.floor(floorXp / players.length); floorMora = Math.floor(floorMora / players.length); }
+                let floorMora = Math.floor(baseMora * weakMonsterPenalty * bonusMultiplier);
+                
+                // 🔥 قاعدة: كل 1 اكس بي = 3 مورا 🔥
+                let floorXp = Math.floor(floorMora / 3); 
+
+                if (floor >= 5) { 
+                    floorXp = Math.floor(floorXp / players.length); 
+                    floorMora = Math.floor(floorMora / players.length); 
+                }
                 
                 players.forEach(p => { if (!p.isDead) { p.loot.mora += floorMora; p.loot.xp += floorXp; } });
 
@@ -831,8 +850,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // 🔥🔥🔥 إيمبد الاستراحة بين الطوابق  🔥🔥🔥
                 // ================================================================
                 
-                let buffPercentDisplay = Math.min(5 + Math.floor(floor / 2), 50);
-                let buffDurationDisplay = Math.min(10 + Math.floor(floor / 2), 60);
+                // حساب البف المعروض (للعرض فقط)
+                const nextBuff = getDungeonBuff(floor + 1); // البف القادم
+                let buffString = "لا يوجد تعزيز حالياً";
+                if (nextBuff.percent > 0) buffString = `+${nextBuff.percent}% لمدة ${nextBuff.minutes}د`;
 
                 const decisionEmbed = new EmbedBuilder()
                     .setTitle('❖ استـراحـة بيـن الطـوابـق')
@@ -840,10 +861,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         `✶ نجحتـم في تصفية الطابق الـ: **${floor}**`,
                         `✶ عثرتم على منصـة استراحـة بين الطابقين`,
                         `✶ تـم استعادة صحة المغامرين بنسبة **%30**`,
-                        `\n**✶ احصـاء مجمـوع الغنـائـم لكل شخص (تراكمي):**`,
+                        `\n**✶ احصـاء مجمـوع الغنـائـم لكل شخص:**`,
                         `✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}`,
                         `✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`,
-                        `✬ تعزيـز اكس بي ومورا: **+${buffPercentDisplay}%** لمدة **${buffDurationDisplay}د** ${EMOJI_BUFF}`,
+                        `✬ التعزيز القادم: **${buffString}** ${EMOJI_BUFF}`,
                         `\n- الخـيار للقـائـد الاستمرار والانسحاب بالغنائم ! ام المخاطرة للطابـق التـالي ...`
                     ].join('\n'))
                     .setColor(Colors.Red)
@@ -1033,24 +1054,27 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     let mvpPlayer = players.length > 0 ? players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current) : null;
     
-    let buffPercent = Math.min(5 + Math.floor(floor / 2), 50); 
-    let buffDurationMinutes = Math.min(10 + Math.floor(floor / 2), 60); 
-
-    const durationMs = buffDurationMinutes * 60 * 1000;
-    const expire = Date.now() + durationMs;
+    // 🔥 حساب التعزيز النهائي بناءً على الطابق الذي وصلوا له 🔥
+    const buffData = getDungeonBuff(floor);
     let buffText = "";
 
-    if (status === 'win' || status === 'retreat') {
-        buffText = `- تـعـزيـز (+XP/Mora): +${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_BUFF}`;
+    const durationMs = buffData.minutes * 60 * 1000;
+    const expire = Date.now() + durationMs;
+
+    if ((status === 'win' || status === 'retreat') && buffData.percent > 0) {
+        buffText = `- تـعـزيـز (+XP/Mora): +${buffData.percent}% (${buffData.minutes}د) ${EMOJI_BUFF}`;
         players.forEach(p => {
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'xp', buffPercent / 100);
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'mora', buffPercent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'xp', buffData.percent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'mora', buffData.percent / 100);
         });
     } else if (status === 'lose') {
-        buffText = `- لـعـنـة (-XP/Mora): -${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_NERF}`;
+        // عند الخسارة، عقاب بسيط (نفس المدة والنسبة لكن بالسالب)
+        const nerfPercent = Math.min(10, Math.floor(floor / 2));
+        buffText = `- لـعـنـة (-XP/Mora): -${nerfPercent}% (10د) ${EMOJI_NERF}`;
+        const nerfExpire = Date.now() + (10 * 60 * 1000);
         players.forEach(p => {
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -buffPercent, expire, 'xp', -buffPercent / 100);
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -buffPercent, expire, 'mora', -buffPercent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'xp', -nerfPercent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'mora', -nerfPercent / 100);
         });
     }
 
