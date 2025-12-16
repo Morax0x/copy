@@ -605,6 +605,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()})`];
         let ongoing = true;
+        let turnCount = 0; // ✅ عداد الجولات لضبط التصاعد
 
         const battleMsg = await threadChannel.send({ 
             embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
@@ -776,11 +777,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
             } else {
                 // 🔥🔥 منطق ذكاء الوحش الجديد (Monster AI) 🔥🔥
+                turnCount++; // زيادة الجولة
                 const alivePlayers = players.filter(p => !p.isDead);
+                
                 if (alivePlayers.length > 0) {
                     const isLowHp = monster.hp < (monster.maxHp * 0.3); // هل دم الوحش أقل من 30%؟
                     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-                    let dmg = monster.atk;
+                    
+                    // ✅ حساب التصاعد في القوة (كل جولة تزيد القوة 5%)
+                    const rampUpMultiplier = 1 + (turnCount * 0.05);
+                    const currentMonsterAtk = Math.floor(monster.atk * rampUpMultiplier);
+
+                    let dmg = currentMonsterAtk;
                     let actionLog = "";
 
                     // فرصة 30% لاستخدام مهارة (أو 50% إذا كان دمه قليل)
@@ -789,35 +797,47 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (useSkill) {
                         const skillRoll = Math.random();
                         
-                        // مهارة 1: زلزال (AoE) - يضرب الجميع إذا كان هناك أكثر من لاعب
+                        // مهارة 1: زلزال (AoE)
                         if (alivePlayers.length > 1 && skillRoll > 0.6) {
                             alivePlayers.forEach(p => {
-                                let aoeDmg = Math.floor(monster.atk * 0.7);
+                                let aoeDmg = Math.floor(currentMonsterAtk * 0.7);
                                 if (p.defending) aoeDmg = Math.floor(aoeDmg * 0.5);
                                 if (p.shield > 0) {
                                     if (aoeDmg > p.shield) { aoeDmg -= p.shield; p.shield = 0; } else { p.shield -= aoeDmg; aoeDmg = 0; }
                                 }
+                                
+                                // ✅ حماية الاونر 90%
+                                if (p.id === OWNER_ID) aoeDmg = Math.floor(aoeDmg * 0.1);
+
                                 p.hp -= aoeDmg;
                                 if (p.hp <= 0) { p.hp = 0; p.isDead = true; }
                             });
                             log.push(`🌋 **${monster.name}** أطلق زلزالاً مدمراً على الفريق!`);
                         }
-                        // مهارة 2: امتصاص الحياة (Heal) - إذا كان دمه منخفض
+                        // مهارة 2: امتصاص الحياة (Heal)
                         else if (isLowHp && skillRoll > 0.3) {
-                            let lifeDmg = Math.floor(monster.atk * 1.2);
+                            let lifeDmg = Math.floor(currentMonsterAtk * 1.2);
                             if (target.defending) lifeDmg = Math.floor(lifeDmg * 0.5);
+                            
+                            // ✅ حماية الاونر 90%
+                            if (target.id === OWNER_ID) lifeDmg = Math.floor(lifeDmg * 0.1);
+
                             target.hp -= lifeDmg;
-                            monster.hp += Math.floor(lifeDmg * 0.5); // يعالج نفسه بنصف الضرر
+                            monster.hp += Math.floor(lifeDmg * 0.5); 
                             log.push(`🩸 **${monster.name}** امتص حياة **${target.name}**! (+${Math.floor(lifeDmg * 0.5)} HP)`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
                         }
                         // مهارة 3: ضربة ساحقة (Crit)
                         else {
-                            let critDmg = Math.floor(monster.atk * 1.5);
-                            if (target.defending) critDmg = Math.floor(critDmg * 0.7); // يخترق الدفاع قليلاً
+                            let critDmg = Math.floor(currentMonsterAtk * 1.5);
+                            if (target.defending) critDmg = Math.floor(critDmg * 0.7); 
                             if (target.shield > 0) {
                                 if (critDmg > target.shield) { critDmg -= target.shield; target.shield = 0; } else { target.shield -= critDmg; critDmg = 0; }
                             }
+
+                            // ✅ حماية الاونر 90%
+                            if (target.id === OWNER_ID) critDmg = Math.floor(critDmg * 0.1);
+
                             target.hp -= critDmg;
                             log.push(`💥 **${monster.name}** سدد ضربة ساحقة لـ **${target.name}** (${critDmg})!`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
@@ -839,10 +859,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (isEvaded) {
                             log.push(`👻 **${target.name}** تفادى!`);
                         } else if (counterEffect) {
-                            const reflectedDmg = Math.floor(monster.atk * counterEffect.val);
+                            const reflectedDmg = Math.floor(currentMonsterAtk * counterEffect.val);
                             monster.hp -= reflectedDmg;
                             log.push(`🔄 **${target.name}** عكس الهجوم (${reflectedDmg})!`);
                         } else {
+                            // ✅ حماية الاونر 90%
+                            if (target.id === OWNER_ID) dmg = Math.floor(dmg * 0.1);
+                            
                             target.hp -= dmg;
                             log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
