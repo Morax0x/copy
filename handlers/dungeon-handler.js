@@ -42,7 +42,6 @@ const LOSE_IMAGES = [
 
 // دالة حساب الجوائز الأساسية (مورا) بناءً على الطابق
 function getBaseFloorMora(floor) {
-    // تم تعديل الأرقام لتكون معقولة كبداية قبل الضرب في العوامل الأخرى
     const staticRewards = {
         1: 50, 2: 75, 3: 100, 4: 150, 5: 300,
         6: 400, 7: 600, 8: 800, 9: 1000, 10: 1200
@@ -202,7 +201,6 @@ function buildSkillSelector(player) {
     );
 }
 
-// --- معالجة منطق المهارات (للاعبين) ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -600,7 +598,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     // 🔥 1. تم فك القفل: الطوابق من 1 إلى 100 متاحة للجميع 🔥
     const maxFloors = 100; // ثابت للجميع
-    const gateDifficultyMult = 1.0; // لا يوجد تأثير لبوابة التطوير حالياً
+    const gateDifficultyMult = 1.0; 
 
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
@@ -615,17 +613,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
         let hpPercent;
-        // من الطابق 1 إلى 4: 10% فقط من صحة الفريق (سهل جداً)
         if (floor <= 4) {
             hpPercent = 0.10;
-        } 
-        // من الطابق 5 إلى 10: 20%
-        else if (floor <= 10) {
+        } else if (floor <= 10) {
             hpPercent = 0.20;
-        } 
-        // من الطابق 11 وما فوق
-        else {
-            // يبدأ من 35% عند الطابق 11 ويزيد 10% كل 10 طوابق
+        } else {
             const tiersAbove10 = Math.floor((floor - 11) / 10); 
             hpPercent = 0.35 + (tiersAbove10 * 0.10);
         }
@@ -638,7 +630,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         // ✅✅ تعديل قوة هجوم الوحش لتكون أضعف قليلاً في البداية ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
-        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); // زيادة عدد الضربات لقتل اللاعب في البداية
+        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); 
         let smartAtk = avgPlayerHp / hitsToKillPlayer;
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
         if (finalAtk < 5) finalAtk = 5 + floor;
@@ -816,19 +808,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1); 
+                // ✅✅ حساب الجوائز المعدل (1 XP = 3 Mora + تقليل للوحوش الضعيفة) ✅✅
                 let baseMora = getBaseFloorMora(floor);
 
-                // 🔥 تقليل الجائزة للوحوش الضعيفة (طوابق 1-10) 🔥
-                // إذا كان الوحش ضعيفاً جداً (10% HP)، نقلل الجائزة بنسبة كبيرة
                 let weakMonsterPenalty = 1.0;
-                if (floor <= 4) weakMonsterPenalty = 0.4;      // 60% خصم لأن الوحش دمه 10%
-                else if (floor <= 10) weakMonsterPenalty = 0.7; // 30% خصم لأن الوحش دمه 20%
-                // من طابق 11+ الجائزة كاملة
+                if (floor <= 4) weakMonsterPenalty = 0.4;      
+                else if (floor <= 10) weakMonsterPenalty = 0.7; 
 
-                let floorMora = Math.floor(baseMora * weakMonsterPenalty * bonusMultiplier);
-                
-                // 🔥 قاعدة: كل 1 اكس بي = 3 مورا 🔥
+                let floorMora = Math.floor(baseMora * weakMonsterPenalty);
                 let floorXp = Math.floor(floorMora / 3); 
 
                 if (floor >= 5) { 
@@ -850,8 +837,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // 🔥🔥🔥 إيمبد الاستراحة بين الطوابق  🔥🔥🔥
                 // ================================================================
                 
-                // حساب البف المعروض (للعرض فقط)
-                const nextBuff = getDungeonBuff(floor + 1); // البف القادم
+                const nextBuff = getDungeonBuff(floor + 1); 
                 let buffString = "لا يوجد تعزيز حالياً";
                 if (nextBuff.percent > 0) buffString = `+${nextBuff.percent}% لمدة ${nextBuff.minutes}د`;
 
@@ -889,7 +875,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                  resolve('retreat');
                                  decisionCollector.stop();
                              } else if (clicker) {
-                                 // انسحاب فردي
                                  let pMora = clicker.loot.mora;
                                  let pXp = clicker.loot.xp;
                                  if (pMora > 0 || pXp > 0) {
@@ -1068,7 +1053,6 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
              sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'mora', buffData.percent / 100);
         });
     } else if (status === 'lose') {
-        // عند الخسارة، عقاب بسيط (نفس المدة والنسبة لكن بالسالب)
         const nerfPercent = Math.min(10, Math.floor(floor / 2));
         buffText = `- لـعـنـة (-XP/Mora): -${nerfPercent}% (10د) ${EMOJI_NERF}`;
         const nerfExpire = Date.now() + (10 * 60 * 1000);
