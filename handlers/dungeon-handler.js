@@ -804,9 +804,9 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     let buffText = "";
 
     if (status === 'win') {
-        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: +${buffPercent}% ${buffDurationMinutes}د ${EMOJI_BUFF}`;
+        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: +${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_BUFF}`;
     } else if (status === 'lose') {
-        buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: -${buffPercent}% ${buffDurationMinutes}د ${EMOJI_NERF}`;
+        buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: -${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_NERF}`;
     } else {
         // الانسحاب (تم إزالة كلمة "انسحاب" من النص)
         buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 0%`; 
@@ -849,7 +849,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     const embedDescription = `
 **✶ تقـريـر المعـركـة:**
 - وصلـتـم للطـابـق: **${floor}**
-- نـجـم المعـركـة MVP: <@${mvpPlayer.id}>
+- نـجـم المعـركـة MVP: <@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})
 - اجـمـالـي الـضـرر: **${totalDmg.toLocaleString()}**
 
 **✶ مكـافـأة النـصـر**
@@ -873,7 +873,7 @@ ${lootString}
 
     activeDungeonRequests.delete(hostId);
 
-    await thread.send({ content: `**✶ بـوابـة الدانـجون عـلـى وشـك الاغـلاق غـادروا بـسرعـة <:2BCrikka:1437806481071411391> !!**` });
+    await thread.send({ content: `**✶ بـوابـة الدانـجون عـلـى وشـك الاغـلاق غـادروا بـسرعـة !!**` });
 
     setTimeout(async () => {
         try {
