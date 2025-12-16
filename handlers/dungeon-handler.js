@@ -40,7 +40,6 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// دالة حساب الجوائز الأساسية (مورا) بناءً على الطابق
 function getBaseFloorMora(floor) {
     const staticRewards = {
         1: 50, 2: 75, 3: 100, 4: 150, 5: 300,
@@ -55,7 +54,6 @@ function getBaseFloorMora(floor) {
     }
 }
 
-// دالة تحديد قوة التعزيز (Buff) بناءً على الطابق
 function getDungeonBuff(floor) {
     if (floor >= 15) return { percent: 20, minutes: 30 };
     if (floor >= 9) return { percent: 10, minutes: 10 };
@@ -205,11 +203,12 @@ function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
+    // ✅✅ تعديل مهارة الأونر لتضرب 50% من دم الوحش ✅✅
     if (skill.id === 'skill_secret_owner') {
-        skillDmg = 3000; 
+        skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
         player.totalDamage += skillDmg;
-        log.push(`👁️ **${player.name}** رصد ثغرة ووجه ضربة قاتلة بـ **${skillDmg}** ضرر!`);
+        log.push(`👁️ **${player.name}** استخدم "تركيز تام" وقصم الوحش لنصفين! (**${skillDmg}** ضرر)`);
         return;
     }
 
@@ -611,27 +610,34 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
+        // ✅✅ Smart Scaling Logic الجديد (تدريجي 15%-20%) ✅✅
         let hpPercent;
         if (floor <= 4) {
-            hpPercent = 0.10;
-        } else if (floor <= 10) {
-            hpPercent = 0.20;
+            // من 1 إلى 4: تبدأ 15% وتزيد 1% لكل طابق
+            // مثال طابق 1: 15%
+            // مثال طابق 4: 18%
+            hpPercent = 0.15 + ((floor - 1) * 0.01);
         } else {
-            const tiersAbove10 = Math.floor((floor - 11) / 10); 
-            hpPercent = 0.35 + (tiersAbove10 * 0.10);
+            // من 5 وفوق: تبدأ 20% وتزيد 2% لكل طابق
+            // مثال طابق 5: 20%
+            // مثال طابق 12: 20 + (7*2) = 34%
+            hpPercent = 0.20 + ((floor - 5) * 0.02);
         }
 
         const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 15); 
+        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 30); // زيادة بسيطة جداً مع الطابق
 
         // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
         
-        // ✅✅ تعديل قوة هجوم الوحش لتكون أضعف قليلاً في البداية ✅✅
+        // ✅✅ تعديل قوة هجوم الوحش ليزيد بشكل ثابت ومستقر ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
-        const hitsToKillPlayer = Math.max(4, 12 - ((floor - 1) * 0.4)); 
-        let smartAtk = avgPlayerHp / hitsToKillPlayer;
+        
+        // معادلة خطية: هجوم الوحش يبدأ بـ 5% من دم اللاعب، ويزيد نصف بالمية كل طابق
+        // طابق 1: 5.5% من دمك
+        // طابق 100: 55% من دمك (ضربتين تموت)
+        let smartAtk = Math.floor(avgPlayerHp * (0.05 + (floor * 0.005))); 
+        
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
         if (finalAtk < 5) finalAtk = 5 + floor;
 
