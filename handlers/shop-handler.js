@@ -389,6 +389,7 @@ async function _handleDungeonUpgrade(i, client, sql) {
     let userData = client.getLevel.get(i.user.id, i.guild.id);
     const currentLevel = userData ? (userData.dungeon_gate_level || 1) : 1;
     const maxLevel = 10; // الحد الأقصى للمستويات
+    const currentFloors = currentLevel * 10; // عدد الطوابق الحالي (10 لكل مستوى)
 
     // إعدادات الترقية (التكلفة تتضاعف كل مرة)
     const basePrice = 50000;
@@ -396,23 +397,25 @@ async function _handleDungeonUpgrade(i, client, sql) {
 
     const embed = new EmbedBuilder()
         .setTitle(`⛩️ بـوابـة الـدانجـون`)
-        .setDescription(`تطوير البوابة يزيد من الجوائز والخبرة المكتسبة من الوحوش.`)
+        .setDescription(`تطوير البوابة يفتح 10 طوابق جديدة لكل مستوى ويزيد الجوائز والخبرة المكتسبة.`)
         .setColor('DarkRed')
         .setThumbnail(THUMBNAILS.get('upgrade_dungeon'))
         .setImage(BANNER_URL)
-        .addFields({ name: 'المستوى الحالي', value: `Lv. ${currentLevel}`, inline: true });
+        .addFields({ name: 'المستوى الحالي', value: `Lv. ${currentLevel} (🔓 ${currentFloors} طابق)`, inline: true });
 
     const row = new ActionRowBuilder();
 
     if (currentLevel >= maxLevel) {
-        embed.addFields({ name: "التطوير القادم", value: "وصلت للحد الأقصى (Lv.10)", inline: true });
+        embed.addFields({ name: "التطوير القادم", value: "وصلت للحد الأقصى (Lv.10 - 100 طابق)", inline: true });
         row.addComponents(new ButtonBuilder().setCustomId('max_dungeon').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setDisabled(true));
     } else {
         const nextBonus = (1 + (currentLevel * 0.1)).toFixed(1); // مثال: Lv.1 -> 1.1x Bonus
+        const nextFloors = (currentLevel + 1) * 10;
+        
         embed.addFields(
             { name: "المستوى القادم", value: `Lv. ${currentLevel + 1}`, inline: true },
             { name: "التكلفة", value: `${price.toLocaleString()} ${EMOJI_MORA}`, inline: true },
-            { name: "بونص الجوائز", value: `x${nextBonus}`, inline: true }
+            { name: "الطوابق الجديدة", value: `🔓 ${nextFloors} طابق`, inline: true }
         );
         row.addComponents(new ButtonBuilder().setCustomId('confirm_dungeon_upgrade').setLabel('ترقية البوابة').setStyle(ButtonStyle.Danger).setEmoji('⛩️'));
     }
