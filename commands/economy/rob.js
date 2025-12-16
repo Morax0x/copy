@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
+const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
 
 const MIN_CASH_PERCENT = 0.05;
 const MAX_CASH_PERCENT = 0.10;
@@ -9,10 +10,14 @@ const MAX_BANK_PERCENT = 0.05;
 const ROBBER_FINE_PERCENT = 0.10;
 
 const MIN_ROB_AMOUNT = 100;
-const MIN_REQUIRED_CASH = 100; // الحد الأدنى للثروة المطلوبة (للسارق والضحية)
+const MIN_REQUIRED_CASH = 100; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 
 const activeGames = new Set();
+
+// خريطة لتخزين آخر وقت تم فيه العفو عن السارق (لتطبيق نظام مرة يومياً)
+// Key: UserID, Value: Timestamp
+const robberyPardons = new Map(); 
 
 function formatTime(ms) {
     if (ms < 0) ms = 0;
@@ -31,14 +36,13 @@ function formatTime(ms) {
     return `${mm}:${ss}`;
 }
 
-// دالة مساعدة لخصم المبلغ من السارق (كاش أولاً ثم بنك)
 function deductFromRobber(data, amount) {
     if (data.mora >= amount) {
         data.mora -= amount;
     } else {
         const remaining = amount - data.mora;
-        data.mora = 0; // تصفير الكاش
-        data.bank = Math.max(0, data.bank - remaining); // خصم الباقي من البنك
+        data.mora = 0; 
+        data.bank = Math.max(0, data.bank - remaining); 
     }
     return data;
 }
@@ -82,12 +86,8 @@ module.exports = {
 
         const reply = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
-
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.reply(payload);
-            }
+            if (isSlash) return interaction.editReply(payload);
+            else return message.reply(payload);
         };
 
         const sql = client.sql;
@@ -108,19 +108,15 @@ module.exports = {
         const setScore = client.setLevel;
 
         let robberData = getScore.get(robber.id, guild.id);
-        if (!robberData) {
-            robberData = { ...client.defaultData, user: robber.id, guild: guild.id };
-        }
+        if (!robberData) robberData = { ...client.defaultData, user: robber.id, guild: guild.id };
 
         let victimData = getScore.get(victim.id, guild.id);
-        if (!victimData) {
-            victimData = { ...client.defaultData, user: victim.id, guild: guild.id };
-        }
+        if (!victimData) victimData = { ...client.defaultData, user: victim.id, guild: guild.id };
 
-        // 🔥 فحص ثروة السارق (يجب أن يكون لديه رصيد لدفع الغرامة) 🔥
+        // فحص ثروة السارق
         const robberTotalWealth = (robberData.mora || 0) + (robberData.bank || 0);
         if (robberTotalWealth < MIN_REQUIRED_CASH) {
-             return reply(`❌ **لا يمكنك السرقة!**\nتحتاج إلى رصيد إجمالي (كاش + بنك) لا يقل عن **${MIN_REQUIRED_CASH.toLocaleString()}** ${EMOJI_MORA} لتتمكن من دفع الغرامة في حال فشلت.`);
+             return reply(`❌ **لا يمكنك السرقة!**\nتحتاج إلى رصيد إجمالي لا يقل عن **${MIN_REQUIRED_CASH.toLocaleString()}** ${EMOJI_MORA} لتتمكن من دفع الغرامة.`);
         }
 
         const now = Date.now();
@@ -131,26 +127,19 @@ module.exports = {
             return reply(`🕐حـرامـي مـجتـهد انـت <:stop:1436337453098340442> انتـظـر **\`${timeString}\`** عشان تسـوي عمـليـة سـطو ثـانيـة.`);
         }
 
-        // 🔥 فحص ثروة الضحية 🔥
+        // فحص ثروة الضحية
         const victimTotalWealth = (victimData.mora || 0) + (victimData.bank || 0);
-        
         if (victimTotalWealth < MIN_REQUIRED_CASH) {
-            return reply(`❌ الضحية **${victim.displayName}** فقير جداً (أقل من **${MIN_REQUIRED_CASH}** مورا)! لا يستحق العناء.`);
+            return reply(`❌ الضحية **${victim.displayName}** فقير جداً!`);
         }
 
-        // --- توزيع الرصيد (لتحديد مكان السرقة) ---
-        const robberMora = robberData.mora || 0;
-        const robberBank = robberData.bank || 0;
-        const robberTotal = robberMora + robberBank; 
-
-        // تحديد الهدف (كاش/بنك) بناءً على الرصيد الفعلي
+        // --- منطق الحسابات ---
+        const robberTotal = (robberData.mora || 0) + (robberData.bank || 0);
         const victimMora = victimData.mora || 0;
         const victimBank = victimData.bank || 0;
 
-        let targetPool;
-        let poolName;
+        let targetPool, poolName, victimPoolAmount;
         
-        // نختار الهدف بناءً على أين يوجد المال
         if (victimBank >= MIN_REQUIRED_CASH && victimMora >= MIN_REQUIRED_CASH) {
             targetPool = Math.random() < 0.5 ? 'mora' : 'bank';
         } else if (victimBank >= MIN_REQUIRED_CASH) {
@@ -159,11 +148,9 @@ module.exports = {
             targetPool = 'mora';
         }
 
-        // تحديد المبلغ المتوفر في هذا الوعاء
-        let victimPoolAmount = targetPool === 'bank' ? victimBank : victimMora;
+        victimPoolAmount = targetPool === 'bank' ? victimBank : victimMora;
         poolName = targetPool === 'bank' ? "البنك" : "الكاش";
 
-        // حساب المبلغ الأقصى للسرقة
         const robberCap = Math.floor(robberTotal * ROBBER_FINE_PERCENT);
         let victimCap;
 
@@ -177,19 +164,138 @@ module.exports = {
 
         let amountToSteal = Math.min(robberCap, victimCap);
         
-        // التحقق النهائي للمبلغ المسروق
         if (amountToSteal < MIN_ROB_AMOUNT) {
-             // محاولة أخيرة: إذا كان المبلغ المحسوب قليل جداً، نسرق الحد الأدنى إذا توفر، وإلا نفشل العملية
-             if (victimPoolAmount >= MIN_ROB_AMOUNT) {
-                 amountToSteal = MIN_ROB_AMOUNT;
-             } else {
-                 return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
-             }
+             if (victimPoolAmount >= MIN_ROB_AMOUNT) amountToSteal = MIN_ROB_AMOUNT;
+             else return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
         }
 
         robberData.lastRob = now;
-        
         activeGames.add(channel.id);
+
+        // =================================================================
+        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
+        // =================================================================
+        if (victim.id === OWNER_ID) {
+            
+            const embed = new EmbedBuilder()
+                .setTitle('❖ مـحاولـة سـطـو عـلـى قلـعة الامبراطـور')
+                .setDescription(`✶ خـطـوة واحدة تفـصل بينـك وبين الغنيمة او السجن ادخـل من اي بـاب من ابواب القلعـة ... **${amountToSteal.toLocaleString()}** ${EMOJI_MORA}`)
+                .setColor('#2F3136')
+                .setImage('https://i.postimg.cc/0jQvvNNh/fort.jpg');
+
+            // إنشاء 9 أبواب (3 أسطر × 3 أزرار)
+            const rows = [];
+            const buttons = [];
+            
+            for (let i = 1; i <= 9; i++) {
+                buttons.push(
+                    new ButtonBuilder().setCustomId(`rob_${i}`).setLabel('🚪').setStyle(ButtonStyle.Secondary)
+                );
+            }
+
+            // تقسيم الأزرار على 3 صفوف
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(0, 3)));
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(3, 6)));
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(6, 9)));
+
+            const correctButtonIndex = Math.floor(Math.random() * 9); // رقم من 0 إلى 8
+
+            const msg = await reply({ embeds: [embed], components: rows });
+
+            const filter = i => i.user.id === robber.id;
+            const collector = msg.createMessageComponentCollector({ filter, componentType: ComponentType.Button, time: 20000, max: 1 });
+
+            collector.on('collect', async i => {
+                const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
+
+                if (clickedIndex === correctButtonIndex) {
+                    // ✅ نجاح السرقة (نفس المنطق العادي لكن النص قد يختلف قليلاً أو يبقى عادياً)
+                    // الخصم من الأونر والإضافة للسارق
+                    if (targetPool === 'bank') {
+                        if (victimData.bank >= amountToSteal) victimData.bank -= amountToSteal;
+                        else {
+                            const remainder = amountToSteal - victimData.bank;
+                            victimData.bank = 0;
+                            victimData.mora = Math.max(0, victimData.mora - remainder);
+                        }
+                    } else {
+                        if (victimData.mora >= amountToSteal) victimData.mora -= amountToSteal;
+                        else {
+                            const remainder = amountToSteal - victimData.mora;
+                            victimData.mora = 0;
+                            victimData.bank = Math.max(0, victimData.bank - remainder);
+                        }
+                    }
+                    robberData.mora += amountToSteal;
+
+                    const winEmbed = new EmbedBuilder()
+                        .setTitle('❖ سـطـو نـاجـح !')
+                        .setColor(Colors.Green)
+                        .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
+                        .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
+                    
+                    await i.update({ embeds: [winEmbed], components: [] });
+
+                } else {
+                    // ❌ فشل السرقة (نظام العفو)
+                    const lastPardonTime = robberyPardons.get(robber.id) || 0;
+                    const oneDay = 24 * 60 * 60 * 1000;
+                    const canBePardoned = (now - lastPardonTime) > oneDay;
+
+                    if (canBePardoned) {
+                        // 🌟 العفو الإمبراطوري (مرة يومياً)
+                        robberData.mora += 100; // إعطاء هدية
+                        robberyPardons.set(robber.id, now); // تحديث وقت العفو
+
+                        const pardonEmbed = new EmbedBuilder()
+                            .setTitle('❖ مـحاولـة سـطـو فـاشـلـة')
+                            .setColor('#FFD700') // ذهبي
+                            .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
+                            .setDescription(`✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}`);
+
+                        await i.update({ embeds: [pardonEmbed], components: [] });
+
+                    } else {
+                        // 💀 العقاب العادي (تكرار الفشل في نفس اليوم)
+                        deductFromRobber(robberData, amountToSteal);
+                        victimData.mora += amountToSteal;
+
+                        const loseEmbed = new EmbedBuilder()
+                            .setTitle('❖ الـسـجـن !')
+                            .setColor(Colors.Red)
+                            .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg') // صورة الحراس
+                            .setDescription(`لقد نفد صبر الإمبراطور!\nتم القبض عليك وتغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك.`);
+                        
+                        await i.update({ embeds: [loseEmbed], components: [] });
+                    }
+                }
+                setScore.run(robberData);
+                setScore.run(victimData);
+            });
+
+            collector.on('end', (collected, reason) => {
+                if (reason === 'time') {
+                    // معاملة انتهاء الوقت كفشل عادي (بدون عفو لتشجيع السرعة، أو يمكنك إضافة العفو هنا أيضاً)
+                    deductFromRobber(robberData, amountToSteal);
+                    victimData.mora += amountToSteal;
+                    setScore.run(robberData);
+                    setScore.run(victimData);
+                    
+                    const timeEmbed = new EmbedBuilder()
+                        .setTitle('⏰ فات الأوان!')
+                        .setColor(Colors.Red)
+                        .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
+                    msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
+                }
+                activeGames.delete(channel.id);
+            });
+
+            return; // إنهاء الدالة هنا لحالة الأونر
+        }
+
+        // =================================================================
+        // 🔹 المنطق العادي للأعضاء (الكود السابق) 🔹
+        // =================================================================
 
         let descArray = [
             `✦ انـت تسـطو علـى ممتـلكـات: ${victim} <:thief:1436331309961187488>`,
@@ -227,10 +333,8 @@ module.exports = {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
             if (clickedIndex === correctButtonIndex) {
-                // ( 🌟 هنا يظهر الحارس! إذا اختار الباب الصحيح وكان هناك حارس 🌟 )
                 if (victimData.hasGuard > 0) {
                     deductFromRobber(robberData, amountToSteal);
-                    
                     victimData.mora += amountToSteal;
                     victimData.hasGuard -= 1;
                     victimData.guardExpires = 0;
@@ -239,23 +343,16 @@ module.exports = {
                         .setTitle('✶ تــم الـقـبـض :shield: !')
                         .setColor('#46455f')
                         .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                        .setDescription(
-                            `✬ فتحت الباب ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n` +
-                            `✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية <:mirkk:1435648219488190525>`
-                        );
+                        .setDescription(`✬ فتحت الباب ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
                     
                     await i.update({ embeds: [guardEmbed], components: [] });
                 } else {
-                    // نجاح السرقة (بدون حارس)
                     const finalAmount = amountToSteal;
                     robberData.mora += finalAmount;
                     
-                    // الخصم من الضحية (من المكان المحدد)
                     if (targetPool === 'bank') {
-                        // التأكد من عدم نزول الرصيد عن 0
                         if (victimData.bank >= finalAmount) victimData.bank -= finalAmount;
                         else {
-                            // حالة نادرة: نخصم المتوفر في البنك والباقي من الكاش
                             const remainder = finalAmount - victimData.bank;
                             victimData.bank = 0;
                             victimData.mora = Math.max(0, victimData.mora - remainder);
@@ -279,7 +376,6 @@ module.exports = {
                 }
 
             } else {
-                // فشل (الباب الخطأ) - القنبلة
                 deductFromRobber(robberData, amountToSteal);
                 victimData.mora += amountToSteal;
 
@@ -298,7 +394,6 @@ module.exports = {
             if (reason === 'time') {
                 deductFromRobber(robberData, amountToSteal);
                 victimData.mora += amountToSteal;
-                
                 setScore.run(robberData);
                 setScore.run(victimData);
 
@@ -308,7 +403,7 @@ module.exports = {
                     .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
                     .setDescription(`لقد ترددت طويلاً وتم القبض عليك!\n\nفشلت السرقة، وتم تغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} وإعطاؤها للضحية.`);
 
-                msg.edit({ embeds: [timeEmbed], components: [] });
+                msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
             }
             activeGames.delete(channel.id);
         });
