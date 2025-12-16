@@ -40,20 +40,22 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
+// دالة حساب الجوائز (مورا) - تم تخفيض البداية وزيادة التصاعد
 function getBaseFloorMora(floor) {
-    const staticRewards = {
-        1: 50, 2: 75, 3: 100, 4: 150, 5: 300,
-        6: 400, 7: 600, 8: 800, 9: 1000, 10: 1200
-    };
-
-    if (floor <= 10) {
-        return staticRewards[floor];
+    if (floor <= 4) {
+        // طوابق ضعيفة جداً -> جوائز قليلة (20 - 50 مورا)
+        return 20 + (floor * 10);
+    } else if (floor <= 10) {
+        // طوابق متوسطة (100 - 350)
+        return 100 + ((floor - 5) * 50);
     } else {
+        // طوابق متقدمة (500+)
         const extra = floor - 10;
-        return 1200 + (extra * 250);
+        return 500 + (extra * 150);
     }
 }
 
+// دالة تحديد قوة التعزيز (Buff)
 function getDungeonBuff(floor) {
     if (floor >= 15) return { percent: 20, minutes: 30 };
     if (floor >= 9) return { percent: 10, minutes: 10 };
@@ -203,7 +205,7 @@ function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
-    // ✅✅ تعديل مهارة الأونر لتضرب 50% من دم الوحش ✅✅
+    // ✅ مهارة الأونر المعدلة: 50% من MaxHP للوحش
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -595,9 +597,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    // 🔥 1. تم فك القفل: الطوابق من 1 إلى 100 متاحة للجميع 🔥
-    const maxFloors = 100; // ثابت للجميع
-    const gateDifficultyMult = 1.0; 
+    // 🔥 الحد الأقصى للطوابق هو 100 تلقائياً للجميع 🔥
+    const maxFloors = 100; 
 
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
@@ -610,36 +611,31 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅✅ Smart Scaling Logic الجديد (تدريجي 15%-20%) ✅✅
+        // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
         let hpPercent;
         if (floor <= 4) {
             // من 1 إلى 4: تبدأ 15% وتزيد 1% لكل طابق
-            // مثال طابق 1: 15%
-            // مثال طابق 4: 18%
             hpPercent = 0.15 + ((floor - 1) * 0.01);
         } else {
             // من 5 وفوق: تبدأ 20% وتزيد 2% لكل طابق
-            // مثال طابق 5: 20%
-            // مثال طابق 12: 20 + (7*2) = 34%
             hpPercent = 0.20 + ((floor - 5) * 0.02);
         }
 
         const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 30); // زيادة بسيطة جداً مع الطابق
+        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 30); 
 
-        // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
-        finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
-        
         // ✅✅ تعديل قوة هجوم الوحش ليزيد بشكل ثابت ومستقر ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
         
         // معادلة خطية: هجوم الوحش يبدأ بـ 5% من دم اللاعب، ويزيد نصف بالمية كل طابق
-        // طابق 1: 5.5% من دمك
-        // طابق 100: 55% من دمك (ضربتين تموت)
         let smartAtk = Math.floor(avgPlayerHp * (0.05 + (floor * 0.005))); 
         
-        let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1) * gateDifficultyMult);
-        if (finalAtk < 5) finalAtk = 5 + floor;
+        // حد أدنى للهجوم 
+        if (smartAtk < 5) smartAtk = 5 + floor;
+
+        // تطبيق مضاعفات الكونفق (إن وجدت)
+        let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1));
+        finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
@@ -814,16 +810,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅✅ حساب الجوائز المعدل (1 XP = 3 Mora + تقليل للوحوش الضعيفة) ✅✅
+                // ✅✅ حساب الجوائز النهائي ✅✅
                 let baseMora = getBaseFloorMora(floor);
-
-                let weakMonsterPenalty = 1.0;
-                if (floor <= 4) weakMonsterPenalty = 0.4;      
-                else if (floor <= 10) weakMonsterPenalty = 0.7; 
-
-                let floorMora = Math.floor(baseMora * weakMonsterPenalty);
+                
+                // الجائزة المالية الكاملة للطابق
+                let floorMora = Math.floor(baseMora);
+                
+                // حساب الاكس بي (ثلث المورا)
                 let floorXp = Math.floor(floorMora / 3); 
 
+                // تقسيم الجائزة إذا كانوا فريق (طابق 5 وفوق)
                 if (floor >= 5) { 
                     floorXp = Math.floor(floorXp / players.length); 
                     floorMora = Math.floor(floorMora / players.length); 
