@@ -40,12 +40,12 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// دالة حساب الجوائز (مورا) - تزيد مع الطوابق بشكل ملحوظ الآن
+// دالة حساب الجوائز (مورا)
 function getBaseFloorMora(floor) {
-    if (floor <= 5) return 50 + (floor * 20); // 70 - 150
-    if (floor <= 20) return 200 + ((floor - 5) * 50); // 250 - 1000
-    if (floor <= 50) return 1000 + ((floor - 20) * 100); // 1100 - 4000
-    return 4000 + ((floor - 50) * 200); // طابق 100 = 14000 مورا (تتقسم على الفريق)
+    if (floor <= 5) return 50 + (floor * 20); 
+    if (floor <= 20) return 200 + ((floor - 5) * 50); 
+    if (floor <= 50) return 1000 + ((floor - 20) * 100); 
+    return 4000 + ((floor - 50) * 200); 
 }
 
 // دالة تحديد قوة التعزيز (Buff)
@@ -198,7 +198,7 @@ function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
-    // ✅ مهارة الأونر المعدلة: 50% من MaxHP للوحش
+    // ✅ مهارة الأونر: 50% من MaxHP للوحش
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -574,7 +574,7 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 }
 
-// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل) ⚔️⚔️
+// ⚔️⚔️ تشغيل الدانجون (منطق القتال - النظام الثابت الجديد) ⚔️⚔️
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
     const guild = threadChannel.guild;
     let players = [];
@@ -590,7 +590,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ في البيانات.");
     }
 
-    // 🔥 الحد الأقصى للطوابق هو 100 تلقائياً للجميع 🔥
     const maxFloors = 100; 
 
     let totalAccumulatedCoins = 0;
@@ -604,30 +603,32 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅✅ Smart Scaling Logic الجديد (HP الوحش) ✅✅
-        // معادلة: (مجموع صحة الفريق * نسبة مئوية) + (قيمة ثابتة تزيد مع الطوابق)
+        // 🔥🔥🔥🔥 نظام HP الوحش (ثابت ومنطقي ولا يعتمد على قوة اللاعب) 🔥🔥🔥🔥
         
-        const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        let hpMultiplier = 0.5 + (floor / 8); // يبدأ من 62% ويزيد 12.5% كل طابق
-        let baseStaticHP = floor * 400; // قيمة ثابتة 400 لكل طابق (طابق 100 = 40000)
+        // 1. حساب HP الأساسي بناءً على الطابق (Exponential/Polynomial growth)
+        // طابق 1 = 500
+        // طابق 10 = 3,500
+        // طابق 50 = 30,000
+        // طابق 100 = 100,000+
+        let baseFloorHP = 500 + (floor * 200) + (Math.pow(floor, 2) * 8);
 
-        let finalHp = Math.floor((totalPlayersHealth * hpMultiplier) + baseStaticHP);
+        // 2. زيادة بسيطة حسب عدد اللاعبين (عشان ما يكون سهل للفريق الكامل)
+        // كل لاعب إضافي يزيد دم الوحش 50%
+        let partyMultiplier = 1 + ((players.length - 1) * 0.5); 
+
+        let finalHp = Math.floor(baseFloorHP * partyMultiplier);
 
         // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
         
-        // ✅✅ تعديل قوة هجوم الوحش ليزيد بشكل ثابت ومستقر ✅✅
-        const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
+        // 🔥🔥🔥🔥 نظام هجوم الوحش (ATK) 🔥🔥🔥🔥
+        // يبدأ بـ 15 ويزيد تدريجياً
+        // طابق 1: 17
+        // طابق 50: ~120
+        // طابق 100: ~400
+        let baseAtk = 15 + (floor * 2) + (floor > 50 ? (floor - 50) * 3 : 0);
         
-        // معادلة: هجوم الوحش يبدأ بـ 5% من دم اللاعب، ويزيد مع الطوابق
-        // طابق 100: يضرب حوالي 55% من صحة اللاعب بضربة واحدة
-        let smartAtk = Math.floor(avgPlayerHp * (0.05 + (floor * 0.005))); 
-        
-        // حد أدنى للهجوم 
-        if (smartAtk < 5) smartAtk = 5 + floor;
-
-        // تطبيق مضاعفات الكونفق (إن وجدت)
-        let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1));
+        let finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
@@ -802,7 +803,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅✅ حساب الجوائز النهائي ✅✅
+                // ✅✅ حساب الجوائز ✅✅
                 let baseMora = getBaseFloorMora(floor);
                 
                 // الجائزة المالية الكاملة للطابق
