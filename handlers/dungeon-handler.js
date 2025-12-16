@@ -4,7 +4,6 @@ const path = require('path');
 // تحميل الإعدادات
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
-// تأكد من وجود هذه الملفات أو عدل المسار حسب هيكلة مشروعك
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
@@ -134,7 +133,6 @@ function getRandomMonster(type, theme) {
     if (type === 'boss') {
         pool = dungeonConfig.monsters.bosses;
     } else if (type === 'guardian') {
-        // 🔥 تحديث: استخدام قائمة الحراس الخاصة من الـ JSON
         pool = dungeonConfig.monsters.guardians;
     } else if (type === 'elite') {
         pool = dungeonConfig.monsters.elites;
@@ -191,7 +189,6 @@ function buildSkillSelector(player) {
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
      
-    // مضاعف المهارات للأونر x10
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
     if (skill.id === 'skill_secret_owner') {
@@ -603,101 +600,147 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 60000 });
             let actedPlayers = [];
+            let processingUsers = new Set(); // 🔒 حماية
 
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(() => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
                           const mentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
-                          threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`);
+                          threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`).catch(()=>{});
                     }
                     collector.stop('turn_end'); 
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 👇👇👇 Safe Defer Logic 👇👇👇
-                    try {
-                        if (i.customId !== 'skill' && !i.customId.startsWith('skill_select')) {
-                             await i.deferUpdate(); 
-                        }
-                    } catch (e) { }
-
                     const p = players.find(pl => pl.id === i.user.id);
-                    if (!p || p.isDead || actedPlayers.includes(p.id)) {
+
+                    // 1. تجاهل أي شخص ليس في الفريق
+                    if (!p) {
+                        return i.reply({ content: "🚫 لست مشاركاً في هذه المعركة!", ephemeral: true });
+                    }
+
+                    // 2. التحقق من حالة اللاعب
+                    if (p.isDead || actedPlayers.includes(p.id)) {
                         if (!i.replied && !i.deferred) await i.reply({ content: "⏳ انتظر دورك/أنت ميت.", ephemeral: true });
                         return;
                     }
 
-                    if (i.customId === 'skill') {
-                        const skillRow = buildSkillSelector(p);
-                        if (!skillRow) return i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
-                        
-                        try {
-                            const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
-                            
-                            const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 10000 });
-                            const skillId = selection.values[0];
-                            
-                            await selection.deferUpdate().catch(()=>{}); // Defer فوري بعد الاختيار
-
-                            actedPlayers.push(p.id);
-                            
-                            const skill = (skillId === 'skill_secret_owner') ? { id: 'skill_secret_owner', name: 'تركيز تام' } : p.skills[skillId];
-                            
-                            if (skillId !== 'skill_secret_owner') {
-                                if ((p.skillCooldowns[skillId] || 0) > 0) {
-                                    await selection.editReply({ content: `⏳ المهارة في وضع الكولداون.`, components: [] }).catch(()=>{});
-                                    return;
-                                }
-                                p.skillCooldowns[skillId] = 3;
-                            }
-
-                            handleSkillUsage(p, skill, monster, log);
-                            await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
-
-                        } catch (err) { 
-                            if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
-                            return; 
-                        }
-                    } 
-                    else {
-                        actedPlayers.push(p.id);
-                        // No need for defer here, done at start
-
-                        if (i.customId === 'atk') {
-                            let atkMultiplier = 1.0;
-                            p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                            const currentAtk = Math.floor(p.atk * atkMultiplier);
-
-                            const isCrit = Math.random() < 0.2;
-                            let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
-                            if (isCrit) dmg = Math.floor(dmg * 1.5);
-
-                            monster.hp -= dmg;
-                            p.totalDamage += dmg; 
-                            log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
-                        } 
-                        else if (i.customId === 'heal') {
-                            if (p.potions > 0) {
-                                p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.35), p.maxHp);
-                                p.potions--;
-                                log.push(`🧪 **${p.name}** تعالج.`);
-                            }
-                        } 
-                        else if (i.customId === 'def') {
-                            p.defending = true;
-                            p.shield += Math.floor(p.maxHp * 0.1);
-                            log.push(`🛡️ **${p.name}** يدافع.`);
-                        }
+                    // 🔒 3. منع التكرار
+                    if (processingUsers.has(i.user.id)) {
+                        await i.deferUpdate().catch(()=>{}); 
+                        return;
                     }
+                    processingUsers.add(i.user.id); // قفل اللاعب
 
-                    if (monster.hp <= 0) monster.hp = 0;
-                    if (log.length > 5) log = log.slice(-5);
-                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] });
+                    try {
+                        // معالجة الأزرار
+                        if (i.customId === 'skill') {
+                            const skillRow = buildSkillSelector(p);
+                            if (!skillRow) {
+                                await i.reply({ content: "❌ لا توجد مهارات متاحة.", ephemeral: true });
+                                processingUsers.delete(i.user.id); 
+                                return;
+                            }
+                            
+                            try {
+                                const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
+                                
+                                const selection = await skillMsg.awaitMessageComponent({ 
+                                    filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', 
+                                    time: 10000 
+                                });
+                                
+                                const skillId = selection.values[0];
+                                await selection.deferUpdate().catch(()=>{}); 
 
-                    if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
-                        clearTimeout(turnTimeout); 
-                        collector.stop('turn_end'); 
+                                actedPlayers.push(p.id);
+                                
+                                const skill = (skillId === 'skill_secret_owner') ? { id: 'skill_secret_owner', name: 'تركيز تام' } : p.skills[skillId];
+                                
+                                if (skillId !== 'skill_secret_owner') {
+                                    if ((p.skillCooldowns[skillId] || 0) > 0) {
+                                        await selection.editReply({ content: `⏳ المهارة في وضع الكولداون.`, components: [] }).catch(()=>{});
+                                        processingUsers.delete(i.user.id); 
+                                        actedPlayers.pop(); 
+                                        return;
+                                    }
+                                    p.skillCooldowns[skillId] = 3;
+                                }
+
+                                handleSkillUsage(p, skill, monster, log);
+                                await selection.editReply({ content: `✅ تم استخدام ${skill.name}`, components: [] }).catch(()=>{});
+
+                            } catch (err) { 
+                                if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى وقت اختيار المهارة.", components: [] }).catch(()=>{}); 
+                                processingUsers.delete(i.user.id); 
+                                return; 
+                            }
+                        } 
+                        else {
+                            if (i.customId === 'heal') {
+                                // 👇👇 منطق الجرعة الجديد 👇👇
+                                if (p.potions > 0) {
+                                    await i.deferUpdate().catch(()=>{}); // Defer فقط إذا نجحت العملية
+                                    
+                                    p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.35), p.maxHp);
+                                    p.potions--;
+                                    log.push(`🧪 **${p.name}** تعالج.`);
+                                    
+                                    // رسالة مخفية
+                                    await i.followUp({ content: `🧪 استعدت عافيتك! (متبقي: ${p.potions})`, ephemeral: true }).catch(()=>{});
+                                    actedPlayers.push(p.id);
+                                } else {
+                                    // إذا لم يكن لديه جرعات: رسالة مخفية ولا تحتسب الدور
+                                    await i.reply({ content: "❌ نفذت الجرعات لديك!", ephemeral: true });
+                                    processingUsers.delete(i.user.id); // فك القفل ليختار زر آخر
+                                    return; // خروج لكي لا يتم احتساب الدور
+                                }
+                            } 
+                            else {
+                                // باقي الأزرار (هجوم / دفاع)
+                                await i.deferUpdate().catch(()=>{});
+                                actedPlayers.push(p.id);
+
+                                if (i.customId === 'atk') {
+                                    let atkMultiplier = 1.0;
+                                    p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
+                                    const currentAtk = Math.floor(p.atk * atkMultiplier);
+
+                                    const isCrit = Math.random() < 0.2;
+                                    let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
+                                    if (isCrit) dmg = Math.floor(dmg * 1.5);
+
+                                    monster.hp -= dmg;
+                                    p.totalDamage += dmg; 
+                                    log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
+                                } 
+                                else if (i.customId === 'def') {
+                                    // 👇👇 منطق الدفاع الجديد 👇👇
+                                    p.defending = true;
+                                    // تم إزالة إضافة الدرع (Shield HP)
+                                    log.push(`🛡️ **${p.name}** يتخذ وضعية الدفاع (تخفيف 50%)!`);
+                                }
+                            }
+                        }
+
+                        if (monster.hp <= 0) monster.hp = 0;
+                        if (log.length > 5) log = log.slice(-5);
+                        
+                        // تحديث الرسالة
+                        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(e => console.log("Lag Update skip"));
+
+                        // التحقق من انتهاء الدور
+                        if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
+                            clearTimeout(turnTimeout); 
+                            collector.stop('turn_end'); 
+                        }
+
+                    } catch (error) {
+                        console.error("Dungeon Action Error:", error);
+                    } finally {
+                        // 🔓 فك القفل عن اللاعب
+                        processingUsers.delete(i.user.id);
                     }
                 });
 
@@ -726,8 +769,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp <= 0) {
                 ongoing = false;
-                await battleMsg.edit({ components: [] });
-                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
+                await battleMsg.edit({ components: [] }).catch(()=>{});
+                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
                 const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
                 const gateLevel = hostData?.dungeon_gate_level || 1;
@@ -817,15 +860,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 if (players.every(p => p.isDead)) {
                     ongoing = false;
-                    await battleMsg.edit({ components: [] });
-                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
+                    await battleMsg.edit({ components: [] }).catch(()=>{});
+                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "lose", sql, guild.id, hostId);
                     return;
                 }
 
                 players.forEach(p => p.defending = false);
                 if (log.length > 5) log = log.slice(-5);
-                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
+                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
             }
         }
     }
