@@ -184,7 +184,7 @@ function buildSkillSelector(player) {
     );
 }
 
-// --- معالجة منطق المهارات ---
+// --- معالجة منطق المهارات (للاعبين) ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
       
@@ -573,12 +573,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     // 🔥 1. حساب الحد الأقصى للطوابق بناءً على مستوى البوابة 🔥
     const hostData = sql.prepare("SELECT dungeon_gate_level FROM levels WHERE user = ? AND guild = ?").get(hostId, guild.id);
     const gateLevel = hostData?.dungeon_gate_level || 1;
-    
-    // كل مستوى بوابة يضيف 10 طوابق، بحد أقصى 100
     const maxFloors = Math.min(gateLevel * 10, 100); 
     const gateDifficultyMult = 1 + ((gateLevel - 1) * 0.1); 
 
-    // الحلقة تستمر حتى الحد الأقصى للطوابق المتاحة
     for (let floor = 1; floor <= maxFloors; floor++) {
         if (players.every(p => p.isDead)) break; 
 
@@ -595,12 +592,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
             
-            // معادلة الصحة
             hp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.25)) * gateDifficultyMult * hpScale),
             maxHp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.25)) * gateDifficultyMult * hpScale),
             
-            // معادلة الهجوم
-            atk: Math.floor((25 + (floor * 3)) * floorConfig.atk_mult * gateDifficultyMult * atkScale), 
+            // ✅ تم تعديل المعادلة لتبدأ من 30 في الطابق الأول
+            // الطابق 1: (27 + 3) * 1.0 = 30
+            atk: Math.floor((27 + (floor * 3)) * floorConfig.atk_mult * gateDifficultyMult * atkScale), 
             
             enraged: false,
             effects: [] 
@@ -702,10 +699,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                         if (monster.hp <= 0) {
                             monster.hp = 0;
-                            // 🔥🔥 تحديث الرسالة ثم إيقاف الكوليكتور فوراً للمرور للتالي 🔥🔥
                             if (log.length > 5) log = log.slice(-5);
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(e => {});
-                            collector.stop('monster_dead'); // 🚀 إيقاف فوري للانتظار
+                            collector.stop('monster_dead'); 
                             return; 
                         }
 
@@ -740,7 +736,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
                 // مكافآت الطابق
-                const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1) + ((floor - 1) * 0.05); // زيادة المكافأة مع الطوابق
+                const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1) + ((floor - 1) * 0.05); 
                 let floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
                 let floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
 
@@ -748,7 +744,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 players.forEach(p => { if (!p.isDead) { p.loot.mora += floorMora; p.loot.xp += floorXp; } });
 
-                // 🔥 3. شرط الفوز النهائي: الوصول لآخر طابق متاح 🔥
                 if (floor === maxFloors) {
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId);
                     return; 
@@ -774,41 +769,84 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         return;
                     }
                     await i.update({ content: `⚔️ **نحو الطابق ${floor + 1}...**`, components: [], embeds: [] });
-                    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.2), p.maxHp); }); // شفاء بسيط بين الطوابق
+                    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.2), p.maxHp); });
                 } catch (e) {
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                     return;
                 }
             } else {
-                // Monster Attack Logic (Simplified for readability)
+                // 🔥🔥 منطق ذكاء الوحش الجديد (Monster AI) 🔥🔥
                 const alivePlayers = players.filter(p => !p.isDead);
                 if (alivePlayers.length > 0) {
+                    const isLowHp = monster.hp < (monster.maxHp * 0.3); // هل دم الوحش أقل من 30%؟
                     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
                     let dmg = monster.atk;
-                    if (target.defending) dmg = Math.floor(dmg * 0.5);
-                    if (target.shield > 0) {
-                        if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; } else { target.shield -= dmg; dmg = 0; }
-                    }
-                    if (target.id === OWNER_ID) dmg = Math.floor(dmg / 50);
+                    let actionLog = "";
 
-                    // Evasion & Reflect
-                    let isEvaded = false;
-                    const evasionEffect = target.effects.find(e => e.type === 'evasion');
-                    if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
-                    
-                    const counterEffect = target.effects.find(e => e.type === 'counter');
+                    // فرصة 30% لاستخدام مهارة (أو 50% إذا كان دمه قليل)
+                    const useSkill = Math.random() < (isLowHp ? 0.5 : 0.3);
 
-                    if (isEvaded) {
-                        log.push(`👻 **${target.name}** تفادى!`);
-                    } else if (counterEffect) {
-                        const reflectedDmg = Math.floor(monster.atk * counterEffect.val);
-                        monster.hp -= reflectedDmg;
-                        log.push(`🔄 **${target.name}** عكس الهجوم (${reflectedDmg})!`);
-                        dmg = 0;
-                    } else {
-                        target.hp -= dmg;
-                        log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
-                        if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                    if (useSkill) {
+                        const skillRoll = Math.random();
+                        
+                        // مهارة 1: زلزال (AoE) - يضرب الجميع إذا كان هناك أكثر من لاعب
+                        if (alivePlayers.length > 1 && skillRoll > 0.6) {
+                            alivePlayers.forEach(p => {
+                                let aoeDmg = Math.floor(monster.atk * 0.7);
+                                if (p.defending) aoeDmg = Math.floor(aoeDmg * 0.5);
+                                if (p.shield > 0) {
+                                    if (aoeDmg > p.shield) { aoeDmg -= p.shield; p.shield = 0; } else { p.shield -= aoeDmg; aoeDmg = 0; }
+                                }
+                                p.hp -= aoeDmg;
+                                if (p.hp <= 0) { p.hp = 0; p.isDead = true; }
+                            });
+                            log.push(`🌋 **${monster.name}** أطلق زلزالاً مدمراً على الفريق!`);
+                        }
+                        // مهارة 2: امتصاص الحياة (Heal) - إذا كان دمه منخفض
+                        else if (isLowHp && skillRoll > 0.3) {
+                            let lifeDmg = Math.floor(monster.atk * 1.2);
+                            if (target.defending) lifeDmg = Math.floor(lifeDmg * 0.5);
+                            target.hp -= lifeDmg;
+                            monster.hp += Math.floor(lifeDmg * 0.5); // يعالج نفسه بنصف الضرر
+                            log.push(`🩸 **${monster.name}** امتص حياة **${target.name}**! (+${Math.floor(lifeDmg * 0.5)} HP)`);
+                            if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        }
+                        // مهارة 3: ضربة ساحقة (Crit)
+                        else {
+                            let critDmg = Math.floor(monster.atk * 1.5);
+                            if (target.defending) critDmg = Math.floor(critDmg * 0.7); // يخترق الدفاع قليلاً
+                            if (target.shield > 0) {
+                                if (critDmg > target.shield) { critDmg -= target.shield; target.shield = 0; } else { target.shield -= critDmg; critDmg = 0; }
+                            }
+                            target.hp -= critDmg;
+                            log.push(`💥 **${monster.name}** سدد ضربة ساحقة لـ **${target.name}** (${critDmg})!`);
+                            if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        }
+                    } 
+                    // الهجوم العادي
+                    else {
+                        if (target.defending) dmg = Math.floor(dmg * 0.5);
+                        if (target.shield > 0) {
+                            if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; } else { target.shield -= dmg; dmg = 0; }
+                        }
+                        
+                        // التحقق من التفادي والارتداد
+                        let isEvaded = false;
+                        const evasionEffect = target.effects.find(e => e.type === 'evasion');
+                        if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
+                        const counterEffect = target.effects.find(e => e.type === 'counter');
+
+                        if (isEvaded) {
+                            log.push(`👻 **${target.name}** تفادى!`);
+                        } else if (counterEffect) {
+                            const reflectedDmg = Math.floor(monster.atk * counterEffect.val);
+                            monster.hp -= reflectedDmg;
+                            log.push(`🔄 **${target.name}** عكس الهجوم (${reflectedDmg})!`);
+                        } else {
+                            target.hp -= dmg;
+                            log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
+                            if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        }
                     }
                 }
 
@@ -844,9 +882,8 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
     const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
 
-    // حساب البوف بناءً على الطوابق (كلما زاد الطابق زاد البوف)
-    let buffPercent = Math.min(5 + Math.floor(floor / 2), 50); // أقصى بوف 50%
-    let buffDurationMinutes = Math.min(10 + Math.floor(floor / 2), 60); // أقصى مدة ساعة
+    let buffPercent = Math.min(5 + Math.floor(floor / 2), 50); 
+    let buffDurationMinutes = Math.min(10 + Math.floor(floor / 2), 60); 
 
     const durationMs = buffDurationMinutes * 60 * 1000;
     const expire = Date.now() + durationMs;
@@ -854,7 +891,6 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     if (status === 'win' || status === 'retreat') {
         buffText = `- تـعـزيـز (+XP/Mora): +${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_BUFF}`;
-        // تسجيل البوف
         players.forEach(p => {
              sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'xp', buffPercent / 100);
              sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'mora', buffPercent / 100);
