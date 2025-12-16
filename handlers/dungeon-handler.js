@@ -4,6 +4,7 @@ const path = require('path');
 // تحميل الإعدادات
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
+// تأكد من وجود هذه الملفات أو عدل المسار حسب هيكلة مشروعك
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
@@ -68,7 +69,8 @@ function getRealPlayerData(member, sql) {
 
     let damage = 15;
     let weaponName = "قبضة اليد";
-    
+     
+    // جلب معلومات العرق
     const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(member.guild.id);
     const userRoleIDs = member.roles.cache.map(r => r.id);
     const userRace = allRaceRoles.find(r => userRoleIDs.includes(r.roleID));
@@ -86,7 +88,7 @@ function getRealPlayerData(member, sql) {
 
     const skillsOutput = {};
     const userSkillsData = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(member.id, member.guild.id);
-    
+     
     if (userSkillsData) {
         userSkillsData.forEach(userSkill => {
             const skillConfig = skillsConfig.find(s => s.id === userSkill.skillID);
@@ -129,9 +131,20 @@ function getRealPlayerData(member, sql) {
 
 function getRandomMonster(type, theme) {
     let pool = [];
-    if (type === 'boss') pool = dungeonConfig.monsters.bosses;
-    else if (type === 'elite' || type === 'guardian') pool = dungeonConfig.monsters.elites;
-    else pool = dungeonConfig.monsters.minions;
+    if (type === 'boss') {
+        pool = dungeonConfig.monsters.bosses;
+    } else if (type === 'guardian') {
+        // 🔥 تحديث: استخدام قائمة الحراس الخاصة من الـ JSON
+        pool = dungeonConfig.monsters.guardians;
+    } else if (type === 'elite') {
+        pool = dungeonConfig.monsters.elites;
+    } else {
+        pool = dungeonConfig.monsters.minions;
+    }
+    
+    // Fallback if pool is empty
+    if (!pool || pool.length === 0) pool = dungeonConfig.monsters.minions;
+
     const name = pool[Math.floor(Math.random() * pool.length)];
     return { name, emoji: theme.emoji };
 }
@@ -139,7 +152,7 @@ function getRandomMonster(type, theme) {
 function buildSkillSelector(player) {
     const userSkills = player.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
-    
+     
     if (availableSkills.length === 0 && player.id !== OWNER_ID) return null;
 
     const options = availableSkills.map(skill => {
@@ -177,7 +190,7 @@ function buildSkillSelector(player) {
 // --- معالجة منطق المهارات ---
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
-    
+     
     // مضاعف المهارات للأونر x10
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
@@ -193,7 +206,7 @@ function handleSkillUsage(player, skill, monster, log) {
 
     switch (skill.id) {
         case 'skill_healing':
-        case 'skill_cleanse':
+        case 'skill_cleanse': {
             let healAmount = Math.floor(player.maxHp * (value / 100)) * mult;
             if (skill.id === 'skill_cleanse') {
                 player.effects = []; 
@@ -203,9 +216,10 @@ function handleSkillUsage(player, skill, monster, log) {
             }
             player.hp = Math.min(player.maxHp, player.hp + healAmount);
             break;
+        }
 
         case 'skill_shielding':
-        case 'race_human_skill':
+        case 'race_human_skill': {
              let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
              player.shield += shieldAmount;
              log.push(`${skill.emoji} **${player.name}** اكتسب درعاً بقوة **${shieldAmount}**.`);
@@ -214,9 +228,9 @@ function handleSkillUsage(player, skill, monster, log) {
                  log.push(`⚔️ **${player.name}** زادت عزيمته (ATK UP)!`);
              }
              break;
+        }
 
-        // 🔥🔥 تعديل: القزم - ضربة + درع 🔥🔥
-        case 'race_dwarf_skill':
+        case 'race_dwarf_skill': {
              skillDmg = Math.floor(player.atk * 1.5) * mult;
              let addedShield = Math.floor(player.maxHp * 0.15) * mult;
              player.shield += addedShield;
@@ -224,22 +238,25 @@ function handleSkillUsage(player, skill, monster, log) {
              player.totalDamage += skillDmg;
              log.push(`🛡️ **${player.name}** ضرب بترسه (${skillDmg}) واكتسب درعاً (${addedShield})!`);
              break;
+        }
 
-        case 'skill_buffing':
+        case 'skill_buffing': {
              player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
              log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
              break;
+        }
 
         case 'skill_poison':
-        case 'race_dark_elf_skill':
+        case 'race_dark_elf_skill': {
              skillDmg = Math.floor(player.atk * 0.5) * mult; 
              monster.effects.push({ type: 'poison', val: Math.floor(player.atk * (value/100)) * mult, turns: 3 });
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
              break;
+        }
 
-        case 'skill_gamble':
+        case 'skill_gamble': {
              const roll = Math.random();
              if (roll > 0.5) {
                  skillDmg = Math.floor(player.atk * 2.5) * mult; 
@@ -251,34 +268,38 @@ function handleSkillUsage(player, skill, monster, log) {
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              break;
+        }
         
-        case 'race_dragon_skill':
+        case 'race_dragon_skill': {
              skillDmg = (Math.floor(player.atk * 1.5) + value) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`🔥 **${player.name}** أطلق ${skill.name} بـ **${skillDmg}** ضرر!`);
              break;
+        }
 
         case 'race_seraphim_skill':
-        case 'race_vampire_skill':
+        case 'race_vampire_skill': {
              skillDmg = (Math.floor(player.atk * 1.2) + value) * mult;
-             const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.6 : 0.4)); // زيادة الامتصاص لمصاص الدماء
+             const lifesteal = Math.floor(skillDmg * (skill.id === 'race_vampire_skill' ? 0.6 : 0.4));
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              player.hp = Math.min(player.maxHp, player.hp + lifesteal);
              log.push(`${skill.emoji} **${player.name}** امتص حياة الخصم! (**${skillDmg}** ضرر / **+${lifesteal}** HP).`);
              break;
+        }
 
-        case 'race_demon_skill':
+        case 'race_demon_skill': {
              const selfDmg = Math.floor(player.maxHp * 0.10); 
-             skillDmg = (Math.floor(player.atk * 2.5) + value) * mult; // زيادة الضرر
+             skillDmg = (Math.floor(player.atk * 2.5) + value) * mult;
              player.hp -= selfDmg;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`🩸 **${player.name}** ضحى بدمه (**-${selfDmg}**) ليسبب **${skillDmg}**!`);
              break;
+        }
 
-        case 'race_elf_skill':
+        case 'race_elf_skill': {
              const hit1 = Math.floor(player.atk * 0.9) * mult;
              const hit2 = Math.floor(player.atk * 0.9) * mult;
              skillDmg = hit1 + hit2;
@@ -286,54 +307,58 @@ function handleSkillUsage(player, skill, monster, log) {
              player.totalDamage += skillDmg; 
              log.push(`🏹 **${player.name}** أطلق سهمين دقيقين! (**${skillDmg}**).`);
              break;
+        }
         
-        case 'skill_weaken':
+        case 'skill_weaken': {
              skillDmg = Math.floor(player.atk * 0.5) * mult;
              monster.effects.push({ type: 'weakness', val: 0.25, turns: 2 }); 
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
              break;
+        }
         
-        // 🔥🔥 تعديل: الغول (كلما قلت الصحة زاد الضرر) 🔥🔥
-        case 'race_ghoul_skill':
+        case 'race_ghoul_skill': {
              let missingHpPercent = 1 - (player.hp / player.maxHp);
-             let rageMult = 1.5 + (missingHpPercent * 2.5); // يصل لـ 4 أضعاف عند الموت
+             let rageMult = 1.5 + (missingHpPercent * 2.5);
              skillDmg = Math.floor(player.atk * rageMult) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`🧟 **${player.name}** هاج بجنون (HP ${(player.hp/player.maxHp*100).toFixed(0)}%) وسبب **${skillDmg}** ضرر!`);
              break;
+        }
 
-        // 🔥🔥 تعديل: الروح (ضرر + مراوغة) 🔥🔥
-        case 'race_spirit_skill':
+        case 'race_spirit_skill': {
              skillDmg = Math.floor(player.atk * 1.8) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
-             player.effects.push({ type: 'evasion', val: 0.5, turns: 1 }); // 50% مراوغة
+             player.effects.push({ type: 'evasion', val: 0.5, turns: 1 });
              log.push(`👻 **${player.name}** ضرب بطيفية (${skillDmg}) وأصبح مراوغاً!`);
              break;
+        }
         
-        case 'skill_dispel':
+        case 'skill_dispel': {
             monster.effects = monster.effects.filter(e => e.type === 'poison'); 
             log.push(`💨 **${player.name}** بدد السحر!`);
             break;
+        }
 
-        case 'race_hybrid_skill':
-            // سرقة القوة (بدلاً من الراندوم)
+        case 'race_hybrid_skill': {
             skillDmg = Math.floor(player.atk * 1.2) * mult;
             monster.hp -= skillDmg;
             player.effects.push({ type: 'atk_buff', val: 0.2 * mult, turns: 2 });
             log.push(`🌀 **${player.name}** سرق قوة الخصم (+ATK) وسبب **${skillDmg}** ضرر!`);
             break;
+        }
 
-        default:
+        default: {
             let multiplier = skill.stat_type === '%' ? (1 + (value/100)) : 1;
             skillDmg = Math.floor((player.atk * multiplier) + (skill.stat_type !== '%' ? value : 0)) * mult;
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg; 
             log.push(`💥 **${player.name}** استخدم ${skill.name} بـ **${skillDmg}** ضرر!`);
             break;
+        }
     }
 }
 
@@ -422,7 +447,7 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, theme, sql) {
     const host = interaction.user;
     let party = [host.id];
-    
+     
     const updateEmbed = () => {
         const memberList = party.map((id, i) => `\`${i+1}.\` <@${id}> ${id === host.id ? '👑' : ''}`).join('\n');
         return new EmbedBuilder()
@@ -583,8 +608,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 const turnTimeout = setTimeout(() => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
-                         const mentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
-                         threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`);
+                          const mentions = afkPlayers.map(p => `<@${p.id}>`).join(' ');
+                          threadChannel.send(`⏰ **انتهى الوقت!** تم تخطي أدوار المتأخرين: ${mentions}`);
                     }
                     collector.stop('turn_end'); 
                 }, 45000); 
@@ -828,6 +853,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
     const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
 
+    // حساب نسبة البوف بناءً على الطابق الذي وصلوا إليه
     let buffPercent = 0;
     let buffDurationMinutes = 0;
 
@@ -847,12 +873,11 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     let buffText = "";
 
-    if (status === 'win') {
+    // 🔥 التعديل هنا: الانسحاب يعطي بوف إيجابي مثل الفوز لأنه نجا 🔥
+    if (status === 'win' || status === 'retreat') {
         buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: +${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_BUFF}`;
     } else if (status === 'lose') {
         buffText = `- لـعـنـة مكاسـب المـورا والاكس بـي: -${buffPercent}% (${buffDurationMinutes}د) ${EMOJI_NERF}`;
-    } else {
-        buffText = `- تـعـزيـز مكاسـب المـورا والاكس بـي: 0%`; 
     }
 
     let lootString = "";
@@ -861,18 +886,22 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
         let finalMora = p.loot.mora;
         let finalXp = p.loot.xp;
 
+        // الخاسر يفقد نصف الغنيمة
         if (p.isDead) {
             finalMora = Math.floor(finalMora * 0.5);
             finalXp = Math.floor(finalXp * 0.5);
         }
 
-        if (status !== 'lose') {
-            if (finalMora > 0 || finalXp > 0) {
-                sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-            }
+        // تسجيل الغنائم في الداتابيس (إلا في حالة الخسارة الكاملة للفريق قد ترغب بمنعها، لكن هنا نسمح بها للميت كجائزة ترضية)
+        if (finalMora > 0 || finalXp > 0) {
+            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
         }
         
-        if (status === 'win') {
+        // 🔥 التعديل هنا: تسجيل البوف في الداتابيس للانسحاب أيضاً 🔥
+        if (status === 'win' || status === 'retreat') {
+            // حذف البوفات القديمة لنفس النوع لضمان عدم التكرار (اختياري)
+            // sql.prepare("DELETE FROM user_buffs WHERE userID = ? AND guildID = ?").run(p.id, guildId);
+            
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'xp', buffPercent / 100);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffPercent, expire, 'mora', buffPercent / 100);
         } else if (status === 'lose') {
@@ -958,7 +987,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
     if (log.length > 0) {
-        embed.addFields({ name: "📝 سجل المعركة:", value: log.join('\n'), inline: false });
+        embed.addFields({ name: "احـداث المعركة:", value: log.join('\n'), inline: false });
     }
 
     return embed;
