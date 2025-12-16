@@ -61,7 +61,6 @@ async function updateBuilderEmbed(interaction, data) {
             console.log("[Giveaway Builder] Original message missing.");
             await interaction.followUp({ content: "⚠️ الرسالة الأصلية اختفت. يرجى بدء الأمر من جديد.", flags: [MessageFlags.Ephemeral] });
         } else {
-            // تجاهل أخطاء التعديل البسيطة
             if (error.code !== 10062) throw error;
         }
     }
@@ -79,7 +78,7 @@ module.exports = (client, sql, antiRolesCache) => {
              return;
         }
 
-        // منع التكرار السريع (Anti-Spam Click)
+        // منع التكرار السريع
         if (processingInteractions.has(i.user.id)) {
             if (!i.isModalSubmit()) {
                  return i.reply({ content: '⏳ | الرجاء الانتظار.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
@@ -102,7 +101,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     return; 
                 }
                 
-                // التحقق من الصلاحيات الخاصة بالقنوات
                 let isAllowed = false;
                 if (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) isAllowed = true;
                 else {
@@ -154,47 +152,38 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // 🆕 FIX: Defer for buttons leading to modals or complex logic (Safe Defer)
+                // Defer for buttons leading to modals or complex logic
                 if (id === 'g_builder_content' || id === 'g_builder_visuals' || id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm') || id === 'open_xp_modal') {
                     if (!i.replied && !i.deferred) {
-                        try {
-                            await i.deferUpdate(); 
-                        } catch (err) {
-                            if (err.code !== 10062) throw err; // تجاهل خطأ 10062 فقط
-                            return; // توقف هنا إذا التفاعل غير صالح
-                        }
+                        try { await i.deferUpdate(); } 
+                        catch (err) { if (err.code !== 10062) throw err; return; }
                     }
                 }
 
-                // 🔥 معالجة أزرار القيف اواي العامة (التي يديرها الهاندلر) 🔥
+                // 🔥 معالجة أزرار القيف اواي العامة
                 if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) {
                         await handleGiveawayInteraction(client, i);
                     }
-                    return; // إنهاء لتجنب التعارض
+                    return; 
                 }
 
-                // رتب خاصة
                 if (id.startsWith('customrole_')) {
                     await handleCustomRoleInteraction(i, client, sql);
                 }
                 
-                // ✅ World Boss Buttons
                 else if (id.startsWith('boss_')) {
                     await handleBossInteraction(i, client, sql);
                 }
                 
-                // ✅ Farm Buttons
                 else if ((id === 'farm_collect' || id === 'farm_buy_menu') && handleFarmInteractions) {
                     await handleFarmInteractions(i, client, sql);
                 }
 
-                // ✅ Streak Panel Buttons
                 else if (id.startsWith('streak_panel_')) { 
                     await handleStreakPanel(i, client, sql);
                 }
 
-                // ✅ Shop/Fish/Market Buttons (تم إضافة أزرار الدانجون هنا 🔥)
                 else if (
                     id.startsWith('buy_') || id.startsWith('upgrade_') || id.startsWith('shop_') || 
                     id.startsWith('replace_') || id === 'cancel_purchase' || id === 'open_xp_modal' ||
@@ -206,7 +195,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     await handleShopInteractions(i, client, sql);
                 }
                   
-                // ✅ أزرار بناء القيفاواي (Builder)
                 else if (id === 'g_builder_content') {
                     const data = giveawayBuilders.get(i.user.id) || {};
                     const modal = new ModalBuilder().setCustomId('g_content_modal').setTitle('إعداد المحتوى (1/2)');
@@ -234,7 +222,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     await i.deferReply({ flags: [MessageFlags.Ephemeral] }); 
                     const data = giveawayBuilders.get(i.user.id);
                     if (!data || !data.prize || !data.durationStr || !data.winnerCountStr) {
-                        return i.editReply("❌ البيانات الأساسية (الجائزة، المدة، الفائزون) مفقودة.");
+                        return i.editReply("❌ البيانات الأساسية مفقودة.");
                     }
                     const durationMs = ms(data.durationStr);
                     const winnerCount = parseInt(data.winnerCountStr);
@@ -242,12 +230,11 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (isNaN(winnerCount) || winnerCount < 1) return i.editReply("❌ عدد الفائزين غير صالح.");
                     
                     const endsAt = Date.now() + durationMs;
-                    const endsAtTimestamp = Math.floor(endsAt / 1000);
                     
                     let embedDescription = "";
                     if (data.description) embedDescription += `${data.description}\n\n`;
                     embedDescription += `✶ عـدد الـمـشاركـيـن: \`0\`\n`;
-                    embedDescription += `✦ ينتهي بعـد: <t:${endsAtTimestamp}:R>`;
+                    embedDescription += `✦ ينتهي بعـد: <t:${Math.floor(endsAt / 1000)}:R>`;
                     
                     const embed = new EmbedBuilder()
                         .setTitle(`✥ قـيـفـاواي عـلـى: ${data.prize}`)
@@ -284,7 +271,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
                     const giveawayID = i.message.id;
                     const userID = i.user.id;
-                    const existingEntry = sql.prepare("SELECT * FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(giveawayID, userID);
+                    const existingEntry = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(giveawayID, userID);
                     let replyMessage = "";
                     if (existingEntry) {
                         sql.prepare("DELETE FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").run(giveawayID, userID);
@@ -296,18 +283,33 @@ module.exports = (client, sql, antiRolesCache) => {
                     }
                     await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
                 
-                } else if (id === 'g_enter_drop') {
+                } 
+                // 🔥🔥 إصلاح زر الدروب قيفاواي 🔥🔥
+                else if (id === 'g_enter_drop') {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
                     const messageID = i.message.id;
+                    const userID = i.user.id;
+
                     try {
                         const giveaway = sql.prepare("SELECT * FROM active_giveaways WHERE messageID = ? AND isFinished = 0").get(messageID);
-                        if (!giveaway || giveaway.endsAt < Date.now()) return i.followUp({ content: "❌ انتهى.", flags: [MessageFlags.Ephemeral] });
+                        if (!giveaway || giveaway.endsAt < Date.now()) {
+                            return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
+                        }
+
+                        // التحقق من التسجيل المسبق
+                        const existing = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(messageID, userID);
+                        if (existing) {
+                            return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
+                        }
+
                         const weight = await getUserWeight(i.member, sql);
-                        try {
-                            sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, i.member.id, weight);
-                            return i.followUp({ content: `✅ تم التسجيل بوزن \`${weight}x\`!`, flags: [MessageFlags.Ephemeral] });
-                        } catch (err) { return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] }); }
-                    } catch (error) { return i.followUp({ content: "❌ حدث خطأ.", flags: [MessageFlags.Ephemeral] }); }
+                        sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
+                        return i.followUp({ content: `✅ تم التسجيل بوزن \`${weight}x\`!`, flags: [MessageFlags.Ephemeral] });
+
+                    } catch (error) { 
+                        console.error("Drop Error:", error);
+                        return i.followUp({ content: "❌ حدث خطأ أثناء التسجيل.", flags: [MessageFlags.Ephemeral] }); 
+                    }
 
                 } else if (id.startsWith('panel_') || id.startsWith('quests_')) {
                     await handleQuestPanel(i, client, sql);
@@ -327,10 +329,13 @@ module.exports = (client, sql, antiRolesCache) => {
                          data.prize = i.fields.getTextInputValue('g_prize');
                          data.durationStr = i.fields.getTextInputValue('g_duration');
                          data.winnerCountStr = i.fields.getTextInputValue('g_winners');
-                         // ...
+                         data.rewardsInput = i.fields.getTextInputValue('g_rewards');
+                         data.channelID = i.fields.getTextInputValue('g_channel');
                      } else {
                          data.description = i.fields.getTextInputValue('g_desc');
-                         // ...
+                         data.image = i.fields.getTextInputValue('g_image');
+                         data.color = i.fields.getTextInputValue('g_color');
+                         data.buttonEmoji = i.fields.getTextInputValue('g_emoji');
                      }
                      giveawayBuilders.set(i.user.id, data);
                      await updateBuilderEmbed(i, data);
@@ -349,12 +354,10 @@ module.exports = (client, sql, antiRolesCache) => {
                 
                 const id = i.customId;
                 
-                // ✅ قائمة مهارات الوحش
                 if (id === 'boss_execute_skill') {
                     await handleBossInteraction(i, client, sql);
                 }
 
-                // ✅ قوائم الستريك بانل (الفواصل)
                 else if (id.startsWith('streak_panel_')) { 
                     await handleStreakPanel(i, client, sql);
                 }
@@ -388,11 +391,8 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
-            // 🔥🔥 الحل السحري: تجاهل أخطاء التفاعل المنتهي الصلاحية 🔥🔥
-            if (error.code === 10062 || error.code === 40060) {
-                // لا تطبع شيئاً في الكونسول لتجنب الإزعاج
-                return;
-            }
+            // تجاهل خطأ التفاعل غير المعروف
+            if (error.code === 10062 || error.code === 40060) return;
 
             console.error("خطأ فادح في معالج التفاعلات:", error);
             if (!i.replied && !i.deferred) {
