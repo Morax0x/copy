@@ -201,9 +201,9 @@ function handleSkillUsage(player, skill, monster, log) {
     const value = skill.effectValue; 
 
     switch (skill.id) {
-        // 🔥 مهارة الارتداد العكسي الجديدة 🔥
-        case 'skill_reflect': {
-             // القيمة هنا تمثل نسبة العكس (مثلاً 50 تعني عكس 50% من ضرر الوحش)
+        // 🔥 مهارة الارتداد العكسي (تم تعديل الاسم ليطابق الجيسون) 🔥
+        case 'skill_rebound': {
+             // القيمة هنا تمثل نسبة العكس (مثلاً 20 تعني عكس 20% من ضرر الوحش)
              const reflectPercent = (value / 100) * mult;
              player.effects.push({ type: 'counter', val: reflectPercent, turns: 1 });
              log.push(`🔄 **${player.name}** اتخذ وضعية الارتداد العكسي! (سيتم عكس ${Math.floor(reflectPercent*100)}% من الهجوم القادم).`);
@@ -264,7 +264,7 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'skill_gamble': {
              const roll = Math.random();
              if (roll > 0.5) {
-                 skillDmg = Math.floor(player.atk * 2.5) * mult; 
+                 skillDmg = Math.floor(player.atk * 1.5) * mult; // تم تعديل القيم لتكون منطقية أكثر
                  log.push(`🎲 **${player.name}** ربح المقامرة! ضربة **${skillDmg}**!`);
              } else {
                  skillDmg = Math.floor(player.atk * 0.25) * mult; 
@@ -836,7 +836,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (Math.random() < evasionEffect.val) isEvaded = true;
                     }
 
-                    // 🔥 التحقق من الارتداد العكسي (Reflect) 🔥
+                    // 🔥 التحقق من الارتداد العكسي (Rebound) 🔥
                     const counterEffect = target.effects.find(e => e.type === 'counter');
 
                     if (isEvaded) {
@@ -847,7 +847,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                          const reflectedDmg = Math.floor(monster.atk * counterEffect.val);
                          monster.hp -= reflectedDmg;
                          log.push(`🔄 **${target.name}** عكس هجوم الوحش! (سبب **${reflectedDmg}** ضرر ولم يصب بأذى).`);
-                         // إلغاء الضرر على اللاعب
                          dmg = 0;
                     }
                     else {
@@ -890,7 +889,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     } else if (status === 'retreat') {
         title = "❖ انـسـحـاب تـكـتيـكـي !";
         color = "#FFFF00"; 
-        randomImage = LOSE_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)];
+        randomImage = WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)];
     } else {
         title = "❖ مـوت محـتـوم ...";
         color = "#FF0000"; 
