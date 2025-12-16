@@ -609,16 +609,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
         // ✅✅ Smart Scaling Logic المعدل ✅✅
-        // الطوابق 1-5: صحة ثابتة وسهلة
-        // الطوابق 6+: تعتمد على مجموع اتش بي اللاعبين
-        let finalHp;
-        if (floor <= 5) {
-            const baseHP = 300; 
-            finalHp = baseHP + (floor * 150); 
-        } else {
-            const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-            finalHp = totalPlayersHealth + (floor * 100); 
-        }
+        // تم تعميم المعادلة لتبدأ من الطابق الأول
+        // الطوابق 1-7: سهلة (تعتمد على 35% من صحة اللاعبين)
+        // الطوابق 8+: أصعب (تعتمد على 60% من صحة اللاعبين)
+        
+        const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
+        const hpPercent = floor <= 7 ? 0.35 : 0.60;
+        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 50); 
 
         // تطبيق مضاعفات البوابة
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1) * gateDifficultyMult);
@@ -858,20 +855,67 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 const dMsg = await threadChannel.send({ embeds: [decisionEmbed], components: [row] });
                 
-                try {
-                    const i = await dMsg.awaitMessageComponent({ filter: idx => idx.user.id === hostId, time: 60000 });
-                    if (i.customId === 'dungeon_retreat') {
-                        await i.update({ components: [] });
-                        await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
-                        return;
-                    }
+                // ✅✅ تعديل منطق الانسحاب ليكون فردياً لمن يقتحم المعركة ✅✅
+                const floorDecision = await new Promise(resolve => {
+                    const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
                     
-                    await i.update({ content: `**قـرر القـائد الاستـمرار وغزو الطـابق التالي .. يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
-                    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.3), p.maxHp); });
-                } catch (e) {
+                    decisionCollector.on('collect', async i => {
+                         // التحقق من أن الضغط من شخص مشارك
+                         const clicker = players.find(p => p.id === i.user.id);
+                         
+                         if (i.customId === 'dungeon_retreat') {
+                             if (i.user.id === hostId) {
+                                 // إذا القائد انسحب -> إنهاء للكل
+                                 await i.update({ components: [] });
+                                 resolve('retreat');
+                                 decisionCollector.stop();
+                             } else if (clicker) {
+                                 // إذا عضو آخر (مثل الأونر) انسحب -> يخرج لوحده وتستمر المعركة
+                                 // 1. حفظ جوائزه
+                                 let pMora = clicker.loot.mora;
+                                 let pXp = clicker.loot.xp;
+                                 if (pMora > 0 || pXp > 0) {
+                                     sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
+                                 }
+                                 
+                                 // 2. إزالة اللاعب من القائمة
+                                 players = players.filter(p => p.id !== clicker.id);
+                                 
+                                 await i.reply({ content: `👋 **${clicker.name}** قرر الانسحاب والاكتفاء بالغنائم!`, ephemeral: false });
+                                 
+                                 // إذا لم يتبق أحد، ننهي الدانجون
+                                 if (players.length === 0) {
+                                     resolve('retreat');
+                                     decisionCollector.stop();
+                                 }
+                                 // لا نوقف الكوليكتور، ننتظر قرار القائد
+                             } else {
+                                 i.reply({ content: "لست مشاركاً في المعركة.", ephemeral: true });
+                             }
+                         } else if (i.customId === 'dungeon_continue') {
+                             if (i.user.id === hostId) {
+                                 await i.update({ content: `**قـرر القـائد الاستـمرار وغزو الطـابق التالي .. يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
+                                 resolve('continue');
+                                 decisionCollector.stop();
+                             } else {
+                                 i.reply({ content: "فقط القائد يملك قرار الاستمرار.", ephemeral: true });
+                             }
+                         }
+                    });
+
+                    decisionCollector.on('end', (c, reason) => {
+                        if (reason !== 'user') resolve('retreat'); // انتهى الوقت = انسحاب
+                    });
+                });
+
+                if (floorDecision === 'retreat') {
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                     return;
                 }
+                
+                // تعافي بسيط لمن استمر
+                players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.3), p.maxHp); });
+
             } else {
                 // 🔥🔥 منطق ذكاء الوحش (AI) مع التركيز (Focus) 🔥🔥
                 turnCount++; 
@@ -997,9 +1041,8 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
         color = "#FF0000"; randomImage = LOSE_IMAGES[1];
     }
 
-    let mvpPlayer = players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
-    const totalDmg = players.reduce((sum, p) => sum + p.totalDamage, 0);
-
+    let mvpPlayer = players.length > 0 ? players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current) : null;
+    
     let buffPercent = Math.min(5 + Math.floor(floor / 2), 50); 
     let buffDurationMinutes = Math.min(10 + Math.floor(floor / 2), 60); 
 
@@ -1032,7 +1075,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     const embed = new EmbedBuilder()
         .setTitle(title)
-        .setDescription(`**✶ تقـريـر المعـركـة (طابق ${floor}):**\nMVP: <@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
+        .setDescription(`**✶ تقـريـر المعـركـة (طابق ${floor}):**\nMVP: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
         .setColor(color)
         .setTimestamp();
 
