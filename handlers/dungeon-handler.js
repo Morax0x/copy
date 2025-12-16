@@ -1,7 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, ChannelType, Colors } = require('discord.js');
 const path = require('path');
 
-// تحميل الإعدادات
+// --- تحميل الإعدادات ---
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
@@ -585,19 +585,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const randomMob = getRandomMonster(floorConfig.type, theme);
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
         
-        // 🔥 2. معادلة تضخيم القوة للطوابق العليا (Scaling) 🔥
+        // 🔥 2. معادلة تضخيم القوة للطوابق العليا (Scaling) المتوافقة مع طلبك 🔥
+        // تبدأ بـ 25 ضرر في الطابق 1، وتصل لـ 95-100 في الطابق 10
         const hpScale = 1 + ((floor - 1) * 0.20); 
         const atkScale = 1 + ((floor - 1) * 0.10);
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
             
+            // معادلة الصحة: تزيد 20% كل طابق
             hp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.25)) * gateDifficultyMult * hpScale),
             maxHp: Math.floor(avgPlayerHp * floorConfig.hp_mult * (1 + (players.length * 0.25)) * gateDifficultyMult * hpScale),
             
-            // ✅ تم تعديل المعادلة لتبدأ من 30 في الطابق الأول
-            // الطابق 1: (27 + 3) * 1.0 = 30
-            atk: Math.floor((27 + (floor * 3)) * floorConfig.atk_mult * gateDifficultyMult * atkScale), 
+            // ✅ تم تعديل المعادلة: (25 أساس + (رقم الطابق * 7))
+            // الطابق 1: 32 ضرر تقريباً
+            // الطابق 10: 95 ضرر تقريباً
+            atk: Math.floor((25 + (floor * 7)) * floorConfig.atk_mult * gateDifficultyMult), 
             
             enraged: false,
             effects: [] 
@@ -605,7 +608,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()})`];
         let ongoing = true;
-        let turnCount = 0; // ✅ عداد الجولات لضبط التصاعد
+        let turnCount = 0; // ✅ عداد الجولات
 
         const battleMsg = await threadChannel.send({ 
             embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
@@ -736,10 +739,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // مكافآت الطابق
-                const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1) + ((floor - 1) * 0.05); 
-                let floorXp = Math.floor(floorConfig.xp * bonusMultiplier);
-                let floorMora = Math.floor(floorConfig.mora * bonusMultiplier);
+                // 🔥 تعديل الجوائز: نظام تقشفي لأول 10 طوابق 🔥
+                const bonusMultiplier = 1 + ((gateLevel - 1) * 0.1); 
+                
+                // المعادلة الجديدة: تبدأ قليلة وتزيد مع الطوابق
+                let baseMora = Math.floor(5 * Math.pow(floor, 1.3));
+                let baseXp = Math.floor(3 * Math.pow(floor, 1.3));
+
+                // إذا كان بوس (كل 5 طوابق مثلاً أو الطابق 10) ضاعف الجائزة
+                if (floor % 10 === 0) { baseMora *= 10; baseXp *= 10; }
+                else if (floor % 5 === 0) { baseMora *= 5; baseXp *= 5; }
+
+                let floorXp = Math.floor(baseXp * bonusMultiplier);
+                let floorMora = Math.floor(baseMora * bonusMultiplier);
 
                 if (floor >= 5) { floorXp = Math.floor(floorXp / players.length); floorMora = Math.floor(floorMora / players.length); }
                 
@@ -776,22 +788,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     return;
                 }
             } else {
-                // 🔥🔥 منطق ذكاء الوحش الجديد (Monster AI) 🔥🔥
-                turnCount++; // زيادة الجولة
+                // 🔥🔥 منطق ذكاء الوحش (AI) 🔥🔥
+                turnCount++; 
                 const alivePlayers = players.filter(p => !p.isDead);
                 
                 if (alivePlayers.length > 0) {
-                    const isLowHp = monster.hp < (monster.maxHp * 0.3); // هل دم الوحش أقل من 30%؟
+                    const isLowHp = monster.hp < (monster.maxHp * 0.3); 
                     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
                     
-                    // ✅ حساب التصاعد في القوة (كل جولة تزيد القوة 5%)
                     const rampUpMultiplier = 1 + (turnCount * 0.05);
                     const currentMonsterAtk = Math.floor(monster.atk * rampUpMultiplier);
 
                     let dmg = currentMonsterAtk;
                     let actionLog = "";
 
-                    // فرصة 30% لاستخدام مهارة (أو 50% إذا كان دمه قليل)
                     const useSkill = Math.random() < (isLowHp ? 0.5 : 0.3);
 
                     if (useSkill) {
