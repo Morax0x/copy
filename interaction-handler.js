@@ -3,7 +3,7 @@ const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
 const { handlePvpInteraction } = require('./handlers/pvp-handler.js'); 
-const { getUserWeight, endGiveaway, createRandomDropGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); // ✅ تم إضافة handleGiveawayInteraction
+const { getUserWeight, endGiveaway, createRandomDropGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); 
 const { handleReroll } = require('./handlers/reroll-handler.js'); 
 const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
@@ -61,7 +61,8 @@ async function updateBuilderEmbed(interaction, data) {
             console.log("[Giveaway Builder] Original message missing.");
             await interaction.followUp({ content: "⚠️ الرسالة الأصلية اختفت. يرجى بدء الأمر من جديد.", flags: [MessageFlags.Ephemeral] });
         } else {
-            throw error;
+            // تجاهل أخطاء التعديل البسيطة
+            if (error.code !== 10062) throw error;
         }
     }
 }
@@ -153,9 +154,16 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // 🆕 FIX: Defer for buttons leading to modals or complex logic
+                // 🆕 FIX: Defer for buttons leading to modals or complex logic (Safe Defer)
                 if (id === 'g_builder_content' || id === 'g_builder_visuals' || id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm') || id === 'open_xp_modal') {
-                    if (!i.replied && !i.deferred) await i.deferUpdate(); 
+                    if (!i.replied && !i.deferred) {
+                        try {
+                            await i.deferUpdate(); 
+                        } catch (err) {
+                            if (err.code !== 10062) throw err; // تجاهل خطأ 10062 فقط
+                            return; // توقف هنا إذا التفاعل غير صالح
+                        }
+                    }
                 }
 
                 // 🔥 معالجة أزرار القيف اواي العامة (التي يديرها الهاندلر) 🔥
@@ -273,7 +281,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     return;
 
                 } else if (id === 'g_enter') {
-                    await i.deferUpdate(); 
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
                     const giveawayID = i.message.id;
                     const userID = i.user.id;
                     const existingEntry = sql.prepare("SELECT * FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(giveawayID, userID);
@@ -289,7 +297,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
                 
                 } else if (id === 'g_enter_drop') {
-                    await i.deferUpdate(); 
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
                     const messageID = i.message.id;
                     try {
                         const giveaway = sql.prepare("SELECT * FROM active_giveaways WHERE messageID = ? AND isFinished = 0").get(messageID);
@@ -313,7 +321,7 @@ module.exports = (client, sql, antiRolesCache) => {
             // ====================================================
             } else if (i.isModalSubmit()) {
                 if (i.customId === 'g_content_modal' || i.customId === 'g_visuals_modal') {
-                     await i.deferUpdate();
+                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                      const data = giveawayBuilders.get(i.user.id) || {};
                      if (i.customId === 'g_content_modal') {
                          data.prize = i.fields.getTextInputValue('g_prize');
@@ -380,6 +388,12 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
+            // 🔥🔥 الحل السحري: تجاهل أخطاء التفاعل المنتهي الصلاحية 🔥🔥
+            if (error.code === 10062 || error.code === 40060) {
+                // لا تطبع شيئاً في الكونسول لتجنب الإزعاج
+                return;
+            }
+
             console.error("خطأ فادح في معالج التفاعلات:", error);
             if (!i.replied && !i.deferred) {
                 await i.reply({ content: '⚠️ انتهى وقت الاستجابة.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
