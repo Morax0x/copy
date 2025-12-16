@@ -40,19 +40,12 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// دالة حساب الجوائز (مورا) - تم تخفيض البداية وزيادة التصاعد
+// دالة حساب الجوائز (مورا) - تزيد مع الطوابق بشكل ملحوظ الآن
 function getBaseFloorMora(floor) {
-    if (floor <= 4) {
-        // طوابق ضعيفة جداً -> جوائز قليلة (20 - 50 مورا)
-        return 20 + (floor * 10);
-    } else if (floor <= 10) {
-        // طوابق متوسطة (100 - 350)
-        return 100 + ((floor - 5) * 50);
-    } else {
-        // طوابق متقدمة (500+)
-        const extra = floor - 10;
-        return 500 + (extra * 150);
-    }
+    if (floor <= 5) return 50 + (floor * 20); // 70 - 150
+    if (floor <= 20) return 200 + ((floor - 5) * 50); // 250 - 1000
+    if (floor <= 50) return 1000 + ((floor - 20) * 100); // 1100 - 4000
+    return 4000 + ((floor - 50) * 200); // طابق 100 = 14000 مورا (تتقسم على الفريق)
 }
 
 // دالة تحديد قوة التعزيز (Buff)
@@ -611,23 +604,23 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅✅ Smart Scaling Logic الجديد (تدريجي) ✅✅
-        let hpPercent;
-        if (floor <= 4) {
-            // من 1 إلى 4: تبدأ 15% وتزيد 1% لكل طابق
-            hpPercent = 0.15 + ((floor - 1) * 0.01);
-        } else {
-            // من 5 وفوق: تبدأ 20% وتزيد 2% لكل طابق
-            hpPercent = 0.20 + ((floor - 5) * 0.02);
-        }
-
+        // ✅✅ Smart Scaling Logic الجديد (HP الوحش) ✅✅
+        // معادلة: (مجموع صحة الفريق * نسبة مئوية) + (قيمة ثابتة تزيد مع الطوابق)
+        
         const totalPlayersHealth = players.reduce((sum, p) => sum + p.maxHp, 0);
-        let finalHp = Math.floor(totalPlayersHealth * hpPercent) + (floor * 30); 
+        let hpMultiplier = 0.5 + (floor / 8); // يبدأ من 62% ويزيد 12.5% كل طابق
+        let baseStaticHP = floor * 400; // قيمة ثابتة 400 لكل طابق (طابق 100 = 40000)
 
+        let finalHp = Math.floor((totalPlayersHealth * hpMultiplier) + baseStaticHP);
+
+        // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
+        finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
+        
         // ✅✅ تعديل قوة هجوم الوحش ليزيد بشكل ثابت ومستقر ✅✅
         const avgPlayerHp = players.reduce((sum, p) => sum + p.maxHp, 0) / players.length;
         
-        // معادلة خطية: هجوم الوحش يبدأ بـ 5% من دم اللاعب، ويزيد نصف بالمية كل طابق
+        // معادلة: هجوم الوحش يبدأ بـ 5% من دم اللاعب، ويزيد مع الطوابق
+        // طابق 100: يضرب حوالي 55% من صحة اللاعب بضربة واحدة
         let smartAtk = Math.floor(avgPlayerHp * (0.05 + (floor * 0.005))); 
         
         // حد أدنى للهجوم 
@@ -635,7 +628,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         // تطبيق مضاعفات الكونفق (إن وجدت)
         let finalAtk = Math.floor(smartAtk * (floorConfig.atk_mult || 1));
-        finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
