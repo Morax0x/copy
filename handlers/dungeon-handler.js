@@ -110,7 +110,7 @@ async function lobbyPhase(interaction, theme, sql) {
 
         return new EmbedBuilder()
             .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
-            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n⚠️ **تنبيه:** لا يمكن تكرار التخصص في الفريق الواحد!\n\n👥 **الفريق:**\n${memberList}`)
+            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n اختـر التخصص الذي يناسبـك\n\n👥 **الفريق:**\n${memberList}`)
             .setColor('DarkRed')
             .setThumbnail(host.displayAvatarURL());
     };
