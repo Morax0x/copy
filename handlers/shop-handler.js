@@ -26,7 +26,6 @@ const THUMBNAILS = new Map([
     ['upgrade_skill', 'https://i.postimg.cc/CMkxJJF4/tsmym-bdwn-ʿnwan-8.png'],
     ['upgrade_rod', 'https://i.postimg.cc/Wz0g0Zg0/fishing.png'], 
     ['upgrade_boat', 'https://i.postimg.cc/Wz0g0Zg0/fishing.png'], 
-    ['upgrade_dungeon', 'https://media.discordapp.net/attachments/1145327691772481577/1169000000000000000/dungeon_gate.gif'], // صورة الدانجون
     ['exchange_xp', 'https://i.postimg.cc/2yKbQSd3/tsmym-bdwn-ʿnwan-6.png'],
     ['personal_guard_1d', 'https://i.postimg.cc/CMv2qp8n/tsmym-bdwn-ʿnwan-1.png'],
     ['streak_shield', 'https://i.postimg.cc/3rbLwCMj/tsmym-bdwn-ʿnwan-2.png'],
@@ -102,7 +101,7 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-function getBuyableItems() { return shopItems.filter(it => !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'upgrade_dungeon'].includes(it.id)); }
+function getBuyableItems() { return shopItems.filter(it => !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu'].includes(it.id)); }
 
 // 🔥 دالة حساب الانزلاق السعري (Slippage Calculation) 🔥
 function calculateSlippage(basePrice, quantity, isBuy) {
@@ -307,9 +306,6 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         if (itemData.isBuy) sql.prepare("INSERT INTO user_skills (userID, guildID, skillID, skillLevel) VALUES (?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, itemData.skillId, newLevel);
         else sql.prepare("UPDATE user_skills SET skillLevel = ? WHERE id = ?").run(newLevel, itemData.dbId);
     }
-    else if (callbackType === 'dungeon') {
-        userData.dungeon_gate_level = (userData.dungeon_gate_level || 1) + 1;
-    }
 
     client.setLevel.run(userData); // حفظ البيانات بعد الخصم والتعديل
 
@@ -379,69 +375,6 @@ function _buildSkillEmbedFields(embed, buttonRow, skillConfig, currentLevel) {
         if (skillConfig.max_level === 1) { nextEffect = skillConfig.base_value; } else { nextEffect = skillConfig.base_value + (skillConfig.value_increment * currentLevel); }
         embed.addFields({ name: "المستوى القادم", value: `Lv. ${currentLevel + 1}`, inline: true }, { name: "التأثير القادم", value: `${nextEffect}${effectType}`, inline: true }, { name: "التكلفة", value: `${nextLevelPrice.toLocaleString()} ${EMOJI_MORA}`, inline: true });
         buttonRow.addComponents(new ButtonBuilder().setCustomId(buttonId).setLabel(buttonLabel).setStyle(ButtonStyle.Success).setEmoji('⬆️'));
-    }
-}
-
-// --- 🔥 معالجة ترقية الدانجون (Dungeon Gate) 🔥 ---
-async function _handleDungeonUpgrade(i, client, sql) {
-    if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
-    
-    let userData = client.getLevel.get(i.user.id, i.guild.id);
-    const currentLevel = userData ? (userData.dungeon_gate_level || 1) : 1;
-    const maxLevel = 10; // الحد الأقصى للمستويات
-    const currentFloors = currentLevel * 10; // عدد الطوابق الحالي (10 لكل مستوى)
-
-    // إعدادات الترقية (التكلفة تتضاعف كل مرة)
-    const basePrice = 50000;
-    const price = Math.floor(basePrice * Math.pow(1.5, currentLevel - 1)); // يغلى السعر كل مرة
-
-    const embed = new EmbedBuilder()
-        .setTitle(`⛩️ بـوابـة الـدانجـون`)
-        .setDescription(`تطوير البوابة يفتح 10 طوابق جديدة لكل مستوى ويزيد الجوائز والخبرة المكتسبة.`)
-        .setColor('DarkRed')
-        .setThumbnail(THUMBNAILS.get('upgrade_dungeon'))
-        .setImage(BANNER_URL)
-        .addFields({ name: 'المستوى الحالي', value: `Lv. ${currentLevel} (🔓 ${currentFloors} طابق)`, inline: true });
-
-    const row = new ActionRowBuilder();
-
-    if (currentLevel >= maxLevel) {
-        embed.addFields({ name: "التطوير القادم", value: "وصلت للحد الأقصى (Lv.10 - 100 طابق)", inline: true });
-        row.addComponents(new ButtonBuilder().setCustomId('max_dungeon').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setDisabled(true));
-    } else {
-        const nextBonus = (1 + (currentLevel * 0.1)).toFixed(1); // مثال: Lv.1 -> 1.1x Bonus
-        const nextFloors = (currentLevel + 1) * 10;
-        
-        embed.addFields(
-            { name: "المستوى القادم", value: `Lv. ${currentLevel + 1}`, inline: true },
-            { name: "التكلفة", value: `${price.toLocaleString()} ${EMOJI_MORA}`, inline: true },
-            { name: "الطوابق الجديدة", value: `🔓 ${nextFloors} طابق`, inline: true }
-        );
-        row.addComponents(new ButtonBuilder().setCustomId('confirm_dungeon_upgrade').setLabel('ترقية البوابة').setStyle(ButtonStyle.Danger).setEmoji('⛩️'));
-    }
-
-    await i.editReply({ embeds: [embed], components: [row] });
-}
-
-async function _processDungeonUpgrade(i, client, sql) {
-    try {
-        let userData = client.getLevel.get(i.user.id, i.guild.id);
-        const currentLevel = userData.dungeon_gate_level || 1;
-        const basePrice = 50000;
-        const price = Math.floor(basePrice * Math.pow(1.5, currentLevel - 1));
-
-        const itemData = { 
-            name: `ترقية بوابة الدانجون (Lv.${currentLevel + 1})`, 
-            id: 'upgrade_dungeon', 
-            price: price 
-        };
-
-        // استخدام نظام الكوبونات
-        await handlePurchaseWithCoupons(i, itemData, 1, price, client, sql, 'dungeon');
-
-    } catch (e) {
-        console.error(e);
-        if (!i.replied) await i.reply({ content: "❌ حدث خطأ.", flags: MessageFlags.Ephemeral });
     }
 }
 
@@ -897,7 +830,6 @@ async function handleShopSelectMenu(i, client, sql) {
             return await i.editReply({ embeds: [embed], components: [row] });
         }
         if (selected === 'upgrade_weapon') { await _handleWeaponUpgrade(i, client, sql); return; }
-        if (selected === 'upgrade_dungeon') { await _handleDungeonUpgrade(i, client, sql); return; } // 🔥🔥
         if (selected === 'upgrade_skill') {
             await i.deferReply({ flags: MessageFlags.Ephemeral });
             const allUserSkills = getAllUserAvailableSkills(i.member, sql);
@@ -933,7 +865,6 @@ async function handleShopInteractions(i, client, sql) {
 
     if (i.customId === 'upgrade_rod') await _handleRodUpgrade(i, client, sql);
     else if (i.customId === 'upgrade_boat') await _handleBoatUpgrade(i, client, sql);
-    else if (i.customId === 'confirm_dungeon_upgrade') await _processDungeonUpgrade(i, client, sql); // 🔥🔥
     else if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') await _handleBaitBuy(i, client, sql);
     
     else if (i.customId.startsWith('buy_item_')) await _handleShopButton(i, client, sql);
