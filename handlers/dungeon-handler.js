@@ -40,21 +40,17 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// ✅✅ دالة حساب الجوائز (مورا) بناءً على نمط المجموعات الخماسية ✅✅
-// 1-5: 50 | 6-10: 80 | 11-15: 100 | 16-20: 130 ...
+// ✅✅ دالة حساب الجوائز المعدلة ✅✅
 function getBaseFloorMora(floor) {
-    let reward = 50;
-    const blockCount = Math.ceil(floor / 5); // تحديد رقم المجموعة (كل 5 طوابق مجموعة)
-    
-    // نبدأ الحساب من المجموعة الثانية لأن الأولى ثابتة بـ 50
-    for (let b = 2; b <= blockCount; b++) {
-        if (b % 2 === 0) {
-            reward += 30; // المجموعات الزوجية (2, 4, 6...) تزيد 30
-        } else {
-            reward += 20; // المجموعات الفردية (3, 5, 7...) تزيد 20
-        }
-    }
-    return reward;
+    // أول 10 طوابق ثابتة 100
+    if (floor <= 10) return 100;
+
+    // من طابق 11 وفوق: زيادة قوية (تربيعية/تصاعدية)
+    // طابق 11: ~350
+    // طابق 50: ~2500
+    // طابق 100: ~10000+
+    const tier = floor - 10;
+    return 100 + (tier * 50) + (Math.pow(tier, 1.8)); 
 }
 
 // دالة تحديد قوة التعزيز (Buff)
@@ -222,7 +218,7 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'skill_rebound': {
              const reflectPercent = (value / 100) * mult;
              player.effects.push({ type: 'counter', val: reflectPercent, turns: 1 });
-             log.push(`🔄 **${player.name}** اتخذ وضعية الارتداد العكسي! (سيتم عكس ${Math.floor(reflectPercent*100)}% من الهجوم القادم).`);
+             log.push(`🔄 **${player.name}** دخل وضعية الارتداد! (سيعكس ${Math.floor(reflectPercent*100)}% من أي هجوم للوحش).`);
              break;
         }
 
@@ -612,9 +608,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // 🔥🔥🔥🔥 نظام HP الوحش (ثابت تربيعي) 🔥🔥🔥🔥
-        // معادلة: 500 + (طابق * 150) + (طابق^2 * 8)
-        let baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8);
+        // 🔥🔥🔥🔥 نظام HP الوحش (تعديل 1-10 + تربيعي) 🔥🔥🔥🔥
+        let baseFloorHP;
+        if (floor <= 10) {
+            // من 1 إلى 10: 500, 600, 700... 1400
+            baseFloorHP = 500 + ((floor - 1) * 100);
+        } else {
+            // من 11+: يرجع للنظام التربيعي لزيادة الصعوبة
+            // مثال طابق 50: ~30000
+            baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8);
+        }
 
         let finalHp = Math.floor(baseFloorHP);
 
@@ -622,6 +625,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
         
         // 🔥🔥🔥🔥 نظام هجوم الوحش (ATK) 🔥🔥🔥🔥
+        // زيادة خطية بسيطة
         let baseAtk = 15 + (floor * 3);
         
         let finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
@@ -799,18 +803,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅✅ حساب الجوائز النهائي (معادلة جديدة متدرجة) ✅✅
+                // ✅✅ حساب الجوائز النهائي (بدون تقسيم) ✅✅
                 let baseMora = getBaseFloorMora(floor);
                 let floorXp = Math.floor(baseMora / 3); 
 
                 players.forEach(p => { 
-                    if (!p.isDead) { 
-                        p.loot.mora += baseMora; 
-                        p.loot.xp += floorXp; 
+                    if (!p.isDead) { // الأحياء فقط يجمعون الجوائز في الصندوق
+                        // الجائزة كاملة لكل شخص
+                        let rewardMora = baseMora;
+                        let rewardXp = floorXp;
+                        
+                        p.loot.mora += rewardMora; 
+                        p.loot.xp += rewardXp; 
                     }
                 });
 
-                totalAccumulatedCoins += baseMora; 
+                totalAccumulatedCoins += baseMora; // للعرض فقط (المجموع التراكمي لكل شخص)
                 totalAccumulatedXP += floorXp;
 
                 if (floor === maxFloors) {
@@ -894,7 +902,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 });
 
                 if (floorDecision === 'retreat') {
-                    // ✅ تم تمرير "retreat" للحالة لتمييز الانسحاب عن الفوز/الخسارة
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                     return;
                 }
@@ -924,6 +931,30 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                     let dmg = currentMonsterAtk;
                     let actionLog = "";
+
+                    // 🔥🔥 تفعيل مهارة الارتداد لكل اللاعبين قبل هجوم الوحش 🔥🔥
+                    let reflectionLog = [];
+                    players.forEach(p => {
+                        if (!p.isDead) {
+                            const counterEffect = p.effects.find(e => e.type === 'counter');
+                            if (counterEffect) {
+                                // حتى لو لم يهاجمه، يعكس نسبة من ضرر الوحش
+                                const reflectedDmg = Math.floor(currentMonsterAtk * counterEffect.val);
+                                monster.hp -= reflectedDmg;
+                                reflectionLog.push(`🔄 **${p.name}** ردع الوحش وعكس (${reflectedDmg}) ضرر!`);
+                            }
+                        }
+                    });
+                    if (reflectionLog.length > 0) log.push(reflectionLog.join('\n'));
+
+                    // إذا مات الوحش من الارتداد، ننهي الدور فوراً
+                    if (monster.hp <= 0) {
+                         monster.hp = 0;
+                         if (log.length > 5) log = log.slice(-5);
+                         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(e => {});
+                         collector.stop('monster_dead'); 
+                         return; 
+                    }
 
                     const useSkill = Math.random() < (isLowHp ? 0.5 : 0.3);
 
@@ -976,14 +1007,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         let isEvaded = false;
                         const evasionEffect = target.effects.find(e => e.type === 'evasion');
                         if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
-                        const counterEffect = target.effects.find(e => e.type === 'counter');
+                        
+                        // تمت إزالة منطق الارتداد القديم من هنا لأنه أصبح عاماً بالأعلى
 
                         if (isEvaded) {
                             log.push(`👻 **${target.name}** تفادى!`);
-                        } else if (counterEffect) {
-                            const reflectedDmg = Math.floor(currentMonsterAtk * counterEffect.val);
-                            monster.hp -= reflectedDmg;
-                            log.push(`🔄 **${target.name}** عكس الهجوم (${reflectedDmg})!`);
                         } else {
                             if (target.id === OWNER_ID) dmg = Math.floor(dmg * 0.1);
                             
@@ -1057,7 +1085,6 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
         lootString += `✬ **${p.name}** ${p.isDead ? '(💀 نصف الغنائم)' : ''}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
 
-    // ✅✅ تعديل الوصف لعرض حالة الانسحاب بوضوح ✅✅
     let desc = "";
     if (status === 'retreat') {
         desc = `**تم الانسحاب بنجاح في الطابق ${floor}**\nعاد الفريق أدراجه محملين بالغنائم التي جمعوها.`;
