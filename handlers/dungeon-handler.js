@@ -40,17 +40,15 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// ✅✅ دالة حساب الجوائز المعدلة ✅✅
+// ✅✅ دالة حساب الجوائز المعدلة (تمت إضافة Math.floor) ✅✅
 function getBaseFloorMora(floor) {
     // أول 10 طوابق ثابتة 100
     if (floor <= 10) return 100;
 
     // من طابق 11 وفوق: زيادة قوية (تربيعية/تصاعدية)
-    // طابق 11: ~350
-    // طابق 50: ~2500
-    // طابق 100: ~10000+
     const tier = floor - 10;
-    return 100 + (tier * 50) + (Math.pow(tier, 1.8)); 
+    // Math.floor هنا ضروري جداً لأن Math.pow ترجع كسوراً
+    return Math.floor(100 + (tier * 50) + (Math.pow(tier, 1.8))); 
 }
 
 // دالة تحديد قوة التعزيز (Buff)
@@ -583,7 +581,7 @@ async function lobbyPhase(interaction, theme, sql) {
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
     const guild = threadChannel.guild;
     let players = [];
-    
+     
     // جلب بيانات اللاعبين
     for (const id of partyIDs) {
         const m = await guild.members.fetch(id).catch(()=>null);
@@ -677,10 +675,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     let p = players.find(pl => pl.id === i.user.id);
 
                     if (!p && i.user.id === OWNER_ID) {
-                         const ownerData = getRealPlayerData(i.member, sql);
-                         players.push(ownerData);
-                         p = ownerData;
-                         threadChannel.send(`👑 **${p.name}** اقتحم المعركة!`).catch(()=>{});
+                          const ownerData = getRealPlayerData(i.member, sql);
+                          players.push(ownerData);
+                          p = ownerData;
+                          threadChannel.send(`👑 **${p.name}** اقتحم المعركة!`).catch(()=>{});
                     }
 
                     if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
@@ -716,8 +714,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 if (skillId !== 'skill_secret_owner') {
                                     if (p.id !== OWNER_ID && (p.skillCooldowns[skillId] || 0) > 0) {
-                                        await selection.editReply({ content: `⏳ كولداون.`, components: [] }).catch(()=>{});
-                                        processingUsers.delete(i.user.id); actedPlayers.pop(); return;
+                                         await selection.editReply({ content: `⏳ كولداون.`, components: [] }).catch(()=>{});
+                                         processingUsers.delete(i.user.id); actedPlayers.pop(); return;
                                     }
                                     if (p.id !== OWNER_ID) p.skillCooldowns[skillId] = 3;
                                 }
@@ -803,8 +801,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅✅ حساب الجوائز النهائي (بدون تقسيم) ✅✅
-                let baseMora = getBaseFloorMora(floor);
+                // ✅✅ حساب الجوائز النهائي (تمت إضافة Math.floor) ✅✅
+                let baseMora = Math.floor(getBaseFloorMora(floor)); // ضمان أن القيمة القادمة عدد صحيح
                 let floorXp = Math.floor(baseMora / 3); 
 
                 players.forEach(p => { 
@@ -860,16 +858,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
                     
                     decisionCollector.on('collect', async i => {
-                         const clicker = players.find(p => p.id === i.user.id);
-                         
-                         if (i.customId === 'dungeon_retreat') {
+                          const clicker = players.find(p => p.id === i.user.id);
+                          
+                          if (i.customId === 'dungeon_retreat') {
                              if (i.user.id === hostId) {
                                  await i.update({ components: [] });
                                  resolve('retreat');
                                  decisionCollector.stop();
                              } else if (clicker) {
-                                 let pMora = clicker.loot.mora;
-                                 let pXp = clicker.loot.xp;
+                                 // ✅✅ استخدام Math.floor هنا لضمان سلامة الداتابيس عند الانسحاب الفردي
+                                 let pMora = Math.floor(clicker.loot.mora);
+                                 let pXp = Math.floor(clicker.loot.xp);
                                  if (pMora > 0 || pXp > 0) {
                                      sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
                                  }
@@ -885,7 +884,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              } else {
                                  i.reply({ content: "لست مشاركاً في المعركة.", ephemeral: true });
                              }
-                         } else if (i.customId === 'dungeon_continue') {
+                          } else if (i.customId === 'dungeon_continue') {
                              if (i.user.id === hostId) {
                                  await i.update({ content: `**قـرر القـائد الاستـمرار وغزو الطـابق التالي .. يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
                                  resolve('continue');
@@ -893,7 +892,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              } else {
                                  i.reply({ content: "فقط القائد يملك قرار الاستمرار.", ephemeral: true });
                              }
-                         }
+                          }
                     });
 
                     decisionCollector.on('end', (c, reason) => {
@@ -1008,8 +1007,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         const evasionEffect = target.effects.find(e => e.type === 'evasion');
                         if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
                         
-                        // تمت إزالة منطق الارتداد القديم من هنا لأنه أصبح عاماً بالأعلى
-
                         if (isEvaded) {
                             log.push(`👻 **${target.name}** تفادى!`);
                         } else {
@@ -1052,7 +1049,7 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
     }
 
     let mvpPlayer = players.length > 0 ? players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current) : null;
-    
+     
     // 🔥 حساب التعزيز النهائي بناءً على الطابق الذي وصلوا له 🔥
     const buffData = getDungeonBuff(floor);
     let buffText = "";
@@ -1078,7 +1075,10 @@ async function sendEndMessage(mainChannel, thread, players, floor, status, sql, 
 
     let lootString = "";
     players.forEach(p => {
-        let finalMora = p.loot.mora, finalXp = p.loot.xp;
+        // ✅✅ استخدام Math.floor نهائي لضمان عدم وجود كسور عند الحفظ في الداتابيس
+        let finalMora = Math.floor(p.loot.mora);
+        let finalXp = Math.floor(p.loot.xp);
+        
         if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
         if (finalMora > 0 || finalXp > 0) sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
           
