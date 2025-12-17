@@ -3,7 +3,7 @@ const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
 const { handlePvpInteraction } = require('./handlers/pvp-handler.js'); 
-const { getUserWeight, endGiveaway, createRandomDropGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); 
+const { getUserWeight, endGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); 
 const { handleReroll } = require('./handlers/reroll-handler.js'); 
 const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
@@ -277,14 +277,14 @@ module.exports = (client, sql, antiRolesCache) => {
                         sql.prepare("DELETE FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").run(giveawayID, userID);
                         replyMessage = "✅ تـم الـغـاء الـمـشاركـة";
                     } else {
-                        const weight = await getUserWeight(i.member, sql);
+                        const weight = await getUserWeight(i.member, sql).catch(() => 1);
                         sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(giveawayID, userID, weight);
                         replyMessage = `✅ تـمـت الـمـشاركـة بنـجـاح دخـلت بـ: ${weight} تذكـرة`;
                     }
                     await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
                 
                 } 
-                // 🔥🔥 إصلاح زر الدروب قيفاواي 🔥🔥
+                // 🔥🔥 إصلاح زر الدروب قيفاواي (Sudden Drop) 🔥🔥
                 else if (id === 'g_enter_drop') {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
                     const messageID = i.message.id;
@@ -292,7 +292,8 @@ module.exports = (client, sql, antiRolesCache) => {
 
                     try {
                         const giveaway = sql.prepare("SELECT * FROM active_giveaways WHERE messageID = ? AND isFinished = 0").get(messageID);
-                        if (!giveaway || giveaway.endsAt < Date.now()) {
+                        
+                        if (!giveaway || (giveaway.endsAt && giveaway.endsAt < Date.now())) {
                             return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
                         }
 
@@ -302,13 +303,21 @@ module.exports = (client, sql, antiRolesCache) => {
                             return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
                         }
 
-                        const weight = await getUserWeight(i.member, sql);
+                        // محاولة جلب الوزن مع قيمة احتياطية عند الخطأ
+                        let weight = 1;
+                        try {
+                            weight = await getUserWeight(i.member, sql);
+                        } catch (err) {
+                            console.error("خطأ في جلب الوزن (Drop):", err);
+                            weight = 1; // قيمة افتراضية
+                        }
+
                         sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
-                        return i.followUp({ content: `✅ تم التسجيل بوزن \`${weight}x\`!`, flags: [MessageFlags.Ephemeral] });
+                        return i.followUp({ content: `✅ تم التسجيل بنجاح (تذاكر: ${weight})!`, flags: [MessageFlags.Ephemeral] });
 
                     } catch (error) { 
-                        console.error("Drop Error:", error);
-                        return i.followUp({ content: "❌ حدث خطأ أثناء التسجيل.", flags: [MessageFlags.Ephemeral] }); 
+                        console.error("Drop Entry Error:", error);
+                        return i.followUp({ content: "❌ حدث خطأ غير متوقع أثناء التسجيل.", flags: [MessageFlags.Ephemeral] }); 
                     }
 
                 } else if (id.startsWith('panel_') || id.startsWith('quests_')) {
