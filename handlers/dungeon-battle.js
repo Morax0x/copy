@@ -34,7 +34,7 @@ const LOSE_IMAGES = [
     'https://i.postimg.cc/8PyPZRqt/download.jpg'
 ];
 
-// --- الدوال المساعدة (Helpers) ---
+// --- الدوال المساعدة ---
 
 function getBaseFloorMora(floor) {
     if (floor <= 10) return 100;
@@ -153,87 +153,76 @@ function getRandomMonster(type, theme) {
     return { name, emoji: theme.emoji };
 }
 
-// 🔥 تعديل: تحسين القائمة وعرض اسم المهارة بوضوح 🔥
+// 🔥 تعديل: دمج قدرة التخصص + ميزة الأونر لرؤية كل شيء 🔥
 function buildSkillSelector(player) {
-    // 1. تحديد بيانات مهارة الكلاس (الاسم والوصف الحقيقي)
-    const classSkillsInfo = {
-        'Leader': { name: "صرخة الحرب", desc: "تزيد ضرر الفريق 30% لمدة دورين.", emoji: "👑" },
-        'Tank': { name: "استفزاز وتصليب", desc: "جذب انتباه الوحش + تقليل الضرر 60%.", emoji: "🛡️" },
-        'Priest': { name: "النور المقدس", desc: "علاج جماعي 40% أو إحياء عضو ميت.", emoji: "✨" },
-        'Mage': { name: "سجن الجليد", desc: "تجميد الوحش ومنعه من اللعب.", emoji: "❄️" },
-        'Summoner': { name: "استدعاء حارس الظل", desc: "وحش مساند يهاجم ثم ينفجر.", emoji: "🐺" }
-    };
-
-    const myClassSkill = classSkillsInfo[player.class];
-
-    // 2. تجميع المهارات
-    let availableSkills = [];
-
-    // 🔥 ميزة الأونر: يرى كل مهارات اللعبة 🔥
-    if (player.id === OWNER_ID) {
-        availableSkills = skillsConfig.map(s => ({ ...s, currentLevel: 999, effectValue: s.base_value * 2 })); 
-    } else {
-        const userSkills = player.skills || {};
-        availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
-    }
-
     const options = [];
 
-    // أ. إضافة مهارة الكلاس (باسمها الحقيقي)
-    if (myClassSkill) {
-        const cd = player.special_cooldown;
-        const desc = cd > 0 && player.id !== OWNER_ID ? `🕓 كولداون: ${cd} دور` : `⚡ ${myClassSkill.desc}`;
-        options.push(
-            new StringSelectMenuOptionBuilder()
-                .setLabel(`مهارة: ${myClassSkill.name}`) // الاسم واضح هنا
-                .setValue('class_special_skill') // القيمة البرمجية ثابتة
-                .setDescription(desc)
-                .setEmoji(myClassSkill.emoji)
-        );
-    }
-
-    // ب. إضافة مهارة الأونر السرية
+    // --- 1. خيارات الأونر الخاصة (يرى كل شيء) ---
     if (player.id === OWNER_ID) {
-        options.push(
-            new StringSelectMenuOptionBuilder()
-                .setLabel('تركيز تام (Admin)')
-                .setValue('skill_secret_owner')
-                .setDescription('ضربة قاضية (50% من دم الوحش).')
-                .setEmoji('👁️')
-        );
-    }
+        // مهارة سرية
+        options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام (Admin)').setValue('skill_secret_owner').setDescription('ضربة قاضية (50% من دم الوحش).').setEmoji('👁️'));
 
-    // ج. إضافة باقي المهارات
-    availableSkills.forEach(skill => {
-        const cooldown = player.skillCooldowns[skill.id] || 0;
-        const description = (cooldown > 0 && player.id !== OWNER_ID) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
-        if (!options.some(o => o.data.value === skill.id)) {
-             options.push(
-                new StringSelectMenuOptionBuilder()
-                    .setLabel(skill.name)
-                    .setValue(skill.id)
-                    .setDescription(description.substring(0, 100))
-                    .setEmoji(skill.emoji || '✨')
-            );
-        }
-    });
+        // إضافة جميع قدرات التخصصات للأونر
+        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب (Leader)').setValue('class_leader').setDescription('زيادة ضرر الفريق 30%.').setEmoji('👑'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب (Tank)').setValue('class_tank').setDescription('جذب الوحش وتقليل الضرر 60%.').setEmoji('🛡️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس (Priest)').setValue('class_priest').setDescription('شفاء الفريق أو إحياء ميت.').setEmoji('✨'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد (Mage)').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل (Summoner)').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
+
+        // إضافة جميع المهارات الموجودة في الكونفق (Race & Normal)
+        skillsConfig.forEach(s => {
+             // نتأكد من عدم التكرار
+             if (!options.some(o => o.data.value === s.id)) {
+                 options.push(new StringSelectMenuOptionBuilder().setLabel(s.name).setValue(s.id).setDescription(s.description ? s.description.substring(0, 100) : "مهارة").setEmoji(s.emoji || '📜'));
+             }
+        });
+
+    } else {
+        // --- 2. اللاعب العادي ---
+
+        // إضافة قدرة التخصص الخاصة به فقط
+        const cd = player.special_cooldown;
+        const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
+
+        if (player.class === 'Leader') options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب').setValue('class_leader').setDescription(`زيادة ضرر الفريق 30%.${cdText}`).setEmoji('👑'));
+        else if (player.class === 'Tank') options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب').setValue('class_tank').setDescription(`جذب الوحش وتقليل الضرر 60%.${cdText}`).setEmoji('🛡️'));
+        else if (player.class === 'Priest') options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس').setValue('class_priest').setDescription(`شفاء الفريق أو إحياء ميت.${cdText}`).setEmoji('✨'));
+        else if (player.class === 'Mage') options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد').setValue('class_mage').setDescription(`تجميد الوحش.${cdText}`).setEmoji('❄️'));
+        else if (player.class === 'Summoner') options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل').setValue('class_summoner').setDescription(`استدعاء وحش مساند.${cdText}`).setEmoji('🐺'));
+
+        // إضافة مهاراته المكتسبة
+        const userSkills = player.skills || {};
+        const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
+        
+        availableSkills.forEach(skill => {
+            const cooldown = player.skillCooldowns[skill.id] || 0;
+            const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
+            options.push(new StringSelectMenuOptionBuilder()
+                .setLabel(skill.name)
+                .setValue(skill.id)
+                .setDescription(description.substring(0, 100))
+                .setEmoji(skill.emoji || '✨'));
+        });
+    }
 
     if (options.length === 0) return null;
-    const slicedOptions = options.slice(0, 25); 
+    // قص القائمة لتناسب حد ديسكورد (25 خيار)
+    const slicedOptions = options.slice(0, 25);
 
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
-        .setPlaceholder('اختر مهارة لتفعيلها...')
+        .setPlaceholder('اختر مهارة أو قدرة...')
         .addOptions(slicedOptions)
     );
 }
 
+// دالة لمعالجة المهارات العادية (قدرات التخصص تُعالج في اللوب الرئيسي لأنها تحتاج players array)
 function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
-    // معالجة مهارة الأونر السرية
+    // مهارة الأونر السرية
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -242,32 +231,16 @@ function handleSkillUsage(player, skill, monster, log) {
         return;
     }
 
-    // 🔥 معالجة قدرة التخصص (جاءت من القائمة) 🔥
-    if (skill.id === 'class_special_skill') {
-         if (player.special_cooldown > 0 && player.id !== OWNER_ID) {
-             return { error: `انتظر ${player.special_cooldown} دور.` }; 
-         }
+    const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
-         switch(player.class) {
-             case 'Leader': return { type: 'class_effect', effect: 'leader_buff', cooldown: 5 }; 
-             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 4 };
-             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:6) };
-             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 5 };
-             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 6 };
-         }
-         return;
-    }
-
-    const value = skill.effectValue || 0; 
-
-    // --- المهارات العادية ---
     switch (skill.id) {
         case 'skill_rebound': {
              const reflectPercent = (value / 100) * mult;
              player.effects.push({ type: 'counter', val: reflectPercent, turns: 1 });
-             log.push(`🔄 **${player.name}** دخل وضعية الارتداد!`);
+             log.push(`🔄 **${player.name}** دخل وضعية الارتداد! (سيعكس ${Math.floor(reflectPercent*100)}% من أي هجوم للوحش).`);
              break;
         }
+
         case 'skill_healing':
         case 'skill_cleanse': {
             let healAmount = Math.floor(player.maxHp * (value / 100)) * mult;
@@ -280,6 +253,7 @@ function handleSkillUsage(player, skill, monster, log) {
             player.hp = Math.min(player.maxHp, player.hp + healAmount);
             break;
         }
+
         case 'skill_shielding':
         case 'race_human_skill': {
              let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
@@ -291,10 +265,12 @@ function handleSkillUsage(player, skill, monster, log) {
              }
              break;
         }
+
         case 'race_dwarf_skill': {
              skillDmg = Math.floor(player.atk * 1.5) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg;
+
              if (player.shield <= 0) {
                  let addedShield = Math.floor(player.maxHp * 0.15) * mult;
                  player.shield = addedShield;
@@ -304,11 +280,13 @@ function handleSkillUsage(player, skill, monster, log) {
              }
              break;
         }
+
         case 'skill_buffing': {
              player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
              log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
              break;
         }
+
         case 'skill_poison':
         case 'race_dark_elf_skill': {
              skillDmg = Math.floor(player.atk * 0.5) * mult; 
@@ -318,6 +296,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
              break;
         }
+
         case 'skill_gamble': {
              const isSuccess = Math.random() < 0.5; 
              if (isSuccess) {
@@ -336,6 +315,7 @@ function handleSkillUsage(player, skill, monster, log) {
              }
              break;
         }
+        
         case 'race_dragon_skill': {
              skillDmg = (Math.floor(player.atk * 1.5) + value) * mult;
              monster.hp -= skillDmg;
@@ -343,6 +323,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`🔥 **${player.name}** أطلق ${skill.name} بـ **${skillDmg}** ضرر!`);
              break;
         }
+
         case 'race_seraphim_skill':
         case 'race_vampire_skill': {
              skillDmg = (Math.floor(player.atk * 1.2) + value) * mult;
@@ -353,6 +334,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`${skill.emoji} **${player.name}** امتص حياة الخصم! (**${skillDmg}** ضرر / **+${lifesteal}** HP).`);
              break;
         }
+
         case 'race_demon_skill': {
              const selfDmg = Math.floor(player.maxHp * 0.10); 
              skillDmg = (Math.floor(player.atk * 2.5) + value) * mult;
@@ -362,6 +344,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`🩸 **${player.name}** ضحى بدمه (**-${selfDmg}**) ليسبب **${skillDmg}**!`);
              break;
         }
+
         case 'race_elf_skill': {
              const hit1 = Math.floor(player.atk * 0.9) * mult;
              const hit2 = Math.floor(player.atk * 0.9) * mult;
@@ -371,6 +354,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`🏹 **${player.name}** أطلق سهمين دقيقين! (**${skillDmg}**).`);
              break;
         }
+        
         case 'skill_weaken': {
              skillDmg = Math.floor(player.atk * 0.5) * mult;
              monster.effects.push({ type: 'weakness', val: 0.25, turns: 2 }); 
@@ -379,6 +363,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
              break;
         }
+        
         case 'race_ghoul_skill': {
              let missingHpPercent = 1 - (player.hp / player.maxHp);
              let rageMult = 1.5 + (missingHpPercent * 2.5);
@@ -388,6 +373,7 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`🧟 **${player.name}** هاج بجنون (HP ${(player.hp/player.maxHp*100).toFixed(0)}%) وسبب **${skillDmg}** ضرر!`);
              break;
         }
+
         case 'race_spirit_skill': {
              skillDmg = Math.floor(player.atk * 1.8) * mult;
              monster.hp -= skillDmg;
@@ -396,11 +382,13 @@ function handleSkillUsage(player, skill, monster, log) {
              log.push(`👻 **${player.name}** ضرب بطيفية (${skillDmg}) وأصبح مراوغاً!`);
              break;
         }
+        
         case 'skill_dispel': {
             monster.effects = monster.effects.filter(e => e.type === 'poison'); 
             log.push(`💨 **${player.name}** بدد السحر!`);
             break;
         }
+
         case 'race_hybrid_skill': {
             skillDmg = Math.floor(player.atk * 1.2) * mult;
             monster.hp -= skillDmg;
@@ -408,6 +396,7 @@ function handleSkillUsage(player, skill, monster, log) {
             log.push(`🌀 **${player.name}** سرق قوة الخصم (+ATK) وسبب **${skillDmg}** ضرر!`);
             break;
         }
+
         default: {
             let multiplier = skill.stat_type === '%' ? (1 + (value/100)) : 1;
             skillDmg = Math.floor((player.atk * multiplier) + (skill.stat_type !== '%' ? value : 0)) * mult;
@@ -470,8 +459,8 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
 function generateBattleRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('atk').setLabel('هجوم').setEmoji('⚔️').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('skill').setLabel('المهارات والقدرات').setEmoji('✨').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('heal').setLabel('ترياق').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('skill').setLabel('المهارات').setEmoji('✨').setStyle(ButtonStyle.Primary), // المنيو المدمج
+        new ButtonBuilder().setCustomId('heal').setLabel('جرعة').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('def').setLabel('دفاع').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
     );
 }
@@ -493,7 +482,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     if (players.length === 0) {
         activeDungeonRequests.delete(hostId);
-        return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.");
+        return threadChannel.send("❌ خطأ في البيانات.");
     }
 
     const maxFloors = 100; 
@@ -503,7 +492,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     for (let floor = 1; floor <= maxFloors; floor++) {
         if (players.every(p => p.isDead)) break; 
 
-        // تصفير الدروع والمؤثرات (بدون إبطاء)
         for (let p of players) {
             if (!p.isDead) { 
                 p.shield = 0; p.effects = []; p.defending = false; p.summon = null; 
@@ -546,10 +534,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
                                 if (afkP.skipCount >= 5) {
                                     afkP.hp = 0; afkP.isDead = true;
-                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده لتجاوز وقت الانتظار!`).catch(()=>{});
+                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده من الفريق بسبب كثرة التخطي!`).catch(()=>{});
                                 } else {
                                     monster.targetFocusId = afkP.id;
-                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5)`).catch(()=>{});
+                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5) - الوحش يركز عليه!`).catch(()=>{});
                                 }
                           });
                     }
@@ -574,97 +562,124 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 processingUsers.delete(i.user.id); return;
                             }
                             try {
-                                const skillMsg = await i.reply({ content: "✨ **اختر:**", components: [skillRow], ephemeral: true, fetchReply: true });
+                                const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
                                 const skillId = selection.values[0];
                                 
-                                await selection.deferUpdate().catch(()=>{});
-                                
-                                // 🔥 معالجة اختيار المهارة 🔥
-                                let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
-                                
-                                // إذا كانت قدرة التخصص
-                                if (skillId === 'class_special_skill') {
-                                    const res = handleSkillUsage(p, { id: 'class_special_skill' }, monster, log);
-                                    
-                                    if (res && res.error) {
-                                        await selection.editReply({ content: `⏳ ${res.error}`, components: [] }).catch(()=>{});
-                                        processingUsers.delete(i.user.id); return;
-                                    }
+                                // إذا كانت المهارة هي درع وكان اللاعب يملك درعاً مسبقاً
+                                const shieldSkills = ['skill_shielding', 'race_human_skill'];
+                                if (shieldSkills.includes(skillId) && p.shield > 0) {
+                                    await selection.reply({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
+                                    processingUsers.delete(i.user.id); 
+                                    return; 
+                                }
 
-                                    // تنفيذ تأثير التخصص
-                                    if (res && res.type === 'class_effect') {
-                                        if (res.effect === 'leader_buff') {
-                                            players.forEach(m => { if(!m.isDead) m.effects.push({ type: 'atk_buff', val: 0.3, turns: 2 }); });
-                                            log.push(`⚔️ **${p.name}** أطلق صرخة الحرب!`);
-                                        } else if (res.effect === 'tank_taunt') {
-                                            monster.targetFocusId = p.id;
-                                            p.effects.push({ type: 'def_buff', val: 0.6, turns: 1 });
-                                            log.push(`🛡️ **${p.name}** استفز الوحش!`);
-                                        } else if (res.effect === 'priest_heal') {
-                                            const dead = players.filter(m => m.isDead);
-                                            if (dead.length > 0) {
-                                                const t = dead[0]; t.isDead = false; t.hp = Math.floor(t.maxHp * 0.2);
-                                                p.hp = Math.max(1, p.hp - Math.floor(p.maxHp * 0.1));
-                                                log.push(`✨ **${p.name}** أحيا **${t.name}**!`);
+                                await selection.deferUpdate().catch(()=>{}); 
+                                actedPlayers.push(p.id);
+
+                                // 🔥 معالجة قدرة التخصص (من المنيو) 🔥
+                                let isClassSkill = false;
+                                let skillNameUsed = "مهارة";
+
+                                if (skillId === 'class_leader' || skillId === 'class_tank' || skillId === 'class_priest' || skillId === 'class_mage' || skillId === 'class_summoner') {
+                                    // التحقق من الكولداون (للأونر تجاوز، وللاعب العادي تحقق)
+                                    if (p.special_cooldown > 0 && p.id !== OWNER_ID) {
+                                        await selection.editReply({ content: `⏳ انتظر ${p.special_cooldown} دور.`, components: [] }).catch(()=>{});
+                                        processingUsers.delete(i.user.id); actedPlayers.pop(); return;
+                                    }
+                                    
+                                    // تنفيذ منطق الكلاسات
+                                    isClassSkill = true;
+                                    let chosenClass = skillId.replace('class_', ''); // leader, tank...
+                                    // تصحيح حالة الأحرف الأولى لتتوافق مع Switch
+                                    chosenClass = chosenClass.charAt(0).toUpperCase() + chosenClass.slice(1); 
+
+                                    // إذا كان أونر، نسمح له باستخدام أي كلاس اختاره من القائمة
+                                    // إذا لاعب عادي، نستخدم p.class (وهو أصلاً لن يرى في القائمة إلا كلاسه)
+                                    const classToUse = (p.id === OWNER_ID) ? chosenClass : p.class; 
+
+                                    switch(classToUse) {
+                                        case 'Leader':
+                                            players.forEach(member => { if(!member.isDead) member.effects.push({ type: 'atk_buff', val: 0.3, turns: 2 }); });
+                                            log.push(`⚔️ **${p.name}** أطلق صرخة الحرب! (+30% ضرر للفريق).`);
+                                            p.special_cooldown = 5;
+                                            skillNameUsed = "صرخة الحرب";
+                                            break;
+                                        case 'Priest':
+                                            const deadMembers = players.filter(m => m.isDead);
+                                            if (deadMembers.length > 0) {
+                                                const reviveTarget = deadMembers[0]; reviveTarget.isDead = false; reviveTarget.hp = Math.floor(reviveTarget.maxHp * 0.2);
+                                                const sacDmg = Math.floor(p.maxHp * 0.1); p.hp = Math.max(1, p.hp - sacDmg);
+                                                log.push(`✨ **${p.name}** ضحى بدمه وأحيا **${reviveTarget.name}**!`);
                                                 p.special_cooldown = 7;
                                             } else {
-                                                players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
-                                                log.push(`✨ **${p.name}** عالج الفريق!`);
+                                                players.forEach(member => { if(!member.isDead) member.hp = Math.min(member.maxHp, member.hp + Math.floor(member.maxHp * 0.4)); });
+                                                log.push(`✨ **${p.name}** نشر النور المقدس وعالج الجميع!`);
                                                 p.special_cooldown = 6;
                                             }
-                                        } else if (res.effect === 'mage_freeze') {
+                                            skillNameUsed = "النور المقدس";
+                                            break;
+                                        case 'Tank':
+                                            monster.targetFocusId = p.id;
+                                            p.effects.push({ type: 'def_buff', val: 0.6, turns: 1 });
+                                            log.push(`🛡️ **${p.name}** استفز الوحش وصلب درعه!`);
+                                            p.special_cooldown = 4;
+                                            skillNameUsed = "استفزاز وتصليب";
+                                            break;
+                                        case 'Mage':
                                             monster.frozen = true;
-                                            log.push(`❄️ **${p.name}** جمد الوحش!`);
-                                        } else if (res.effect === 'summon_pet') {
-                                            p.summon = { active: true, turns: 3 };
-                                            log.push(`🐺 **${p.name}** استدعى الحارس!`);
-                                        }
-                                        
-                                        if (res.cooldown && res.effect !== 'priest_heal') p.special_cooldown = res.cooldown;
+                                            log.push(`❄️ **${p.name}** جمد الوحش بسجن جليدي!`);
+                                            p.special_cooldown = 5;
+                                            skillNameUsed = "سجن الجليد";
+                                            break;
+                                        case 'Summoner':
+                                            p.summon = { active: true, turns: 3, hp: 500 }; 
+                                            log.push(`🐺 **${p.name}** استدعى حارس الظل!`);
+                                            p.special_cooldown = 6; 
+                                            skillNameUsed = "استدعاء الحارس";
+                                            break;
                                     }
                                 } 
-                                // إذا كانت مهارة عادية
                                 else {
-                                    // جلب بيانات المهارة
+                                    // مهارة عادية أو سرية
+                                    let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
                                     if (skillId === 'skill_secret_owner') skillObj = { id: skillId, name: 'تركيز تام' };
                                     else if (p.skills[skillId]) skillObj = p.skills[skillId];
+                                    // للأونر: البحث في الكونفق الكامل
                                     else if (p.id === OWNER_ID) {
-                                        const sConf = skillsConfig.find(s=>s.id === skillId);
-                                        if(sConf) skillObj = { ...sConf, effectValue: sConf.base_value * 2 };
+                                        const sConf = skillsConfig.find(s => s.id === skillId);
+                                        if (sConf) skillObj = { ...sConf, effectValue: sConf.base_value * 2 };
                                     }
 
-                                    // التحقق من الكولداون
+                                    // كولداون المهارات العادية
                                     if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID && (p.skillCooldowns[skillId] || 0) > 0) {
                                          await selection.editReply({ content: `⏳ كولداون.`, components: [] }).catch(()=>{});
-                                         processingUsers.delete(i.user.id); return;
+                                         processingUsers.delete(i.user.id); actedPlayers.pop(); return;
                                     }
 
                                     handleSkillUsage(p, skillObj, monster, log);
+                                    skillNameUsed = skillObj.name;
+                                    
                                     if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID) p.skillCooldowns[skillId] = 3;
                                 }
-
-                                actedPlayers.push(p.id);
+                                
                                 p.skipCount = 0; 
-                                await selection.editReply({ content: `✅ تم التنفيذ.`, components: [] }).catch(()=>{});
-
+                                await selection.editReply({ content: `✅ تم استخدام ${skillNameUsed}`, components: [] }).catch(()=>{});
                             } catch (err) { 
                                 if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
                                 processingUsers.delete(i.user.id); return; 
                             }
-                        } 
-                        
-                        else if (i.customId === 'heal') {
+                        } else if (i.customId === 'heal') {
                             if (p.potions > 0) {
                                 await i.deferUpdate().catch(()=>{});
                                 p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.35), p.maxHp);
                                 p.potions--;
-                                log.push(`🧪 **${p.name}** تجرع الترياق.`);
+                                log.push(`🧪 **${p.name}** تعالج.`);
                                 await i.followUp({ content: `🧪 (+HP) متبقي: ${p.potions}`, ephemeral: true }).catch(()=>{});
                                 actedPlayers.push(p.id);
                                 p.skipCount = 0;
                             } else {
-                                await i.reply({ content: "❌ لا تملك ترياق!", ephemeral: true });
+                                await i.reply({ content: "❌ لا تملك جرعات!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } else if (i.customId === 'atk' || i.customId === 'def') {
@@ -708,61 +723,102 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
             });
 
-            // 1. هجوم المستدعي
+            // --- نهاية الدور (End Turn Logic) ---
+            
+            // 1. هجوم المستدعي التلقائي
             players.forEach(p => {
                 if (p.summon && p.summon.active) {
                     const summonDmg = Math.floor(p.atk * 0.8);
                     monster.hp -= summonDmg;
-                    log.push(`🐺 **حارس الظل** (${p.name}) هاجم! (-${summonDmg})`);
+                    log.push(`🐺 **حارس الظل** (${p.name}) عض الوحش! (-${summonDmg})`);
+                    
                     p.summon.turns--;
                     if (p.summon.turns <= 0) {
                         const explodeDmg = Math.floor(p.atk * 2.0);
                         monster.hp -= explodeDmg;
-                        log.push(`💥 **حارس الظل** انفجر! (-${explodeDmg})`);
+                        log.push(`💥 **حارس الظل** انفجر مسبباً ضرراً هائلاً! (-${explodeDmg})`);
                         p.summon = null;
                     }
                 }
             });
 
-            if (monster.hp <= 0) { ongoing = false; await battleMsg.edit({ components: [] }).catch(()=>{}); await battleMsg.edit({ content: "✅ قُضي على الوحش!" }); }
+            // التحقق من موت الوحش بعد ضربة المستدعي
+            if (monster.hp <= 0) {
+                ongoing = false;
+                await battleMsg.edit({ components: [] }).catch(()=>{});
+                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
+                await battleMsg.edit({ content: "✅ تم القضاء على الوحش!" });
+            }
 
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
-                if (p.special_cooldown > 0) p.special_cooldown--; 
+                if (p.special_cooldown > 0) p.special_cooldown--; // كولداون الكلاس
                 p.effects = p.effects.filter(e => { e.turns--; return e.turns > 0; });
             });
 
             if (monster.effects.length > 0) {
                 monster.effects = monster.effects.filter(e => {
-                    if (e.type === 'poison') { monster.hp -= e.val; log.push(`☠️ **${monster.name}** تأذى من السم.`); }
+                    if (e.type === 'poison') { monster.hp -= e.val; log.push(`☠️ **${monster.name}** سم (-${e.val}).`); }
                     e.turns--; return e.turns > 0;
                 });
             }
 
-            if (monster.hp <= 0) ongoing = false;
-            else {
-                turnCount++;
+            if (monster.hp <= 0) {
+                ongoing = false;
+            } else {
+                turnCount++; 
+                
+                // --- دور الوحش (Monster Turn) ---
                 if (monster.frozen) {
-                    log.push(`❄️ **${monster.name}** متجمد!`);
-                    monster.frozen = false;
+                    log.push(`❄️ **${monster.name}** متجمد ولا يستطيع الحراك!`);
+                    monster.frozen = false; // يفك التجميد للدور القادم
                 } else {
-                    const alive = players.filter(p => !p.isDead);
-                    if (alive.length > 0) {
-                        let target = monster.targetFocusId ? alive.find(p => p.id === monster.targetFocusId) : null;
-                        if (!target) target = alive[Math.floor(Math.random() * alive.length)];
+                    const alivePlayers = players.filter(p => !p.isDead);
+                    if (alivePlayers.length > 0) {
+                        let target = null;
                         
-                        let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
-                        if(target.effects.some(e=>e.type==='def_buff')) dmg = Math.floor(dmg * 0.4);
-                        if(target.defending) dmg = Math.floor(dmg * 0.5);
+                        if (monster.targetFocusId) {
+                            target = alivePlayers.find(p => p.id === monster.targetFocusId);
+                            monster.targetFocusId = null; 
+                        }
                         
-                        target.hp -= dmg;
-                        log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
-                        if(target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        if (!target) target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                        
+                        const rampUpMultiplier = 1 + (turnCount * 0.05);
+                        const currentMonsterAtk = Math.floor(monster.atk * rampUpMultiplier);
+
+                        let dmg = currentMonsterAtk;
+                        
+                        // التحقق من دفاع التانك (Def Buff)
+                        let defMultiplier = 1.0;
+                        if (target) {
+                             target.effects.forEach(e => { if (e.type === 'def_buff') defMultiplier -= e.val; }); // 1 - 0.6 = 0.4
+                        }
+                        dmg = Math.floor(dmg * defMultiplier);
+
+                        if (target.defending) dmg = Math.floor(dmg * 0.5);
+                        if (target.shield > 0) {
+                             if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; } else { target.shield -= dmg; dmg = 0; }
+                        }
+                        
+                        let isEvaded = false;
+                        const evasionEffect = target.effects.find(e => e.type === 'evasion');
+                        if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
+
+                        if (isEvaded) {
+                             log.push(`👻 **${target.name}** تفادى!`);
+                        } else {
+                             target.hp -= dmg;
+                             log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
+                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        }
                     }
                 }
-                
+
                 if (players.every(p => p.isDead)) {
                     ongoing = false;
+                    await battleMsg.edit({ components: [] }).catch(()=>{});
+                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
                     await sendEndMessage(mainChannel, threadChannel, players, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
                     return;
                 }
@@ -773,31 +829,162 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
         
+        // --- نسخ كود توزيع الجوائز والانتقال للطابق التالي (نفس القديم) ---
         if (!ongoing && monster.hp <= 0) {
+             await battleMsg.edit({ components: [] }).catch(()=>{});
+             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
+
+             let baseMora = Math.floor(getBaseFloorMora(floor));
+             let floorXp = Math.floor(baseMora / 3); 
+
+             players.forEach(p => { 
+                 if (!p.isDead) { 
+                     p.loot.mora += baseMora; 
+                     p.loot.xp += floorXp; 
+                 }
+             });
+
+             totalAccumulatedCoins += baseMora;
+             totalAccumulatedXP += floorXp;
+
              if (floor === maxFloors) {
                  await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId, activeDungeonRequests);
+                 return; 
+             }
+
+             // --- إيمبد الاستراحة ---
+             const nextBuff = getDungeonBuff(floor + 1); 
+             let buffString = "لا يوجد تعزيز حالياً";
+             if (nextBuff.percent > 0) buffString = `+${nextBuff.percent}% لمدة ${nextBuff.minutes}د`;
+
+             const decisionEmbed = new EmbedBuilder()
+                 .setTitle('❖ استـراحـة بيـن الطـوابـق')
+                 .setDescription([
+                     `✶ نجحتـم في تصفية الطابق الـ: **${floor}**`,
+                     `✶ تم استعادة صحة المغامرين بنسبة **%30**`,
+                     `\n**✶ الغنـائـم المتراكمة:**`,
+                     `✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}`,
+                     `✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`,
+                     `\n- الخـيار للقـائـد الاستمرار أو الانسحاب !`
+                 ].join('\n'))
+                 .setColor(Colors.Red)
+                 .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
+
+             const row = new ActionRowBuilder().addComponents(
+                 new ButtonBuilder().setCustomId('dungeon_continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
+                 new ButtonBuilder().setCustomId('dungeon_retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
+             );
+
+             const dMsg = await threadChannel.send({ embeds: [decisionEmbed], components: [row] });
+             
+             const floorDecision = await new Promise(resolve => {
+                 const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
+                 
+                 decisionCollector.on('collect', async i => {
+                       const clicker = players.find(p => p.id === i.user.id);
+                       
+                       if (i.customId === 'dungeon_retreat') {
+                          if (i.user.id === hostId) {
+                               await i.update({ components: [] });
+                               resolve('retreat');
+                               decisionCollector.stop();
+                          } else if (clicker) {
+                               let pMora = Math.floor(clicker.loot.mora);
+                               let pXp = Math.floor(clicker.loot.xp);
+                               if (pMora > 0 || pXp > 0) {
+                                    sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
+                               }
+                               players = players.filter(p => p.id !== clicker.id);
+                               await i.reply({ content: `👋 **${clicker.name}** انسحب!`, ephemeral: false });
+                               if (players.length === 0) { resolve('retreat'); decisionCollector.stop(); }
+                          }
+                       } else if (i.customId === 'dungeon_continue') {
+                          if (i.user.id === hostId) {
+                               await i.update({ content: `**قـرر القـائد الاستمرار يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
+                               resolve('continue');
+                               decisionCollector.stop();
+                          } else {
+                               i.reply({ content: "فقط القائد يقرر.", ephemeral: true });
+                          }
+                       }
+                 });
+
+                 decisionCollector.on('end', (c, reason) => { if (reason !== 'user') resolve('retreat'); });
+             });
+
+             if (floorDecision === 'retreat') {
+                 await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
                  return;
              }
-             await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId, activeDungeonRequests);
+             
+             players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.3), p.maxHp); });
         }
     }
 }
 
 async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId, activeDungeonRequests) {
-    let title = status === 'win' ? "نصر!" : "مــوت محتوم ...";
-    let color = status === 'win' ? "#00FF00" : "#FF0000";
-    
+    let title = "", color = "", randomImage = null;
+
+    if (status === 'win') {
+        title = "❖ أسطـورة الدانـجون !";
+        color = "#00FF00"; randomImage = WIN_IMAGES[0];
+    } else if (status === 'retreat') {
+        title = "❖ انـسـحـاب تـكـتيـكـي !";
+        color = "#FFFF00"; randomImage = WIN_IMAGES[0];
+    } else {
+        title = "❖ هزيمـة ساحقـة ...";
+        color = "#FF0000"; randomImage = LOSE_IMAGES[1];
+    }
+
+    let mvpPlayer = players.length > 0 ? players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current) : null;
+     
+    const buffData = getDungeonBuff(floor);
+    let buffText = "";
+    const durationMs = buffData.minutes * 60 * 1000;
+    const expire = Date.now() + durationMs;
+
+    if ((status === 'win' || status === 'retreat') && buffData.percent > 0) {
+        buffText = `- تـعـزيـز (+XP/Mora): +${buffData.percent}% (${buffData.minutes}د) ${EMOJI_BUFF}`;
+        players.forEach(p => {
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'xp', buffData.percent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'mora', buffData.percent / 100);
+        });
+    } else if (status === 'lose') {
+        const nerfPercent = Math.min(10, Math.floor(floor / 2));
+        buffText = `- لـعـنـة (-XP/Mora): -${nerfPercent}% (10د) ${EMOJI_NERF}`;
+        const nerfExpire = Date.now() + (10 * 60 * 1000);
+        players.forEach(p => {
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'xp', -nerfPercent / 100);
+             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'mora', -nerfPercent / 100);
+        });
+    }
+
+    let lootString = "";
     players.forEach(p => {
-        let xp = Math.floor(p.loot.xp);
-        let mora = Math.floor(p.loot.mora);
-        if(xp>0 || mora>0) sql.prepare("UPDATE levels SET xp=xp+?, mora=mora+? WHERE user=? AND guild=?").run(xp, mora, p.id, guildId);
+        let finalMora = Math.floor(p.loot.mora);
+        let finalXp = Math.floor(p.loot.xp);
+        
+        if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
+        if (finalMora > 0 || finalXp > 0) sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
+          
+        lootString += `✬ **${p.name}** ${p.isDead ? '(💀 نصف الغنائم)' : ''}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
 
-    const embed = new EmbedBuilder().setTitle(title).setColor(color).setDescription(`انتهت المعركة في الطابق ${floor}.`);
-    await mainChannel.send({ embeds: [embed] });
+    const embed = new EmbedBuilder()
+        .setTitle(title)
+        .setDescription(`**الطابق الذي وصلتم له:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنـجـم المعـركـة: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
+        .setColor(color)
+        .setTimestamp();
+
+    if (randomImage) embed.setImage(randomImage);
+    const mentions = players.map(p => `<@${p.id}>`).join(' ');
+
+    await mainChannel.send({ content: `✬ ${mentions}\n`, embeds: [embed] });
     
     if (activeDungeonRequests) activeDungeonRequests.delete(hostId);
-    setTimeout(async () => { try { await thread.delete(); } catch (err) {} }, 5000); 
+      
+    await thread.send({ content: `**✶ ستغـلق بوابـة الدانجـون اخـرجـوا بسـرعـة...**` });
+    setTimeout(async () => { try { await thread.delete(); } catch (err) {} }, 10000); 
 }
 
 module.exports = { runDungeon };
