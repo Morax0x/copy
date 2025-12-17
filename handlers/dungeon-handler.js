@@ -13,14 +13,13 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
 const OWNER_ID = "1145327691772481577"; 
 
-// تتبع الطلبات النشطة
 const activeDungeonRequests = new Set();
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
     if (activeDungeonRequests.has(user.id)) {
-        return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل! أنهِ المعركة الحالية أو انتظر قليلاً.", ephemeral: true });
+        return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", ephemeral: true });
     }
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
@@ -30,7 +29,6 @@ async function startDungeon(interaction, sql) {
 
     activeDungeonRequests.add(user.id);
 
-    // التحقق من الكولداون للمالك
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
@@ -44,7 +42,6 @@ async function startDungeon(interaction, sql) {
         }
     }
 
-    // أزرار اختيار الثيم
     const themes = Object.keys(dungeonConfig.themes);
     const buttons = themes.map(key => {
         const theme = dungeonConfig.themes[key];
@@ -91,18 +88,17 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, theme, sql) {
     const host = interaction.user;
     
-    // 🔥🔥 إصلاح: تهيئة خريطة الكلاسات بشكل صحيح 🔥🔥
-    // القائد يبدأ كـ Leader، لكن يمكنه تغييره
+    // القائد دائماً Leader ولا أحد غيره
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     
     let party = [host.id];
       
-    // دالة تحديث واجهة اللوبي
     const updateEmbed = () => {
         const memberList = party.map((id, i) => {
-            const cls = partyClasses.get(id) || 'Unknown';
+            const cls = partyClasses.get(id) || 'جاري الاختيار...';
             let arabCls = cls;
+            // تعريب الأسماء للعرض
             if (cls === 'Leader') arabCls = 'القائد 👑';
             else if (cls === 'Tank') arabCls = 'مُدرّع 🛡️';
             else if (cls === 'Priest') arabCls = 'كاهن ✨';
@@ -114,72 +110,86 @@ async function lobbyPhase(interaction, theme, sql) {
 
         return new EmbedBuilder()
             .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
-            .setDescription(`**القائد:** ${host}\n**المطلوب:** لفل 5+ و 100 ${EMOJI_MORA}\n\n👇 **اضغط "انضمام" لاختيار تخصصك!**\n\n👥 **الفريق الحالي:**\n${memberList}`)
+            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n⚠️ **تنبيه:** لا يمكن تكرار التخصص في الفريق الواحد!\n\n👥 **الفريق:**\n${memberList}`)
             .setColor('DarkRed')
             .setThumbnail(host.displayAvatarURL());
     };
 
+    // الأزرار كما طلبت بالضبط
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join').setLabel('انضمام / تغيير التخصص').setStyle(ButtonStyle.Success).setEmoji('🛡️'),
+        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'),
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    // تحديث الرسالة لواجهة اللوبي
     await interaction.update({ content: null, embeds: [updateEmbed()], components: [row] });
     const msg = await interaction.message;
-    
-    // كوليكتور يستمع للأزرار
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
         // ==========================================
-        // 🛡️ زر الانضمام واختيار الكلاس
+        // 🛡️ زر الانضمام
         // ==========================================
         if (i.customId === 'join') {
-            const isJoined = party.includes(i.user.id);
+            if (i.user.id === host.id) {
+                return i.reply({ content: "👑 أنت القائد بالفعل (تخصصك ثابت: Leader).", ephemeral: true });
+            }
 
-            // التحقق من العدد
-            if (party.length >= 5 && !isJoined) {
+            if (party.includes(i.user.id)) {
+                // إذا كان منضماً ويريد تغيير التخصص، نسمح له بشرط عدم التكرار
+                // لكن سنعرض له القائمة مباشرة
+            } else if (party.length >= 5) {
                 return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
-            }
-            
-            // التحقق من الشروط (لغير المالك والمنضمين الجدد)
-            if (!isJoined && i.user.id !== OWNER_ID) {
-                const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
-                const now = Date.now();
-                const resetTime = (joinData?.last_join_reset || 0);
-                
-                if (now - resetTime < DUNGEON_COOLDOWN) {
-                    if ((joinData?.dungeon_join_count || 0) >= 3) {
-                        return i.reply({ content: "🚫 استنفذت محاولات الانضمام (3/3).", ephemeral: true });
+            } else {
+                // شروط الانضمام (لغير المنضمين)
+                if (i.user.id !== OWNER_ID) {
+                    const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+                    const now = Date.now();
+                    const resetTime = (joinData?.last_join_reset || 0);
+                    
+                    if (now - resetTime < DUNGEON_COOLDOWN) {
+                        if ((joinData?.dungeon_join_count || 0) >= 3) {
+                            return i.reply({ content: "🚫 استنفذت محاولات الانضمام.", ephemeral: true });
+                        }
                     }
-                }
 
-                const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
-                if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 مستواك أقل من 5.", ephemeral: true });
-                if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك 100 ${EMOJI_MORA}.`, ephemeral: true });
+                    const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+                    if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 مستواك أقل من 5.", ephemeral: true });
+                    if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك 100 ${EMOJI_MORA}.`, ephemeral: true });
+                }
             }
-            
-            // 🔥 إنشاء قائمة الكلاسات 🔥
+
+            // معرفة التخصصات المحجوزة حالياً
+            const takenClasses = Array.from(partyClasses.values());
+
+            // بناء القائمة (حذف التخصصات المأخوذة من قبل أشخاص آخرين)
+            // ملاحظة: إذا كان اللاعب نفسه حاجز تخصصاً، نسمح له باختيار غيره
+            const availableOptions = [];
+
+            // دالة مساعدة للتحقق هل الكلاس متاح
+            const isAvailable = (clsName) => {
+                // متاح إذا لم يكن موجوداً في القائمة، أو إذا كان الشخص الذي اختاره هو "أنا" (للتغيير)
+                return !takenClasses.includes(clsName) || partyClasses.get(i.user.id) === clsName;
+            };
+
+            if (isAvailable('Tank')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المُدرّع (Tank)').setValue('Tank').setDescription('دفاع وحماية.').setEmoji('🛡️'));
+            if (isAvailable('Priest')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الكاهن (Priest)').setValue('Priest').setDescription('شفاء وإحياء.').setEmoji('✨'));
+            if (isAvailable('Mage')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('تجميد وتحكم.').setEmoji('❄️'));
+            if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
+
+            if (availableOptions.length === 0) {
+                return i.reply({ content: "🚫 جميع التخصصات مأخوذة! لا يوجد مكان شاغر في تشكيلة الفريق.", ephemeral: true });
+            }
+
             const classRow = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
                     .setCustomId('class_select')
-                    .setPlaceholder('اختر تخصصك للمعركة...')
-                    .addOptions(
-                        new StringSelectMenuOptionBuilder().setLabel('المُدرّع (Tank)').setValue('Tank').setDescription('دفاع عالي، يحمي الفريق.').setEmoji('🛡️'),
-                        new StringSelectMenuOptionBuilder().setLabel('الكاهن (Priest)').setValue('Priest').setDescription('يعالج الفريق ويحيي الموتى.').setEmoji('✨'),
-                        new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('يجمد الوحش ويمنعه من الهجوم.').setEmoji('❄️'),
-                        new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('يستدعي وحشاً ليقاتل معه.').setEmoji('🐺'),
-                        // خيار القائد يظهر فقط للمضيف
-                        ...(i.user.id === host.id ? [new StringSelectMenuOptionBuilder().setLabel('القائد (Leader)').setValue('Leader').setDescription('يزيد ضرر الفريق بالكامل.').setEmoji('👑')] : [])
-                    )
+                    .setPlaceholder('اختر تخصصاً (غير مكرر)...')
+                    .addOptions(availableOptions)
             );
 
-            // إرسال القائمة بشكل خاص (Ephemeral)
-            const selectMsg = await i.reply({ content: "⚔️ **اختر دورك في المعركة:**", components: [classRow], ephemeral: true, fetchReply: true });
+            const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:** (التخصصات الملونة بالرمادي محجوزة)", components: [classRow], ephemeral: true, fetchReply: true });
             
             try {
-                // انتظار اختيار اللاعب من القائمة
                 const selection = await selectMsg.awaitMessageComponent({ 
                     filter: subI => subI.user.id === i.user.id && subI.customId === 'class_select', 
                     time: 20000,
@@ -188,23 +198,31 @@ async function lobbyPhase(interaction, theme, sql) {
                 
                 const selectedClass = selection.values[0];
                 
-                // ✅ أهم نقطة: حفظ الكلاس في الماب
+                // التحقق النهائي من التكرار (في حال اختار شخصان نفس الكلاس في نفس اللحظة)
+                const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
+                
+                if (currentTaken.includes(selectedClass)) {
+                    return selection.update({ content: `🚫 **سبقك بها عكاشة!** تخصص ${selectedClass} تم حجزه للتو. حاول مرة أخرى.`, components: [] });
+                }
+
+                // حفظ الاختيار
                 partyClasses.set(i.user.id, selectedClass);
                 
-                // إذا لم يكن في القائمة، نضيفه
-                if (!isJoined) {
+                if (!party.includes(i.user.id)) {
                     party.push(i.user.id);
                 }
                 
-                // تأكيد الاختيار للاعب
-                await selection.update({ content: `✅ **تم اختيار: ${selectedClass}**! استعد.`, components: [] });
-                
-                // تحديث رسالة اللوبي الرئيسية ليظهر التخصص الجديد
+                let displayClassName = selectedClass;
+                if(selectedClass === 'Tank') displayClassName = 'المُدرّع';
+                else if(selectedClass === 'Priest') displayClassName = 'الكاهن';
+                else if(selectedClass === 'Mage') displayClassName = 'الساحر';
+                else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
+
+                await selection.update({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
                 await msg.edit({ embeds: [updateEmbed()] });
                 
             } catch (e) {
-                // إذا انتهى الوقت ولم يختر
-                await i.editReply({ content: "⏰ انتهى وقت اختيار التخصص.", components: [] }).catch(()=>{});
+                await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
             }
 
         // ==========================================
@@ -213,9 +231,9 @@ async function lobbyPhase(interaction, theme, sql) {
         } else if (i.customId === 'start') {
             if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه بدء المعركة.", ephemeral: true });
             
-            // التأكد من أن الجميع اختار كلاس (ولو أنهم لا ينضمون إلا باختيار، لكن للاحتياط)
-            if (party.some(id => !partyClasses.has(id))) {
-                return i.reply({ content: "⚠️ هناك لاعب لم يختر تخصصه بعد!", ephemeral: true });
+            // التأكد أن الجميع لديه تخصص (نظرياً الكود يضمن ذلك، لكن زيادة حرص)
+            if (party.length < 1) { // مستحيل تصير لأن القائد موجود، لكن للاحتياط
+                 return i.reply({ content: "لا يوجد أحد في الفريق!", ephemeral: true });
             }
 
             collector.stop('start');
@@ -226,14 +244,15 @@ async function lobbyPhase(interaction, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
 
-            // خصم المورا وتحديث الكولداون
             party.forEach(id => {
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
                 
-                if (id !== OWNER_ID) {
-                    if (id === host.id) {
+                if (id === host.id) {
+                    if (id !== OWNER_ID) {
                         sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, interaction.guild.id);
-                    } else {
+                    }
+                } else {
+                    if (id !== OWNER_ID) {
                         const jData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, interaction.guild.id);
                         const lastReset = jData?.last_join_reset || 0;
                         if (now - lastReset > DUNGEON_COOLDOWN) {
@@ -258,7 +277,7 @@ async function lobbyPhase(interaction, theme, sql) {
 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // 🔥 تمرير بيانات الكلاسات الصحيحة للمعركة 🔥
+                // تمرير الكلاسات للمعركة
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
             } catch (err) {
