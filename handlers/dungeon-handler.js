@@ -40,17 +40,24 @@ const LOSE_IMAGES = [
 
 // --- دوال مساعدة ---
 
-// ✅ دالة حساب الجوائز (مورا) بناءً على النمط المطلـوب (+30 ثم +20 كل 5 طوابق)
+// ✅✅ دالة حساب الجوائز (مورا) بناءً على نمط المجموعات الخماسية ✅✅
+// 1-5: 50 | 6-10: 80 | 11-15: 100 | 16-20: 130 ...
 function getBaseFloorMora(floor) {
     let reward = 50;
-    const blockCount = Math.ceil(floor / 5);
+    const blockCount = Math.ceil(floor / 5); // تحديد رقم المجموعة (كل 5 طوابق مجموعة)
+    
+    // نبدأ الحساب من المجموعة الثانية لأن الأولى ثابتة بـ 50
     for (let b = 2; b <= blockCount; b++) {
-        if (b % 2 === 0) reward += 30; // المجموعات الزوجية (6-10, 16-20...)
-        else reward += 20;            // المجموعات الفردية (11-15, 21-25...)
+        if (b % 2 === 0) {
+            reward += 30; // المجموعات الزوجية (2, 4, 6...) تزيد 30
+        } else {
+            reward += 20; // المجموعات الفردية (3, 5, 7...) تزيد 20
+        }
     }
     return reward;
 }
 
+// دالة تحديد قوة التعزيز (Buff)
 function getDungeonBuff(floor) {
     if (floor >= 15) return { percent: 20, minutes: 30 };
     if (floor >= 9) return { percent: 10, minutes: 10 };
@@ -141,8 +148,7 @@ function getRealPlayerData(member, sql) {
         tempAtkMultiplier: 1.0,
         effects: [],
         totalDamage: 0,
-        skipCount: 0,
-        retreatFloor: null, // تتبع طابق الانسحاب
+        skipCount: 0, 
         loot: { mora: 0, xp: 0 }
     };
 }
@@ -201,6 +207,7 @@ function handleSkillUsage(player, skill, monster, log) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
+    // ✅ مهارة الأونر: 50% من MaxHP للوحش
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -576,12 +583,12 @@ async function lobbyPhase(interaction, theme, sql) {
     });
 }
 
-// ⚔️⚔️ تشغيل الدانجون (منطق القتال المعدل) ⚔️⚔️
+// ⚔️⚔️ تشغيل الدانجون (منطق القتال - النظام الثابت الجديد) ⚔️⚔️
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId) {
     const guild = threadChannel.guild;
     let players = [];
-    let retiredPlayers = []; // لتخزين من انسحب وتقريره
     
+    // جلب بيانات اللاعبين
     for (const id of partyIDs) {
         const m = await guild.members.fetch(id).catch(()=>null);
         if (m) players.push(getRealPlayerData(m, sql));
@@ -593,6 +600,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     }
 
     const maxFloors = 100; 
+
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
 
@@ -604,12 +612,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // ✅ نظام HP الوحش المحدث (ثابت تربيعي منطقي)
+        // 🔥🔥🔥🔥 نظام HP الوحش (ثابت تربيعي) 🔥🔥🔥🔥
+        // معادلة: 500 + (طابق * 150) + (طابق^2 * 8)
         let baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8);
+
         let finalHp = Math.floor(baseFloorHP);
+
+        // تطبيق مضاعفات (إذا كانت موجودة في الكونفق)
         finalHp = Math.floor(finalHp * (floorConfig.hp_mult || 1));
         
+        // 🔥🔥🔥🔥 نظام هجوم الوحش (ATK) 🔥🔥🔥🔥
         let baseAtk = 15 + (floor * 3);
+        
         let finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
 
         let monster = {
@@ -767,6 +781,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
             });
 
+            // End Turn Logic
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 p.effects = p.effects.filter(e => { e.turns--; return e.turns > 0; });
@@ -784,7 +799,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await battleMsg.edit({ components: [] }).catch(()=>{});
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
 
-                // ✅ نظام الجوائز المحدث
+                // ✅✅ حساب الجوائز النهائي (معادلة جديدة متدرجة) ✅✅
                 let baseMora = getBaseFloorMora(floor);
                 let floorXp = Math.floor(baseMora / 3); 
 
@@ -799,12 +814,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 totalAccumulatedXP += floorXp;
 
                 if (floor === maxFloors) {
-                    await sendEndMessage(mainChannel, threadChannel, players, retiredPlayers, floor, "win", sql, guild.id, hostId);
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "win", sql, guild.id, hostId);
                     return; 
                 }
 
+                // ================================================================
+                // 🔥🔥🔥 إيمبد الاستراحة بين الطوابق  🔥🔥🔥
+                // ================================================================
+                
                 const nextBuff = getDungeonBuff(floor + 1); 
-                let buffString = nextBuff.percent > 0 ? `+${nextBuff.percent}% لمدة ${nextBuff.minutes}د` : "لا يوجد تعزيز حالياً";
+                let buffString = "لا يوجد تعزيز حالياً";
+                if (nextBuff.percent > 0) buffString = `+${nextBuff.percent}% لمدة ${nextBuff.minutes}د`;
 
                 const decisionEmbed = new EmbedBuilder()
                     .setTitle('❖ استـراحـة بيـن الطـوابـق')
@@ -830,107 +850,143 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 const floorDecision = await new Promise(resolve => {
                     const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
+                    
                     decisionCollector.on('collect', async i => {
                          const clicker = players.find(p => p.id === i.user.id);
+                         
                          if (i.customId === 'dungeon_retreat') {
                              if (i.user.id === hostId) {
                                  await i.update({ components: [] });
                                  resolve('retreat');
                                  decisionCollector.stop();
                              } else if (clicker) {
-                                 // ✅ تسجيل الانسحاب الفردي
-                                 clicker.retreatFloor = floor;
-                                 retiredPlayers.push({...clicker}); // حفظ نسخة للتقرير النهائي
-                                 
                                  let pMora = clicker.loot.mora;
                                  let pXp = clicker.loot.xp;
                                  if (pMora > 0 || pXp > 0) {
                                      sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
                                  }
+                                 
                                  players = players.filter(p => p.id !== clicker.id);
+                                 
                                  await i.reply({ content: `👋 **${clicker.name}** قرر الانسحاب والاكتفاء بالغنائم!`, ephemeral: false });
+                                 
                                  if (players.length === 0) {
                                      resolve('retreat');
                                      decisionCollector.stop();
                                  }
-                             } else { i.reply({ content: "لست مشاركاً.", ephemeral: true }); }
+                             } else {
+                                 i.reply({ content: "لست مشاركاً في المعركة.", ephemeral: true });
+                             }
                          } else if (i.customId === 'dungeon_continue') {
                              if (i.user.id === hostId) {
                                  await i.update({ content: `**قـرر القـائد الاستـمرار وغزو الطـابق التالي .. يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
                                  resolve('continue');
                                  decisionCollector.stop();
-                             } else { i.reply({ content: "فقط القائد يملك القرار.", ephemeral: true }); }
+                             } else {
+                                 i.reply({ content: "فقط القائد يملك قرار الاستمرار.", ephemeral: true });
+                             }
                          }
                     });
-                    decisionCollector.on('end', (c, reason) => { if (reason !== 'user') resolve('retreat'); });
+
+                    decisionCollector.on('end', (c, reason) => {
+                        if (reason !== 'user') resolve('retreat'); 
+                    });
                 });
 
                 if (floorDecision === 'retreat') {
-                    await sendEndMessage(mainChannel, threadChannel, players, retiredPlayers, floor, "retreat", sql, guild.id, hostId);
+                    // ✅ تم تمرير "retreat" للحالة لتمييز الانسحاب عن الفوز/الخسارة
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "retreat", sql, guild.id, hostId);
                     return;
                 }
+                
                 players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.3), p.maxHp); });
 
             } else {
                 turnCount++; 
                 const alivePlayers = players.filter(p => !p.isDead);
+                
                 if (alivePlayers.length > 0) {
                     const isLowHp = monster.hp < (monster.maxHp * 0.3); 
-                    let target = monster.targetFocusId ? alivePlayers.find(p => p.id === monster.targetFocusId) : null;
-                    if (target) { monster.targetFocusId = null; log.push(`👁️ **الوحش يركز غضبه على ${target.name}!**`); }
-                    else { target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)]; }
+                    
+                    let target = null;
+                    if (monster.targetFocusId) {
+                        target = alivePlayers.find(p => p.id === monster.targetFocusId);
+                        monster.targetFocusId = null; 
+                        if (target) log.push(`👁️ **الوحش يركز غضبه على ${target.name} لأنه لم يهاجم!**`);
+                    }
+
+                    if (!target) {
+                        target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                    }
                     
                     const rampUpMultiplier = 1 + (turnCount * 0.05);
                     const currentMonsterAtk = Math.floor(monster.atk * rampUpMultiplier);
+
                     let dmg = currentMonsterAtk;
+                    let actionLog = "";
+
                     const useSkill = Math.random() < (isLowHp ? 0.5 : 0.3);
 
                     if (useSkill) {
                         const skillRoll = Math.random();
+                        
                         if (alivePlayers.length > 1 && skillRoll > 0.6) {
                             alivePlayers.forEach(p => {
                                 let aoeDmg = Math.floor(currentMonsterAtk * 0.7);
                                 if (p.defending) aoeDmg = Math.floor(aoeDmg * 0.5);
-                                if (p.shield > 0) { if (aoeDmg > p.shield) { aoeDmg -= p.shield; p.shield = 0; } else { p.shield -= aoeDmg; aoeDmg = 0; } }
+                                if (p.shield > 0) {
+                                    if (aoeDmg > p.shield) { aoeDmg -= p.shield; p.shield = 0; } else { p.shield -= aoeDmg; aoeDmg = 0; }
+                                }
                                 if (p.id === OWNER_ID) aoeDmg = Math.floor(aoeDmg * 0.1); 
+
                                 p.hp -= aoeDmg;
                                 if (p.hp <= 0) { p.hp = 0; p.isDead = true; }
                             });
-                            log.push(`🌋 **${monster.name}** أطلق زلزالاً مدمراً!`);
+                            log.push(`🌋 **${monster.name}** أطلق زلزالاً مدمراً على الفريق!`);
                         }
                         else if (isLowHp && skillRoll > 0.3) {
                             let lifeDmg = Math.floor(currentMonsterAtk * 1.2);
                             if (target.defending) lifeDmg = Math.floor(lifeDmg * 0.5);
                             if (target.id === OWNER_ID) lifeDmg = Math.floor(lifeDmg * 0.1);
+
                             target.hp -= lifeDmg;
                             monster.hp += Math.floor(lifeDmg * 0.5); 
-                            log.push(`🩸 **${monster.name}** امتص حياة **${target.name}**!`);
+                            log.push(`🩸 **${monster.name}** امتص حياة **${target.name}**! (+${Math.floor(lifeDmg * 0.5)} HP)`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
                         }
                         else {
                             let critDmg = Math.floor(currentMonsterAtk * 1.5);
                             if (target.defending) critDmg = Math.floor(critDmg * 0.7); 
-                            if (target.shield > 0) { if (critDmg > target.shield) { critDmg -= target.shield; target.shield = 0; } else { target.shield -= critDmg; critDmg = 0; } }
+                            if (target.shield > 0) {
+                                if (critDmg > target.shield) { critDmg -= target.shield; target.shield = 0; } else { target.shield -= critDmg; critDmg = 0; }
+                            }
                             if (target.id === OWNER_ID) critDmg = Math.floor(critDmg * 0.1);
+
                             target.hp -= critDmg;
-                            log.push(`💥 **${monster.name}** سدد ضربة ساحقة لـ **${target.name}**!`);
+                            log.push(`💥 **${monster.name}** سدد ضربة ساحقة لـ **${target.name}** (${critDmg})!`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
                         }
                     } 
                     else {
                         if (target.defending) dmg = Math.floor(dmg * 0.5);
-                        if (target.shield > 0) { if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; } else { target.shield -= dmg; dmg = 0; } }
+                        if (target.shield > 0) {
+                            if (dmg > target.shield) { dmg -= target.shield; target.shield = 0; } else { target.shield -= dmg; dmg = 0; }
+                        }
+                        
                         let isEvaded = false;
                         const evasionEffect = target.effects.find(e => e.type === 'evasion');
                         if (evasionEffect && Math.random() < evasionEffect.val) isEvaded = true;
                         const counterEffect = target.effects.find(e => e.type === 'counter');
-                        if (isEvaded) { log.push(`👻 **${target.name}** تفادى!`); } 
-                        else if (counterEffect) {
+
+                        if (isEvaded) {
+                            log.push(`👻 **${target.name}** تفادى!`);
+                        } else if (counterEffect) {
                             const reflectedDmg = Math.floor(currentMonsterAtk * counterEffect.val);
                             monster.hp -= reflectedDmg;
                             log.push(`🔄 **${target.name}** عكس الهجوم (${reflectedDmg})!`);
                         } else {
                             if (target.id === OWNER_ID) dmg = Math.floor(dmg * 0.1);
+                            
                             target.hp -= dmg;
                             log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
                             if (target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
@@ -942,7 +998,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     ongoing = false;
                     await battleMsg.edit({ components: [] }).catch(()=>{});
                     await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
-                    await sendEndMessage(mainChannel, threadChannel, players, retiredPlayers, floor, "lose", sql, guild.id, hostId);
+                    await sendEndMessage(mainChannel, threadChannel, players, floor, "lose", sql, guild.id, hostId);
                     return;
                 }
                 players.forEach(p => p.defending = false);
@@ -953,7 +1009,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     }
 }
 
-async function sendEndMessage(mainChannel, thread, players, retiredPlayers, floor, status, sql, guildId, hostId) {
+async function sendEndMessage(mainChannel, thread, players, floor, status, sql, guildId, hostId) {
     let title = "", color = "", randomImage = null;
 
     if (status === 'win') {
@@ -968,8 +1024,11 @@ async function sendEndMessage(mainChannel, thread, players, retiredPlayers, floo
     }
 
     let mvpPlayer = players.length > 0 ? players.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current) : null;
+    
+    // 🔥 حساب التعزيز النهائي بناءً على الطابق الذي وصلوا له 🔥
     const buffData = getDungeonBuff(floor);
     let buffText = "";
+
     const durationMs = buffData.minutes * 60 * 1000;
     const expire = Date.now() + durationMs;
 
@@ -990,26 +1049,32 @@ async function sendEndMessage(mainChannel, thread, players, retiredPlayers, floo
     }
 
     let lootString = "";
-    // ✅ عرض تقرير المنسحبين أولاً
-    retiredPlayers.forEach(p => {
-        lootString += `✬ **${p.name}** (🚪 انسحب طابق ${p.retreatFloor}): ${p.loot.mora.toLocaleString()} ${EMOJI_MORA} | ${p.loot.xp.toLocaleString()} XP\n`;
-    });
-    // ✅ عرض تقرير من أكمل للنهاية
     players.forEach(p => {
         let finalMora = p.loot.mora, finalXp = p.loot.xp;
         if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
         if (finalMora > 0 || finalXp > 0) sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-        lootString += `✬ **${p.name}** ${p.isDead ? '(💀 نصف الغنائم)' : ''}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP\n`;
+          
+        lootString += `✬ **${p.name}** ${p.isDead ? '(💀 نصف الغنائم)' : ''}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
+
+    // ✅✅ تعديل الوصف لعرض حالة الانسحاب بوضوح ✅✅
+    let desc = "";
+    if (status === 'retreat') {
+        desc = `**تم الانسحاب بنجاح في الطابق ${floor}**\nعاد الفريق أدراجه محملين بالغنائم التي جمعوها.`;
+    } else if (status === 'win') {
+        desc = `**مبروك! تم إنهاء الدانجون بالكامل (100 طابق)!**\nلقد أثبتم جدارتكم كأبطال حقيقيين.`;
+    } else {
+        desc = `**للأسف، تم القضاء على الفريق في الطابق ${floor}**\nحاولوا مرة أخرى بعد الاستعداد جيداً.`;
+    }
 
     const embed = new EmbedBuilder()
         .setTitle(title)
-        .setDescription(`**✶ تقـريـر المعـركـة (طابق ${floor}):**\nMVP: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
+        .setDescription(`${desc}\n\n**✶ تقـريـر المعـركـة:**\nMVP: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
         .setColor(color)
         .setTimestamp();
 
     if (randomImage) embed.setImage(randomImage);
-    const mentions = [...players, ...retiredPlayers].map(p => `<@${p.id}>`).join(' ');
+    const mentions = players.map(p => `<@${p.id}>`).join(' ');
 
     await mainChannel.send({ content: `✬ ${mentions}\n`, embeds: [embed] });
     activeDungeonRequests.delete(hostId);
@@ -1023,7 +1088,10 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         .setTitle(`${theme.emoji} الطابق ${floor} | ضد ${monster.name}`)
         .setColor(color);
 
-    let monsterStatus = monster.effects.some(e => e.type === 'poison') ? " ☠️" : "";
+    let monsterStatus = "";
+    if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
+    if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
+
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
     embed.addFields({ 
         name: `👹 **${monster.name}** ${monsterStatus}`, 
@@ -1034,12 +1102,23 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     let teamStatus = players.map(p => {
         const icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '❤️');
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
-        let displayName = (p.isDead || actedPlayers.includes(p.id)) ? `**${p.name}**` : `<@${p.id}>`;
+          
+        let displayName;
+        if (p.isDead || actedPlayers.includes(p.id)) {
+            displayName = `**${p.name}**`; 
+        } else {
+            displayName = `<@${p.id}>`; 
+        }
+
         return `${icon} ${displayName}\n${hpBar}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
-    if (log.length > 0) embed.addFields({ name: "احـداث المعركة:", value: log.join('\n'), inline: false });
+
+    if (log.length > 0) {
+        embed.addFields({ name: "احـداث المعركة:", value: log.join('\n'), inline: false });
+    }
+
     return embed;
 }
 
