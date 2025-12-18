@@ -152,8 +152,9 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // Defer for buttons leading to modals or complex logic
-                if (id === 'g_builder_content' || id === 'g_builder_visuals' || id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm') || id === 'open_xp_modal') {
+                // 🛑 الإصلاح هنا: إزالة الأزرار التي تفتح Modals من قائمة الانتظار (Defer)
+                // تم إزالة: g_builder_content, g_builder_visuals, open_xp_modal
+                if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm')) {
                     if (!i.replied && !i.deferred) {
                         try { await i.deferUpdate(); } 
                         catch (err) { if (err.code !== 10062) throw err; return; }
