@@ -610,12 +610,18 @@ client.on(Events.ClientReady, async () => {
         } catch (err) { console.error(`[Load Error] ${file}:`, err.message); }
     }
     try { 
-        // ⬇️⬇️⬇️ استخدام تحديث السيرفر المحدد فقط لضمان سرعة الظهور ⬇️⬇️⬇️
-        // يجب أن تضع آيدي سيرفرك هنا بدلاً من "952732360074494003" إذا اختلف
-        const GUILD_ID = "952732360074494003"; 
+        // --------------------------------------------------------
+        // 🔥 تم التعديل: رفع الأوامر بشكل عام (Global) لكل السيرفرات 🔥
+        // --------------------------------------------------------
+        console.log(`Started refreshing ${commands.length} application (/) commands globally.`);
         
-        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: commands }); 
-        console.log(`✅ Successfully reloaded ${commands.length} application (/) commands for guild ${GUILD_ID}.`); 
+        await rest.put(
+            Routes.applicationCommands(client.user.id), // هذا السطر يجعل الأوامر عامة لكل السيرفرات
+            { body: commands },
+        );
+        
+        console.log(`✅ Successfully reloaded ${commands.length} application (/) commands GLOBALLY.`);
+        console.log(`⏳ Note: Global commands may take up to 1 hour to update across all servers.`);
     } catch (error) { console.error("[Deploy Error]", error); }
 
     setInterval(calculateInterest, 60 * 60 * 1000); calculateInterest();
