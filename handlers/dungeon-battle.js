@@ -34,12 +34,8 @@ const LOSE_IMAGES = [
     'https://i.postimg.cc/8PyPZRqt/download.jpg'
 ];
 
-// --- الدوال المساعدة (Helpers) ---
+// --- الدوال المساعدة ---
 
-/**
- * دالة مركزية لتطبيق الضرر مع مراعاة الدرع
- * تخصم من الدرع أولاً ثم الـ HP
- */
 function applyDamageToPlayer(player, damageAmount) {
     let remainingDamage = damageAmount;
     if (player.shield > 0) {
@@ -336,7 +332,6 @@ function handleSkillUsage(player, skill, monster, log) {
              } else {
                  const selfDamage = Math.floor(Math.random() * (70 - 30 + 1)) + 30;
                  skillDmg = 0;
-                 // 🔥 تم التعديل: خصم الضرر من الدرع أولاً
                  applyDamageToPlayer(player, selfDamage);
                  log.push(`🎲 **${player.name}** خسر الرهان! وانفجرت النردات مسببة **${selfDamage}** ضرر!`);
              }
@@ -366,7 +361,6 @@ function handleSkillUsage(player, skill, monster, log) {
         case 'race_demon_skill': {
              const selfDmg = Math.floor(player.maxHp * 0.10); 
              skillDmg = (Math.floor(player.atk * 2.5) + value) * mult;
-             // 🔥 تم التعديل: خصم التضحية من الدرع أولاً
              applyDamageToPlayer(player, selfDmg);
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
@@ -571,6 +565,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
+                    // 🔥 إضافة ميزة الاقتحام للأونر 🔥
+                    if (i.user.id === OWNER_ID) {
+                        let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
+                        if (!ownerPlayer) {
+                             const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
+                             if (member) {
+                                 ownerPlayer = getRealPlayerData(member, sql, 'Leader');
+                                 players.push(ownerPlayer);
+                                 log.push(`👑 **اقتـحـام الأونـر!** انضم المالك للمعركة!`);
+                             }
+                        }
+                    }
+
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) {
@@ -774,7 +781,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if(target.effects.some(e=>e.type==='def_buff')) dmg = Math.floor(dmg * 0.4);
                         if(target.defending) dmg = Math.floor(dmg * 0.5);
                         
-                        // 🔥 تم التعديل: تطبيق الضرر مع خصم الدرع أولاً للهجمات العادية للوحش
                         applyDamageToPlayer(target, dmg);
                         
                         log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
@@ -843,7 +849,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                        const clicker = players.find(p => p.id === i.user.id);
                        
                        if (i.customId === 'dungeon_retreat') {
-                          if (i.user.id === hostId) {
+                          // 🔥 تعديل ميزة الانسحاب: الأونر ينسحب في أي وقت وينهي الرحلة للكل 🔥
+                          if (i.user.id === hostId || i.user.id === OWNER_ID) {
                                await i.update({ components: [] });
                                resolve('retreat');
                                decisionCollector.stop();
@@ -858,7 +865,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                if (players.length === 0) { resolve('retreat'); decisionCollector.stop(); }
                           }
                        } else if (i.customId === 'dungeon_continue') {
-                          if (i.user.id === hostId) {
+                          // الأونر يستطيع ضغط استمرار أيضاً
+                          if (i.user.id === hostId || i.user.id === OWNER_ID) {
                                await i.update({ content: `**يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
                                resolve('continue');
                                decisionCollector.stop();
