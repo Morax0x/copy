@@ -77,7 +77,7 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
     if (!isUnlimited) {
         const cooldownRecord = sql.prepare("SELECT timestamp FROM active_reports WHERE guildID = ? AND targetID = ? AND reporterID = ?").get(guild.id, targetMember.id, reporter.id);
         if (cooldownRecord && (currentTimestamp - cooldownRecord.timestamp) < COOLDOWN_DURATION) {
-            return sendReportError(interactionOrMessage, "❖ بـلاغ مـكـرر !", "حـبلاوة هي؟ كل شوي تبلغ عليـه.", true);
+            return sendReportError(interactionOrMessage, "❖ بـلاغ مـكـرر !", "حـلاوة هي؟ كل شوي تبلغ عليـه.", true);
         }
     }
 
@@ -146,7 +146,7 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
 
             const jailEmbed = new EmbedBuilder()
                 .setTitle("❖ تلقـى بلاغين وتـم سـجـنـه!")
-                .setDescription(`✶ المنفي: ${targetMember}\n✶ \n✶ المدة: 3 ساعات`)
+                .setDescription(`✶ المنفي: ${targetMember}\n✶ المدة: 3 ساعات`)
                 .setColor(Colors.Blue)
                 .setImage("https://i.postimg.cc/L6TpBZMs/image.png");
                 
