@@ -24,6 +24,7 @@ async function loadRoleSettings(sql, antiRolesCache = internalCache) {
         console.log(`[Reaction Roles] تم تحميل ${antiRolesCache.size} إعداد رول في الذاكرة.`);
     } catch (e) {
         // نتجاهل الخطأ إذا الجدول غير موجود (أول تشغيل)
+        console.log("[Reaction Roles] لم يتم العثور على جداول الإعدادات أو أنها فارغة.");
     }
 }
 
@@ -82,6 +83,7 @@ async function handleReactionRole(interaction, client, sql, antiRolesCache) {
             const currentMenuRoles = allMenuRoleData.filter(roleData => memberRoleIds.has(roleData.role_id));
 
             if (currentMenuRoles.length > 0) {
+                // إذا كان لديه رتبة بالفعل ويحاول تغييرها أو اختيار أكثر من واحدة
                 if (selectedValues.length === 0 || currentMenuRoles.some(roleData => !selectedValues.includes(roleData.value)) || selectedValues.length > 1) { 
                     const refusalMessage = `✥ اجـراء مرفـوض <:0dalami:1395674712473862185>\n- تـم تحديـد عرقـك بالفعـل لا يسمح بتغييـره `;
                     return interaction.editReply({ content: refusalMessage });
