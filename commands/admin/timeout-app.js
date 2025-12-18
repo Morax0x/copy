@@ -2,42 +2,43 @@ const { ContextMenuCommandBuilder, ApplicationCommandType, ModalBuilder, TextInp
 
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Timeout Member') // الاسم في القائمة
-        .setType(ApplicationCommandType.User)
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.ModerateMembers),
+        .setName('تـايـم اوت') // هذا الاسم الذي سيظهر في القائمة
+        .setType(ApplicationCommandType.User) // نوعه: يظهر عند الضغط على مستخدم
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.ModerateMembers), // الصلاحية المطلوبة
 
     async execute(interaction) {
         const targetMember = interaction.targetMember;
 
-        // التحقق من الصلاحيات
+        // 1. التحقق من إمكانية معاقبة العضو
         if (!targetMember.moderatable) {
-             return interaction.reply({ content: '❌ **لا يمكنني معاقبة هذا العضو (رتبته أعلى مني).**', ephemeral: true });
+             return interaction.reply({ content: '❌ **لا يمكنني إعطاء تايم أوت لهذا العضو!** (رتبته أعلى مني أو مساوية لي).', ephemeral: true });
         }
 
+        // 2. التحقق من التراتبية
         if (interaction.member.roles.highest.position <= targetMember.roles.highest.position && interaction.user.id !== interaction.guild.ownerId) {
-            return interaction.reply({ content: '❌ **لا يمكنك معاقبة شخص رتبته أعلى منك.**', ephemeral: true });
+            return interaction.reply({ content: '❌ **لا يمكنك معاقبة شخص رتبته أعلى منك أو مثلك.**', ephemeral: true });
         }
 
-        // بناء النافذة (Modal)
+        // 3. فتح النافذة المنبثقة (Modal)
         const modal = new ModalBuilder()
             .setCustomId(`timeout_app_modal_${targetMember.id}`)
             .setTitle(`عقوبة: ${targetMember.user.username}`);
 
-        // المدة (اختياري)
+        // خانة المدة
         const durationInput = new TextInputBuilder()
             .setCustomId('timeout_duration')
             .setLabel("المدة (اتركها فارغة لـ 3 ساعات)")
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder("مثال: 1h, 30m, 1d")
-            .setRequired(false); // غير اجباري
+            .setPlaceholder("مثال: 10m, 1h, 1d")
+            .setRequired(false);
 
-        // السبب (اختياري)
+        // خانة السبب
         const reasonInput = new TextInputBuilder()
             .setCustomId('timeout_reason')
-            .setLabel("السبب (اختياري)")
+            .setLabel("سبب العقوبة (اختياري)")
             .setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder("سبب العقوبة...")
-            .setRequired(false); // غير اجباري
+            .setPlaceholder("اكتب سبب المخالفة هنا...")
+            .setRequired(false);
 
         const row1 = new ActionRowBuilder().addComponents(durationInput);
         const row2 = new ActionRowBuilder().addComponents(reasonInput);
