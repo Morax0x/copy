@@ -3,6 +3,9 @@ const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
+// ⬇️⬇️⬇️ آيدي سيرفرك (مهم جداً للتحديث الفوري للأوامر) ⬇️⬇️⬇️
+const MAIN_GUILD_ID = "952732360074494003"; 
+
 // ==================================================================
 // 1. إعداد قاعدة البيانات
 // ==================================================================
@@ -607,8 +610,12 @@ client.on(Events.ClientReady, async () => {
         } catch (err) { console.error(`[Load Error] ${file}:`, err.message); }
     }
     try { 
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands }); 
-        console.log(`✅ Successfully reloaded ${commands.length} application (/) commands.`); 
+        // ⬇️⬇️⬇️ استخدام تحديث السيرفر المحدد فقط لضمان سرعة الظهور ⬇️⬇️⬇️
+        // يجب أن تضع آيدي سيرفرك هنا بدلاً من "952732360074494003" إذا اختلف
+        const GUILD_ID = "952732360074494003"; 
+        
+        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: commands }); 
+        console.log(`✅ Successfully reloaded ${commands.length} application (/) commands for guild ${GUILD_ID}.`); 
     } catch (error) { console.error("[Deploy Error]", error); }
 
     setInterval(calculateInterest, 60 * 60 * 1000); calculateInterest();
