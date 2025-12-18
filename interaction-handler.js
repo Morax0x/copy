@@ -1,4 +1,4 @@
-const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
+const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField, MessageFlags, Colors } = require("discord.js");
 const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
@@ -152,8 +152,8 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // 🛑 الإصلاح هنا: إزالة الأزرار التي تفتح Modals من قائمة الانتظار (Defer)
-                // تم إزالة: g_builder_content, g_builder_visuals, open_xp_modal
+                // 🛑 تم التعديل: إزالة الأزرار التي تفتح Modals من قائمة الانتظار (Defer)
+                // الأزرار التي تفتح مودل يجب أن لا يتم عمل defer لها!
                 if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm')) {
                     if (!i.replied && !i.deferred) {
                         try { await i.deferUpdate(); } 
@@ -332,6 +332,58 @@ module.exports = (client, sql, antiRolesCache) => {
             // 4. Modals Submissions
             // ====================================================
             } else if (i.isModalSubmit()) {
+                
+                // 🔥🔥🔥 معالجة مودل التايم أوت (Apps Command) 🔥🔥🔥
+                if (i.customId.startsWith('timeout_app_modal_')) {
+                    // الرد مخفي (Ephemeral) للمشرف فقط
+                    await i.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+                    const targetId = i.customId.replace('timeout_app_modal_', '');
+                    let durationInput = i.fields.getTextInputValue('timeout_duration');
+                    let reasonInput = i.fields.getTextInputValue('timeout_reason');
+
+                    // القيم الافتراضية
+                    if (!durationInput || durationInput.trim() === "") durationInput = "3h";
+                    if (!reasonInput || reasonInput.trim() === "") reasonInput = "مخالفة القوانين";
+
+                    const targetMember = await i.guild.members.fetch(targetId).catch(() => null);
+                    if (!targetMember) return i.editReply("❌ العضو غير موجود.");
+
+                    const durationMs = ms(durationInput);
+                    if (!durationMs || durationMs > 2419200000) return i.editReply("❌ مدة غير صالحة (الحد الأقصى 28 يوم).");
+
+                    try {
+                        // تنفيذ التايم أوت
+                        await targetMember.timeout(durationMs, `بواسطة ${i.user.tag}: ${reasonInput}`);
+
+                        // 1. رسالة في الشات (الرد على الأمر - مخفية)
+                        const finishTime = Math.floor((Date.now() + durationMs) / 1000);
+                        await i.editReply({ 
+                            content: `❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ\n✶ <t:${finishTime}:R>` 
+                        });
+
+                        // 2. رسالة في الخاص (DM)
+                        const dmEmbed = new EmbedBuilder()
+                            .setDescription(`**❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ**\n✶ المدة: ${durationInput}\n✶ السـبب: ${reasonInput}`)
+                            .setColor("Random")
+                            .setThumbnail(targetMember.user.displayAvatarURL());
+
+                        const dmRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setLabel(i.guild.name)
+                                .setStyle(ButtonStyle.Link)
+                                .setURL(`https://discord.com/channels/${i.guild.id}`) // رابط يوجه للسيرفر
+                        );
+
+                        await targetMember.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
+
+                    } catch (err) {
+                        console.error(err);
+                        await i.editReply("❌ حدث خطأ (تأكد من صلاحيات البوت وتراتبية الرتب).");
+                    }
+                    return;
+                }
+
                 if (i.customId === 'g_content_modal' || i.customId === 'g_visuals_modal') {
                      if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                      const data = giveawayBuilders.get(i.user.id) || {};
