@@ -1,7 +1,7 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 
-const COOLDOWN_DURATION = 86400; 
-const JAIL_DURATION = 10800; 
+const COOLDOWN_DURATION = 86400; // 24 ساعة (بالثواني)
+const JAIL_DURATION = 10800;     // 3 ساعات (بالثواني)
 
 function getReportSettings(sql, guildID) {
     return sql.prepare("SELECT * FROM report_settings WHERE guildID = ?").get(guildID) || {};
@@ -21,7 +21,7 @@ function hasReportPermission(sql, member) {
     return member.roles.cache.some(r => allowedRoleIDs.includes(r.id));
 }
 
-// --- ( 🌟 تم التعديل: إزالة الحذف التلقائي للرسائل اليدوية 🌟 ) ---
+// --- ( 🌟 دالة إرسال رسائل الخطأ والنجاح 🌟 ) ---
 async function sendReportError(destination, title, description, ephemeral = false) {
     const embed = new EmbedBuilder()
         .setTitle(title)
@@ -33,7 +33,7 @@ async function sendReportError(destination, title, description, ephemeral = fals
     if (destination.channel && !destination.isCommand && !destination.isInteraction) { 
         try { await destination.delete(); } catch(e) {} // نحذف رسالة العضو
         
-        // ✅ التغيير هنا: نرسل الرسالة ولا نحذفها (تم إزالة setTimeout)
+        // ✅ نرسل الرسالة ولا نحذفها تلقائياً
         return destination.channel.send({ content: `${destination.author}`, embeds: [embed] });
     }
 
@@ -63,10 +63,10 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
     const REPORT_CHANNEL_ID = settings.reportChannelID; 
 
     const isSlash = !!interactionOrMessage.isChatInputCommand || !!interactionOrMessage.isContextMenuCommand || !!interactionOrMessage.isModalSubmit;
-    
-    if (targetMember.id === reporter.id) return sendReportError(interactionOrMessage, "❖ بـلاغ مـرفـوض", "لا يمكنك البلاغ على نفسك.", true);
-    if (targetMember.id === guild.ownerId) return sendReportError(interactionOrMessage, "❖ تـم رفـض بـلاغـك !", "لا يمكنك البلاغ على الأونر.", true);
-    if (targetMember.user.bot) return sendReportError(interactionOrMessage, "❖ تـم رفـض بـلاغـك !", "لا يمكنك البلاغ على بوت.", true);
+     
+    if (targetMember.id === reporter.id) return sendReportError(interactionOrMessage, "❖ بـلاغ مـرفـوض", "متـوحـد انـت؟ تبلغ على نفسـك؟.", true);
+    if (targetMember.id === guild.ownerId) return sendReportError(interactionOrMessage, "❖ تـم رفـض بـلاغـك !", "تبلغ على موراكس؟ بتودينا بداهية اذلف.", true);
+    if (targetMember.user.bot) return sendReportError(interactionOrMessage, "❖ تـم رفـض بـلاغـك !", "صـاحـي انت؟ تبلغ علـة بوت؟؟.", true);
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const unlimitedRole = UNLIMITED_ROLE_ID ? guild.roles.cache.get(UNLIMITED_ROLE_ID) : null;
@@ -77,7 +77,7 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
     if (!isUnlimited) {
         const cooldownRecord = sql.prepare("SELECT timestamp FROM active_reports WHERE guildID = ? AND targetID = ? AND reporterID = ?").get(guild.id, targetMember.id, reporter.id);
         if (cooldownRecord && (currentTimestamp - cooldownRecord.timestamp) < COOLDOWN_DURATION) {
-            return sendReportError(interactionOrMessage, "❖ بـلاغ مـكـرر !", "لقد قمت بالبلاغ عن هذا الشخص مسبقاً.", true);
+            return sendReportError(interactionOrMessage, "❖ بـلاغ مـكـرر !", "حـبلاوة هي؟ كل شوي تبلغ عليـه.", true);
         }
     }
 
@@ -117,43 +117,101 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
         await logChannel.send({ embeds: [logEmbed] });
     }
 
+    // --- ( 🚨 منطقة تنفيذ العقوبة عند الوصول لـ 2 بلاغات 🚨 ) ---
     if (reportCount >= 2) {
         try {
             const jailRole = JAIL_ROLE_ID ? guild.roles.cache.get(JAIL_ROLE_ID) : null;
             const arenaRole = ARENA_ROLE_ID ? guild.roles.cache.get(ARENA_ROLE_ID) : null;
-            if (arenaRole && targetMember.roles.cache.has(arenaRole.id)) await targetMember.roles.remove(arenaRole, "تلقى بلاغين");
-            if (jailRole) await targetMember.roles.add(jailRole, "تلقى بلاغين");
+            
+            // 1. إزالة رتبة الساحة (إذا وجدت)
+            if (arenaRole && targetMember.roles.cache.has(arenaRole.id)) {
+                await targetMember.roles.remove(arenaRole, "تلقى بلاغين (سحب رتبة الساحة)");
+            }
+            
+            // 2. إضافة رتبة السجن (إذا وجدت)
+            if (jailRole) {
+                await targetMember.roles.add(jailRole, "تلقى بلاغين (إعطاء رتبة السجن)");
+            }
 
+            // 3. إعطاء تايم اوت (Timeout) لمدة 3 ساعات
+            // JAIL_DURATION بالثواني (10800)، نضربه في 1000 ليصبح ملي ثانية
+            if (targetMember.moderatable) {
+                await targetMember.timeout(JAIL_DURATION * 1000, "تلقى بلاغين - سجن تلقائي");
+            }
+
+            // تسجيل العقوبة في الداتابيس
             const unjailTime = currentTimestamp + JAIL_DURATION;
             sql.prepare("INSERT OR REPLACE INTO jailed_members (guildID, userID, unjailTime) VALUES (?, ?, ?)").run(guild.id, targetMember.id, unjailTime);
             sql.prepare("DELETE FROM active_reports WHERE guildID = ? AND targetID = ?").run(guild.id, targetMember.id);
 
-            const jailEmbed = new EmbedBuilder().setTitle("❖ تلقـى بلاغين وتـم سـجـنـه!").setDescription(`✶ المنفي: ${targetMember}\n✶ مدة السجن: 3 ساعات`).setColor(Colors.Blue).setImage("https://i.postimg.cc/L6TpBZMs/image.png");
+            const jailEmbed = new EmbedBuilder()
+                .setTitle("❖ تلقـى بلاغين وتـم سـجـنـه!")
+                .setDescription(`✶ المنفي: ${targetMember}\n✶ \n✶ المدة: 3 ساعات`)
+                .setColor(Colors.Blue)
+                .setImage("https://i.postimg.cc/L6TpBZMs/image.png");
+                
             const reportChannel = REPORT_CHANNEL_ID ? guild.channels.cache.get(REPORT_CHANNEL_ID) : null;
             if (reportChannel) await reportChannel.send({ embeds: [jailEmbed] });
-        } catch (e) { console.error("Jail Error", e); }
+
+        } catch (e) { 
+            console.error("Jail/Timeout Execution Error:", e); 
+        }
     }
 }
 
+// --- ( 🔄 دالة فحص انتهاء مدة السجن تلقائياً 🔄 ) ---
 async function checkUnjailTask(client) {
     const sql = client.sql;
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const jailedToRelease = sql.prepare("SELECT * FROM jailed_members WHERE unjailTime <= ?").all(currentTimestamp);
+    
     for (const record of jailedToRelease) {
         const guild = client.guilds.cache.get(record.guildID);
-        if (!guild) { sql.prepare("DELETE FROM jailed_members WHERE guildID = ? AND userID = ?").run(record.guildID, record.userID); continue; }
+        // تنظيف البيانات القديمة إذا السيرفر غير موجود
+        if (!guild) { 
+            sql.prepare("DELETE FROM jailed_members WHERE guildID = ? AND userID = ?").run(record.guildID, record.userID); 
+            continue; 
+        }
+
         const settings = getReportSettings(sql, guild.id);
         const jailRoleID = settings.jailRoleID;
-        if (!jailRoleID) { sql.prepare("DELETE FROM jailed_members WHERE guildID = ? AND userID = ?").run(record.guildID, record.userID); continue; }
+        // تنظيف إذا لم يتم إعداد رتبة السجن
+        if (!jailRoleID) { 
+            sql.prepare("DELETE FROM jailed_members WHERE guildID = ? AND userID = ?").run(record.guildID, record.userID); 
+            continue; 
+        }
+
         const jailRole = guild.roles.cache.get(jailRoleID);
         const logChannel = settings.logChannelID ? guild.channels.cache.get(settings.logChannelID) : null;
+        
         try {
             const member = await guild.members.fetch(record.userID);
-            if (member && jailRole && member.roles.cache.has(jailRole.id)) {
-                await member.roles.remove(jailRole, "انتهاء مدة السجن");
-                if (logChannel) await logChannel.send({ embeds: [new EmbedBuilder().setTitle("🎉 تـم الإفـراج عن سجين").setDescription(`المستخدم ${member} تم الإفراج عنه.`).setColor(Colors.Green)] });
+            if (member) {
+                // 1. إزالة رتبة السجن
+                if (jailRole && member.roles.cache.has(jailRole.id)) {
+                    await member.roles.remove(jailRole, "انتهاء مدة السجن التلقائي");
+                }
+                
+                // 2. إزالة التايم اوت (تصفيره)
+                if (member.isCommunicationDisabled()) {
+                    await member.timeout(null, "انتهاء مدة السجن التلقائي");
+                }
+
+                if (logChannel) {
+                    await logChannel.send({ 
+                        embeds: [new EmbedBuilder()
+                            .setTitle("🎉 تـم الإفـراج عن سجين")
+                            .setDescription(`المستخدم ${member} تم الإفراج عنه وانتهاء عقوبة التايم أوت.`)
+                            .setColor(Colors.Green)
+                        ] 
+                    });
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            // خطأ بسيط (العضو غادر السيرفر مثلاً)
+        }
+        
+        // حذف السجل من الداتابيس بعد التنفيذ
         sql.prepare("DELETE FROM jailed_members WHERE guildID = ? AND userID = ?").run(record.guildID, record.userID);
     }
 }
