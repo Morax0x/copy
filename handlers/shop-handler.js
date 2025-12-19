@@ -6,7 +6,6 @@ const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
 const path = require('path');
 
-// استيراد ملف الصيد الشامل
 const rootDir = process.cwd();
 let rodsConfig = [], boatsConfig = [], baitsConfig = [];
 try {
