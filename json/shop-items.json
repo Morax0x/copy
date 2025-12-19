@@ -126,60 +126,6 @@
     "image": "https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png"
   },
   {
-    "id": "potion_heal",
-    "name": "جرعة الشفاء",
-    "price": 200,
-    "description": "🧪 تستعيد 50% من صحتك أثناء المعركة.",
-    "category": "potions",
-    "emoji": "🧪",
-    "effect": { "type": "heal", "percent": 50 }
-  },
-  {
-    "id": "potion_stealth",
-    "name": "جرعة التخفي",
-    "price": 450,
-    "description": "👻 تجعل الوحش يتجاهلك تماماً للجولة القادمة.",
-    "category": "potions",
-    "emoji": "👻",
-    "effect": { "type": "stealth", "duration": 1 }
-  },
-  {
-    "id": "potion_reflect",
-    "name": "جرعة الانعكاس",
-    "price": 600,
-    "description": "🌵 تعكس 50% من الضرر المتلقى ليعود على الوحش.",
-    "category": "potions",
-    "emoji": "🌵",
-    "effect": { "type": "reflect", "percent": 50, "duration": 1 }
-  },
-  {
-    "id": "potion_time",
-    "name": "جرعة الزمن",
-    "price": 1000,
-    "description": "⏳ تعيد شحن مهاراتك فوراً (تصفير الكولداون).",
-    "category": "potions",
-    "emoji": "⏳",
-    "effect": { "type": "cooldown_reset" }
-  },
-  {
-    "id": "potion_titan",
-    "name": "جرعة العملاق",
-    "price": 1500,
-    "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك (Tank Mode).",
-    "category": "potions",
-    "emoji": "🔥",
-    "effect": { "type": "titan", "duration": 3 }
-  },
-  {
-    "id": "potion_sacrifice",
-    "name": "جرعة التضحية",
-    "price": 3000,
-    "description": "💀 تضحي بنفسك لإنعاش وشفاء كامل الفريق.",
-    "category": "potions",
-    "emoji": "💀",
-    "effect": { "type": "sacrifice" }
-  },
-  {
     "id": "item_temp_reply",
     "name": "رد بوت تلقائي خاص بك",
     "description": "شراء رد خاص بك لمدة 3 أيام.",
