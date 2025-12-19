@@ -2,46 +2,45 @@ const { AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Message
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const Database = require('better-sqlite3'); // نحتاج هذا لإعادة الاتصال إذا فشل الريستارت
+const Database = require('better-sqlite3'); 
 
-const BACKUP_INTERVAL = 3 * 60 * 60 * 1000; // 3 ساعات
-const OWNER_ID = "1145327691772481577"; // آيديك
+const BACKUP_INTERVAL = 3 * 60 * 60 * 1000; // النسخ كل 3 ساعات
+const OWNER_ID = "1145327691772481577";
 const DB_PATH = path.join(process.cwd(), 'mainDB.sqlite');
 const TEMP_PATH = path.join(process.cwd(), 'temp_restore.sqlite');
 
-module.exports = (client, sql) => {
+// ⚠️ ضع آيدي قناة الباكب هنا يدوياً لتجنب مشاكل قاعدة البيانات
+// أو اتركه فارغاً وسيحاول البوت جلبه من الإعدادات إذا وجدت
+const BACKUP_CHANNEL_ID_CONST = "123456789012345678"; // <--- ضع آيدي القناة هنا
 
-    // 1. دالة النسخ الاحتياطي
+module.exports = (client, sql) => {
+    // 1. دالة النسخ الاحتياطي التلقائي
     const performBackup = async () => {
         try {
-            // التحقق من وجود ملف القاعدة
-            if (!fs.existsSync(DB_PATH)) return;
-
-            // جلب قناة النسخ من جدول settings (المعتمد في بوتك)
-            // تأكد أنك أضفت عمود shopLogChannelID أو قم بإنشاء عمود جديد اسمه backupChannelID
-            // سأفترض هنا أنك ستضيف عمود backupChannelID لجدول settings لاحقاً
-            // أو يمكنك وضع الآيدي مباشرة هنا مؤقتاً للتجربة
+            let backupChannelID = BACKUP_CHANNEL_ID_CONST;
             
-            let backupChannelID = null;
-            try {
-                // محاولة جلب القناة من الإعدادات
-                const settings = sql.prepare("SELECT backupChannelID FROM settings LIMIT 1").get();
-                if (settings) backupChannelID = settings.backupChannelID;
-            } catch (e) {
-                // إذا العمود غير موجود، تجاهل الخطأ
+            // محاولة جلب القناة من الإعدادات إذا لم يتم تحديدها بالأعلى
+            if (!backupChannelID || backupChannelID === "123456789012345678") {
+                try {
+                    // نستخدم جدول settings الموجود فعلياً
+                    // تأكد من وجود عمود shopLogChannelID أو قم بإنشاء عمود جديد
+                    // هنا سنستخدم shopLogChannelID كبديل مؤقت إذا لم تحدد قناة خاصة
+                    const row = sql.prepare("SELECT shopLogChannelID FROM settings LIMIT 1").get();
+                    if (row) backupChannelID = row.shopLogChannelID;
+                } catch (e) {}
             }
 
-            // إذا لم يتم تحديد قناة، لا تقم بالنسخ
-            if (!backupChannelID) return; 
+            if (!backupChannelID) return; // لا توجد قناة، إلغاء النسخ
 
             const channel = await client.channels.fetch(backupChannelID).catch(() => null);
             if (!channel) return;
 
-            // حفظ البيانات المعلقة (Checkpoint)
             if (sql.open) {
                 try { sql.pragma('wal_checkpoint(RESTART)'); } catch (e) {}
             }
             
+            if (!fs.existsSync(DB_PATH)) return;
+
             const attachment = new AttachmentBuilder(DB_PATH, { name: 'mainDB.sqlite' });
 
             const row = new ActionRowBuilder().addComponents(
@@ -60,15 +59,13 @@ module.exports = (client, sql) => {
         } catch (err) { console.error("[Backup] Error:", err); }
     };
 
-    // تشغيل المؤقت
     setInterval(performBackup, BACKUP_INTERVAL);
 
-    // 2. معالج زر الاستعادة
+    // 2. معالج زر الاستعادة (Restore)
     client.on('interactionCreate', async interaction => {
         if (!interaction.isButton()) return;
         if (interaction.customId !== 'restore_backup') return;
 
-        // التحقق من المالك
         if (interaction.user.id !== OWNER_ID) {
             return interaction.reply({ content: "🚫 هذا الزر للمالك فقط.", flags: [MessageFlags.Ephemeral] });
         }
@@ -77,63 +74,46 @@ module.exports = (client, sql) => {
         const attachment = message.attachments.first();
 
         if (!attachment || !attachment.name.endsWith('.sqlite')) {
-            return interaction.reply({ content: "⚠️ لا يوجد ملف قاعدة بيانات صالح.", flags: [MessageFlags.Ephemeral] });
+            return interaction.reply({ content: "⚠️ لا يوجد ملف قاعدة بيانات صالح في هذه الرسالة.", flags: [MessageFlags.Ephemeral] });
         }
 
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-        
-        // التحقق من أن الرابط صالح
-        if (!attachment.url) {
-            return interaction.editReply("❌ رابط الملف غير صالح.");
-        }
-
-        await interaction.editReply("⏳ **جاري تحميل النسخة...**");
+        await interaction.editReply("⏳ **جاري تحميل النسخة واستبدال القاعدة...**");
 
         const file = fs.createWriteStream(TEMP_PATH);
         
         https.get(attachment.url, (response) => {
-            if (response.statusCode !== 200) {
-                return interaction.editReply("❌ فشل تحميل الملف من ديسكورد.");
-            }
-
             response.pipe(file);
+            file.on('finish', () => {
+                file.close(async () => {
+                    try {
+                        if (sql.open) sql.close();
 
-            file.on('finish', async () => {
-                file.close(); // إغلاق ملف التحميل
-
-                try {
-                    await interaction.editReply("⏳ **جاري استبدال قاعدة البيانات...**");
-
-                    // 1. إغلاق الاتصال الحالي
-                    if (client.sql && client.sql.open) {
-                        client.sql.close();
+                        if (fs.existsSync(TEMP_PATH)) {
+                            const filesToRemove = [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
+                            filesToRemove.forEach(f => {
+                                if (fs.existsSync(f)) fs.unlinkSync(f);
+                            });
+                            
+                            fs.renameSync(TEMP_PATH, DB_PATH);
+                            console.log("[Backup Restore] Database replaced successfully.");
+                            
+                            await interaction.editReply("✅ **تمت الاستعادة بنجاح!**\n🔌 جاري إعادة التشغيل...");
+                            
+                            // ⚠️ تنبيه: هذا الأمر يغلق البوت. يجب أن يكون لديك سكربت تشغيل تلقائي
+                            setTimeout(() => process.exit(0), 1000);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        await interaction.editReply(`❌ **فشل الاستعادة:** ${err.message}`);
+                        // محاولة إعادة الاتصال في حال الفشل
+                        try { client.sql = new Database(DB_PATH); } catch(e){}
                     }
-
-                    // 2. حذف الملفات القديمة
-                    if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH);
-                    if (fs.existsSync(`${DB_PATH}-wal`)) fs.unlinkSync(`${DB_PATH}-wal`);
-                    if (fs.existsSync(`${DB_PATH}-shm`)) fs.unlinkSync(`${DB_PATH}-shm`);
-
-                    // 3. وضع الملف الجديد
-                    fs.renameSync(TEMP_PATH, DB_PATH);
-
-                    console.log("[Backup] Database restored.");
-
-                    await interaction.editReply("✅ **تمت الاستعادة!**\n🔌 سيتم إعادة التشغيل الآن...");
-
-                    // 4. الخروج لإعادة التشغيل (يتطلب PM2)
-                    setTimeout(() => process.exit(0), 1000);
-
-                } catch (err) {
-                    console.error(err);
-                    // محاولة الطوارئ: إعادة فتح القاعدة القديمة إذا فشل الاستبدال
-                    try { client.sql = new Database(DB_PATH); } catch(e) {}
-                    await interaction.editReply(`❌ **حدث خطأ فادح:** ${err.message}`);
-                }
+                });
             });
         }).on('error', async (err) => {
-            fs.unlink(TEMP_PATH, () => {}); // تنظيف الملف المؤقت
-            await interaction.editReply(`❌ **خطأ في الشبكة:** ${err.message}`);
+            console.error(err);
+            await interaction.editReply(`❌ **خطأ أثناء تحميل الملف:** ${err.message}`);
         });
     });
 };
