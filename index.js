@@ -13,7 +13,7 @@ const sql = new SQLite('./mainDB.sqlite');
 sql.pragma('journal_mode = WAL');
 
 try {
-    // 🔥 [تصحيح] استدعاء ذكي للدالة لضمان عملها مهما كانت طريقة التصدير 🔥
+    // 🔥 استدعاء ذكي للدالة لضمان عملها 🔥
     const dbSetupModule = require("./database-setup.js");
     const setupDatabase = dbSetupModule.setupDatabase || dbSetupModule;
 
@@ -29,11 +29,10 @@ try {
 }
 
 // ==================================================================
-// 2. تحميل الخطوط (الحل الجذري للمربعات) ✅
+// 2. تحميل الخطوط
 // ==================================================================
 try {
     const { registerFont } = require('canvas');
-
     const beinPath = path.join(__dirname, 'fonts', 'bein-ar-normal.ttf');
     
     if (fs.existsSync(beinPath)) {
@@ -54,15 +53,13 @@ try {
         registerFont(emojiPath, { family: 'NotoEmoji' });
         console.log(`[Fonts] ✅ تم تحميل خط الإيموجي: NotoEmoji`);
     }
-
 } catch (e) {
     console.warn("[Fonts] ⚠️ مشكلة في مكتبة Canvas: " + e.message);
 }
 
 // ==================================================================
-// 3. تحديثات الجداول (لضمان عمل الأوامر الجديدة)
+// 3. تحديثات الجداول
 // ==================================================================
-// ملاحظة: معظم هذه التحديثات موجودة بالفعل في database-setup.js، لكن لا ضرر من وجودها هنا كاحتياط
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastFish INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN rodLevel INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER DEFAULT 1").run(); } catch (e) {}
@@ -123,7 +120,8 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.DirectMessages // ✅ [مهم] تم إضافة نية الخاص
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction] 
 });
@@ -136,6 +134,7 @@ client.recentMessageTimestamps = new Collection();
 const RECENT_MESSAGE_WINDOW = 2 * 60 * 60 * 1000; 
 const botToken = process.env.DISCORD_BOT_TOKEN;
 
+// ... (بقية الإيموجي والإعدادات كما هي) ...
 client.EMOJI_MORA = '<:mora:1435647151349698621>';
 client.EMOJI_STAR = '⭐';
 client.EMOJI_WI = '<a:wi:1435572304988868769>';
@@ -213,7 +212,7 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-// --- Helper Functions ---
+// ... (بقية دوال المساعدة كما هي تماماً) ...
 client.checkAndAwardLevelRoles = async function(member, newLevel) { if (!client.sql.open) return; try { const guild = member.guild; const allLevelRoles = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id); if (allLevelRoles.length === 0) return; const botMember = guild.members.me; if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) return; let roleToAdd = null; const rolesToRemove = []; let highestRoleFound = false; for (const row of allLevelRoles) { const role = guild.roles.cache.get(row.roleID); if (!role) continue; if (row.level <= newLevel && !highestRoleFound) { highestRoleFound = true; if (!member.roles.cache.has(role.id)) roleToAdd = role; } else { if (member.roles.cache.has(role.id)) rolesToRemove.push(role); } } if (roleToAdd && roleToAdd.position < botMember.roles.highest.position) { await member.roles.add(roleToAdd); } if (rolesToRemove.length > 0) { try { await member.roles.remove(rolesToRemove); } catch (e) {} } } catch (err) { console.error("[Level Roles] Error:", err.message); } }
 client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) { if (!client.sql.open) return; try { await client.checkAndAwardLevelRoles(member, newLevel); const guild = member.guild; let channelToSend = null; try { let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id); if (channelData && channelData.channel && channelData.channel !== 'Default') { const fetchedChannel = guild.channels.cache.get(channelData.channel); if (fetchedChannel) channelToSend = fetchedChannel; } } catch(e) {} if (!channelToSend) { if (messageOrInteraction && messageOrInteraction.channel) { channelToSend = messageOrInteraction.channel; } else { return; } } let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id); let levelUpContent = null; let embed; if (customSettings && customSettings.lvlUpTitle) { function antonymsLevelUp(string) { return string.replace(/{member}/gi, `${member}`).replace(/{level}/gi, `${newLevel}`).replace(/{level_old}/gi, `${oldLevel}`).replace(/{xp}/gi, `${xpData.xp}`).replace(/{totalXP}/gi, `${xpData.totalXP}`); } embed = new EmbedBuilder().setTitle(antonymsLevelUp(customSettings.lvlUpTitle)).setDescription(antonymsLevelUp(customSettings.lvlUpDesc.replace(/\\n/g, '\n'))).setColor(customSettings.lvlUpColor || "Random").setTimestamp(); if (customSettings.lvlUpImage) { embed.setImage(antonymsLevelUp(customSettings.lvlUpImage)); } if (customSettings.lvlUpMention == 1) { levelUpContent = `${member}`; } } else { embed = new EmbedBuilder().setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) }).setColor("Random").setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`); } const perms = channelToSend.permissionsFor(guild.members.me); if (perms.has(PermissionsBitField.Flags.SendMessages) && perms.has(PermissionsBitField.Flags.ViewChannel)) { await channelToSend.send({ content: levelUpContent, embeds: [embed] }).catch(() => {}); } } catch (err) { console.error(`[LevelUp Error]: ${err.message}`); } }
 client.sendQuestAnnouncement = async function(guild, member, quest, questType = 'achievement') { if (!client.sql.open) return; try { const id = `${member.id}-${guild.id}`; let notifSettings = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?").get(id); if (!notifSettings) { notifSettings = { id: id, userID: member.id, guildID: guild.id, dailyNotif: 1, weeklyNotif: 1, achievementsNotif: 1, levelNotif: 1 }; client.setQuestNotif.run(notifSettings); } let sendMention = false; if (questType === 'daily' && notifSettings.dailyNotif === 1) sendMention = true; if (questType === 'weekly' && notifSettings.weeklyNotif === 1) sendMention = true; if (questType === 'achievement' && notifSettings.achievementsNotif === 1) sendMention = true; const userIdentifier = sendMention ? `${member}` : `**${member.displayName}**`; const settings = sql.prepare("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = ?").get(guild.id); if (!settings || !settings.questChannelID) return; const channel = guild.channels.cache.get(settings.questChannelID); if (!channel) return; const perms = channel.permissionsFor(guild.members.me); if (!perms || !perms.has(PermissionsBitField.Flags.SendMessages)) return; const canAttachFiles = perms.has(PermissionsBitField.Flags.AttachFiles); const questName = quest.name; const reward = quest.reward; let message = ''; let files = []; const rewardDetails = `\n- **حصـلـت عـلـى:**\nMora: \`${reward.mora.toLocaleString()}\` ${client.EMOJI_MORA} | XP: \`${reward.xp.toLocaleString()}\` ${EMOJI_XP_ANIM}`; const panelChannelLink = settings.lastQuestPanelChannelID ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${settings.lastQuestPanelChannelID}>` : ""; if (canAttachFiles) { try { let attachment; if (questType === 'achievement') { attachment = await client.generateSingleAchievementAlert(member, quest); } else { const typeForAlert = questType === 'weekly' ? 'rare' : 'daily'; attachment = await client.generateQuestAlert(member, quest, typeForAlert); } if(attachment) files.push(attachment); } catch (imgErr) { console.error("[Image Gen Fail]", imgErr); } } if (questType === 'achievement') { message = [ `╭⭒★︰ ${client.EMOJI_WI} ${userIdentifier} ${client.EMOJI_WII}`, `✶ انـرت سمـاء الامـبراطـوريـة بإنجـازك ${client.EMOJI_FASTER}`, `✥ انـجـاز: **${questName}**`, ``, `- فـالتسـجل امبراطوريتـنـا اسمـك بيـن العضـمـاء ${client.EMOJI_PRAY}`, rewardDetails, panelChannelLink ].join('\n'); } else { const typeText = questType === 'daily' ? 'يوميـة' : 'اسبوعيـة'; message = [ `╭⭒★︰ ${client.EMOJI_WI} ${userIdentifier} ${client.EMOJI_WII}`, `✶ اتـممـت مهمـة ${typeText}`, `✥ الـمهـمـة: **${questName}**`, ``, `- لقـد أثبـت انـك احـد اركـان الامبراطـورية ${client.EMOJI_PRAY}`, `- لا يُكلـف مثـلك الا بالمستحيـل ${client.EMOJI_COOL} ~`, rewardDetails, panelChannelLink ].join('\n'); } await channel.send({ content: message, files: files, allowedMentions: { users: sendMention ? [member.id] : [] } }); } catch (err) { console.error("Error sending quest announcement:", err.message); } }
@@ -597,11 +596,9 @@ client.on(Events.ClientReady, async () => {
     }
     
     try { 
-        // 🛑 تنظيف أوامر السيرفر القديمة لمنع التكرار 🛑
         console.log(`🧹 تنظيف أوامر السيرفر: ${MAIN_GUILD_ID}`);
         await rest.put(Routes.applicationGuildCommands(client.user.id, MAIN_GUILD_ID), { body: [] });
 
-        // 🌍 تسجيل الأوامر عالمياً (Global) 🌍
         console.log(`🚀 جاري تسجيل ${commands.length} أمر عالمياً...`);
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
         
@@ -610,15 +607,15 @@ client.on(Events.ClientReady, async () => {
 
     // --- Timers & Intervals ---
     setInterval(calculateInterest, 60 * 60 * 1000); 
-    calculateInterest(); // Run on start
+    calculateInterest(); 
 
     setInterval(updateMarketPrices, 60 * 60 * 1000); 
-    updateMarketPrices(); // Run on start
+    updateMarketPrices(); 
     
-    setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); // Check loans every hour
+    setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); 
 
-    setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); // Farm income every hour
-    checkFarmIncome(client, sql); // Run on start
+    setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); 
+    checkFarmIncome(client, sql); 
 
     setInterval(() => checkDailyStreaks(client, sql), 3600000); 
     checkDailyStreaks(client, sql);
@@ -637,7 +634,6 @@ client.on(Events.ClientReady, async () => {
 
     setInterval(() => updateRainbowRoles(client), 180000); 
 
-    // ✅✅✅ نظام تنظيف الردود التلقائية المؤقتة (كل ساعة) ✅✅✅
     setInterval(() => {
         if (!sql.open) return;
         const now = Date.now();
@@ -677,7 +673,6 @@ client.on(Events.ClientReady, async () => {
     sendDailyMediaUpdate(client, sql);
 }); 
 
-// ( 🌟 Pass Cache to Interaction Handler 🌟 )
 require('./interaction-handler.js')(client, sql, client.antiRolesCache);
 
 const eventsPath = path.join(__dirname, 'events');
