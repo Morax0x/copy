@@ -18,7 +18,7 @@ function getWeekStartDateString() {
 
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
-    if (!sql || !sql.open) return;
+    if (!sql) return; // تصحيح: إزالة .open
 
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
@@ -44,15 +44,14 @@ async function recordBump(client, guildID, userID) {
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
-        if (message.author.bot) return;
-        if (!message.guild) return;
+        if (!message.guild) return; // تم نقله للأعلى لضمان وجود السيرفر
 
         const client = message.client;
         const sql = client.sql;
 
-        if (!sql || !sql.open) return;
+        if (!sql) return; // تصحيح: إزالة .open
 
-        // 1. كشف البومب (Disboard Bump)
+        // 1. كشف البومب (Disboard Bump) - يعمل للبوت فقط
         if (message.author.id === DISBOARD_BOT_ID) {
             let bumperID = null;
             if (message.interaction && message.interaction.commandName === 'bump') {
@@ -71,10 +70,11 @@ module.exports = {
             return; 
         }
 
+        // جلب الإعدادات مرة واحدة هنا لاستخدامها في الأسفل (XP والبريفكس)
         let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
-        // 2. تتبع سقاية الشجرة
+        // 2. تتبع سقاية الشجرة (يعمل للبوتات فقط)
         if (settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
             if (message.author.bot) {
                 const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
@@ -98,6 +98,97 @@ module.exports = {
         }
 
         if (message.author.bot) return;
+
+        // ============================================================
+        // 🔥 تقديم نظام الإحصائيات والـ XP ليعمل قبل الأوامر 🔥
+        // (تم النقل من الأسفل إلى هنا لضمان الاحتساب)
+        // ============================================================
+        
+        // أ. تتبع الإحصائيات (Stats Tracking)
+        try {
+            const userID = message.author.id;
+            const guildID = message.guild.id;
+
+            if (client.incrementQuestStats) {
+                await client.incrementQuestStats(userID, guildID, 'messages', 1);
+                if (message.attachments.size > 0) await client.incrementQuestStats(userID, guildID, 'images', 1);
+                if (message.stickers.size > 0) await client.incrementQuestStats(userID, guildID, 'stickers', message.stickers.size);
+                
+                const emojiRegex = /<a?:\w+:\d+>|[\u{1F300}-\u{1F9FF}]/gu;
+                const emojis = message.content.match(emojiRegex);
+                if (emojis) {
+                    await client.incrementQuestStats(userID, guildID, 'emojis_sent', emojis.length);
+                }
+            }
+
+            if (message.mentions.users.size > 0) {
+                message.mentions.users.forEach(async (user) => {
+                    if (user.id !== message.author.id && !user.bot) {
+                        if (client.incrementQuestStats) await client.incrementQuestStats(user.id, guildID, 'mentions_received', 1);
+                    }
+                });
+            }
+            if (message.reference && message.reference.messageId) {
+                try {
+                    const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                    if (repliedMsg && repliedMsg.author.id !== message.author.id) {
+                        if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'replies_sent', 1);
+                    }
+                } catch(e) {}
+            }
+            if (settings && settings.countingChannelID && message.channel.id === settings.countingChannelID) {
+                if (!isNaN(message.content.trim())) {
+                    if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'counting_channel', 1);
+                }
+            }
+            if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
+                if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'meow_count', 1);
+                let level = client.getLevel.get(userID, guildID);
+                if (level) {
+                      level.total_meow_count = (level.total_meow_count || 0) + 1;
+                      client.setLevel.run(level);
+                      if (client.checkAchievements) await client.checkAchievements(client, message.member, level, null);
+                }
+            }
+            const isMediaChannel = sql.prepare("SELECT * FROM media_streak_channels WHERE guildID = ? AND channelID = ?").get(guildID, message.channel.id);
+            if (isMediaChannel) {
+                if (message.attachments.size > 0 || message.content.includes('http')) {
+                    await handleMediaStreakMessage(message);
+                    // ملاحظة: لا نضع return هنا لنسمح بالـ XP
+                }
+            }
+        } catch (err) {}
+
+        // ب. نظام الـ XP & Streak
+        await handleStreakMessage(message);
+        
+        let level = client.getLevel.get(message.author.id, message.guild.id);
+        const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
+        if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
+        
+        let getXpfromDB = settings?.customXP || 25;
+        let getCooldownfromDB = settings?.customCooldown || 60000;
+
+        if (!client.talkedRecently.get(message.author.id)) {
+            const buff = calculateBuffMultiplier(message.member, sql);
+            const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
+            level.xp += xp; level.totalXP += xp;
+            const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
+            if (level.xp >= nextXP) {
+                level.xp -= nextXP; level.level++;
+                if(client.sendLevelUpMessage) await client.sendLevelUpMessage(message, message.member, level.level, level.level-1, level);
+            }
+            client.setLevel.run(level);
+            client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
+            setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
+        }
+        
+        try {
+            let Roles = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
+            if (Roles && message.member && !message.member.roles.cache.has(Roles.roleID)) {
+                message.member.roles.add(Roles.roleID).catch(e => {});
+            }
+        } catch (e) {}
 
         // ============================================================
         // 3. معالج الاختصارات (Shortcuts)
@@ -140,11 +231,7 @@ module.exports = {
         } catch (err) { console.error("[Shortcut Handler Error]", err); }
 
         // 4. معالج البريفكس (Prefix Handler)
-        let Prefix = "-";
-        try { 
-            const row = sql.prepare("SELECT prefix FROM settings WHERE guild = ?").get(message.guild.id); 
-            if (row && row.prefix) Prefix = row.prefix; 
-        } catch(e) {}
+        let Prefix = settings?.prefix || "-"; // استخدام الإعدادات التي جلبناها بالأعلى
         
         // السماح بالمنشن كبريفكس
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
@@ -249,15 +336,19 @@ module.exports = {
                     // انتهت صلاحيته وتم حذفه، لا نرسل الرد
                 } 
                 else {
-                    // ب) التحقق من القنوات المسموحة/المحظورة
+                    // ب) التحقق من القنوات المسموحة/المحظورة (مع حماية JSON)
                     let isAllowedChannel = true;
-                    if (autoReply.allowedChannels) {
-                        const allowed = JSON.parse(autoReply.allowedChannels);
-                        if (allowed.length > 0 && !allowed.includes(message.channel.id)) isAllowedChannel = false;
-                    }
-                    if (autoReply.ignoredChannels) {
-                        const ignored = JSON.parse(autoReply.ignoredChannels);
-                        if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
+                    try {
+                        if (autoReply.allowedChannels) {
+                            const allowed = JSON.parse(autoReply.allowedChannels);
+                            if (allowed.length > 0 && !allowed.includes(message.channel.id)) isAllowedChannel = false;
+                        }
+                        if (autoReply.ignoredChannels) {
+                            const ignored = JSON.parse(autoReply.ignoredChannels);
+                            if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
+                        }
+                    } catch (e) {
+                         // في حال الخطأ في البيانات نتجاوز ونعتبر القناة مسموحة لتجنب الكراش
                     }
 
                     if (isAllowedChannel) {
@@ -270,11 +361,8 @@ module.exports = {
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
                             
                             // إرسال الرد
-                            if (autoReply.images) {
-                                await message.reply({ content: autoReply.response, files: JSON.parse(autoReply.images), allowedMentions: { repliedUser: false } }).catch(() => {});
-                            } else {
-                                await message.reply({ content: autoReply.response, allowedMentions: { repliedUser: false } }).catch(() => {});
-                            }
+                            const files = autoReply.images ? JSON.parse(autoReply.images) : [];
+                            await message.reply({ content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
 
                             // تفعيل الكولداون
                             autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
@@ -284,91 +372,5 @@ module.exports = {
                 }
             }
         } catch (err) { console.error("[Auto Responder Error]", err); }
-
-        // 7. تتبع الإحصائيات (Stats Tracking)
-        try {
-            const userID = message.author.id;
-            const guildID = message.guild.id;
-
-            if (client.incrementQuestStats) {
-                await client.incrementQuestStats(userID, guildID, 'messages', 1);
-                if (message.attachments.size > 0) await client.incrementQuestStats(userID, guildID, 'images', 1);
-                if (message.stickers.size > 0) await client.incrementQuestStats(userID, guildID, 'stickers', message.stickers.size);
-                
-                const emojiRegex = /<a?:\w+:\d+>|[\u{1F300}-\u{1F9FF}]/gu;
-                const emojis = message.content.match(emojiRegex);
-                if (emojis) {
-                    await client.incrementQuestStats(userID, guildID, 'emojis_sent', emojis.length);
-                }
-            }
-
-            if (message.mentions.users.size > 0) {
-                message.mentions.users.forEach(async (user) => {
-                    if (user.id !== message.author.id && !user.bot) {
-                        if (client.incrementQuestStats) await client.incrementQuestStats(user.id, guildID, 'mentions_received', 1);
-                    }
-                });
-            }
-            if (message.reference && message.reference.messageId) {
-                try {
-                    const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                    if (repliedMsg && repliedMsg.author.id !== message.author.id) {
-                        if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'replies_sent', 1);
-                    }
-                } catch(e) {}
-            }
-            if (settings && settings.countingChannelID && message.channel.id === settings.countingChannelID) {
-                if (!isNaN(message.content.trim())) {
-                    if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'counting_channel', 1);
-                }
-            }
-            if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
-                if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'meow_count', 1);
-                let level = client.getLevel.get(userID, guildID);
-                if (level) {
-                      level.total_meow_count = (level.total_meow_count || 0) + 1;
-                      client.setLevel.run(level);
-                      if (client.checkAchievements) await client.checkAchievements(client, message.member, level, null);
-                }
-            }
-            const isMediaChannel = sql.prepare("SELECT * FROM media_streak_channels WHERE guildID = ? AND channelID = ?").get(guildID, message.channel.id);
-            if (isMediaChannel) {
-                if (message.attachments.size > 0 || message.content.includes('http')) {
-                    await handleMediaStreakMessage(message);
-                    return; 
-                }
-            }
-        } catch (err) {}
-
-        // 8. XP & Streak System
-        await handleStreakMessage(message);
-        
-        let level = client.getLevel.get(message.author.id, message.guild.id);
-        const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
-        if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
-        
-        let getXpfromDB = settings?.customXP || 25;
-        let getCooldownfromDB = settings?.customCooldown || 60000;
-
-        if (!client.talkedRecently.get(message.author.id)) {
-            const buff = calculateBuffMultiplier(message.member, sql);
-            const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
-            level.xp += xp; level.totalXP += xp;
-            const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
-            if (level.xp >= nextXP) {
-                level.xp -= nextXP; level.level++;
-                if(client.sendLevelUpMessage) await client.sendLevelUpMessage(message, message.member, level.level, level.level-1, level);
-            }
-            client.setLevel.run(level);
-            client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
-            setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
-        }
-        
-        try {
-            let Roles = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
-            if (Roles && message.member && !message.member.roles.cache.has(Roles.roleID)) {
-                message.member.roles.add(Roles.roleID).catch(e => {});
-            }
-        } catch (e) {}
     },
 };
