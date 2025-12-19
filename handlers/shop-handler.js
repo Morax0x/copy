@@ -1,5 +1,5 @@
 const { EmbedBuilder, Colors, MessageFlags, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } = require("discord.js");
-const { sendLevelUpMessage } = require('./handler-utils.js');
+const { sendLevelUpMessage } = require('../handler-utils.js');
 
 // 🔥 استيراد الملفين بشكل منفصل 🔥
 const shopItems = require('../json/shop-items.json'); // العناصر العامة
@@ -49,6 +49,7 @@ const THUMBNAILS = new Map([
 
 // 🌟 دالة للتأكد من وجود جدول المخزون (Inventory) 🌟
 function ensureInventoryTable(sql) {
+    if(!sql.open) return;
     sql.prepare(`
         CREATE TABLE IF NOT EXISTS user_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +116,17 @@ function updateMarketPrices() {
     } catch (err) { console.error("[Market] Error updating prices:", err.message); }
 }
 
-function normalize(str) { if (!str) return ""; return str.toString().toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function getBuyableItems() { 
+    return shopItems.filter(it => 
+        it.category !== 'menus' && 
+        !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
+    ); 
+}
+
+function getPotionItems() {
+    return potionItems; 
+}
+
 function getGeneralSkills() { return skillsConfig.filter(s => s.id.startsWith('skill_')); }
 
 function getRaceSkillConfig(raceName) { 
@@ -146,17 +157,6 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-function getBuyableItems() { 
-    return shopItems.filter(it => 
-        it.category !== 'menus' && 
-        !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
-    ); 
-}
-
-function getPotionItems() {
-    return potionItems; 
-}
-
 function calculateSlippage(basePrice, quantity, isBuy) {
     const slippageFactor = 0.0001; 
     const impact = quantity * slippageFactor;
@@ -166,7 +166,7 @@ function calculateSlippage(basePrice, quantity, isBuy) {
     return Math.max(Math.floor(avgPrice), 1);
 }
 
-// ... (نظام الكوبونات) ...
+// ... (نظام الكوبونات ودالة processFinalPurchase المعدلة) ...
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, sql, callbackType) {
     const member = interaction.member; const guildID = interaction.guild.id; const userID = member.id;
     const bossCoupon = sql.prepare("SELECT * FROM user_coupons WHERE guildID = ? AND userID = ? AND isUsed = 0 LIMIT 1").get(guildID, userID);
@@ -218,25 +218,32 @@ async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalP
 async function processFinalPurchase(interaction, itemData, quantity, finalPrice, discountUsed, couponType, client, sql, callbackType, couponIdToDelete = null) {
     let userData = client.getLevel.get(interaction.user.id, interaction.guild.id);
     if (!userData) userData = { ...client.defaultData, user: interaction.user.id, guild: interaction.guild.id };
+    
     const safeReply = async (payload) => {
         payload.flags = MessageFlags.Ephemeral; 
         if (interaction.deferred || interaction.replied) return await interaction.followUp(payload); else return await interaction.reply(payload);
     };
+
     if (userData.mora < finalPrice) {
         const userBank = userData.bank || 0; 
         let errorMsg = `❌ **عذراً، لا تملك مورا كافية!**\nالمطلوب بالكاش: **${finalPrice.toLocaleString()}** ${EMOJI_MORA}`;
         if (userBank >= finalPrice) errorMsg += `\n\n💡 **تلميح:** ليس لديك كاش كافٍ، ولكن لديك **${userBank.toLocaleString()}** في البنك.`;
         return await safeReply({ content: errorMsg });
     }
-    userData.mora -= finalPrice; userData.shop_purchases = (userData.shop_purchases || 0) + 1;
+
+    // خصم المبلغ وتحديث المشتريات
+    userData.mora -= finalPrice; 
+    userData.shop_purchases = (userData.shop_purchases || 0) + 1;
+    
     if (couponType === 'boss' && couponIdToDelete) sql.prepare("DELETE FROM user_coupons WHERE id = ?").run(couponIdToDelete);
     else if (couponType === 'role') sql.prepare("INSERT OR REPLACE INTO user_role_coupon_usage (guildID, userID, lastUsedTimestamp) VALUES (?, ?, ?)").run(interaction.guild.id, interaction.user.id, Date.now());
 
+    // تنفيذ عملية الشراء بناءً على النوع
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') { userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0; }
-        // 🔥🔥 إصلاح المشكلة هنا: استخدام user_inventory بدلاً من user_portfolio للجرعات 🔥🔥
+        // 🔥🔥 إصلاح: الجرعات تذهب للمخزون (inventory) 🔥🔥
         else if (itemData.category === 'potions') { 
-            ensureInventoryTable(sql); // تأكد أن الجدول موجود
+            ensureInventoryTable(sql); 
             sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id); 
         }
         else if (itemData.id === 'streak_shield') {
@@ -294,9 +301,12 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         if (itemData.isBuy) sql.prepare("INSERT INTO user_skills (userID, guildID, skillID, skillLevel) VALUES (?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, itemData.skillId, newLevel);
         else sql.prepare("UPDATE user_skills SET skillLevel = ? WHERE id = ?").run(newLevel, itemData.dbId);
     }
+    
     client.setLevel.run(userData);
+    
     let successMsg = `✅ **تمت العملية بنجاح!**\n📦 **العنصر:** ${itemData.name || itemData.raceName || 'Unknown'}\n💰 **المبلغ المدفوع:** ${finalPrice.toLocaleString()} ${EMOJI_MORA}`;
     if (discountUsed > 0) successMsg += `\n📉 **تم تطبيق خصم:** ${discountUsed}%`;
+    
     await safeReply({ content: successMsg });
     sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || itemData.raceName || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
 }
@@ -375,6 +385,7 @@ function _buildSkillEmbedFields(embed, buttonRow, skillConfig, currentLevel) {
     }
 }
 
+// ... (دوال الصيد: Rod, Boat, Bait - كما هي) ...
 async function _handleRodSelect(i, client, sql) {
     if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
     let userData = sql.prepare("SELECT rodLevel FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
@@ -457,8 +468,7 @@ async function _handlePotionSelect(i, client, sql) {
     await i.editReply({ embeds: [embed], components: [row] });
 }
 
-// ... (بقية دوال التطوير والشراء كما هي) ...
-
+// ... (دوال التطوير والشراء - Rod, Boat, Bait - كما هي) ...
 async function _handleRodUpgrade(i, client, sql) {
     await i.deferUpdate();
     const userId = i.user.id; let userData = client.getLevel.get(userId, i.guild.id);
@@ -510,8 +520,6 @@ async function _handleBaitBuy(i, client, sql) {
     }
     userData.mora -= cost; 
     client.setLevel.run(userData);
-    // الطعوم قد تكون مرتبطة بالماركت، إذا كانت كذلك اتركها user_portfolio، إذا كانت ثابتة غيرها لـ user_inventory
-    // سأبقيها كما كانت في كودك الأصلي لأنك لم تشتكي منها
     sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?").run(i.guild.id, i.user.id, baitId, qty, qty);
     await i.editReply({ content: `✅ تم شراء **${qty}x ${bait.name}** بنجاح!` });
     sendShopLog(client, i.guild.id, i.member, `طعم: ${bait.name} (x${qty})`, cost, "شراء");
@@ -762,19 +770,24 @@ async function handleShopModal(i, client, sql) {
     return false;
 }
 
+// 🔥🔥🔥 الدالة المعدلة لإصلاح المزرعة والسوق 🔥🔥🔥
 async function _handleBuySellModal(i, client, sql, types) {
     const { isBuyMarket, isSellMarket, isBuyFarm, isSellFarm } = types;
-    await i.deferReply({ ephemeral: false });
+    await i.deferReply({ ephemeral: false }); // لأن هذه العمليات ليست ephemeral عادة
     try {
         const quantityString = i.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) return await i.editReply({ content: '❌ كمية غير صالحة.' });
+        
         let userData = client.getLevel.get(i.user.id, i.guild.id); if (!userData) userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
         let userMora = userData.mora || 0; const userBank = userData.bank || 0;
+        
+        // --- قسم المزرعة ---
         if (isBuyFarm || isSellFarm) {
              const animalId = i.customId.replace(isBuyFarm ? 'buy_animal_' : 'sell_animal_', '');
              const animal = farmAnimals.find(a => a.id === animalId);
              if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود.' });
+             
              if(isBuyFarm) {
                  const totalCost = Math.floor(animal.price * quantity);
                  if (userMora < totalCost) {
@@ -784,7 +797,10 @@ async function _handleBuySellModal(i, client, sql, types) {
                  }
                  userData.mora -= totalCost;
                  const now = Date.now();
-                 for (let j = 0; j < quantity; j++) sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?)").run(i.guild.id, i.user.id, animal.id, now, now);
+                 // إضافة كل حيوان كسجل منفصل (لأن المزرعة تعتمد على وقت الحصاد الفردي)
+                 for (let j = 0; j < quantity; j++) {
+                     sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?)").run(i.guild.id, i.user.id, animal.id, now, now);
+                 }
                  userData.shop_purchases = (userData.shop_purchases || 0) + 1;
                  client.setLevel.run(userData);
                  const embed = new EmbedBuilder().setTitle('✅ تم الشراء').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${animal.name}\n💵 التكلفة: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
@@ -794,17 +810,21 @@ async function _handleBuySellModal(i, client, sql, types) {
                  if (farmCount < quantity) return await i.editReply({ content: `❌ لا تملك هذه الكمية.` });
                  const toDelete = sql.prepare("SELECT id FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT ?").all(i.user.id, i.guild.id, animal.id, quantity);
                  toDelete.forEach(d => sql.prepare("DELETE FROM user_farm WHERE id = ?").run(d.id));
-                 const totalGain = Math.floor(animal.price * 0.70 * quantity);
+                 const totalGain = Math.floor(animal.price * 0.70 * quantity); // بيع بـ 70%
                  userData.mora += totalGain;
                  client.setLevel.run(userData);
                  const embed = new EmbedBuilder().setTitle('✅ تم البيع').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${animal.name}\n💵 الربح: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
                  return await i.editReply({ embeds: [embed] });
              }
         }
+        
+        // --- قسم السوق (Market) ---
         const assetId = i.customId.replace(isBuyMarket ? 'buy_modal_' : 'sell_modal_', '');
         const item = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
         if (!item) return await i.editReply({ content: '❌ الأصل غير موجود.' });
+        
         const getPortfolio = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?");
+        
         if (isBuyMarket) {
              const avgPrice = calculateSlippage(item.currentPrice, quantity, true);
              const totalCost = Math.floor(avgPrice * quantity);
@@ -816,21 +836,27 @@ async function _handleBuySellModal(i, client, sql, types) {
              }
              userData.mora -= totalCost; userData.shop_purchases = (userData.shop_purchases || 0) + 1;
              client.setLevel.run(userData);
+             
+             // تحديث المحفظة (Portfolio)
              let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
              if (pfItem) sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(quantity, pfItem.id);
              else sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?)").run(i.guild.id, i.user.id, item.id, quantity);
+             
              const embed = new EmbedBuilder().setTitle('✅ تم الشراء').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${item.name}\n💵 التكلفة: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
              await i.editReply({ embeds: [embed] });
         } else {
              let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
              const userQty = pfItem ? pfItem.quantity : 0;
              if (userQty < quantity) return await i.editReply({ content: `❌ لا تملك الكمية.` });
+             
              const avgPrice = calculateSlippage(item.currentPrice, quantity, false);
              const totalGain = Math.floor(avgPrice * quantity);
              userData.mora += totalGain;
              client.setLevel.run(userData);
+             
              if (userQty - quantity > 0) sql.prepare("UPDATE user_portfolio SET quantity = ? WHERE id = ?").run(userQty - quantity, pfItem.id);
              else sql.prepare("DELETE FROM user_portfolio WHERE id = ?").run(pfItem.id);
+             
              const embed = new EmbedBuilder().setTitle('✅ تم البيع').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${item.name}\n💵 الربح: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
              await i.editReply({ embeds: [embed] });
         }
@@ -876,8 +902,24 @@ async function _handleXpExchangeModal(i, client, sql) {
 }
 
 async function handleShopInteractions(i, client, sql) {
-    if (i.customId.startsWith('shop_paginate_item_')) { try { await i.deferUpdate(); const id = i.customId.replace('shop_paginate_item_', ''); const embed = buildPaginatedItemEmbed(id); if (embed) await i.editReply(embed); } catch (e) {} return; }
-    if (i.customId.startsWith('shop_skill_paginate_')) { try { await i.deferUpdate(); const idx = i.customId.replace('shop_skill_paginate_', ''); const skills = getAllUserAvailableSkills(i.member, sql); const embed = buildSkillEmbedWithPagination(skills, idx, sql, i); if (embed) await i.editReply(embed); } catch (e) {} return; }
+    // 🔥🔥 إصلاح التصفح: استخدم editReply لتعديل الرسالة بدلاً من update 🔥🔥
+    if (i.customId.startsWith('shop_paginate_item_')) { 
+        try { 
+            await i.deferUpdate(); 
+            const id = i.customId.replace('shop_paginate_item_', ''); 
+            const embed = buildPaginatedItemEmbed(id); 
+            if (embed) await i.editReply(embed); 
+        } catch (e) {} return; 
+    }
+    if (i.customId.startsWith('shop_skill_paginate_')) { 
+        try { 
+            await i.deferUpdate(); 
+            const idx = i.customId.replace('shop_skill_paginate_', ''); 
+            const skills = getAllUserAvailableSkills(i.member, sql); 
+            const embed = buildSkillEmbedWithPagination(skills, idx, sql, i); 
+            if (embed) await i.editReply(embed); 
+        } catch (e) {} return; 
+    }
 
     if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
         const val = i.values[0];
@@ -908,6 +950,8 @@ async function handleShopInteractions(i, client, sql) {
         await i.showModal(xpModal);
     }
     else if (i.customId === 'replace_guard') { await _handleReplaceGuard(i, client, sql); }
+    
+    // 🔥🔥 توجيه صحيح لمودالات السوق والمزرعة 🔥🔥
     else if (i.customId.startsWith('buy_market_') || i.customId.startsWith('sell_market_') || i.customId.startsWith('buy_animal_') || i.customId.startsWith('sell_animal_')) {
         const action = i.customId.split('_')[0]; 
         const modalId = action === 'buy' ? (i.customId.includes('market') ? 'buy_modal_' : 'buy_animal_') : (i.customId.includes('market') ? 'sell_modal_' : 'sell_animal_');
