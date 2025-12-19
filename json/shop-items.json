@@ -15,7 +15,7 @@
   },
   {
     "id": "item_temp_reply",
-    "name": "رد تلقائي (3 أيام)",
+    "name": "رد بوت تلقائي خاص بك",
     "description": "شراء رد خاص بك لمدة 3 أيام.",
     "price": 10000,
     "type": "special",
