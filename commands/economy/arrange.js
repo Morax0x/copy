@@ -212,7 +212,7 @@ module.exports = {
                             disableAll(ButtonStyle.Success);
                             
                             if (i) {
-                                await i.update({ embeds: [winEmbed], components: [row1, row2, row3] });
+                                await i.editReply({ embeds: [winEmbed], components: [row1, row2, row3] });
                             } else {
                                 await gameMsg.edit({ embeds: [winEmbed], components: [row1, row2, row3] });
                             }
@@ -228,7 +228,7 @@ module.exports = {
                             disableAll(ButtonStyle.Secondary);
                             
                             if (i) {
-                                await i.update({ embeds: [loseEmbed], components: [row1, row2, row3] });
+                                await i.editReply({ embeds: [loseEmbed], components: [row1, row2, row3] });
                             } else {
                                 await gameMsg.edit({ embeds: [loseEmbed], components: [row1, row2, row3] });
                             }
@@ -253,6 +253,9 @@ module.exports = {
                 collector.on('collect', async i => {
                     if (i.user.id !== userId) return i.reply({ content: 'هذه اللعبة ليست لك!', ephemeral: true });
 
+                    // 🔥🔥🔥 الحل الجذري: الرد فوراً 🔥🔥🔥
+                    if (!i.deferred && !i.replied) await i.deferUpdate();
+
                     const clickedNum = parseInt(i.customId.split('_')[1]);
                     const correctNum = sortedSolution[currentStep];
 
@@ -266,8 +269,8 @@ module.exports = {
                             collector.stop('finished');
                             await finishGame(i, 'win');
                         } else {
-                            // استمرار اللعب: تحديث الأزرار فقط
-                            await i.update({ components: [row1, row2, row3] });
+                            // استمرار اللعب: تحديث الأزرار فقط (باستخدام editReply لأننا عملنا deferUpdate)
+                            await i.editReply({ components: [row1, row2, row3] });
                         }
                     } else {
                         // خسارة: تحديث الزر للأحمر وإنهاء اللعبة فوراً
@@ -339,6 +342,7 @@ module.exports = {
 
             if (confirmation.customId === 'arrange_auto_cancel') {
                 clearActive(); 
+                // نستخدم update هنا لأنها المرة الوحيدة التي نضغط فيها
                 await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
                 return;
             }
