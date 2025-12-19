@@ -1,5 +1,7 @@
 const { EmbedBuilder, Colors, MessageFlags, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } = require("discord.js");
-const { sendLevelUpMessage } = require('../handler-utils.js');
+
+// ✅ [تصحيح] تم تعديل المسار هنا ليقرأ الملف من نفس المجلد
+const { sendLevelUpMessage } = require('./handler-utils.js'); 
 
 // 🔥 استيراد الملفين بشكل منفصل 🔥
 const shopItems = require('../json/shop-items.json'); // العناصر العامة
@@ -385,7 +387,6 @@ function _buildSkillEmbedFields(embed, buttonRow, skillConfig, currentLevel) {
     }
 }
 
-// ... (دوال الصيد: Rod, Boat, Bait - كما هي) ...
 async function _handleRodSelect(i, client, sql) {
     if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
     let userData = sql.prepare("SELECT rodLevel FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
