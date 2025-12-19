@@ -283,7 +283,8 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-function handleSkillUsage(player, skill, monster, log) {
+// 🟢 دالة استخدام المهارات (تم تحديثها لقبول threadChannel للرسائل المنفصلة)
+function handleSkillUsage(player, skill, monster, log, threadChannel) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
@@ -298,6 +299,7 @@ function handleSkillUsage(player, skill, monster, log) {
     if (skill.id === 'skill_owner_leave') {
         monster.hp = 1; 
         log.push(`🚪 **${player.name}** غادر بلمح البصر، وترك الوحش يترنح (HP: 1)!`);
+        if (threadChannel) threadChannel.send(`🚪 **${player.name}** غادر الدانجون بلمح البصر!`).catch(()=>{});
         return { type: 'owner_leave' };
     }
 
@@ -391,7 +393,8 @@ function handleSkillUsage(player, skill, monster, log) {
                  skillDmg = (player.atk + bonusDmg) * mult; 
                  log.push(`🎲 **${player.name}** خاطر ونجح! سدد ضربة قوية بمقدار **${skillDmg}**!`);
              } else {
-                 const selfDamage = Math.floor(Math.random() * (70 - 30 + 1)) + 30;
+                 // 🔥🔥 تم تعديل الضرر هنا ليصبح بين 10 و 30 🔥🔥
+                 const selfDamage = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
                  skillDmg = 0;
                  applyDamageToPlayer(player, selfDamage);
                  log.push(`🎲 **${player.name}** خسر الرهان! وانفجرت النردات مسببة **${selfDamage}** ضرر!`);
@@ -426,6 +429,7 @@ function handleSkillUsage(player, skill, monster, log) {
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
              log.push(`🩸 **${player.name}** ضحى بقوته (**-${selfDmg}**) ليسبب **${skillDmg}**!`);
+             if (threadChannel) threadChannel.send(`🩸 **${player.name}** ضحى بجزء من حياته!`).catch(()=>{});
              break;
         }
         case 'race_elf_skill': {
@@ -618,18 +622,21 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
-                // مؤقت انتهاء الدور (45 ثانية)
                 const turnTimeout = setTimeout(() => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
                           afkPlayers.forEach(afkP => {
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
-                                monster.targetFocusId = afkP.id;
-                                // لا ننهي اللعبة، فقط نتخطى الدور ونسمح للوحش بالهجوم
-                                // threadChannel.send(`⏩ **${afkP.name}** لم يهاجم!`).catch(()=>{});
+                                if (afkP.skipCount >= 5) {
+                                    afkP.hp = 0; afkP.isDead = true;
+                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده لتجاوز وقت الانتظار!`).catch(()=>{});
+                                } else {
+                                    monster.targetFocusId = afkP.id;
+                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5)`).catch(()=>{});
+                                }
                           });
                     }
-                    collector.stop('turn_end'); // هذا لا ينهي المعركة، بل ينهي الدور الحالي فقط
+                    collector.stop('turn_end'); 
                 }, 45000); 
 
                 collector.on('collect', async i => {
@@ -671,7 +678,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 let skillNameUsed = "مهارة";
 
                                 if (skillId === 'class_special_skill' || skillId.startsWith('class_')) {
-                                    const res = handleSkillUsage(p, { id: skillId }, monster, log);
+                                    const res = handleSkillUsage(p, { id: skillId }, monster, log, threadChannel);
                                     if (res && res.error) {
                                         await selection.editReply({ content: `⏳ ${res.error}`, components: [] }).catch(()=>{});
                                         processingUsers.delete(i.user.id); return;
@@ -692,6 +699,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                                 const t = dead[0]; t.isDead = false; t.hp = Math.floor(t.maxHp * 0.2);
                                                 applyDamageToPlayer(p, Math.floor(p.maxHp * 0.1));
                                                 log.push(`✨ **${p.name}** أحيا **${t.name}**!`);
+                                                threadChannel.send(`✨ **${p.name}** قام بإحياء **${t.name}**!`).catch(()=>{});
                                                 p.special_cooldown = 7;
                                             } else {
                                                 players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
@@ -712,7 +720,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 } else {
                                     if (skillId === 'skill_owner_leave') {
-                                        const res = handleSkillUsage(p, { id: skillId }, monster, log);
+                                        const res = handleSkillUsage(p, { id: skillId }, monster, log, threadChannel);
                                         if (res && res.type === 'owner_leave') {
                                             players = players.filter(pl => pl.id !== OWNER_ID);
                                             if (players.length === 0) { collector.stop('monster_dead'); return; }
@@ -726,7 +734,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             const sConf = skillsConfig.find(s=>s.id === skillId);
                                             if(sConf) skillObj = { ...sConf, effectValue: sConf.base_value * 2 };
                                         }
-                                        handleSkillUsage(p, skillObj, monster, log);
+                                        handleSkillUsage(p, skillObj, monster, log, threadChannel);
                                         skillNameUsed = skillObj.name;
                                         if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID) p.skillCooldowns[skillId] = 3;
                                     }
@@ -758,11 +766,26 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 } else if (potionId === 'potion_reflect') {
                                     p.effects.push({ type: 'reflect', val: 0.5, turns: 2 });
                                     actionMsg = "🌵 جهز درع الأشواك!";
+                                } else if (potionId === 'potion_time') {
+                                    p.special_cooldown = 0;
+                                    p.skillCooldowns = {};
+                                    actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
                                 } else if (potionId === 'potion_titan') {
                                     p.maxHp *= 2; p.hp = p.maxHp;
                                     p.effects.push({ type: 'titan', turns: 3 }); 
                                     monster.targetFocusId = p.id;
                                     actionMsg = "🔥 تحول لعملاق!";
+                                } else if (potionId === 'potion_sacrifice') {
+                                    p.hp = 0; p.isDead = true; 
+                                    players.forEach(ally => {
+                                        if (ally.id !== p.id) {
+                                            ally.isDead = false;
+                                            ally.hp = ally.maxHp; 
+                                            ally.effects = [];
+                                        }
+                                    });
+                                    actionMsg = "💀 شرب جرعة التضحية ومات لينقذ الجميع!";
+                                    threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية ومات لينقذ الفريق!`).catch(()=>{});
                                 }
                                 log.push(`**${p.name}**: ${actionMsg}`);
                                 actedPlayers.push(p.id); p.skipCount = 0;
@@ -812,17 +835,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 else {
                     const alive = players.filter(p => !p.isDead);
                     if (alive.length > 0) {
-                        // الوحش يهاجم هدفاً عشوائياً أو مركزاً عليه
-                        let target = alive.find(p => p.id === monster.targetFocusId);
-                        
-                        // إذا الهدف المركز عليه مات أو غير موجود، اختر هدفاً عشوائياً
-                        if (!target) target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive[Math.floor(Math.random() * alive.length)];
-                        
+                        let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive[Math.floor(Math.random() * alive.length)];
                         let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                         if(target.defending) dmg = Math.floor(dmg * 0.5);
                         applyDamageToPlayer(target, dmg);
                         log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
-                        if(target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
+                        
+                        // 🔥🔥 رسالة الموت الفورية 🔥🔥
+                        if(target.hp <= 0 && !target.isDead) { 
+                            target.hp = 0; 
+                            target.isDead = true; 
+                            log.push(`💀 **${target.name}** سقط!`);
+                            threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
+                        }
                     }
                 }
                 if (players.every(p => p.isDead)) ongoing = false;
@@ -838,7 +863,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
-        // 🔥🔥 استعادة نظام الاستراحة بين الطوابق 🔥🔥
+        // 🔥🔥 نظام الاستراحة (المعدل) 🔥🔥
         let baseMora = Math.floor(getBaseFloorMora(floor));
         let floorXp = Math.floor(baseMora / 3); 
         players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
@@ -868,11 +893,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             decCollector.on('end', (c, reason) => res(reason));
         });
 
-        await restMsg.delete().catch(()=>{});
+        // 🔥 تعديل: إزالة الأزرار فقط بدلاً من حذف الرسالة 🔥
+        await restMsg.edit({ components: [] }).catch(()=>{});
 
-        if (decision === 'retreat' || decision === 'time') { // الانسحاب أو انتهاء الوقت = انسحاب
+        if (decision === 'retreat' || decision === 'time') { 
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
+        } else if (decision === 'continue') {
+            await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
         }
 
         players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
@@ -911,7 +939,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     try {
         await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة...**` });
         setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
-    } catch(e) { /* تجاهل الخطأ إذا تم حذف الثريد يدوياً */ }
+    } catch(e) { }
 }
 
 module.exports = { runDungeon };
