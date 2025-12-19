@@ -6,7 +6,10 @@ const { runDungeon } = require('./dungeon-battle.js');
 
 // --- تحميل الإعدادات ---
 const rootDir = process.cwd();
-const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
+let dungeonConfig = {};
+try {
+    dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
+} catch (e) { console.error("Error loading dungeon config:", e); }
 
 // --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
@@ -42,7 +45,12 @@ async function startDungeon(interaction, sql) {
         }
     }
 
-    const themes = Object.keys(dungeonConfig.themes);
+    const themes = Object.keys(dungeonConfig.themes || {});
+    if (themes.length === 0) {
+        activeDungeonRequests.delete(user.id);
+        return interaction.reply({ content: "❌ لا توجد بيانات للدانجون حالياً.", flags: [MessageFlags.Ephemeral] });
+    }
+
     const buttons = themes.map(key => {
         const theme = dungeonConfig.themes[key];
         return new ButtonBuilder()
@@ -75,8 +83,10 @@ async function startDungeon(interaction, sql) {
 
     collector.on('collect', async i => {
         try {
-            await i.deferUpdate(); 
-            collector.stop('selected'); // 🔥 إيقاف الكوليكتور فوراً لمنع مشاكل الوقت
+            // 🔥 الإصلاح الأساسي: الرد فوراً لتجنب Unknown Interaction
+            if (!i.deferred && !i.replied) await i.deferUpdate(); 
+            
+            collector.stop('selected'); 
 
             const themeKey = i.customId.replace('dungeon_theme_', '');
             const theme = dungeonConfig.themes[themeKey];
@@ -128,15 +138,19 @@ async function lobbyPhase(interaction, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    // نستخدم editReply لأن التفاعل تم تأجيله (deferred) سابقاً في startDungeon
+    // نستخدم editReply لأن التفاعل تم تأجيله (deferred) سابقاً
     await interaction.editReply({ content: null, embeds: [updateEmbed()], components: [row] });
     
     const msg = interaction.message || await interaction.fetchReply();
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
+        // التحقق من التفاعل المجهول قبل البدء
+        if (i.replied || i.deferred) return;
+
         try {
             if (i.customId === 'join') {
+                // الفحوصات الأولية (ردود سريعة ephemeral)
                 if (i.user.id === host.id) {
                     return i.reply({ content: "👑 أنت القائد (Leader).", flags: [MessageFlags.Ephemeral] });
                 }
@@ -163,6 +177,7 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                 }
 
+                // تجهيز قائمة الكلاسات
                 const takenClasses = Array.from(partyClasses.values());
                 const availableOptions = [];
 
@@ -195,12 +210,18 @@ async function lobbyPhase(interaction, theme, sql) {
                         componentType: ComponentType.StringSelect 
                     });
                     
+                    // 🔥🔥 إصلاح: الرد الفوري عند اختيار التخصص 🔥🔥
+                    // إذا اخترنا تخصص، نرد فوراً حتى لو أخذ الكود وقتاً
                     const selectedClass = selection.values[0];
                     const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
                     
                     if (currentTaken.includes(selectedClass)) {
-                        return selection.update({ content: `🚫 **سبقك بها عكاشة!**`, components: [] });
+                        // حالة الرفض
+                        return selection.update({ content: `🚫 **سبقك بها عكاشة!** اختر تخصصاً آخر.`, components: [] });
                     }
+
+                    // حالة القبول - تأجيل الرد فوراً
+                    await selection.deferUpdate(); 
 
                     partyClasses.set(i.user.id, selectedClass);
                     
@@ -214,12 +235,10 @@ async function lobbyPhase(interaction, theme, sql) {
                     else if(selectedClass === 'Mage') displayClassName = 'الساحر';
                     else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
 
-                    // 🔥🔥 حماية من Unknown Interaction هنا 🔥🔥
-                    if (!selection.deferred && !selection.replied) {
-                        try { await selection.deferUpdate(); } catch(e){}
-                    }
+                    // تحديث رسالة القائمة المختفية
                     await selection.editReply({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
                     
+                    // تحديث اللوبي الرئيسي
                     await msg.edit({ embeds: [updateEmbed()] });
 
                     if (party.length >= 5) {
@@ -227,6 +246,8 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                     
                 } catch (e) {
+                    // في حال انتهاء الوقت وعدم الاختيار
+                    if (e.code !== 'InteractionCollectorError') console.log(e);
                     await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
                 }
 
@@ -234,13 +255,13 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", flags: [MessageFlags.Ephemeral] });
                 if (party.length < 1) return i.reply({ content: "خطأ", flags: [MessageFlags.Ephemeral] });
                 
-                // 🔥🔥 حماية من Unknown Interaction هنا 🔥🔥
-                if (!i.deferred && !i.replied) {
-                    try { await i.deferUpdate(); } catch(e){}
-                }
+                // 🔥🔥 إصلاح: تأجيل الرد فوراً عند الضغط على start 🔥🔥
+                await i.deferUpdate();
+                
                 collector.stop('start');
             }
         } catch (err) {
+            if (err.code === 10062) return; // تجاهل خطأ التفاعل المجهول إذا حدث
             console.error("Dungeon Interaction Error:", err);
         }
     });
@@ -249,6 +270,7 @@ async function lobbyPhase(interaction, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
 
+            // تنفيذ الخصومات والتحديثات
             party.forEach(id => {
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, interaction.guild.id);
                 if (id === host.id) {
@@ -264,6 +286,7 @@ async function lobbyPhase(interaction, theme, sql) {
             });
 
             try {
+                // إنشاء الثريد
                 const thread = await msg.channel.threads.create({
                     name: `⚔️ دانجون ${host.username}`,
                     autoArchiveDuration: 60,
@@ -276,14 +299,16 @@ async function lobbyPhase(interaction, theme, sql) {
 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
+                // تشغيل المعركة
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
             } catch (err) {
                 console.error(err);
                 activeDungeonRequests.delete(host.id); 
-                interaction.channel.send("❌ حدث خطأ.");
+                interaction.channel.send("❌ حدث خطأ أثناء إنشاء المعركة.");
             }
         } else {
+            // إذا انتهى الوقت أو تم الإلغاء
             activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون.", components: [], embeds: [] });
         }
