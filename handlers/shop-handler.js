@@ -39,7 +39,8 @@ const THUMBNAILS = new Map([
     ['nitro_basic', 'https://i.postimg.cc/Qxmn3G8K/5.webp'],
     ['nitro_gaming', 'https://i.postimg.cc/kXJfw1Q4/6.webp'],
     ['change_race', 'https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png'],
-    ['item_temp_reply', 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'] // أيقونة للرد التلقائي
+    ['item_temp_reply', 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'],
+    ['potions_menu', 'https://cdn-icons-png.flaticon.com/512/867/867927.png'] // أيقونة الجرعات
 ]);
 
 // 🌟 دالة اللوج (تسجيل العمليات) 🌟
@@ -81,8 +82,8 @@ function updateMarketPrices() {
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
         
         const SATURATION_POINT = 2000; 
-        const MIN_PRICE = 10;          
-        const MAX_PRICE = 50000;       
+        const MIN_PRICE = 10;           
+        const MAX_PRICE = 50000;        
 
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
@@ -148,7 +149,10 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-function getBuyableItems() { return shopItems.filter(it => !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu'].includes(it.id)); }
+function getBuyableItems() { 
+    // استبعاد القوائم الفرعية والعناصر التي لها قوائم خاصة
+    return shopItems.filter(it => !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id) && it.category !== 'potions'); 
+}
 
 // 🔥 دالة حساب الانزلاق السعري (Slippage Calculation) 🔥
 function calculateSlippage(basePrice, quantity, isBuy) {
@@ -297,6 +301,10 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') {
             userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0;
+        }
+        // معالجة الجرعات
+        else if (itemData.category === 'potions') {
+            sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id);
         }
         else if (itemData.id === 'streak_shield') {
             const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak);");
@@ -475,6 +483,40 @@ async function _handleBaitSelect(i, client, sql) {
     await i.editReply({ content: "**🛒 متجر الطعوم:**", components: [row], embeds: [] });
 }
 
+async function _handlePotionSelect(i, client, sql) {
+    if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
+    
+    // جلب الجرعات فقط من ملف العناصر
+    const potions = shopItems.filter(it => it.category === 'potions');
+    
+    if (potions.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
+
+    const potionOptions = potions.map(p => {
+        return { 
+            label: p.name, 
+            description: `${p.price.toLocaleString()} مورا | ${p.description.substring(0, 50)}`, 
+            value: `buy_item_${p.id}`, // نستخدم نفس نظام الشراء العام
+            emoji: p.emoji 
+        };
+    });
+
+    const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('shop_buy_potion_menu')
+            .setPlaceholder('اختر الجرعة لشرائها...')
+            .addOptions(potionOptions)
+    );
+
+    const embed = new EmbedBuilder()
+        .setTitle('🧪 متجر الجرعات السحرية')
+        .setDescription('اختر الجرعة التي تريد شراءها من القائمة بالأسفل.\n⚠️ **تنبيه:** عدد الجرعات التي يمكنك حملها يعتمد على مستواك!')
+        .setColor(Colors.Purple)
+        .setImage(BANNER_URL)
+        .setThumbnail(THUMBNAILS.get('potions_menu'));
+
+    await i.editReply({ embeds: [embed], components: [row] });
+}
+
 // --- Upgrade Logic ---
 async function _handleRodUpgrade(i, client, sql) {
     await i.deferUpdate();
@@ -633,6 +675,52 @@ async function _handleShopButton(i, client, sql) {
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
+        // 🔥🔥🔥 التحقق من حدود الجرعات (Capacity Check) 🔥🔥🔥
+        if (item.category === 'potions') {
+            const userLevel = userData.level;
+            let maxTypes = 3;
+            let maxQtyPerType = 1;
+
+            if (userLevel >= 31) { maxTypes = 6; maxQtyPerType = 5; }
+            else if (userLevel >= 21) { maxTypes = 6; maxQtyPerType = 3; }
+            else if (userLevel >= 11) { maxTypes = 6; maxQtyPerType = 2; }
+            else { maxTypes = 3; maxQtyPerType = 1; }
+
+            // 1. فحص كمية الجرعة المحددة
+            const existingPotion = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
+            const currentQty = existingPotion ? existingPotion.quantity : 0;
+
+            if (currentQty >= maxQtyPerType) {
+                return await i.reply({ 
+                    content: `🚫 **وصلت للحد الأقصى من هذه الجرعة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxQtyPerType}** فقط من نوع **${item.name}**.\nارفع مستواك لزيادة السعة!`, 
+                    flags: MessageFlags.Ephemeral 
+                });
+            }
+
+            // 2. فحص عدد الأنواع (إذا كانت جرعة جديدة)
+            if (currentQty === 0) {
+                // نحسب عدد أنواع الجرعات الفريدة التي يمتلكها اللاعب حالياً
+                // نفترض أن الجرعات تبدأ بـ potion_ أو موجودة في shopItems بكاتيجوري potions
+                const allUserItems = sql.prepare("SELECT itemID FROM user_portfolio WHERE userID = ? AND guildID = ?").all(userId, guildId);
+                let currentPotionTypesCount = 0;
+                
+                for (const uItem of allUserItems) {
+                    const shopItem = shopItems.find(si => si.id === uItem.itemID);
+                    if (shopItem && shopItem.category === 'potions') {
+                        currentPotionTypesCount++;
+                    }
+                }
+
+                if (currentPotionTypesCount >= maxTypes) {
+                    return await i.reply({ 
+                        content: `🚫 **حقيبتك ممتلئة بأنواع مختلفة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxTypes}** أنواع مختلفة من الجرعات.\nاستهلك بعض الجرعات أولاً.`, 
+                        flags: MessageFlags.Ephemeral 
+                    });
+                }
+            }
+        }
+        // 🔥🔥🔥 نهاية التحقق 🔥🔥🔥
+
         const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
         if (RESTRICTED_ITEMS.includes(item.id)) {
              if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
@@ -916,6 +1004,16 @@ async function handleShopInteractions(i, client, sql) {
         return;
     }
 
+    if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
+        const potionId = i.values[0].replace('buy_item_', '');
+        const item = shopItems.find(it => it.id === potionId);
+        if (item) {
+             const paginationEmbed = buildPaginatedItemEmbed(potionId);
+             if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
+        }
+        return;
+    }
+
     if (i.customId === 'upgrade_rod') await _handleRodUpgrade(i, client, sql);
     else if (i.customId === 'upgrade_boat') await _handleBoatUpgrade(i, client, sql);
     else if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') await _handleBaitBuy(i, client, sql);
@@ -970,6 +1068,13 @@ async function handleShopSelectMenu(i, client, sql) {
              const embed = new EmbedBuilder().setTitle('تبديل الخبرة').setDescription(`السعر: ${XP_EXCHANGE_RATE} مورا = 1 XP`).setColor(Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('exchange_xp'));
              return await i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)], flags: MessageFlags.Ephemeral });
         }
+        
+        // 🔥🔥 معالجة اختيار قائمة الجرعات 🔥🔥
+        if (selected === 'potions_menu') {
+            await _handlePotionSelect(i, client, sql);
+            return;
+        }
+
         const item = getBuyableItems().find(it => it.id === selected);
         if (item) {
              const paginationEmbed = buildPaginatedItemEmbed(selected);
@@ -990,11 +1095,10 @@ async function handleSkillSelectMenu(i, client, sql) {
     } catch (error) { console.error(error); }
 }
 
-// ⚠️⚠️⚠️ تأكد من أن كل الدوال مصدرة بشكل صحيح ⚠️⚠️⚠️
 module.exports = {
     handleShopModal,
     handleShopSelectMenu,
     handleShopInteractions,
     handleSkillSelectMenu,
-    updateMarketPrices // ✅ الدالة المفقودة تمت إضافتها هنا
+    updateMarketPrices
 };
