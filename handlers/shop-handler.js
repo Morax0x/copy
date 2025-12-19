@@ -2,8 +2,8 @@ const { EmbedBuilder, Colors, MessageFlags, ButtonBuilder, ButtonStyle, ActionRo
 const { sendLevelUpMessage } = require('./handler-utils.js');
 
 // 🔥 استيراد الملفين بشكل منفصل 🔥
-const shopItems = require('../json/shop-items.json'); // العناصر العامة فقط
-const potionItems = require('../json/potions.json'); // الجرعات فقط
+const shopItems = require('../json/shop-items.json'); // العناصر العامة
+const potionItems = require('../json/potions.json'); // الجرعات
 
 const farmAnimals = require('../json/farm-animals.json');
 const weaponsConfig = require('../json/weapons-config.json');
@@ -46,6 +46,20 @@ const THUMBNAILS = new Map([
     ['item_temp_reply', 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'],
     ['potions_menu', 'https://cdn-icons-png.flaticon.com/512/867/867927.png']
 ]);
+
+// 🌟 دالة للتأكد من وجود جدول المخزون (Inventory) 🌟
+function ensureInventoryTable(sql) {
+    sql.prepare(`
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guildID TEXT,
+            userID TEXT,
+            itemID TEXT,
+            quantity INTEGER DEFAULT 0,
+            UNIQUE(guildID, userID, itemID)
+        );
+    `).run();
+}
 
 // 🌟 دالة اللوج (تسجيل العمليات) 🌟
 async function sendShopLog(client, guildId, member, item, price, type = "شراء") {
@@ -132,15 +146,13 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-// 🔥 دالة العناصر العامة (من الملف القديم) 🔥
 function getBuyableItems() { 
     return shopItems.filter(it => 
-        it.category !== 'menus' && // استبعاد القوائم
+        it.category !== 'menus' && 
         !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
     ); 
 }
 
-// 🔥 دالة الجرعات (من الملف الجديد) 🔥
 function getPotionItems() {
     return potionItems; 
 }
@@ -154,7 +166,7 @@ function calculateSlippage(basePrice, quantity, isBuy) {
     return Math.max(Math.floor(avgPrice), 1);
 }
 
-// ... (نظام الكوبونات كما هو) ...
+// ... (نظام الكوبونات) ...
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, sql, callbackType) {
     const member = interaction.member; const guildID = interaction.guild.id; const userID = member.id;
     const bossCoupon = sql.prepare("SELECT * FROM user_coupons WHERE guildID = ? AND userID = ? AND isUsed = 0 LIMIT 1").get(guildID, userID);
@@ -190,7 +202,7 @@ async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalP
     }
     row.addComponents(new ButtonBuilder().setCustomId('skip_coupon').setLabel('تخـطـي (دفع كامل)').setStyle(ButtonStyle.Primary));
 
-    const replyData = { content: `**🛍️ خيـارات الـدفع:**\n\n${couponMessage}`, components: [row], ephemeral: true, fetchReply: true };
+    const replyData = { content: `**🛍️ خيـارات الـدفع:**\n\n${couponMessage}`, components: [row], flags: MessageFlags.Ephemeral, fetchReply: true };
     let msg; if (interaction.replied || interaction.deferred) msg = await interaction.followUp(replyData); else msg = await interaction.reply(replyData);
     const filter = i => i.user.id === userID;
     const collector = msg.createMessageComponentCollector({ filter, componentType: ComponentType.Button, time: 60000 });
@@ -207,7 +219,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     let userData = client.getLevel.get(interaction.user.id, interaction.guild.id);
     if (!userData) userData = { ...client.defaultData, user: interaction.user.id, guild: interaction.guild.id };
     const safeReply = async (payload) => {
-        payload.ephemeral = true; 
+        payload.flags = MessageFlags.Ephemeral; 
         if (interaction.deferred || interaction.replied) return await interaction.followUp(payload); else return await interaction.reply(payload);
     };
     if (userData.mora < finalPrice) {
@@ -222,7 +234,11 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
 
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') { userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0; }
-        else if (itemData.category === 'potions') { sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id); }
+        // 🔥🔥 إصلاح المشكلة هنا: استخدام user_inventory بدلاً من user_portfolio للجرعات 🔥🔥
+        else if (itemData.category === 'potions') { 
+            ensureInventoryTable(sql); // تأكد أن الجدول موجود
+            sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id); 
+        }
         else if (itemData.id === 'streak_shield') {
             const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak);");
             const existingStreak = sql.prepare("SELECT * FROM streaks WHERE userID = ? AND guildID = ?").get(interaction.user.id, interaction.guild.id);
@@ -285,9 +301,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || itemData.raceName || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
 }
 
-// 🔥🔥 دالة اختيار الجرعات مع جمعها وإصلاح التكرار 🔥🔥
 function buildPaginatedItemEmbed(selectedItemId) {
-    // تحديد الملف المناسب بناءً على وجود العنصر
     const isPotion = potionItems.find(i => i.id === selectedItemId);
     const itemList = isPotion ? potionItems : getBuyableItems();
 
@@ -410,17 +424,13 @@ async function _handleBaitSelect(i, client, sql) {
     await i.editReply({ content: "**🛒 متجر الطعوم:**", components: [row], embeds: [] });
 }
 
-// 🔥🔥 دالة اختيار الجرعات مع جمعها وإصلاح التكرار 🔥🔥
 async function _handlePotionSelect(i, client, sql) {
     if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
     
-    // جلب الجرعات من الملف المنفصل
     const potions = getPotionItems();
-    
     if (potions.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
 
     const limitedPotions = potions.slice(0, 25);
-
     const potionOptions = limitedPotions.map(p => {
         return { 
             label: p.name, 
@@ -500,6 +510,8 @@ async function _handleBaitBuy(i, client, sql) {
     }
     userData.mora -= cost; 
     client.setLevel.run(userData);
+    // الطعوم قد تكون مرتبطة بالماركت، إذا كانت كذلك اتركها user_portfolio، إذا كانت ثابتة غيرها لـ user_inventory
+    // سأبقيها كما كانت في كودك الأصلي لأنك لم تشتكي منها
     sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?").run(i.guild.id, i.user.id, baitId, qty, qty);
     await i.editReply({ content: `✅ تم شراء **${qty}x ${bait.name}** بنجاح!` });
     sendShopLog(client, i.guild.id, i.member, `طعم: ${bait.name} (x${qty})`, cost, "شراء");
@@ -594,8 +606,10 @@ async function _handleShopButton(i, client, sql) {
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
-        // 🔥🔥🔥 التحقق من حدود الجرعات (Capacity Check) 🔥🔥🔥
+        // 🔥🔥🔥 التحقق من حدود الجرعات (باستخدام الجدول الجديد) 🔥🔥🔥
         if (item.category === 'potions') {
+            ensureInventoryTable(sql); // إنشاء الجدول إذا لم يكن موجوداً
+            
             const userLevel = userData.level;
             let maxTypes = 3;
             let maxQtyPerType = 1;
@@ -603,16 +617,19 @@ async function _handleShopButton(i, client, sql) {
             else if (userLevel >= 21) { maxTypes = 6; maxQtyPerType = 3; }
             else if (userLevel >= 11) { maxTypes = 6; maxQtyPerType = 2; }
             else { maxTypes = 3; maxQtyPerType = 1; }
-            const existingPotion = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
+
+            // القراءة من user_inventory
+            const existingPotion = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
             const currentQty = existingPotion ? existingPotion.quantity : 0;
             if (currentQty >= maxQtyPerType) {
                 return await i.reply({ content: `🚫 **وصلت للحد الأقصى من هذه الجرعة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxQtyPerType}** فقط من نوع **${item.name}**.\nارفع مستواك لزيادة السعة!`, flags: MessageFlags.Ephemeral });
             }
             if (currentQty === 0) {
-                const allUserItems = sql.prepare("SELECT itemID FROM user_portfolio WHERE userID = ? AND guildID = ?").all(userId, guildId);
+                // القراءة من user_inventory
+                const allUserItems = sql.prepare("SELECT itemID FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
                 let currentPotionTypesCount = 0;
                 for (const uItem of allUserItems) {
-                    const shopItem = potionItems.find(si => si.id === uItem.itemID); // البحث في ملف الجرعات
+                    const shopItem = potionItems.find(si => si.id === uItem.itemID); 
                     if (shopItem) { currentPotionTypesCount++; }
                 }
                 if (currentPotionTypesCount >= maxTypes) {
@@ -872,7 +889,6 @@ async function handleShopInteractions(i, client, sql) {
 
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
         const potionId = i.values[0].replace('buy_item_', '');
-        // هنا كان اللاق: الدالة القديمة لم تكن تجد الجرعة لأنها تبحث في قائمة العناصر العامة فقط
         const paginationEmbed = buildPaginatedItemEmbed(potionId);
         if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
         else return await i.reply({ content: "❌ خطأ في تحميل بيانات الجرعة.", flags: MessageFlags.Ephemeral });
