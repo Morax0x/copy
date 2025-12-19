@@ -43,7 +43,6 @@ const THUMBNAILS = new Map([
     ['potions_menu', 'https://cdn-icons-png.flaticon.com/512/867/867927.png']
 ]);
 
-// ... (دوال اللوج والسوق كما هي بدون تغيير) ...
 // 🌟 دالة اللوج (تسجيل العمليات) 🌟
 async function sendShopLog(client, guildId, member, item, price, type = "شراء") {
     try {
@@ -129,12 +128,16 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
+// 🔥 تم التعديل: استبعاد الجرعات والقوائم من المتجر العام 🔥
 function getBuyableItems() { 
-    // هذه الدالة للعناصر العامة فقط، نستبعد منها الجرعات والأسلحة والقوائم الخاصة
-    return shopItems.filter(it => !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id) && it.category !== 'potions'); 
+    return shopItems.filter(it => 
+        it.category !== 'potions' && // استبعاد الجرعات
+        it.category !== 'menus' &&   // استبعاد القوائم
+        !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
+    ); 
 }
 
-// دالة مساعدة جديدة لجلب الجرعات فقط
+// دالة لجلب الجرعات فقط
 function getPotionItems() {
     return shopItems.filter(it => it.category === 'potions');
 }
@@ -279,7 +282,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || itemData.raceName || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
 }
 
-// 🔥🔥 تم تعديل هذه الدالة لإصلاح مشكلة اللاق عند اختيار الجرعة 🔥🔥
+// 🔥🔥 دالة اختيار الجرعات مع جمعها وإصلاح التكرار 🔥🔥
 function buildPaginatedItemEmbed(selectedItemId) {
     // نحدد القائمة المناسبة بناءً على نوع العنصر (جرعة أم عنصر عام)
     let itemList;
