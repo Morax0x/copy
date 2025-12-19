@@ -1,8 +1,5 @@
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, Colors } = require("discord.js");
 
-// (كائن الإحصائيات الافتراضية لتجنب الأخطاء)
-const autoResponderCooldowns = new Map();
-
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('رد-تلقائي')
@@ -38,18 +35,30 @@ module.exports = {
         ),
 
     name: 'auto-responder',
+    aliases: ['ar', 'ردود'],
     category: "Admin",
     description: "نظام الردود التلقائية.",
 
     async execute(interaction) {
-        if (!interaction.isChatInputCommand) return;
+        // دعم الأوامر العادية (Prefix) والسلاش (Slash)
+        const isSlash = !!interaction.isChatInputCommand;
         
-        const sql = interaction.client.sql;
-        const guildID = interaction.guild.id;
-        const sub = interaction.options.getSubcommand();
+        let client, sql, guildID, user, sub;
+        
+        if (isSlash) {
+            client = interaction.client;
+            sql = interaction.client.sql;
+            guildID = interaction.guild.id;
+            user = interaction.user;
+            sub = interaction.options.getSubcommand();
+        } else {
+            // دعم البريفكس (إذا تم استدعاؤه كأمر عادي)
+            // ملاحظة: هذا الملف مصمم كـ SlashCommandBuilder، لذا قد تحتاج لتعديل بسيط إذا كنت تستخدمه كأمر عادي أيضاً
+            // سأفترض هنا أنه Slash فقط كما هو في الكود الأصلي
+            return; 
+        }
 
         try {
-             // ( 🌟 نجعل الـ defer خارج الـ try block الرئيسية )
             await interaction.deferReply({ ephemeral: true });
 
             if (sub === 'اضافة') {
@@ -62,15 +71,13 @@ module.exports = {
                 const exists = sql.prepare("SELECT id FROM auto_responses WHERE guildID = ? AND trigger = ?").get(guildID, trigger);
                 if (exists) return interaction.editReply("❌ هذا الرد موجود مسبقاً. قم بحذفه أولاً للتعديل.");
 
-                const responseData = {
-                    text: response.split('|').map(t => t.trim()), 
-                    images: images.split(/\s+/).filter(url => url.startsWith('http'))
-                };
+                // معالجة الصور (التأكد من الروابط)
+                const imageList = images.split(/\s+/).filter(url => url.startsWith('http'));
 
                 sql.prepare(`
-                    INSERT INTO auto_responses (guildID, trigger, response, images, matchType, cooldown) 
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `).run(guildID, trigger, JSON.stringify(responseData.text), JSON.stringify(responseData.images), matchType, cooldown);
+                    INSERT INTO auto_responses (guildID, trigger, response, images, matchType, cooldown, createdBy) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).run(guildID, trigger, response, JSON.stringify(imageList), matchType, cooldown, user.id);
 
                 return interaction.editReply(`✅ تم إضافة الرد على: **"${trigger}"** بنجاح.\nنوع المطابقة: ${matchType}\nالكولداون: ${cooldown} ثانية.`);
             }
@@ -85,7 +92,8 @@ module.exports = {
 
             if (sub === 'قائمة') {
                 const page = interaction.options.getInteger('صفحة') || 1;
-                const rows = sql.prepare("SELECT trigger, matchType, cooldown FROM auto_responses WHERE guildID = ?").all(guildID);
+                // جلب جميع البيانات بما فيها تاريخ الانتهاء وصاحب الرد
+                const rows = sql.prepare("SELECT trigger, matchType, cooldown, expiresAt, createdBy FROM auto_responses WHERE guildID = ?").all(guildID);
                 
                 if (rows.length === 0) return interaction.editReply("📭 لا توجد ردود تلقائية مسجلة.");
 
@@ -94,13 +102,19 @@ module.exports = {
                 const start = (page - 1) * itemsPerPage;
                 const currentItems = rows.slice(start, start + itemsPerPage);
 
-                const desc = currentItems.map((r, i) => 
-                    `**${start + i + 1}.** \`${r.trigger}\` (${r.matchType === 'exact' ? 'تطابق تام' : 'يحتوي'}) - ⏳ ${r.cooldown}ث`
-                ).join('\n');
+                const desc = currentItems.map((r, i) => {
+                    let status = "♾️ دائم";
+                    if (r.expiresAt) {
+                        status = `⏳ ينتهي: <t:${Math.floor(r.expiresAt / 1000)}:R>`;
+                    }
+                    let creator = r.createdBy ? `<@${r.createdBy}>` : "إداري";
+                    
+                    return `**${start + i + 1}.** \`${r.trigger}\` (${r.matchType === 'exact' ? 'تطابق' : 'يحتوي'}) | ⏳ ${r.cooldown}ث\n   ↳ ${status} | 👤 بواسطة: ${creator}`;
+                }).join('\n\n');
 
                 const embed = new EmbedBuilder()
                     .setTitle(`📜 قائمة الردود التلقائية (${rows.length})`)
-                    .setDescription(desc)
+                    .setDescription(desc || "لا توجد ردود في هذه الصفحة.")
                     .setFooter({ text: `صفحة ${page} من ${totalPages}` })
                     .setColor(Colors.Blue);
 
@@ -134,7 +148,6 @@ module.exports = {
 
         } catch (error) {
             console.error("[Auto Responder Execute Error]", error);
-            // (إغلاق التفاعل برسالة خطأ في حال الكراش)
             if (interaction.deferred || interaction.replied) {
                 return interaction.editReply({ content: "❌ حدث خطأ داخلي أثناء تنفيذ الأمر.", ephemeral: true });
             } else {
