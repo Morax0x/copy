@@ -160,11 +160,32 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // استثناء الأزرار التي تفتح Modals من الـ defer لتجنب الأخطاء
-                if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm') || id === 'open_xp_modal' || id.startsWith('buy_market_') || id.startsWith('sell_market_') || id.startsWith('buy_animal_') || id.startsWith('sell_animal_') || id === 'buy_item_item_temp_reply') {
-                    // لا تفعل شيئاً، دع الهاندلر يتصرف
+                // 🔥🔥 [إصلاح هام] استثناء الأزرار التي تتعامل معها ملفات أخرى من الـ Defer التلقائي هنا
+                // لمنع خطأ Interaction Already Acknowledged
+                const handledElsewhere = 
+                    id.startsWith('farm_') || 
+                    id.startsWith('mem_') || 
+                    id === 'open_xp_modal' || 
+                    id.startsWith('buy_') || 
+                    id.startsWith('sell_') || 
+                    id.startsWith('upgrade_') || 
+                    id.startsWith('shop_') || 
+                    id.startsWith('replace_') || 
+                    id.startsWith('giveaway_') || 
+                    id.startsWith('customrole_') || 
+                    id.startsWith('boss_') || 
+                    id.startsWith('streak_') || 
+                    id.startsWith('pvp_') || 
+                    id.startsWith('rob_') || // 🔥 تمت إضافة زر السرقة هنا
+                    id === 'cancel_purchase' ||
+                    id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' ||
+                    id === 'cast_rod' || id.startsWith('pull_rod') ||
+                    id === 'replace_guard' || id === 'confirm_dungeon_upgrade';
+
+                if (handledElsewhere) {
+                    // لا تفعل شيئاً هنا، اترك الهاندلر الخاص بها يتصرف
                 } else {
-                    // محاولة عمل defer للأزرار العادية
+                    // للأزرار العامة فقط (التي ليس لها ملف خاص)
                     if (!i.replied && !i.deferred) {
                         try { await i.deferUpdate(); } 
                         catch (err) { if (err.code !== 10062) throw err; return; }
@@ -204,7 +225,7 @@ module.exports = (client, sql, antiRolesCache) => {
                 ) {
                     await handleShopInteractions(i, client, sql);
                 }
-                 
+                  
                 else if (id === 'g_builder_content') {
                     const data = giveawayBuilders.get(i.user.id) || {};
                     const modal = new ModalBuilder().setCustomId('g_content_modal').setTitle('إعداد المحتوى (1/2)');
