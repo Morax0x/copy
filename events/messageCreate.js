@@ -1,11 +1,12 @@
-const { Events, PermissionsBitField, Collection } = require("discord.js");
+const { Events, ChannelType, PermissionsBitField, EmbedBuilder, Colors, Collection } = require('discord.js');
+const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
 const { checkPermissions, checkCooldown } = require("../permission-handler.js");
 const { processReportLogic, sendReportError } = require("../handlers/report-handler.js");
 
 const DISBOARD_BOT_ID = '302050872383242240'; 
 
-// كوليكشن لحفظ الكولداون الخاص بالردود التلقائية
+// كوليكشن لحفظ الكولداون الخاص بالردود التلقائية (في الذاكرة المؤقتة)
 const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
 
@@ -26,7 +27,6 @@ async function recordBump(client, guildID, userID) {
     const totalID = `${userID}-${guildID}`;
 
     try {
-        // 🔥 إضافة القيم الافتراضية الجديدة في حال عدم وجود السجل 🔥
         sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = disboard_bumps + 1`).run(dailyID, userID, guildID, dateStr);
         sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = disboard_bumps + 1`).run(weeklyID, userID, guildID, weekStr);
         sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = total_disboard_bumps + 1`).run(totalID, userID, guildID);
@@ -44,14 +44,15 @@ async function recordBump(client, guildID, userID) {
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
+        if (message.author.bot) return;
+        if (!message.guild) return;
+
         const client = message.client;
         const sql = client.sql;
 
         if (!sql || !sql.open) return;
-        
-        if (!message.guild) return;
 
-        // 1. كشف البومب
+        // 1. كشف البومب (Disboard Bump)
         if (message.author.id === DISBOARD_BOT_ID) {
             let bumperID = null;
             if (message.interaction && message.interaction.commandName === 'bump') {
@@ -71,6 +72,7 @@ module.exports = {
         }
 
         let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
+        let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
         // 2. تتبع سقاية الشجرة
         if (settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
@@ -97,10 +99,8 @@ module.exports = {
 
         if (message.author.bot) return;
 
-        let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
-
         // ============================================================
-        // 3. معالج الاختصارات
+        // 3. معالج الاختصارات (Shortcuts)
         // ============================================================
         try {
             const argsRaw = message.content.trim().split(/ +/);
@@ -139,52 +139,72 @@ module.exports = {
             }
         } catch (err) { console.error("[Shortcut Handler Error]", err); }
 
-        // 4. معالج البريفكس
+        // 4. معالج البريفكس (Prefix Handler)
         let Prefix = "-";
-        try { const row = sql.prepare("SELECT serverprefix FROM prefix WHERE guild = ?").get(message.guild.id); if (row && row.serverprefix) Prefix = row.serverprefix; } catch(e) {}
+        try { 
+            const row = sql.prepare("SELECT prefix FROM settings WHERE guild = ?").get(message.guild.id); 
+            if (row && row.prefix) Prefix = row.prefix; 
+        } catch(e) {}
+        
+        // السماح بالمنشن كبريفكس
+        const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
+        if (mentionRegex.test(message.content)) {
+            return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
+        }
 
         if (message.content.startsWith(Prefix)) {
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
             
-            const command = client.commands.find(cmd => 
-                (cmd.name && cmd.name.toLowerCase() === commandName) || 
-                (cmd.aliases && cmd.aliases.includes(commandName))
-            );
-            
-            if (command) {
-                args.prefix = Prefix;
-                let isAllowed = false;
+            if (commandName.length > 0) {
+                const command = client.commands.find(cmd => 
+                    (cmd.name && cmd.name.toLowerCase() === commandName) || 
+                    (cmd.aliases && cmd.aliases.includes(commandName))
+                );
                 
-                if (message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                    isAllowed = true;
-                } 
-                else if (settings && settings.casinoChannelID === message.channel.id && command.category === 'Economy') {
-                    isAllowed = true;
-                }
-                else {
-                    try {
-                        const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.id);
-                        const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId);
-                        
-                        if (channelPerm || categoryPerm) {
-                            isAllowed = true;
-                        }
-                    } catch (err) { isAllowed = true; }
-                }
-
-                if (isAllowed) {
-                    if (checkPermissions(message, command)) {
-                        const cooldownMsg = checkCooldown(message, command);
-                        if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
-                        else { try { await command.execute(message, args); } catch (error) { console.error(error); message.reply("❌ حدث خطأ."); } }
+                if (command) {
+                    args.prefix = Prefix;
+                    let isAllowed = false;
+                    
+                    if (message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                        isAllowed = true;
+                    } 
+                    else if (settings && settings.casinoChannelID === message.channel.id && command.category === 'Economy') {
+                        isAllowed = true;
                     }
+                    else {
+                        try {
+                            const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.id);
+                            const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId);
+                            
+                            if (channelPerm || categoryPerm) {
+                                isAllowed = true;
+                            } else {
+                                const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(message.guild.id, command.name);
+                                if (!hasRestrictions) isAllowed = true;
+                            }
+                        } catch (err) { isAllowed = true; }
+                    }
+
+                    if (isAllowed) {
+                        // التحقق من البلاك ليست
+                        try {
+                            const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(message.author.id);
+                            if (isBlacklisted) return; 
+                        } catch(e) {}
+
+                        if (checkPermissions(message, command)) {
+                            const cooldownMsg = checkCooldown(message, command);
+                            if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
+                            else { try { await command.execute(message, args); } catch (error) { console.error(error); message.reply("❌ حدث خطأ."); } }
+                        }
+                    }
+                    return;
                 }
-                return;
             }
         }
 
-        // 5. القنوات الخاصة (بلاغ)
+        // 5. القنوات الخاصة (نظام البلاغات)
         if (reportSettings && reportSettings.reportChannelID && message.channel.id === reportSettings.reportChannelID) {
             if (message.content.trim().startsWith("بلاغ")) {
                 const args = message.content.trim().split(/ +/); args.shift(); await message.delete().catch(() => {});
@@ -199,7 +219,7 @@ module.exports = {
             return; 
         }
 
-        // الكازينو بدون بريفكس
+        // الكازينو بدون بريفكس (أوامر الاقتصاد فقط)
         if (settings && settings.casinoChannelID && message.channel.id === settings.casinoChannelID) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -214,82 +234,58 @@ module.exports = {
             return;
         }
 
-        try {
-            let blacklist = sql.prepare(`SELECT id FROM blacklistTable WHERE id = ?`);
-            if (blacklist.get(`${message.guild.id}-${message.author.id}`) || blacklist.get(`${message.guild.id}-${message.channel.id}`)) return;
-        } catch (e) {}
-
         // ============================================================
-        // 🔥 6. الردود التلقائية (المحدثة مع الكولداون العام والكاتاغوري) 🔥
+        // 🔥 6. نظام الردود التلقائية (Auto-Responder) المحدث 🔥
         // ============================================================
         try {
-            const autoResponses = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ?").all(message.guild.id);
-            const content = message.content.trim().toLowerCase();
-            const channelId = message.channel.id;
-            const parentId = message.channel.parentId;
+            const content = message.content.trim();
+            // البحث عن رد مطابق للكلمة
+            const autoReply = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ? AND trigger = ?").get(message.guild.id, content);
 
-            for (const ar of autoResponses) {
-                // 1. التحقق من تطابق الكلمة
-                let isMatch = false;
-                const trigger = ar.trigger.trim().toLowerCase();
-                if (ar.matchType === 'contains') { if (content.includes(trigger)) isMatch = true; } 
-                else { if (content === trigger) isMatch = true; }
-
-                if (isMatch) {
-                    // 2. التحقق من القنوات والكاتاغوري
-                    const allowed = ar.allowedChannels ? JSON.parse(ar.allowedChannels) : [];
-                    const ignored = ar.ignoredChannels ? JSON.parse(ar.ignoredChannels) : [];
-
-                    // أ) قائمة التجاهل (روم أو كاتاغوري)
-                    if (ignored.length > 0) {
-                        if (ignored.includes(channelId) || (parentId && ignored.includes(parentId))) continue; 
+            if (autoReply) {
+                // أ) التحقق من انتهاء الصلاحية (للردود المؤقتة)
+                if (autoReply.expiresAt && Date.now() > autoReply.expiresAt) {
+                    sql.prepare("DELETE FROM auto_responses WHERE id = ?").run(autoReply.id);
+                    // انتهت صلاحيته وتم حذفه، لا نرسل الرد
+                } 
+                else {
+                    // ب) التحقق من القنوات المسموحة/المحظورة
+                    let isAllowedChannel = true;
+                    if (autoReply.allowedChannels) {
+                        const allowed = JSON.parse(autoReply.allowedChannels);
+                        if (allowed.length > 0 && !allowed.includes(message.channel.id)) isAllowedChannel = false;
+                    }
+                    if (autoReply.ignoredChannels) {
+                        const ignored = JSON.parse(autoReply.ignoredChannels);
+                        if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
                     }
 
-                    // ب) قائمة السماح (روم أو كاتاغوري)
-                    if (allowed.length > 0) {
-                        const isAllowedChannel = allowed.includes(channelId);
-                        const isAllowedCategory = parentId && allowed.includes(parentId);
-                        if (!isAllowedChannel && !isAllowedCategory) continue; // غير مسموح
-                    }
+                    if (isAllowedChannel) {
+                        // ج) التحقق من الكولداون (10 دقائق افتراضياً أو المحدد)
+                        const cooldownKey = `ar_${autoReply.id}_${message.channel.id}`;
+                        const cooldownTime = (autoReply.cooldown || 600) * 1000;
+                        const now = Date.now();
 
-                    // 3. التحقق من الكولداون (العام - Global)
-                    const cooldownKey = `${message.guild.id}-${trigger}`;
-                    const now = Date.now();
-                    
-                    // المالك فقط يتخطى الكولداون
-                    if (message.author.id !== message.guild.ownerId) {
-                        if (autoResponderCooldowns.has(cooldownKey)) {
-                            const expirationTime = autoResponderCooldowns.get(cooldownKey);
-                            if (now < expirationTime) continue; // الكولداون شغال، لا ترد
+                        // المالك يتخطى الكولداون
+                        if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
+                            
+                            // إرسال الرد
+                            if (autoReply.images) {
+                                await message.reply({ content: autoReply.response, files: JSON.parse(autoReply.images), allowedMentions: { repliedUser: false } }).catch(() => {});
+                            } else {
+                                await message.reply({ content: autoReply.response, allowedMentions: { repliedUser: false } }).catch(() => {});
+                            }
+
+                            // تفعيل الكولداون
+                            autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
+                            setTimeout(() => autoResponderCooldowns.delete(cooldownKey), cooldownTime);
                         }
                     }
-
-                    // 4. إرسال الرد
-                    let responses = [];
-                    try { responses = JSON.parse(ar.response); } catch (e) { responses = [ar.response]; }
-                    let images = [];
-                    try { images = ar.images ? JSON.parse(ar.images) : []; } catch(e) {}
-                    
-                    const randomText = responses[Math.floor(Math.random() * responses.length)];
-                    const randomImage = images.length > 0 ? images[Math.floor(Math.random() * images.length)] : null;
-
-                    const payload = { content: randomText, allowedMentions: { repliedUser: false } };
-                    if (randomImage) payload.files = [randomImage];
-                    
-                    await message.reply(payload).catch(() => {});
-
-                    // 5. تفعيل الكولداون (إذا كان محدداً)
-                    if (ar.cooldown > 0) {
-                        autoResponderCooldowns.set(cooldownKey, now + (ar.cooldown * 1000));
-                        setTimeout(() => autoResponderCooldowns.delete(cooldownKey), ar.cooldown * 1000);
-                    }
-
-                    break; // توقف بعد أول رد مطابق
                 }
             }
         } catch (err) { console.error("[Auto Responder Error]", err); }
 
-        // 7. تتبع الإحصائيات
+        // 7. تتبع الإحصائيات (Stats Tracking)
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
@@ -344,7 +340,7 @@ module.exports = {
             }
         } catch (err) {}
 
-        // 8. XP & Streak
+        // 8. XP & Streak System
         await handleStreakMessage(message);
         
         let level = client.getLevel.get(message.author.id, message.guild.id);
