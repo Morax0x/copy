@@ -10,7 +10,7 @@ const EMOJI_XP = '<a:levelup:1437805366048985290>';
 // 🎲 دالة حساب الضربة الحرجة (1%)
 // ==========================================
 function calculateHit(baseDamage) {
-    const isCritical = Math.random() * 100 < 1;
+    const isCritical = Math.random() * 100 < 5;
     let finalDamage = baseDamage;
     if (isCritical) {
         finalDamage = Math.floor(baseDamage * 1.5);
@@ -55,8 +55,26 @@ function formatDuration(ms) {
     return `${minutes} د`;
 }
 
+async function safeReply(interaction, data) {
+    try {
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(data).catch(() => {});
+        } else {
+            await interaction.reply(data).catch(() => {});
+        }
+    } catch (e) { console.error("[SafeReply Error]", e); }
+}
+
 async function handleBossInteraction(interaction, client, sql) {
     if (!interaction.isButton()) return;
+
+    // [FIX] التحقق من أن قاعدة البيانات مفتوحة
+    if (!sql || !sql.open) {
+        return safeReply(interaction, { 
+            content: "⚠️ **النظام في حالة صيانة مؤقتة (نسخ احتياطي)، يرجى المحاولة بعد دقيقة.**", 
+            flags: [MessageFlags.Ephemeral] 
+        });
+    }
 
     try {
         sql.prepare("SELECT totalHits FROM world_boss LIMIT 1").get();
@@ -71,7 +89,7 @@ async function handleBossInteraction(interaction, client, sql) {
     const userID = user.id;
 
     const boss = sql.prepare("SELECT * FROM world_boss WHERE guildID = ? AND active = 1").get(guildID);
-    if (!boss) return interaction.reply({ content: "❌ **الوحش مات!**", flags: [MessageFlags.Ephemeral] });
+    if (!boss) return safeReply(interaction, { content: "❌ **الوحش مات!**", flags: [MessageFlags.Ephemeral] });
 
     // 1. زر الحالة
     if (customId === 'boss_status') {
@@ -93,7 +111,7 @@ async function handleBossInteraction(interaction, client, sql) {
                 `✶ **اعـلـى ضـرر:**\n${lbText}`
             );
         if (boss.image) statusEmbed.setThumbnail(boss.image);
-        return interaction.reply({ embeds: [statusEmbed], flags: [MessageFlags.Ephemeral] });
+        return safeReply(interaction, { embeds: [statusEmbed], flags: [MessageFlags.Ephemeral] });
     }
 
     // 2. التحقق من الزر والمهارة
@@ -106,7 +124,7 @@ async function handleBossInteraction(interaction, client, sql) {
         skillData = Object.values(userSkills).find(s => s.id.startsWith('race_'));
         
         if (!skillData) {
-            return interaction.reply({ 
+            return safeReply(interaction, { 
                 content: "✶ حـدد عرقـك وطور مهارة عرقـك من المتجـر لتوجه ضربات اقوى وتحصل على جوائز قيمة <a:MugiStronk:1438795606872166462>", 
                 flags: [MessageFlags.Ephemeral] 
             });
@@ -121,7 +139,7 @@ async function handleBossInteraction(interaction, client, sql) {
         
         if (cooldownData && (now - cooldownData.lastHit) < HIT_COOLDOWN) {
             const expiryTime = Math.floor((cooldownData.lastHit + HIT_COOLDOWN) / 1000);
-            return interaction.reply({ 
+            return safeReply(interaction, { 
                 content: `⏳ **اسـترح قليلا ايهـا المحـارب <a:MugiStronk:1438795606872166462>!**\nيمكنك الهجوم مجدداً بعـد <t:${expiryTime}:R>`, 
                 flags: [MessageFlags.Ephemeral] 
             });
@@ -330,7 +348,7 @@ async function handleBossInteraction(interaction, client, sql) {
             sql.prepare("UPDATE world_boss SET active = 0 WHERE guildID = ?").run(guildID);
             sql.prepare("DELETE FROM boss_leaderboard WHERE guildID = ?").run(guildID);
             
-            return interaction.reply({ 
+            return safeReply(interaction, { 
                 content: `✬ هـاجـمـت الزعـيـم وتسببـت بـ **${finalDamage.toLocaleString()}** ضرر (قاضية!)${critText}\n✶ حـصـلت عـلـى: ${rewardString}${weakWeaponWarning}`, 
                 flags: [MessageFlags.Ephemeral] 
             });
@@ -339,7 +357,7 @@ async function handleBossInteraction(interaction, client, sql) {
         }
     }
 
-    await interaction.reply({ 
+    await safeReply(interaction, { 
         content: `✬ هـاجـمـت الزعـيـم وتسببـت بـ **${finalDamage.toLocaleString()}** ضرر${critText}\n✶ حـصـلت عـلـى: ${rewardString}${weakWeaponWarning}`, 
         flags: [MessageFlags.Ephemeral] 
     });
