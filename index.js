@@ -13,7 +13,14 @@ const sql = new SQLite('./mainDB.sqlite');
 sql.pragma('journal_mode = WAL');
 
 try {
-    const { setupDatabase } = require("./database-setup.js");
+    // 🔥 [تصحيح] استدعاء ذكي للدالة لضمان عملها مهما كانت طريقة التصدير 🔥
+    const dbSetupModule = require("./database-setup.js");
+    const setupDatabase = dbSetupModule.setupDatabase || dbSetupModule;
+
+    if (typeof setupDatabase !== 'function') {
+        throw new Error("ملف database-setup.js لا يحتوي على دالة التجهيز الصحيحة!");
+    }
+
     setupDatabase(sql);
 } catch (err) {
     console.error("!!! Database Setup Fatal Error !!!");
@@ -55,6 +62,7 @@ try {
 // ==================================================================
 // 3. تحديثات الجداول (لضمان عمل الأوامر الجديدة)
 // ==================================================================
+// ملاحظة: معظم هذه التحديثات موجودة بالفعل في database-setup.js، لكن لا ضرر من وجودها هنا كاحتياط
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastFish INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN rodLevel INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER DEFAULT 1").run(); } catch (e) {}
@@ -101,7 +109,6 @@ const { createRandomDropGiveaway, endGiveaway, getUserWeight, initGiveaways } = 
 const { checkUnjailTask } = require('./handlers/report-handler.js'); 
 const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
 
-// 🔥 تم إزالة updateMarketPrices من هنا لمنع الخطأ (موجودة كدالة محلية بالأسفل)
 const { handleShopInteractions } = require('./handlers/shop-handler.js'); 
 const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
