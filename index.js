@@ -28,6 +28,7 @@ try {
     const { registerFont } = require('canvas');
 
     const beinPath = path.join(__dirname, 'fonts', 'bein-ar-normal.ttf');
+    
     if (fs.existsSync(beinPath)) {
         registerFont(beinPath, { family: 'Bein' });
         console.log(`[Fonts] ✅ تم تحميل خط النصوص: Bein`);
@@ -80,7 +81,7 @@ try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID T
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
 
-// 🔥 إنشاء الجداول الضرورية (بلاغات، سجن، قيف اواي، ردود تلقائية) 🔥
+// 🔥 إنشاء الجداول الضرورية 🔥
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_giveaways (messageID TEXT PRIMARY KEY, guildID TEXT, channelID TEXT, prize TEXT, endsAt INTEGER, winnerCount INTEGER, xpReward INTEGER, moraReward INTEGER, isFinished INTEGER DEFAULT 0)").run(); } catch(e) {}
@@ -101,6 +102,7 @@ const { generateSingleAchievementAlert, generateQuestAlert } = require('./genera
 const { createRandomDropGiveaway, endGiveaway, getUserWeight, initGiveaways } = require('./handlers/giveaway-handler.js');
 const { checkUnjailTask } = require('./handlers/report-handler.js'); 
 const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
+// 🔥 هنا نستورد updateMarketPrices بدلاً من كتابتها مرة أخرى في الأسفل
 const { handleShopInteractions, updateMarketPrices } = require('./handlers/shop-handler.js'); 
 const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
@@ -144,7 +146,6 @@ client.generateQuestAlert = generateQuestAlert;
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
     
-    // 🔥🔥 تم تحديث هذا الأمر ليشمل أعمدة الدانجون للحفظ الصحيح 🔥🔥
     client.setLevel = sql.prepare(`
         INSERT OR REPLACE INTO levels (
             user, guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank, 
@@ -168,7 +169,6 @@ if (sql.open) {
         total_meow_count: 0, boost_count: 0, lastPVP: 0, lastFarmYield: 0,
         lastFish: 0, rodLevel: 1, boatLevel: 1, currentLocation: 'beach',
         lastMemory: 0, lastArrange: 0,
-        // 🔥 قيم الدانجون الافتراضية 🔥
         last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0
     };
 
@@ -399,64 +399,6 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
 // ==================================================================
 // 5. Economy, Farm, and Loans
 // ==================================================================
-
-function updateMarketPrices() {
-    if (!sql.open) return;
-    try {
-        const allItems = sql.prepare("SELECT * FROM market_items").all();
-        if (allItems.length === 0) return;
-
-        const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        
-        // 📊 إعدادات السوق والتشبع
-        const SATURATION_POINT = 2000; // الكمية التي يبدأ عندها السعر بالتأثر سلباً بشكل ملحوظ
-        const MIN_PRICE = 10;          // الحد الأدنى للسعر
-        const MAX_PRICE = 50000;       // الحد الأقصى للسعر
-
-        const transaction = sql.transaction(() => {
-            for (const item of allItems) {
-                // 1. جلب مجموع ما يمتلكه اللاعبون من هذا السهم (العرض)
-                const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
-                const totalOwned = result.total || 0;
-
-                // 2. نسبة التغير العشوائية الطبيعية (بين -10% و +10%)
-                let randomPercent = (Math.random() * 0.20) - 0.10;
-
-                // 3. حساب ضريبة التشبع (كلما زاد المملوك، زاد الضغط لإنزال السعر)
-                // المعادلة: كل 2000 حبة مملوكة تخصم 2% إضافية من السعر
-                const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
-                
-                // النسبة النهائية = الحركة العشوائية - ضريبة التشبع
-                let finalChangePercent = randomPercent - saturationPenalty;
-
-                // 4. جاذبية الأسعار الغالية (يصعب الصعود أكثر إذا السعر مرتفع جداً)
-                if (item.currentPrice > 5000 && finalChangePercent > 0) {
-                    finalChangePercent /= 2; 
-                }
-
-                // حماية من الانهيار التام (أقصى نزول في ساعة واحدة هو 30%)
-                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
-
-                // 5. حساب السعر الجديد
-                const oldPrice = item.currentPrice;
-                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
-
-                // ضبط الحدود القصوى والدنيا
-                if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
-                if (newPrice > MAX_PRICE) newPrice = MAX_PRICE;
-
-                // 6. الحفظ في قاعدة البيانات
-                const changeAmount = newPrice - oldPrice;
-                // حساب النسبة المئوية للعرض (للشكل الجمالي)
-                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-                
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
-            }
-        });
-        transaction();
-        console.log(`[Market] Prices updated (Saturation Logic Applied).`);
-    } catch (err) { console.error("[Market] Error updating prices:", err.message); }
-}
 
 async function checkTemporaryRoles(client) {
     if (!sql.open) return;
