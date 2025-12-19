@@ -161,7 +161,7 @@ function getRandomMonster(type, theme) {
     else if (type === 'guardian') pool = dungeonConfig.monsters.guardians;
     else if (type === 'elite') pool = dungeonConfig.monsters.elites;
     else pool = dungeonConfig.monsters.minions;
-     
+      
     if (!pool || pool.length === 0) pool = dungeonConfig.monsters.minions;
 
     const name = pool[Math.floor(Math.random() * pool.length)];
@@ -460,7 +460,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === 'Priest') arabClass = 'كاهن';
         else if (p.class === 'Mage') arabClass = 'ساحر';
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
-        else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } // كلاس الأونر
+        else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } 
 
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
           
@@ -500,9 +500,8 @@ function generateBattleRows() {
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
     let players = [];
-    // قائمة المنسحبين
     let retreatedPlayers = [];
-     
+      
     const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
     const members = await Promise.all(promises);
 
@@ -534,12 +533,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        // 🔥 تعديل دم الوحوش: أول 10 طوابق يزيد بانتظام 100 🔥
         let baseFloorHP;
         if (floor <= 10) {
-            baseFloorHP = 300 + ((floor - 1) * 100); // 300, 400, ..., 1200
+            baseFloorHP = 300 + ((floor - 1) * 100); 
         } else {
-            baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8); // تربيعي بعد العاشر
+            baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8); 
         }
 
         let finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
@@ -585,16 +583,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥 حماية التكرار والتعليق: الرد الفوري 🔥
-                    if (processingUsers.has(i.user.id)) { await i.deferUpdate().catch(()=>{}); return; }
+                    // 🔥 [هام] تأجيل التحديث فوراً لتجنب التايم أوت 🔥
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     
-                    // ميزة اقتحام الأونر
+                    if (processingUsers.has(i.user.id)) return;
+                    
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
                         if (!ownerPlayer) {
                              const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
                              if (member) {
-                                 ownerPlayer = getRealPlayerData(member, sql, '???'); // الكلاس مجهول
+                                 ownerPlayer = getRealPlayerData(member, sql, '???'); 
                                  players.push(ownerPlayer);
                                  log.push(`👑 **اقتـحـام الأونـر!**`);
                              }
@@ -602,9 +601,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     }
 
                     let p = players.find(pl => pl.id === i.user.id);
-                    if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
+                    if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) {
-                        if (!i.replied && !i.deferred) await i.reply({ content: "⏳ انتظر دورك.", ephemeral: true });
+                        await i.followUp({ content: "⏳ انتظر دورك.", ephemeral: true });
                         return;
                     }
                     
@@ -614,21 +613,23 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (i.customId === 'skill') {
                             const skillRow = buildSkillSelector(p);
                             if (!skillRow) {
-                                await i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
+                                await i.followUp({ content: "❌ لا توجد مهارات.", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
                             try {
-                                const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
+                                const skillMsg = await i.followUp({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
+                                
+                                await selection.deferUpdate().catch(()=>{}); // تأجيل تحديث القائمة أيضاً
+
                                 const skillId = selection.values[0];
                                 
                                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                                 if (shieldSkills.includes(skillId) && p.shield > 0) {
-                                    await selection.reply({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
+                                    await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
                                     processingUsers.delete(i.user.id); return; 
                                 }
 
-                                await selection.deferUpdate().catch(()=>{}); 
                                 actedPlayers.push(p.id);
 
                                 let skillNameUsed = "مهارة";
@@ -678,14 +679,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 } 
                                 else {
-                                    // التحقق من مهارة الأونر للخروج
                                     if (skillId === 'skill_owner_leave') {
                                         const res = handleSkillUsage(p, { id: skillId }, monster, log);
                                         if (res && res.type === 'owner_leave') {
-                                            // إزالة الأونر من قائمة اللاعبين الحاليين
-                                            // نضيفه للمنسحبين لكي لا يظهر في الإيمبد النهائي كلاعب عادي
                                             players = players.filter(pl => pl.id !== OWNER_ID);
-                                            // إجبار التحديث لإنهاء الدور إذا كان هو الوحيد المتبقي
                                             if (players.length === 0) { collector.stop('monster_dead'); return; }
                                         }
                                         skillNameUsed = "رحيل بصمت";
@@ -719,7 +716,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         } 
                         else if (i.customId === 'heal') {
                             if (p.potions > 0) {
-                                await i.deferUpdate().catch(()=>{});
                                 p.hp = Math.min(p.hp + Math.floor(p.maxHp * 0.35), p.maxHp);
                                 p.potions--;
                                 log.push(`🧪 **${p.name}** تجرع الترياق.`);
@@ -727,11 +723,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 actedPlayers.push(p.id);
                                 p.skipCount = 0;
                             } else {
-                                await i.reply({ content: "❌ لا تملك جرعات!", ephemeral: true });
+                                await i.followUp({ content: "❌ لا تملك جرعات!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } else if (i.customId === 'atk' || i.customId === 'def') {
-                            await i.deferUpdate().catch(()=>{});
                             actedPlayers.push(p.id);
                             p.skipCount = 0;
 
@@ -771,7 +766,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
             });
 
-            // ... (نهاية الدور - الهجوم التلقائي للسمونز وتصفية المؤثرات)
             players.forEach(p => {
                 if (p.summon && p.summon.active) {
                     const summonDmg = Math.floor(p.atk * 0.8);
@@ -883,46 +877,42 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                  const decisionCollector = dMsg.createMessageComponentCollector({ time: 60000 });
                  
                  decisionCollector.on('collect', async i => {
+                       // 🔥 [هام] تأجيل التحديث فوراً لتجنب التايم أوت 🔥
+                       if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
+
                        const clicker = players.find(p => p.id === i.user.id);
                        
                        if (i.customId === 'dungeon_retreat') {
-                          // الأونر ينسحب فقط ولا يتحكم بالقرار الجماعي إلا إذا كان هو الهوست
                           if (i.user.id === OWNER_ID && i.user.id !== hostId) {
-                               await i.update({ components: [] });
-                               // إذا الأونر انسحب، نعامله كأنه غير موجود
+                               await i.editReply({ components: [] });
                                players = players.filter(p => p.id !== OWNER_ID);
                                if (players.length === 0) { resolve('retreat'); decisionCollector.stop(); }
                                else await i.followUp({ content: `🚪 **${i.user.username}** غادر بصمت.`, ephemeral: true });
                           } 
-                          // القائد ينهي اللعبة
                           else if (i.user.id === hostId) {
-                               await i.update({ components: [] });
+                               await i.editReply({ components: [] });
                                resolve('retreat');
                                decisionCollector.stop();
                           } 
-                          // اللاعب العادي ينسحب
                           else if (clicker) {
                                let pMora = Math.floor(clicker.loot.mora);
                                let pXp = Math.floor(clicker.loot.xp);
-                               // حفظ الجوائز قبل الخروج
                                if (pMora > 0 || pXp > 0) {
                                     sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(pXp, pMora, clicker.id, guild.id);
                                }
-                               // نقل اللاعب لقائمة المنسحبين
                                retreatedPlayers.push(clicker);
                                players = players.filter(p => p.id !== clicker.id);
                                
-                               await i.reply({ content: `👋 **${clicker.name}** انسحب!`, ephemeral: false });
+                               await i.followUp({ content: `👋 **${clicker.name}** انسحب!`, ephemeral: false });
                                if (players.length === 0) { resolve('retreat'); decisionCollector.stop(); }
                           }
                        } else if (i.customId === 'dungeon_continue') {
-                          // فقط القائد يقرر الاستمرار
                           if (i.user.id === hostId) {
-                               await i.update({ content: `**يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
+                               await i.editReply({ content: `**يتقدم الفريق نحو الظلام !**`, components: [], embeds: [] });
                                resolve('continue');
                                decisionCollector.stop();
                           } else {
-                               i.reply({ content: "فقط القائد يقرر.", ephemeral: true });
+                               i.followUp({ content: "فقط القائد يقرر.", ephemeral: true });
                           }
                        }
                  });
@@ -954,20 +944,18 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         color = "#FF0000"; randomImage = LOSE_IMAGES[1];
     }
 
-    // دمج اللاعبين المتبقين مع المنسحبين للعرض
     const allParticipants = [...activePlayers, ...retreatedPlayers];
     
     let mvpPlayer = null;
     if (allParticipants.length > 0) {
         mvpPlayer = allParticipants.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
     }
-     
+      
     const buffData = getDungeonBuff(floor);
     let buffText = "";
     const durationMs = buffData.minutes * 60 * 1000;
     const expire = Date.now() + durationMs;
 
-    // تطبيق البف أو النيرف فقط على اللاعبين الذين بقوا للنهاية (activePlayers)
     if ((status === 'win' || status === 'retreat') && buffData.percent > 0) {
         buffText = `- تـعـزيـز (+XP/Mora): +${buffData.percent}% (${buffData.minutes}د) ${EMOJI_BUFF}`;
         activePlayers.forEach(p => {
@@ -985,7 +973,6 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     }
 
     let lootString = "";
-    // عرض نتائج كل المشاركين
     allParticipants.forEach(p => {
         let finalMora = Math.floor(p.loot.mora);
         let finalXp = Math.floor(p.loot.xp);
@@ -996,14 +983,11 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             finalXp = Math.floor(finalXp * 0.5);
             statusIcon = "💀";
         } else if (retreatedPlayers.includes(p)) {
-            statusIcon = "🏃‍♂️"; // أيقونة المنسحب
+            statusIcon = "🏃‍♂️"; 
         } else {
             statusIcon = "✅";
         }
 
-        // حفظ الجوائز (إذا لم تكن محفوظة مسبقاً للمنسحبين)
-        // المنسحبون تم الحفظ لهم لحظة الانسحاب، لذا نتجنب التكرار إذا أردت
-        // لكن للكود البسيط سنقوم بالتحديث للجميع لضمان عدم ضياع شيء، SQLite سريع
         if (finalMora > 0 || finalXp > 0) {
             sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
         }
