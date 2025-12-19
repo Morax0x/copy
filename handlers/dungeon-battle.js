@@ -48,6 +48,7 @@ const LOSE_IMAGES = [
 // --- الدوال المساعدة ---
 
 function ensureInventoryTable(sql) {
+    if (!sql.open) return;
     sql.prepare(`
         CREATE TABLE IF NOT EXISTS user_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +188,6 @@ function getRandomMonster(type, theme) {
     return { name, emoji: theme.emoji };
 }
 
-// 🟢 بناء قائمة المهارات
 function buildSkillSelector(player) {
     const options = [];
 
@@ -195,18 +195,11 @@ function buildSkillSelector(player) {
         options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('ضربة قاضية خاصة بالمالك.').setEmoji('👁️'));
         options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش يحتضر والمغادرة.').setEmoji('🚪'));
         
-        // خيارات الكلاسات للمالك
-        const classSkills = [
-            {v: 'class_leader', l: 'صرخة الحرب', d: 'زيادة ضرر الفريق 30%.', e: '👑'},
-            {v: 'class_tank', l: 'استفزاز وتصليب', d: 'جذب الوحش وتقليل الضرر 60%.', e: '🛡️'},
-            {v: 'class_priest', l: 'النور المقدس', d: 'شفاء الفريق أو إحياء ميت.', e: '✨'},
-            {v: 'class_mage', l: 'سجن الجليد', d: 'تجميد الوحش.', e: '❄️'},
-            {v: 'class_summoner', l: 'استدعاء حارس الظل', d: 'استدعاء وحش مساند.', e: '🐺'}
-        ];
-        
-        classSkills.forEach(cs => {
-             options.push(new StringSelectMenuOptionBuilder().setLabel(cs.l).setValue(cs.v).setDescription(cs.d).setEmoji(cs.e));
-        });
+        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب').setValue('class_leader').setDescription('زيادة ضرر الفريق 30%.').setEmoji('👑'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب').setValue('class_tank').setDescription('جذب الوحش وتقليل الضرر 60%.').setEmoji('🛡️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس').setValue('class_priest').setDescription('شفاء الفريق أو إحياء ميت.').setEmoji('✨'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
 
         skillsConfig.forEach(s => {
              if (!options.some(o => o.data.value === s.id)) {
@@ -248,19 +241,15 @@ function buildSkillSelector(player) {
     }
 
     if (options.length === 0) return null;
-    const slicedOptions = options.slice(0, 25); 
-
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
         .setPlaceholder('اختر مهارة لتفعيلها...')
-        .addOptions(slicedOptions)
+        .addOptions(options.slice(0, 25))
     );
 }
 
-// 🟢 بناء قائمة الجرعات (باستخدام user_inventory)
 function buildPotionSelector(player, sql, guildID) {
-    // 🔥🔥 نستخدم user_inventory بدلاً من user_portfolio 🔥🔥
     ensureInventoryTable(sql); 
     const userItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(player.id, guildID);
     
@@ -555,7 +544,7 @@ function generateBattleRows() {
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
-    ensureInventoryTable(sql); // 🔥 ضمان وجود جدول المخزون قبل البدء
+    ensureInventoryTable(sql); 
 
     let players = [];
     let retreatedPlayers = [];
@@ -618,8 +607,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         });
 
         while (ongoing) {
-            // 🔥🔥 [إصلاح التايم أوت] الكوليكتور يعمل لمدة طويلة جداً (يوم) لمنع توقفه التلقائي
-            const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
+            const collector = battleMsg.createMessageComponentCollector({ time: 60000 });
             let actedPlayers = [];
             let processingUsers = new Set(); 
 
@@ -642,9 +630,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥🔥 [إصلاح اللاق] الرد فوراً 🔥🔥
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
-                    
                     if (processingUsers.has(i.user.id)) return;
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
@@ -661,15 +647,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
-                    if (p.isDead || actedPlayers.includes(p.id)) {
-                        await i.followUp({ content: "⏳ انتظر دورك.", ephemeral: true });
-                        return;
-                    }
+                    if (p.isDead || actedPlayers.includes(p.id)) return;
                     
                     processingUsers.add(i.user.id);
 
                     try {
-                        // 🌟 منطق المهارات 🌟
                         if (i.customId === 'skill') {
                             const skillRow = buildSkillSelector(p);
                             if (!skillRow) {
@@ -679,29 +661,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             try {
                                 const skillMsg = await i.followUp({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
-                                
                                 await selection.deferUpdate().catch(()=>{}); 
 
                                 const skillId = selection.values[0];
-                                
-                                const shieldSkills = ['skill_shielding', 'race_human_skill'];
-                                if (shieldSkills.includes(skillId) && p.shield > 0) {
-                                    await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
-                                    processingUsers.delete(i.user.id); return; 
-                                }
-
                                 actedPlayers.push(p.id);
-
                                 let skillNameUsed = "مهارة";
 
                                 if (skillId === 'class_special_skill' || skillId.startsWith('class_')) {
                                     const res = handleSkillUsage(p, { id: skillId }, monster, log);
-                                    
                                     if (res && res.error) {
                                         await selection.editReply({ content: `⏳ ${res.error}`, components: [] }).catch(()=>{});
                                         processingUsers.delete(i.user.id); return;
                                     }
-
                                     if (res && res.type === 'class_effect') {
                                         if (res.effect === 'leader_buff') {
                                             players.forEach(m => { if(!m.isDead) m.effects.push({ type: 'atk_buff', val: 0.3, turns: 2 }); });
@@ -734,11 +705,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             log.push(`🐺 **${p.name}** استدعى الحارس!`);
                                             skillNameUsed = "استدعاء حارس الظل";
                                         }
-                                        
                                         if (res.cooldown && res.effect !== 'priest_heal') p.special_cooldown = res.cooldown;
                                     }
-                                } 
-                                else {
+                                } else {
                                     if (skillId === 'skill_owner_leave') {
                                         const res = handleSkillUsage(p, { id: skillId }, monster, log);
                                         if (res && res.type === 'owner_leave') {
@@ -754,107 +723,51 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             const sConf = skillsConfig.find(s=>s.id === skillId);
                                             if(sConf) skillObj = { ...sConf, effectValue: sConf.base_value * 2 };
                                         }
-
-                                        if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID && (p.skillCooldowns[skillId] || 0) > 0) {
-                                             await selection.editReply({ content: `⏳ كولداون.`, components: [] }).catch(()=>{});
-                                             processingUsers.delete(i.user.id); return;
-                                        }
-
                                         handleSkillUsage(p, skillObj, monster, log);
                                         skillNameUsed = skillObj.name;
                                         if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID) p.skillCooldowns[skillId] = 3;
                                     }
                                 }
-
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
 
                             } catch (err) { 
-                                if (err.code !== 10062) await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{}); 
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } 
-                        // 🧪 منطق الجرعات الجديد (User Inventory) 🧪
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
                             if (!potionRow) {
                                 await i.followUp({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
-
                             try {
                                 const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true, fetchReply: true });
                                 const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 15000 });
-                                
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
-                                
-                                // خصم الجرعة من user_inventory
-                                const userItem = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, potionId);
-                                if (!userItem || userItem.quantity <= 0) {
-                                    await selection.followUp({ content: "❌ نفذت الكمية!", ephemeral: true });
-                                    processingUsers.delete(i.user.id); return;
-                                }
-
                                 sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
-                                if (userItem.quantity - 1 <= 0) {
-                                    sql.prepare("DELETE FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
-                                }
 
-                                // تطبيق التأثير
                                 let actionMsg = "";
-                                switch(potionId) {
-                                    case 'potion_heal':
-                                        p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.5));
-                                        actionMsg = "🧪 شرب جرعة الشفاء واستعاد 50% HP!";
-                                        break;
-                                    case 'potion_stealth':
-                                        p.effects.push({ type: 'stealth', turns: 2 });
-                                        actionMsg = "👻 شرب جرعة التخفي واختفى عن الأنظار!";
-                                        break;
-                                    case 'potion_reflect':
-                                        p.effects.push({ type: 'reflect', val: 0.5, turns: 2 });
-                                        actionMsg = "🌵 شرب جرعة الانعكاس وجهز درع الأشواك!";
-                                        break;
-                                    case 'potion_time':
-                                        p.special_cooldown = 0;
-                                        p.skillCooldowns = {};
-                                        actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
-                                        break;
-                                    case 'potion_titan':
-                                        p.maxHp *= 2;
-                                        p.hp = p.maxHp;
-                                        p.effects.push({ type: 'titan', turns: 3 }); 
-                                        monster.targetFocusId = p.id;
-                                        actionMsg = "🔥 شرب جرعة العملاق وتحول لوحش هائج!";
-                                        break;
-                                    case 'potion_sacrifice':
-                                        p.hp = 0; p.isDead = true; 
-                                        players.forEach(ally => {
-                                            if (ally.id !== p.id) {
-                                                ally.isDead = false;
-                                                ally.hp = ally.maxHp; 
-                                                ally.effects = [];
-                                            }
-                                        });
-                                        actionMsg = "💀 شرب جرعة التضحية ومات لينقذ الجميع!";
-                                        break;
+                                if (potionId === 'potion_heal') {
+                                    p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.5));
+                                    actionMsg = "🧪 استعاد 50% HP!";
+                                } else if (potionId === 'potion_reflect') {
+                                    p.effects.push({ type: 'reflect', val: 0.5, turns: 2 });
+                                    actionMsg = "🌵 جهز درع الأشواك!";
+                                } else if (potionId === 'potion_titan') {
+                                    p.maxHp *= 2; p.hp = p.maxHp;
+                                    p.effects.push({ type: 'titan', turns: 3 }); 
+                                    monster.targetFocusId = p.id;
+                                    actionMsg = "🔥 تحول لعملاق!";
                                 }
-
                                 log.push(`**${p.name}**: ${actionMsg}`);
-                                actedPlayers.push(p.id);
-                                p.skipCount = 0;
+                                actedPlayers.push(p.id); p.skipCount = 0;
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
-
-                            } catch (err) {
-                                await i.editReply({ content: "⏰ تأخرت في الاختيار.", components: [] }).catch(()=>{});
-                                processingUsers.delete(i.user.id); return;
-                            }
+                            } catch (err) { processingUsers.delete(i.user.id); return; }
                         }
                         else if (i.customId === 'atk' || i.customId === 'def') {
-                            actedPlayers.push(p.id);
-                            p.skipCount = 0;
-
+                            actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
                                 let atkMultiplier = 1.0;
                                 p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
@@ -862,26 +775,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const isCrit = Math.random() < 0.2;
                                 let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                 if (isCrit) dmg = Math.floor(dmg * 1.5);
-                                monster.hp -= dmg;
-                                p.totalDamage += dmg; 
+                                monster.hp -= dmg; p.totalDamage += dmg; 
                                 log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
                             } else if (i.customId === 'def') {
-                                p.defending = true;
-                                log.push(`🛡️ **${p.name}** يدافع!`);
+                                p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
                         }
 
                         if (monster.hp <= 0) {
-                            monster.hp = 0;
-                            if (log.length > 5) log = log.slice(-5);
-                            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(e => {});
-                            collector.stop('monster_dead'); 
-                            return; 
+                            monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; 
                         }
-
-                        if (log.length > 5) log = log.slice(-5);
-                        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(e => {});
-
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                             clearTimeout(turnTimeout); collector.stop('turn_end'); 
                         }
@@ -891,175 +794,111 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
             });
 
-            players.forEach(p => {
-                if (p.summon && p.summon.active) {
-                    const summonDmg = Math.floor(p.atk * 0.8);
-                    monster.hp -= summonDmg;
-                    log.push(`🐺 **حارس الظل** (${p.name}) عض الوحش! (-${summonDmg})`);
-                    p.summon.turns--;
-                    if (p.summon.turns <= 0) {
-                        const explodeDmg = Math.floor(p.atk * 2.0);
-                        monster.hp -= explodeDmg;
-                        log.push(`💥 **حارس الظل** انفجر مسبباً ضرراً هائلاً! (-${explodeDmg})`);
-                        p.summon = null;
-                    }
-                }
-            });
-
             if (monster.hp <= 0) { ongoing = false; await battleMsg.edit({ components: [] }).catch(()=>{}); }
 
+            // تصفية المؤثرات
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
                 p.effects = p.effects.filter(e => { e.turns--; return e.turns > 0; });
-                if (p.maxHp > 2000 && !p.effects.some(e=>e.type==='titan')) p.maxHp = BASE_HP + (p.level * HP_PER_LEVEL); // إعادة الـ HP لطبيعته إذا انتهى العملاق
             });
 
-            if (monster.effects.length > 0) {
-                monster.effects = monster.effects.filter(e => {
-                    if (e.type === 'poison') { monster.hp -= e.val; log.push(`☠️ **${monster.name}** سم (-${e.val}).`); }
-                    e.turns--; return e.turns > 0;
-                });
-            }
-
-            if (monster.hp <= 0) ongoing = false;
-            else {
+            if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                if (monster.frozen) {
-                    log.push(`❄️ **${monster.name}** متجمد!`);
-                    monster.frozen = false;
-                } else {
+                if (monster.frozen) { log.push(`❄️ **${monster.name}** متجمد!`); monster.frozen = false; } 
+                else {
                     const alive = players.filter(p => !p.isDead);
                     if (alive.length > 0) {
-                        // فلترة اللاعبين المتخفين
-                        const visiblePlayers = alive.filter(p => !p.effects.some(e => e.type === 'stealth'));
-                        let targetCandidates = visiblePlayers.length > 0 ? visiblePlayers : alive; // إذا الكل متخفي، يهاجم أي أحد
-
-                        let target = monster.targetFocusId ? targetCandidates.find(p => p.id === monster.targetFocusId) : null;
-                        
-                        // أولوية لجرعة العملاق (Taunt)
-                        const titanPlayer = alive.find(p => p.effects.some(e => e.type === 'titan'));
-                        if (titanPlayer) target = titanPlayer;
-
-                        if (!target || !targetCandidates.includes(target)) target = targetCandidates[Math.floor(Math.random() * targetCandidates.length)];
-                        
+                        let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive[Math.floor(Math.random() * alive.length)];
                         let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
-                        if(target.effects.some(e=>e.type==='def_buff')) dmg = Math.floor(dmg * 0.4);
                         if(target.defending) dmg = Math.floor(dmg * 0.5);
-                        
                         applyDamageToPlayer(target, dmg);
                         log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
-                        
-                        // 🔥🔥 منطق الانعكاس (Reflection) المحدث 🔥🔥
-                        players.forEach(p => {
-                            if (!p.isDead) {
-                                const reflectBuff = p.effects.find(e => e.type === 'reflect');
-                                if (reflectBuff) {
-                                    const reflectedDmg = Math.floor(monster.atk * reflectBuff.val);
-                                    monster.hp -= reflectedDmg;
-                                    log.push(`🌵 **${p.name}** عكس الضرر على الوحش! (-${reflectedDmg})`);
-                                }
-                            }
-                        });
-
                         if(target.hp <= 0) { target.hp = 0; target.isDead = true; log.push(`💀 **${target.name}** سقط!`); }
                     }
                 }
-                
-                if (players.every(p => p.isDead)) {
-                    ongoing = false;
-                    await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-                    return;
+                if (players.every(p => p.isDead)) ongoing = false;
+                else {
+                    if (log.length > 5) log = log.slice(-5);
+                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
                 }
-                
-                players.forEach(p => p.defending = false);
-                if (log.length > 5) log = log.slice(-5);
-                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
             }
         }
+
+        if (players.every(p => p.isDead)) {
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            break;
+        }
+
+        // 🔥🔥 استعادة نظام الاستراحة بين الطوابق 🔥🔥
+        let baseMora = Math.floor(getBaseFloorMora(floor));
+        let floorXp = Math.floor(baseMora / 3); 
+        players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
+        totalAccumulatedCoins += baseMora;
+        totalAccumulatedXP += floorXp;
+
+        const restEmbed = new EmbedBuilder()
+            .setTitle('❖ استـراحـة بيـن الطـوابـق')
+            .setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`)
+            .setColor(Colors.Red)
+            .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
+
+        const restRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
+        );
+
+        const restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
+        
+        const decision = await new Promise(res => {
+            const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
+            decCollector.on('collect', async i => {
+                if (i.user.id !== hostId) return i.reply({ content: "فقط القائد يقرر.", ephemeral: true });
+                decCollector.stop(i.customId);
+            });
+            decCollector.on('end', (c, reason) => res(reason));
+        });
+
+        await restMsg.delete().catch(()=>{});
+
+        if (decision === 'retreat' || decision === 'time') {
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+            return;
+        }
+
+        players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
     }
 }
 
 async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests) {
+    if (!sql.open) return;
     let title = "", color = "", randomImage = null;
 
-    if (status === 'win') {
-        title = "❖ أسطـورة الدانـجون !";
-        color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); 
-    } else if (status === 'retreat') {
-        title = "❖ انـسـحـاب تـكـتيـكـي !";
-        color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); 
-    } else {
-        title = "❖ هزيمـة ساحقـة ...";
-        color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); 
-    }
+    if (status === 'win') { title = "❖ أسطـورة الدانـجون !"; color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); } 
+    else if (status === 'retreat') { title = "❖ انـسـحـاب تـكـتيـكـي !"; color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); } 
+    else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
-    
-    let mvpPlayer = null;
-    if (allParticipants.length > 0) {
-        mvpPlayer = allParticipants.reduce((prev, current) => (prev.totalDamage > current.totalDamage) ? prev : current);
-    }
+    let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
       
-    const buffData = getDungeonBuff(floor);
-    let buffText = "";
-    const durationMs = buffData.minutes * 60 * 1000;
-    const expire = Date.now() + durationMs;
-
-    if ((status === 'win' || status === 'retreat') && buffData.percent > 0) {
-        buffText = `- تـعـزيـز (+XP/Mora): +${buffData.percent}% (${buffData.minutes}د) ${EMOJI_BUFF}`;
-        activePlayers.forEach(p => {
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'xp', buffData.percent / 100);
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, buffData.percent, expire, 'mora', buffData.percent / 100);
-        });
-    } else if (status === 'lose') {
-        const nerfPercent = Math.min(10, Math.floor(floor / 2));
-        buffText = `- لـعـنـة (-XP/Mora): -${nerfPercent}% (10د) ${EMOJI_NERF}`;
-        const nerfExpire = Date.now() + (10 * 60 * 1000);
-        activePlayers.forEach(p => {
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'xp', -nerfPercent / 100);
-             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -nerfPercent, nerfExpire, 'mora', -nerfPercent / 100);
-        });
-    }
-
     let lootString = "";
     allParticipants.forEach(p => {
         let finalMora = Math.floor(p.loot.mora);
         let finalXp = Math.floor(p.loot.xp);
-        
-        let statusIcon = "";
-        if (p.isDead) {
-            finalMora = Math.floor(finalMora * 0.5); 
-            finalXp = Math.floor(finalXp * 0.5);
-            statusIcon = "💀";
-        } else if (retreatedPlayers.includes(p)) {
-            statusIcon = "🏃‍♂️"; 
-        } else {
-            statusIcon = "✅";
-        }
-
-        if (finalMora > 0 || finalXp > 0) {
-            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-        }
-          
-        lootString += `✬ **${p.name}** ${statusIcon}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
+        if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
+        sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
+        lootString += `✬ **${p.name}**: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
 
     const embed = new EmbedBuilder()
         .setTitle(title)
-        .setDescription(`**الطابق الذي وصلتم له:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
-        .setColor(color)
-        .setTimestamp();
+        .setDescription(`**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`)
+        .setColor(color).setImage(randomImage).setTimestamp();
 
-    if (randomImage) embed.setImage(randomImage);
-    const mentions = activePlayers.map(p => `<@${p.id}>`).join(' ');
-
-    await mainChannel.send({ content: `✬ ${mentions}\n`, embeds: [embed] });
-    
-    if (activeDungeonRequests) activeDungeonRequests.delete(hostId);
-      
+    await mainChannel.send({ content: activePlayers.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
+    activeDungeonRequests.delete(hostId);
     await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة...**` });
-    setTimeout(async () => { try { await thread.delete(); } catch (err) {} }, 10000); 
+    setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
 }
 
 module.exports = { runDungeon };
