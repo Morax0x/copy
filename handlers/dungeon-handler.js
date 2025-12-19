@@ -54,8 +54,10 @@ async function startDungeon(interaction, sql) {
 
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
-    if (buttons.length > 0) row1.addComponents(buttons.slice(0, 2));
-    if (buttons.length > 2) row2.addComponents(buttons.slice(2, 4));
+    
+    // 🔥 [تعديل] إصلاح توزيع الأزرار (5 في كل صف بدلاً من 2)
+    if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
+    if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
 
     const components = [row1];
     if (row2.components.length > 0) components.push(row2);
@@ -73,20 +75,23 @@ async function startDungeon(interaction, sql) {
 
     collector.on('collect', async i => {
         try {
-            // 🔥 [إصلاح 1] تأجيل التحديث فوراً لتجنب التايم أوت
             await i.deferUpdate(); 
             
+            // 🔥 [إصلاح هام] إيقاف الكوليكتور فوراً عند الاختيار لمنع انتهاء الوقت وتدمير اللوبي
+            collector.stop('selected'); 
+
             const themeKey = i.customId.replace('dungeon_theme_', '');
             const theme = dungeonConfig.themes[themeKey];
             
-            // نمرر التفاعل (i) بعد عمل defer له
             await lobbyPhase(i, theme, sql); 
         } catch (err) {
             console.error("Error in theme selection:", err);
+            activeDungeonRequests.delete(user.id);
         }
     });
 
     collector.on('end', (c, reason) => {
+        // 🔥 [إصلاح هام] الحذف فقط إذا انتهى الوقت ولم يختر أحد
         if (reason === 'time') {
             activeDungeonRequests.delete(user.id); 
             if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
@@ -126,10 +131,9 @@ async function lobbyPhase(interaction, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    // 🔥 [إصلاح 2] استخدام editReply بدلاً من update لأننا عملنا deferUpdate سابقاً
+    // نستخدم editReply لأن التفاعل تم تأجيله (deferred) سابقاً في startDungeon
     await interaction.editReply({ content: null, embeds: [updateEmbed()], components: [row] });
     
-    // نحصل على الرسالة للتعديل عليها
     const msg = interaction.message || await interaction.fetchReply();
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
@@ -141,7 +145,8 @@ async function lobbyPhase(interaction, theme, sql) {
                 }
 
                 if (party.includes(i.user.id)) {
-                    // موجود مسبقاً
+                    // موجود مسبقاً، يمكن تجاهله أو إرسال رسالة
+                    return i.reply({ content: "✅ أنت منضم بالفعل.", ephemeral: true });
                 } else if (party.length >= 5) {
                     return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
                 } else {
@@ -213,7 +218,6 @@ async function lobbyPhase(interaction, theme, sql) {
                     else if(selectedClass === 'Mage') displayClassName = 'الساحر';
                     else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
 
-                    // 🔥 [إصلاح 3] تأجيل تحديث قائمة الاختيار لمنع الخطأ
                     if (!selection.deferred && !selection.replied) await selection.deferUpdate();
                     await selection.editReply({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
                     
@@ -231,7 +235,6 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
                 if (party.length < 1) return i.reply({ content: "خطأ", ephemeral: true });
                 
-                // 🔥 [إصلاح 4] تأجيل التحديث فوراً عند البدء
                 if (!i.deferred && !i.replied) await i.deferUpdate();
                 collector.stop('start');
             }
@@ -279,6 +282,7 @@ async function lobbyPhase(interaction, theme, sql) {
                 interaction.channel.send("❌ حدث خطأ.");
             }
         } else {
+            // 🔥 [إصلاح هام] تنظيف القائمة إذا تم الإلغاء أو انتهاء الوقت
             activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون.", components: [], embeds: [] });
         }
