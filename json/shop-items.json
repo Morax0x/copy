@@ -4,7 +4,32 @@
     "name": "عـدة الـصـيـد ",
     "description": "شراء وتطوير معدات الصيد (سنارات، قوارب، طعوم).",
     "price": 0,
-    "emoji": "🎣"
+    "emoji": "🎣",
+    "category": "menus"
+  },
+  {
+    "id": "potions_menu",
+    "name": "الجرعات",
+    "description": "قائمة لشراء جرعات الدانجون",
+    "price": 0,
+    "emoji": "🧪",
+    "category": "menus"
+  },
+  {
+    "id": "upgrade_weapon",
+    "name": "سلاح العرق",
+    "description": "قم بشراء وتطوير سلاحك الخاص بناءً على عرقك.",
+    "price": 0,
+    "emoji": "🗡️",
+    "category": "menus"
+  },
+  {
+    "id": "upgrade_skill",
+    "name": "تطوير المهارات",
+    "description": "شراء أو تطوير مهاراتك القتالية (الشفاء، الدرع، ...)",
+    "price": 0,
+    "emoji": "🌟",
+    "category": "menus"
   },
   {
     "id": "personal_guard_1d",
@@ -12,16 +37,6 @@
     "description": "حماية كاملة من السرقة لثلاث محاولات سرقة.",
     "price": 1500,
     "emoji": "🛡️"
-  },
-  {
-    "id": "item_temp_reply",
-    "name": "رد بوت تلقائي خاص بك",
-    "description": "شراء رد خاص بك لمدة 3 أيام.",
-    "price": 10000,
-    "type": "special",
-    "emoji": "💬",
-    "stock": -1,
-    "role_id": null
   },
   {
     "id": "streak_shield",
@@ -102,20 +117,6 @@
     "emoji": "🪙"
   },
   {
-    "id": "upgrade_weapon",
-    "name": "سلاح العرق",
-    "description": "قم بشراء وتطوير سلاحك الخاص بناءً على عرقك.",
-    "price": 0,
-    "emoji": "🗡️"
-  },
-  {
-    "id": "upgrade_skill",
-    "name": "تطوير المهارات",
-    "description": "شراء أو تطوير مهاراتك القتالية (الشفاء، الدرع، ...)",
-    "price": 0,
-    "emoji": "🌟"
-  },
-  {
     "id": "change_race",
     "name": "تغيير العرق",
     "description": "إزالة عرقك الحالي وتطبيق عقوبة -5% (XP/Mora) لمدة 7 أيام.",
@@ -123,5 +124,69 @@
     "duration": 7,
     "emoji": "🧬",
     "image": "https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png"
+  },
+  {
+    "id": "potion_heal",
+    "name": "جرعة الشفاء",
+    "price": 200,
+    "description": "🧪 تستعيد 50% من صحتك أثناء المعركة.",
+    "category": "potions",
+    "emoji": "🧪",
+    "effect": { "type": "heal", "percent": 50 }
+  },
+  {
+    "id": "potion_stealth",
+    "name": "جرعة التخفي",
+    "price": 450,
+    "description": "👻 تجعل الوحش يتجاهلك تماماً للجولة القادمة.",
+    "category": "potions",
+    "emoji": "👻",
+    "effect": { "type": "stealth", "duration": 1 }
+  },
+  {
+    "id": "potion_reflect",
+    "name": "جرعة الانعكاس",
+    "price": 600,
+    "description": "🌵 تعكس 50% من الضرر المتلقى ليعود على الوحش.",
+    "category": "potions",
+    "emoji": "🌵",
+    "effect": { "type": "reflect", "percent": 50, "duration": 1 }
+  },
+  {
+    "id": "potion_time",
+    "name": "جرعة الزمن",
+    "price": 1000,
+    "description": "⏳ تعيد شحن مهاراتك فوراً (تصفير الكولداون).",
+    "category": "potions",
+    "emoji": "⏳",
+    "effect": { "type": "cooldown_reset" }
+  },
+  {
+    "id": "potion_titan",
+    "name": "جرعة العملاق",
+    "price": 1500,
+    "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك (Tank Mode).",
+    "category": "potions",
+    "emoji": "🔥",
+    "effect": { "type": "titan", "duration": 3 }
+  },
+  {
+    "id": "potion_sacrifice",
+    "name": "جرعة التضحية",
+    "price": 3000,
+    "description": "💀 تضحي بنفسك لإنعاش وشفاء كامل الفريق.",
+    "category": "potions",
+    "emoji": "💀",
+    "effect": { "type": "sacrifice" }
+  },
+  {
+    "id": "item_temp_reply",
+    "name": "رد بوت تلقائي خاص بك",
+    "description": "شراء رد خاص بك لمدة 3 أيام.",
+    "price": 10000,
+    "type": "special",
+    "emoji": "💬",
+    "stock": -1,
+    "role_id": null
   }
 ]
