@@ -19,7 +19,9 @@ function getWeekStartDateString() {
 
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
-    if (!sql) return;
+    // 🔥 حماية: عدم التسجيل إذا كانت القاعدة مغلقة
+    if (!sql || !sql.open) return;
+
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
     const dailyID = `${userID}-${guildID}-${dateStr}`;
@@ -42,18 +44,15 @@ async function recordBump(client, guildID, userID) {
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
-        // [DEBUG] سجل للتأكد من وصول الرسالة
-        // console.log(`[MSG] New message from ${message.author.tag} in ${message.channel.name}`);
-
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
         if (!message.guild) return;
 
         const client = message.client;
         const sql = client.sql;
 
-        // [FIX] إزالة فحص .open لأنه قد يعطل البوت في بعض المكتبات
-        if (!sql) {
-            console.log("[ERROR] client.sql is undefined! Check database setup.");
+        // 🔥🔥 [الحل النهائي] منع الكراش عند إغلاق قاعدة البيانات 🔥🔥
+        if (!sql || !sql.open) {
+            // يتم تجاهل الرسالة بصمت لأن البوت في وضع صيانة/نسخ احتياطي
             return;
         }
 
@@ -104,8 +103,7 @@ module.exports = {
         if (message.author.bot) return;
 
         // ============================================================
-        // 🔥 [نقل للأعلى] 7 & 8. نظام الإحصائيات والـ XP
-        // تم نقله هنا ليعمل قبل الأوامر (حتى لا يتم تجاهله عند عمل return)
+        // نظام الإحصائيات والـ XP
         // ============================================================
         try {
             const userID = message.author.id;
@@ -163,7 +161,6 @@ module.exports = {
             if (isMediaChannel) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
                     await handleMediaStreakMessage(message);
-                    // لا نضع return هنا لكي يكمل احتساب الـ XP والأوامر
                 }
             }
 
@@ -245,16 +242,14 @@ module.exports = {
         // ============================================================
         // 4. معالج البريفكس (Prefix Handler)
         // ============================================================
-        let Prefix = settings?.prefix || "-"; // جلب البريفكس من الإعدادات المحملة سابقاً
+        let Prefix = settings?.prefix || "-";
         
-        // السماح بالمنشن كبريفكس
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
         if (mentionRegex.test(message.content)) {
             return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
         }
 
         if (message.content.startsWith(Prefix)) {
-            // console.log(`[DEBUG] Prefix matched: ${Prefix}`);
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
             
@@ -289,7 +284,6 @@ module.exports = {
                     }
 
                     if (isAllowed) {
-                        // التحقق من البلاك ليست
                         try {
                             const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(message.author.id);
                             if (isBlacklisted) return; 
@@ -301,7 +295,7 @@ module.exports = {
                             else { try { await command.execute(message, args); } catch (error) { console.error(error); message.reply("❌ حدث خطأ."); } }
                         }
                     }
-                    return; // إنهاء هنا إذا تم تنفيذ أمر
+                    return; 
                 }
             }
         }
@@ -321,7 +315,7 @@ module.exports = {
             return; 
         }
 
-        // الكازينو بدون بريفكس (أوامر الاقتصاد فقط)
+        // الكازينو بدون بريفكس
         if (settings && settings.casinoChannelID && message.channel.id === settings.casinoChannelID) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -337,7 +331,7 @@ module.exports = {
         }
 
         // ============================================================
-        // 🔥 6. نظام الردود التلقائية (Auto-Responder) المحدث 🔥
+        // 6. نظام الردود التلقائية
         // ============================================================
         try {
             const content = message.content.trim();
@@ -358,7 +352,7 @@ module.exports = {
                             const ignored = JSON.parse(autoReply.ignoredChannels);
                             if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
                         }
-                    } catch (e) {} // تجاهل أخطاء الـ JSON
+                    } catch (e) {} 
 
                     if (isAllowedChannel) {
                         const cooldownKey = `ar_${autoReply.id}_${message.channel.id}`;
