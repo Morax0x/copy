@@ -70,6 +70,52 @@ async function sendShopLog(client, guildId, member, item, price, type = "شرا�
     }
 }
 
+// 🌟 دالة تحديث أسعار السوق (مطلوبة في index.js) 🌟
+function updateMarketPrices() {
+    const sql = require('better-sqlite3')('./mainDB.sqlite');
+    if (!sql.open) return;
+    try {
+        const allItems = sql.prepare("SELECT * FROM market_items").all();
+        if (allItems.length === 0) return;
+
+        const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
+        
+        const SATURATION_POINT = 2000; 
+        const MIN_PRICE = 10;          
+        const MAX_PRICE = 50000;       
+
+        const transaction = sql.transaction(() => {
+            for (const item of allItems) {
+                const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
+                const totalOwned = result.total || 0;
+
+                let randomPercent = (Math.random() * 0.20) - 0.10;
+                const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
+                let finalChangePercent = randomPercent - saturationPenalty;
+
+                if (item.currentPrice > 5000 && finalChangePercent > 0) {
+                    finalChangePercent /= 2; 
+                }
+
+                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
+
+                const oldPrice = item.currentPrice;
+                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
+
+                if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
+                if (newPrice > MAX_PRICE) newPrice = MAX_PRICE;
+
+                const changeAmount = newPrice - oldPrice;
+                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
+                
+                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+            }
+        });
+        transaction();
+        console.log(`[Market] Prices updated (Saturation Logic Applied).`);
+    } catch (err) { console.error("[Market] Error updating prices:", err.message); }
+}
+
 // --- دوال مساعدة ---
 function normalize(str) { if (!str) return ""; return str.toString().toLowerCase().replace(/[^a-z0-9]/g, ""); }
 function getGeneralSkills() { return skillsConfig.filter(s => s.id.startsWith('skill_')); }
@@ -944,9 +990,11 @@ async function handleSkillSelectMenu(i, client, sql) {
     } catch (error) { console.error(error); }
 }
 
+// ⚠️⚠️⚠️ تأكد من أن كل الدوال مصدرة بشكل صحيح ⚠️⚠️⚠️
 module.exports = {
     handleShopModal,
     handleShopSelectMenu,
     handleShopInteractions,
-    handleSkillSelectMenu
+    handleSkillSelectMenu,
+    updateMarketPrices // ✅ الدالة المفقودة تمت إضافتها هنا
 };
