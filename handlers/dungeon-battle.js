@@ -7,12 +7,11 @@ const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'))
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// تحميل ملفات العناصر (محاولة تحميل potions.json إذا وجد، وإلا الاعتماد على shop-items)
+// تحميل ملفات العناصر
 let potionItems = [];
 try {
     potionItems = require(path.join(rootDir, 'json', 'potions.json'));
 } catch (e) {
-    // إذا لم يوجد ملف منفصل، نحاول استخراجه من المتجر العام
     try {
         const shopItems = require(path.join(rootDir, 'json', 'shop-items.json'));
         potionItems = shopItems.filter(i => i.category === 'potions');
@@ -48,7 +47,6 @@ const LOSE_IMAGES = [
 
 // --- الدوال المساعدة ---
 
-// 🌟 دالة لضمان وجود جدول المخزون (لمنع خطأ Foreign Key)
 function ensureInventoryTable(sql) {
     sql.prepare(`
         CREATE TABLE IF NOT EXISTS user_inventory (
@@ -620,7 +618,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         });
 
         while (ongoing) {
-            const collector = battleMsg.createMessageComponentCollector({ time: 60000 });
+            // 🔥🔥 [إصلاح التايم أوت] الكوليكتور يعمل لمدة طويلة جداً (يوم) لمنع توقفه التلقائي
+            const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
             let processingUsers = new Set(); 
 
