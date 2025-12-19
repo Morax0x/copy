@@ -6,7 +6,7 @@ const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
-const shopItems = require(path.join(rootDir, 'json', 'shop-items.json')); // ✅ استيراد العناصر لمعرفة الجرعات
+const shopItems = require(path.join(rootDir, 'json', 'shop-items.json')); // ✅ استيراد العناصر
 
 // --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
@@ -36,6 +36,10 @@ const LOSE_IMAGES = [
 ];
 
 // --- الدوال المساعدة ---
+
+function getRandomImage(list) {
+    return list[Math.floor(Math.random() * list.length)];
+}
 
 function applyDamageToPlayer(player, damageAmount) {
     let remainingDamage = damageAmount;
@@ -142,7 +146,6 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
         skills: skillsOutput,
         isDead: false,
         defending: false,
-        potions: 0, // لا نستخدم هذا، سنعتمد على قاعدة البيانات
         skillCooldowns: {},
         shield: 0,
         tempAtkMultiplier: 1.0,
@@ -169,7 +172,7 @@ function getRandomMonster(type, theme) {
     return { name, emoji: theme.emoji };
 }
 
-// 🟢 بناء قائمة المهارات (كما هي)
+// 🟢 بناء قائمة المهارات
 function buildSkillSelector(player) {
     const options = [];
 
@@ -957,13 +960,13 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     if (status === 'win') {
         title = "❖ أسطـورة الدانـجون !";
-        color = "#00FF00"; randomImage = WIN_IMAGES[0];
+        color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); // ✅ صورة عشوائية
     } else if (status === 'retreat') {
         title = "❖ انـسـحـاب تـكـتيـكـي !";
-        color = "#FFFF00"; randomImage = WIN_IMAGES[0];
+        color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); // ✅ صورة عشوائية
     } else {
         title = "❖ هزيمـة ساحقـة ...";
-        color = "#FF0000"; randomImage = LOSE_IMAGES[1];
+        color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); // ✅ صورة عشوائية
     }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
@@ -1019,7 +1022,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     const embed = new EmbedBuilder()
         .setTitle(title)
-        .setDescription(`**الطابق الذي وصلتم له:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nMVP: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
+        .setDescription(`**الطابق الذي وصلتم له:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}> (${mvpPlayer.totalDamage.toLocaleString()})` : 'N/A'}\n\n**✶ المكافآت:**\n${buffText}\n\n${lootString}`)
         .setColor(color)
         .setTimestamp();
 
