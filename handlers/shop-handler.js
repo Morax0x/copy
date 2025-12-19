@@ -1,6 +1,10 @@
 const { EmbedBuilder, Colors, MessageFlags, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } = require("discord.js");
 const { sendLevelUpMessage } = require('./handler-utils.js');
-const shopItems = require('../json/shop-items.json');
+
+// 🔥 استيراد الملفين بشكل منفصل 🔥
+const shopItems = require('../json/shop-items.json'); // العناصر العامة فقط
+const potionItems = require('../json/potions.json'); // الجرعات فقط
+
 const farmAnimals = require('../json/farm-animals.json');
 const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
@@ -128,18 +132,17 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-// 🔥 تم التعديل: استبعاد الجرعات والقوائم من المتجر العام 🔥
+// 🔥 دالة العناصر العامة (من الملف القديم) 🔥
 function getBuyableItems() { 
     return shopItems.filter(it => 
-        it.category !== 'potions' && // استبعاد الجرعات
-        it.category !== 'menus' &&   // استبعاد القوائم
+        it.category !== 'menus' && // استبعاد القوائم
         !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
     ); 
 }
 
-// دالة لجلب الجرعات فقط
+// 🔥 دالة الجرعات (من الملف الجديد) 🔥
 function getPotionItems() {
-    return shopItems.filter(it => it.category === 'potions');
+    return potionItems; 
 }
 
 function calculateSlippage(basePrice, quantity, isBuy) {
@@ -151,7 +154,7 @@ function calculateSlippage(basePrice, quantity, isBuy) {
     return Math.max(Math.floor(avgPrice), 1);
 }
 
-// ... (نظام الكوبونات ودالة processFinalPurchase كما هي) ...
+// ... (نظام الكوبونات كما هو) ...
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, sql, callbackType) {
     const member = interaction.member; const guildID = interaction.guild.id; const userID = member.id;
     const bossCoupon = sql.prepare("SELECT * FROM user_coupons WHERE guildID = ? AND userID = ? AND isUsed = 0 LIMIT 1").get(guildID, userID);
@@ -284,19 +287,11 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
 
 // 🔥🔥 دالة اختيار الجرعات مع جمعها وإصلاح التكرار 🔥🔥
 function buildPaginatedItemEmbed(selectedItemId) {
-    // نحدد القائمة المناسبة بناءً على نوع العنصر (جرعة أم عنصر عام)
-    let itemList;
-    const isPotion = shopItems.find(i => i.id === selectedItemId && i.category === 'potions');
-
-    if (isPotion) {
-        itemList = getPotionItems(); // استخدم قائمة الجرعات فقط إذا كان العنصر جرعة
-    } else {
-        itemList = getBuyableItems(); // استخدم القائمة العامة للباقي
-    }
+    // تحديد الملف المناسب بناءً على وجود العنصر
+    const isPotion = potionItems.find(i => i.id === selectedItemId);
+    const itemList = isPotion ? potionItems : getBuyableItems();
 
     const itemIndex = itemList.findIndex(it => it.id === selectedItemId);
-    
-    // إذا لم يتم العثور على العنصر (وهذا سبب اللاق سابقاً حيث كان يعود بـ null ولا يتم الرد)
     if (itemIndex === -1) return null;
 
     const item = itemList[itemIndex];
@@ -310,7 +305,7 @@ function buildPaginatedItemEmbed(selectedItemId) {
         .setTitle(`${item.emoji} ${item.name}`)
         .setDescription(item.description)
         .addFields({ name: 'السعر', value: `**${item.price.toLocaleString()}** ${EMOJI_MORA}`, inline: true })
-        .setColor(item.category === 'potions' ? Colors.Purple : Colors.Greyple)
+        .setColor(isPotion ? Colors.Purple : Colors.Greyple)
         .setImage(BANNER_URL)
         .setThumbnail(THUMBNAILS.get(item.id) || item.image || null)
         .setFooter({ text: `العنصر ${itemIndex + 1} / ${totalItems}` });
@@ -419,13 +414,11 @@ async function _handleBaitSelect(i, client, sql) {
 async function _handlePotionSelect(i, client, sql) {
     if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
     
-    // جلب الجرعات فقط من ملف العناصر
+    // جلب الجرعات من الملف المنفصل
     const potions = getPotionItems();
     
     if (potions.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
 
-    // تقليص العدد إلى 25 فقط لتجنب خطأ ديسكورد (API Limit)
-    // إذا كان لديك أكثر من 25، يجب استخدام Pagination (صفحات) للقائمة نفسها، لكن 25 جرعة عدد كبير جداً عادة.
     const limitedPotions = potions.slice(0, 25);
 
     const potionOptions = limitedPotions.map(p => {
@@ -594,7 +587,10 @@ async function _handleShopButton(i, client, sql) {
             return i.showModal(modal);
         }
 
-        const item = shopItems.find(it => it.id === boughtItemId);
+        // 🔥 البحث في كلا الملفين 🔥
+        let item = shopItems.find(it => it.id === boughtItemId);
+        if (!item) item = potionItems.find(it => it.id === boughtItemId);
+
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
@@ -616,8 +612,8 @@ async function _handleShopButton(i, client, sql) {
                 const allUserItems = sql.prepare("SELECT itemID FROM user_portfolio WHERE userID = ? AND guildID = ?").all(userId, guildId);
                 let currentPotionTypesCount = 0;
                 for (const uItem of allUserItems) {
-                    const shopItem = shopItems.find(si => si.id === uItem.itemID);
-                    if (shopItem && shopItem.category === 'potions') { currentPotionTypesCount++; }
+                    const shopItem = potionItems.find(si => si.id === uItem.itemID); // البحث في ملف الجرعات
+                    if (shopItem) { currentPotionTypesCount++; }
                 }
                 if (currentPotionTypesCount >= maxTypes) {
                     return await i.reply({ content: `🚫 **حقيبتك ممتلئة بأنواع مختلفة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxTypes}** أنواع مختلفة من الجرعات.\nاستهلك بعض الجرعات أولاً.`, flags: MessageFlags.Ephemeral });
@@ -939,7 +935,10 @@ async function handleShopSelectMenu(i, client, sql) {
             return;
         }
 
-        const item = getBuyableItems().find(it => it.id === selected);
+        // 🔥 هنا: نبحث في العنصر العام، إذا لم نجده، نبحث في الجرعات (فقط للتأكيد) 🔥
+        let item = getBuyableItems().find(it => it.id === selected);
+        if (!item) item = getPotionItems().find(it => it.id === selected);
+
         if (item) {
              const paginationEmbed = buildPaginatedItemEmbed(selected);
              if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
