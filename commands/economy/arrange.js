@@ -210,8 +210,12 @@ module.exports = {
                                 .setDescription(`✶ جبتها صــح!\n⏱️ الوقت: **${timeTaken}ث**\n💰 ربـحـت: **${totalProfit}** ${MORA_EMOJI}${buffText}`);
 
                             disableAll(ButtonStyle.Success);
-                            // استخدام i.update لأنه استجابة مباشرة للزر
-                            await i.update({ embeds: [winEmbed], components: [row1, row2, row3] });
+                            
+                            if (i) {
+                                await i.update({ embeds: [winEmbed], components: [row1, row2, row3] });
+                            } else {
+                                await gameMsg.edit({ embeds: [winEmbed], components: [row1, row2, row3] });
+                            }
 
                         } else if (reason === 'lose') {
                             let reasonText = 'ضغطت رقم غلط!';
@@ -222,8 +226,12 @@ module.exports = {
                                 .setDescription(`${reasonText}\nراحت عليك **${finalBetAmount} ${MORA_EMOJI}**`);
 
                             disableAll(ButtonStyle.Secondary);
-                            // استخدام i.update لأنه استجابة مباشرة للزر
-                            await i.update({ embeds: [loseEmbed], components: [row1, row2, row3] });
+                            
+                            if (i) {
+                                await i.update({ embeds: [loseEmbed], components: [row1, row2, row3] });
+                            } else {
+                                await gameMsg.edit({ embeds: [loseEmbed], components: [row1, row2, row3] });
+                            }
 
                         } else if (reason === 'time') {
                             // هنا انتهى الوقت، لا يوجد زر مضغوط، لذا نستخدم gameMsg.edit
