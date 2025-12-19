@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
 const path = require('path');
 
 // استدعاء محرك المعركة
@@ -19,12 +19,12 @@ async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
     if (activeDungeonRequests.has(user.id)) {
-        return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", ephemeral: true });
+        return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 10) {
-        return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **10** لتتمكن من قيادة غارة دانجون.", ephemeral: true });
+        return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **10** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
     activeDungeonRequests.add(user.id);
@@ -38,7 +38,7 @@ async function startDungeon(interaction, sql) {
         if (now < expirationTime) {
             const finishTimeUnix = Math.floor(expirationTime / 1000);
             activeDungeonRequests.delete(user.id); 
-            return interaction.reply({ content: `⏳ **استرح قليلاً!** يمكنك بدء غارة جديدة <t:${finishTimeUnix}:R>.`, ephemeral: true });
+            return interaction.reply({ content: `⏳ **استرح قليلاً!** يمكنك بدء غارة جديدة <t:${finishTimeUnix}:R>.`, flags: [MessageFlags.Ephemeral] });
         }
     }
 
@@ -55,7 +55,7 @@ async function startDungeon(interaction, sql) {
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
     
-    // 🔥 [تعديل] إصلاح توزيع الأزرار (5 في كل صف بدلاً من 2)
+    // 🔥 [إصلاح] توزيع الأزرار 5 في كل صف
     if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
     if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
 
@@ -76,9 +76,7 @@ async function startDungeon(interaction, sql) {
     collector.on('collect', async i => {
         try {
             await i.deferUpdate(); 
-            
-            // 🔥 [إصلاح هام] إيقاف الكوليكتور فوراً عند الاختيار لمنع انتهاء الوقت وتدمير اللوبي
-            collector.stop('selected'); 
+            collector.stop('selected'); // 🔥 إيقاف الكوليكتور فوراً لمنع مشاكل الوقت
 
             const themeKey = i.customId.replace('dungeon_theme_', '');
             const theme = dungeonConfig.themes[themeKey];
@@ -91,7 +89,6 @@ async function startDungeon(interaction, sql) {
     });
 
     collector.on('end', (c, reason) => {
-        // 🔥 [إصلاح هام] الحذف فقط إذا انتهى الوقت ولم يختر أحد
         if (reason === 'time') {
             activeDungeonRequests.delete(user.id); 
             if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
@@ -141,14 +138,13 @@ async function lobbyPhase(interaction, theme, sql) {
         try {
             if (i.customId === 'join') {
                 if (i.user.id === host.id) {
-                    return i.reply({ content: "👑 أنت القائد (Leader).", ephemeral: true });
+                    return i.reply({ content: "👑 أنت القائد (Leader).", flags: [MessageFlags.Ephemeral] });
                 }
 
                 if (party.includes(i.user.id)) {
-                    // موجود مسبقاً، يمكن تجاهله أو إرسال رسالة
-                    return i.reply({ content: "✅ أنت منضم بالفعل.", ephemeral: true });
+                    return i.reply({ content: "✅ أنت منضم بالفعل.", flags: [MessageFlags.Ephemeral] });
                 } else if (party.length >= 5) {
-                    return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
+                    return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
                 } else {
                     if (i.user.id !== OWNER_ID) {
                         const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
@@ -157,13 +153,13 @@ async function lobbyPhase(interaction, theme, sql) {
                         
                         if (now - resetTime < DUNGEON_COOLDOWN) {
                             if ((joinData?.dungeon_join_count || 0) >= 3) {
-                                return i.reply({ content: "🚫 استنفذت محاولات الانضمام.", ephemeral: true });
+                                return i.reply({ content: "🚫 استنفذت محاولات الانضمام.", flags: [MessageFlags.Ephemeral] });
                             }
                         }
 
                         const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
-                        if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 لفل منخفض.", ephemeral: true });
-                        if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك المال.`, ephemeral: true });
+                        if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 لفل منخفض.", flags: [MessageFlags.Ephemeral] });
+                        if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك المال.`, flags: [MessageFlags.Ephemeral] });
                     }
                 }
 
@@ -180,7 +176,7 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
 
                 if (availableOptions.length === 0) {
-                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة!", ephemeral: true });
+                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة!", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const classRow = new ActionRowBuilder().addComponents(
@@ -190,7 +186,7 @@ async function lobbyPhase(interaction, theme, sql) {
                         .addOptions(availableOptions)
                 );
 
-                const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:**", components: [classRow], ephemeral: true, fetchReply: true });
+                const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:**", components: [classRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
                 
                 try {
                     const selection = await selectMsg.awaitMessageComponent({ 
@@ -218,7 +214,10 @@ async function lobbyPhase(interaction, theme, sql) {
                     else if(selectedClass === 'Mage') displayClassName = 'الساحر';
                     else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
 
-                    if (!selection.deferred && !selection.replied) await selection.deferUpdate();
+                    // 🔥🔥 حماية من Unknown Interaction هنا 🔥🔥
+                    if (!selection.deferred && !selection.replied) {
+                        try { await selection.deferUpdate(); } catch(e){}
+                    }
                     await selection.editReply({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
                     
                     await msg.edit({ embeds: [updateEmbed()] });
@@ -232,10 +231,13 @@ async function lobbyPhase(interaction, theme, sql) {
                 }
 
             } else if (i.customId === 'start') {
-                if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
-                if (party.length < 1) return i.reply({ content: "خطأ", ephemeral: true });
+                if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", flags: [MessageFlags.Ephemeral] });
+                if (party.length < 1) return i.reply({ content: "خطأ", flags: [MessageFlags.Ephemeral] });
                 
-                if (!i.deferred && !i.replied) await i.deferUpdate();
+                // 🔥🔥 حماية من Unknown Interaction هنا 🔥🔥
+                if (!i.deferred && !i.replied) {
+                    try { await i.deferUpdate(); } catch(e){}
+                }
                 collector.stop('start');
             }
         } catch (err) {
@@ -282,7 +284,6 @@ async function lobbyPhase(interaction, theme, sql) {
                 interaction.channel.send("❌ حدث خطأ.");
             }
         } else {
-            // 🔥 [إصلاح هام] تنظيف القائمة إذا تم الإلغاء أو انتهاء الوقت
             activeDungeonRequests.delete(host.id); 
             if (msg.editable) msg.edit({ content: "❌ تم إلغاء الدانجون.", components: [], embeds: [] });
         }
