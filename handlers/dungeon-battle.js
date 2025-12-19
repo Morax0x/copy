@@ -6,7 +6,18 @@ const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
-const shopItems = require(path.join(rootDir, 'json', 'shop-items.json')); // ✅ استيراد العناصر
+
+// تحميل ملفات العناصر (محاولة تحميل potions.json إذا وجد، وإلا الاعتماد على shop-items)
+let potionItems = [];
+try {
+    potionItems = require(path.join(rootDir, 'json', 'potions.json'));
+} catch (e) {
+    // إذا لم يوجد ملف منفصل، نحاول استخراجه من المتجر العام
+    try {
+        const shopItems = require(path.join(rootDir, 'json', 'shop-items.json'));
+        potionItems = shopItems.filter(i => i.category === 'potions');
+    } catch (err) { console.error("Error loading potions:", err); }
+}
 
 // --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
@@ -37,6 +48,20 @@ const LOSE_IMAGES = [
 
 // --- الدوال المساعدة ---
 
+// 🌟 دالة لضمان وجود جدول المخزون (لمنع خطأ Foreign Key)
+function ensureInventoryTable(sql) {
+    sql.prepare(`
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guildID TEXT,
+            userID TEXT,
+            itemID TEXT,
+            quantity INTEGER DEFAULT 0,
+            UNIQUE(guildID, userID, itemID)
+        );
+    `).run();
+}
+
 function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
@@ -56,12 +81,6 @@ function applyDamageToPlayer(player, damageAmount) {
     if (player.hp < 0) player.hp = 0;
 }
 
-function getBaseFloorMora(floor) {
-    if (floor <= 10) return 100;
-    const tier = floor - 10;
-    return Math.floor(100 + (tier * 50) + (Math.pow(tier, 1.8))); 
-}
-
 function getDungeonBuff(floor) {
     if (floor >= 15) return { percent: 20, minutes: 30 };
     if (floor >= 9) return { percent: 10, minutes: 10 };
@@ -73,8 +92,6 @@ function cleanDisplayName(name) {
     if (!name) return "لاعب";
     let clean = name.replace(/<a?:.+?:\d+>/g, '');
     clean = clean.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\DFFF]|\uD83D[\uDC00-\DFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\DFFF]/g, '');
-    clean = clean.replace(/^[\s\d\[\]|.,\-#]+/, '');
-    clean = clean.replace(/[\s\d\[\]|.,\-#]+$/, '');
     return clean.trim() || "لاعب";
 }
 
@@ -179,11 +196,19 @@ function buildSkillSelector(player) {
     if (player.id === OWNER_ID) {
         options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('ضربة قاضية خاصة بالمالك.').setEmoji('👁️'));
         options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش يحتضر والمغادرة.').setEmoji('🚪'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب').setValue('class_leader').setDescription('زيادة ضرر الفريق 30%.').setEmoji('👑'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب').setValue('class_tank').setDescription('جذب الوحش وتقليل الضرر 60%.').setEmoji('🛡️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس').setValue('class_priest').setDescription('شفاء الفريق أو إحياء ميت.').setEmoji('✨'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
+        
+        // خيارات الكلاسات للمالك
+        const classSkills = [
+            {v: 'class_leader', l: 'صرخة الحرب', d: 'زيادة ضرر الفريق 30%.', e: '👑'},
+            {v: 'class_tank', l: 'استفزاز وتصليب', d: 'جذب الوحش وتقليل الضرر 60%.', e: '🛡️'},
+            {v: 'class_priest', l: 'النور المقدس', d: 'شفاء الفريق أو إحياء ميت.', e: '✨'},
+            {v: 'class_mage', l: 'سجن الجليد', d: 'تجميد الوحش.', e: '❄️'},
+            {v: 'class_summoner', l: 'استدعاء حارس الظل', d: 'استدعاء وحش مساند.', e: '🐺'}
+        ];
+        
+        classSkills.forEach(cs => {
+             options.push(new StringSelectMenuOptionBuilder().setLabel(cs.l).setValue(cs.v).setDescription(cs.d).setEmoji(cs.e));
+        });
 
         skillsConfig.forEach(s => {
              if (!options.some(o => o.data.value === s.id)) {
@@ -235,13 +260,14 @@ function buildSkillSelector(player) {
     );
 }
 
-// 🟢 بناء قائمة الجرعات (الجديدة)
+// 🟢 بناء قائمة الجرعات (باستخدام user_inventory)
 function buildPotionSelector(player, sql, guildID) {
-    const userItems = sql.prepare("SELECT itemID, quantity FROM user_portfolio WHERE userID = ? AND guildID = ?").all(player.id, guildID);
+    // 🔥🔥 نستخدم user_inventory بدلاً من user_portfolio 🔥🔥
+    ensureInventoryTable(sql); 
+    const userItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(player.id, guildID);
     
-    // فلترة الجرعات فقط
     const potions = userItems.map(ui => {
-        const itemDef = shopItems.find(si => si.id === ui.itemID && si.category === 'potions');
+        const itemDef = potionItems.find(si => si.id === ui.itemID);
         if (itemDef) return { ...itemDef, quantity: ui.quantity };
         return null;
     }).filter(p => p !== null && p.quantity > 0);
@@ -309,7 +335,7 @@ function handleSkillUsage(player, skill, monster, log) {
 
     switch (skill.id) {
         case 'skill_rebound': 
-        case 'potion_reflect': { // ✅ دمجنا مهارة الانعكاس مع الجرعة
+        case 'potion_reflect': { 
              const reflectPercent = (value > 0 ? value / 100 : 0.5) * mult;
              player.effects.push({ type: 'reflect', val: reflectPercent, turns: 1 });
              log.push(`🌵 **${player.name}** جهز درع الأشواك (انعكاس)!`);
@@ -531,6 +557,8 @@ function generateBattleRows() {
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
+    ensureInventoryTable(sql); // 🔥 ضمان وجود جدول المخزون قبل البدء
+
     let players = [];
     let retreatedPlayers = [];
       
@@ -615,7 +643,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥 [هام] تأجيل التحديث فوراً لتجنب التايم أوت 🔥
+                    // 🔥🔥 [إصلاح اللاق] الرد فوراً 🔥🔥
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     
                     if (processingUsers.has(i.user.id)) return;
@@ -747,7 +775,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } 
-                        // 🧪 منطق الجرعات الجديد 🧪
+                        // 🧪 منطق الجرعات الجديد (User Inventory) 🧪
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
                             if (!potionRow) {
@@ -762,16 +790,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
-                                // خصم الجرعة
-                                const userItem = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, potionId);
+                                // خصم الجرعة من user_inventory
+                                const userItem = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, potionId);
                                 if (!userItem || userItem.quantity <= 0) {
                                     await selection.followUp({ content: "❌ نفذت الكمية!", ephemeral: true });
                                     processingUsers.delete(i.user.id); return;
                                 }
 
-                                sql.prepare("UPDATE user_portfolio SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
+                                sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
                                 if (userItem.quantity - 1 <= 0) {
-                                    sql.prepare("DELETE FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
+                                    sql.prepare("DELETE FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
                                 }
 
                                 // تطبيق التأثير
@@ -797,16 +825,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     case 'potion_titan':
                                         p.maxHp *= 2;
                                         p.hp = p.maxHp;
-                                        p.effects.push({ type: 'titan', turns: 3 }); // تايتان = Taunt + HP
+                                        p.effects.push({ type: 'titan', turns: 3 }); 
                                         monster.targetFocusId = p.id;
                                         actionMsg = "🔥 شرب جرعة العملاق وتحول لوحش هائج!";
                                         break;
                                     case 'potion_sacrifice':
-                                        p.hp = 0; p.isDead = true; // موت اللاعب
+                                        p.hp = 0; p.isDead = true; 
                                         players.forEach(ally => {
                                             if (ally.id !== p.id) {
                                                 ally.isDead = false;
-                                                ally.hp = ally.maxHp; // شفاء كامل وإحياء
+                                                ally.hp = ally.maxHp; 
                                                 ally.effects = [];
                                             }
                                         });
@@ -924,12 +952,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`👹 **${monster.name}** ضرب **${target.name}** (${dmg})`);
                         
                         // 🔥🔥 منطق الانعكاس (Reflection) المحدث 🔥🔥
-                        // الرد يكون من أي لاعب مفعل الانعكاس، حتى لو لم يهاجمه الوحش
                         players.forEach(p => {
                             if (!p.isDead) {
                                 const reflectBuff = p.effects.find(e => e.type === 'reflect');
                                 if (reflectBuff) {
-                                    // الضرر المرتد يعتمد على قوة هجوم الوحش الأساسية
                                     const reflectedDmg = Math.floor(monster.atk * reflectBuff.val);
                                     monster.hp -= reflectedDmg;
                                     log.push(`🌵 **${p.name}** عكس الضرر على الوحش! (-${reflectedDmg})`);
@@ -960,13 +986,13 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     if (status === 'win') {
         title = "❖ أسطـورة الدانـجون !";
-        color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); // ✅ صورة عشوائية
+        color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); 
     } else if (status === 'retreat') {
         title = "❖ انـسـحـاب تـكـتيـكـي !";
-        color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); // ✅ صورة عشوائية
+        color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); 
     } else {
         title = "❖ هزيمـة ساحقـة ...";
-        color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); // ✅ صورة عشوائية
+        color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); 
     }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
