@@ -6,6 +6,7 @@ const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
 const path = require('path');
 
+// استيراد ملف الصيد الشامل
 const rootDir = process.cwd();
 let rodsConfig = [], boatsConfig = [], baitsConfig = [];
 try {
@@ -37,7 +38,8 @@ const THUMBNAILS = new Map([
     ['discord_effect_10', 'https://i.postimg.cc/tJHmX9nh/3.webp'],
     ['nitro_basic', 'https://i.postimg.cc/Qxmn3G8K/5.webp'],
     ['nitro_gaming', 'https://i.postimg.cc/kXJfw1Q4/6.webp'],
-    ['change_race', 'https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png']
+    ['change_race', 'https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png'],
+    ['item_temp_reply', 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'] // أيقونة للرد التلقائي
 ]);
 
 // 🌟 دالة اللوج (تسجيل العمليات) 🌟
@@ -854,6 +856,47 @@ async function _handleXpExchangeModal(i, client, sql) {
         sendShopLog(client, guildId, i.member, `شراء ${amountToBuy} XP`, totalCost, "تبديل");
 
     } catch (e) { console.error(e); }
+}
+
+async function handleShopInteractions(i, client, sql) {
+    if (i.customId.startsWith('shop_paginate_item_')) { try { await i.deferUpdate(); const id = i.customId.replace('shop_paginate_item_', ''); const embed = buildPaginatedItemEmbed(id); if (embed) await i.editReply(embed); } catch (e) {} return; }
+    if (i.customId.startsWith('shop_skill_paginate_')) { try { await i.deferUpdate(); const idx = i.customId.replace('shop_skill_paginate_', ''); const skills = getAllUserAvailableSkills(i.member, sql); const embed = buildSkillEmbedWithPagination(skills, idx, sql, i); if (embed) await i.editReply(embed); } catch (e) {} return; }
+
+    if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
+        const val = i.values[0];
+        if (val === 'gear_rods') await _handleRodSelect(i, client, sql);
+        else if (val === 'gear_boats') await _handleBoatSelect(i, client, sql);
+        else if (val === 'gear_baits') await _handleBaitSelect(i, client, sql);
+        return;
+    }
+
+    if (i.customId === 'upgrade_rod') await _handleRodUpgrade(i, client, sql);
+    else if (i.customId === 'upgrade_boat') await _handleBoatUpgrade(i, client, sql);
+    else if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') await _handleBaitBuy(i, client, sql);
+    
+    else if (i.customId.startsWith('buy_item_')) await _handleShopButton(i, client, sql);
+    else if (i.customId.startsWith('replace_buff_')) await _handleReplaceBuffButton(i, client, sql);
+    else if (i.customId.startsWith('buy_weapon_') || i.customId.startsWith('upgrade_weapon_')) await _handleWeaponUpgrade(i, client, sql);
+    else if (i.customId.startsWith('buy_skill_') || i.customId.startsWith('upgrade_skill_')) await _handleSkillUpgrade(i, client, sql);
+    else if (i.customId === 'cancel_purchase') { await i.deferUpdate(); await i.editReply({ content: 'تم الإلغاء.', components: [], embeds: [] }); }
+    else if (i.customId === 'open_xp_modal') { 
+        const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
+        xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true)));
+        await i.showModal(xpModal);
+    }
+    else if (i.customId === 'replace_guard') {
+        await _handleReplaceGuard(i, client, sql);
+    }
+    else if (i.customId.startsWith('buy_market_') || i.customId.startsWith('sell_market_') || i.customId.startsWith('buy_animal_') || i.customId.startsWith('sell_animal_')) {
+        const action = i.customId.split('_')[0]; 
+        const modalId = action === 'buy' ? (i.customId.includes('market') ? 'buy_modal_' : 'buy_animal_') : (i.customId.includes('market') ? 'sell_modal_' : 'sell_animal_');
+        const suffix = i.customId.split('_').slice(2).join('_'); 
+        
+        const modal = new ModalBuilder().setCustomId(modalId + suffix).setTitle(action === 'buy' ? 'شراء' : 'بيع');
+        const input = new TextInputBuilder().setCustomId('quantity_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await i.showModal(modal);
+    }
 }
 
 async function handleShopSelectMenu(i, client, sql) {
