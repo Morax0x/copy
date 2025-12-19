@@ -65,6 +65,12 @@ function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
+function getBaseFloorMora(floor) {
+    if (floor <= 10) return 100;
+    const tier = floor - 10;
+    return Math.floor(100 + (tier * 50) + (Math.pow(tier, 1.8))); 
+}
+
 function applyDamageToPlayer(player, damageAmount) {
     let remainingDamage = damageAmount;
     if (player.shield > 0) {
@@ -607,26 +613,23 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         });
 
         while (ongoing) {
-            const collector = battleMsg.createMessageComponentCollector({ time: 60000 });
+            const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
+                // مؤقت انتهاء الدور (45 ثانية)
                 const turnTimeout = setTimeout(() => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
                     if (afkPlayers.length > 0) {
                           afkPlayers.forEach(afkP => {
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
-                                if (afkP.skipCount >= 5) {
-                                    afkP.hp = 0; afkP.isDead = true;
-                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده لتجاوز وقت الانتظار!`).catch(()=>{});
-                                } else {
-                                    monster.targetFocusId = afkP.id;
-                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5)`).catch(()=>{});
-                                }
+                                monster.targetFocusId = afkP.id;
+                                // لا ننهي اللعبة، فقط نتخطى الدور ونسمح للوحش بالهجوم
+                                // threadChannel.send(`⏩ **${afkP.name}** لم يهاجم!`).catch(()=>{});
                           });
                     }
-                    collector.stop('turn_end'); 
+                    collector.stop('turn_end'); // هذا لا ينهي المعركة، بل ينهي الدور الحالي فقط
                 }, 45000); 
 
                 collector.on('collect', async i => {
@@ -809,7 +812,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 else {
                     const alive = players.filter(p => !p.isDead);
                     if (alive.length > 0) {
-                        let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive[Math.floor(Math.random() * alive.length)];
+                        // الوحش يهاجم هدفاً عشوائياً أو مركزاً عليه
+                        let target = alive.find(p => p.id === monster.targetFocusId);
+                        
+                        // إذا الهدف المركز عليه مات أو غير موجود، اختر هدفاً عشوائياً
+                        if (!target) target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive[Math.floor(Math.random() * alive.length)];
+                        
                         let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                         if(target.defending) dmg = Math.floor(dmg * 0.5);
                         applyDamageToPlayer(target, dmg);
@@ -854,6 +862,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
                 if (i.user.id !== hostId) return i.reply({ content: "فقط القائد يقرر.", ephemeral: true });
+                await i.deferUpdate(); // تجنب اللاق
                 decCollector.stop(i.customId);
             });
             decCollector.on('end', (c, reason) => res(reason));
@@ -861,7 +870,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         await restMsg.delete().catch(()=>{});
 
-        if (decision === 'retreat' || decision === 'time') {
+        if (decision === 'retreat' || decision === 'time') { // الانسحاب أو انتهاء الوقت = انسحاب
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
         }
@@ -897,8 +906,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     await mainChannel.send({ content: activePlayers.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
     activeDungeonRequests.delete(hostId);
-    await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة...**` });
-    setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
+    
+    // إغلاق الثريد بأمان
+    try {
+        await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة...**` });
+        setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
+    } catch(e) { /* تجاهل الخطأ إذا تم حذف الثريد يدوياً */ }
 }
 
 module.exports = { runDungeon };
