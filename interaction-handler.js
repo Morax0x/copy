@@ -13,12 +13,12 @@ const { handleBossInteraction } = require('./handlers/boss-handler.js');
 let handleFarmInteractions;
 try { ({ handleFarmInteractions } = require('./handlers/farm-handler.js')); } catch(e) {}
 
-// ✅ تصحيح المسار: بما أننا في الجذر، نستدعيه مباشرة
+// تصحيح المسار لملف الستريك
 let streakHandler;
 try {
     streakHandler = require('./streak-handler.js');
 } catch (e) {
-    try { streakHandler = require('../../streak-handler.js'); } catch (err) {} // محاولة احتياطية
+    try { streakHandler = require('../../streak-handler.js'); } catch (err) {} 
 }
 
 const ms = require('ms');
@@ -160,15 +160,17 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // 🛑 إزالة الأزرار التي تفتح Modals من قائمة الانتظار
-                if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm')) {
+                // استثناء الأزرار التي تفتح Modals من الـ defer لتجنب الأخطاء
+                if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm') || id === 'open_xp_modal' || id.startsWith('buy_market_') || id.startsWith('sell_market_') || id.startsWith('buy_animal_') || id.startsWith('sell_animal_') || id === 'buy_item_item_temp_reply') {
+                    // لا تفعل شيئاً، دع الهاندلر يتصرف
+                } else {
+                    // محاولة عمل defer للأزرار العادية
                     if (!i.replied && !i.deferred) {
                         try { await i.deferUpdate(); } 
                         catch (err) { if (err.code !== 10062) throw err; return; }
                     }
                 }
 
-                // 🔥 معالجة أزرار القيف اواي العامة (مثل reroll وغيرها)
                 if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) {
                         await handleGiveawayInteraction(client, i);
@@ -292,7 +294,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
                 
                 } 
-                // ✅✅✅ تم إضافة معالجة زر الدروب هنا ✅✅✅
                 else if (id === 'g_enter_drop') {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     const messageID = i.message.id;
@@ -317,7 +318,7 @@ module.exports = (client, sql, antiRolesCache) => {
                             weight = await getUserWeight(i.member, sql);
                         } catch (err) {
                             console.error("خطأ في جلب الوزن (Drop):", err);
-                            weight = 1; // قيمة افتراضية
+                            weight = 1; 
                         }
 
                         sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
@@ -340,7 +341,7 @@ module.exports = (client, sql, antiRolesCache) => {
             // ====================================================
             } else if (i.isModalSubmit()) {
                 
-                // معالجة مودل التايم أوت (Apps Command)
+                // معالجة مودل التايم أوت
                 if (i.customId.startsWith('timeout_app_modal_')) {
                     await i.deferReply({ flags: [MessageFlags.Ephemeral] });
 
@@ -404,9 +405,12 @@ module.exports = (client, sql, antiRolesCache) => {
                      giveawayBuilders.set(i.user.id, data);
                      await updateBuilderEmbed(i, data);
                 }
+                
+                // 🔥 معالجة مودالات المتجر (بما فيها شراء الرد التلقائي) 🔥
                 else if (await handleShopModal(i, client, sql)) {
-                    // Handled
-                } else if (i.customId.startsWith('customrole_modal_')) { 
+                    // تم التعامل معه
+                } 
+                else if (i.customId.startsWith('customrole_modal_')) { 
                     await handleCustomRoleInteraction(i, client, sql);
                 }
                 return; 
@@ -421,15 +425,12 @@ module.exports = (client, sql, antiRolesCache) => {
                 if (id === 'boss_execute_skill') {
                     await handleBossInteraction(i, client, sql);
                 }
-
                 else if (id.startsWith('streak_panel_')) { 
                     await handleStreakPanel(i, client, sql);
                 }
-
                 else if (id === 'farm_shop_select' && handleFarmInteractions) {
                     await handleFarmInteractions(i, client, sql);
                 }
-                
                 else if (
                     id === 'shop_select_item' || 
                     id === 'shop_skill_select_menu' || 
@@ -440,7 +441,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
                     else await handleShopInteractions(i, client, sql);
                 }
-
                 else if (id.startsWith('rr_')) { 
                     await handleReactionRole(i, client, sql, antiRolesCache); 
                 } else if (id === 'g_reroll_select') {
@@ -455,9 +455,7 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
-            // تجاهل خطأ التفاعل غير المعروف
             if (error.code === 10062 || error.code === 40060) return;
-
             console.error("خطأ فادح في معالج التفاعلات:", error);
             if (!i.replied && !i.deferred) {
                 await i.reply({ content: '⚠️ انتهى وقت الاستجابة.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
