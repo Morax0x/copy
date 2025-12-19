@@ -40,7 +40,6 @@ module.exports = {
     description: "نظام الردود التلقائية.",
 
     async execute(interaction) {
-        // دعم الأوامر العادية (Prefix) والسلاش (Slash)
         const isSlash = !!interaction.isChatInputCommand;
         
         let client, sql, guildID, user, sub;
@@ -52,9 +51,6 @@ module.exports = {
             user = interaction.user;
             sub = interaction.options.getSubcommand();
         } else {
-            // دعم البريفكس (إذا تم استدعاؤه كأمر عادي)
-            // ملاحظة: هذا الملف مصمم كـ SlashCommandBuilder، لذا قد تحتاج لتعديل بسيط إذا كنت تستخدمه كأمر عادي أيضاً
-            // سأفترض هنا أنه Slash فقط كما هو في الكود الأصلي
             return; 
         }
 
@@ -62,14 +58,20 @@ module.exports = {
             await interaction.deferReply({ ephemeral: true });
 
             if (sub === 'اضافة') {
-                const trigger = interaction.options.getString('الكلمة').toLowerCase();
+                // 🟢 التعديل هنا: جلب الكلمة، ثم حذف الأقواس والمسافات الزائدة
+                let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
+                const trigger = rawTrigger.replace(/[()]/g, '').trim(); 
+
                 const response = interaction.options.getString('الرد');
                 const images = interaction.options.getString('الصور') || "";
                 const matchType = interaction.options.getString('المطابقة') || 'exact';
                 const cooldown = interaction.options.getInteger('كولداون') || 0;
 
+                // التحقق من أن الكلمة لم تصبح فارغة بعد التنظيف
+                if (!trigger) return interaction.editReply("❌ الكلمة تحتوي فقط على رموز غير صالحة.");
+
                 const exists = sql.prepare("SELECT id FROM auto_responses WHERE guildID = ? AND trigger = ?").get(guildID, trigger);
-                if (exists) return interaction.editReply("❌ هذا الرد موجود مسبقاً. قم بحذفه أولاً للتعديل.");
+                if (exists) return interaction.editReply(`❌ الرد على كلمة **"${trigger}"** موجود مسبقاً. قم بحذفه أولاً للتعديل.`);
 
                 // معالجة الصور (التأكد من الروابط)
                 const imageList = images.split(/\s+/).filter(url => url.startsWith('http'));
@@ -79,20 +81,22 @@ module.exports = {
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 `).run(guildID, trigger, response, JSON.stringify(imageList), matchType, cooldown, user.id);
 
-                return interaction.editReply(`✅ تم إضافة الرد على: **"${trigger}"** بنجاح.\nنوع المطابقة: ${matchType}\nالكولداون: ${cooldown} ثانية.`);
+                return interaction.editReply(`✅ تم إضافة الرد على: **"${trigger}"** بنجاح.\n(تمت إزالة الأقواس تلقائياً)\nنوع المطابقة: ${matchType}\nالكولداون: ${cooldown} ثانية.`);
             }
 
             if (sub === 'حذف') {
-                const trigger = interaction.options.getString('الكلمة').toLowerCase();
+                // 🟢 التعديل هنا أيضاً: عند الحذف يجب تنظيف المدخل ليطابق المخزن
+                let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
+                const trigger = rawTrigger.replace(/[()]/g, '').trim();
+
                 const result = sql.prepare("DELETE FROM auto_responses WHERE guildID = ? AND trigger = ?").run(guildID, trigger);
                 
                 if (result.changes > 0) return interaction.editReply(`✅ تم حذف الرد الخاص بـ **"${trigger}"**.`);
-                return interaction.editReply(`❌ لم يتم العثور على رد لهذه الكلمة.`);
+                return interaction.editReply(`❌ لم يتم العثور على رد لهذه الكلمة: **"${trigger}"**.`);
             }
 
             if (sub === 'قائمة') {
                 const page = interaction.options.getInteger('صفحة') || 1;
-                // جلب جميع البيانات بما فيها تاريخ الانتهاء وصاحب الرد
                 const rows = sql.prepare("SELECT trigger, matchType, cooldown, expiresAt, createdBy FROM auto_responses WHERE guildID = ?").all(guildID);
                 
                 if (rows.length === 0) return interaction.editReply("📭 لا توجد ردود تلقائية مسجلة.");
@@ -122,12 +126,15 @@ module.exports = {
             }
 
             if (sub === 'تخصيص-قناة') {
-                const trigger = interaction.options.getString('الكلمة').toLowerCase();
+                // 🟢 التعديل هنا أيضاً لضمان المطابقة
+                let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
+                const trigger = rawTrigger.replace(/[()]/g, '').trim();
+
                 const channel = interaction.options.getChannel('القناة');
                 const action = interaction.options.getString('الاجراء');
 
                 const row = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ? AND trigger = ?").get(guildID, trigger);
-                if (!row) return interaction.editReply("❌ هذا الرد غير موجود.");
+                if (!row) return interaction.editReply(`❌ هذا الرد غير موجود: **"${trigger}"**.`);
 
                 let allowed = row.allowedChannels ? JSON.parse(row.allowedChannels) : [];
                 let ignored = row.ignoredChannels ? JSON.parse(row.ignoredChannels) : [];
@@ -141,7 +148,7 @@ module.exports = {
                 }
 
                 sql.prepare("UPDATE auto_responses SET allowedChannels = ?, ignoredChannels = ? WHERE id = ?")
-                   .run(JSON.stringify(allowed), JSON.stringify(ignored), row.id);
+                    .run(JSON.stringify(allowed), JSON.stringify(ignored), row.id);
 
                 return interaction.editReply(`✅ تم تحديث إعدادات القناة للرد **"${trigger}"**.`);
             }
