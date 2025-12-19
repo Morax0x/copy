@@ -10,7 +10,6 @@ const DB_PATH = path.join(process.cwd(), 'mainDB.sqlite');
 const TEMP_PATH = path.join(process.cwd(), 'temp_restore.sqlite');
 
 // ⚠️ ضع آيدي قناة الباكب هنا يدوياً لتجنب مشاكل قاعدة البيانات
-// أو اتركه فارغاً وسيحاول البوت جلبه من الإعدادات إذا وجدت
 const BACKUP_CHANNEL_ID_CONST = "123456789012345678"; // <--- ضع آيدي القناة هنا
 
 module.exports = (client, sql) => {
@@ -22,15 +21,14 @@ module.exports = (client, sql) => {
             // محاولة جلب القناة من الإعدادات إذا لم يتم تحديدها بالأعلى
             if (!backupChannelID || backupChannelID === "123456789012345678") {
                 try {
-                    // نستخدم جدول settings الموجود فعلياً
-                    // تأكد من وجود عمود shopLogChannelID أو قم بإنشاء عمود جديد
-                    // هنا سنستخدم shopLogChannelID كبديل مؤقت إذا لم تحدد قناة خاصة
-                    const row = sql.prepare("SELECT shopLogChannelID FROM settings LIMIT 1").get();
-                    if (row) backupChannelID = row.shopLogChannelID;
+                    if (sql.open) {
+                        const row = sql.prepare("SELECT shopLogChannelID FROM settings LIMIT 1").get();
+                        if (row) backupChannelID = row.shopLogChannelID;
+                    }
                 } catch (e) {}
             }
 
-            if (!backupChannelID) return; // لا توجد قناة، إلغاء النسخ
+            if (!backupChannelID) return; 
 
             const channel = await client.channels.fetch(backupChannelID).catch(() => null);
             if (!channel) return;
@@ -66,54 +64,59 @@ module.exports = (client, sql) => {
         if (!interaction.isButton()) return;
         if (interaction.customId !== 'restore_backup') return;
 
-        if (interaction.user.id !== OWNER_ID) {
-            return interaction.reply({ content: "🚫 هذا الزر للمالك فقط.", flags: [MessageFlags.Ephemeral] });
-        }
+        try {
+            if (interaction.user.id !== OWNER_ID) {
+                return interaction.reply({ content: "🚫 هذا الزر للمالك فقط.", flags: [MessageFlags.Ephemeral] });
+            }
 
-        const message = interaction.message;
-        const attachment = message.attachments.first();
+            // 🔥🔥 حماية من Unknown Interaction هنا 🔥🔥
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-        if (!attachment || !attachment.name.endsWith('.sqlite')) {
-            return interaction.reply({ content: "⚠️ لا يوجد ملف قاعدة بيانات صالح في هذه الرسالة.", flags: [MessageFlags.Ephemeral] });
-        }
+            const message = interaction.message;
+            const attachment = message.attachments.first();
 
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-        await interaction.editReply("⏳ **جاري تحميل النسخة واستبدال القاعدة...**");
+            if (!attachment || !attachment.name.endsWith('.sqlite')) {
+                return interaction.editReply({ content: "⚠️ لا يوجد ملف قاعدة بيانات صالح في هذه الرسالة." });
+            }
 
-        const file = fs.createWriteStream(TEMP_PATH);
-        
-        https.get(attachment.url, (response) => {
-            response.pipe(file);
-            file.on('finish', () => {
-                file.close(async () => {
-                    try {
-                        if (sql.open) sql.close();
+            await interaction.editReply("⏳ **جاري تحميل النسخة واستبدال القاعدة...**");
 
-                        if (fs.existsSync(TEMP_PATH)) {
-                            const filesToRemove = [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
-                            filesToRemove.forEach(f => {
-                                if (fs.existsSync(f)) fs.unlinkSync(f);
-                            });
-                            
-                            fs.renameSync(TEMP_PATH, DB_PATH);
-                            console.log("[Backup Restore] Database replaced successfully.");
-                            
-                            await interaction.editReply("✅ **تمت الاستعادة بنجاح!**\n🔌 جاري إعادة التشغيل...");
-                            
-                            // ⚠️ تنبيه: هذا الأمر يغلق البوت. يجب أن يكون لديك سكربت تشغيل تلقائي
-                            setTimeout(() => process.exit(0), 1000);
+            const file = fs.createWriteStream(TEMP_PATH);
+            
+            https.get(attachment.url, (response) => {
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close(async () => {
+                        try {
+                            if (sql.open) sql.close();
+
+                            if (fs.existsSync(TEMP_PATH)) {
+                                const filesToRemove = [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
+                                filesToRemove.forEach(f => {
+                                    if (fs.existsSync(f)) fs.unlinkSync(f);
+                                });
+                                
+                                fs.renameSync(TEMP_PATH, DB_PATH);
+                                console.log("[Backup Restore] Database replaced successfully.");
+                                
+                                await interaction.editReply("✅ **تمت الاستعادة بنجاح!**\n🔌 جاري إعادة التشغيل...");
+                                
+                                setTimeout(() => process.exit(0), 1000);
+                            }
+                        } catch (err) {
+                            console.error(err);
+                            await interaction.editReply(`❌ **فشل الاستعادة:** ${err.message}`);
+                            try { client.sql = new Database(DB_PATH); } catch(e){}
                         }
-                    } catch (err) {
-                        console.error(err);
-                        await interaction.editReply(`❌ **فشل الاستعادة:** ${err.message}`);
-                        // محاولة إعادة الاتصال في حال الفشل
-                        try { client.sql = new Database(DB_PATH); } catch(e){}
-                    }
+                    });
                 });
+            }).on('error', async (err) => {
+                console.error(err);
+                await interaction.editReply(`❌ **خطأ أثناء تحميل الملف:** ${err.message}`);
             });
-        }).on('error', async (err) => {
-            console.error(err);
-            await interaction.editReply(`❌ **خطأ أثناء تحميل الملف:** ${err.message}`);
-        });
+
+        } catch (err) {
+            console.error("[Restore Backup Interaction Error]", err);
+        }
     });
 };
