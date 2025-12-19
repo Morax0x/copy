@@ -3,7 +3,10 @@ const defaultMarketItems = require("./json/market-items.json");
 
 // ( 🌟 تم إزالة استيراد fishing-config لمنع دمج عناصر الصيد مع السوق 🌟 )
 
-function setupDatabase(sql) {
+function setupDatabase(clientOrSql) {
+    // دعم تمرير Client أو كائن الـ SQL مباشرة
+    const sql = clientOrSql.sql ? clientOrSql.sql : clientOrSql;
+
     // Activate WAL Mode for performance
     sql.pragma('journal_mode = WAL');
     sql.pragma('synchronous = 1');
@@ -12,9 +15,9 @@ function setupDatabase(sql) {
 
     // 1. All tables in one array
     const tables = [
-        // 🔥 تم تحديث جدول levels بإضافة الأعمدة الجديدة في النهاية 🔥
         "CREATE TABLE IF NOT EXISTS levels (user TEXT NOT NULL, guild TEXT NOT NULL, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, totalXP INTEGER DEFAULT 0, mora INTEGER DEFAULT 0, lastWork INTEGER DEFAULT 0, lastDaily INTEGER DEFAULT 0, dailyStreak INTEGER DEFAULT 0, bank INTEGER DEFAULT 0, lastInterest INTEGER DEFAULT 0, totalInterestEarned INTEGER DEFAULT 0, hasGuard INTEGER DEFAULT 0, guardExpires INTEGER DEFAULT 0, totalVCTime INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastRob INTEGER DEFAULT 0, lastGuess INTEGER DEFAULT 0, lastRPS INTEGER DEFAULT 0, lastRoulette INTEGER DEFAULT 0, lastTransfer INTEGER DEFAULT 0, lastDeposit INTEGER DEFAULT 0, shop_purchases INTEGER DEFAULT 0, total_meow_count INTEGER DEFAULT 0, boost_count INTEGER DEFAULT 0, lastPVP INTEGER DEFAULT 0, lastFarmYield INTEGER DEFAULT 0, lastFish INTEGER DEFAULT 0, rodLevel INTEGER DEFAULT 1, boatLevel INTEGER DEFAULT 1, currentLocation TEXT DEFAULT 'beach', lastMemory INTEGER DEFAULT 0, lastArrange INTEGER DEFAULT 0, last_dungeon INTEGER DEFAULT 0, dungeon_gate_level INTEGER DEFAULT 1, max_dungeon_floor INTEGER DEFAULT 0, dungeon_wins INTEGER DEFAULT 0, dungeon_join_count INTEGER DEFAULT 0, last_join_reset INTEGER DEFAULT 0, PRIMARY KEY (user, guild))",
-        "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT)",
+        // تم إضافة عمود prefix هنا
+        "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, prefix TEXT DEFAULT '-', voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT)",
         "CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, reportChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)",
         "CREATE TABLE IF NOT EXISTS report_permissions (guildID TEXT NOT NULL, roleID TEXT NOT NULL, PRIMARY KEY (guildID, roleID))",
         "CREATE TABLE IF NOT EXISTS active_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, targetID TEXT NOT NULL, reporterID TEXT NOT NULL, timestamp INTEGER NOT NULL, UNIQUE(guildID, targetID, reporterID))",
@@ -104,6 +107,7 @@ function setupDatabase(sql) {
     ensureColumn('streaks', 'has12hWarning', 'INTEGER DEFAULT 0');
     
     // 🔥🔥 التعديلات المطلوبة (ضمان وجود الأعمدة يدوياً) 🔥🔥
+    try { sql.prepare("ALTER TABLE settings ADD COLUMN prefix TEXT DEFAULT '-'").run(); } catch (e) {} // 🌟 أهم تعديل هنا
     try { sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
@@ -131,15 +135,14 @@ function setupDatabase(sql) {
     ensureColumn('media_streak_channels', 'lastReminderMessageID', 'TEXT');
 
     // ( 🌟 Market Items Sync (Default ONLY) 🌟 )
-    // تم إزالة إضافة الأسماك والطعوم لجدول السوق لمنع ظهورها في أوامر السوق
     const insertItem = sql.prepare("INSERT OR IGNORE INTO market_items (id, name, description, currentPrice) VALUES (@id, @name, @description, @price)");
     
     sql.transaction(() => {
         defaultMarketItems.forEach((item) => insertItem.run(item));
-        // تم إزالة كود الطعوم والأسماك
     })();
 
     console.log("[Database] ✅ All tables checked, updated, and ready.");
 }
 
-module.exports = { setupDatabase };
+// تصدير الدالة فقط (لا تقم بتصدير module.exports = function مباشرة لتجنب التكرار)
+module.exports = setupDatabase;
