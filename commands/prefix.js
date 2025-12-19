@@ -1,8 +1,7 @@
 const { PermissionsBitField, SlashCommandBuilder } = require("discord.js");
-// ( 1 ) تم حذف السطرين الخاصين بـ new SQlite
 
 module.exports = {
-    // --- ( 2 ) إضافة بيانات أمر السلاش ---
+    // بيانات السلاش كوماند
     data: new SlashCommandBuilder()
         .setName('تغيير-البريفكس')
         .setDescription('تغيير البريفكس (البادئة) الخاصة بأوامر البوت.')
@@ -11,17 +10,15 @@ module.exports = {
             option.setName('البريفكس-الجديد')
             .setDescription('البريفكس الجديد الذي تريده (مثل ! أو $)')
             .setRequired(true)),
-    // ---------------------------------
 
     name: 'prefix',
-    aliases: ['set-prefix'],
-    category: "Admin", // ( 3 ) تم التغيير إلى فئة الادمن
+    aliases: ['set-prefix', 'تغيير-البريفكس'],
+    category: "Admin",
     description: "Set server prefix",
     cooldown: 3,
 
     async execute (interactionOrMessage, args) {
-
-        // --- ( 4 ) إضافة معالج الأوامر الهجينة ---
+        // 1. معالج الأوامر الهجينة (يعمل مع الرسائل والسلاش)
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, guild, client, member;
 
@@ -30,7 +27,7 @@ module.exports = {
             guild = interaction.guild;
             client = interaction.client;
             member = interaction.member;
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: false }); // جعل الرد عاماً
         } else {
             message = interactionOrMessage;
             guild = message.guild;
@@ -38,48 +35,62 @@ module.exports = {
             member = message.member;
         }
 
-        // --- ( 5 ) إصلاح اتصال قاعدة البيانات ---
         const sql = client.sql;
 
-        // --- ( 6 ) توحيد دوال الرد ---
-        const reply = async (payload) => {
-            if (typeof payload === 'string') payload = { content: payload };
-            payload.ephemeral = false; // جعل الرد عام
+        // 2. دوال الرد الموحدة
+        const reply = async (content) => {
+            const payload = typeof content === 'string' ? { content } : content;
             if (isSlash) return interaction.editReply(payload);
             return message.reply(payload);
         };
+
         const replyError = async (content) => {
             const payload = { content, ephemeral: true };
-            if (isSlash) return interaction.editReply(payload);
+            if (isSlash) return interaction.editReply(payload); // نستخدم edit لأننا عملنا defer سابقاً
             return message.reply(payload);
         };
-        // ------------------------------------
 
+        // التحقق من الصلاحيات
         if(!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return replyError(`You do not have permission to use this command!`);
+            return replyError(`❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`);
         }
 
-        // --- ( 7 ) توحيد جلب المدخلات ---
+        // 3. جلب البريفكس الجديد
         let newPrefix;
         if (isSlash) {
             newPrefix = interaction.options.getString('البريفكس-الجديد');
         } else {
+            if (!args[0]) return replyError(`❌ **الرجاء كتابة البريفكس الجديد.**\nمثال: \`-prefix !\``);
             newPrefix = args[0];
         }
-        // ------------------------------------
 
-        const currentPrefixResult = sql.prepare("SELECT serverprefix FROM prefix WHERE guild = ?").get(guild.id);
-        const currentPrefix = currentPrefixResult ? currentPrefixResult.serverprefix : null;
-
-        if(!newPrefix) {
-            return replyError(`Please provide a new prefix!`);
+        // 4. [تصحيح هام] القراءة من جدول settings بدلاً من prefix
+        let currentPrefix = "-";
+        try {
+            const row = sql.prepare("SELECT prefix FROM settings WHERE guild = ?").get(guild.id);
+            if (row && row.prefix) currentPrefix = row.prefix;
+        } catch (e) {
+            // الجدول قد لا يكون موجوداً بعد، وهذا طبيعي
         }
 
         if(newPrefix === currentPrefix) {
-            return replyError(`That is already the prefix!`);
+            return replyError(`⚠ **هذا هو البريفكس الحالي بالفعل!**`);
         }
 
-        sql.prepare("INSERT OR REPLACE INTO prefix (serverprefix, guild) VALUES (?, ?);").run(newPrefix, guild.id);
-        return reply(`Server prefix is now \`${newPrefix}\``);
+        // 5. [تصحيح هام] الحفظ في جدول settings مع الحفاظ على البيانات الأخرى
+        // نستخدم ON CONFLICT للحفاظ على إعدادات القنوات الأخرى لو كانت موجودة
+        try {
+            sql.prepare(`
+                INSERT INTO settings (guild, prefix) 
+                VALUES (?, ?) 
+                ON CONFLICT(guild) DO UPDATE SET prefix = excluded.prefix
+            `).run(guild.id, newPrefix);
+            
+            return reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
+            
+        } catch (error) {
+            console.error(error);
+            return replyError("❌ **حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.**");
+        }
     }
 }
