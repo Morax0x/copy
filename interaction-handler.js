@@ -435,7 +435,8 @@ module.exports = (client, sql, antiRolesCache) => {
                     id === 'shop_select_item' || 
                     id === 'shop_skill_select_menu' || 
                     id === 'fishing_gear_sub_menu' || 
-                    id === 'shop_buy_bait_menu'
+                    id === 'shop_buy_bait_menu' ||
+                    id === 'shop_buy_potion_menu' // 🔥🔥 تمت الإضافة هنا! 🔥🔥
                 ) {
                     if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
                     else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
