@@ -8,15 +8,16 @@ function setupDatabase(clientOrSql) {
     const sql = clientOrSql.sql ? clientOrSql.sql : clientOrSql;
 
     // Activate WAL Mode for performance
-    sql.pragma('journal_mode = WAL');
-    sql.pragma('synchronous = 1');
+    try {
+        sql.pragma('journal_mode = WAL');
+        sql.pragma('synchronous = 1');
+    } catch (e) { console.log("[Database] WAL mode check skipped."); }
 
     console.log("[Database] Checking integrity & schema...");
 
     // 1. All tables in one array
     const tables = [
         "CREATE TABLE IF NOT EXISTS levels (user TEXT NOT NULL, guild TEXT NOT NULL, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, totalXP INTEGER DEFAULT 0, mora INTEGER DEFAULT 0, lastWork INTEGER DEFAULT 0, lastDaily INTEGER DEFAULT 0, dailyStreak INTEGER DEFAULT 0, bank INTEGER DEFAULT 0, lastInterest INTEGER DEFAULT 0, totalInterestEarned INTEGER DEFAULT 0, hasGuard INTEGER DEFAULT 0, guardExpires INTEGER DEFAULT 0, totalVCTime INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastRob INTEGER DEFAULT 0, lastGuess INTEGER DEFAULT 0, lastRPS INTEGER DEFAULT 0, lastRoulette INTEGER DEFAULT 0, lastTransfer INTEGER DEFAULT 0, lastDeposit INTEGER DEFAULT 0, shop_purchases INTEGER DEFAULT 0, total_meow_count INTEGER DEFAULT 0, boost_count INTEGER DEFAULT 0, lastPVP INTEGER DEFAULT 0, lastFarmYield INTEGER DEFAULT 0, lastFish INTEGER DEFAULT 0, rodLevel INTEGER DEFAULT 1, boatLevel INTEGER DEFAULT 1, currentLocation TEXT DEFAULT 'beach', lastMemory INTEGER DEFAULT 0, lastArrange INTEGER DEFAULT 0, last_dungeon INTEGER DEFAULT 0, dungeon_gate_level INTEGER DEFAULT 1, max_dungeon_floor INTEGER DEFAULT 0, dungeon_wins INTEGER DEFAULT 0, dungeon_join_count INTEGER DEFAULT 0, last_join_reset INTEGER DEFAULT 0, PRIMARY KEY (user, guild))",
-        // تم إضافة عمود prefix هنا
         "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, prefix TEXT DEFAULT '-', voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT)",
         "CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, reportChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)",
         "CREATE TABLE IF NOT EXISTS report_permissions (guildID TEXT NOT NULL, roleID TEXT NOT NULL, PRIMARY KEY (guildID, roleID))",
@@ -59,7 +60,8 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS role_settings (role_id TEXT PRIMARY KEY, anti_roles TEXT, is_removable BOOLEAN NOT NULL DEFAULT 1)",
         "CREATE TABLE IF NOT EXISTS role_menu_items (message_id TEXT NOT NULL, value TEXT NOT NULL, role_id TEXT NOT NULL, description TEXT, emoji TEXT, PRIMARY KEY (message_id, value))",
         "CREATE TABLE IF NOT EXISTS rainbow_roles (roleID TEXT PRIMARY KEY, guildID TEXT NOT NULL)",
-        "CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, UNIQUE(guildID, trigger))",
+        // 🔥 تحديث الجدول: إضافة createdBy و expiresAt هنا للتثبيت الجديد 🔥
+        "CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))",
         "CREATE TABLE IF NOT EXISTS world_boss (guildID TEXT PRIMARY KEY, currentHP INTEGER, maxHP INTEGER, name TEXT, image TEXT, active INTEGER DEFAULT 0, messageID TEXT, channelID TEXT, lastLog TEXT DEFAULT '[]', totalHits INTEGER DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS boss_cooldowns (guildID TEXT, userID TEXT, lastHit INTEGER, PRIMARY KEY (guildID, userID))",
         "CREATE TABLE IF NOT EXISTS user_coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT, userID TEXT, discountPercent INTEGER, isUsed INTEGER DEFAULT 0)",
@@ -107,12 +109,17 @@ function setupDatabase(clientOrSql) {
     ensureColumn('streaks', 'has12hWarning', 'INTEGER DEFAULT 0');
     
     // 🔥🔥 التعديلات المطلوبة (ضمان وجود الأعمدة يدوياً) 🔥🔥
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN prefix TEXT DEFAULT '-'").run(); } catch (e) {} // 🌟 أهم تعديل هنا
+    try { sql.prepare("ALTER TABLE settings ADD COLUMN prefix TEXT DEFAULT '-'").run(); } catch (e) {} 
     try { sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN boostChannelID TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN shopLogChannelID TEXT").run(); } catch (e) {}
+
+    // 🔥👇🔥 حل مشكلة الردود التلقائية في المتجر 🔥👇🔥
+    // هذه الأسطر ستضيف الأعمدة الناقصة لجدول auto_responses تلقائياً
+    try { sql.prepare("ALTER TABLE auto_responses ADD COLUMN createdBy TEXT").run(); } catch (e) {}
+    try { sql.prepare("ALTER TABLE auto_responses ADD COLUMN expiresAt INTEGER").run(); } catch (e) {}
 
     // 🔥🔥 أعمدة نظام الدانجون الجديد 🔥🔥
     try { sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level INTEGER DEFAULT 1").run(); } catch (e) {}
@@ -144,5 +151,4 @@ function setupDatabase(clientOrSql) {
     console.log("[Database] ✅ All tables checked, updated, and ready.");
 }
 
-// تصدير الدالة فقط (لا تقم بتصدير module.exports = function مباشرة لتجنب التكرار)
-module.exports = setupDatabase;
+module.exports = { setupDatabase };
