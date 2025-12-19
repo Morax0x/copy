@@ -124,100 +124,111 @@ async function lobbyPhase(interaction, theme, sql) {
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
-        if (i.customId === 'join') {
-            if (i.user.id === host.id) {
-                return i.reply({ content: "👑 أنت القائد (Leader).", ephemeral: true });
-            }
+        try {
+            if (i.customId === 'join') {
+                if (i.user.id === host.id) {
+                    return i.reply({ content: "👑 أنت القائد (Leader).", ephemeral: true });
+                }
 
-            if (party.includes(i.user.id)) {
-                // المنضم مسبقاً يمكنه تغيير التخصص
-            } else if (party.length >= 5) {
-                return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
-            } else {
-                if (i.user.id !== OWNER_ID) {
-                    const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
-                    const now = Date.now();
-                    const resetTime = (joinData?.last_join_reset || 0);
-                    
-                    if (now - resetTime < DUNGEON_COOLDOWN) {
-                        if ((joinData?.dungeon_join_count || 0) >= 3) {
-                            return i.reply({ content: "🚫 استنفذت محاولات الانضمام.", ephemeral: true });
+                if (party.includes(i.user.id)) {
+                    // المنضم مسبقاً يمكنه تغيير التخصص
+                } else if (party.length >= 5) {
+                    return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
+                } else {
+                    if (i.user.id !== OWNER_ID) {
+                        const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+                        const now = Date.now();
+                        const resetTime = (joinData?.last_join_reset || 0);
+                        
+                        if (now - resetTime < DUNGEON_COOLDOWN) {
+                            if ((joinData?.dungeon_join_count || 0) >= 3) {
+                                return i.reply({ content: "🚫 استنفذت محاولات الانضمام.", ephemeral: true });
+                            }
                         }
+
+                        const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+                        if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 لفل منخفض.", ephemeral: true });
+                        if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك المال.`, ephemeral: true });
+                    }
+                }
+
+                const takenClasses = Array.from(partyClasses.values());
+                const availableOptions = [];
+
+                const isAvailable = (clsName) => {
+                    return !takenClasses.includes(clsName) || partyClasses.get(i.user.id) === clsName;
+                };
+
+                if (isAvailable('Tank')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المُدرّع (Tank)').setValue('Tank').setDescription('دفاع وحماية.').setEmoji('🛡️'));
+                if (isAvailable('Priest')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الكاهن (Priest)').setValue('Priest').setDescription('شفاء وإحياء.').setEmoji('✨'));
+                if (isAvailable('Mage')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('تجميد وتحكم.').setEmoji('❄️'));
+                if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
+
+                if (availableOptions.length === 0) {
+                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة!", ephemeral: true });
+                }
+
+                const classRow = new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId('class_select')
+                        .setPlaceholder('اختر تخصصاً...')
+                        .addOptions(availableOptions)
+                );
+
+                const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:**", components: [classRow], ephemeral: true, fetchReply: true });
+                
+                try {
+                    const selection = await selectMsg.awaitMessageComponent({ 
+                        filter: subI => subI.user.id === i.user.id && subI.customId === 'class_select', 
+                        time: 20000,
+                        componentType: ComponentType.StringSelect 
+                    });
+                    
+                    const selectedClass = selection.values[0];
+                    const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
+                    
+                    if (currentTaken.includes(selectedClass)) {
+                        return selection.update({ content: `🚫 **سبقك بها عكاشة!**`, components: [] });
                     }
 
-                    const joinerData = sql.prepare("SELECT level, mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
-                    if (!joinerData || joinerData.level < 5) return i.reply({ content: "🚫 لفل منخفض.", ephemeral: true });
-                    if (joinerData.mora < 100) return i.reply({ content: `❌ ليس لديك المال.`, ephemeral: true });
+                    partyClasses.set(i.user.id, selectedClass);
+                    
+                    if (!party.includes(i.user.id)) {
+                        party.push(i.user.id);
+                    }
+                    
+                    let displayClassName = selectedClass;
+                    if(selectedClass === 'Tank') displayClassName = 'المُدرّع';
+                    else if(selectedClass === 'Priest') displayClassName = 'الكاهن';
+                    else if(selectedClass === 'Mage') displayClassName = 'الساحر';
+                    else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
+
+                    // ✅ استخدام deferUpdate هنا لتجنب خطأ Unknown interaction عند التحديث
+                    if (!selection.deferred && !selection.replied) {
+                        await selection.deferUpdate();
+                    }
+                    await selection.editReply({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
+                    
+                    await msg.edit({ embeds: [updateEmbed()] });
+
+                    if (party.length >= 5) {
+                        collector.stop('start'); 
+                    }
+                    
+                } catch (e) {
+                    await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
                 }
+
+            } else if (i.customId === 'start') {
+                if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
+                if (party.length < 1) return i.reply({ content: "خطأ", ephemeral: true });
+                
+                // ✅ تأكيد البدء فوراً لتجنب التأخير
+                if (!i.deferred && !i.replied) await i.deferUpdate();
+                collector.stop('start');
             }
-
-            const takenClasses = Array.from(partyClasses.values());
-            const availableOptions = [];
-
-            const isAvailable = (clsName) => {
-                return !takenClasses.includes(clsName) || partyClasses.get(i.user.id) === clsName;
-            };
-
-            if (isAvailable('Tank')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المُدرّع (Tank)').setValue('Tank').setDescription('دفاع وحماية.').setEmoji('🛡️'));
-            if (isAvailable('Priest')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الكاهن (Priest)').setValue('Priest').setDescription('شفاء وإحياء.').setEmoji('✨'));
-            if (isAvailable('Mage')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('تجميد وتحكم.').setEmoji('❄️'));
-            if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
-
-            if (availableOptions.length === 0) {
-                return i.reply({ content: "🚫 جميع التخصصات مأخوذة!", ephemeral: true });
-            }
-
-            const classRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('class_select')
-                    .setPlaceholder('اختر تخصصاً...')
-                    .addOptions(availableOptions)
-            );
-
-            const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:**", components: [classRow], ephemeral: true, fetchReply: true });
-            
-            try {
-                const selection = await selectMsg.awaitMessageComponent({ 
-                    filter: subI => subI.user.id === i.user.id && subI.customId === 'class_select', 
-                    time: 20000,
-                    componentType: ComponentType.StringSelect 
-                });
-                
-                const selectedClass = selection.values[0];
-                const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
-                
-                if (currentTaken.includes(selectedClass)) {
-                    return selection.update({ content: `🚫 **سبقك بها عكاشة!**`, components: [] });
-                }
-
-                partyClasses.set(i.user.id, selectedClass);
-                
-                if (!party.includes(i.user.id)) {
-                    party.push(i.user.id);
-                }
-                
-                let displayClassName = selectedClass;
-                if(selectedClass === 'Tank') displayClassName = 'المُدرّع';
-                else if(selectedClass === 'Priest') displayClassName = 'الكاهن';
-                else if(selectedClass === 'Mage') displayClassName = 'الساحر';
-                else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
-
-                await selection.update({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
-                await msg.edit({ embeds: [updateEmbed()] });
-
-                // 🔥🔥 البدء التلقائي عند اكتمال العدد (5) 🔥🔥
-                if (party.length >= 5) {
-                    collector.stop('start'); // يوقف التجميع ويذهب للبدء
-                }
-                
-            } catch (e) {
-                await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
-            }
-
-        } else if (i.customId === 'start') {
-            if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
-            if (party.length < 1) return i.reply({ content: "خطأ", ephemeral: true });
-            collector.stop('start');
+        } catch (err) {
+            console.error("Dungeon Interaction Error:", err);
         }
     });
 
