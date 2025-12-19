@@ -567,7 +567,22 @@ async function _handleSkillUpgrade(i, client, sql) {
 
 async function _handleShopButton(i, client, sql) {
     try {
-        const userId = i.user.id; const guildId = i.guild.id; const boughtItemId = i.customId.replace('buy_item_', ''); const item = shopItems.find(it => it.id === boughtItemId);
+        const userId = i.user.id; const guildId = i.guild.id; const boughtItemId = i.customId.replace('buy_item_', ''); 
+        
+        // 🔥🔥 معالجة خاصة لشراء الرد التلقائي (Item: item_temp_reply) 🔥🔥
+        if (boughtItemId === 'item_temp_reply') {
+            const userMora = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(userId, guildId)?.mora || 0;
+            if (userMora < 10000) return i.reply({ content: `❌ تحتاج 10,000 ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
+
+            const modal = new ModalBuilder().setCustomId('shop_buy_reply_modal').setTitle('شراء رد تلقائي (3 أيام)');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reply_trigger').setLabel("الكلمة (Trigger)").setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reply_response').setLabel("الرد (Response)").setStyle(TextInputStyle.Paragraph).setRequired(true))
+            );
+            return i.showModal(modal);
+        }
+
+        const item = shopItems.find(it => it.id === boughtItemId);
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
@@ -679,6 +694,30 @@ async function _handleReplaceBuffButton(i, client, sql) {
 
 async function handleShopModal(i, client, sql) {
     if (i.customId === 'exchange_xp_modal') { await _handleXpExchangeModal(i, client, sql); return true; }
+    
+    // 🔥 معالجة مودل شراء الرد التلقائي 🔥
+    if (i.customId === 'shop_buy_reply_modal') {
+        const trigger = i.fields.getTextInputValue('reply_trigger').trim();
+        const response = i.fields.getTextInputValue('reply_response').trim();
+        const price = 10000;
+        
+        await i.deferReply({ flags: MessageFlags.Ephemeral });
+        const userData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
+        
+        if (!userData || userData.mora < price) return i.editReply(`❌ رصيدك غير كافي.`);
+        const existing = sql.prepare("SELECT 1 FROM auto_responses WHERE guildID = ? AND trigger = ?").get(i.guild.id, trigger);
+        if (existing) return i.editReply(`❌ هذا الرد موجود مسبقاً.`);
+
+        try {
+            sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(price, i.user.id, i.guild.id);
+            const expiresAt = Date.now() + (3 * 24 * 60 * 60 * 1000);
+            sql.prepare("INSERT INTO auto_responses (guildID, trigger, response, matchType, cooldown, createdBy, expiresAt) VALUES (?, ?, ?, 'exact', 600, ?, ?)").run(i.guild.id, trigger, response, i.user.id, expiresAt);
+            await i.editReply(`✅ **تم شراء الرد!**\n- الكلمة: \`${trigger}\`\n- الرد: \`${response}\`\n- الصلاحية: 3 أيام`);
+            sendShopLog(client, i.guild.id, i.member, `رد تلقائي: ${trigger}`, price, "شراء");
+        } catch (e) { console.error(e); await i.editReply(`❌ حدث خطأ.`); }
+        return true;
+    }
+
     const isBuyMarket = i.customId.startsWith('buy_modal_');
     const isSellMarket = i.customId.startsWith('sell_modal_');
     const isBuyFarm = i.customId.startsWith('buy_animal_');
@@ -849,47 +888,6 @@ async function handleShopSelectMenu(i, client, sql) {
              if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
         }
     } catch (e) { console.error(e); }
-}
-
-async function handleShopInteractions(i, client, sql) {
-    if (i.customId.startsWith('shop_paginate_item_')) { try { await i.deferUpdate(); const id = i.customId.replace('shop_paginate_item_', ''); const embed = buildPaginatedItemEmbed(id); if (embed) await i.editReply(embed); } catch (e) {} return; }
-    if (i.customId.startsWith('shop_skill_paginate_')) { try { await i.deferUpdate(); const idx = i.customId.replace('shop_skill_paginate_', ''); const skills = getAllUserAvailableSkills(i.member, sql); const embed = buildSkillEmbedWithPagination(skills, idx, sql, i); if (embed) await i.editReply(embed); } catch (e) {} return; }
-
-    if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
-        const val = i.values[0];
-        if (val === 'gear_rods') await _handleRodSelect(i, client, sql);
-        else if (val === 'gear_boats') await _handleBoatSelect(i, client, sql);
-        else if (val === 'gear_baits') await _handleBaitSelect(i, client, sql);
-        return;
-    }
-
-    if (i.customId === 'upgrade_rod') await _handleRodUpgrade(i, client, sql);
-    else if (i.customId === 'upgrade_boat') await _handleBoatUpgrade(i, client, sql);
-    else if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') await _handleBaitBuy(i, client, sql);
-    
-    else if (i.customId.startsWith('buy_item_')) await _handleShopButton(i, client, sql);
-    else if (i.customId.startsWith('replace_buff_')) await _handleReplaceBuffButton(i, client, sql);
-    else if (i.customId.startsWith('buy_weapon_') || i.customId.startsWith('upgrade_weapon_')) await _handleWeaponUpgrade(i, client, sql);
-    else if (i.customId.startsWith('buy_skill_') || i.customId.startsWith('upgrade_skill_')) await _handleSkillUpgrade(i, client, sql);
-    else if (i.customId === 'cancel_purchase') { await i.deferUpdate(); await i.editReply({ content: 'تم الإلغاء.', components: [], embeds: [] }); }
-    else if (i.customId === 'open_xp_modal') { 
-        const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
-        xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true)));
-        await i.showModal(xpModal);
-    }
-    else if (i.customId === 'replace_guard') {
-        await _handleReplaceGuard(i, client, sql);
-    }
-    else if (i.customId.startsWith('buy_market_') || i.customId.startsWith('sell_market_') || i.customId.startsWith('buy_animal_') || i.customId.startsWith('sell_animal_')) {
-        const action = i.customId.split('_')[0]; 
-        const modalId = action === 'buy' ? (i.customId.includes('market') ? 'buy_modal_' : 'buy_animal_') : (i.customId.includes('market') ? 'sell_modal_' : 'sell_animal_');
-        const suffix = i.customId.split('_').slice(2).join('_'); 
-        
-        const modal = new ModalBuilder().setCustomId(modalId + suffix).setTitle(action === 'buy' ? 'شراء' : 'بيع');
-        const input = new TextInputBuilder().setCustomId('quantity_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        await i.showModal(modal);
-    }
 }
 
 async function handleSkillSelectMenu(i, client, sql) {
