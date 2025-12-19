@@ -3,7 +3,7 @@ const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
-// ⬇️⬇️⬇️ آيدي سيرفرك (مهم جداً للتحديث الفوري للأوامر) ⬇️⬇️⬇️
+// ⬇️⬇️⬇️ آيدي سيرفرك الرئيسي (لتنظيف الأوامر المكررة منه) ⬇️⬇️⬇️
 const MAIN_GUILD_ID = "952732360074494003"; 
 
 // ==================================================================
@@ -28,7 +28,6 @@ try {
     const { registerFont } = require('canvas');
 
     const beinPath = path.join(__dirname, 'fonts', 'bein-ar-normal.ttf');
-    
     if (fs.existsSync(beinPath)) {
         registerFont(beinPath, { family: 'Bein' });
         console.log(`[Fonts] ✅ تم تحميل خط النصوص: Bein`);
@@ -38,12 +37,11 @@ try {
             registerFont(beinPathAlt, { family: 'Bein' });
             console.log(`[Fonts] ✅ تم تحميل خط النصوص (اسم بديل): Bein`);
         } else {
-            console.error(`[Fonts] ❌ خطأ فادح: ملف bein-ar-normal.ttf غير موجود في مجلد fonts! ستظهر مربعات.`);
+            console.error(`[Fonts] ❌ خطأ فادح: ملف bein-ar-normal.ttf غير موجود في مجلد fonts!`);
         }
     }
 
     const emojiPath = path.join(__dirname, 'efonts', 'NotoEmoji.ttf');
-    
     if (fs.existsSync(emojiPath)) {
         registerFont(emojiPath, { family: 'NotoEmoji' });
         console.log(`[Fonts] ✅ تم تحميل خط الإيموجي: NotoEmoji`);
@@ -64,8 +62,6 @@ try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER 
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN currentLocation TEXT DEFAULT 'beach'").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastMemory INTEGER DEFAULT 0").run(); } catch (e) {} 
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastArrange INTEGER DEFAULT 0").run(); } catch (e) {} 
-
-// 🔥🔥 تحديثات الدانجون (مهم جداً) 🔥🔥
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN max_dungeon_floor INTEGER DEFAULT 0").run(); } catch (e) {}
@@ -84,13 +80,13 @@ try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID T
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
 
-// 🔥 إنشاء الجداول الضرورية (للتأكد من وجودها) 🔥
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, UNIQUE(guildID, trigger))").run(); } catch(e) {}
+// 🔥 إنشاء الجداول الضرورية (بلاغات، سجن، قيف اواي، ردود تلقائية) 🔥
+try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_giveaways (messageID TEXT PRIMARY KEY, guildID TEXT, channelID TEXT, prize TEXT, endsAt INTEGER, winnerCount INTEGER, xpReward INTEGER, moraReward INTEGER, isFinished INTEGER DEFAULT 0)").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giveawayID TEXT, userID TEXT, weight INTEGER, PRIMARY KEY (giveawayID, userID))").run(); } catch(e) {}
+try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
+try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
 
 // ==================================================================
 // 4. استيراد الهاندلرز
@@ -98,7 +94,6 @@ try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giv
 const { handleStreakMessage, calculateBuffMultiplier, checkDailyStreaks, updateNickname, calculateMoraBuff, checkDailyMediaStreaks, sendMediaStreakReminders, sendDailyMediaUpdate, sendStreakWarnings } = require("./streak-handler.js");
 const { checkPermissions, checkCooldown } = require("./permission-handler.js");
 const { checkLoanPayments } = require('./handlers/loan-handler.js'); 
-
 const questsConfig = require('./json/quests-config.json');
 const farmAnimals = require('./json/farm-animals.json');
 
@@ -106,7 +101,7 @@ const { generateSingleAchievementAlert, generateQuestAlert } = require('./genera
 const { createRandomDropGiveaway, endGiveaway, getUserWeight, initGiveaways } = require('./handlers/giveaway-handler.js');
 const { checkUnjailTask } = require('./handlers/report-handler.js'); 
 const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
-const { handleShopInteractions } = require('./handlers/shop-handler.js'); 
+const { handleShopInteractions, updateMarketPrices } = require('./handlers/shop-handler.js'); 
 const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
 
@@ -574,10 +569,7 @@ async function updateRainbowRoles(client) {
 client.on(Events.ClientReady, async () => { 
     console.log(`✅ Logged in as ${client.user.username}`);
     
-    // 🔥 تشغيل نظام الاستعادة التلقائي (صوت + حالة) 🔥
     await autoJoin(client);
-
-    // 🔥 تشغيل استعادة القيف اواي 🔥
     await initGiveaways(client);
 
     client.antiRolesCache = new Map();
@@ -596,6 +588,7 @@ client.on(Events.ClientReady, async () => {
         }
         return commandFiles;
     }
+
     const commandFiles = getFiles(path.join(__dirname, 'commands'));
     for (const file of commandFiles) {
         try {
@@ -609,36 +602,62 @@ client.on(Events.ClientReady, async () => {
             }
         } catch (err) { console.error(`[Load Error] ${file}:`, err.message); }
     }
+    
     try { 
-        // --------------------------------------------------------
-        // 🔥 تم التعديل: رفع الأوامر بشكل عام (Global) لكل السيرفرات 🔥
-        // --------------------------------------------------------
-        console.log(`Started refreshing ${commands.length} application (/) commands globally.`);
+        // 🛑 تنظيف أوامر السيرفر القديمة لمنع التكرار 🛑
+        console.log(`🧹 تنظيف أوامر السيرفر: ${MAIN_GUILD_ID}`);
+        await rest.put(Routes.applicationGuildCommands(client.user.id, MAIN_GUILD_ID), { body: [] });
+
+        // 🌍 تسجيل الأوامر عالمياً (Global) 🌍
+        console.log(`🚀 جاري تسجيل ${commands.length} أمر عالمياً...`);
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
         
-        await rest.put(
-            Routes.applicationCommands(client.user.id), // هذا السطر يجعل الأوامر عامة لكل السيرفرات
-            { body: commands },
-        );
-        
-        console.log(`✅ Successfully reloaded ${commands.length} application (/) commands GLOBALLY.`);
-        console.log(`⏳ Note: Global commands may take up to 1 hour to update across all servers.`);
+        console.log(`✅ تم التحديث العالمي بنجاح!`); 
     } catch (error) { console.error("[Deploy Error]", error); }
 
-    setInterval(calculateInterest, 60 * 60 * 1000); calculateInterest();
-    setInterval(updateMarketPrices, 60 * 60 * 1000); updateMarketPrices();
+    // --- Timers & Intervals ---
+    setInterval(calculateInterest, 60 * 60 * 1000); 
+    calculateInterest(); // Run on start
+
+    setInterval(updateMarketPrices, 60 * 60 * 1000); 
+    updateMarketPrices(); // Run on start
     
-    setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); // كل ساعة
+    setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); // Check loans every hour
 
-    // فحص المزرعة
-    setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); // فحص كل ساعة
-    checkFarmIncome(client, sql); // فحص فوري عند التشغيل
+    setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); // Farm income every hour
+    checkFarmIncome(client, sql); // Run on start
 
-    setInterval(() => checkDailyStreaks(client, sql), 3600000); checkDailyStreaks(client, sql);
-    setInterval(() => checkDailyMediaStreaks(client, sql), 3600000); checkDailyMediaStreaks(client, sql);
-    setInterval(() => checkUnjailTask(client), 5 * 60 * 1000); checkUnjailTask(client);
-    setInterval(() => checkTemporaryRoles(client), 60000); checkTemporaryRoles(client);
-    setInterval(() => updateTimerChannels(client), 5 * 60 * 1000); updateTimerChannels(client); 
+    setInterval(() => checkDailyStreaks(client, sql), 3600000); 
+    checkDailyStreaks(client, sql);
+
+    setInterval(() => checkDailyMediaStreaks(client, sql), 3600000); 
+    checkDailyMediaStreaks(client, sql);
+
+    setInterval(() => checkUnjailTask(client), 5 * 60 * 1000); 
+    checkUnjailTask(client);
+
+    setInterval(() => checkTemporaryRoles(client), 60000); 
+    checkTemporaryRoles(client);
+
+    setInterval(() => updateTimerChannels(client), 5 * 60 * 1000); 
+    updateTimerChannels(client); 
+
     setInterval(() => updateRainbowRoles(client), 180000); 
+
+    // ✅✅✅ نظام تنظيف الردود التلقائية المؤقتة (كل ساعة) ✅✅✅
+    setInterval(() => {
+        if (!sql.open) return;
+        const now = Date.now();
+        try {
+            const expired = sql.prepare("SELECT * FROM auto_responses WHERE expiresAt IS NOT NULL AND expiresAt < ?").all(now);
+            for (const reply of expired) {
+                sql.prepare("DELETE FROM auto_responses WHERE id = ?").run(reply.id);
+                console.log(`[Auto-Reply] Expired reply '${reply.trigger}' deleted.`);
+            }
+        } catch (err) {
+            console.error("[Auto-Reply Expiry Check]", err);
+        }
+    }, 60 * 60 * 1000);
 
     let lastReminderSentHour = -1; let lastUpdateSentHour = -1; let lastWarningSentHour = -1; 
     setInterval(() => { 
