@@ -72,9 +72,18 @@ async function startDungeon(interaction, sql) {
     const collector = msg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
 
     collector.on('collect', async i => {
-        const themeKey = i.customId.replace('dungeon_theme_', '');
-        const theme = dungeonConfig.themes[themeKey];
-        await lobbyPhase(i, theme, sql); 
+        try {
+            // 🔥 [إصلاح 1] تأجيل التحديث فوراً لتجنب التايم أوت
+            await i.deferUpdate(); 
+            
+            const themeKey = i.customId.replace('dungeon_theme_', '');
+            const theme = dungeonConfig.themes[themeKey];
+            
+            // نمرر التفاعل (i) بعد عمل defer له
+            await lobbyPhase(i, theme, sql); 
+        } catch (err) {
+            console.error("Error in theme selection:", err);
+        }
     });
 
     collector.on('end', (c, reason) => {
@@ -88,10 +97,8 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, theme, sql) {
     const host = interaction.user;
     
-    // القائد دائماً Leader
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
-    
     let party = [host.id];
       
     const updateEmbed = () => {
@@ -119,8 +126,11 @@ async function lobbyPhase(interaction, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    await interaction.update({ content: null, embeds: [updateEmbed()], components: [row] });
-    const msg = await interaction.message;
+    // 🔥 [إصلاح 2] استخدام editReply بدلاً من update لأننا عملنا deferUpdate سابقاً
+    await interaction.editReply({ content: null, embeds: [updateEmbed()], components: [row] });
+    
+    // نحصل على الرسالة للتعديل عليها
+    const msg = interaction.message || await interaction.fetchReply();
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
@@ -131,7 +141,7 @@ async function lobbyPhase(interaction, theme, sql) {
                 }
 
                 if (party.includes(i.user.id)) {
-                    // المنضم مسبقاً يمكنه تغيير التخصص
+                    // موجود مسبقاً
                 } else if (party.length >= 5) {
                     return i.reply({ content: "🚫 الفريق ممتلئ.", ephemeral: true });
                 } else {
@@ -203,10 +213,8 @@ async function lobbyPhase(interaction, theme, sql) {
                     else if(selectedClass === 'Mage') displayClassName = 'الساحر';
                     else if(selectedClass === 'Summoner') displayClassName = 'المستدعي';
 
-                    // ✅ استخدام deferUpdate هنا لتجنب خطأ Unknown interaction عند التحديث
-                    if (!selection.deferred && !selection.replied) {
-                        await selection.deferUpdate();
-                    }
+                    // 🔥 [إصلاح 3] تأجيل تحديث قائمة الاختيار لمنع الخطأ
+                    if (!selection.deferred && !selection.replied) await selection.deferUpdate();
                     await selection.editReply({ content: `✅ تم تعيينك كـ **${displayClassName}**.`, components: [] });
                     
                     await msg.edit({ embeds: [updateEmbed()] });
@@ -223,7 +231,7 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", ephemeral: true });
                 if (party.length < 1) return i.reply({ content: "خطأ", ephemeral: true });
                 
-                // ✅ تأكيد البدء فوراً لتجنب التأخير
+                // 🔥 [إصلاح 4] تأجيل التحديث فوراً عند البدء
                 if (!i.deferred && !i.replied) await i.deferUpdate();
                 collector.stop('start');
             }
