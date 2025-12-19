@@ -13,6 +13,14 @@ const { handleBossInteraction } = require('./handlers/boss-handler.js');
 let handleFarmInteractions;
 try { ({ handleFarmInteractions } = require('./handlers/farm-handler.js')); } catch(e) {}
 
+// ✅ تصحيح المسار: بما أننا في الجذر، نستدعيه مباشرة
+let streakHandler;
+try {
+    streakHandler = require('./streak-handler.js');
+} catch (e) {
+    try { streakHandler = require('../../streak-handler.js'); } catch (err) {} // محاولة احتياطية
+}
+
 const ms = require('ms');
 
 const processingInteractions = new Set();
@@ -152,8 +160,7 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton()) {
                 const id = i.customId;
 
-                // 🛑 تم التعديل: إزالة الأزرار التي تفتح Modals من قائمة الانتظار (Defer)
-                // الأزرار التي تفتح مودل يجب أن لا يتم عمل defer لها!
+                // 🛑 إزالة الأزرار التي تفتح Modals من قائمة الانتظار
                 if (id.startsWith('farm_buy_menu') || id.startsWith('mem_auto_confirm')) {
                     if (!i.replied && !i.deferred) {
                         try { await i.deferUpdate(); } 
@@ -161,7 +168,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     }
                 }
 
-                // 🔥 معالجة أزرار القيف اواي العامة
+                // 🔥 معالجة أزرار القيف اواي العامة (مثل reroll وغيرها)
                 if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) {
                         await handleGiveawayInteraction(client, i);
@@ -195,7 +202,7 @@ module.exports = (client, sql, antiRolesCache) => {
                 ) {
                     await handleShopInteractions(i, client, sql);
                 }
-                  
+                 
                 else if (id === 'g_builder_content') {
                     const data = giveawayBuilders.get(i.user.id) || {};
                     const modal = new ModalBuilder().setCustomId('g_content_modal').setTitle('إعداد المحتوى (1/2)');
@@ -285,9 +292,9 @@ module.exports = (client, sql, antiRolesCache) => {
                     await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
                 
                 } 
-                // 🔥🔥 إصلاح زر الدروب قيفاواي (Sudden Drop) 🔥🔥
+                // ✅✅✅ تم إضافة معالجة زر الدروب هنا ✅✅✅
                 else if (id === 'g_enter_drop') {
-                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     const messageID = i.message.id;
                     const userID = i.user.id;
 
@@ -333,16 +340,14 @@ module.exports = (client, sql, antiRolesCache) => {
             // ====================================================
             } else if (i.isModalSubmit()) {
                 
-                // 🔥🔥🔥 معالجة مودل التايم أوت (Apps Command) 🔥🔥🔥
+                // معالجة مودل التايم أوت (Apps Command)
                 if (i.customId.startsWith('timeout_app_modal_')) {
-                    // الرد مخفي (Ephemeral) للمشرف فقط
                     await i.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const targetId = i.customId.replace('timeout_app_modal_', '');
                     let durationInput = i.fields.getTextInputValue('timeout_duration');
                     let reasonInput = i.fields.getTextInputValue('timeout_reason');
 
-                    // القيم الافتراضية
                     if (!durationInput || durationInput.trim() === "") durationInput = "3h";
                     if (!reasonInput || reasonInput.trim() === "") reasonInput = "مخالفة القوانين";
 
@@ -353,16 +358,13 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (!durationMs || durationMs > 2419200000) return i.editReply("❌ مدة غير صالحة (الحد الأقصى 28 يوم).");
 
                     try {
-                        // تنفيذ التايم أوت
                         await targetMember.timeout(durationMs, `بواسطة ${i.user.tag}: ${reasonInput}`);
 
-                        // 1. رسالة في الشات (الرد على الأمر - مخفية)
                         const finishTime = Math.floor((Date.now() + durationMs) / 1000);
                         await i.editReply({ 
                             content: `❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ\n✶ <t:${finishTime}:R>` 
                         });
 
-                        // 2. رسالة في الخاص (DM)
                         const dmEmbed = new EmbedBuilder()
                             .setDescription(`**❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ**\n✶ المدة: ${durationInput}\n✶ السـبب: ${reasonInput}`)
                             .setColor("Random")
@@ -372,7 +374,7 @@ module.exports = (client, sql, antiRolesCache) => {
                             new ButtonBuilder()
                                 .setLabel(i.guild.name)
                                 .setStyle(ButtonStyle.Link)
-                                .setURL(`https://discord.com/channels/${i.guild.id}`) // رابط يوجه للسيرفر
+                                .setURL(`https://discord.com/channels/${i.guild.id}`) 
                         );
 
                         await targetMember.send({ embeds: [dmEmbed], components: [dmRow] }).catch(() => {});
