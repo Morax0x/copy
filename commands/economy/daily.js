@@ -109,8 +109,11 @@ module.exports = {
         // 2. حساب الستريك
         let newStreak = data.dailyStreak || 0;
         
-        // نحسب الفرق بالأيام بين اليوم وآخر استلام لمعرفة إذا انقطع الستريك
-        const dayDifference = (new Date(todayKSA) - new Date(lastDailyKSA)) / (1000 * 60 * 60 * 24);
+        // حساب فرق الأيام لمعرفة إذا الستريك مستمر أم انقطع
+        // ملاحظة: نستخدم Date.parse للتأكد من حساب الفرق بين تواريخ نصية بشكل صحيح
+        const date1 = new Date(todayKSA);
+        const date2 = new Date(lastDailyKSA);
+        const dayDifference = (date1 - date2) / (1000 * 60 * 60 * 24);
 
         if (dayDifference === 1) {
             // استلم بالأمس، نزيد الستريك
@@ -120,12 +123,11 @@ module.exports = {
             newStreak = 1;
         }
 
-        if (newStreak > MAX_STREAK_DAY) {
-            newStreak = 1; // إعادة الستريك بعد الوصول للحد الأقصى (اختياري، أو يمكن تثبيته على 7)
-            // في الكود القديم كان يعيد للواحد، سأبقيه كما هو.
-        }
-
-        const rewardRange = REWARDS[newStreak] || REWARDS[MAX_STREAK_DAY];
+        // 🔥 التعديل هنا: لا نعيد التعيين للصفر، بل نستخدم سقف الجائزة فقط 🔥
+        // نختار مفتاح الجائزة: إذا كان الستريك أكبر من 7، نستخدم 7. وإلا نستخدم رقم الستريك نفسه.
+        const currentRewardKey = newStreak > MAX_STREAK_DAY ? MAX_STREAK_DAY : newStreak;
+        
+        const rewardRange = REWARDS[currentRewardKey];
         const baseAmount = getRandomAmount(rewardRange.min, rewardRange.max);
 
         const moraMultiplier = calculateMoraBuff(member, sql);
@@ -147,7 +149,7 @@ module.exports = {
             buffString = ` (${buffPercent.toFixed(0)}%)`;
         }
 
-        // إعداد الرسالة (تم إزالة سطر الجائزة الكبرى)
+        // إعداد الرسالة
         descriptionLines = [
             `✥ استلـمـت جـائـزتـك اليـوميـة`,
             `✶ حـصـلـت عـلـى **${finalAmount}** <:mora:1435647151349698621>${buffString}`,
