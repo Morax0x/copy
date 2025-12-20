@@ -206,7 +206,7 @@ module.exports = {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
 
-            let shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
+            let shortcut = sql.prepare("commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
                 .get(message.guild.id, message.channel.id, shortcutWord);
 
             if (!shortcut) {
@@ -266,7 +266,8 @@ module.exports = {
                     if (message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                         isAllowed = true;
                     } 
-                    else if (settings && settings.casinoChannelID === message.channel.id && command.category === 'Economy') {
+                    // 🔥 تعديل: السماح في الكازينو الأول أو الثاني 🔥
+                    else if (settings && (settings.casinoChannelID === message.channel.id || settings.casinoChannelID2 === message.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     }
                     else {
@@ -315,8 +316,11 @@ module.exports = {
             return; 
         }
 
-        // الكازينو بدون بريفكس
-        if (settings && settings.casinoChannelID && message.channel.id === settings.casinoChannelID) {
+        // ============================================================
+        // الكازينو بدون بريفكس (الأول + الثاني)
+        // ============================================================
+        // 🔥 تعديل: السماح بالكتابة بدون بريفكس في كلا الرومين 🔥
+        if (settings && ((settings.casinoChannelID && message.channel.id === settings.casinoChannelID) || (settings.casinoChannelID2 && message.channel.id === settings.casinoChannelID2))) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
             const command = client.commands.find(cmd => 
