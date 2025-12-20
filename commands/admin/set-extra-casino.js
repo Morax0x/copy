@@ -1,5 +1,7 @@
 const { PermissionsBitField, ChannelType, SlashCommandBuilder } = require('discord.js');
 
+console.log("✅ Command Loaded: set-extra-casino"); // رسالة تأكيد التحميل
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('كازينو-اضافي')
@@ -12,7 +14,7 @@ module.exports = {
                 .addChannelTypes(ChannelType.GuildText)), 
 
     name: 'set-extra-casino',
-    aliases: ['كازينو2', 'تحديد-كازينو-اضافي'],
+    aliases: ['كازينو2', 'تحديد-كازينو-اضافي', 'set-extra-casino'], // أضفت الاسم الإنجليزي كـ alias احتياطاً
     category: "Leveling", 
     description: 'يحدد روم كازينو إضافي (تعمل فيه الأوامر بدون بريفكس).',
 
@@ -21,6 +23,7 @@ module.exports = {
         let interaction, message, member, guild, client, sql;
         let channel;
 
+        // تحديد هل الأمر سلاش أم عادي
         const isSlash = !!interactionOrMessage.isChatInputCommand;
 
         if (isSlash) {
@@ -36,24 +39,33 @@ module.exports = {
             guild = message.guild;
             client = message.client;
             sql = client.sql;
+            
+            // محاولة جلب القناة من المنشن أو الآيدي
             channel = message.mentions.channels.first() || message.guild.channels.cache.get(args[0]);
         }
 
+        // دالة الرد الموحدة
         const reply = async (content, ephemeral = false) => {
-            if (isSlash) return interaction.reply({ content, ephemeral });
-            else return message.reply(content);
+            if (isSlash) {
+                if (interaction.replied || interaction.deferred) return interaction.followUp({ content, ephemeral });
+                return interaction.reply({ content, ephemeral });
+            } else {
+                return message.reply(content);
+            }
         };
 
+        // التحقق من الصلاحيات
         if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return reply('❌ | أنت بحاجة إلى صلاحية `ManageGuild`.', true);
         }
 
+        // التحقق من وجود القناة
         if (!channel || channel.type !== ChannelType.GuildText) {
-            return reply('**الاستخدام:** `-set-extra-casino <#channel>`', true);
+            return reply('**الاستخدام:** `-كازينو2 <#channel>`', true);
         }
 
         try {
-            // التعديل هنا: يتم الحفظ في casinoChannelID2
+            // حفظ القناة في قاعدة البيانات
             sql.prepare(`
                 INSERT INTO settings (guild, casinoChannelID2) 
                 VALUES (@guild, @casinoChannelID2) 
@@ -67,7 +79,11 @@ module.exports = {
             return reply(`✅ | تم تحديد روم الكازينو **الإضافي** بنجاح: ${channel}\n(ستعمل فيه الأوامر بدون بريفكس، لكن الإشعارات ستبقى في الروم الأساسي).`);
 
         } catch (err) {
-            console.error(err);
+            console.error("[Database Error] set-extra-casino:", err);
+            // إذا كان الخطأ بسبب عدم وجود العمود، سيظهر هنا
+            if (err.message.includes("no such column")) {
+                return reply('❌ | خطأ: قاعدة البيانات لم تتحدث بعد. الرجاء إعادة تشغيل البوت بالكامل لتفعيل التحديثات.', true);
+            }
             return reply('❌ | حدث خطأ أثناء تحديث قاعدة البيانات.', true);
         }
     }
