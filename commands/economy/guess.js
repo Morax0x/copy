@@ -273,6 +273,9 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
     const filter = (m) => m.author.id === author.id && !m.author.bot;
     const collector = channel.createMessageCollector({ filter, time: 60000, max: maxAttempts });
 
+    // متغير لتتبع حالة الفوز
+    let hasWon = false;
+
     collector.on('collect', (msg) => {
         const guess = parseInt(msg.content);
         if (isNaN(guess)) return;
@@ -281,6 +284,7 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
         const attemptsLeft = maxAttempts - attempts;
 
         if (guess === targetNumber) {
+            hasWon = true; // ✅ تحديد أن اللاعب فاز
             const moraMultiplier = calculateMoraBuff(author, sql);
             const finalWinnings = Math.floor(currentWinnings * moraMultiplier);
 
@@ -313,6 +317,7 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
                 .setFooter({ text: `المحاولات المتبقية: ${attemptsLeft}` });
             channel.send({ embeds: [hintEmbed] });
         } else {
+            // انتهت المحاولات ولم يفز (سيتم التعامل معها في event end)
             collector.stop('lose');
         }
     });
@@ -321,7 +326,9 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
         client.activeGames.delete(channelId);
         client.activePlayers.delete(author.id);
 
-        if (reason === 'lose' || reason === 'time') {
+        // 🔥 التصحيح: لا ترسل رسالة الخسارة إذا كان السبب هو الفوز أو الحد الأقصى مع الفوز
+        // أضفنا hasWon للتأكد 100% أن اللاعب لم يفز في المحاولة الأخيرة
+        if (!hasWon && (reason === 'limit' || reason === 'lose' || reason === 'time')) {
             const loseEmbed = new EmbedBuilder()
                 .setTitle(reason === 'time' ? '⏰ انتهى الوقت! لقد خسرت...' : '💔 لقد خسرت...')
                 .setDescription(`انتهت المحاولات أو الوقت.\nكـان الـرقـم **${targetNumber}**.\nخسرت **${bet}** ${EMOJI_MORA} 💸.`) 
