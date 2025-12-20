@@ -1,5 +1,5 @@
-const { PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ComponentType } = require("discord.js");
-const { startGiveaway } = require('../../handlers/giveaway-handler.js'); // التأكد من المسار الصحيح
+const { PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ComponentType, MessageFlags } = require("discord.js");
+const { startGiveaway } = require('../../handlers/giveaway-handler.js'); 
 
 // دالة تحويل النص (10m, 1h) إلى ميلي ثانية
 function parseDuration(durationStr) {
@@ -37,7 +37,6 @@ module.exports = {
             interaction = interactionOrMessage;
             member = interaction.member;
             channel = interaction.channel;
-            // استخدام deferReply لأن التجميع قد يستغرق وقتاً
             await interaction.deferReply({ ephemeral: true }); 
         } else {
             message = interactionOrMessage;
@@ -61,6 +60,7 @@ module.exports = {
             durationMs: null,
             winnerCount: 1,
             description: null,
+            image: null, // 🔥 تمت إضافة الصورة هنا
             targetChannel: channel,
             xpReward: 0,
             moraReward: 0
@@ -77,7 +77,14 @@ module.exports = {
                     { name: "الفائزون (*)", value: `${giveawayData.winnerCount}`, inline: true },
                     { name: "القناة", value: `${giveawayData.targetChannel}`, inline: true },
                     { name: "المكافآت", value: `مورا: ${giveawayData.moraReward} | XP: ${giveawayData.xpReward}`, inline: true },
+                    { name: "الصورة", value: giveawayData.image ? "✅ تم تحديدها" : "لا يوجد", inline: true }
                 ]);
+            
+            // عرض الصورة في المعاينة
+            if (giveawayData.image) {
+                embed.setImage(giveawayData.image);
+            }
+
             return embed;
         };
 
@@ -101,7 +108,7 @@ module.exports = {
                     .setLabel('إرسال القيفاواي')
                     .setEmoji('✅')
                     .setStyle(ButtonStyle.Success)
-                    .setDisabled(disabled || !isReady) // معطل حتى تكتمل البيانات
+                    .setDisabled(disabled || !isReady) 
             );
         };
 
@@ -155,7 +162,6 @@ module.exports = {
 
                 await i.showModal(modal);
 
-                // انتظار تسليم المودال
                 try {
                     const submit = await i.awaitModalSubmit({ time: 60000, filter: s => s.user.id === i.user.id });
                     
@@ -183,7 +189,7 @@ module.exports = {
                 } catch (e) { /* تجاهل انتهاء الوقت */ }
             }
 
-            // --- زر الإعدادات الإضافية ---
+            // --- زر الإعدادات الإضافية (تعديل الصورة هنا) ---
             else if (i.customId === 'g_builder_visuals') {
                 const modal = new ModalBuilder()
                     .setCustomId('modal_g_visuals')
@@ -207,10 +213,20 @@ module.exports = {
                     .setStyle(TextInputStyle.Short)
                     .setRequired(false);
 
+                // 🔥 حقل الصورة الجديد
+                const imageInput = new TextInputBuilder()
+                    .setCustomId('input_image')
+                    .setLabel("رابط الصورة (https://...)")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(false);
+                
+                if (giveawayData.image) imageInput.setValue(giveawayData.image);
+
                 modal.addComponents(
                     new ActionRowBuilder().addComponents(channelInput),
                     new ActionRowBuilder().addComponents(moraInput),
-                    new ActionRowBuilder().addComponents(xpInput)
+                    new ActionRowBuilder().addComponents(xpInput),
+                    new ActionRowBuilder().addComponents(imageInput) // إضافة الحقل للمودال
                 );
 
                 await i.showModal(modal);
@@ -221,6 +237,7 @@ module.exports = {
                     const chID = submit.fields.getTextInputValue('input_channel');
                     const m = parseInt(submit.fields.getTextInputValue('input_mora')) || 0;
                     const x = parseInt(submit.fields.getTextInputValue('input_xp')) || 0;
+                    const img = submit.fields.getTextInputValue('input_image'); // استلام الرابط
 
                     if (chID) {
                         const ch = member.guild.channels.cache.get(chID);
@@ -233,6 +250,13 @@ module.exports = {
 
                     giveawayData.moraReward = m;
                     giveawayData.xpReward = x;
+                    
+                    // التحقق من الرابط وتخزينه
+                    if (img && img.startsWith('http')) {
+                        giveawayData.image = img;
+                    } else {
+                        giveawayData.image = null;
+                    }
 
                     await submit.update({ embeds: [updateEmbed()], components: [getRows()] });
 
@@ -244,7 +268,7 @@ module.exports = {
                 await i.deferUpdate(); // تأكيد الضغط
 
                 try {
-                    // استدعاء دالة البدء من الهاندلر (التي تحفظ في الداتابيس)
+                    // استدعاء دالة البدء من الهاندلر
                     await startGiveaway(
                         interaction.client,
                         i, // نمرر التفاعل
@@ -253,7 +277,8 @@ module.exports = {
                         giveawayData.winnerCount, // عدد الفائزين
                         giveawayData.prize, // الجائزة
                         giveawayData.xpReward, // XP
-                        giveawayData.moraReward // Mora
+                        giveawayData.moraReward, // Mora
+                        giveawayData.image // 🔥 تمرير الصورة للهاندلر
                     );
 
                     const successEmbed = new EmbedBuilder()
