@@ -1,6 +1,7 @@
 const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js');
 const skillsConfig = require('../../json/skills-config.json');
+const weaponsConfig = require('../../json/weapons-config.json'); // نحتاج ملف الأسلحة لحساب التكلفة
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -58,9 +59,26 @@ module.exports = {
         const userSkillsDB = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ? AND skillLevel > 0").all(targetUser.id, guild.id);
 
         const embed = new EmbedBuilder()
-            .setTitle(`⚔️ السجل القتالي لـ ${cleanName}`)
+            .setTitle(`⚔️ العتاد القتالي لـ ${cleanName}`)
             .setColor(Colors.Gold)
             .setThumbnail(targetUser.displayAvatarURL());
+
+        // --- حساب القيمة الإجمالية للتطويرات ---
+        let totalSpent = 0;
+
+        // أ) حساب تكلفة السلاح
+        if (userRace && weaponData) {
+            // نجد إعدادات السلاح الأصلي من الملف لحساب الأسعار
+            const originalWeaponConfig = weaponsConfig.find(w => w.race === userRace.raceName);
+            if (originalWeaponConfig) {
+                // نحسب تكلفة كل المستويات التي وصل لها اللاعب
+                for (let i = 0; i < weaponData.currentLevel; i++) {
+                    // السعر للمستوى (i+1) = السعر الأساسي + (الزيادة * i)
+                    let levelPrice = originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
+                    totalSpent += levelPrice;
+                }
+            }
+        }
 
         // --- قسم السلاح ---
         let weaponField = "لا يوجد سلاح مجهز.";
@@ -82,12 +100,11 @@ module.exports = {
 
         // أ) مهارة العرق (تضاف تلقائياً إذا كان لديه عرق)
         if (userRace) {
-            // تحويل اسم العرق لصيغة الآيدي (مثال: Dark Elf -> race_dark_elf_skill)
             const raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/ /g, '_')}_skill`;
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             
             if (raceSkillConfig) {
-                skillsList.push(`**${raceSkillConfig.emoji} ${raceSkillConfig.name}** (مهارة العرق)\n> ${raceSkillConfig.description}`);
+                skillsList.push(`**${raceSkillConfig.emoji} ${raceSkillConfig.name}**\n> ${raceSkillConfig.description}`);
             }
         }
 
@@ -107,6 +124,12 @@ module.exports = {
                     else effectDesc = `Lv.${dbSkill.skillLevel}`;
 
                     skillsList.push(`**${skillConfig.emoji} ${skillConfig.name}** \`(Lv.${dbSkill.skillLevel})\`\n> التأثير: ${effectDesc}`);
+
+                    // 🔥 حساب تكلفة المهارة 🔥
+                    for (let i = 0; i < dbSkill.skillLevel; i++) {
+                        let skillLevelPrice = skillConfig.base_price + (skillConfig.price_increment * i);
+                        totalSpent += skillLevelPrice;
+                    }
                 }
             }
         }
@@ -116,6 +139,13 @@ module.exports = {
         } else {
             embed.addFields({ name: "🌟 المهارات والقدرات", value: "لا توجد مهارات مكتسبة حالياً.", inline: false });
         }
+
+        // 🔥 إضافة سطر قيمة التطويرات في النهاية 🔥
+        embed.addFields({ 
+            name: "💎 قيمة التطويرات", 
+            value: `**${totalSpent.toLocaleString()}** ${EMOJI_MORA}`, 
+            inline: false 
+        });
 
         // إضافة تذييل
         embed.setFooter({ text: "يمكنك تطوير مهاراتك وشراء المزيد من المتجر." });
