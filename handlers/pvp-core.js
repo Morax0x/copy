@@ -60,19 +60,16 @@ function getWeaponData(sql, member) {
     
     let userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(member.id, member.guild.id, userRace.raceName);
     
-    // إذا لم يملك السلاح أو مستواه 0 نرجع null ليتم التعامل معه كأعزل
     if (!userWeapon || userWeapon.weaponLevel <= 0) return null;
 
     const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
     return { ...weaponConfig, currentDamage: damage, currentLevel: userWeapon.weaponLevel };
 }
 
-// ✅ دالة جلب المهارات (تدمج مهارات الداتابيس + مهارات العرق التلقائية)
 function getAllSkillData(sql, member) {
     const userRace = getUserRace(member, sql);
     const skillsOutput = {};
     
-    // 1. جلب المهارات المشتراة والمخزنة في الداتابيس
     const userSkillsData = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(member.id, member.guild.id);
     
     if (userSkillsData) {
@@ -86,16 +83,11 @@ function getAllSkillData(sql, member) {
         });
     }
 
-    // 2. إضافة مهارة العرق التلقائية (حتى لو لم تكن في جدول user_skills)
     if (userRace) {
-        // تحويل اسم العرق لصيغة الـ ID (مثلاً: Dragon -> race_dragon_skill)
         const raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/\s+/g, '_')}_skill`;
-        
-        // البحث عنها في ملف الكونفيج
         const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
 
         if (raceSkillConfig) {
-            // إذا لم تكن المهارة مضافة بالفعل، نضيفها بالمستوى 1
             if (!skillsOutput[raceSkillId]) {
                 skillsOutput[raceSkillId] = { 
                     ...raceSkillConfig, 
@@ -122,7 +114,7 @@ async function getUserActiveSkill(sql, userId, guildId) {
     return null;
 }
 
-// --- بناء الواجهة ---
+// --- دوال المعركة الأساسية ---
 
 function buildHpBar(currentHp, maxHp) {
     currentHp = Math.max(0, currentHp);
@@ -137,7 +129,6 @@ function buildSkillButtons(battleState, attackerId, page = 0) {
     if (attacker.isMonster) return []; 
 
     const cooldowns = battleState.skillCooldowns[attackerId];
-    // التأكد من وجود المهارات قبل الفلترة لتجنب الأخطاء
     const userSkills = attacker.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
 
@@ -150,7 +141,6 @@ function buildSkillButtons(battleState, attackerId, page = 0) {
     const skillButtons = new ActionRowBuilder();
     
     skillsToShow.forEach(skill => {
-        // التأكد من الايموجي
         let emoji = skill.emoji || '✨';
         if (!emoji.match(/<a?:.+?:\d+>/) && !emoji.match(/(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/)) {
              emoji = '✨';
@@ -220,7 +210,87 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: [mainButtons] };
 }
 
-// --- بدء المعارك ---
+// 🔥 دالة تفعيل المهارات (تم إضافتها لتخزين التأثيرات) 🔥
+function applySkillEffect(battleState, attackerId, skill) {
+    const attacker = battleState.players.get(attackerId);
+    // العثور على المدافع (الشخص الآخر)
+    const defenderId = battleState.turn.find(id => id !== attackerId);
+    const defender = battleState.players.get(defenderId);
+
+    const effectValue = skill.effectValue; // القيمة المحسوبة بناءً على اللفل
+
+    switch (skill.id) {
+        case 'skill_shielding': 
+        case 'race_human_skill': // مثال لمهارة درع العرق
+            attacker.effects.shield = Math.floor(attacker.maxHp * (effectValue / 100));
+            return `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً بقوة ${attacker.effects.shield}!`;
+
+        case 'skill_buffing':
+            attacker.effects.buff = effectValue; // نسبة زيادة الهجوم
+            return `💪 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** رفع قوته الهجومية!`;
+
+        case 'skill_rebound':
+            attacker.effects.rebound_active = effectValue; // نسبة عكس الضرر
+            return `🔄 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** جهز درع الانعكاس!`;
+
+        case 'skill_healing':
+            const healAmount = Math.floor(attacker.maxHp * (effectValue / 100));
+            attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmount);
+            return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${healAmount} HP!`;
+
+        case 'skill_poison':
+            defender.effects.poison = effectValue; // قيمة ضرر السم لكل دور
+            return `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه!`;
+
+        case 'skill_weaken':
+            defender.effects.weaken = effectValue; // نسبة تقليل الدفاع/الهجوم
+            return `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
+
+        default:
+            // مهارات هجومية مباشرة
+            const dmg = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : effectValue); // مثال: المهارات تضرب بقوة 150% أو قيمة ثابتة
+            defender.hp -= dmg;
+            return `💥 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استخدم ${skill.name} وسبب ${dmg} ضرر!`;
+    }
+}
+
+// 🔥 دالة حساب الضرر (تأخذ البوفات والدروع في الاعتبار) 🔥
+function calculateDamage(attacker, defender, multiplier = 1) {
+    let baseDmg = attacker.weapon ? attacker.weapon.currentDamage : 15; // الضرر الأساسي
+    
+    // تطبيق البوف (زيادة الهجوم)
+    if (attacker.effects.buff > 0) {
+        baseDmg *= (1 + (attacker.effects.buff / 100));
+    }
+
+    // تطبيق الضعف على المهاجم (إذا كان موجوداً)
+    if (attacker.effects.weaken > 0) {
+        baseDmg *= (1 - (attacker.effects.weaken / 100));
+    }
+
+    let finalDmg = Math.floor(baseDmg * multiplier);
+
+    // تطبيق الدرع
+    if (defender.effects.shield > 0) {
+        if (defender.effects.shield >= finalDmg) {
+            defender.effects.shield -= finalDmg;
+            finalDmg = 0; // الدرع امتص الضربة بالكامل
+        } else {
+            finalDmg -= defender.effects.shield;
+            defender.effects.shield = 0; // تحطم الدرع
+        }
+    }
+
+    // تطبيق الانعكاس (Rebound)
+    if (defender.effects.rebound_active > 0) {
+        const reflectedDmg = Math.floor(finalDmg * (defender.effects.rebound_active / 100));
+        attacker.hp -= reflectedDmg; // المهاجم يتلقى ضرراً
+        finalDmg -= reflectedDmg; // تقليل الضرر الذي يتلقاه المدافع
+    }
+
+    return Math.max(0, finalDmg);
+}
+
 
 async function startPvpBattle(i, client, sql, challengerMember, opponentMember, bet) {
     const getLevel = i.client.getLevel;
@@ -324,7 +394,6 @@ async function endBattle(battleState, winnerId, sql, reason = "win") {
     const embed = new EmbedBuilder();
     let descriptionLines = [];
 
-    // مدة التعزيز الجديدة: 15 دقيقة
     const BUFF_DURATION_MS = 15 * 60 * 1000; 
     const winnerExpiresAt = Date.now() + BUFF_DURATION_MS;
 
@@ -342,7 +411,6 @@ async function endBattle(battleState, winnerId, sql, reason = "win") {
             userData.xp += rewardXP;
             client.setLevel.run(userData);
 
-            // تطبيق تعزيز الفوز للوحش (15 دقيقة - 15%)
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winner.member.id, 15, winnerExpiresAt, 'xp', 0.15);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winner.member.id, 15, winnerExpiresAt, 'mora', 0.15);
 
@@ -386,7 +454,6 @@ async function endBattle(battleState, winnerId, sql, reason = "win") {
         winnerData.mora += finalWinnings;
         setScore.run(winnerData);
 
-        // تطبيق البف للفائز (15 دقيقة - 15%)
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, winnerExpiresAt, 'xp', 0.15);
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, winnerExpiresAt, 'mora', 0.15);
 
@@ -420,10 +487,11 @@ function applyPersistentEffects(battleState, attackerId) {
     const attacker = battleState.players.get(attackerId);
     let logEntries = [];
     if (attacker.effects.poison > 0) {
-        const poisonDamage = 20;
+        const poisonDamage = attacker.effects.poison; // استخدام القيمة المخزنة
         attacker.hp -= poisonDamage;
         logEntries.push(`☠️ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يتألم من السم (-${poisonDamage})!`);
     }
+    // يمكن إضافة تأثيرات أخرى هنا (مثل الشفاء المستمر)
     return logEntries;
 }
 
@@ -431,5 +499,6 @@ module.exports = {
     activePvpChallenges, activePvpBattles, activePveBattles,
     BASE_HP, HP_PER_LEVEL, SKILL_COOLDOWN_TURNS,
     cleanDisplayName, getUserRace, getWeaponData, getAllSkillData, getUserActiveSkill,
-    buildBattleEmbed, startPvpBattle, startPveBattle, endBattle, applyPersistentEffects
+    buildBattleEmbed, startPvpBattle, startPveBattle, endBattle, applyPersistentEffects,
+    applySkillEffect, calculateDamage // تصدير الدوال الجديدة
 };
