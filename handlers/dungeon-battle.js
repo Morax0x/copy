@@ -283,7 +283,7 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🟢 دالة استخدام المهارات (تم تحديثها لقبول threadChannel للرسائل المنفصلة)
+// 🟢 دالة استخدام المهارات
 function handleSkillUsage(player, skill, monster, log, threadChannel) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -393,7 +393,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel) {
                  skillDmg = (player.atk + bonusDmg) * mult; 
                  log.push(`🎲 **${player.name}** خاطر ونجح! سدد ضربة قوية بمقدار **${skillDmg}**!`);
              } else {
-                 // 🔥🔥 تم تعديل الضرر هنا ليصبح بين 10 و 30 🔥🔥
+                 // الضرر من 10 إلى 30
                  const selfDamage = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
                  skillDmg = 0;
                  applyDamageToPlayer(player, selfDamage);
@@ -520,10 +520,12 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
           
         let displayName;
+        // إذا اللاعب مات أو تحرك بالفعل، نظهر اسمه
         if (p.isDead || actedPlayers.includes(p.id)) {
             displayName = `**${p.name}** [${arabClass}]`; 
         } else {
-            displayName = `<@${p.id}> [${arabClass}]`; 
+            // إذا لم يتحرك، نظهر منشن + علامة انتظار
+            displayName = `<@${p.id}> [${arabClass}] ⏳`; 
         }
 
         return `${icon} ${displayName}\n${hpBar}`;
@@ -627,13 +629,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (afkPlayers.length > 0) {
                           afkPlayers.forEach(afkP => {
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
-                                if (afkP.skipCount >= 5) {
-                                    afkP.hp = 0; afkP.isDead = true;
-                                    threadChannel.send(`💀 **${afkP.name}** تم استبعاده لتجاوز وقت الانتظار!`).catch(()=>{});
-                                } else {
-                                    monster.targetFocusId = afkP.id;
-                                    threadChannel.send(`⏩ **${afkP.name}** لم يهاجم! (تخطي: ${afkP.skipCount}/5)`).catch(()=>{});
-                                }
+                                monster.targetFocusId = afkP.id;
                           });
                     }
                     collector.stop('turn_end'); 
@@ -741,6 +737,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
+                                // 🔥🔥 تحديث فوري للإيمبد بعد المهارة 🔥🔥
+                                if (monster.hp > 0) await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                             } catch (err) { 
                                 processingUsers.delete(i.user.id); return; 
@@ -790,6 +788,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 log.push(`**${p.name}**: ${actionMsg}`);
                                 actedPlayers.push(p.id); p.skipCount = 0;
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
+                                // 🔥🔥 تحديث فوري للإيمبد بعد الجرعة 🔥🔥
+                                if (monster.hp > 0) await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
                             } catch (err) { processingUsers.delete(i.user.id); return; }
                         }
                         else if (i.customId === 'atk' || i.customId === 'def') {
@@ -806,6 +807,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
+                            // 🔥🔥 تحديث فوري للإيمبد بعد الهجوم/الدفاع 🔥🔥
+                            if (monster.hp > 0) await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                         }
 
                         if (monster.hp <= 0) {
