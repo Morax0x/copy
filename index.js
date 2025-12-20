@@ -78,6 +78,9 @@ try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN emojis_s
 try { if(sql.open) sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN boost_channel_reactions INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN casinoChannelID TEXT").run(); } catch (e) {}
+// 🔥 إضافة الكازينو الإضافي 🔥
+try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN casinoChannelID2 TEXT").run(); } catch (e) {}
+
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN shopLogChannelID TEXT").run(); } catch (e) {} 
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN boostChannelID TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
@@ -214,7 +217,65 @@ function getWeekStartDateString() {
 
 // ... (بقية دوال المساعدة كما هي تماماً) ...
 client.checkAndAwardLevelRoles = async function(member, newLevel) { if (!client.sql.open) return; try { const guild = member.guild; const allLevelRoles = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id); if (allLevelRoles.length === 0) return; const botMember = guild.members.me; if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) return; let roleToAdd = null; const rolesToRemove = []; let highestRoleFound = false; for (const row of allLevelRoles) { const role = guild.roles.cache.get(row.roleID); if (!role) continue; if (row.level <= newLevel && !highestRoleFound) { highestRoleFound = true; if (!member.roles.cache.has(role.id)) roleToAdd = role; } else { if (member.roles.cache.has(role.id)) rolesToRemove.push(role); } } if (roleToAdd && roleToAdd.position < botMember.roles.highest.position) { await member.roles.add(roleToAdd); } if (rolesToRemove.length > 0) { try { await member.roles.remove(rolesToRemove); } catch (e) {} } } catch (err) { console.error("[Level Roles] Error:", err.message); } }
-client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) { if (!client.sql.open) return; try { await client.checkAndAwardLevelRoles(member, newLevel); const guild = member.guild; let channelToSend = null; try { let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id); if (channelData && channelData.channel && channelData.channel !== 'Default') { const fetchedChannel = guild.channels.cache.get(channelData.channel); if (fetchedChannel) channelToSend = fetchedChannel; } } catch(e) {} if (!channelToSend) { if (messageOrInteraction && messageOrInteraction.channel) { channelToSend = messageOrInteraction.channel; } else { return; } } let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id); let levelUpContent = null; let embed; if (customSettings && customSettings.lvlUpTitle) { function antonymsLevelUp(string) { return string.replace(/{member}/gi, `${member}`).replace(/{level}/gi, `${newLevel}`).replace(/{level_old}/gi, `${oldLevel}`).replace(/{xp}/gi, `${xpData.xp}`).replace(/{totalXP}/gi, `${xpData.totalXP}`); } embed = new EmbedBuilder().setTitle(antonymsLevelUp(customSettings.lvlUpTitle)).setDescription(antonymsLevelUp(customSettings.lvlUpDesc.replace(/\\n/g, '\n'))).setColor(customSettings.lvlUpColor || "Random").setTimestamp(); if (customSettings.lvlUpImage) { embed.setImage(antonymsLevelUp(customSettings.lvlUpImage)); } if (customSettings.lvlUpMention == 1) { levelUpContent = `${member}`; } } else { embed = new EmbedBuilder().setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) }).setColor("Random").setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`); } const perms = channelToSend.permissionsFor(guild.members.me); if (perms.has(PermissionsBitField.Flags.SendMessages) && perms.has(PermissionsBitField.Flags.ViewChannel)) { await channelToSend.send({ content: levelUpContent, embeds: [embed] }).catch(() => {}); } } catch (err) { console.error(`[LevelUp Error]: ${err.message}`); } }
+
+// 🔥 تعديل دالة إرسال رسالة اللفل لتوجيه الكازينو الإضافي إلى الأساسي 🔥
+client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) {
+    if (!client.sql.open) return;
+    try {
+        await client.checkAndAwardLevelRoles(member, newLevel);
+        const guild = member.guild;
+        
+        // جلب الإعدادات أولاً للتحقق من الكازينو
+        let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id);
+        
+        let channelToSend = null;
+        
+        // 1. التحقق من وجود روم مخصص للفل (أولوية قصوى)
+        try {
+            let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id);
+            if (channelData && channelData.channel && channelData.channel !== 'Default') {
+                const fetchedChannel = guild.channels.cache.get(channelData.channel);
+                if (fetchedChannel) channelToSend = fetchedChannel;
+            }
+        } catch(e) {}
+
+        // 2. إذا لم يكن هناك روم مخصص، نحدد الروم بناءً على مكان اللعب
+        if (!channelToSend) {
+            if (messageOrInteraction && messageOrInteraction.channel) {
+                // 🔥 منطق التحويل: إذا كان في الكازينو الإضافي، أرسل للأساسي 🔥
+                if (customSettings && customSettings.casinoChannelID2 && customSettings.casinoChannelID && messageOrInteraction.channel.id === customSettings.casinoChannelID2) {
+                     const mainCasino = guild.channels.cache.get(customSettings.casinoChannelID);
+                     if (mainCasino) {
+                         channelToSend = mainCasino;
+                     } else {
+                         // إذا الكازينو الأساسي محذوف أو غير موجود، ارسل في نفس المكان
+                         channelToSend = messageOrInteraction.channel;
+                     }
+                } else {
+                    channelToSend = messageOrInteraction.channel;
+                }
+            } else {
+                return;
+            }
+        }
+        
+        let levelUpContent = null;
+        let embed;
+        if (customSettings && customSettings.lvlUpTitle) {
+            function antonymsLevelUp(string) { return string.replace(/{member}/gi, `${member}`).replace(/{level}/gi, `${newLevel}`).replace(/{level_old}/gi, `${oldLevel}`).replace(/{xp}/gi, `${xpData.xp}`).replace(/{totalXP}/gi, `${xpData.totalXP}`); }
+            embed = new EmbedBuilder().setTitle(antonymsLevelUp(customSettings.lvlUpTitle)).setDescription(antonymsLevelUp(customSettings.lvlUpDesc.replace(/\\n/g, '\n'))).setColor(customSettings.lvlUpColor || "Random").setTimestamp();
+            if (customSettings.lvlUpImage) { embed.setImage(antonymsLevelUp(customSettings.lvlUpImage)); }
+            if (customSettings.lvlUpMention == 1) { levelUpContent = `${member}`; }
+        } else {
+            embed = new EmbedBuilder().setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) }).setColor("Random").setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`);
+        }
+        const perms = channelToSend.permissionsFor(guild.members.me);
+        if (perms.has(PermissionsBitField.Flags.SendMessages) && perms.has(PermissionsBitField.Flags.ViewChannel)) {
+            await channelToSend.send({ content: levelUpContent, embeds: [embed] }).catch(() => {});
+        }
+    } catch (err) { console.error(`[LevelUp Error]: ${err.message}`); }
+}
+
 client.sendQuestAnnouncement = async function(guild, member, quest, questType = 'achievement') { if (!client.sql.open) return; try { const id = `${member.id}-${guild.id}`; let notifSettings = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?").get(id); if (!notifSettings) { notifSettings = { id: id, userID: member.id, guildID: guild.id, dailyNotif: 1, weeklyNotif: 1, achievementsNotif: 1, levelNotif: 1 }; client.setQuestNotif.run(notifSettings); } let sendMention = false; if (questType === 'daily' && notifSettings.dailyNotif === 1) sendMention = true; if (questType === 'weekly' && notifSettings.weeklyNotif === 1) sendMention = true; if (questType === 'achievement' && notifSettings.achievementsNotif === 1) sendMention = true; const userIdentifier = sendMention ? `${member}` : `**${member.displayName}**`; const settings = sql.prepare("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = ?").get(guild.id); if (!settings || !settings.questChannelID) return; const channel = guild.channels.cache.get(settings.questChannelID); if (!channel) return; const perms = channel.permissionsFor(guild.members.me); if (!perms || !perms.has(PermissionsBitField.Flags.SendMessages)) return; const canAttachFiles = perms.has(PermissionsBitField.Flags.AttachFiles); const questName = quest.name; const reward = quest.reward; let message = ''; let files = []; const rewardDetails = `\n- **حصـلـت عـلـى:**\nMora: \`${reward.mora.toLocaleString()}\` ${client.EMOJI_MORA} | XP: \`${reward.xp.toLocaleString()}\` ${EMOJI_XP_ANIM}`; const panelChannelLink = settings.lastQuestPanelChannelID ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${settings.lastQuestPanelChannelID}>` : ""; if (canAttachFiles) { try { let attachment; if (questType === 'achievement') { attachment = await client.generateSingleAchievementAlert(member, quest); } else { const typeForAlert = questType === 'weekly' ? 'rare' : 'daily'; attachment = await client.generateQuestAlert(member, quest, typeForAlert); } if(attachment) files.push(attachment); } catch (imgErr) { console.error("[Image Gen Fail]", imgErr); } } if (questType === 'achievement') { message = [ `╭⭒★︰ ${client.EMOJI_WI} ${userIdentifier} ${client.EMOJI_WII}`, `✶ انـرت سمـاء الامـبراطـوريـة بإنجـازك ${client.EMOJI_FASTER}`, `✥ انـجـاز: **${questName}**`, ``, `- فـالتسـجل امبراطوريتـنـا اسمـك بيـن العضـمـاء ${client.EMOJI_PRAY}`, rewardDetails, panelChannelLink ].join('\n'); } else { const typeText = questType === 'daily' ? 'يوميـة' : 'اسبوعيـة'; message = [ `╭⭒★︰ ${client.EMOJI_WI} ${userIdentifier} ${client.EMOJI_WII}`, `✶ اتـممـت مهمـة ${typeText}`, `✥ الـمهـمـة: **${questName}**`, ``, `- لقـد أثبـت انـك احـد اركـان الامبراطـورية ${client.EMOJI_PRAY}`, `- لا يُكلـف مثـلك الا بالمستحيـل ${client.EMOJI_COOL} ~`, rewardDetails, panelChannelLink ].join('\n'); } await channel.send({ content: message, files: files, allowedMentions: { users: sendMention ? [member.id] : [] } }); } catch (err) { console.error("Error sending quest announcement:", err.message); } }
 
 client.checkQuests = async function(client, member, stats, questType, dateKey) {
@@ -415,8 +476,8 @@ function updateMarketPrices() {
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
         
         const SATURATION_POINT = 2000; 
-        const MIN_PRICE = 10;          
-        const MAX_PRICE = 50000;       
+        const MIN_PRICE = 10;           
+        const MAX_PRICE = 50000;        
 
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
