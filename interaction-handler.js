@@ -97,17 +97,28 @@ module.exports = (client, sql, antiRolesCache) => {
                 
                 // التحقق من الصلاحيات
                 let isAllowed = false;
+                
+                // أ) صلاحية إدارة السيرفر
                 if (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) isAllowed = true;
                 else {
-                    try {
-                        const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
-                        const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId);
-                        if (channelPerm || categoryPerm) isAllowed = true;
-                        else {
-                            const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
-                            if (!hasRestrictions) isAllowed = true; 
-                        }
-                    } catch(e) { isAllowed = true; }
+                    // ب) التحقق إذا كان الأمر اقتصادي وفي قناة الكازينو (الأساسية أو الإضافية)
+                    // 🔥🔥 هذا هو التعديل الجديد 🔥🔥
+                    const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
+                    if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
+                        isAllowed = true;
+                    } 
+                    else {
+                        // ج) التحقق من جدول الصلاحيات المخصصة (Blacklist/Whitelist)
+                        try {
+                            const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
+                            const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId);
+                            if (channelPerm || categoryPerm) isAllowed = true;
+                            else {
+                                const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
+                                if (!hasRestrictions) isAllowed = true; 
+                            }
+                        } catch(e) { isAllowed = true; }
+                    }
                 }
 
                 if (!isAllowed) {
@@ -141,7 +152,6 @@ module.exports = (client, sql, antiRolesCache) => {
             // ====================================================
             // 3. Buttons & Select Menus (الأزرار والقوائم)
             // ====================================================
-            // ⚠️ ملاحظة: تم إزالة deferUpdate التلقائي لمنع التعارض مع الملفات الأخرى
             
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
@@ -205,10 +215,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     // معالجة خاصة لأزرار بناء القيفاواي (لأنها محلية هنا)
                     await handleGiveawayBuilderButtons(i, client, sql); 
                 }
-                
-                // ملاحظة: أزرار السرقة (rob_) والدانجون (dungeon_) غير موجودة هنا
-                // لأن الأوامر الخاصة بها تنشئ "Collector" خاص بها داخل ملفاتها.
-                // وهذا هو الصحيح لمنع التداخل.
 
                 return;
             }
@@ -398,4 +404,6 @@ async function handleTimeoutModal(i) {
     } catch (err) {
         await i.editReply("❌ حدث خطأ (تأكد من الصلاحيات).");
     }
+}
+
 }
