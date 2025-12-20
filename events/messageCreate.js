@@ -206,7 +206,8 @@ module.exports = {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
 
-            let shortcut = sql.prepare("commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
+            // 🔥 التصحيح هنا: إضافة SELECT 🔥
+            let shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
                 .get(message.guild.id, message.channel.id, shortcutWord);
 
             if (!shortcut) {
