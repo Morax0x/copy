@@ -300,9 +300,16 @@ module.exports = {
         // ============================================================
         //  معالجة الأمر (Input Logic)
         // ============================================================
+        
+        // 🔥 1. التحقق من المدخلات غير الصالحة (مثل الإيموجي أو النصوص)
+        if (args && args.length > 0 && isNaN(parseInt(args[0]))) {
+             clearActive();
+             return replyError("❌ **الرجاء إدخال مبلغ رهان صحيح (أرقام فقط).**");
+        }
+
         let finalBetAmount = betArg;
 
-        // 1. إذا حدد رقم مباشرة
+        // 2. إذا حدد رقم مباشرة (رهان يدوي)
         if (finalBetAmount && !isNaN(finalBetAmount)) {
             if (finalBetAmount <= 0) {
                 clearActive(); return replyError("❌ **حدد مبلغ رهان صحيح.**");
@@ -313,7 +320,7 @@ module.exports = {
             return startGame(finalBetAmount);
         }
 
-        // 2. نظام الرهان التلقائي
+        // 3. نظام الرهان التلقائي (فقط إذا لم يتم إدخال أي شيء)
         let userData = db.prepare('SELECT mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
         
         if (!userData || userData.mora < 1) {
