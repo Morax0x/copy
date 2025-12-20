@@ -428,8 +428,8 @@ function handleSkillUsage(player, skill, monster, log, threadChannel) {
              applyDamageToPlayer(player, selfDmg);
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
+             // 🔥 تم إزالة رسالة الشات للتضحية (ستظهر فقط باللوج)
              log.push(`🩸 **${player.name}** ضحى بقوته (**-${selfDmg}**) ليسبب **${skillDmg}**!`);
-             if (threadChannel) threadChannel.send(`🩸 **${player.name}** ضحى بجزء من حياته!`).catch(()=>{});
              break;
         }
         case 'race_elf_skill': {
@@ -520,15 +520,22 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
           
         let displayName;
-        // إذا اللاعب مات أو تحرك بالفعل، نظهر اسمه
-        if (p.isDead || actedPlayers.includes(p.id)) {
+        let statusCircle;
+
+        if (p.isDead) {
+            statusCircle = "💀";
+            displayName = `**${p.name}** [${arabClass}]`; // نص عادي لأنه ميت
+        } else if (actedPlayers.includes(p.id)) {
+            // 🔥🔥 إذا لعب دوره: دائرة حمراء + نص عادي 🔥🔥
+            statusCircle = "🔴";
             displayName = `**${p.name}** [${arabClass}]`; 
         } else {
-            // إذا لم يتحرك، نظهر منشن + علامة انتظار
-            displayName = `<@${p.id}> [${arabClass}] ⏳`; 
+            // 🔥🔥 إذا عليه الدور: دائرة خضراء + منشن 🔥🔥
+            statusCircle = "🟢";
+            displayName = `<@${p.id}> [${arabClass}]`; 
         }
 
-        return `${icon} ${displayName}\n${hpBar}`;
+        return `${statusCircle} ${icon} ${displayName}\n${hpBar}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
