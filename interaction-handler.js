@@ -102,13 +102,12 @@ module.exports = (client, sql, antiRolesCache) => {
                 if (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) isAllowed = true;
                 else {
                     // ب) التحقق إذا كان الأمر اقتصادي وفي قناة الكازينو (الأساسية أو الإضافية)
-                    // 🔥🔥 هذا هو التعديل الجديد 🔥🔥
                     const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
                     if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     } 
                     else {
-                        // ج) التحقق من جدول الصلاحيات المخصصة (Blacklist/Whitelist)
+                        // ج) التحقق من جدول الصلاحيات المخصصة
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
                             const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId);
@@ -212,7 +211,6 @@ module.exports = (client, sql, antiRolesCache) => {
                 }
                 // 11. منشئ القيفاواي (Giveaway Builder Buttons)
                 else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
-                    // معالجة خاصة لأزرار بناء القيفاواي (لأنها محلية هنا)
                     await handleGiveawayBuilderButtons(i, client, sql); 
                 }
 
@@ -404,6 +402,4 @@ async function handleTimeoutModal(i) {
     } catch (err) {
         await i.editReply("❌ حدث خطأ (تأكد من الصلاحيات).");
     }
-}
-
 }
