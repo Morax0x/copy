@@ -907,6 +907,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if(target.hp <= 0 && !target.isDead) { 
                             target.hp = 0; 
                             target.isDead = true; 
+                            
+                            // 🔥🔥 التحقق من موت الكاهن (الرمق الأخير) 🔥🔥
+                            if (target.class === 'Priest' && !target.isPermDead) {
+                                // الكاهن يشفي الفريق قبل أن يموت
+                                players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
+                                log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
+                                threadChannel.send(`✨⚰️ **${target.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
+                            }
+
                             // 🔥🔥 التحقق مما إذا كان هذا هو الموت الثاني (تحلل) 🔥🔥
                             if (target.reviveCount >= 1) {
                                 target.isPermDead = true;
@@ -928,6 +937,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         if (players.every(p => p.isDead)) {
+            // 🔥🔥 خسارة وموت الجميع (سيتم تطبيق اللعنة) 🔥🔥
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break;
         }
@@ -983,7 +993,9 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     else if (status === 'retreat') { title = "❖ انـسـحـاب تـكـتيـكـي !"; color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); } 
     else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
 
+    // 🔥 دمج المنسحبين مع النشطين في التقرير النهائي 🔥
     const allParticipants = [...activePlayers, ...retreatedPlayers];
+    
     // 🔥 تحديد نجم المعركة (MVP) 🔥
     let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
       
@@ -993,7 +1005,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalXp = Math.floor(p.loot.xp);
         if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
         sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-        lootString += `✬ **${p.name}**: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
+        // 🔥🔥 إزالة تكرار الاسم والاكتفاء بالمنشن 🔥🔥
+        lootString += `✬ <@${p.id}>: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
     });
 
     const embed = new EmbedBuilder()
@@ -1004,17 +1017,29 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     await mainChannel.send({ content: activePlayers.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
     activeDungeonRequests.delete(hostId);
     
-    // 🔥🔥 منح تعزيز لنجم المعركة إذا تجاوز الطابق 10 🔥🔥
-    if (mvpPlayer && floor >= 10) {
-        const buffDuration = 15 * 60 * 1000; // 15 دقيقة
-        const expiresAt = Date.now() + buffDuration;
-        
-        // بوف مورا 15%
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
-        // بوف XP 15%
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15);
+    // 🔥🔥 منطق المكافأة واللعنة 🔥🔥
+    if (floor >= 10) {
+        if (status === 'lose') {
+            // 🔥🔥 لعنة للجميع عند الخسارة بعد الطابق 10 🔥🔥
+            const debuffDuration = 15 * 60 * 1000;
+            const expiresAt = Date.now() + debuffDuration;
+            
+            allParticipants.forEach(p => {
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'mora', -0.15);
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'xp', -0.15);
+            });
+            await mainChannel.send(`**💀 لعنـة الهزيمـة:** أصابت اللعنة جميع المشاركين! (-15% مورا واكس بي لـ 15د) ${EMOJI_NERF}`).catch(()=>{});
 
-        await mainChannel.send(`**✨ نجـم المعركـة (ضرر: ${mvpPlayer.totalDamage.toLocaleString()}):** <@${mvpPlayer.id}>\nحصل على تعزيز **15%** مورا واكس بي لـ **15د** ${EMOJI_BUFF}`).catch(()=>{});
+        } else if (mvpPlayer) {
+            // 🔥🔥 مكافأة للـ MVP فقط عند الفوز أو الانسحاب 🔥🔥
+            const buffDuration = 15 * 60 * 1000; 
+            const expiresAt = Date.now() + buffDuration;
+            
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
+            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15);
+
+            await mainChannel.send(`**✨ نجـم المعركـة (ضرر: ${mvpPlayer.totalDamage.toLocaleString()}):** <@${mvpPlayer.id}>\nحصل على تعزيز **15%** مورا واكس بي لـ **15د** ${EMOJI_BUFF}`).catch(()=>{});
+        }
     }
 
     try {
