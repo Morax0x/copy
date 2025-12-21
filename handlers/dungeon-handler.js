@@ -62,7 +62,7 @@ async function startDungeon(interaction, sql) {
 
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
-    
+     
     // 🔥 [إصلاح] توزيع الأزرار 5 في كل صف
     if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
     if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
@@ -211,12 +211,10 @@ async function lobbyPhase(interaction, theme, sql) {
                     });
                     
                     // 🔥🔥 إصلاح: الرد الفوري عند اختيار التخصص 🔥🔥
-                    // إذا اخترنا تخصص، نرد فوراً حتى لو أخذ الكود وقتاً
                     const selectedClass = selection.values[0];
                     const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
                     
                     if (currentTaken.includes(selectedClass)) {
-                        // حالة الرفض
                         return selection.update({ content: `🚫 **سبقك بها عكاشة!** اختر تخصصاً آخر.`, components: [] });
                     }
 
