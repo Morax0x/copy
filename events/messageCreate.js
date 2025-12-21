@@ -56,6 +56,25 @@ module.exports = {
             return;
         }
 
+        // ============================================================
+        // 0. التحقق من تاق السيرفر (Server Tag Check) - جديد 🔥
+        // ============================================================
+        try {
+            // جلب التاق من الإعدادات
+            const tagSettings = sql.prepare("SELECT serverTag FROM settings WHERE guild = ?").get(message.guild.id);
+            if (tagSettings && tagSettings.serverTag) {
+                // التحقق مما إذا كان الاسم المعروض يحتوي على التاق
+                if (message.member && message.member.displayName.includes(tagSettings.serverTag)) {
+                    if (client.incrementQuestStats) {
+                        // تحديث المهمة بدون انتظار (fire and forget) لتجنب تأخير الرسالة
+                        client.incrementQuestStats(message.author.id, message.guild.id, 'server_tag', 1).catch(() => {});
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("[Tag Check Error]", err);
+        }
+
         // 1. كشف البومب
         if (message.author.id === DISBOARD_BOT_ID) {
             let bumperID = null;
