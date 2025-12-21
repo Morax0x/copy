@@ -119,7 +119,7 @@
   {
     "id": "race_dragon_skill",
     "name": "جحيم التنين",
-    "description": "نيران تحرق العدو وتسبب ضرراً مستمراً (DoT) يتجاهل الدفاع.",
+    "description": "نيران تحرق العدو بضرر حقيقي يتجاهل الدروع ويسبب حرقاً مستمراً.",
     "emoji": "🐲",
     "base_price": 1000,
     "price_increment": 600,
@@ -158,7 +158,7 @@
   {
     "id": "race_demon_skill",
     "name": "تضحية الدم",
-    "description": "تضحي بـ 10% من صحتك لتوجيه ضربة حرجة (Crit) مضمونة ومدمرة.",
+    "description": "تضحي بـ 10% من صحتك لتوجيه ضربة حرجة مضمونة ومدمرة.",
     "emoji": "🩸",
     "base_price": 1000,
     "price_increment": 600,
@@ -171,7 +171,7 @@
   {
     "id": "race_elf_skill",
     "name": "وابل السهام",
-    "description": "تشل حركة الخصم (Stun) وتجعل دفاعه هشاً (يتلقى ضرراً مضاعفاً).",
+    "description": "تشل حركة الخصم وتجعل دفاعه هشاً (يتلقى ضرراً مضاعفاً).",
     "emoji": "🏹",
     "base_price": 1000,
     "price_increment": 600,
@@ -184,7 +184,7 @@
   {
     "id": "race_dark_elf_skill",
     "name": "خنجر الظل",
-    "description": "تسبب الارتباك للخصم (Confusion)، مما قد يجعله يضرب نفسه بدلاً منك.",
+    "description": "تسبب الارتباك للخصم، مما قد يجعله يضرب نفسه بدلاً منك.",
     "emoji": "🗡️",
     "base_price": 1000,
     "price_increment": 600,
