@@ -417,7 +417,7 @@ async function startPveBattle(interaction, client, sql, playerMember, monsterDat
     battleState.message = await interaction.channel.send({ content: `⚔️ **قتال ضد وحش!** ${playerMember}`, embeds, components });
 }
 
-async function endBattle(battleState, winnerId, sql, reason = "win") {
+async function endBattle(battleState, winnerId, sql, reason = "win", buffCalculator = null) {
     if (!battleState.message) return;
 
     // 🔥🔥 تحديث الرسالة لآخر مرة قبل إعلان النتيجة (لإظهار الـ 0 HP) 🔥🔥
@@ -470,6 +470,11 @@ async function endBattle(battleState, winnerId, sql, reason = "win") {
         let winnerData = getScore.get(winnerId, battleState.message.guild.id);
         winnerData.mora += finalWinnings;
         setScore.run(winnerData);
+
+        // استخدام buffCalculator إذا تم توفيره (لحساب MoraBuff بناءً على الستريك مثلاً)
+        if (buffCalculator) {
+             // يمكنك استدعاء buffCalculator هنا إذا لزم الأمر، لكننا حالياً نستخدم قيم ثابتة للـ PvP
+        }
 
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
