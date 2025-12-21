@@ -9,7 +9,8 @@
     "base_value": 15,
     "value_increment": 2,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 3
   },
   {
     "id": "skill_shielding",
@@ -21,7 +22,8 @@
     "base_value": 20,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 3
   },
   {
     "id": "skill_buffing",
@@ -33,7 +35,8 @@
     "base_value": 15,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 4
   },
   {
     "id": "skill_rebound",
@@ -45,7 +48,8 @@
     "base_value": 20,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 4
   },
   {
     "id": "skill_weaken",
@@ -57,7 +61,8 @@
     "base_value": 20,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 3
   },
   {
     "id": "skill_dispel",
@@ -69,7 +74,8 @@
     "base_value": 1,
     "value_increment": 0,
     "max_level": 1,
-    "stat_type": "Utility"
+    "stat_type": "Utility",
+    "cooldown": 5
   },
   {
     "id": "skill_cleanse",
@@ -81,7 +87,8 @@
     "base_value": 8,
     "value_increment": 1,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 4
   },
   {
     "id": "skill_poison",
@@ -93,7 +100,8 @@
     "base_value": 15,
     "value_increment": 2,
     "max_level": 10,
-    "stat_type": "%"
+    "stat_type": "%",
+    "cooldown": 3
   },
   {
     "id": "skill_gamble",
@@ -105,138 +113,150 @@
     "base_value": 150,
     "value_increment": 0,
     "max_level": 1,
-    "stat_type": "RNG"
+    "stat_type": "RNG",
+    "cooldown": 5
   },
   {
     "id": "race_dragon_skill",
     "name": "جحيم التنين",
-    "description": "نيران تحرق العدو بضرر خالص يتجاهل الدروع.",
-    "emoji": "🔥",
+    "description": "نيران تحرق العدو وتسبب ضرراً مستمراً (DoT) يتجاهل الدفاع.",
+    "emoji": "🐲",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 35,
-    "value_increment": 5,
+    "base_value": 40,
+    "value_increment": 4,
     "max_level": 10,
-    "stat_type": "TrueDMG"
+    "stat_type": "TrueDMG_Burn",
+    "cooldown": 3
   },
   {
     "id": "race_human_skill",
     "name": "تكتيك القائد",
-    "description": "ضربة تمنحك درعاً وتعزز هجومك القادم.",
+    "description": "تزيل السموم والآثار السلبية، تمنح درعاً، وتزيد الهجوم.",
     "emoji": "🛡️",
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 15,
     "value_increment": 2,
     "max_level": 10,
-    "stat_type": "Buff_Shield"
+    "stat_type": "Cleanse_Buff_Shield",
+    "cooldown": 4
   },
   {
     "id": "race_seraphim_skill",
     "name": "نور المقدس",
-    "description": "يعاقب العدو بضرر ويشفي جراحك بنفس المقدار.",
+    "description": "ضرر يزداد كلما انخفضت صحتك + شفاء ذاتي.",
     "emoji": "✨",
+    "base_price": 1000,
+    "price_increment": 600,
+    "base_value": 25,
+    "value_increment": 3,
+    "max_level": 10,
+    "stat_type": "Scale_MissingHP_Heal",
+    "cooldown": 3
+  },
+  {
+    "id": "race_demon_skill",
+    "name": "تضحية الدم",
+    "description": "تضحي بـ 10% من صحتك لتوجيه ضربة حرجة (Crit) مضمونة ومدمرة.",
+    "emoji": "🩸",
+    "base_price": 1000,
+    "price_increment": 600,
+    "base_value": 180,
+    "value_increment": 10,
+    "max_level": 10,
+    "stat_type": "Sacrifice_Crit",
+    "cooldown": 3
+  },
+  {
+    "id": "race_elf_skill",
+    "name": "وابل السهام",
+    "description": "تشل حركة الخصم (Stun) وتجعل دفاعه هشاً (يتلقى ضرراً مضاعفاً).",
+    "emoji": "🏹",
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 30,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "HealDMG"
-  },
-  {
-    "id": "race_demon_skill",
-    "name": "تضحية الدم",
-    "description": "تضحي بـ 10% من صحتك لتوجيه ضربة مدمرة.",
-    "emoji": "🩸",
-    "base_price": 1000,
-    "price_increment": 600,
-    "base_value": 60,
-    "value_increment": 6,
-    "max_level": 10,
-    "stat_type": "RecoilDMG"
-  },
-  {
-    "id": "race_elf_skill",
-    "name": "وابل السهام",
-    "description": "يطلق سهمين سريعين بدقة عالية.",
-    "emoji": "🏹",
-    "base_price": 1000,
-    "price_increment": 600,
-    "base_value": 45,
-    "value_increment": 3,
-    "max_level": 10,
-    "stat_type": "Multi_Hit"
+    "stat_type": "Stun_Vulnerable",
+    "cooldown": 5
   },
   {
     "id": "race_dark_elf_skill",
     "name": "خنجر الظل",
-    "description": "طعنة غادرة تسبب نزيفاً وسموماً قوية.",
+    "description": "تسبب الارتباك للخصم (Confusion)، مما قد يجعله يضرب نفسه بدلاً منك.",
     "emoji": "🗡️",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 20,
+    "base_value": 25,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "DoT"
+    "stat_type": "Confusion",
+    "cooldown": 4
   },
   {
     "id": "race_vampire_skill",
     "name": "امتصاص الحياة",
-    "description": "يسرق صحة الخصم بكمية كبيرة .",
+    "description": "سرقة حياة قوية. الشفاء الفائض يتحول إلى درع.",
     "emoji": "🦇",
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 35,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "Lifesteal"
+    "stat_type": "Lifesteal_Overheal",
+    "cooldown": 3
   },
   {
     "id": "race_hybrid_skill",
     "name": "سرقة القوة",
-    "description": "يضعف هجوم العدو ويزيد هجومك بنفس المقدار.",
+    "description": "هجوم يسبب تأثيراً عشوائياً (إما تجميد، حرق، أو إضعاف).",
     "emoji": "🌀",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 15,
-    "value_increment": 2,
+    "base_value": 30,
+    "value_increment": 3,
     "max_level": 10,
-    "stat_type": "Steal_Stat"
+    "stat_type": "Chaos_RNG",
+    "cooldown": 4
   },
   {
     "id": "race_spirit_skill",
     "name": "طيف مراوغ",
-    "description": "يضرب العدو ويخترق دروعه (Penetrate).",
+    "description": "تسبب ضرراً وتصبح 'غير ملموس' (تتفادى الهجوم القادم بنسبة 100%).",
     "emoji": "👻",
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 30,
     "value_increment": 3,
     "max_level": 10,
-    "stat_type": "Penetrate"
+    "stat_type": "Dmg_Evasion",
+    "cooldown": 5
   },
   {
     "id": "race_dwarf_skill",
     "name": "ضربة الترس",
-    "description": "ضربة ثقيلة تسبب ضرراً وتمنحك درعاً فورياً.",
+    "description": "تفعيل وضعية الدفاع: تقليل الضرر القادم بـ 60% وعكس جزء منه للخصم.",
     "emoji": "🛡️",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 30,
-    "value_increment": 3,
+    "base_value": 40,
+    "value_increment": 4,
     "max_level": 10,
-    "stat_type": "Tank_Hit"
+    "stat_type": "Reflect_Tank",
+    "cooldown": 4
   },
   {
     "id": "race_ghoul_skill",
     "name": "هيجان",
-    "description": "يزداد ضرر الهجوم كلما كانت صحتك منخفضة.",
+    "description": "هجوم وحشي. إذا قتل الخصم بهذه الضربة، تستعيد 20% صحة.",
     "emoji": "🧟",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 25,
-    "value_increment": 2,
+    "base_value": 50,
+    "value_increment": 5,
     "max_level": 10,
-    "stat_type": "LowHP_Scale"
+    "stat_type": "Execute_Heal",
+    "cooldown": 3
   }
 ]
