@@ -1,14 +1,18 @@
-const questsConfig = require('../json/quests-config.json'); // تأكد من المسار الصحيح
+const path = require('path');
+// ✅ تصحيح المسار: استخدام path.join لضمان الوصول الصحيح للملف من أي مكان
+const questsConfig = require(path.join(process.cwd(), 'json', 'quests-config.json')); 
+
 const ROWS_PER_PAGE_ACH = 5;
 
 function getAchievementPageData(sql, member, levelData, totalStats, completedAchievements, page = 1) {
     const achievements = questsConfig.achievements;
+    
+    // ✅ تحسين الأداء: جلب البيانات مرة واحدة خارج التكرار
     const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
     const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
+    // جلب إعدادات التاق مرة واحدة فقط
+    const settings = sql.prepare("SELECT serverTag FROM settings WHERE guild = ?").get(member.guild.id);
 
-    // إضافة: جلب إحصائيات التاق إذا كانت مخزنة كـ quest stat
-    // أو الاعتماد على completedAchievements
-    
     const perPage = ROWS_PER_PAGE_ACH;
     const totalPages = Math.ceil(achievements.length / perPage);
     page = Math.max(1, Math.min(page, totalPages));
@@ -40,21 +44,18 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
                 currentProgress = streakData[ach.stat];
             }
             
-            // 🔥🔥 التعديل الجديد: دعم server_tag والمهام الخاصة 🔥🔥
-            else if (ach.stat === 'server_tag' || ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
-                // هذه المهام منطقية (نعم/لا)، إذا لم تكن مكتملة (isDone=false)، فالتقدم 0
-                currentProgress = 0; 
-                
-                // تحسين إضافي: التحقق اللحظي للتاق للعرض فقط (اختياري)
-                if (ach.stat === 'server_tag') {
-                    // محاولة جلب التاق من الإعدادات للتحقق الشكلي
-                    try {
-                        const settings = sql.prepare("SELECT serverTag FROM settings WHERE guild = ?").get(member.guild.id);
-                        if (settings && settings.serverTag && member.displayName.includes(settings.serverTag)) {
-                            currentProgress = 1; // يظهر كـ 1/1 حتى لو لم يسجل في القاعدة بعد
-                        }
-                    } catch (e) {}
+            // 🔥🔥 التعديل: دعم server_tag والمهام الخاصة 🔥🔥
+            else if (ach.stat === 'server_tag') {
+                // التحقق باستخدام المتغير settings الذي جلبناه في الأعلى
+                if (settings && settings.serverTag && member.displayName.includes(settings.serverTag)) {
+                    currentProgress = 1; 
+                } else {
+                    currentProgress = 0;
                 }
+            }
+            // مهام الرتب الخاصة
+            else if (ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
+                currentProgress = 0;
             }
         }
 
