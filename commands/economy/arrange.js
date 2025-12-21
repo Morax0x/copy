@@ -5,9 +5,7 @@ const path = require('path');
 let streakHandler;
 try {
     streakHandler = require('../../streak-handler.js');
-} catch (e) {
-    console.warn("⚠️ لم يتم العثور على streak-handler.js في المسار المتوقع.");
-}
+} catch (e) {}
 
 // 1. قائمة اللاعبين النشطين (لمنع السبام)
 const activePlayers = new Set();
@@ -189,14 +187,21 @@ module.exports = {
                             
                             let moraMultiplier = 1.0;
                             const memberObj = isSlash ? interaction.member : message.member;
+                            
+                            // حساب نسبة البف (إذا وجدت)
                             if (streakHandler && streakHandler.calculateMoraBuff) {
                                 moraMultiplier = streakHandler.calculateMoraBuff(memberObj, db);
                             }
-
-                            const baseProfit = finalBetAmount; 
-                            const totalProfit = Math.floor(baseProfit * moraMultiplier); 
-                            const totalPrize = finalBetAmount + totalProfit; 
                             
+                            // 🔥🔥 التعديل الجديد: حساب الربح بناءً على طلبك 🔥🔥
+                            // الربح الأساسي = مبلغ الرهان نفسه (يعني يرجع له رهانه + مثله)
+                            // إذا عنده بف 20%، يربح: الرهان + (الرهان * 0.20)
+                            // مثال: رهان 100 وبف 20% (المضاعف 1.2) -> يربح 120 (إجمالي الجائزة 220)
+                            
+                            const profit = Math.floor(finalBetAmount * moraMultiplier); 
+                            const totalPrize = finalBetAmount + profit; 
+                            
+                            // حساب نسبة الزيادة للعرض فقط
                             const buffPercent = Math.round((moraMultiplier - 1) * 100);
                             let buffText = "";
                             if (buffPercent > 0) buffText = ` (+${buffPercent}%)`;
@@ -207,7 +212,7 @@ module.exports = {
                                 .setColor('#00FF00')
                                 .setThumbnail(user.displayAvatarURL())
                                 .setTitle('❖ كفــوو عليك <:2BCrikka:1437806481071411391>')
-                                .setDescription(`✶ جبتها صــح!\n⏱️ الوقت: **${timeTaken}ث**\n💰 ربـحـت: **${totalProfit}** ${MORA_EMOJI}${buffText}`);
+                                .setDescription(`✶ جبتها صــح!\n⏱️ الوقت: **${timeTaken}ث**\n💰 ربـحـت: **${profit}** ${MORA_EMOJI}${buffText}`);
 
                             disableAll(ButtonStyle.Success);
                             
