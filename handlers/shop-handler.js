@@ -94,7 +94,7 @@ function updateMarketPrices() {
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;       
+        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;        
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
                 const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
@@ -629,18 +629,23 @@ async function _handleShopButton(i, client, sql) {
 
             // القراءة من user_inventory
             const existingPotion = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
-            const currentQty = existingPotion ? existingPotion.quantity : 0;
+            // 🔥 الإصلاح: نعتبر الكمية 0 إذا لم يكن هناك سجل أو الكمية 0
+            const currentQty = (existingPotion && existingPotion.quantity > 0) ? existingPotion.quantity : 0;
+
             if (currentQty >= maxQtyPerType) {
                 return await i.reply({ content: `🚫 **وصلت للحد الأقصى من هذه الجرعة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxQtyPerType}** فقط من نوع **${item.name}**.\nارفع مستواك لزيادة السعة!`, flags: MessageFlags.Ephemeral });
             }
             if (currentQty === 0) {
                 // القراءة من user_inventory
-                const allUserItems = sql.prepare("SELECT itemID FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
+                // 🔥 الإصلاح: حساب فقط الأنواع التي كميتها > 0
+                const allUserItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
                 let currentPotionTypesCount = 0;
                 for (const uItem of allUserItems) {
+                    if (uItem.quantity <= 0) continue; // تجاهل الكميات الصفرية
                     const shopItem = potionItems.find(si => si.id === uItem.itemID); 
                     if (shopItem) { currentPotionTypesCount++; }
                 }
+                
                 if (currentPotionTypesCount >= maxTypes) {
                     return await i.reply({ content: `🚫 **حقيبتك ممتلئة بأنواع مختلفة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxTypes}** أنواع مختلفة من الجرعات.\nاستهلك بعض الجرعات أولاً.`, flags: MessageFlags.Ephemeral });
                 }
