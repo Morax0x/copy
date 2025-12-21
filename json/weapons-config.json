@@ -4,11 +4,11 @@
     "race": "Human",
     "name": "سيف",
     "emoji": "⚔️",
-    "base_price": 4500,
+    "base_price": 250,
     "price_increment": 1500,
     "base_damage": 22,
     "damage_increment": 5,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleHuman.png"
   },
   {
@@ -16,11 +16,11 @@
     "race": "Dragon",
     "name": "أنفاس نارية",
     "emoji": "🔥",
-    "base_price": 5000,
+    "base_price": 250,
     "price_increment": 2000,
     "base_damage": 30,
     "damage_increment": 5,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleDragon.png"
   },
   {
@@ -28,11 +28,11 @@
     "race": "Elf",
     "name": "قوس",
     "emoji": "🏹",
-    "base_price": 3000,
+    "base_price": 250,
     "price_increment": 1000,
     "base_damage": 19,
     "damage_increment": 4,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleElf.png"
   },
   {
@@ -40,11 +40,11 @@
     "race": "Dark Elf",
     "name": "خنجر اسود",
     "emoji": "🗡️",
-    "base_price": 2500,
+    "base_price": 250,
     "price_increment": 1000,
     "base_damage": 14,
     "damage_increment": 4,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleDarkElf.png"
   },
   {
@@ -52,11 +52,11 @@
     "race": "Seraphim",
     "name": "رمح سماوي",
     "emoji": "🔱",
-    "base_price": 4000,
+    "base_price": 250,
     "price_increment": 1400,
     "base_damage": 17,
     "damage_increment": 5,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleSeraphim.png"
   },
   {
@@ -64,11 +64,11 @@
     "race": "Demon",
     "name": "معول ناري",
     "emoji": "⛏️",
-    "base_price": 3500,
+    "base_price": 250,
     "price_increment": 1200,
     "base_damage": 21,
     "damage_increment": 4,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleDemon.png"
   },
   {
@@ -76,11 +76,11 @@
     "race": "Vampire",
     "name": "اسنان دموية",
     "emoji": "🩸",
-    "base_price": 2000,
+    "base_price": 250,
     "price_increment": 900,
     "base_damage": 12,
     "damage_increment": 4,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleVampire.png"
   },
   {
@@ -88,11 +88,11 @@
     "race": "Spirit",
     "name": "التحكم بالأرواح",
     "emoji": "👻",
-    "base_price": 1500,
+    "base_price": 250,
     "price_increment": 700,
     "base_damage": 11,
     "damage_increment": 3,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleSpirit.png"
   },
   {
@@ -100,11 +100,11 @@
     "race": "Dwarf",
     "name": "فأس ضخمة",
     "emoji": "🪓",
-    "base_price": 1000,
-    "price_increment": 500,
+    "base_price": 250,
+    "price_increment": 600,
     "base_damage": 10,
-    "damage_increment": 2,
-    "max_level": 10,
+    "damage_increment": 3,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleDwarf.png"
   },
   {
@@ -112,11 +112,11 @@
     "race": "Ghoul",
     "name": "عصا خشبية",
     "emoji": "🪵",
-    "base_price": 500,
-    "price_increment": 200,
-    "base_damage": 2,
-    "damage_increment": 2,
-    "max_level": 10,
+    "base_price": 250,
+    "price_increment": 300,
+    "base_damage": 5,
+    "damage_increment": 3,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleGhoul.png"
   },
   {
@@ -124,11 +124,11 @@
     "race": "Hybrid",
     "name": "سيف مزدوج",
     "emoji": "⚔️",
-    "base_price": 1800,
+    "base_price": 250,
     "price_increment": 800,
     "base_damage": 16,
     "damage_increment": 3,
-    "max_level": 10,
+    "max_level": 20,
     "image": "https://i.imgur.com/ExampleHybrid.png"
   }
 ]
