@@ -292,7 +292,7 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🟢 دالة استخدام المهارات
+// 🟢 دالة استخدام المهارات (المحدثة)
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -464,9 +464,8 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             break;
         }
         
-        // --- المهارات العامة القديمة (fallback) ---
+        // --- المهارات العامة والقديمة (fallback) ---
         default: {
-            // التعامل مع المهارات العامة مثل skill_healing, skill_buffing
             switch (skill.id) {
                 case 'skill_rebound': 
                 case 'potion_reflect': { 
@@ -534,13 +533,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      break;
                 }
                 case 'skill_dispel': {
-                    monster.effects = []; // إزالة كل تأثيرات الوحش الإيجابية (إن وجدت) أو السلبية (حسب الرغبة)
-                    // بما أن الوحش ليس لديه بفات حالياً، نعتبرها تزيل السموم القديمة أو المؤثرات
+                    monster.effects = []; // إزالة كل تأثيرات الوحش
                     log.push(`💨 **${player.name}** بدد السحر!`);
                     break;
                 }
                 default: {
-                    // أي مهارة أخرى تعامل كضرر مباشر
                     let multiplier = skill.stat_type === '%' ? (1 + (value/100)) : 1;
                     skillDmg = Math.floor((effectiveAtk * multiplier) + (skill.stat_type !== '%' ? value : 0)) * mult;
                     monster.hp -= skillDmg;
