@@ -73,9 +73,16 @@ function getBaseFloorMora(floor) {
 
 function applyDamageToPlayer(player, damageAmount) {
     let remainingDamage = damageAmount;
+    
     // التحقق من تأثير المراوغة (Evasion)
     if (player.effects.some(e => e.type === 'evasion')) {
         return 0; // تفادي كامل
+    }
+
+    // التحقق من بوف الدفاع (Tank Skill)
+    const defBuff = player.effects.find(e => e.type === 'def_buff');
+    if (defBuff) {
+        remainingDamage = Math.floor(remainingDamage * (1 - defBuff.val));
     }
 
     // التحقق من تأثير تقليل الضرر (مثل القزم)
@@ -95,7 +102,7 @@ function applyDamageToPlayer(player, damageAmount) {
     }
     player.hp -= remainingDamage;
     if (player.hp < 0) player.hp = 0;
-    return remainingDamage; // إرجاع الضرر الفعلي المتلقى
+    return remainingDamage; 
 }
 
 function cleanDisplayName(name) {
@@ -301,6 +308,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     if (player.effects) {
         player.effects.forEach(e => { if (e.type === 'atk_buff') atkMultiplier += e.val; });
     }
+    // الهجوم الفعال (مع البوفات) لاستخدامه في المهارات
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
     if (skill.id === 'skill_secret_owner') {
@@ -354,7 +362,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             break;
         }
         case 'Cleanse_Buff_Shield': { // البشري
-            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff'); 
+            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff'); // إزالة الديبفات فقط
             const shieldVal = Math.floor(player.maxHp * (value / 100));
             player.shield += shieldVal;
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
@@ -374,7 +382,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
         case 'Sacrifice_Crit': { // الشيطان
             const selfDmg = Math.floor(player.maxHp * 0.10);
-            skillDmg = Math.floor(effectiveAtk * (value / 100)) * mult; 
+            skillDmg = Math.floor(effectiveAtk * (value / 100)) * mult; // ضرر كريتيكال ضخم
             applyDamageToPlayer(player, selfDmg);
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg;
@@ -945,77 +953,85 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 monster.hp -= burnDmg;
                                 log.push(`🔥 **${monster.name}** يحترق! (-${burnDmg} HP)`);
                             }
-                            // 🔥🔥 إضافة: تأثير السم على الوحش 🔥🔥
                             if (e.type === 'poison') {
                                 const poisonDmg = e.val;
                                 monster.hp -= poisonDmg;
                                 log.push(`☠️ **${monster.name}** يتألم من السم! (-${poisonDmg} HP)`);
                             }
+                            // تأثيرات أخرى للوحش يمكن إضافتها هنا
                             e.turns--;
                             return e.turns > 0;
                         });
                     }
 
-                    if (monster.hp <= 0) { ongoing = false; break; } // مات من التأثيرات
+                    if (monster.hp <= 0) { ongoing = false; break; } // مات من الحرق
 
                     // 🔥🔥 التحقق من حالة Confusion (الارتباك) للوحش 🔥🔥
                     const confusion = monster.effects.find(e => e.type === 'confusion');
-                    let hitSelf = false;
                     if (confusion && Math.random() < confusion.val) {
-                        hitSelf = true;
+                        // الوحش يضرب نفسه
                         const selfDmg = Math.floor(monster.atk * 0.5);
                         monster.hp -= selfDmg;
                         log.push(`😵 **${monster.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg} HP)`);
-                    } 
-                    
-                    if (!hitSelf) {
-                        // 🔥🔥 التحقق من العمى (Blind) 🔥🔥
-                        const blind = monster.effects.find(e => e.type === 'blind');
-                        if (blind && Math.random() < blind.val) {
-                             log.push(`🌫️ **${monster.name}** أخطأ الهجوم بسبب العمى!`);
-                        } else {
-                            // هجوم الوحش الطبيعي
-                            const alive = players.filter(p => !p.isDead);
-                            if (alive.length > 0) {
-                                let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive.find(p => p.id === monster.targetFocusId) || alive[Math.floor(Math.random() * alive.length)];
-                                let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
-                                
-                                // التحقق من الضعف (Weakness)
-                                if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
+                    } else {
+                        // هجوم الوحش الطبيعي
+                        const alive = players.filter(p => !p.isDead);
+                        if (alive.length > 0) {
+                            // 🔥🔥 تعديل: تفعيل هجوم المستدعي (Summoner Pet) 🔥🔥
+                            players.forEach(p => {
+                                if (!p.isDead && p.summon && p.summon.active && p.summon.turns > 0) {
+                                    const petDmg = Math.floor(p.atk * 0.5); // الحارس يضرب بـ 50% من هجوم المستدعي
+                                    monster.hp -= petDmg;
+                                    p.totalDamage += petDmg;
+                                    log.push(`🐺 حارس **${p.name}** نهش الوحش! (${petDmg} ضرر)`);
+                                    p.summon.turns--;
+                                    if (p.summon.turns <= 0) {
+                                        p.summon.active = false;
+                                        log.push(`🐺 اختفى حارس **${p.name}**.`);
+                                    }
+                                }
+                            });
 
-                                if(target.defending) dmg = Math.floor(dmg * 0.5);
+                            if (monster.hp <= 0) { ongoing = false; break; }
+
+                            let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive.find(p => p.id === monster.targetFocusId) || alive[Math.floor(Math.random() * alive.length)];
+                            let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
+                            
+                            // التحقق من الضعف (Weakness)
+                            if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
+
+                            if(target.defending) dmg = Math.floor(dmg * 0.5);
+                            
+                            // 🔥 عكس الضرر (Reflect) 🔥
+                            const reflectEffect = target.effects.find(e => e.type === 'reflect');
+                            if (reflectEffect) {
+                                const reflected = Math.floor(dmg * reflectEffect.val);
+                                dmg -= reflected;
+                                monster.hp -= reflected;
+                                log.push(`🔄 **${target.name}** عكس **${reflected}** ضرر للوحش!`);
+                            }
+
+                            const takenDmg = applyDamageToPlayer(target, dmg);
+                            if (takenDmg === 0 && dmg > 0) log.push(`👻 **${target.name}** راوغ الهجوم!`);
+                            else log.push(`👹 **${monster.name}** ضرب **${target.name}** (${takenDmg})`);
+                            
+                            if(target.hp <= 0 && !target.isDead) { 
+                                target.hp = 0; 
+                                target.isDead = true; 
                                 
-                                // 🔥 عكس الضرر (Reflect) 🔥
-                                const reflectEffect = target.effects.find(e => e.type === 'reflect');
-                                if (reflectEffect) {
-                                    const reflected = Math.floor(dmg * reflectEffect.val);
-                                    dmg -= reflected;
-                                    monster.hp -= reflected;
-                                    log.push(`🔄 **${target.name}** عكس **${reflected}** ضرر للوحش!`);
+                                if (target.class === 'Priest' && !target.isPermDead) {
+                                    players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
+                                    log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
+                                    threadChannel.send(`✨⚰️ **${target.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
                                 }
 
-                                const takenDmg = applyDamageToPlayer(target, dmg);
-                                if (takenDmg === 0 && dmg > 0) log.push(`👻 **${target.name}** راوغ الهجوم!`);
-                                else log.push(`👹 **${monster.name}** ضرب **${target.name}** (${takenDmg})`);
-                                
-                                if(target.hp <= 0 && !target.isDead) { 
-                                    target.hp = 0; 
-                                    target.isDead = true; 
-                                    
-                                    if (target.class === 'Priest' && !target.isPermDead) {
-                                        players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
-                                        log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
-                                        threadChannel.send(`✨⚰️ **${target.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
-                                    }
-
-                                    if (target.reviveCount >= 1) {
-                                        target.isPermDead = true;
-                                        log.push(`💀 **${target.name}** سقط وتحللت جثته!`);
-                                        threadChannel.send(`💀 **${target.name}** سقط وتحللت جثته (لا يمكن إحياؤه)!`).catch(()=>{});
-                                    } else {
-                                        log.push(`💀 **${target.name}** سقط!`);
-                                        threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
-                                    }
+                                if (target.reviveCount >= 1) {
+                                    target.isPermDead = true;
+                                    log.push(`💀 **${target.name}** سقط وتحللت جثته!`);
+                                    threadChannel.send(`💀 **${target.name}** سقط وتحللت جثته (لا يمكن إحياؤه)!`).catch(()=>{});
+                                } else {
+                                    log.push(`💀 **${target.name}** سقط!`);
+                                    threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
                                 }
                             }
                         }
