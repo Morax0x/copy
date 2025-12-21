@@ -178,7 +178,9 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
         loot: { mora: 0, xp: 0 },
         class: assignedClass, 
         special_cooldown: 0, 
-        summon: null 
+        summon: null,
+        reviveCount: 0, // 🔥 عداد مرات الإحياء
+        isPermDead: false // 🔥 علامة الموت الدائم (تحلل الجثة)
     };
 }
 
@@ -525,7 +527,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
         else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } 
 
-        const hpBar = p.isDead ? 'MORT' : buildHpBar(p.hp, p.maxHp, p.shield);
+        const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'MORT') : buildHpBar(p.hp, p.maxHp, p.shield);
         let displayName;
         let statusCircle;
 
@@ -604,16 +606,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
-        let baseFloorHP;
+        let finalHp, finalAtk;
+        
+        // 🔥🔥 تعديل: دم الوحوش بعد الطابق 10 (التربيع) 🔥🔥
         if (floor <= 10) {
-            baseFloorHP = 300 + ((floor - 1) * 100); 
+            const baseFloorHP = 300 + ((floor - 1) * 100);
+            const baseAtk = 15 + (floor * 3);
+            finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
+            finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
         } else {
-            baseFloorHP = 500 + (floor * 150) + (Math.pow(floor, 2) * 8); 
+            // يبدأ من حيث انتهى الطابق 10 (1200 تقريباً) ويزيد بالتربيع
+            const tier = floor - 10;
+            const baseFloorHP = 1200 + (Math.pow(tier, 2) * 50); // تعديل معادلة التربيع لزيادة تدريجية
+            const baseAtk = 45 + (tier * 5); // زيادة تدريجية للهجوم أيضاً
+            finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
+            finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
         }
-
-        let finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
-        let baseAtk = 15 + (floor * 3);
-        let finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
 
         let monster = {
             name: `${randomMob.name} (Lv.${floor})`, 
@@ -642,6 +650,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                           afkPlayers.forEach(afkP => {
                                 afkP.skipCount = (afkP.skipCount || 0) + 1;
                                 monster.targetFocusId = afkP.id;
+                                // 🔥🔥 إرسال منشن عند تخطي الدور 🔥🔥
+                                threadChannel.send(`⚠️ **${afkP.name}** <@${afkP.id}> تم تخطي دورك بسبب عدم الاستجابة!`).catch(()=>{});
                           });
                     }
                     collector.stop('turn_end'); 
@@ -714,13 +724,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             log.push(`🛡️ **${p.name}** استفز الوحش وتصلب!`);
                                             skillNameUsed = "استفزاز وتصليب";
                                         } else if (res.effect === 'priest_heal') {
-                                            const dead = players.filter(m => m.isDead);
+                                            // 🔥🔥 تعديل الكاهن: إحياء مرة واحدة فقط 🔥🔥
+                                            const dead = players.filter(m => m.isDead && !m.isPermDead); // لا يحيي المتحللين
                                             if (dead.length > 0) {
-                                                const t = dead[0]; t.isDead = false; t.hp = Math.floor(t.maxHp * 0.2);
-                                                applyDamageToPlayer(p, Math.floor(p.maxHp * 0.1));
-                                                log.push(`✨ **${p.name}** أحيا **${t.name}**!`);
-                                                threadChannel.send(`✨ **${p.name}** قام بإحياء **${t.name}**!`).catch(()=>{});
-                                                p.special_cooldown = 7;
+                                                const t = dead[0]; 
+                                                if (t.reviveCount >= 1) {
+                                                    // إذا تم إحياؤه من قبل ومات ثانية -> تحلل
+                                                    t.isPermDead = true;
+                                                    log.push(`💀 **${t.name}** تحللت جثته وزهقت روحه ولا يمكن إحياؤه!`);
+                                                    threadChannel.send(`💀 **${t.name}** <@${t.id}> تحللت جثته وزهقت روحه!`).catch(()=>{});
+                                                } else {
+                                                    t.isDead = false; 
+                                                    t.hp = Math.floor(t.maxHp * 0.2);
+                                                    t.reviveCount = (t.reviveCount || 0) + 1; // زيادة عداد الإحياء
+                                                    applyDamageToPlayer(p, Math.floor(p.maxHp * 0.1));
+                                                    log.push(`✨ **${p.name}** أحيا **${t.name}**!`);
+                                                    // 🔥🔥 منشن عند الإحياء 🔥🔥
+                                                    threadChannel.send(`✨ **${p.name}** قام بإحياء **${t.name}** <@${t.id}>!`).catch(()=>{});
+                                                    p.special_cooldown = 7;
+                                                }
                                             } else {
                                                 players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
                                                 log.push(`✨ **${p.name}** عالج الفريق!`);
@@ -798,16 +820,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     monster.targetFocusId = p.id;
                                     actionMsg = "🔥 تحول لعملاق!";
                                 } else if (potionId === 'potion_sacrifice') {
-                                    p.hp = 0; p.isDead = true; 
+                                    p.hp = 0; p.isDead = true; p.isPermDead = true; // 🔥🔥 تحلل فوري عند التضحية 🔥🔥
                                     players.forEach(ally => {
                                         if (ally.id !== p.id) {
                                             ally.isDead = false;
+                                            ally.isPermDead = false; // إعادة إحياء كاملة
+                                            ally.reviveCount = 0; // تصفير عداد الموت للآخرين (مكافأة التضحية)
                                             ally.hp = ally.maxHp; 
                                             ally.effects = [];
                                         }
                                     });
-                                    actionMsg = "💀 شرب جرعة التضحية ومات لينقذ الجميع!";
-                                    threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية ومات لينقذ الفريق!`).catch(()=>{});
+                                    actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
+                                    threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
                                 }
                                 log.push(`**${p.name}**: ${actionMsg}`);
                                 actedPlayers.push(p.id); p.skipCount = 0;
@@ -883,8 +907,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if(target.hp <= 0 && !target.isDead) { 
                             target.hp = 0; 
                             target.isDead = true; 
-                            log.push(`💀 **${target.name}** سقط!`);
-                            threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
+                            // 🔥🔥 التحقق مما إذا كان هذا هو الموت الثاني (تحلل) 🔥🔥
+                            if (target.reviveCount >= 1) {
+                                target.isPermDead = true;
+                                log.push(`💀 **${target.name}** سقط وتحللت جثته!`);
+                                threadChannel.send(`💀 **${target.name}** سقط وتحللت جثته (لا يمكن إحياؤه)!`).catch(()=>{});
+                            } else {
+                                log.push(`💀 **${target.name}** سقط!`);
+                                threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
+                            }
                         }
                     }
                 }
@@ -953,6 +984,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
+    // 🔥 تحديد نجم المعركة (MVP) 🔥
     let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
       
     let lootString = "";
@@ -972,6 +1004,19 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     await mainChannel.send({ content: activePlayers.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
     activeDungeonRequests.delete(hostId);
     
+    // 🔥🔥 منح تعزيز لنجم المعركة إذا تجاوز الطابق 10 🔥🔥
+    if (mvpPlayer && floor >= 10) {
+        const buffDuration = 15 * 60 * 1000; // 15 دقيقة
+        const expiresAt = Date.now() + buffDuration;
+        
+        // بوف مورا 15%
+        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
+        // بوف XP 15%
+        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15);
+
+        await mainChannel.send(`**✨ نجـم المعركـة (ضرر: ${mvpPlayer.totalDamage.toLocaleString()}):** <@${mvpPlayer.id}>\nحصل على تعزيز **15%** مورا واكس بي لـ **15د** ${EMOJI_BUFF}`).catch(()=>{});
+    }
+
     try {
         await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة ...**` });
         setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
