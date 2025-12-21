@@ -83,9 +83,6 @@ async function processMonsterTurn(battleState, sql) {
         }
     }
 
-    // إزالة قيمة الدرع عند انتهاء العداد (اختياري، يمكن تركه يتراكم)
-    // if (player.effects.shield === 0) player.effects.shield_value = 0;
-
     if (player.hp <= 0) {
         player.hp = 0;
         await core.endBattle(battleState, monsterId, sql, "win");
@@ -263,7 +260,7 @@ async function handlePvpTurn(i, client, sql) {
             // تفعيل الكولداون
             battleState.skillCooldowns[attackerId][skillId] = skill.cooldown || core.SKILL_COOLDOWN_TURNS;
 
-            // استدعاء دالة التأثير من core
+            // استدعاء دالة التأثير من core (التي تستخدم stat_type الجديد)
             actionLog = core.applySkillEffect(battleState, attackerId, skill);
             battleState.log.push(actionLog);
         }
