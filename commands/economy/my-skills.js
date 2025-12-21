@@ -14,7 +14,7 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
         .setThumbnail(targetUser.displayAvatarURL())
         .setImage("https://i.postimg.cc/nVT4tjm6/123.png");
 
-    // 🔥🔥 التعديل: عرض المعلومات الأساسية فقط في الصفحة الأولى 🔥🔥
+    // عرض المعلومات الأساسية فقط في الصفحة الأولى
     if (page === 0) {
         // --- قسم السلاح ---
         let weaponField = "لا يوجد سلاح مجهز.";
@@ -46,7 +46,6 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
     
     let skillsField = "";
     if (totalSkills > 0) {
-        // تحديد البداية والنهاية للصفحة الحالية
         const start = page * ITEMS_PER_PAGE;
         const end = start + ITEMS_PER_PAGE;
         const currentSkills = skillsList.slice(start, end);
@@ -114,6 +113,7 @@ module.exports = {
         // 1. جلب البيانات
         const userRace = getUserRace(targetMember, sql);
         const weaponData = getWeaponData(sql, targetMember);
+        // جلب المهارات التي مستواها أكبر من 0
         const userSkillsDB = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ? AND skillLevel > 0").all(targetUser.id, guild.id);
         
         // جلب الجرعات
@@ -133,7 +133,7 @@ module.exports = {
         // --- حساب القيمة وتجهيز قائمة المهارات ---
         let totalSpent = 0;
         let skillsList = [];
-        let raceSkillId = null; // لتخزين آيدي مهارة العرق لمنع التكرار
+        let raceSkillId = null;
 
         // أ) تكلفة السلاح
         if (userRace && weaponData) {
@@ -146,29 +146,44 @@ module.exports = {
             }
         }
 
-        // ب) مهارة العرق (إضافة أولية)
+        // ب) تحديد هوية مهارة العرق (للمقارنة لاحقاً)
         if (userRace) {
-            raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/ /g, '_')}_skill`;
-            const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
-            if (raceSkillConfig) {
-                skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1)\n✶ وصف المهارة: ${raceSkillConfig.description}`);
-            }
+            // استخدام trim و replace لضمان تطابق الآيدي
+            const cleanRaceName = userRace.raceName.toLowerCase().trim().replace(/\s+/g, '_');
+            raceSkillId = `race_${cleanRaceName}_skill`;
         }
 
-        // ج) المهارات المشتراة (مع منع تكرار مهارة العرق)
+        // ج) عرض المهارات الموجودة في الداتابيس (سواء عرق أو عامة)
+        let hasRaceSkillInDB = false;
+
         if (userSkillsDB.length > 0) {
             for (const dbSkill of userSkillsDB) {
-                // 🔥🔥 التعديل: تخطي المهارة إذا كانت هي نفسها مهارة العرق 🔥🔥
-                if (dbSkill.skillID === raceSkillId) continue; 
-
                 const skillConfig = skillsConfig.find(s => s.id === dbSkill.skillID);
+                
                 if (skillConfig) {
+                    // التحقق هل هذه هي مهارة العرق؟
+                    if (raceSkillId && dbSkill.skillID === raceSkillId) {
+                        hasRaceSkillInDB = true;
+                    }
+
+                    // إضافة المهارة للقائمة مع اللفل الحقيقي من الداتابيس
                     skillsList.push(`✶ ${skillConfig.emoji} ${skillConfig.name} : (Lv.${dbSkill.skillLevel})\n✶ وصف المهارة: ${skillConfig.description}`);
+                    
+                    // حساب تكلفة التطويرات لهذه المهارة
                     for (let i = 0; i < dbSkill.skillLevel; i++) {
                         let skillLevelPrice = skillConfig.base_price + (skillConfig.price_increment * i);
                         totalSpent += skillLevelPrice;
                     }
                 }
+            }
+        }
+
+        // د) إذا كان لديه عرق، ولكن المهارة غير مسجلة في الداتابيس (لم يشتريها/يطورها بعد)
+        // نعرضها كمستوى 1 افتراضي
+        if (userRace && raceSkillId && !hasRaceSkillInDB) {
+            const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
+            if (raceSkillConfig) {
+                skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1) [غير مفعلة]\n✶ وصف المهارة: ${raceSkillConfig.description}`);
             }
         }
 
