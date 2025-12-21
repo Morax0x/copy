@@ -14,32 +14,35 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
         .setThumbnail(targetUser.displayAvatarURL())
         .setImage("https://i.postimg.cc/nVT4tjm6/123.png");
 
-    // --- قسم السلاح ---
-    let weaponField = "لا يوجد سلاح مجهز.";
-    if (userRace && weaponData) {
-        weaponField =
-            `**✶ الـسـلاح:** ${weaponData.emoji} ${weaponData.name}\n` +
-            `**✶ مستوى السلاح:** \`Lv.${weaponData.currentLevel}\`\n` +
-            `**✶ ضـرر السلاح:** \`${weaponData.currentDamage}\` DMG`;
-    } else if (userRace && !weaponData) {
-        weaponField = `**✶ العرق:** **${userRace.raceName}** (بدون سلاح)`;
-    } else {
-        weaponField = "لم يتم اختيار عرق بعد.";
-    }
-    
-    embed.addFields({ name: "❖ العـتـاد القتالي", value: weaponField, inline: false });
+    // 🔥🔥 التعديل: عرض المعلومات الأساسية فقط في الصفحة الأولى 🔥🔥
+    if (page === 0) {
+        // --- قسم السلاح ---
+        let weaponField = "لا يوجد سلاح مجهز.";
+        if (userRace && weaponData) {
+            weaponField =
+                `**✶ الـسـلاح:** ${weaponData.emoji} ${weaponData.name}\n` +
+                `**✶ مستوى السلاح:** \`Lv.${weaponData.currentLevel}\`\n` +
+                `**✶ ضـرر السلاح:** \`${weaponData.currentDamage}\` DMG`;
+        } else if (userRace && !weaponData) {
+            weaponField = `**✶ العرق:** **${userRace.raceName}** (بدون سلاح)`;
+        } else {
+            weaponField = "لم يتم اختيار عرق بعد.";
+        }
+        
+        embed.addFields({ name: "❖ العـتـاد القتالي", value: weaponField, inline: false });
 
-    // --- قسم الجرعات ---
-    if (potionsList.length > 0) {
-        const potionsString = potionsList.map(p => `✬ ${p.name}: (${p.qty})`).join('\n');
-        embed.addFields({ name: "❖ حقـيبـة الجرعـات", value: potionsString, inline: false });
-    } else {
-        embed.addFields({ name: "❖ حقـيبـة الجرعـات", value: "لا توجد جرعات.", inline: false });
+        // --- قسم الجرعات ---
+        if (potionsList.length > 0) {
+            const potionsString = potionsList.map(p => `✬ ${p.name}: (${p.qty})`).join('\n');
+            embed.addFields({ name: "❖ حقـيبـة الجرعـات", value: potionsString, inline: false });
+        } else {
+            embed.addFields({ name: "❖ حقـيبـة الجرعـات", value: "لا توجد جرعات.", inline: false });
+        }
     }
 
     // --- قسم المهارات (مع التصفح) ---
     const totalSkills = skillsList.length;
-    const totalPages = Math.ceil(totalSkills / ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(totalSkills / ITEMS_PER_PAGE) || 1; 
     
     let skillsField = "";
     if (totalSkills > 0) {
@@ -113,7 +116,7 @@ module.exports = {
         const weaponData = getWeaponData(sql, targetMember);
         const userSkillsDB = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ? AND skillLevel > 0").all(targetUser.id, guild.id);
         
-        // جلب الجرعات (إذا كان لديك جدول للمخزون)
+        // جلب الجرعات
         let potionsList = [];
         try {
             const userInventory = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND quantity > 0").all(targetUser.id, guild.id);
@@ -125,13 +128,12 @@ module.exports = {
                     }
                 }
             }
-        } catch (e) {
-            // تجاهل الخطأ في حالة عدم وجود جدول الجرعات
-        }
+        } catch (e) {}
 
         // --- حساب القيمة وتجهيز قائمة المهارات ---
         let totalSpent = 0;
         let skillsList = [];
+        let raceSkillId = null; // لتخزين آيدي مهارة العرق لمنع التكرار
 
         // أ) تكلفة السلاح
         if (userRace && weaponData) {
@@ -144,18 +146,21 @@ module.exports = {
             }
         }
 
-        // ب) مهارة العرق
+        // ب) مهارة العرق (إضافة أولية)
         if (userRace) {
-            const raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/ /g, '_')}_skill`;
+            raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/ /g, '_')}_skill`;
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             if (raceSkillConfig) {
                 skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1)\n✶ وصف المهارة: ${raceSkillConfig.description}`);
             }
         }
 
-        // ج) المهارات المشتراة
+        // ج) المهارات المشتراة (مع منع تكرار مهارة العرق)
         if (userSkillsDB.length > 0) {
             for (const dbSkill of userSkillsDB) {
+                // 🔥🔥 التعديل: تخطي المهارة إذا كانت هي نفسها مهارة العرق 🔥🔥
+                if (dbSkill.skillID === raceSkillId) continue; 
+
                 const skillConfig = skillsConfig.find(s => s.id === dbSkill.skillID);
                 if (skillConfig) {
                     skillsList.push(`✶ ${skillConfig.emoji} ${skillConfig.name} : (Lv.${dbSkill.skillLevel})\n✶ وصف المهارة: ${skillConfig.description}`);
