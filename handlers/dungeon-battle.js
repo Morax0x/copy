@@ -298,7 +298,7 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🟢 دالة استخدام المهارات
+// 🟢 دالة استخدام المهارات (تعديل الكولداون: الكلاسات 5، العادي 3)
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -308,7 +308,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     if (player.effects) {
         player.effects.forEach(e => { if (e.type === 'atk_buff') atkMultiplier += e.val; });
     }
-    // الهجوم الفعال (مع البوفات) لاستخدامه في المهارات
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
     if (skill.id === 'skill_secret_owner') {
@@ -326,6 +325,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         return { type: 'owner_leave' };
     }
 
+    // --- مهارات الكلاسات (Classes) - كولداون 5 جولات ---
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -339,17 +339,23 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
              return { error: `انتظر ${player.special_cooldown} دور.` }; 
          }
 
+         // تحديد الكولداون (جميع الكلاسات 5 جولات)
          switch(classType) {
              case 'Leader': return { type: 'class_effect', effect: 'leader_buff', cooldown: 5 }; 
-             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 4 };
-             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:6) };
-             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 5 };
-             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 6 };
+             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 5 }; 
+             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:5) }; 
+             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 5 }; 
+             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 5 }; 
          }
          return;
     }
 
     const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
+
+    // دالة مساعدة لتعيين الكولداون (جميع المهارات العادية 3 جولات)
+    const setCD = (turns = 3) => {
+        if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
+    };
 
     // 🔥🔥🔥 التعامل مع المهارات الجديدة (Stat Type) 🔥🔥🔥
     switch (skill.stat_type) {
@@ -359,14 +365,16 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.totalDamage += skillDmg;
             monster.effects.push({ type: 'burn', val: Math.floor(effectiveAtk * 0.2), turns: 3 });
             log.push(`🐲 **${player.name}** أطلق ${skill.name} وأحرق الوحش! (${skillDmg} ضرر)`);
+            setCD(3);
             break;
         }
         case 'Cleanse_Buff_Shield': { // البشري
-            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff'); // إزالة الديبفات فقط
+            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff'); 
             const shieldVal = Math.floor(player.maxHp * (value / 100));
             player.shield += shieldVal;
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
             log.push(`⚔️ **${player.name}** استجمع قواه! (تطهير + درع ${shieldVal} + هجوم)`);
+            setCD(3);
             break;
         }
         case 'Scale_MissingHP_Heal': { // السيرافيم
@@ -378,32 +386,36 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.hp = Math.min(player.maxHp, player.hp + healVal);
             player.totalDamage += skillDmg;
             log.push(`⚖️ **${player.name}** عاقب الوحش وشفى نفسه! (${skillDmg} ضرر / +${healVal} HP)`);
+            setCD(3);
             break;
         }
         case 'Sacrifice_Crit': { // الشيطان
             const selfDmg = Math.floor(player.maxHp * 0.10);
-            skillDmg = Math.floor(effectiveAtk * (value / 100)) * mult; // ضرر كريتيكال ضخم
+            skillDmg = Math.floor(effectiveAtk * (value / 100)) * mult;
             applyDamageToPlayer(player, selfDmg);
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg;
             log.push(`👹 **${player.name}** ضحى بدمه (-${selfDmg}) لتوجيه ضربة مدمرة! (**${skillDmg}** ضرر)`);
+            setCD(3);
             break;
         }
         case 'Stun_Vulnerable': { // الإلف
             skillDmg = Math.floor(effectiveAtk * 1.2) * mult;
             monster.hp -= skillDmg;
-            monster.frozen = true; // شلل (Stun)
-            monster.effects.push({ type: 'weakness', val: 0.5, turns: 1 }); // هشاشة
+            monster.frozen = true; 
+            monster.effects.push({ type: 'weakness', val: 0.5, turns: 1 }); 
             player.totalDamage += skillDmg;
             log.push(`🍃 **${player.name}** شل حركة الوحش وجعل دفاعه هشاً! (${skillDmg} ضرر)`);
+            setCD(3);
             break;
         }
         case 'Confusion': { // إلف الظلام
             skillDmg = Math.floor(effectiveAtk * 1.2) * mult;
             monster.hp -= skillDmg;
-            monster.effects.push({ type: 'confusion', val: 0.5, turns: 2 }); // 50% يضرب نفسه
+            monster.effects.push({ type: 'confusion', val: 0.5, turns: 2 }); 
             player.totalDamage += skillDmg;
             log.push(`😵 **${player.name}** ألقى لعنة الجنون على الوحش! (${skillDmg} ضرر)`);
+            setCD(3);
             break;
         }
         case 'Lifesteal_Overheal': { // الفامباير
@@ -422,6 +434,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 player.hp += healVal;
                 log.push(`🍷 **${player.name}** امتص ${healVal} من الصحة!`);
             }
+            setCD(3);
             break;
         }
         case 'Chaos_RNG': { // الهجين
@@ -437,28 +450,30 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             else if (randomEffect === 'blind') monster.effects.push({ type: 'blind', val: 0.5, turns: 2 });
 
             log.push(`🌀 **${player.name}** أثار الفوضى بتأثير عشوائي (${randomEffect})!`);
+            setCD(3);
             break;
         }
         case 'Dmg_Evasion': { // الروح
             skillDmg = Math.floor(effectiveAtk * 1.3) * mult;
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg;
-            player.effects.push({ type: 'evasion', val: 1, turns: 1 }); // مراوغة 100%
+            player.effects.push({ type: 'evasion', val: 1, turns: 1 }); 
             log.push(`👻 **${player.name}** ضرب واختفى كالشبح! (مراوغة تامة)`);
+            setCD(3);
             break;
         }
         case 'Reflect_Tank': { // القزم
             const shieldVal = Math.floor(player.maxHp * 0.2);
             player.shield += shieldVal;
-            player.effects.push({ type: 'dmg_reduce', val: 0.6, turns: 2 }); // تقليل ضرر 60%
-            player.effects.push({ type: 'reflect', val: 0.4, turns: 2 }); // عكس 40%
+            player.effects.push({ type: 'dmg_reduce', val: 0.6, turns: 2 });
+            player.effects.push({ type: 'reflect', val: 0.4, turns: 2 }); 
             log.push(`🔨 **${player.name}** تحصن بالجبل! (دفاع عالٍ + عكس الضرر)`);
+            setCD(3);
             break;
         }
         case 'Execute_Heal': { // الغول
             skillDmg = Math.floor(effectiveAtk * 1.8) * mult;
             if (monster.hp - skillDmg <= 0) {
-                // إذا قتلت الوحش
                 monster.hp = 0;
                 player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * 0.25));
                 log.push(`🥩 **${player.name}** افترس الوحش واستعاد 25% صحة!`);
@@ -467,10 +482,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 log.push(`🧟 **${player.name}** نهش الوحش بضرر **${skillDmg}**!`);
             }
             player.totalDamage += skillDmg;
+            setCD(3);
             break;
         }
         
-        // --- المهارات العامة والقديمة (fallback) ---
+        // --- المهارات العامة (fallback) ---
         default: {
             switch (skill.id) {
                 case 'skill_rebound': 
@@ -478,6 +494,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      const reflectPercent = (value > 0 ? value / 100 : 0.5) * mult;
                      player.effects.push({ type: 'reflect', val: reflectPercent, turns: 1 });
                      log.push(`🌵 **${player.name}** جهز درع الأشواك (انعكاس)!`);
+                     setCD(3);
                      break;
                 }
                 case 'skill_healing':
@@ -490,6 +507,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         log.push(`❤️‍🩹 **${player.name}** استخدم ${skill.name} واستعاد **${healAmount}** HP.`);
                     }
                     player.hp = Math.min(player.maxHp, player.hp + healAmount);
+                    setCD(3);
                     break;
                 }
                 case 'skill_shielding': {
@@ -497,11 +515,13 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
                      player.shield = shieldAmount; 
                      log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
+                     setCD(3);
                      break;
                 }
                 case 'skill_buffing': {
                      player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
                      log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
+                     setCD(3);
                      break;
                 }
                 case 'skill_poison': {
@@ -510,6 +530,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      monster.hp -= skillDmg;
                      player.totalDamage += skillDmg; 
                      log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
+                     setCD(3);
                      break;
                 }
                 case 'skill_gamble': {
@@ -528,6 +549,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         monster.hp -= skillDmg;
                         player.totalDamage += skillDmg; 
                      }
+                     setCD(3);
                      break;
                 }
                 case 'skill_weaken': {
@@ -536,11 +558,13 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      monster.hp -= skillDmg;
                      player.totalDamage += skillDmg; 
                      log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
+                     setCD(3);
                      break;
                 }
                 case 'skill_dispel': {
                     monster.effects = []; 
                     log.push(`💨 **${player.name}** بدد السحر!`);
+                    setCD(3);
                     break;
                 }
                 default: {
@@ -549,6 +573,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                     monster.hp -= skillDmg;
                     player.totalDamage += skillDmg; 
                     log.push(`💥 **${player.name}** استخدم ${skill.name} بـ **${skillDmg}** ضرر!`);
+                    setCD(3);
                     break;
                 }
             }
@@ -1101,7 +1126,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
-    
+      
     let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
       
     let lootString = "";
@@ -1120,12 +1145,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     await mainChannel.send({ content: activePlayers.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
     activeDungeonRequests.delete(hostId);
-    
+      
     if (floor >= 10) {
         if (status === 'lose') {
             const debuffDuration = 15 * 60 * 1000;
             const expiresAt = Date.now() + debuffDuration;
-            
+              
             allParticipants.forEach(p => {
                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'mora', -0.15);
                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'xp', -0.15);
@@ -1135,7 +1160,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         } else if (mvpPlayer) {
             const buffDuration = 15 * 60 * 1000; 
             const expiresAt = Date.now() + buffDuration;
-            
+              
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15);
 
