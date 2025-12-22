@@ -60,6 +60,10 @@ try {
 // ==================================================================
 // 3. تحديثات الجداول
 // ==================================================================
+// 🔥 إضافة أعمدة نظام البومب الجديد 🔥
+try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN nextBumpTime INTEGER DEFAULT 0").run(); } catch (e) {}
+try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN lastBumperID TEXT").run(); } catch (e) {}
+
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastFish INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN rodLevel INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER DEFAULT 1").run(); } catch (e) {}
@@ -694,6 +698,34 @@ client.on(Events.ClientReady, async () => {
     updateTimerChannels(client); 
 
     setInterval(() => updateRainbowRoles(client), 180000); 
+
+    // 🔥🔥🔥 نظام فحص البومب الجديد (Interval بدلاً من Timeout) 🔥🔥🔥
+    setInterval(() => {
+        if (!sql.open) return;
+        const now = Date.now();
+        const guildsToNotify = sql.prepare("SELECT guild, bumpChannelID, bumpNotifyRoleID, lastBumperID FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= ?").all(now);
+
+        for (const row of guildsToNotify) {
+            try {
+                const guild = client.guilds.cache.get(row.guild);
+                if (guild && row.bumpChannelID) {
+                    const channel = guild.channels.cache.get(row.bumpChannelID);
+                    if (channel) {
+                        const roleMention = row.bumpNotifyRoleID ? `<@&${row.bumpNotifyRoleID}>` : "";
+                        const userMention = row.lastBumperID ? `<@${row.lastBumperID}>` : " "; 
+
+                        channel.send({
+                            content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
+                            files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
+                        }).catch(() => {});
+                    }
+                }
+            } catch (err) { console.error("[Bump Notify Error]", err); }
+            
+            // تصفير الوقت لمنع التكرار
+            sql.prepare("UPDATE settings SET nextBumpTime = 0 WHERE guild = ?").run(row.guild);
+        }
+    }, 60 * 1000); // يفحص كل دقيقة
 
     setInterval(() => {
         if (!sql.open) return;
