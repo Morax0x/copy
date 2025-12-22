@@ -75,8 +75,23 @@ module.exports = {
             console.error("[Tag Check Error]", err);
         }
 
-        // 1. كشف البومب
+        // ============================================================
+        // 1. كشف البومب (نظام التنبيه الجديد) 🔥
+        // ============================================================
         if (message.author.id === DISBOARD_BOT_ID) {
+            // جلب إعدادات القناة والرتبة
+            let settingsData;
+            try {
+                settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id);
+            } catch (e) {
+                settingsData = sql.prepare("SELECT bumpChannelID FROM settings WHERE guild = ?").get(message.guild.id);
+            }
+            
+            // التحقق مما إذا كان البومب في القناة المخصصة (إذا تم تحديدها)
+            if (settingsData && settingsData.bumpChannelID && message.channel.id !== settingsData.bumpChannelID) {
+                return;
+            }
+
             let bumperID = null;
             if (message.interaction && message.interaction.commandName === 'bump') {
                 bumperID = message.interaction.user.id;
@@ -87,14 +102,37 @@ module.exports = {
                     if (match && match[1]) bumperID = match[1];
                 }
             }
+
             if (bumperID) {
                 await recordBump(client, message.guild.id, bumperID);
-                await message.react('👊').catch(() => {});
+                await message.react('<a:MugiStronk:1438795606872166462>').catch(() => {});
+
+                // حساب وقت التنبيه القادم (بعد ساعتين) لعمل العداد
+                const nextBumpTime = Math.floor((Date.now() + 7200000) / 1000);
+
+                // --- 1. الرد الفوري (رسالة النجاح والعداد) ---
+                message.channel.send({
+                    content: `بُورك النشــر، وسُمــع الــنداء \nعــدّاد المــجد بدأ مــن جــديــد <:2cenema:1428340793676009502>\n\n- النشر التالي بعد: <t:${nextBumpTime}:R>`,
+                    files: ["https://media.discordapp.net/attachments/1394261509537927258/1407752253141549147/0.gif?ex=68a73ef3&is=68a5ed73&hm=5a654f595b5a64cdbfa7caa709cd78f22c8ec10b1a75ccf2fd81556a4f4d5bdc&="]
+                }).catch(() => {});
+
+                // --- 2. المؤقت للتنبيه بعد ساعتين ---
+                if (settingsData && settingsData.bumpNotifyRoleID) {
+                    setTimeout(() => {
+                        const roleMention = `<@&${settingsData.bumpNotifyRoleID}>`;
+                        const userMention = bumperID ? `<@${bumperID}>` : " "; // منشن الشخص إذا وجد
+
+                        message.channel.send({
+                            content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
+                            files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
+                        }).catch(() => {});
+                    }, 2 * 60 * 60 * 1000); // 7200000 ms (2 hours)
+                }
             }
             return;
         }
 
-        // جلب الإعدادات مرة واحدة
+        // جلب الإعدادات مرة واحدة لباقي الميزات
         let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
