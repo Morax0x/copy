@@ -599,7 +599,7 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🟢 SKILL USAGE FUNCTION (Updated Cooldowns: Class=6, Race=5, Std=3)
+// 🟢 SKILL USAGE FUNCTION (Updated Cooldowns & Strict Checks)
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -626,7 +626,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         return { type: 'owner_leave' };
     }
 
-    // --- Class Skills (Cooldown: 6 Turns) ---
+    // --- Class Skills Logic ---
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -637,7 +637,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     if (classType) {
          if (player.special_cooldown > 0 && player.id !== OWNER_ID) {
-             return { error: `انتظر ${player.special_cooldown} دور.` }; 
+             return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
          }
 
          // Set cooldown to 6 for all class skills
@@ -653,12 +653,19 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
+    // 🔥🔥🔥 FIX: Strict Cooldown Check for Standard/Race Skills 🔥🔥🔥
+    if (!classType && skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
+        if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
+            return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
+        }
+    }
+
     // Helper to set cooldown (Race=5, Std=3)
     const setCD = (turns = 3) => {
         if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
     };
 
-    // Race Skill Check
+    // Race Skill Check for cooldown setting
     if (skill.id.startsWith('race_')) {
         setCD(5); 
     } else {
@@ -1009,6 +1016,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
+            // 🔥🔥 Anti-Spam Set: Tracks users currently processing an action 🔥🔥
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
@@ -1026,7 +1034,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 collector.on('collect', async i => {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
-                    if (processingUsers.has(i.user.id)) return;
+                    
+                    // 🔥🔥 Spam Protection Check 🔥🔥
+                    if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
@@ -1044,6 +1054,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
                     
+                    // 🔥 Lock the user
                     processingUsers.add(i.user.id);
 
                     try {
@@ -1066,13 +1077,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     processingUsers.delete(i.user.id); return; 
                                 }
 
-                                actedPlayers.push(p.id);
                                 let skillNameUsed = "مهارة";
 
                                 if (skillId === 'class_special_skill' || skillId.startsWith('class_')) {
                                     const res = handleSkillUsage(p, { id: skillId }, monster, log, threadChannel, players);
                                     if (res && res.error) {
-                                        await selection.editReply({ content: `⏳ ${res.error}`, components: [] }).catch(()=>{});
+                                        await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
                                         processingUsers.delete(i.user.id); return;
                                     }
                                     if (res && res.type === 'class_effect') {
@@ -1140,11 +1150,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             const sConf = skillsConfig.find(s=>s.id === skillId);
                                             if(sConf) skillObj = { ...sConf, effectValue: sConf.base_value * 2 };
                                         }
-                                        handleSkillUsage(p, skillObj, monster, log, threadChannel);
+                                        
+                                        // 🔥🔥 Cooldown Check Logic inside handleSkillUsage returns object if failed
+                                        const res = handleSkillUsage(p, skillObj, monster, log, threadChannel);
+                                        if (res && res.error) {
+                                            await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
+                                            processingUsers.delete(i.user.id); return;
+                                        }
+
                                         skillNameUsed = skillObj.name;
                                         if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID) p.skillCooldowns[skillId] = skillObj.cooldown || 3;
                                     }
                                 }
+                                actedPlayers.push(p.id); // 🔥 Mark as acted only on success
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
