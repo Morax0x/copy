@@ -60,7 +60,20 @@ async function checkLoanPayments(client, sql) {
             }
 
             // =================================================
-            // 2. تسييل أصول السوق (Stocks)
+            // 2. الخصم من البنك (Bank) - (تمت الإضافة هنا)
+            // =================================================
+            if (remainingToPay > 0 && userData.bank > 0) {
+                const takeBank = Math.min(userData.bank, remainingToPay);
+                userData.bank -= takeBank;
+                remainingToPay -= takeBank;
+
+                if (takeBank > 0) {
+                     deductionDetails += `💳 **خصم بنكي:** تم سحب **${takeBank.toLocaleString()}** ${EMOJI_MORA}\n`;
+                }
+            }
+
+            // =================================================
+            // 3. تسييل أصول السوق (Stocks)
             // =================================================
             if (remainingToPay > 0) {
                  const portfolio = stmtGetPortfolio.all(loan.userID, loan.guildID);
@@ -87,7 +100,7 @@ async function checkLoanPayments(client, sql) {
                      // خصم المبلغ وحساب الفائض
                      if (value > remainingToPay) {
                          const change = value - remainingToPay;
-                         userData.mora += change; // إرجاع الباقي للمستخدم
+                         userData.mora += change; // إرجاع الباقي للمستخدم كاش
                          remainingToPay = 0;
                      } else {
                          remainingToPay -= value;
@@ -98,7 +111,7 @@ async function checkLoanPayments(client, sql) {
             }
 
             // =================================================
-            // 3. بيع حيوانات المزرعة (Farm)
+            // 4. بيع حيوانات المزرعة (Farm)
             // =================================================
             if (remainingToPay > 0) {
                  const farm = stmtGetFarm.all(loan.userID, loan.guildID);
@@ -128,7 +141,7 @@ async function checkLoanPayments(client, sql) {
             }
 
             // =================================================
-            // 4. عقوبة الخبرة (XP Penalty) - الملاذ الأخير
+            // 5. عقوبة الخبرة (XP Penalty) - الملاذ الأخير
             // =================================================
             if (remainingToPay > 0) {
                 // العقوبة: ضعف المبلغ المتبقي يخصم من الـ XP
