@@ -10,7 +10,7 @@ const MOVES = [ROCK, PAPER, SCISSORS];
 
 const MIN_BET = 20;
 const MAX_BET_SOLO = 100; 
-const MAX_LOAN_BET = 500; // 🔒 الحد الأقصى للمقترضين في الجماعي
+const MAX_LOAN_BET = 500; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; 
 
 function formatTime(ms) {
@@ -83,7 +83,7 @@ module.exports = {
         if (!client.activeGames) client.activeGames = new Set();
         if (!client.activePlayers) client.activePlayers = new Set();
 
-        // 🛑🛑 1. الحماية من التكرار (أهم نقطة) 🛑🛑
+        // 🛑🛑 1. الحماية من التكرار 🛑🛑
         if (client.activePlayers.has(user.id)) {
             if (isSlash) return interaction.editReply({ content: "🚫 لديك لعبة أو طلب معلق حالياً! أكمله أولاً." });
             return; 
@@ -93,7 +93,7 @@ module.exports = {
         let userData = client.getLevel.get(user.id, guild.id);
         if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
-        // 2. التحقق من الكولداون
+        // 2. التحقق من الكولداون (قبل الحجز)
         const now = Date.now();
         if (user.id !== OWNER_ID) {
             const timeLeft = (userData.lastRPS || 0) + COOLDOWN_MS - now;
@@ -102,16 +102,19 @@ module.exports = {
             }
         }
 
+        // 🔥🔥🔥 الحجز الفوري (الحل للسبام) 🔥🔥🔥
+        client.activePlayers.add(user.id);
+
         // --- منطق المراهنة التلقائية ---
         if (!betInput) {
             let proposedBet = 100;
             const userBalance = userData.mora;
 
-            if (userBalance < MIN_BET) return reply({ content: `❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`, ephemeral: true });
+            if (userBalance < MIN_BET) {
+                client.activePlayers.delete(user.id); // 🔓 فك الحجز عند الفشل
+                return reply({ content: `❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`, ephemeral: true });
+            }
             if (userBalance < 100) proposedBet = userBalance;
-
-            // 🔒 حجز اللاعب فوراً لمنع التكرار
-            client.activePlayers.add(user.id);
 
             const autoBetEmbed = new EmbedBuilder()
                 .setColor(Colors.Blue)
@@ -128,7 +131,7 @@ module.exports = {
 
             const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
             
-            // حجز القناة أيضاً (اختياري)
+            // حجز القناة
             client.activeGames.add(channel.id);
 
             const filter = i => i.user.id === user.id && (i.customId === 'rps_auto_confirm' || i.customId === 'rps_auto_cancel');
@@ -163,8 +166,7 @@ module.exports = {
                 return;
             }
         } else {
-            // إذا حدد مبلغ، نحجزه ونبدأ
-            client.activePlayers.add(user.id);
+            // اللاعب محجوز بالفعل في الأعلى، نبدأ اللعبة مباشرة
             return startGame(channel, user, member, opponentInput, betInput, client, guild, sql, isSlash ? interaction : null);
         }
     }
@@ -181,7 +183,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
     }
     
     let userData = client.getLevel.get(user.id, guild.id);
-    // (الفحص المزدوج للتأكد من الكاش)
     if (!userData || userData.mora < bet) {
         client.activePlayers.delete(user.id); // تحرير
         const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData ? userData.mora : 0})`;
@@ -311,8 +312,7 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
         }
 
         client.activeGames.add(channel.id);
-        // user is already in activePlayers
-
+        
         userData.mora -= bet;
         if (user.id !== OWNER_ID) userData.lastRPS = Date.now();
         client.setLevel.run(userData);
@@ -389,7 +389,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
     });
 
     collector.on('end', async (collected, reason) => {
-        // 🔥 تحرير اللاعبين والقناة عند انتهاء اللعبة
+        // 🔥 تحرير اللاعبين والقناة
         client.activeGames.delete(message.channel.id);
         client.activePlayers.delete(player1.id);
         if (player2) client.activePlayers.delete(player2.id);
@@ -405,6 +405,9 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
             } else {
                 let p1Data = client.getLevel.get(player1.id, guild.id);
                 p1Data.mora += bet;
+                
+                // في حالة إلغاء اللعبة الفردية لانتهاء الوقت، نلغي الكولداون أيضاً
+                p1Data.lastRPS = 0; 
                 client.setLevel.run(p1Data);
             }
             return message.edit({ content: "⏰ انتهى الوقت! تم إلغاء اللعبة وإعادة المورا.", embeds: [], components: [] }).catch(() => {});
@@ -429,6 +432,11 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
         if (result === 0) {
             let p1Data = client.getLevel.get(player1.id, guild.id);
             p1Data.mora += bet;
+
+            // 🔥 تصفير الكولداون عند التعادل ضد البوت 🔥
+            if (!isPvP) {
+                p1Data.lastRPS = 0; 
+            }
             client.setLevel.run(p1Data);
             
             if (isPvP) {
@@ -441,7 +449,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                 .setDescription(
                     `✶ قـام ${player1} بـ اختيـار ${p1Move}\n` +
                     `✶ قـام ${p2Name} بـ اختيـار ${p2Move}\n\n` +
-                    `تم استرجاع المورا.`
+                    `تم استرجاع المورا ${!isPvP ? "وإلغاء الكولداون" : ""}.`
                 );
         
         } else if (result === 1) {
