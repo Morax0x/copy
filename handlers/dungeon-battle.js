@@ -91,7 +91,6 @@ const MONSTER_SKILLS = {
         emoji: "🌸",
         chance: 0.25,
         execute: (monster, players, log) => {
-            // ذكاء خاص: إذا الصحة منخفضة تزيد فرصة استخدام المهارة للشفاء
             let totalDmg = 0;
             players.forEach(p => {
                 if (!p.isDead) {
@@ -109,7 +108,7 @@ const MONSTER_SKILLS = {
         emoji: "☄️",
         chance: 0.20,
         execute: (monster, players, log) => {
-            const target = getSmartTarget(players); // استهداف ذكي
+            const target = getSmartTarget(players);
             if (target) {
                 applyDamageToPlayer(target, Math.floor(monster.atk * 2.5));
                 target.effects.push({ type: 'weakness', val: 0.5, turns: 2 });
@@ -1207,17 +1206,36 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
-                                let atkMultiplier = 1.0;
-                                p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                                const currentAtk = Math.floor(p.atk * atkMultiplier);
-                                
-                                const baseCrit = p.critRate || 0.2;
-                                const isCrit = Math.random() < baseCrit;
-                                
-                                let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
-                                if (isCrit) dmg = Math.floor(dmg * 1.5);
-                                monster.hp -= dmg; p.totalDamage += dmg; 
-                                log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
+                                // 🔥 إصلاح الغلتش: التحقق من العمى والارتباك قبل الهجوم
+                                let canAttack = true;
+
+                                // 1. Confusion Check
+                                const confusion = p.effects.find(e => e.type === 'confusion');
+                                if (confusion && Math.random() < confusion.val) {
+                                    canAttack = false;
+                                    const selfDmg = Math.floor(p.maxHp * 0.15); 
+                                    applyDamageToPlayer(p, selfDmg);
+                                    log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
+                                } 
+                                // 2. Blind Check
+                                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
+                                    canAttack = false;
+                                    log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
+                                }
+
+                                if (canAttack) {
+                                    let atkMultiplier = 1.0;
+                                    p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
+                                    const currentAtk = Math.floor(p.atk * atkMultiplier);
+                                    
+                                    const baseCrit = p.critRate || 0.2;
+                                    const isCrit = Math.random() < baseCrit;
+                                    
+                                    let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
+                                    if (isCrit) dmg = Math.floor(dmg * 1.5);
+                                    monster.hp -= dmg; p.totalDamage += dmg; 
+                                    log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
+                                }
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
