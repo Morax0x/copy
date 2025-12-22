@@ -45,14 +45,53 @@ const LOSE_IMAGES = [
     'https://i.postimg.cc/8PyPZRqt/download.jpg'
 ];
 
-// --- 👹 Lore-Accurate Monster Skills Database ---
+// --- 🧠 دوال الذكاء الاصطناعي (Smart AI Helpers) ---
+function getSmartTarget(players) {
+    const alive = players.filter(p => !p.isDead);
+    if (alive.length === 0) return null;
+
+    // 1. الأولوية للكاهن (Priest) لتعطيل الإحياء
+    const priest = alive.find(p => p.class === 'Priest');
+    if (priest && Math.random() < 0.7) return priest; // 70% فرصة لاستهداف الكاهن
+
+    // 2. الأولوية للأضعف (Kill Confirm)
+    const lowestHp = alive.sort((a, b) => a.hp - b.hp)[0];
+    if (lowestHp.hp < lowestHp.maxHp * 0.3 && Math.random() < 0.8) return lowestHp; // 80% فرصة لقتل الضعيف
+
+    // 3. عشوائي
+    return alive[Math.floor(Math.random() * alive.length)];
+}
+
+// --- ⚔️ مهارات الوحوش العامة (للمينيون والنخبة) ---
+const GENERIC_MONSTER_SKILLS = [
+    { name: "ضربة قاصمة", emoji: "🔨", chance: 0.3, execute: (m, p, l) => { 
+        const target = getSmartTarget(p); // استخدام الاستهداف الذكي
+        if(target){ applyDamageToPlayer(target, Math.floor(m.atk * 1.5)); l.push(`🔨 **${m.name}** رصد نقطة ضعف **${target.name}** وسدد ضربة قاصمة!`); }
+    }},
+    { name: "عضة سامة", emoji: "🤮", chance: 0.3, execute: (m, p, l) => { 
+        const target = p.filter(pl=>!pl.isDead)[Math.floor(Math.random()*p.filter(pl=>!pl.isDead).length)];
+        if(target){ target.effects.push({type:'poison', val: Math.floor(m.atk*0.2), turns:3}); l.push(`🤮 **${m.name}** نفث سماً على **${target.name}**!`); }
+    }},
+    { name: "صرخة مرعبة", emoji: "🗣️", chance: 0.2, execute: (m, p, l) => { 
+        p.forEach(pl=>{if(!pl.isDead && Math.random()<0.5) pl.effects.push({type:'weakness',val:0.3,turns:2})}); l.push(`🗣️ **${m.name}** أطلق صرخة أضعفت عزيمة البعض!`);
+    }},
+    { name: "هجوم متوحش", emoji: "🐾", chance: 0.3, execute: (m, p, l) => { 
+        p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*0.8))}); l.push(`🐾 **${m.name}** هاجم الجميع بوحشية!`);
+    }},
+    { name: "تصلب", emoji: "🛡️", chance: 0.2, execute: (m, p, l) => { 
+        m.hp += Math.floor(m.maxHp * 0.05); l.push(`🛡️ **${m.name}** زاد دفاعه واستعاد قليلاً من الصحة!`);
+    }}
+];
+
+// --- 👹 قاعدة بيانات مهارات الزعماء والحراس (Bosses & Guardians) ---
 const MONSTER_SKILLS = {
-    // --- Elden Ring Bosses ---
+    // === Elden Ring ===
     "مالينيا، نصل ميكيلا": {
-        name: "رقصة الموت (Dance of Death)", // 🔥 تم التعديل هنا
+        name: "رقصة الموت (Dance of Death)",
         emoji: "🌸",
         chance: 0.25,
         execute: (monster, players, log) => {
+            // ذكاء خاص: إذا الصحة منخفضة تزيد فرصة استخدام المهارة للشفاء
             let totalDmg = 0;
             players.forEach(p => {
                 if (!p.isDead) {
@@ -62,36 +101,29 @@ const MONSTER_SKILLS = {
                     monster.hp = Math.min(monster.maxHp, monster.hp + Math.floor(actualDmg * 0.5));
                 }
             });
-            log.push(`🌸 **مالينيا** حلقت في الهواء ونفذت **رقصة الموت**! (ضرر جماعي + شفاء ذاتي)`); // 🔥 تم التعديل هنا
+            log.push(`🌸 **مالينيا** حلقت ونفذت **رقصة الموت**! (امتصاص صحة الفريق)`);
         }
     },
     "الجنرال رادان": {
-        name: "نجمة القهر (Starscourge Meteor)",
+        name: "نجمة القهر",
         emoji: "☄️",
         chance: 0.20,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead)[Math.floor(Math.random() * players.filter(p => !p.isDead).length)];
+            const target = getSmartTarget(players); // استهداف ذكي
             if (target) {
-                const dmg = Math.floor(monster.atk * 2.5);
-                applyDamageToPlayer(target, dmg);
+                applyDamageToPlayer(target, Math.floor(monster.atk * 2.5));
                 target.effects.push({ type: 'weakness', val: 0.5, turns: 2 });
-                log.push(`☄️ **رادان** تحول إلى نيزك وسحق **${target.name}**! (${dmg} ضرر + كسر دفاع)`);
+                log.push(`☄️ **رادان** سحق **${target.name}** بقوة النجوم!`);
             }
         }
     },
     "ماليكيث، النصل الأسود": {
-        name: "الموت المقدر (Destined Death)",
+        name: "الموت المقدر",
         emoji: "🗡️",
         chance: 0.30,
         execute: (monster, players, log) => {
-            players.forEach(p => {
-                if (!p.isDead) {
-                    const hpCut = Math.floor(p.hp * 0.20);
-                    p.hp -= hpCut;
-                    p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.2), turns: 3 });
-                }
-            });
-            log.push(`🗡️ **ماليكيث** أطلق العنان للموت المقدر! (خسارة HP جماعية + احتراق)`);
+            players.forEach(p => { if (!p.isDead) { p.hp -= Math.floor(p.hp * 0.20); p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.2), turns: 3 }); } });
+            log.push(`🗡️ **ماليكيث** أطلق العنان للموت المقدر! (HP Cut + Burn)`);
         }
     },
     "غودفري، الإلدن لورد": {
@@ -99,38 +131,37 @@ const MONSTER_SKILLS = {
         emoji: "🌋",
         chance: 0.25,
         execute: (monster, players, log) => {
-            players.forEach(p => {
-                if (!p.isDead) {
-                    const dmg = Math.floor(monster.atk * 0.8);
-                    applyDamageToPlayer(p, dmg);
-                    if (Math.random() < 0.5) p.skipCount = (p.skipCount || 0) + 1;
-                }
-            });
-            log.push(`🌋 **غودفري** ضرب الأرض بقوة ساحقة! (ضرر جماعي + فرصة إسقاط)`);
+            players.forEach(p => { if (!p.isDead) { applyDamageToPlayer(p, Math.floor(monster.atk * 0.9)); if (Math.random() < 0.5) p.skipCount = (p.skipCount || 0) + 1; } });
+            log.push(`🌋 **غودفري** مزق الأرض! (ضرر + إسقاط)`);
         }
     },
-    
-    // --- Souls / Sekiro ---
+    "الساحرة راني": {
+        name: "قمر الظلام البارد",
+        emoji: "🌕",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if(!p.isDead) { applyDamageToPlayer(p, monster.atk); p.effects.push({type:'weakness', val:0.3, turns:2}); } });
+            log.push(`🌕 **راني** أطلقت سحر القمر المظلم! (تجميد/ضعف)`);
+        }
+    },
+
+    // === Dark Souls / Bloodborne / Sekiro ===
     "إيشين قديس السيف": {
         name: "تقنية البرق",
         emoji: "⚡",
         chance: 0.30,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead)[0];
-            if(target) {
-                const dmg = Math.floor(monster.atk * 2.0);
-                applyDamageToPlayer(target, dmg);
-                log.push(`⚡ **إيشين** جمع البرق برمحه وصعق **${target.name}**! (${dmg} ضرر)`);
-            }
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 2.2)); log.push(`⚡ **إيشين** صعق **${target.name}** بالبرق!`); }
         }
     },
     "النامليس كينج": {
-        name: "عاصفة البرق",
+        name: "عاصفة الرعد",
         emoji: "🌩️",
         chance: 0.25,
         execute: (monster, players, log) => {
-            players.forEach(p => { if(!p.isDead) applyDamageToPlayer(p, monster.atk); });
-            log.push(`🌩️ **الملك المجهول** استدعى عاصفة رعدية على الجميع!`);
+            players.forEach(p => { if(!p.isDead) applyDamageToPlayer(p, Math.floor(monster.atk * 1.1)); });
+            log.push(`🌩️ **الملك المجهول** استدعى العاصفة!`);
         }
     },
     "أرتورياس، سائر الهاوية": {
@@ -138,66 +169,105 @@ const MONSTER_SKILLS = {
         emoji: "🤸",
         chance: 0.30,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead)[Math.floor(Math.random() * players.filter(p => !p.isDead).length)];
-            if(target) {
-                const dmg = Math.floor(monster.atk * 1.8);
-                applyDamageToPlayer(target, dmg);
-                monster.atk = Math.floor(monster.atk * 1.1);
-                log.push(`🌑 **أرتورياس** سحق **${target.name}** وازداد غضباً! (ATK UP)`);
-            }
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.8)); monster.atk = Math.floor(monster.atk * 1.1); log.push(`🌑 **أرتورياس** سحق **${target.name}** وازداد غضباً!`); }
+        }
+    },
+    "سول أوف سيندر": {
+        name: "كومبو السيف الملتوي",
+        emoji: "🔥",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); target.effects.push({type:'burn', val: Math.floor(monster.atk*0.3), turns:2}); log.push(`🔥 **روح الرماد** أحرق **${target.name}**!`); }
+        }
+    },
+    "مانوس أبو الهاوية": {
+        name: "وابل الظلام (Dark Bead)",
+        emoji: "⚫",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if (!p.isDead) { applyDamageToPlayer(p, Math.floor(monster.atk * 1.6)); p.effects.push({ type: 'blind', val: 0.5, turns: 2 }); } });
+            log.push(`⚫ **مانوس** أطلق سحر **وابل الظلام**! (ضرر + عمى)`);
         }
     },
 
-    // --- Final Fantasy ---
+    // === Final Fantasy ===
     "سيفيروث": {
         name: "سوبر نوفا",
         emoji: "🌌",
         chance: 0.15,
         execute: (monster, players, log) => {
-            players.forEach(p => {
-                if (!p.isDead) {
-                    const dmg = Math.floor(p.hp * 0.5);
-                    applyDamageToPlayer(p, dmg);
-                    p.effects.push({ type: 'confusion', val: 0.5, turns: 2 });
-                }
-            });
-            log.push(`🌌 **سيفيروث** دمر النظام الشمسي بـ **سوبر نوفا**! (HP -50% + ارتباك)`);
+            players.forEach(p => { if (!p.isDead) { const dmg = Math.floor(p.hp * 0.5); applyDamageToPlayer(p, dmg); p.effects.push({ type: 'confusion', val: 0.5, turns: 2 }); } });
+            log.push(`🌌 **سيفيروث** دمر النظام الشمسي بـ **سوبر نوفا**! (HP -50%)`);
         }
     },
 
-    // --- DMC ---
+    // === DMC ===
     "فيرجل، العاصفة المقتربة": {
         name: "Judgment Cut End",
         emoji: "⚔️",
         chance: 0.20,
         execute: (monster, players, log) => {
-            players.forEach(p => { if(!p.isDead) applyDamageToPlayer(p, Math.floor(monster.atk * 1.2)); });
-            log.push(`⚔️ **فيرجل** قطع الزمان والمكان! (Judgment Cut End)`);
+            players.forEach(p => { if(!p.isDead) applyDamageToPlayer(p, Math.floor(monster.atk * 1.3)); });
+            log.push(`⚔️ **فيرجل** قطع الزمان والمكان!`);
         }
     },
     "دانتي صائد الشياطين": {
-        name: "زناد الشيطان",
+        name: "Devil Trigger",
         emoji: "😈",
         chance: 0.20,
         execute: (monster, players, log) => {
-            monster.hp = Math.min(monster.maxHp, monster.hp + Math.floor(monster.maxHp * 0.1));
-            monster.atk = Math.floor(monster.atk * 1.3);
+            monster.hp = Math.min(monster.maxHp, monster.hp + Math.floor(monster.maxHp * 0.15));
+            monster.atk = Math.floor(monster.atk * 1.25);
             log.push(`😈 **دانتي** فعل **Devil Trigger**! (شفاء + زيادة هجوم)`);
         }
     },
+    "نيمسيس": {
+        name: "قاذف الصواريخ",
+        emoji: "🚀",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 2.0)); log.push(`🚀 **نيمسيس** أطلق صاروخاً على **${target.name}**!`); }
+        }
+    },
+    "ويسكر المتحول": {
+        name: "انتقال فوري",
+        emoji: "🕶️",
+        chance: 0.30,
+        execute: (monster, players, log) => {
+            const target = players.filter(p => !p.isDead).sort((a,b) => b.atk - a.atk)[0]; // استهداف الأقوى هجوماً (DPS)
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); target.skipCount = (target.skipCount||0)+1; log.push(`🕶️ **ويسكر** باغث **${target.name}** بسرعة خارقة!`); }
+        }
+    },
+    "بيراميد هيد": {
+        name: "حكم الإعدام",
+        emoji: "🔪",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 2.0)); target.effects.push({type:'burn', val: Math.floor(monster.atk*0.2), turns:3}); log.push(`🔪 **بيراميد هيد** شق **${target.name}** بسكينه العظيم! (نزيف)`); }
+        }
+    },
 
-    // --- WoW ---
+    // === WoW / Diablo ===
     "آرثاس، الليتش كينج": {
         name: "غضب فروستمورن",
         emoji: "❄️",
         chance: 0.25,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead)[0];
-            if(target) {
-                applyDamageToPlayer(target, Math.floor(monster.atk * 1.5));
-                target.effects.push({ type: 'weakness', val: 0.5, turns: 3 });
-                log.push(`❄️ **آرثاس** جمد روح **${target.name}** بالسيف الملعون!`);
-            }
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); target.effects.push({ type: 'weakness', val: 0.5, turns: 3 }); log.push(`❄️ **آرثاس** جمد روح **${target.name}**!`); }
+        }
+    },
+    "إليدان ستورمريج": {
+        name: "أشعة العين (Eye Beam)",
+        emoji: "🟢",
+        chance: 0.25,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if(!p.isDead) applyDamageToPlayer(p, Math.floor(monster.atk * 1.2)); });
+            log.push(`🟢 **إليدان** أحرق الجميع بأشعة الفيل!`);
         }
     },
     "ديث وينج المدمر": {
@@ -205,24 +275,54 @@ const MONSTER_SKILLS = {
         emoji: "🔥",
         chance: 0.10,
         execute: (monster, players, log) => {
-            players.forEach(p => {
-                if(!p.isDead) {
-                    applyDamageToPlayer(p, Math.floor(monster.atk * 2));
-                    p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.3), turns: 5 });
-                }
-            });
-            log.push(`🔥 **ديث وينج** أحرق العالم! (ضرر هائل + حرق طويل الأمد)`);
+            players.forEach(p => { if(!p.isDead) { applyDamageToPlayer(p, Math.floor(monster.atk * 2)); p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.3), turns: 5 }); } });
+            log.push(`🔥 **ديث وينج** أحرق العالم! (ضرر هائل + حرق)`);
+        }
+    },
+    "ديابلو سيد الرعب": {
+        name: "برق الجحيم الأحمر",
+        emoji: "🔴",
+        chance: 0.30,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if(!p.isDead) { applyDamageToPlayer(p, monster.atk); p.effects.push({type:'confusion', val:0.3, turns:2}); } });
+            log.push(`🔴 **ديابلو** بث الرعب في القلوب!`);
+        }
+    },
+    "باعل سيد الدمار": {
+        name: "نسخة الظل",
+        emoji: "👥",
+        chance: 0.20,
+        execute: (monster, players, log) => {
+            monster.effects.push({ type: 'evasion', val: 0.5, turns: 2 }); // 50% مراوغة
+            log.push(`👥 **باعل** استدعى نسخة، مما جعل إصابته صعبة!`);
+        }
+    },
+    "ميفيستو سيد الكراهية": {
+        name: "نوفا السموم",
+        emoji: "☠️",
+        chance: 0.30,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if(!p.isDead) p.effects.push({type:'poison', val: Math.floor(monster.atk*0.4), turns:3}); });
+            log.push(`☠️ **ميفيستو** أطلق موجة سموم قاتلة!`);
+        }
+    },
+    "الملك تيرانيوس": {
+        name: "زئير مرعب",
+        emoji: "🦖",
+        chance: 0.30,
+        execute: (monster, players, log) => {
+            players.forEach(p => { if(!p.isDead && Math.random()<0.5) p.skipCount = (p.skipCount||0)+1; });
+            log.push(`🦖 **تيرانيوس** زأر بقوة مرعبة! (إلغاء أدوار)`);
         }
     },
 
-    // --- God of War ---
+    // === God of War ===
     "زيوس جبار الصواعق": {
         name: "غضب الأولمب",
         emoji: "⚡",
         chance: 0.30,
         execute: (monster, players, log) => {
-            const targets = players.filter(p => !p.isDead);
-            targets.forEach(t => applyDamageToPlayer(t, monster.atk));
+            players.forEach(t => { if(!t.isDead) applyDamageToPlayer(t, Math.floor(monster.atk * 1.2)); });
             log.push(`⚡ **زيوس** ألقى الصواعق على الجميع!`);
         }
     },
@@ -231,19 +331,20 @@ const MONSTER_SKILLS = {
         emoji: "😡",
         chance: 0.25,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead)[Math.floor(Math.random() * players.filter(p => !p.isDead).length)];
-            if(target) {
-                const dmg = Math.floor(monster.atk * 3.0);
-                applyDamageToPlayer(target, dmg);
-                log.push(`😡 **كريتوس** فقد أعصابه وانهال بالضرب على **${target.name}**! (${dmg} ضرر)`);
-            }
+            const target = getSmartTarget(players);
+            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 3.0)); log.push(`😡 **كريتوس** فقد أعصابه وانهال بالضرب على **${target.name}**!`); }
         }
     },
 
-    // --- Guardians ---
+    // === Guardians (الحراس) ===
     "حارس البوابة الأخير": { name: "الدرع العظيم", emoji: "🛡️", chance: 0.3, execute: (m,p,l) => { m.hp += Math.floor(m.maxHp * 0.1); l.push(`🛡️ **الحارس** رفع درعه وترمم!`); } },
+    "درع العرش المنيع": { name: "عكس الضرر", emoji: "🔄", chance: 0.3, execute: (m,p,l) => { m.effects.push({type:'reflect', val:0.5, turns:2}); l.push(`🔄 **درع العرش** فعل وضعية الانعكاس!`); } },
+    "حامي الختم المقدس": { name: "تطهير", emoji: "✨", chance: 0.3, execute: (m,p,l) => { m.effects = []; m.hp += Math.floor(m.maxHp*0.05); l.push(`✨ **الحامي** طهر نفسه من اللعنات!`); } },
+    "ظل الملك القاتل": { name: "اغتيال", emoji: "🗡️", chance: 0.3, execute: (m,p,l) => { const t=p.filter(x=>!x.isDead).sort((a,b)=>a.hp-b.hp)[0]; if(t){applyDamageToPlayer(t, Math.floor(m.atk*2)); l.push(`🗡️ **الظل** اغتال أضعف حلقة: **${t.name}**!`);} } },
+    "الجنرال الذي لا يقهر": { name: "هجوم كاسح", emoji: "⚔️", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*1.2))}); l.push(`⚔️ **الجنرال** نفذ هجوماً كاسحاً!`); } },
+    "المدرع الأسطوري": { name: "تحطيم الأرض", emoji: "🔨", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, m.atk)}); l.push(`🔨 **المدرع** حطم الأرض تحتكم!`); } },
     "كابوس الأبعاد": { name: "رعب", emoji: "👻", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) pl.effects.push({type:'confusion',val:0.5,turns:2})}); l.push(`👻 **الكابوس** بث الرعب في القلوب!`); } },
-    "الجنرال الذي لا يقهر": { name: "هجوم كاسح", emoji: "⚔️", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*1.2))}); l.push(`⚔️ **الجنرال** نفذ هجوماً كاسحاً!`); } }
+    "حارس الجحيم الأزلي": { name: "نفس اللهب", emoji: "🔥", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) pl.effects.push({type:'burn',val:Math.floor(m.atk*0.2),turns:3})}); l.push(`🔥 **الحارس** نفث نيران الجحيم!`); } }
 };
 
 // --- Helper Functions ---
@@ -499,7 +600,7 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🟢 SKILL USAGE FUNCTION (Cooldown: 5 for Classes, 3 for Standard)
+// 🟢 SKILL USAGE FUNCTION (Updated Cooldowns: Class=6, Race=5, Std=3)
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -526,7 +627,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         return { type: 'owner_leave' };
     }
 
-    // --- Class Skills (Cooldown: 5 Turns) ---
+    // --- Class Skills (Cooldown: 6 Turns) ---
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -540,23 +641,30 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
              return { error: `انتظر ${player.special_cooldown} دور.` }; 
          }
 
-         // Set cooldown to 5 for all class skills
+         // Set cooldown to 6 for all class skills
          switch(classType) {
-             case 'Leader': return { type: 'class_effect', effect: 'leader_buff', cooldown: 5 }; 
-             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 5 }; 
-             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:5) }; 
-             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 5 }; 
-             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 5 }; 
+             case 'Leader': return { type: 'class_effect', effect: 'leader_buff', cooldown: 6 }; 
+             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 6 }; 
+             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:6) }; 
+             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 6 }; 
+             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 6 }; 
          }
          return;
     }
 
     const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
-    // Helper to set cooldown (Standard Skills: 3 Turns)
+    // Helper to set cooldown (Race=5, Std=3)
     const setCD = (turns = 3) => {
         if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
     };
+
+    // Race Skill Check
+    if (skill.id.startsWith('race_')) {
+        setCD(5); 
+    } else {
+        setCD(3); // Default standard
+    }
 
     switch (skill.stat_type) {
         case 'TrueDMG_Burn': { 
@@ -565,7 +673,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.totalDamage += skillDmg;
             monster.effects.push({ type: 'burn', val: Math.floor(effectiveAtk * 0.2), turns: 3 });
             log.push(`🐲 **${player.name}** أطلق ${skill.name} وأحرق الوحش! (${skillDmg} ضرر)`);
-            setCD(3);
             break;
         }
         case 'Cleanse_Buff_Shield': { 
@@ -574,7 +681,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.shield += shieldVal;
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
             log.push(`⚔️ **${player.name}** استجمع قواه! (تطهير + درع ${shieldVal} + هجوم)`);
-            setCD(3);
             break;
         }
         case 'Scale_MissingHP_Heal': { 
@@ -586,7 +692,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.hp = Math.min(player.maxHp, player.hp + healVal);
             player.totalDamage += skillDmg;
             log.push(`⚖️ **${player.name}** عاقب الوحش وشفى نفسه! (${skillDmg} ضرر / +${healVal} HP)`);
-            setCD(3);
             break;
         }
         case 'Sacrifice_Crit': { 
@@ -596,7 +701,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             monster.hp -= skillDmg;
             player.totalDamage += skillDmg;
             log.push(`👹 **${player.name}** ضحى بدمه (-${selfDmg}) لتوجيه ضربة مدمرة! (**${skillDmg}** ضرر)`);
-            setCD(3);
             break;
         }
         case 'Stun_Vulnerable': { 
@@ -606,7 +710,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             monster.effects.push({ type: 'weakness', val: 0.5, turns: 1 }); 
             player.totalDamage += skillDmg;
             log.push(`🍃 **${player.name}** شل حركة الوحش وجعل دفاعه هشاً! (${skillDmg} ضرر)`);
-            setCD(3);
             break;
         }
         case 'Confusion': { 
@@ -615,7 +718,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             monster.effects.push({ type: 'confusion', val: 0.5, turns: 2 }); 
             player.totalDamage += skillDmg;
             log.push(`😵 **${player.name}** ألقى لعنة الجنون على الوحش! (${skillDmg} ضرر)`);
-            setCD(3);
             break;
         }
         case 'Lifesteal_Overheal': { 
@@ -633,7 +735,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 player.hp += healVal;
                 log.push(`🍷 **${player.name}** امتص ${healVal} من الصحة!`);
             }
-            setCD(3);
             break;
         }
         case 'Chaos_RNG': { 
@@ -649,7 +750,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             else if (randomEffect === 'blind') monster.effects.push({ type: 'blind', val: 0.5, turns: 2 });
 
             log.push(`🌀 **${player.name}** أثار الفوضى بتأثير عشوائي (${randomEffect})!`);
-            setCD(3);
             break;
         }
         case 'Dmg_Evasion': { 
@@ -658,7 +758,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.totalDamage += skillDmg;
             player.effects.push({ type: 'evasion', val: 1, turns: 1 }); 
             log.push(`👻 **${player.name}** ضرب واختفى كالشبح! (مراوغة تامة)`);
-            setCD(3);
             break;
         }
         case 'Reflect_Tank': { 
@@ -667,7 +766,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             player.effects.push({ type: 'dmg_reduce', val: 0.6, turns: 2 });
             player.effects.push({ type: 'reflect', val: 0.4, turns: 2 }); 
             log.push(`🔨 **${player.name}** تحصن بالجبل! (دفاع عالٍ + عكس الضرر)`);
-            setCD(3);
             break;
         }
         case 'Execute_Heal': { 
@@ -681,7 +779,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 log.push(`🧟 **${player.name}** نهش الوحش بضرر **${skillDmg}**!`);
             }
             player.totalDamage += skillDmg;
-            setCD(3);
             break;
         }
         
@@ -692,7 +789,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      const reflectPercent = (value > 0 ? value / 100 : 0.5) * mult;
                      player.effects.push({ type: 'reflect', val: reflectPercent, turns: 1 });
                      log.push(`🌵 **${player.name}** جهز درع الأشواك (انعكاس)!`);
-                     setCD(3);
                      break;
                 }
                 case 'skill_healing':
@@ -705,7 +801,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         log.push(`❤️‍🩹 **${player.name}** استخدم ${skill.name} واستعاد **${healAmount}** HP.`);
                     }
                     player.hp = Math.min(player.maxHp, player.hp + healAmount);
-                    setCD(3);
                     break;
                 }
                 case 'skill_shielding': {
@@ -713,13 +808,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
                      player.shield = shieldAmount; 
                      log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
-                     setCD(3);
                      break;
                 }
                 case 'skill_buffing': {
                      player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
                      log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
-                     setCD(3);
                      break;
                 }
                 case 'skill_poison': {
@@ -728,7 +821,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      monster.hp -= skillDmg;
                      player.totalDamage += skillDmg; 
                      log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
-                     setCD(3);
                      break;
                 }
                 case 'skill_gamble': {
@@ -747,7 +839,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         monster.hp -= skillDmg;
                         player.totalDamage += skillDmg; 
                      }
-                     setCD(3);
                      break;
                 }
                 case 'skill_weaken': {
@@ -756,13 +847,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      monster.hp -= skillDmg;
                      player.totalDamage += skillDmg; 
                      log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
-                     setCD(3);
                      break;
                 }
                 case 'skill_dispel': {
                     monster.effects = []; 
                     log.push(`💨 **${player.name}** بدد السحر!`);
-                    setCD(3);
                     break;
                 }
                 default: {
@@ -771,7 +860,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                     monster.hp -= skillDmg;
                     player.totalDamage += skillDmg; 
                     log.push(`💥 **${player.name}** استخدم ${skill.name} بـ **${skillDmg}** ضرر!`);
-                    setCD(3);
                     break;
                 }
             }
@@ -1196,26 +1284,39 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`😵 **${monster.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg} HP)`);
                     } else {
                         // ========================================================
-                        // 🔥 Monster AI & Skills Logic 🔥
+                        // 🔥 Monster AI & Skills Logic (SMART AI UPDATE) 🔥
                         // ========================================================
                         
                         const alive = players.filter(p => !p.isDead);
                         let skillUsed = false;
 
-                        // 1. Trigger Special Monster Skills (Only after Floor 17)
+                        // 1. Trigger Specific Boss/Guardian Skills (After Floor 17)
                         if (floor > 17 && alive.length > 0) {
                             const baseMonsterName = monster.name.split(' (Lv.')[0].trim();
                             const monsterSkill = MONSTER_SKILLS[baseMonsterName];
 
                             if (monsterSkill) {
-                                if (Math.random() < monsterSkill.chance) {
+                                // Smart Trigger Chance: Increase probability if low HP (Desperation Mode)
+                                let chance = monsterSkill.chance;
+                                if (monster.hp < monster.maxHp * 0.3) chance += 0.2; // Increase by 20%
+
+                                if (Math.random() < chance) {
                                     monsterSkill.execute(monster, players, log);
                                     skillUsed = true;
                                 }
                             }
                         }
 
-                        // 2. Normal Attack (if no skill used)
+                        // 2. Trigger Generic Skills for Minions/Elites (After Floor 17)
+                        if (!skillUsed && floor > 17 && alive.length > 0) {
+                            if (Math.random() < 0.20) {
+                                const randomGenericSkill = GENERIC_MONSTER_SKILLS[Math.floor(Math.random() * GENERIC_MONSTER_SKILLS.length)];
+                                randomGenericSkill.execute(monster, players, log);
+                                skillUsed = true;
+                            }
+                        }
+
+                        // 3. Normal Attack (if no skill used)
                         if (!skillUsed && alive.length > 0) {
                             
                             // Summoner Pet Attack Logic
@@ -1235,7 +1336,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                             if (monster.hp <= 0) { ongoing = false; break; }
 
-                            let target = alive.find(p => p.effects.some(e => e.type === 'titan')) || alive.find(p => p.id === monster.targetFocusId) || alive[Math.floor(Math.random() * alive.length)];
+                            // Smart Targeting for Normal Attacks
+                            // Priority: Taunted > Giant > Priest > Weakest > Random
+                            let target = alive.find(p => p.id === monster.targetFocusId) || 
+                                         alive.find(p => p.effects.some(e => e.type === 'titan')) ||
+                                         getSmartTarget(players) || // Use AI Helper
+                                         alive[Math.floor(Math.random() * alive.length)];
                             
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
