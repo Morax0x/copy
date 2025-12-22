@@ -63,7 +63,7 @@ async function startDungeon(interaction, sql) {
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
      
-    // 🔥 [إصلاح] توزيع الأزرار 5 في كل صف
+    // توزيع الأزرار 5 في كل صف
     if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
     if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
 
@@ -83,7 +83,6 @@ async function startDungeon(interaction, sql) {
 
     collector.on('collect', async i => {
         try {
-            // 🔥 الإصلاح الأساسي: الرد فوراً لتجنب Unknown Interaction
             if (!i.deferred && !i.replied) await i.deferUpdate(); 
             
             collector.stop('selected'); 
@@ -177,10 +176,12 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                 }
 
-                // تجهيز قائمة الكلاسات
+                // 🔥 تعديل: تصفية الكلاسات المتاحة فقط (إزالة المأخوذة) 🔥
                 const takenClasses = Array.from(partyClasses.values());
                 const availableOptions = [];
 
+                // دالة للتحقق إذا الكلاس متاح (غير مأخوذ من قبل لاعب آخر)
+                // اللاعب نفسه يقدر يغير كلاسه إذا كان مختار واحد مسبقاً
                 const isAvailable = (clsName) => {
                     return !takenClasses.includes(clsName) || partyClasses.get(i.user.id) === clsName;
                 };
@@ -190,8 +191,9 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (isAvailable('Mage')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('تجميد وتحكم.').setEmoji('❄️'));
                 if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
 
+                // إذا كانت القائمة فارغة (كل الكلاسات مأخوذة)
                 if (availableOptions.length === 0) {
-                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة!", flags: [MessageFlags.Ephemeral] });
+                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة! تأخرت يا صديقي.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const classRow = new ActionRowBuilder().addComponents(
@@ -210,15 +212,16 @@ async function lobbyPhase(interaction, theme, sql) {
                         componentType: ComponentType.StringSelect 
                     });
                     
-                    // 🔥🔥 إصلاح: الرد الفوري عند اختيار التخصص 🔥🔥
+                    // 🔥🔥 الحماية النهائية (Race Condition Check) 🔥🔥
                     const selectedClass = selection.values[0];
+                    // نعيد جلب الكلاسات المحجوزة حالياً (لأن ممكن واحد ثاني اختاره في نفس اللحظة)
                     const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
                     
                     if (currentTaken.includes(selectedClass)) {
-                        return selection.update({ content: `🚫 **سبقك بها عكاشة!** اختر تخصصاً آخر.`, components: [] });
+                        return selection.update({ content: `🚫 **سبقك بها عكاشة!** هذا التخصص تم أخذه للتو.`, components: [] });
                     }
 
-                    // حالة القبول - تأجيل الرد فوراً
+                    // قبول الاختيار
                     await selection.deferUpdate(); 
 
                     partyClasses.set(i.user.id, selectedClass);
@@ -253,13 +256,11 @@ async function lobbyPhase(interaction, theme, sql) {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", flags: [MessageFlags.Ephemeral] });
                 if (party.length < 1) return i.reply({ content: "خطأ", flags: [MessageFlags.Ephemeral] });
                 
-                // 🔥🔥 إصلاح: تأجيل الرد فوراً عند الضغط على start 🔥🔥
                 await i.deferUpdate();
-                
                 collector.stop('start');
             }
         } catch (err) {
-            if (err.code === 10062) return; // تجاهل خطأ التفاعل المجهول إذا حدث
+            if (err.code === 10062) return; 
             console.error("Dungeon Interaction Error:", err);
         }
     });
