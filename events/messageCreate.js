@@ -105,7 +105,7 @@ module.exports = {
 
             if (bumperID) {
                 await recordBump(client, message.guild.id, bumperID);
-                await message.react('<a:MugiStronk:1438795606872166462>').catch(() => {});
+                await message.react('👊').catch(() => {});
 
                 // حساب وقت التنبيه القادم (بعد ساعتين) لعمل العداد
                 const nextBumpTime = Math.floor((Date.now() + 7200000) / 1000);
@@ -113,7 +113,7 @@ module.exports = {
                 // --- 1. الرد الفوري (رسالة النجاح والعداد) ---
                 message.channel.send({
                     content: `بُورك النشــر، وسُمــع الــنداء \nعــدّاد المــجد بدأ مــن جــديــد <:2cenema:1428340793676009502>\n\n- النشر التالي بعد: <t:${nextBumpTime}:R>`,
-                    files: ["https://media.discordapp.net/attachments/1394261509537927258/1407752253141549147/0.gif?ex=68a73ef3&is=68a5ed73&hm=5a654f595b5a64cdbfa7caa709cd78f22c8ec10b1a75ccf2fd81556a4f4d5bdc&="]
+                    files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
 
                 // --- 2. المؤقت للتنبيه بعد ساعتين ---
