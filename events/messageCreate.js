@@ -107,26 +107,22 @@ module.exports = {
                 await recordBump(client, message.guild.id, bumperID);
                 await message.react('👊').catch(() => {});
 
-                // حساب وقت التنبيه القادم (بعد ساعتين) لعمل العداد
-                const nextBumpTime = Math.floor((Date.now() + 7200000) / 1000);
+                // حساب وقت التنبيه القادم (بعد ساعتين)
+                const nextBumpTime = Date.now() + 7200000;
+                const nextBumpTimeSec = Math.floor(nextBumpTime / 1000);
 
-                // --- 1. الرد الفوري (رسالة النجاح والعداد) ---
+                // --- 1. الرد الفوري ---
                 message.channel.send({
-                    content: `بُورك النشــر، وسُمــع الــنداء \nعــدّاد المــجد بدأ مــن جــديــد <:2cenema:1428340793676009502>\n\n- النشر التالي بعد: <t:${nextBumpTime}:R>`,
+                    content: `بُورك النشــر، وسُمــع الــنداء \nعــدّاد المــجد بدأ مــن جــديــد <:2cenema:1428340793676009502>\n\n- النشر التالي بعد: <t:${nextBumpTimeSec}:R>`,
                     files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
 
-                // --- 2. المؤقت للتنبيه بعد ساعتين ---
-                if (settingsData && settingsData.bumpNotifyRoleID) {
-                    setTimeout(() => {
-                        const roleMention = `<@&${settingsData.bumpNotifyRoleID}>`;
-                        const userMention = bumperID ? `<@${bumperID}>` : " "; // منشن الشخص إذا وجد
-
-                        message.channel.send({
-                            content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
-                            files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
-                        }).catch(() => {});
-                    }, 2 * 60 * 60 * 1000); // 7200000 ms (2 hours)
+                // --- 2. حفظ وقت التنبيه في الداتابيس (الحل الجذري) ---
+                // بدلاً من setTimeout، نحفظ الوقت في الداتابيس ليقوم index.js بفحصه
+                try {
+                    sql.prepare("UPDATE settings SET nextBumpTime = ?, lastBumperID = ? WHERE guild = ?").run(nextBumpTime, bumperID, message.guild.id);
+                } catch (e) {
+                    console.error("[Bump DB Save Error]", e);
                 }
             }
             return;
