@@ -127,13 +127,8 @@ module.exports = {
                 }
 
                 if (confirmation.customId === 'mem_auto_confirm') {
-                    // 🔥 التعديل هنا: نمرر التفاعل الجديد (confirmation) بدلاً من القديم
                     await confirmation.deferUpdate(); 
-                    
-                    // نحذف القفل للسماح للعبة بالبدء
                     client.activeGames.delete(channel.id);
-                    
-                    // نمرر confirmation كـ interaction، هذا سيجعل اللعبة تقوم بتعديل رسالة الزر مباشرة
                     return startMemoryGame(channel, user, member, proposedBet, client, guild, sql, confirmation);
                 }
             } catch (e) {
@@ -211,7 +206,6 @@ async function startMemoryGame(channel, user, member, bet, client, guild, sql, i
 
     let gameMsg;
     if (interaction) {
-        // نستخدم editReply لأن التفاعل (سواء الأمر الأصلي أو الزر) قد تم الرد عليه أو تأجيله
         gameMsg = await interaction.editReply({ content: " ", embeds: [memorizeEmbed], components: rowsReveal });
     } else {
         gameMsg = await channel.send({ content: `${user}`, embeds: [memorizeEmbed], components: rowsReveal });
@@ -278,23 +272,30 @@ async function startMemoryGame(channel, user, member, bet, client, guild, sql, i
             }
 
             if (clickedIndex === targetIndex) {
-                // فوز
-                const winMultiplier = 3.0; // صعوبة 1 من 9 تستحق مضاعف عالي
-                const baseWinnings = Math.floor(bet * winMultiplier);
+                // 🔥🔥🔥 تعديل الحسبة هنا (نفس لعبة arrange بالضبط) 🔥🔥🔥
                 
-                const moraMultiplier = calculateMoraBuff(member, sql);
-                const finalWinnings = Math.floor(baseWinnings * moraMultiplier);
+                // جلب البف
+                let moraMultiplier = 1.0;
+                if (calculateMoraBuff) {
+                    moraMultiplier = calculateMoraBuff(member, sql);
+                }
+
+                // حساب الربح: الرهان × البف (مثلاً 100 × 1.2 = 120 ربح)
+                const profit = Math.floor(bet * moraMultiplier);
+                
+                // الجائزة الكلية: الرهان الأصلي + الربح (100 + 120 = 220)
+                const totalPrize = bet + profit;
                 
                 let buffString = "";
                 const buffPercent = Math.round((moraMultiplier - 1) * 100);
-                if (buffPercent > 0) buffString = ` (${buffPercent}%)`;
+                if (buffPercent > 0) buffString = ` (+${buffPercent}%)`;
 
-                userData.mora += finalWinnings;
+                userData.mora += totalPrize;
                 client.setLevel.run(userData);
 
                 const winEmbed = new EmbedBuilder()
                     .setTitle('🎉 ذاكــرة قويــة!')
-                    .setDescription(`✶ أحسنت! إجابة صحيحة.\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA} ${buffString}`)
+                    .setDescription(`✶ أحسنت! إجابة صحيحة.\n\nربـحت **${profit.toLocaleString()}** ${EMOJI_MORA} ${buffString}`)
                     .setColor(Colors.Green)
                     .setThumbnail(user.displayAvatarURL());
 
@@ -303,7 +304,7 @@ async function startMemoryGame(channel, user, member, bet, client, guild, sql, i
             } else {
                 // خسارة
                 const loseEmbed = new EmbedBuilder()
-                    .setTitle('❌ذاكرة سمـكـة')
+                    .setTitle('❌ ذاكرة سمـكـة')
                     .setDescription(`✶ خطـأ اختـرت ايموجـي مختلف.\n\nخـسرت **${bet}** ${EMOJI_MORA}`)
                     .setColor(Colors.Red);
 
