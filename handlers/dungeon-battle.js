@@ -1,13 +1,13 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, Colors, MessageFlags } = require('discord.js');
 const path = require('path');
 
-// --- Load Configuration ---
+// --- تحميل الإعدادات ---
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// Load Item Files
+// تحميل ملفات العناصر
 let potionItems = [];
 try {
     potionItems = require(path.join(rootDir, 'json', 'potions.json'));
@@ -18,7 +18,7 @@ try {
     } catch (err) { console.error("Error loading potions:", err); }
 }
 
-// --- System Constants ---
+// --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 const EMOJI_XP = '<a:levelup:1437805366048985290>'; 
 const EMOJI_BUFF = '<a:buff:1438796257522094081>';
@@ -27,7 +27,7 @@ const OWNER_ID = "1145327691772481577";
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
 
-// --- Result Images ---
+// --- صور النتائج ---
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
@@ -49,7 +49,7 @@ const LOSE_IMAGES = [
 const MONSTER_SKILLS = {
     // --- Elden Ring Bosses ---
     "مالينيا، نصل ميكيلا": {
-        name: "رقصة البط المائي (Waterfowl Dance)",
+        name: "رقصة الموت (Dance of Death)", // 🔥 تم التعديل هنا
         emoji: "🌸",
         chance: 0.25,
         execute: (monster, players, log) => {
@@ -62,7 +62,7 @@ const MONSTER_SKILLS = {
                     monster.hp = Math.min(monster.maxHp, monster.hp + Math.floor(actualDmg * 0.5));
                 }
             });
-            log.push(`🌸 **مالينيا** حلقت في الهواء ونفذت **رقصة البط المائي**! (ضرر جماعي + شفاء ذاتي)`);
+            log.push(`🌸 **مالينيا** حلقت في الهواء ونفذت **رقصة الموت**! (ضرر جماعي + شفاء ذاتي)`); // 🔥 تم التعديل هنا
         }
     },
     "الجنرال رادان": {
