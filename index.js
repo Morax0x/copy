@@ -75,6 +75,9 @@ try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN max_dungeon_floor INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_wins INTEGER DEFAULT 0").run(); } catch (e) {}
 
+// 🔥🔥 إضافة عمود الكولداون للسباق (مهم جداً) 🔥🔥
+try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) {}
+
 // تحديثات الإحصائيات والإعدادات
 try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_disboard_bumps INTEGER DEFAULT 0").run(); } catch (e) {}
@@ -158,22 +161,26 @@ client.generateQuestAlert = generateQuestAlert;
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
     
+    // 🔥🔥🔥 تعديل استعلام INSERT ليشمل lastRace 🔥🔥🔥
     client.setLevel = sql.prepare(`
         INSERT OR REPLACE INTO levels (
             user, guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank, 
             lastInterest, totalInterestEarned, hasGuard, guardExpires, totalVCTime, lastCollected, 
             lastRob, lastGuess, lastRPS, lastRoulette, lastTransfer, lastDeposit, shop_purchases, 
             total_meow_count, boost_count, lastPVP, lastFarmYield, lastFish, rodLevel, boatLevel, 
-            currentLocation, lastMemory, lastArrange, last_dungeon, dungeon_gate_level, max_dungeon_floor, dungeon_wins
+            currentLocation, lastMemory, lastArrange, last_dungeon, dungeon_gate_level, max_dungeon_floor, dungeon_wins,
+            lastRace 
         ) VALUES (
             @user, @guild, @xp, @level, @totalXP, @mora, @lastWork, @lastDaily, @dailyStreak, @bank, 
             @lastInterest, @totalInterestEarned, @hasGuard, @guardExpires, @totalVCTime, @lastCollected, 
             @lastRob, @lastGuess, @lastRPS, @lastRoulette, @lastTransfer, @lastDeposit, @shop_purchases, 
             @total_meow_count, @boost_count, @lastPVP, @lastFarmYield, @lastFish, @rodLevel, @boatLevel, 
-            @currentLocation, @lastMemory, @lastArrange, @last_dungeon, @dungeon_gate_level, @max_dungeon_floor, @dungeon_wins
+            @currentLocation, @lastMemory, @lastArrange, @last_dungeon, @dungeon_gate_level, @max_dungeon_floor, @dungeon_wins,
+            @lastRace
         );
     `);
     
+    // 🔥🔥🔥 تعديل البيانات الافتراضية لتشمل lastRace 🔥🔥🔥
     client.defaultData = { 
         user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
         lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, 
@@ -181,7 +188,8 @@ if (sql.open) {
         total_meow_count: 0, boost_count: 0, lastPVP: 0, lastFarmYield: 0,
         lastFish: 0, rodLevel: 1, boatLevel: 1, currentLocation: 'beach',
         lastMemory: 0, lastArrange: 0,
-        last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0
+        last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0,
+        lastRace: 0 
     };
 
     client.getDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?");
