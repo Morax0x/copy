@@ -117,6 +117,9 @@ module.exports = {
                     files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
 
+                // 🔥 تغيير اسم الروم (تم النشر - انتظار) 🔥
+                message.channel.setName('˖✶⁺〢🍀・الـنـشـر').catch(err => console.error("[Bump Rename Error]", err.message));
+
                 // --- 2. حفظ وقت التنبيه في الداتابيس (الحل الجذري) ---
                 // بدلاً من setTimeout، نحفظ الوقت في الداتابيس ليقوم index.js بفحصه
                 try {
