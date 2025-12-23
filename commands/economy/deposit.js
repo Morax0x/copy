@@ -100,8 +100,8 @@ module.exports = {
 
             setScore.run(data);
 
-            
-            const interestAmount = Math.floor(data.bank * 0.0005);
+            // 🔥 تصحيح نسبة الفائدة للعرض (0.005 = 0.50%) 🔥
+            const interestAmount = Math.floor(data.bank * 0.005);
 
             const embed = new EmbedBuilder()
                 .setColor("Random") 
@@ -111,7 +111,7 @@ module.exports = {
                     `❖ تـم ايـداع: **${amountToDeposit.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيد البـنك: **${data.bank.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيـدك الكـاش: **${data.mora.toLocaleString()}** ${EMOJI_MORA}\n\n` +
-                    `◇ ستحصل على فائدة يومية 0.05% : **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                    `◇ ستحصل على فائدة يومية 0.50% : **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `◇ وسنحمي اموالك بنسبة اكبر من السرقـة`
                 );
 
