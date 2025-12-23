@@ -718,6 +718,9 @@ client.on(Events.ClientReady, async () => {
                             content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
                             files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
                         }).catch(() => {});
+
+                        // 🔥 تعديل اسم الروم (حان وقت النشر) 🔥
+                        channel.setName('˖✶⁺〢🔥・انشر・الان').catch(err => console.error("[Bump Ready Rename Error]", err.message));
                     }
                 }
             } catch (err) { console.error("[Bump Notify Error]", err); }
