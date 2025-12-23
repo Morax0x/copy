@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const MIN_BET = 25;
+const MIN_BET = 50;
 const MAX_BET_SOLO = 200; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 const MAX_LOAN_BET = 500; 
@@ -23,7 +23,7 @@ function formatTime(ms) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سباق')
-        .setDescription('تحدي البوت (فردي) أو أصدقائك (جماعي) في سباق الخيول.')
+        .setDescription('تحدي البوت أو أصدقائك في سباق الخيول.')
         .addIntegerOption(option =>
             option.setName('الرهان')
                 .setDescription(`المبلغ الذي تريد المراهنة به (اختياري)`)
@@ -37,9 +37,10 @@ module.exports = {
         .addUserOption(option => option.setName('الخصم5').setDescription('الخصم الخامس (لعبة جماعية)').setRequired(false)),
 
     name: 'race',
-    aliases: ['سابق', 'سباق_خيول', 'r'],
+    // 🔥 تم تحديث الاختصارات لتعمل العربية بشكل مؤكد 🔥
+    aliases: ['سباق', 'سابق', 'سباق_خيول', 'r', 'race'],
     category: "Economy",
-    description: `تحدي البوت (فردي) أو تحدي أصدقائك (جماعي) في سباق الخيول.`,
+    description: `تحدي البوت أو تحدي أصدقائك في سباق الخيول.`,
 
     async execute(interactionOrMessage, args) {
 
@@ -254,10 +255,14 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
 
     const prize = bet * 2; 
     
-    // إعداد المتسابقين (اللاعب + بوت)
+    // اختيار عشوائي للأيقونات
+    const playerIcon = RACE_ICONS[Math.floor(Math.random() * RACE_ICONS.length)];
+    const availableBotIcons = RACE_ICONS.filter(i => i !== playerIcon);
+    const botIcon = availableBotIcons[Math.floor(Math.random() * availableBotIcons.length)];
+
     const participants = [
-        { id: author.id, name: author.displayName, icon: RACE_ICONS[0], progress: 0, isPlayer: true },
-        { id: 'bot', name: 'الحصان الأسود', icon: '🦓', progress: 0, isPlayer: false }
+        { id: author.id, name: author.displayName, icon: playerIcon, progress: 0, isPlayer: true },
+        { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false }
     ];
 
     const renderTrack = () => {
@@ -270,6 +275,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
     };
 
     const embed = new EmbedBuilder()
+        // 🔥 تم حذف كلمة (فردي) من هنا 🔥
         .setTitle('🐎 سباق الخيول')
         .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
         .setColor("Orange")
@@ -296,9 +302,12 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
             client.activePlayers.delete(author.id);
 
             if (winner.isPlayer) {
-                // 🔥 حساب البف 🔥
                 const moraMultiplier = calculateMoraBuff(author, sql);
-                const finalWinnings = Math.floor(prize * moraMultiplier);
+                
+                // حساب الربح المبفف
+                const profit = bet;
+                const buffedProfit = Math.floor(profit * moraMultiplier);
+                const finalWinnings = bet + buffedProfit;
                 
                 // حساب نسبة الزيادة للعرض
                 const buffPercent = Math.round((moraMultiplier - 1) * 100);
@@ -309,7 +318,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
 
                 const winEmbed = new EmbedBuilder()
                     .setTitle(`🏆 فـاز ${author.displayName}!`)
-                    .setDescription(`🎉 مبروك! حصانك سبق الحصان الأسود!\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}${buffText}`)
+                    .setDescription(`🎉 مبروك! سبقت الخصم!\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}${buffText}`)
                     .setColor("Green")
                     .setThumbnail(author.user.displayAvatarURL());
                 
@@ -317,7 +326,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
             } else {
                 const loseEmbed = new EmbedBuilder()
                     .setTitle('💔 خسرت السباق...')
-                    .setDescription(`سبقك الحصان الأسود لخط النهاية.\nخسرت **${bet}** ${EMOJI_MORA} 💸.`)
+                    .setDescription(`سبقك الخصم لخط النهاية.\nخسرت **${bet}** ${EMOJI_MORA} 💸.`)
                     .setColor("Red");
                 
                 channel.send({ embeds: [loseEmbed] });
