@@ -36,6 +36,7 @@ const DESCRIPTION_TRANSLATIONS = new Map([
     ['boss', 'التحكم في وحش العالم (للمالك)'],
     ['dungeon', 'دخول الدانجون (PvE) لمحاربة الوحوش'],
     ['arrange', 'لعبة ترتيب الأرقام (سرعة وذاكرة)'],
+    ['race', 'سباق الخيول (فردي وجماعي)'], // 🔥 تمت الإضافة هنا
     ['top', 'عرض قائمة المتصدرين (مورا/لفل/ستريك)']
 ]);
 
@@ -70,7 +71,8 @@ const MANUAL_ARABIC_NAMES = new Map([
     ['emoji', 'ايموجي'],
     ['boss', 'وحش'],
     ['dungeon', 'دانجون'],
-    ['arrange', 'ترتيب']
+    ['arrange', 'ترتيب'],
+    ['race', 'سباق'] // 🔥 تمت الإضافة هنا
 ]);
 
 function getArabicDescription(cmd) {
@@ -135,6 +137,7 @@ function buildCasinoEmbed(client) {
 ✶** ${getCmdName(commands, 'emoji')}: ** \`لعبة تحدي الذاكرة (إيموجي)\`
 ✶** ${getCmdName(commands, 'rob')}: ** \`لسرقة ونهب رصيد مستخدم آخر\`
 ✶** ${getCmdName(commands, 'guess')}: ** \`لعبة تخمين الرقم فردي او جماعي\`
+✶** ${getCmdName(commands, 'race')}: ** \`لعبة سباق الخيول فردي او جماعي\`
 ✶** ${getCmdName(commands, 'arrange')}: ** \`لعبة ترتيب الأرقام (سرعة)\`
 ✶** ${getCmdName(commands, 'gametime')}: ** \`لاظهار فترة التهدئة لأوامر الكازينو\`
 ✶** ${getCmdName(commands, 'fish')}: ** \`صيد السمك وكسب المورا\`
