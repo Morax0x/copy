@@ -2,11 +2,11 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const MIN_BET = 10;
-const MAX_BET_SOLO = 100; 
+const MIN_BET = 50;
+const MAX_BET_SOLO = 200; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
 const MAX_LOAN_BET = 500; 
-const OWNER_ID = "1145327691772481577"; // آيديك (أنت مستثنى من الكولداون)
+const OWNER_ID = "1145327691772481577"; // استثناء لك أنت
 const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂'];
 const TRACK_LENGTH = 20;
 
@@ -90,6 +90,13 @@ module.exports = {
              return message.reply(payload);
         };
 
+        // 🛠️🛠️ إصلاح إجباري: التأكد من وجود العمود في كل مرة يتم تشغيل الأمر 🛠️🛠️
+        try {
+            sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run();
+        } catch (e) {
+            // العمود موجود بالفعل، تجاهل الخطأ
+        }
+
         if (!client.activeGames) client.activeGames = new Set();
         if (!client.activePlayers) client.activePlayers = new Set();
 
@@ -97,13 +104,20 @@ module.exports = {
             return reply({ content: "🚫 **لديك لعبة نشطة بالفعل!** أكملها أولاً.", ephemeral: true });
         }
 
-        let userData = client.getLevel.get(author.id, guild.id);
-        if (!userData) userData = { ...client.defaultData, user: author.id, guild: guild.id };
+        // جلب البيانات (مباشرة من الداتابيس لضمان عدم القراءة من الكاش القديم)
+        let row = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(author.id, guild.id);
+        if (!row) {
+            // إنشاء صف جديد إذا لم يوجد
+            const defaultD = { ...client.defaultData, user: author.id, guild: guild.id };
+            client.setLevel.run(defaultD);
+            row = defaultD;
+        }
 
         const now = Date.now();
-        // 🔥 فحص الكولداون قبل أي شيء 🔥
+        
+        // 🔥🔥🔥 فحص الكولداون (مباشر) 🔥🔥🔥
         if (author.id !== OWNER_ID) {
-            const lastRaceTime = userData.lastRace || 0; 
+            const lastRaceTime = row.lastRace || 0; 
             const timeLeft = lastRaceTime + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل التسابق مرة أخرى.` });
@@ -113,7 +127,7 @@ module.exports = {
         // --- المراهنة التلقائية ---
         if (!betInput) {
             let proposedBet = 100;
-            const userBalance = userData.mora;
+            const userBalance = row.mora;
 
             if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
             if (userBalance < 100) proposedBet = userBalance;
@@ -130,12 +144,12 @@ module.exports = {
                     `\`سباق <مبلغ الرهان> [@لاعب اختياري]\``
                 );
 
-            const row = new ActionRowBuilder().addComponents(
+            const rowBtns = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('race_auto_confirm').setLabel('مـراهـنـة').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('race_auto_cancel').setLabel('رفـض').setStyle(ButtonStyle.Danger)
             );
 
-            const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
+            const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [rowBtns], fetchReply: true });
             
             const filter = i => i.user.id === author.id && (i.customId === 'race_auto_confirm' || i.customId === 'race_auto_cancel');
             
@@ -190,8 +204,13 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
 
     const getScore = client.getLevel;
     const setScore = client.setLevel;
+    
+    // جلب الداتا الطازجة
     let authorData = getScore.get(author.id, guild.id);
-    if (!authorData) authorData = { ...client.defaultData, user: author.id, guild: guild.id };
+    if (!authorData) {
+        authorData = { ...client.defaultData, user: author.id, guild: guild.id };
+        setScore.run(authorData);
+    }
 
     if (authorData.mora < bet) {
         client.activePlayers.delete(author.id);
@@ -207,10 +226,11 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
         }
         client.activeGames.add(gameKey);
         
-        // 🔥🔥 حفظ الكولداون بشكل مضمون 🔥🔥
+        // 🔥🔥🔥 تحديث الكولداون فوراً ومباشرة (SQL DIRECT Update) 🔥🔥🔥
         if (author.id !== OWNER_ID) {
-            authorData.lastRace = Date.now();
-            setScore.run(authorData); // هذا يضمن الحفظ في الداتابيس 100%
+             sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id);
+             // تحديث المتغير المحلي أيضاً
+             authorData.lastRace = Date.now();
         }
         
         await playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
@@ -237,19 +257,18 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
 
         client.activeGames.add(gameKey);
         
-        // 🔥🔥 حفظ الكولداون بشكل مضمون للجماعي أيضاً 🔥🔥
+        // 🔥 تحديث الكولداون للمضيف فوراً
         if (author.id !== OWNER_ID) {
-            authorData.lastRace = Date.now();
-            setScore.run(authorData); // حفظ فوري
+             sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id);
+             authorData.lastRace = Date.now();
         }
-        
+
         await playChallengeRace(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
     }
 }
 
 async function playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey) {
-    // خصم المبلغ (الداتا محدثة بالفعل في startRaceGame مع الكولداون، هنا نخصم المبلغ ونحفظ مرة ثانية)
-    // ملاحظة: authorData تمرر بالمرجع، لذا التعديل عليها آمن
+    // خصم المبلغ
     authorData.mora -= bet;
     setScore.run(authorData);
 
@@ -399,9 +418,9 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
             if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
             data.mora -= bet;
             
-            // 🔥 حفظ الكولداون لبقية اللاعبين (غير المضيف) 🔥
+            // تحديث الكولداون للبقية
             if (player.id !== OWNER_ID && player.id !== author.id) {
-                 data.lastRace = Date.now();
+                 sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), player.id, guild.id);
             }
             setScore.run(data);
         }
