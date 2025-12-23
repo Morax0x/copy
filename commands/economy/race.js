@@ -23,7 +23,7 @@ function formatTime(ms) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سباق')
-        .setDescription('تحدي البوت أو أصدقائك في سباق الخيول.')
+        .setDescription('تحدي البوت (فردي) أو أصدقائك (جماعي) في سباق الخيول.')
         .addIntegerOption(option =>
             option.setName('الرهان')
                 .setDescription(`المبلغ الذي تريد المراهنة به (اختياري)`)
@@ -265,12 +265,19 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false }
     ];
 
+    // 🔥🔥 تعديل: عكس اتجاه العرض 🔥🔥
     const renderTrack = () => {
         return participants.map(p => {
             const spaces = Math.floor(p.progress);
             const remaining = TRACK_LENGTH - spaces;
-            const trackLine = '➖'.repeat(Math.max(0, spaces)) + p.icon + '➖'.repeat(Math.max(0, remaining));
-            return `🏁|${trackLine}|🚩 **${p.name}**`;
+            // 1. الاسم أولاً
+            // 2. خط النهاية (🏁)
+            // 3. المسافة المتبقية (➖)
+            // 4. الأيقونة
+            // 5. المسافة المقطوعة (➖)
+            // 6. خط البداية (|)
+            const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
+            return `**${p.name}**\n${trackLine}`;
         }).join('\n\n');
     };
 
@@ -419,12 +426,13 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
             progress: 0
         }));
 
+        // 🔥🔥 تعديل: عكس اتجاه العرض للجماعي أيضاً 🔥🔥
         const renderTrack = () => {
             return participants.map(p => {
                 const spaces = Math.floor(p.progress);
                 const remaining = TRACK_LENGTH - spaces;
-                const trackLine = '➖'.repeat(Math.max(0, spaces)) + p.icon + '➖'.repeat(Math.max(0, remaining));
-                return `🏁|${trackLine}|🚩 **${p.name}**`;
+                const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
+                return `**${p.name}**\n${trackLine}`;
             }).join('\n\n');
         };
 
