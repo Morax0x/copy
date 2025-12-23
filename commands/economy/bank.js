@@ -1,9 +1,10 @@
 const { EmbedBuilder, Colors, AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
-const { createCanvas, loadImage } = require('canvas'); // ❌ تم حذف registerFont
+const { createCanvas, loadImage } = require('canvas'); 
 const path = require('path');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const INTEREST_RATE = 0.005;
+// 🔥 تم تعديل النسبة هنا للعرض فقط لتطابق النظام (0.0005 = 0.05%) 🔥
+const INTEREST_RATE = 0.0005; 
 const INTEREST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 const LOANS = [
@@ -11,8 +12,6 @@ const LOANS = [
     { amount: 15000, totalToRepay: 16500 },
     { amount: 30000, totalToRepay: 33000 }
 ];
-
-// ❌ تم حذف كود تسجيل الخط من هنا (موجود في index.js)
 
 function formatTimeSimple(ms) {
     if (ms < 0) ms = 0;
@@ -96,7 +95,8 @@ module.exports = {
             const timeLeft = (data.lastInterest || 0) + INTEREST_COOLDOWN_MS - now;
 
             let interestMessage;
-            const currentInterestRate = "0.50%";
+            // 🔥 تم تعديل النص ليطابق النسبة (0.05%) 🔥
+            const currentInterestRate = "0.05%";
 
             const baseInterest = Math.floor(data.bank * INTEREST_RATE);
             const finalInterest = baseInterest;
@@ -161,7 +161,6 @@ module.exports = {
                 context.textAlign = 'left';
                 context.fillStyle = '#E0B04A';
 
-                // 👇 (التعديل هنا: استخدام خط Cairo الموحد)
                 context.font = 'bold 48px "Cairo"';
 
                 context.fillText(data.mora.toLocaleString(), 335, 235);
