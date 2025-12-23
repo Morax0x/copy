@@ -4,9 +4,9 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 50;
 const MAX_BET_SOLO = 200; 
-const COOLDOWN_MS = 1 * 60 * 60 * 1000;
+const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
 const MAX_LOAN_BET = 500; 
-const OWNER_ID = "1145327691772481577";
+const OWNER_ID = "1145327691772481577"; // استثناء لك أنت فقط
 const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂'];
 const TRACK_LENGTH = 20;
 
@@ -37,7 +37,6 @@ module.exports = {
         .addUserOption(option => option.setName('الخصم5').setDescription('الخصم الخامس (لعبة جماعية)').setRequired(false)),
 
     name: 'race',
-    // 🔥 تم تحديث الاختصارات لتعمل العربية بشكل مؤكد 🔥
     aliases: ['سباق', 'سابق', 'سباق_خيول', 'r', 'race'],
     category: "Economy",
     description: `تحدي البوت أو تحدي أصدقائك في سباق الخيول.`,
@@ -106,6 +105,8 @@ module.exports = {
         if (!userData) userData = { ...client.defaultData, user: author.id, guild: guild.id };
 
         const now = Date.now();
+        
+        // 🔥 فحص الكولداون (يستثني المالك) 🔥
         if (author.id !== OWNER_ID) {
             const lastRaceTime = userData.lastRace || 0; 
             const timeLeft = lastRaceTime + COOLDOWN_MS - now;
@@ -211,9 +212,15 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
         }
         client.activeGames.add(gameKey);
         
+        // 🔥🔥 إصلاح الكولداون: إجبار الداتابيس على التحديث وإضافة العمود لو ناقص 🔥🔥
         if (author.id !== OWNER_ID) {
-             try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); } 
-             catch(e) { /* العمود غير موجود، لا بأس */ }
+             try { 
+                 sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); 
+             } catch(e) {
+                 // إذا فشل التحديث، نحاول نضيف العمود ونحدث مرة ثانية
+                 try { sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch(err) {}
+                 try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); } catch(err) {}
+             }
         }
         
         setScore.run(authorData);
@@ -240,9 +247,14 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
         }
 
         client.activeGames.add(gameKey);
+        // 🔥🔥 إصلاح الكولداون للجماعي أيضاً 🔥🔥
         if (author.id !== OWNER_ID) {
-             try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); } 
-             catch(e) {}
+             try { 
+                 sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); 
+             } catch(e) {
+                 try { sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch(err) {}
+                 try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); } catch(err) {}
+             }
         }
         setScore.run(authorData);
         await playChallengeRace(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
@@ -255,7 +267,6 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
 
     const prize = bet * 2; 
     
-    // اختيار عشوائي للأيقونات
     const playerIcon = RACE_ICONS[Math.floor(Math.random() * RACE_ICONS.length)];
     const availableBotIcons = RACE_ICONS.filter(i => i !== playerIcon);
     const botIcon = availableBotIcons[Math.floor(Math.random() * availableBotIcons.length)];
@@ -265,24 +276,16 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false }
     ];
 
-    // 🔥🔥 تعديل: عكس اتجاه العرض 🔥🔥
     const renderTrack = () => {
         return participants.map(p => {
             const spaces = Math.floor(p.progress);
             const remaining = TRACK_LENGTH - spaces;
-            // 1. الاسم أولاً
-            // 2. خط النهاية (🏁)
-            // 3. المسافة المتبقية (➖)
-            // 4. الأيقونة
-            // 5. المسافة المقطوعة (➖)
-            // 6. خط البداية (|)
             const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
             return `**${p.name}**\n${trackLine}`;
         }).join('\n\n');
     };
 
     const embed = new EmbedBuilder()
-        // 🔥 تم حذف كلمة (فردي) من هنا 🔥
         .setTitle('🐎 سباق الخيول')
         .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
         .setColor("Orange")
@@ -294,7 +297,6 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         let winner = null;
 
         participants.forEach(p => {
-            // سرعة عشوائية لكل متسابق
             const move = Math.random() * 3 + 0.5; 
             p.progress += move;
             if (p.progress >= TRACK_LENGTH && !winner) winner = p;
@@ -310,13 +312,9 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
 
             if (winner.isPlayer) {
                 const moraMultiplier = calculateMoraBuff(author, sql);
-                
-                // حساب الربح المبفف
                 const profit = bet;
                 const buffedProfit = Math.floor(profit * moraMultiplier);
                 const finalWinnings = bet + buffedProfit;
-                
-                // حساب نسبة الزيادة للعرض
                 const buffPercent = Math.round((moraMultiplier - 1) * 100);
                 const buffText = buffPercent > 0 ? ` (+${buffPercent}%)` : "";
 
@@ -426,7 +424,6 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
             progress: 0
         }));
 
-        // 🔥🔥 تعديل: عكس اتجاه العرض للجماعي أيضاً 🔥🔥
         const renderTrack = () => {
             return participants.map(p => {
                 const spaces = Math.floor(p.progress);
