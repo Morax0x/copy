@@ -24,7 +24,7 @@ const IMAGES = {
     strongest: 'https://i.postimg.cc/pL7PLmf0/power.webp',
     weekly_xp: 'https://i.postimg.cc/9FWddtV8/123.png',
     daily_xp: 'https://i.postimg.cc/9FWddtV8/123.png',
-    monthly_xp: 'https://i.postimg.cc/9FWddtV8/123.png', // (صورة الشهر)
+    monthly_xp: 'https://i.postimg.cc/9FWddtV8/123.png', 
     achievements: 'https://i.postimg.cc/bwxwsnvs/qaʿt-alanjazat.png'
 };
 
@@ -109,7 +109,7 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن لـهذا الـشـهـر`);
             const monthStart = getMonthStartDateString();
             allUsers = sql.prepare(`
-                SELECT userID, SUM(messages * 15 + vc_minutes * 10) as score 
+                SELECT userID, SUM(messages) as total_messages, SUM(vc_minutes) as total_vc, SUM(messages * 15 + vc_minutes * 10) as score 
                 FROM user_daily_stats 
                 WHERE guildID = ? AND date >= ? 
                 GROUP BY userID 
@@ -187,7 +187,13 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 let line = `${rankEmoji} ${pin}<@${uID}>\n`;
 
                 if (type === 'level') line += `> ${styleStart}XP: \`${user.totalXP.toLocaleString()}\` (Lvl: ${user.level})${styleEnd}`;
-                else if (type === 'weekly_xp' || type === 'daily_xp' || type === 'monthly_xp') line += `> ${styleStart}Score: \`${(user.score||0).toLocaleString()}\`${styleEnd}`;
+                // 🔥 التعديل هنا لعرض الرسائل والدقائق 🔥
+                else if (type === 'weekly_xp' || type === 'daily_xp') {
+                    line += `> ${styleStart}TXT: \`${(user.messages||0).toLocaleString()}\` | VC: \`${(user.vc_minutes||0).toLocaleString()}\`${styleEnd}`;
+                }
+                else if (type === 'monthly_xp') {
+                    line += `> ${styleStart}TXT: \`${(user.total_messages||0).toLocaleString()}\` | VC: \`${(user.total_vc||0).toLocaleString()}\`${styleEnd}`;
+                }
                 else if (type === 'mora') line += `> ${styleStart}Mora: \`${((user.mora||0) + (user.bank||0)).toLocaleString()}\` ${EMOJI_MORA}${styleEnd}`;
                 else if (type === 'streak' || type === 'media_streak') line += `> ${styleStart}Streak: \`${user.streakCount}\` ${type === 'media_streak' ? EMOJI_MEDIA_STREAK : '🔥'}${styleEnd}`;
                 else if (type === 'achievements') line += `> ${styleStart}Count: \`${user.count}\` 🏆${styleEnd}`;
