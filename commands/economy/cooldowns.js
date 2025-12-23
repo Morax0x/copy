@@ -55,7 +55,9 @@ const COMMANDS_TO_CHECK = [
     { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
     { name: 'pvp', db_column: 'lastPVP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
     
-    // ✅ التعديل هنا: تم تغيير lastDungeon إلى last_dungeon ليطابق الداتابيس
+    // ✅ تمت إضافة السباق هنا (ساعة واحدة)
+    { name: 'race', db_column: 'lastRace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
+
     { name: 'dungeon', db_column: 'last_dungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
@@ -126,7 +128,7 @@ module.exports = {
                 descriptionLines.push(`${EMOJI_READY} **راتب**`);
             }
 
-            // 2. حساب الأوامر الثابتة (بما فيها الدانجون والترتيب)
+            // 2. حساب الأوامر الثابتة (بما فيها الدانجون والترتيب والسباق)
             for (const cmd of COMMANDS_TO_CHECK) {
                 const lastUsed = data[cmd.db_column] || 0;
                 const cooldownAmount = cmd.cooldown;
