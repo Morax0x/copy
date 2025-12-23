@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const MIN_BET = 50;
+const MIN_BET = 25;
 const MAX_BET_SOLO = 200; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 const MAX_LOAN_BET = 500; 
@@ -97,7 +97,6 @@ module.exports = {
             return reply({ content: "🚫 **لديك لعبة نشطة بالفعل!** أكملها أولاً.", ephemeral: true });
         }
 
-        // إزالة الكولداون العام للقناة (حسب طلبك)، لكن نترك التحقق من وجود لعبة نشطة للمستخدم نفسه في نفس القناة لتجنب الفوضى فقط
         if (client.activeGames.has(`${channel.id}-${author.id}`)) {
              return reply({ content: "🚫 **لديك لعبة جارية في هذه القناة.**", ephemeral: true });
         }
@@ -107,8 +106,6 @@ module.exports = {
 
         const now = Date.now();
         if (author.id !== OWNER_ID) {
-            // يمكن إضافة حقل lastRace في قاعدة البيانات لاحقاً، حالياً نستخدم lastGuess أو نضيف عمود جديد
-            // سنفترض وجود lastRace أو نستخدم cooldown مؤقت في الذاكرة إذا لم يكن موجوداً في DB
             const lastRaceTime = userData.lastRace || 0; 
             const timeLeft = lastRaceTime + COOLDOWN_MS - now;
             if (timeLeft > 0) {
@@ -125,7 +122,6 @@ module.exports = {
             if (userBalance < 100) proposedBet = userBalance;
 
             client.activePlayers.add(author.id);
-            // نستخدم معرف فريد للعبة بدلاً من القناة كاملة
             const gameKey = `${channel.id}-${author.id}`; 
             client.activeGames.add(gameKey);
 
@@ -161,7 +157,7 @@ module.exports = {
                     if (!isSlash) await confirmMsg.delete().catch(() => {});
                     else await confirmation.editReply({ content: '✅', embeds: [], components: [] });
 
-                    client.activeGames.delete(gameKey); // نحذف المؤقت لنبدأ اللعبة الحقيقية
+                    client.activeGames.delete(gameKey); 
                     
                     return startRaceGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
                 }
@@ -214,7 +210,6 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
         }
         client.activeGames.add(gameKey);
         
-        // محاولة تحديث lastRace (إذا العمود موجود) أو استخدام lastGuess كبديل مؤقت
         if (author.id !== OWNER_ID) {
              try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id); } 
              catch(e) { /* العمود غير موجود، لا بأس */ }
@@ -257,7 +252,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
     authorData.mora -= bet;
     setScore.run(authorData);
 
-    const prize = bet * 2; // الفردي يضاعف المبلغ
+    const prize = bet * 2; 
     
     // إعداد المتسابقين (اللاعب + بوت)
     const participants = [
@@ -275,7 +270,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
     };
 
     const embed = new EmbedBuilder()
-        .setTitle('🐎 سباق الخيول (فردي)')
+        .setTitle('🐎 سباق الخيول')
         .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
         .setColor("Orange")
         .setFooter({ text: "السباق جارٍ..." });
@@ -286,7 +281,8 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         let winner = null;
 
         participants.forEach(p => {
-            const move = Math.random() * 3 + 0.5;
+            // سرعة عشوائية لكل متسابق
+            const move = Math.random() * 3 + 0.5; 
             p.progress += move;
             if (p.progress >= TRACK_LENGTH && !winner) winner = p;
         });
@@ -300,17 +296,22 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
             client.activePlayers.delete(author.id);
 
             if (winner.isPlayer) {
+                // 🔥 حساب البف 🔥
                 const moraMultiplier = calculateMoraBuff(author, sql);
                 const finalWinnings = Math.floor(prize * moraMultiplier);
                 
+                // حساب نسبة الزيادة للعرض
+                const buffPercent = Math.round((moraMultiplier - 1) * 100);
+                const buffText = buffPercent > 0 ? ` (+${buffPercent}%)` : "";
+
                 authorData.mora += finalWinnings;
                 setScore.run(authorData);
 
                 const winEmbed = new EmbedBuilder()
                     .setTitle(`🏆 فـاز ${author.displayName}!`)
-                    .setDescription(`🎉 مبروك! حصانك سبق الحصان الأسود!\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}!`)
+                    .setDescription(`🎉 مبروك! حصانك سبق الحصان الأسود!\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}${buffText}`)
                     .setColor("Green")
-                    .setImage('https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif');
+                    .setThumbnail(author.user.displayAvatarURL());
                 
                 channel.send({ embeds: [winEmbed] });
             } else {
@@ -373,8 +374,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
     const embed = new EmbedBuilder()
         .setTitle(`🏁 تـحـدي سباق الخيول!`)
         .setDescription(description)
-        .setColor("Orange")
-        .setImage('https://i.postimg.cc/Vs9bp19q/download-3.gif');
+        .setColor("Orange");
 
     const challengeMsg = await replyFunction({ 
         content: opponents.map(o => o.toString()).join(' '), 
@@ -392,7 +392,6 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
         const finalPlayers = [author];
         opponents.forEach(o => finalPlayers.push(o));
 
-        // خصم المبالغ
         for (const player of finalPlayers) {
             let data = getScore.get(player.id, channel.guild.id);
             if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
@@ -403,7 +402,6 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
             setScore.run(data);
         }
         
-        // إعداد المتسابقين
         const participants = finalPlayers.map((p, index) => ({
             id: p.id,
             name: p.displayName,
@@ -453,8 +451,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     .setTitle(`🏆 الفائز هو ${winner.name}!`)
                     .setDescription(`🎉 **${winner.name}** اكتسح السباق وحصل على **${totalPot.toLocaleString()}** ${EMOJI_MORA}!`)
                     .setColor("Gold")
-                    .setThumbnail(winner.avatar)
-                    .setImage('https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif');
+                    .setThumbnail(winner.avatar);
 
                 channel.send({ content: `<@${winner.id}>`, embeds: [winEmbed] });
             }
