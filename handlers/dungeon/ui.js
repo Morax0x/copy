@@ -7,6 +7,11 @@ function buildSkillSelector(player) {
     const options = [];
 
     if (player.id === OWNER_ID) {
+        // 🔥 مهارات الأونر الجديدة 🔥
+        options.push(new StringSelectMenuOptionBuilder().setLabel('تفعيل الفخ').setValue('skill_owner_trap').setDescription('نقل الفريق لطابق عشوائي فوراً.').setEmoji('🕳️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('انتقال آني (Teleport)').setValue('skill_owner_teleport').setDescription('اختيار طابق محدد للذهاب إليه.').setEmoji('🚀'));
+        
+        // المهارات القديمة
         options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('ضربة قاضية خاصة بالمالك.').setEmoji('👁️'));
         options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش يحتضر والمغادرة.').setEmoji('🚪'));
         
@@ -92,25 +97,36 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = '#2F3136') {
+// 🔥 تعديل عرض المعركة لدعم وحشين 🔥
+function generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers = [], color = '#2F3136') {
     const embed = new EmbedBuilder()
-        .setTitle(`${theme.emoji} الطابق ${floor} | ضد ${monster.name}`)
+        .setTitle(`${theme.emoji} الطابق ${floor} | المعركة محتدمة!`)
         .setColor(color);
 
+    // 1. الوحش الأساسي
     let monsterStatus = "";
     if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
     if (monster.effects.some(e => e.type === 'burn')) monsterStatus += " 🔥";
-    if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
-    if (monster.effects.some(e => e.type === 'confusion')) monsterStatus += " 😵";
     if (monster.frozen) monsterStatus += " ❄️";
-
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
+    
     embed.addFields({ 
-        name: `👹 **${monster.name}** ${monsterStatus}`, 
+        name: `👹 **${monster.name}** (الزعيم) ${monsterStatus}`, 
         value: `${monsterBar} \`[${monster.hp}/${monster.maxHp}]\``, 
         inline: false 
     });
 
+    // 2. الوحش الصغير (إذا وجد)
+    if (subMonster && subMonster.hp > 0) {
+        const subBar = buildHpBar(subMonster.hp, subMonster.maxHp);
+        embed.addFields({ 
+            name: `👾 **${subMonster.name}** (المساند)`, 
+            value: `${subBar} \`[${subMonster.hp}/${subMonster.maxHp}]\``, 
+            inline: false 
+        });
+    }
+
+    // 3. الفريق
     let teamStatus = players.map(p => {
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
@@ -123,21 +139,10 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } 
 
         const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'MORT') : buildHpBar(p.hp, p.maxHp, p.shield);
-        let displayName;
-        let statusCircle;
+        let displayName = p.isDead ? `**${p.name}**` : (actedPlayers.includes(p.id) ? `**${p.name}**` : `<@${p.id}>`);
+        let statusCircle = p.isDead ? "💀" : (actedPlayers.includes(p.id) ? "🔴" : "🟢");
 
-        if (p.isDead) {
-            statusCircle = "💀";
-            displayName = `**${p.name}** [${arabClass}]`; 
-        } else if (actedPlayers.includes(p.id)) {
-            statusCircle = "🔴";
-            displayName = `**${p.name}** [${arabClass}]`; 
-        } else {
-            statusCircle = "🟢";
-            displayName = `<@${p.id}> [${arabClass}]`; 
-        }
-
-        return `${statusCircle} ${icon} ${displayName}\n${hpBar}`;
+        return `${statusCircle} ${icon} ${displayName} [${arabClass}]\n${hpBar}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
