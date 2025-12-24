@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors, Collection } = require("discord.js");
-const { calculateMoraBuff } = require('../../streak-handler.js');
+const { calculateMoraBuff } = require('../../streak-handler.js'); // تأكد من المسار الصحيح
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 10;
@@ -360,10 +360,9 @@ async function playSoloRaceSelection(channel, author, bet, authorData, getScore,
 
 async function playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey, raceOptions, selectedIndex) {
     try {
+        // 🔥 خصم الرهان في البداية
         authorData.mora -= bet;
         setScore.run(authorData);
-
-        const prize = bet * 3; // الجائزة أكبر لأن المنافسة بين 4
 
         // تجهيز المتسابقين
         const participants = raceOptions.map((icon, index) => ({
@@ -386,7 +385,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
 
         const embed = new EmbedBuilder()
             .setTitle('🐎 السباق الكبير!')
-            .setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
+            .setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\n\n${renderTrack()}`)
             .setColor("Orange")
             .setFooter({ text: "السباق جارٍ..." });
 
@@ -412,7 +411,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                     if (p.progress >= TRACK_LENGTH && !winner) winner = p;
                 });
 
-                embed.setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
+                embed.setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
                 await raceMsg.edit({ embeds: [embed] }).catch(() => clearInterval(raceInterval));
 
                 if (winner) {
@@ -420,18 +419,28 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                     safeCleanup(client, gameKey, author.id);
 
                     if (winner.isPlayer) {
-                        const moraMultiplier = calculateMoraBuff(author, sql);
-                        const buffedPrize = Math.floor(prize * moraMultiplier);
+                        // 🔥 حساب البوف عند الفوز
+                        const moraMultiplier = calculateMoraBuff(author, sql); // مثلا 1.45 للبوف 45%
+                        // الجائزة = (الرهان الأصلي) + (الرهان * البوف) + (مبلغ بسيط كجائزة سباق)
+                        // ولكن لجعلها بسيطة وعادلة: الرهان يرجع + نفس قيمة الرهان مضروبة في البوف
+                        // إذا راهن ب 100، والبوف 45%: يرجع له 100 (رأس ماله) + 100 * 1.45 = 245
+                        // أو حسب طلبك: يفوز بـ 145 إضافية. يعني المبلغ الكلي 245.
                         
+                        // المعادلة لتصبح: (الرهان الأساسي * المضاعف)
+                        const totalWin = Math.floor(bet * moraMultiplier); 
+                        // totalWin هنا سيكون 145 إذا كان الرهان 100 والبوف 45% (لأن 100 * 1.45 = 145)
+                        // نضيف الرهان الأصلي الذي تم خصمه ليعود للمحفظة
+                        const finalPayout = bet + totalWin;
+
                         let currentData = getScore.get(author.id, channel.guild.id);
                         if (currentData) {
-                            currentData.mora += buffedPrize;
+                            currentData.mora += finalPayout;
                             setScore.run(currentData);
                         }
 
                         const winEmbed = new EmbedBuilder()
                             .setTitle(`🏆 فـاز خيلك بالمركز الأول!`)
-                            .setDescription(`🎉 مبروك! توقعك كان في محله!\n\nربـحت **${buffedPrize.toLocaleString()}** ${EMOJI_MORA}`)
+                            .setDescription(`🎉 مبروك! توقعك كان في محله!\n\n💰 الرهان المسترد: **${bet}**\n🎁 الربح الصافي (مع البوف): **${totalWin}**\n💰 المجموع: **${finalPayout}** ${EMOJI_MORA}`)
                             .setColor("Green")
                             .setThumbnail(author.user.displayAvatarURL());
                         
