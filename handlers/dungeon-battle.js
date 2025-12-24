@@ -158,7 +158,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     processingUsers.add(i.user.id);
 
                     try {
-                        // --- معالجة زر المهارات ---
                         if (i.customId === 'skill') {
                             const skillRow = buildSkillSelector(p);
                             if (!skillRow) {
@@ -219,10 +218,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let skillNameUsed = "مهارة";
                                     let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
                                     
-                                    // جلب اسم المهارة الصحيح
                                     if (p.skills[skillId]) {
                                         skillObj = p.skills[skillId];
                                         skillNameUsed = skillObj.name;
+                                    } else if (skillId.startsWith('class_') || skillId.startsWith('skill_owner')) {
+                                        // التعامل معها لاحقاً
                                     }
 
                                     // تمرير subMonster للمهارات
@@ -261,7 +261,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } 
-                        // --- معالجة زر الجرعات ---
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
                             if (!potionRow) {
@@ -296,7 +295,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                             } catch (err) { processingUsers.delete(i.user.id); return; }
                         }
-                        // --- معالجة الهجوم والدفاع ---
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                             actedPlayers.push(p.id); p.skipCount = 0;
@@ -320,12 +318,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     
-                                    // 🔥🔥 منطق الاستهداف الذكي 🔥🔥
+                                    // 🔥🔥 منطق الاستهداف الذكي (الزعيم أو المساند) 🔥🔥
                                     let targetToHit = null;
                                     const isMainAlive = monster.hp > 0;
                                     const isSubAlive = subMonster && subMonster.hp > 0;
 
                                     if (isMainAlive && isSubAlive) {
+                                        // 50% عشوائي
                                         targetToHit = Math.random() < 0.5 ? subMonster : monster;
                                     } else if (isMainAlive) {
                                         targetToHit = monster;
@@ -390,6 +389,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 if (monster.frozen) { log.push(`❄️ **${monster.name}** متجمد!`); monster.frozen = false; } 
                 else if (monster.hp > 0) {
+                    // تأثيرات الوحش (سم، حرق...)
                     if (monster.effects) {
                         monster.effects = monster.effects.filter(e => {
                             if (e.type === 'burn') { const burnDmg = e.val; monster.hp -= burnDmg; log.push(`🔥 **${monster.name}** يحترق! (-${burnDmg} HP)`); }
@@ -426,6 +426,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             });
                             if (monster.hp <= 0 && (!subMonster || subMonster.hp <= 0)) { ongoing = false; break; }
                             
+                            // هجوم الوحش العادي
                             let target = alive.find(p => p.id === monster.targetFocusId) || alive.find(p => p.effects.some(e => e.type === 'titan')) || getSmartTarget(players) || alive[Math.floor(Math.random() * alive.length)];
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
@@ -473,11 +474,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
-        if (isTrapActive) {
-            isTrapActive = false;
-        }
+        if (isTrapActive) isTrapActive = false;
 
-        const restEmbed = new EmbedBuilder().setTitle('❖ استـراحـة بيـن الطـوابـق').setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`).setColor(Colors.Red).setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
+        const restEmbed = new EmbedBuilder().setTitle('❖ استـراحـة بيـن الطـوابـق').setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}**`).setColor(Colors.Red);
         const restRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger));
         const restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
         
@@ -502,6 +501,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     trapStartFloor = floor; 
                     const jumpTo = Math.floor(Math.random() * (90 - 31 + 1)) + 31; 
                     isTrapActive = true; 
+                    // لا نستخدم justJumped هنا لأننا نريد بدء الفخ في الدورة القادمة، لكننا نريد تخطي رسالة الاستمرار
                     floor = jumpTo - 1; 
                     await threadChannel.send(`🌀 **فــخ!!!** الأرضية تنهار بكم وتسقطون إلى أعماق الدانجون... (الطابق ${jumpTo})`);
                 } else { await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`); }
