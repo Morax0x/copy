@@ -7,8 +7,27 @@ const MAX_BET_SOLO = 100;
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
 const MAX_LOAN_BET = 500; 
 const OWNER_ID = "1145327691772481577"; // استثناء لك أنت
-const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂'];
+const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂', '🐆', '🐢'];
 const TRACK_LENGTH = 20;
+
+// 😂 قائمة التعليقات المضحكة والمتنوعة
+const COMMENTS = [
+    "🌯 أحد الخيول وقف يطلب شاورما!",
+    "☕ الحصان تعب.. يبي له كرك يعدل المزاج!",
+    "🚀 يا ساتر! انطلاقة صاروخية لا تصدق!",
+    "👀 الحكم يطالع في الجوال والخيول تغش!",
+    "🐢 سباق سلاحف ولا خيول هذا؟ تحركوا!",
+    "💸 الجمهور يطالب باسترجاع فلوس التذاكر!",
+    "⚡ سرعة خيالية! هل مركب تيربو؟",
+    "🥕 حصانك شاف جزرة ووقف ياكلها!",
+    "🌪️ عاصفة غبارية تقلب الموازين!",
+    "🛌 أحد المتسابقين قرر ياخذ قيلولة!",
+    "😱 منافسة أشرس من خصم الراتب!",
+    "📸 سيلفي مع الجمهور قبل خط النهاية!",
+    "🦵 عرقلة واضحة! وين الـ VAR؟",
+    "🦁 الأسد يطارد المتصدر.. اهرب!",
+    "🧼 الأرضية زلقة.. انتبهوا من الزحلقة!"
+];
 
 function formatTime(ms) {
     if (ms < 0) ms = 0;
@@ -42,7 +61,7 @@ module.exports = {
         .setDescription('تحدي البوت (فردي) أو أصدقائك (جماعي) في سباق الخيول.')
         .addIntegerOption(option =>
             option.setName('الرهان')
-                .setDescription(`المبلغ الذي تريد المراهنة به (اختياري)`)
+                .setDescription(`المبلغ الذي تريد المراهنة به `)
                 .setRequired(false)
                 .setMinValue(MIN_BET)
         )
@@ -309,8 +328,8 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         const botIcon = availableBotIcons[Math.floor(Math.random() * availableBotIcons.length)];
 
         const participants = [
-            { id: author.id, name: author.displayName, icon: playerIcon, progress: 0, isPlayer: true },
-            { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false }
+            { id: author.id, name: author.displayName, icon: playerIcon, progress: 0, isPlayer: true, status: "" },
+            { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false, status: "" }
         ];
 
         const renderTrack = () => {
@@ -318,7 +337,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                 const spaces = Math.floor(p.progress);
                 const remaining = TRACK_LENGTH - spaces;
                 const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
-                return `**${p.name}**\n${trackLine}`;
+                return `**${p.name}** ${p.status}\n${trackLine}`;
             }).join('\n\n');
         };
 
@@ -333,14 +352,35 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         const raceInterval = setInterval(async () => {
             try {
                 let winner = null;
+                const randomComment = COMMENTS[Math.floor(Math.random() * COMMENTS.length)];
 
                 participants.forEach(p => {
-                    const move = Math.random() * 3 + 0.5; 
+                    // أحداث عشوائية
+                    const chance = Math.random();
+                    let move = 0;
+                    p.status = ""; 
+
+                    if (chance < 0.05) { // 5% نوم
+                        move = 0;
+                        p.status = "💤";
+                    } else if (chance < 0.15) { // 10% أكل جزرة (بطء)
+                        move = 0.3;
+                        p.status = "🥕";
+                    } else if (chance > 0.90) { // 10% تيربو
+                        move = 4;
+                        p.status = "🚀";
+                    } else if (chance > 0.80) { // 10% عاصفة
+                        move = 2.5;
+                        p.status = "🌪️";
+                    } else {
+                        move = Math.random() * 3 + 0.5;
+                    }
+
                     p.progress += move;
                     if (p.progress >= TRACK_LENGTH && !winner) winner = p;
                 });
 
-                embed.setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`);
+                embed.setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
                 await raceMsg.edit({ embeds: [embed] }).catch(() => clearInterval(raceInterval));
 
                 if (winner) {
@@ -402,11 +442,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                 return replyFunction({ content: "لا يمكنك تحدي نفسك!", ephemeral: true });
             }
             if (client.activePlayers.has(opponent.id)) {
-                // ملاحظة: قد يكون الخصم مشغولاً في لعبة أخرى، لذا لا ننظف قائمته هنا، فقط نلغي اللعبة الحالية
                 safeCleanup(client, gameKey, author.id); 
-                // الخصوم لم تتم إضافتهم بعد للقائمة النشطة في هذه اللعبة (يتم ذلك قبل استدعاء هذه الدالة)
-                // ولكن بما أننا في دالة playChallengeRace، فقد تمت إضافتهم بالفعل في startRaceGame.
-                // لذا يجب تنظيفهم جميعًا.
                 safeCleanup(client, gameKey, allPlayerIds);
                 return replyFunction({ content: `اللاعب ${opponent.displayName} مشغول في لعبة أخرى!`, ephemeral: true });
             }
@@ -463,7 +499,6 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                 if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
                 data.mora -= bet;
                 
-                // تحديث الكولداون للبقية
                 if (player.id !== OWNER_ID && player.id !== author.id) {
                      try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), player.id, guild.id); } catch(e){}
                 }
@@ -475,7 +510,8 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                 name: p.displayName,
                 avatar: p.user.displayAvatarURL(),
                 icon: RACE_ICONS[index % RACE_ICONS.length],
-                progress: 0
+                progress: 0,
+                status: ""
             }));
 
             const renderTrack = () => {
@@ -483,7 +519,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     const spaces = Math.floor(p.progress);
                     const remaining = TRACK_LENGTH - spaces;
                     const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
-                    return `**${p.name}**\n${trackLine}`;
+                    return `**${p.name}** ${p.status}\n${trackLine}`;
                 }).join('\n\n');
             };
 
@@ -497,19 +533,34 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
             const raceInterval = setInterval(async () => {
                 try {
                     let winner = null;
+                    const randomComment = COMMENTS[Math.floor(Math.random() * COMMENTS.length)];
 
                     participants.forEach(p => {
-                        const move = Math.random() * 3 + 0.5;
+                        // أحداث عشوائية للسباق الجماعي
+                        const chance = Math.random();
+                        let move = 0;
+                        p.status = "";
+
+                        if (chance < 0.1) {
+                            move = 0.2;
+                            p.status = "💤";
+                        } else if (chance > 0.85) {
+                            move = Math.random() * 4 + 2; 
+                            p.status = "💨";
+                        } else {
+                            move = Math.random() * 3 + 0.5;
+                        }
+
                         p.progress += move;
                         if (p.progress >= TRACK_LENGTH && !winner) winner = p;
                     });
 
-                    raceEmbed.setDescription(`الجائزة الكبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}\n\n${renderTrack()}`);
+                    raceEmbed.setDescription(`الجائزة الكبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
                     await challengeMsg.edit({ embeds: [raceEmbed] }).catch(() => clearInterval(raceInterval));
 
                     if (winner) {
                         clearInterval(raceInterval);
-                        safeCleanup(client, gameKey, allPlayerIds); // تنظيف نهائي
+                        safeCleanup(client, gameKey, allPlayerIds);
 
                         let winnerData = getScore.get(winner.id, channel.guild.id);
                         if (winnerData) {
