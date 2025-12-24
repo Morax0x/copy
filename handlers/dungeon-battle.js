@@ -121,10 +121,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥 تصحيح: استخدام reply بدلاً من followUp للفحوصات الأولية 🔥
-                    if (processingUsers.has(i.user.id)) {
-                        return i.reply({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
-                    }
+                    // 🔥 استخدام reply بدلاً من followUp لتجنب الخطأ
+                    if (processingUsers.has(i.user.id)) return i.reply({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
@@ -139,32 +137,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     }
 
                     let p = players.find(pl => pl.id === i.user.id);
-                    // 🔥 تصحيح: استخدام reply
                     if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
-                    // إذا مات أو لعب دوره، فقط نؤجل الرد لكي لا يظهر خطأ التفاعل
                     if (p.isDead || actedPlayers.includes(p.id)) return i.deferUpdate().catch(()=>{});
                     
                     processingUsers.add(i.user.id);
 
                     try {
-                        // --- معالجة زر المهارات ---
                         if (i.customId === 'skill') {
                             const skillRow = buildSkillSelector(p);
                             if (!skillRow) {
-                                // 🔥 تصحيح: reply لأنه أول رد
                                 await i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
-                            
                             try {
-                                // 🔥 تصحيح: reply لفتح القائمة
                                 const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
-                                
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 15000 });
                                 
                                 const skillId = selection.values[0];
                                 
-                                // --- معالجة مهارات الأونر الخاصة ---
+                                // 🔥 مهارات الأونر الخاصة 🔥
                                 if (skillId === 'skill_owner_trap') {
                                     await selection.update({ content: "🌀 تم تفعيل الفخ يدوياً!", components: [] });
                                     floor = Math.floor(Math.random() * (90 - 31 + 1)) + 31; 
@@ -176,13 +167,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     processingUsers.delete(i.user.id);
                                     return;
                                 }
-                                
                                 if (skillId === 'skill_owner_teleport') {
                                     const modal = new ModalBuilder().setCustomId('teleport_modal').setTitle('الانتقال الآني 🚀');
                                     const floorInput = new TextInputBuilder().setCustomId('floor_input').setLabel("رقم الطابق (1-100)").setStyle(TextInputStyle.Short);
                                     modal.addComponents(new ActionRowBuilder().addComponents(floorInput));
                                     await selection.showModal(modal);
-                                    
                                     const modalSubmit = await selection.awaitModalSubmit({ time: 30000 });
                                     const targetFloor = parseInt(modalSubmit.fields.getTextInputValue('floor_input'));
                                     if (isNaN(targetFloor) || targetFloor < 1 || targetFloor > 100) {
@@ -197,7 +186,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         return;
                                     }
                                 } 
-                                // --- معالجة المهارات العادية ---
                                 else {
                                     if (!selection.replied && !selection.deferred) await selection.deferUpdate().catch(()=>{}); 
 
@@ -215,7 +203,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     } else if (p.skills[skillId]) {
                                         skillObj = p.skills[skillId];
                                     } else if (p.id === OWNER_ID) {
-                                        // For owner
+                                        // Owner skills logic
                                     }
 
                                     const res = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
@@ -245,25 +233,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actedPlayers.push(p.id); 
                                     p.skipCount = 0; 
                                     await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
-                                    // نعدل الرسالة الرئيسية للمعركة
                                     await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                                 }
 
                             } catch (err) { 
-                                // إذا انتهى الوقت أو ألغى المستخدم
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } 
-                        // --- معالجة زر الجرعات ---
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
                             if (!potionRow) {
-                                // 🔥 تصحيح: reply
                                 await i.reply({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
                             try {
-                                // 🔥 تصحيح: reply
                                 const potionMsg = await i.reply({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true, fetchReply: true });
                                 const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'potion_select_menu', time: 15000 });
                                 await selection.deferUpdate().catch(()=>{});
@@ -289,9 +272,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                             } catch (err) { processingUsers.delete(i.user.id); return; }
                         }
-                        // --- معالجة الهجوم والدفاع ---
                         else if (i.customId === 'atk' || i.customId === 'def') {
-                            // 🔥 تأجيل التحديث مباشرة لأننا سنعدل الرسالة الأصلية
                             if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                             actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
@@ -306,6 +287,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     
+                                    // 🔥🔥 تحديد الهدف (وحش كبير أو صغير) 🔥🔥
                                     let targetToHit = monster;
                                     if (subMonster && subMonster.hp > 0) { if (Math.random() < 0.5) targetToHit = subMonster; }
                                     if (targetToHit.hp <= 0) targetToHit = monster;
