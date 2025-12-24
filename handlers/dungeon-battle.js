@@ -121,7 +121,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    // 🔥 استخدام reply بدلاً من followUp لتجنب الخطأ
                     if (processingUsers.has(i.user.id)) return i.reply({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
@@ -287,13 +286,26 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     
-                                    // 🔥🔥 تحديد الهدف (وحش كبير أو صغير) 🔥🔥
-                                    let targetToHit = monster;
-                                    if (subMonster && subMonster.hp > 0) { if (Math.random() < 0.5) targetToHit = subMonster; }
-                                    if (targetToHit.hp <= 0) targetToHit = monster;
+                                    // 🔥🔥 إصلاح توجيه الضرر للوحش الحي 🔥🔥
+                                    let targetToHit = null;
+                                    const isMainAlive = monster.hp > 0;
+                                    const isSubAlive = subMonster && subMonster.hp > 0;
 
-                                    targetToHit.hp -= dmg; p.totalDamage += dmg; 
-                                    log.push(`🗡️ **${p.name}** ضرب **${targetToHit.name}** بـ ${dmg} ضرر.`);
+                                    if (isMainAlive && isSubAlive) {
+                                        // 50% عشوائي
+                                        targetToHit = Math.random() < 0.5 ? subMonster : monster;
+                                    } else if (isMainAlive) {
+                                        targetToHit = monster;
+                                    } else if (isSubAlive) {
+                                        targetToHit = subMonster;
+                                    }
+
+                                    if (targetToHit) {
+                                        targetToHit.hp -= dmg; 
+                                        p.totalDamage += dmg; 
+                                        const tName = targetToHit === monster ? "الزعيم" : "التابع";
+                                        log.push(`🗡️ **${p.name}** ضرب **${targetToHit.name}** (${tName}) بـ ${dmg} ضرر.`);
+                                    }
                                 }
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
