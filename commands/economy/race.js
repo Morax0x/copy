@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors, Collection } = require("discord.js");
-const { calculateMoraBuff } = require('../../streak-handler.js'); // تأكد من المسار الصحيح
+const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 10;
@@ -10,7 +10,7 @@ const OWNER_ID = "1145327691772481577"; // استثناء لك أنت
 const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂', '🐆', '🐢', '🐉', '🦖', '🐇'];
 const TRACK_LENGTH = 20;
 
-// 😂 قائمة التعليقات المضحكة والمتنوعة
+// 😂 قائمة التعليقات المضحكة (تمت زيادتها)
 const COMMENTS = [
     "🌯 أحد الخيول وقف يطلب شاورما!",
     "☕ الحصان تعب.. يبي له كرك يعدل المزاج!",
@@ -26,7 +26,25 @@ const COMMENTS = [
     "📸 سيلفي مع الجمهور قبل خط النهاية!",
     "🦵 عرقلة واضحة! وين الـ VAR؟",
     "🦁 الأسد يطارد المتصدر.. اهرب!",
-    "🧼 الأرضية زلقة.. انتبهوا من الزحلقة!"
+    "🧼 الأرضية زلقة.. انتبهوا من الزحلقة!",
+    "🚑 الإسعاف وصل.. خيلك دايخ!",
+    "💃 الخيل قام يرقص بنص الحلبة!",
+    "📱 فارس مشغول يصور سناب!",
+    "🛑 إشارة حمراء بنص الحلبة.. الكل وقف!",
+    "🦟 ذبانة دخلت في عين المتصدر!",
+    "🐸 ضفدع عملاق يعترض الطريق!",
+    "🍌 قشرة موز.. وزززحححلقة!",
+    "👻 يقولون في جنّي يدف الحصان الأخير!",
+    "🛒 أحد الخيول راح البقالة ورجع!",
+    "🚜 الحصان قلب تراكتر وبدأ يحرث الأرض!",
+    "📡 انقطع الاتصال مع الفارس!",
+    "🔋 بطارية الحصان خلصت.. اشحنوه!",
+    "🥤 استراحة مياه.. الجو حار!",
+    "🎮 المتسابق يفكر إنه يلعب فيفا!",
+    "🚽 أحد الخيول طلب إذن يروح الحمام!",
+    "🔭 الحكم يحتاج نظارة مو شايف شي!",
+    "🎈 بالونة خوفت الخيول ورجعتهم ورا!",
+    "🚧 تحويلة مرورية في المسار رقم 3!"
 ];
 
 function formatTime(ms) {
@@ -419,28 +437,24 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                     safeCleanup(client, gameKey, author.id);
 
                     if (winner.isPlayer) {
-                        // 🔥 حساب البوف عند الفوز
-                        const moraMultiplier = calculateMoraBuff(author, sql); // مثلا 1.45 للبوف 45%
-                        // الجائزة = (الرهان الأصلي) + (الرهان * البوف) + (مبلغ بسيط كجائزة سباق)
-                        // ولكن لجعلها بسيطة وعادلة: الرهان يرجع + نفس قيمة الرهان مضروبة في البوف
-                        // إذا راهن ب 100، والبوف 45%: يرجع له 100 (رأس ماله) + 100 * 1.45 = 245
-                        // أو حسب طلبك: يفوز بـ 145 إضافية. يعني المبلغ الكلي 245.
+                        // 🔥 حساب البوف والمبلغ النهائي (التعديل المطلوب)
+                        const moraMultiplier = calculateMoraBuff(author, sql); // مثال: 1.45 للبوف 45%
+                        const totalWin = Math.floor(bet * moraMultiplier); // 100 * 1.45 = 145
                         
-                        // المعادلة لتصبح: (الرهان الأساسي * المضاعف)
-                        const totalWin = Math.floor(bet * moraMultiplier); 
-                        // totalWin هنا سيكون 145 إذا كان الرهان 100 والبوف 45% (لأن 100 * 1.45 = 145)
-                        // نضيف الرهان الأصلي الذي تم خصمه ليعود للمحفظة
-                        const finalPayout = bet + totalWin;
-
+                        // تحديث الداتابيس
                         let currentData = getScore.get(author.id, channel.guild.id);
                         if (currentData) {
-                            currentData.mora += finalPayout;
+                            currentData.mora += totalWin;
                             setScore.run(currentData);
                         }
 
+                        // حساب نسبة البوف للعرض
+                        const buffPercent = Math.floor((moraMultiplier - 1) * 100);
+                        const buffText = buffPercent > 0 ? ` (+%${buffPercent})` : '';
+
                         const winEmbed = new EmbedBuilder()
                             .setTitle(`🏆 فـاز خيلك بالمركز الأول!`)
-                            .setDescription(`🎉 مبروك! توقعك كان في محله!\n\n💰 الرهان المسترد: **${bet}**\n🎁 الربح الصافي (مع البوف): **${totalWin}**\n💰 المجموع: **${finalPayout}** ${EMOJI_MORA}`)
+                            .setDescription(`🎉 مبروك! توقعك كان في محله!\n\n✶ ربحـت: ${totalWin.toLocaleString()} ${EMOJI_MORA}${buffText}`)
                             .setColor("Green")
                             .setThumbnail(author.user.displayAvatarURL());
                         
