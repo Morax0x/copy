@@ -5,12 +5,14 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
+    // حساب البفات (Buffs)
     let atkMultiplier = 1.0;
     if (player.effects) {
         player.effects.forEach(e => { if (e.type === 'atk_buff') atkMultiplier += e.val; });
     }
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
+    // --- 1. مهارات المالك الخاصة ---
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -26,6 +28,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         return { type: 'owner_leave' };
     }
 
+    // --- 2. مهارات الكلاسات (Class Skills) ---
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -51,12 +54,14 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
+    // التحقق من الكولداون للمهارات العادية
     if (!classType && skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
         if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
             return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
         }
     }
 
+    // تعيين الكولداون
     const setCD = (turns = 3) => {
         if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
     };
@@ -67,6 +72,21 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         setCD(3);
     }
 
+    // 🔥🔥🔥 إصلاح مهارة الروح (Spirit) بشكل إجباري 🔥🔥🔥
+    // إذا كان اسم المهارة يحتوي على Spirit أو ID الخاص بها هو race_spirit_skill
+    if (skill.id === 'race_spirit_skill' || skill.stat_type === 'Dmg_Evasion') {
+        skillDmg = Math.floor(effectiveAtk * 1.3) * mult;
+        monster.hp -= skillDmg;
+        player.totalDamage += skillDmg;
+        
+        // تفعيل المراوغة (Evasion) لمدة جولة واحدة
+        player.effects.push({ type: 'evasion', val: 1, turns: 1 });
+        
+        log.push(`👻 **${player.name}** ضرب واختفى كالشبح! (مراوغة تامة للجولة القادمة)`);
+        return; // الخروج لضمان عدم تنفيذ كود آخر
+    }
+
+    // --- 3. بقية أنواع المهارات ---
     switch (skill.stat_type) {
         case 'TrueDMG_Burn': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
@@ -153,6 +173,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             log.push(`🌀 **${player.name}** أثار الفوضى بتأثير عشوائي (${randomEffect})!`);
             break;
         }
+        // حالة Dmg_Evasion موجودة هنا أيضاً كاحتياط للمهارات الأخرى
         case 'Dmg_Evasion': { 
             skillDmg = Math.floor(effectiveAtk * 1.3) * mult;
             monster.hp -= skillDmg;
