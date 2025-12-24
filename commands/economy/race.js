@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, Collection } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors, Collection } = require("discord.js");
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -7,7 +7,7 @@ const MAX_BET_SOLO = 100;
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
 const MAX_LOAN_BET = 500; 
 const OWNER_ID = "1145327691772481577"; // استثناء لك أنت
-const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂', '🐆', '🐢'];
+const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂', '🐆', '🐢', '🐉', '🦖', '🐇'];
 const TRACK_LENGTH = 20;
 
 // 😂 قائمة التعليقات المضحكة والمتنوعة
@@ -39,7 +39,7 @@ function formatTime(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// دالة تنظيف آمنة لضمان إزالة اللاعبين من القائمة النشطة
+// دالة تنظيف آمنة
 function safeCleanup(client, gameKey, playerIds) {
     try {
         if (client.activeGames) client.activeGames.delete(gameKey);
@@ -55,13 +55,22 @@ function safeCleanup(client, gameKey, playerIds) {
     }
 }
 
+// دالة مساعدة لخلط المصفوفة
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سباق')
         .setDescription('تحدي البوت (فردي) أو أصدقائك (جماعي) في سباق الخيول.')
         .addIntegerOption(option =>
             option.setName('الرهان')
-                .setDescription(`المبلغ الذي تريد المراهنة به `)
+                .setDescription(`المبلغ الذي تريد المراهنة به (اختياري)`)
                 .setRequired(false)
                 .setMinValue(MIN_BET)
         )
@@ -125,10 +134,8 @@ module.exports = {
                  return message.reply(payload);
             };
 
-            // ضمان وجود الجداول والأعمدة
-            try {
-                if (sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run();
-            } catch (e) { }
+            // ضمان وجود الجداول
+            try { if (sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) { }
 
             if (!client.activeGames) client.activeGames = new Set();
             if (!client.activePlayers) client.activePlayers = new Set();
@@ -137,7 +144,6 @@ module.exports = {
                 return reply({ content: "🚫 **لديك لعبة نشطة بالفعل!** أكملها أولاً.", ephemeral: true });
             }
 
-            // جلب البيانات مع إنشاء صف جديد إذا لم يوجد
             let row = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(author.id, guild.id);
             if (!row) {
                 const defaultD = { ...client.defaultData, user: author.id, guild: guild.id };
@@ -164,7 +170,6 @@ module.exports = {
                 if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
                 if (userBalance < 100) proposedBet = userBalance;
 
-                // إضافة اللاعب للقائمة مؤقتًا
                 client.activePlayers.add(author.id);
                 const gameKey = `${channel.id}-${author.id}`; 
                 client.activeGames.add(gameKey);
@@ -183,7 +188,6 @@ module.exports = {
                 );
 
                 const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [rowBtns], fetchReply: true });
-                
                 const filter = i => i.user.id === author.id && (i.customId === 'race_auto_confirm' || i.customId === 'race_auto_cancel');
                 
                 try {
@@ -200,7 +204,6 @@ module.exports = {
                         if (!isSlash) await confirmMsg.delete().catch(() => {});
                         else await confirmation.editReply({ content: '✅', embeds: [], components: [] });
 
-                        // إزالة اللعبة من القائمة النشطة لبدء اللعبة الفعلية
                         client.activeGames.delete(gameKey); 
                         
                         return startRaceGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
@@ -217,7 +220,6 @@ module.exports = {
             }
         } catch (err) {
             console.error("[Race Command Error]", err);
-            // تنظيف في حالة حدوث خطأ غير متوقع في البداية
             if (author) safeCleanup(client, `${channel?.id}-${author.id}`, author.id);
             const msg = "حدث خطأ غير متوقع.";
             if (interaction && isSlash) interaction.editReply({ content: msg, ephemeral: true }).catch(() => {});
@@ -229,10 +231,7 @@ module.exports = {
 async function startRaceGame(channel, author, opponents, bet, client, guild, sql, replyError, replyFunction) {
     const gameKey = `${channel.id}-${author.id}`; 
 
-    // تنظيف أي لعبة سابقة عالقة لنفس المفتاح (احتياط)
-    if (client.activeGames.has(gameKey)) {
-        client.activeGames.delete(gameKey);
-    }
+    if (client.activeGames.has(gameKey)) client.activeGames.delete(gameKey);
 
     try {
         if (bet < MIN_BET) {
@@ -242,7 +241,6 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
 
         const getScore = client.getLevel;
         const setScore = client.setLevel;
-        
         let authorData = getScore.get(author.id, guild.id);
         if (!authorData) {
             authorData = { ...client.defaultData, user: author.id, guild: guild.id };
@@ -263,15 +261,8 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
             }
             client.activeGames.add(gameKey);
             
-            // تحديث الكولداون
-            if (author.id !== OWNER_ID) {
-                 try {
-                     sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id);
-                     authorData.lastRace = Date.now();
-                 } catch (e) { console.error("[Race Cooldown Update Error]", e); }
-            }
-            
-            await playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
+            // اختيار الحصان قبل البدء
+            await playSoloRaceSelection(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
 
         } else {
             // --- جماعي ---
@@ -294,16 +285,6 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
             }
 
             client.activeGames.add(gameKey);
-            
-            // تحديث الكولداون للمضيف
-            if (author.id !== OWNER_ID) {
-                 try {
-                     sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, guild.id);
-                     authorData.lastRace = Date.now();
-                 } catch (e) { console.error("[Race Cooldown Update Error]", e); }
-            }
-
-            // إضافة الخصوم للقائمة النشطة
             opponents.forEach(o => client.activePlayers.add(o.id));
 
             await playChallengeRace(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
@@ -315,22 +296,84 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
     }
 }
 
-async function playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey) {
+// 🟢 دالة اختيار الحصان للسباق الفردي 🟢
+async function playSoloRaceSelection(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey) {
     try {
-        // خصم المبلغ
+        // اختيار 4 حيوانات عشوائية للمشاركة
+        const shuffledIcons = shuffleArray([...RACE_ICONS]);
+        const raceOptions = shuffledIcons.slice(0, 4); // نأخذ أول 4
+
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_horse')
+            .setPlaceholder('اختر الحصان الذي تراهن عليه...')
+            .addOptions(
+                raceOptions.map((icon, index) => 
+                    new StringSelectMenuOptionBuilder()
+                        .setLabel(`المتسابق رقم ${index + 1}`)
+                        .setDescription(`راهن على ${icon}`)
+                        .setValue(index.toString())
+                        .setEmoji(icon)
+                )
+            );
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        const embed = new EmbedBuilder()
+            .setTitle('🐎 اختر متسابقك!')
+            .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\n\nاختر الحصان الذي تتوقع فوزه من القائمة بالأسفل!`)
+            .setColor("Blue");
+
+        const msg = await replyFunction({ embeds: [embed], components: [row], fetchReply: true });
+
+        const filter = i => i.user.id === author.id && i.customId === 'select_horse';
+        
+        try {
+            const selection = await msg.awaitMessageComponent({ filter, time: 30000 });
+            await selection.deferUpdate();
+            
+            const selectedIndex = parseInt(selection.values[0]);
+            const selectedIcon = raceOptions[selectedIndex];
+
+            // تحديث الكولداون (فقط بعد الاختيار وبدء السباق الفعلي)
+            if (author.id !== OWNER_ID) {
+                 try {
+                     sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), author.id, channel.guild.id);
+                     authorData.lastRace = Date.now();
+                 } catch (e) {}
+            }
+
+            await msg.delete().catch(()=>{});
+            
+            // بدء السباق الفعلي
+            await playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey, raceOptions, selectedIndex);
+
+        } catch (e) {
+            safeCleanup(client, gameKey, author.id);
+            await msg.edit({ content: '⏰ انتهى وقت الاختيار.', components: [] }).catch(()=>{});
+        }
+
+    } catch (err) {
+        console.error("[Race Selection Error]", err);
+        safeCleanup(client, gameKey, author.id);
+    }
+}
+
+async function playSoloRace(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey, raceOptions, selectedIndex) {
+    try {
         authorData.mora -= bet;
         setScore.run(authorData);
 
-        const prize = bet * 2; 
-        
-        const playerIcon = RACE_ICONS[Math.floor(Math.random() * RACE_ICONS.length)];
-        const availableBotIcons = RACE_ICONS.filter(i => i !== playerIcon);
-        const botIcon = availableBotIcons[Math.floor(Math.random() * availableBotIcons.length)];
+        const prize = bet * 3; // الجائزة أكبر لأن المنافسة بين 4
 
-        const participants = [
-            { id: author.id, name: author.displayName, icon: playerIcon, progress: 0, isPlayer: true, status: "" },
-            { id: 'bot', name: 'الخصم', icon: botIcon, progress: 0, isPlayer: false, status: "" }
-        ];
+        // تجهيز المتسابقين
+        const participants = raceOptions.map((icon, index) => ({
+            id: index === selectedIndex ? author.id : `bot_${index}`,
+            name: index === selectedIndex ? author.displayName : `المنافس ${index + 1}`,
+            icon: icon,
+            progress: 0,
+            isPlayer: index === selectedIndex,
+            status: ""
+        }));
 
         const renderTrack = () => {
             return participants.map(p => {
@@ -342,12 +385,12 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
         };
 
         const embed = new EmbedBuilder()
-            .setTitle('🐎 سباق الخيول')
-            .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
+            .setTitle('🐎 السباق الكبير!')
+            .setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}`)
             .setColor("Orange")
             .setFooter({ text: "السباق جارٍ..." });
 
-        const raceMsg = await replyFunction({ embeds: [embed] });
+        const raceMsg = await channel.send({ embeds: [embed] });
 
         const raceInterval = setInterval(async () => {
             try {
@@ -355,64 +398,48 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                 const randomComment = COMMENTS[Math.floor(Math.random() * COMMENTS.length)];
 
                 participants.forEach(p => {
-                    // أحداث عشوائية
                     const chance = Math.random();
                     let move = 0;
                     p.status = ""; 
 
-                    if (chance < 0.05) { // 5% نوم
-                        move = 0;
-                        p.status = "💤";
-                    } else if (chance < 0.15) { // 10% أكل جزرة (بطء)
-                        move = 0.3;
-                        p.status = "🥕";
-                    } else if (chance > 0.90) { // 10% تيربو
-                        move = 4;
-                        p.status = "🚀";
-                    } else if (chance > 0.80) { // 10% عاصفة
-                        move = 2.5;
-                        p.status = "🌪️";
-                    } else {
-                        move = Math.random() * 3 + 0.5;
-                    }
+                    if (chance < 0.05) { move = 0; p.status = "💤"; }
+                    else if (chance < 0.15) { move = 0.3; p.status = "🥕"; }
+                    else if (chance > 0.90) { move = 4; p.status = "🚀"; }
+                    else if (chance > 0.80) { move = 2.5; p.status = "🌪️"; }
+                    else { move = Math.random() * 3 + 0.5; }
 
                     p.progress += move;
                     if (p.progress >= TRACK_LENGTH && !winner) winner = p;
                 });
 
-                embed.setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
+                embed.setDescription(`لقد راهنت على: ${participants.find(p=>p.isPlayer).icon}\nالرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${prize}** ${EMOJI_MORA}\n\n${renderTrack()}\n\n🎙️ **${randomComment}**`);
                 await raceMsg.edit({ embeds: [embed] }).catch(() => clearInterval(raceInterval));
 
                 if (winner) {
                     clearInterval(raceInterval);
-                    safeCleanup(client, gameKey, author.id); // تنظيف فوري
+                    safeCleanup(client, gameKey, author.id);
 
                     if (winner.isPlayer) {
                         const moraMultiplier = calculateMoraBuff(author, sql);
-                        const profit = bet;
-                        const buffedProfit = Math.floor(profit * moraMultiplier);
-                        const finalWinnings = bet + buffedProfit;
-                        const buffPercent = Math.round((moraMultiplier - 1) * 100);
-                        const buffText = buffPercent > 0 ? ` (+${buffPercent}%)` : "";
-
-                        // إعادة جلب البيانات لضمان التحديث الصحيح
+                        const buffedPrize = Math.floor(prize * moraMultiplier);
+                        
                         let currentData = getScore.get(author.id, channel.guild.id);
                         if (currentData) {
-                            currentData.mora += finalWinnings;
+                            currentData.mora += buffedPrize;
                             setScore.run(currentData);
                         }
 
                         const winEmbed = new EmbedBuilder()
-                            .setTitle(`🏆 فـاز ${author.displayName}!`)
-                            .setDescription(`🎉 مبروك! سبقت الخصم!\n\nربـحت **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}${buffText}`)
+                            .setTitle(`🏆 فـاز خيلك بالمركز الأول!`)
+                            .setDescription(`🎉 مبروك! توقعك كان في محله!\n\nربـحت **${buffedPrize.toLocaleString()}** ${EMOJI_MORA}`)
                             .setColor("Green")
                             .setThumbnail(author.user.displayAvatarURL());
                         
                         channel.send({ embeds: [winEmbed] });
                     } else {
                         const loseEmbed = new EmbedBuilder()
-                            .setTitle('💔 خسرت السباق...')
-                            .setDescription(`سبقك الخصم لخط النهاية.\nخسرت **${bet}** ${EMOJI_MORA} 💸.`)
+                            .setTitle('💔 خسر خيلك...')
+                            .setDescription(`الفائز كان: **${winner.name}** ${winner.icon}\nخسرت الرهان **${bet}** ${EMOJI_MORA}.`)
                             .setColor("Red");
                         
                         channel.send({ embeds: [loseEmbed] });
@@ -436,26 +463,15 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
     try {
         const requiredOpponentsIDs = opponents.map(o => o.id);
 
+        // فحوصات سريعة قبل إرسال الرسالة
         for (const opponent of opponents.values()) {
-            if (opponent.id === author.id) {
-                safeCleanup(client, gameKey, allPlayerIds);
-                return replyFunction({ content: "لا يمكنك تحدي نفسك!", ephemeral: true });
-            }
             if (client.activePlayers.has(opponent.id)) {
                 safeCleanup(client, gameKey, author.id); 
-                safeCleanup(client, gameKey, allPlayerIds);
                 return replyFunction({ content: `اللاعب ${opponent.displayName} مشغول في لعبة أخرى!`, ephemeral: true });
             }
-            if (opponent.user.bot) {
-                safeCleanup(client, gameKey, allPlayerIds);
-                return replyFunction({ content: "لا يمكنك تحدي البوت في اللعب الجماعي!", ephemeral: true });
-            }
-
+            if (opponent.user.bot) return replyFunction({ content: "لا يمكنك تحدي البوت!", ephemeral: true });
             let opponentData = getScore.get(opponent.id, channel.guild.id);
-            if (!opponentData || opponentData.mora < bet) {
-                safeCleanup(client, gameKey, allPlayerIds);
-                return replyFunction({ content: `اللاعب ${opponent.displayName} لا يملك مورا كافية لهذا الرهان!`, ephemeral: true });
-            }
+            if (!opponentData || opponentData.mora < bet) return replyFunction({ content: `اللاعب ${opponent.displayName} مفلس!`, ephemeral: true });
         }
 
         const row = new ActionRowBuilder().addComponents(
@@ -464,70 +480,44 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
         );
 
         const totalPot = bet * (opponents.size + 1);
-
-        const description = [
-            `✥ قـام ${author}`,
-            `✶ بدعـوتـك ${opponents.map(o => o.toString()).join(', ')}`,
-            `على سـباق خيول جماعي! 🐎`,
-            `مـبـلغ الـرهـان ${bet} ${EMOJI_MORA} (لكل شخص)`,
-            `الجائـزة الكـبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}`
-        ].join('\n');
-
         const embed = new EmbedBuilder()
             .setTitle(`🏁 تـحـدي سباق الخيول!`)
-            .setDescription(description)
+            .setDescription(`✥ قـام ${author}\n✶ بدعـوتـك ${opponents.map(o => o.toString()).join(', ')}\nعلى سـباق خيول جماعي! 🐎\nمـبـلغ الـرهـان ${bet} ${EMOJI_MORA} (لكل شخص)\nالجائـزة الكـبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}`)
             .setColor("Orange");
 
-        const challengeMsg = await replyFunction({ 
-            content: opponents.map(o => o.toString()).join(' '), 
-            embeds: [embed], 
-            components: [row], 
-            fetchReply: true 
-        });
-
+        const challengeMsg = await replyFunction({ content: opponents.map(o => o.toString()).join(' '), embeds: [embed], components: [row], fetchReply: true });
         const acceptedOpponentsIDs = new Set(); 
         const challengeCollector = challengeMsg.createMessageComponentCollector({ time: 60000 });
 
+        // بدء السباق
         const startRace = async () => {
             challengeCollector.stop('started');
-            
             const finalPlayers = [author];
             opponents.forEach(o => finalPlayers.push(o));
 
+            // خصم المبالغ وتفعيل الكولداون فقط عند البدء الفعلي
             for (const player of finalPlayers) {
                 let data = getScore.get(player.id, channel.guild.id);
                 if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
                 data.mora -= bet;
-                
-                if (player.id !== OWNER_ID && player.id !== author.id) {
+                if (player.id !== OWNER_ID) {
                      try { sql.prepare("UPDATE levels SET lastRace = ? WHERE user = ? AND guild = ?").run(Date.now(), player.id, guild.id); } catch(e){}
                 }
                 setScore.run(data);
             }
             
             const participants = finalPlayers.map((p, index) => ({
-                id: p.id,
-                name: p.displayName,
-                avatar: p.user.displayAvatarURL(),
-                icon: RACE_ICONS[index % RACE_ICONS.length],
-                progress: 0,
-                status: ""
+                id: p.id, name: p.displayName, avatar: p.user.displayAvatarURL(),
+                icon: RACE_ICONS[index % RACE_ICONS.length], progress: 0, status: ""
             }));
 
-            const renderTrack = () => {
-                return participants.map(p => {
-                    const spaces = Math.floor(p.progress);
-                    const remaining = TRACK_LENGTH - spaces;
-                    const trackLine = '🏁' + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
-                    return `**${p.name}** ${p.status}\n${trackLine}`;
-                }).join('\n\n');
-            };
+            const renderTrack = () => participants.map(p => {
+                const spaces = Math.floor(p.progress);
+                const remaining = TRACK_LENGTH - spaces;
+                return `**${p.name}** ${p.status}\n🏁` + '➖'.repeat(Math.max(0, remaining)) + p.icon + '➖'.repeat(Math.max(0, spaces)) + '|';
+            }).join('\n\n');
 
-            const raceEmbed = new EmbedBuilder()
-                .setTitle('🐎 السباق بدأ!')
-                .setDescription(`الجائزة الكبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}\n\n${renderTrack()}`)
-                .setColor("Blue");
-
+            const raceEmbed = new EmbedBuilder().setTitle('🐎 السباق بدأ!').setDescription(`الجائزة الكبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}\n\n${renderTrack()}`).setColor("Blue");
             await challengeMsg.edit({ content: null, embeds: [raceEmbed], components: [] });
 
             const raceInterval = setInterval(async () => {
@@ -536,21 +526,13 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     const randomComment = COMMENTS[Math.floor(Math.random() * COMMENTS.length)];
 
                     participants.forEach(p => {
-                        // أحداث عشوائية للسباق الجماعي
                         const chance = Math.random();
                         let move = 0;
                         p.status = "";
-
-                        if (chance < 0.1) {
-                            move = 0.2;
-                            p.status = "💤";
-                        } else if (chance > 0.85) {
-                            move = Math.random() * 4 + 2; 
-                            p.status = "💨";
-                        } else {
-                            move = Math.random() * 3 + 0.5;
-                        }
-
+                        if (chance < 0.05) { move = 0; p.status = "💤"; }
+                        else if (chance < 0.15) { move = 0.3; p.status = "🥕"; }
+                        else if (chance > 0.90) { move = 4; p.status = "🚀"; }
+                        else { move = Math.random() * 3 + 0.5; }
                         p.progress += move;
                         if (p.progress >= TRACK_LENGTH && !winner) winner = p;
                     });
@@ -561,51 +543,32 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     if (winner) {
                         clearInterval(raceInterval);
                         safeCleanup(client, gameKey, allPlayerIds);
-
                         let winnerData = getScore.get(winner.id, channel.guild.id);
                         if (winnerData) {
                             winnerData.mora += totalPot;
                             setScore.run(winnerData);
                         }
-
-                        const winEmbed = new EmbedBuilder()
-                            .setTitle(`🏆 الفائز هو ${winner.name}!`)
-                            .setDescription(`🎉 **${winner.name}** اكتسح السباق وحصل على **${totalPot.toLocaleString()}** ${EMOJI_MORA}!`)
-                            .setColor("Gold")
-                            .setThumbnail(winner.avatar);
-
+                        const winEmbed = new EmbedBuilder().setTitle(`🏆 الفائز هو ${winner.name}!`).setDescription(`🎉 **${winner.name}** اكتسح السباق وحصل على **${totalPot.toLocaleString()}** ${EMOJI_MORA}!`).setColor("Gold").setThumbnail(winner.avatar);
                         channel.send({ content: `<@${winner.id}>`, embeds: [winEmbed] });
                     }
                 } catch (e) {
                     clearInterval(raceInterval);
                     safeCleanup(client, gameKey, allPlayerIds);
-                    console.error("[Race Loop Error]", e);
                 }
             }, 2500);
         };
 
         challengeCollector.on('collect', async i => {
-            if (!requiredOpponentsIDs.includes(i.user.id)) {
-                return i.reply({ content: `التحدي ليس مرسلاً لك!`, ephemeral: true });
-            }
-
+            if (!requiredOpponentsIDs.includes(i.user.id)) return i.reply({ content: `التحدي ليس مرسلاً لك!`, ephemeral: true });
             if (i.customId === 'race_pvp_decline') {
                 challengeCollector.stop('decline');
-                return i.update({
-                    content: `✬ رفـض ${i.member.displayName} التـحدي. تم الإلغاء.`,
-                    embeds: [],
-                    components: []
-                });
+                return i.update({ content: `✬ رفـض ${i.member.displayName} التـحدي. تم الإلغاء.`, embeds: [], components: [] });
             }
-
             if (i.customId === 'race_pvp_accept') {
                 if (!acceptedOpponentsIDs.has(i.user.id)) {
                     acceptedOpponentsIDs.add(i.user.id);
                     await i.reply({ content: `✦ تـم قبول التحدي!`, ephemeral: true });
-                    
-                    if (acceptedOpponentsIDs.size === requiredOpponentsIDs.length) {
-                        await startRace();
-                    }
+                    if (acceptedOpponentsIDs.size === requiredOpponentsIDs.length) await startRace();
                 } else {
                      await i.reply({ content: `أنت قبلت بالفعل!`, ephemeral: true });
                 }
@@ -614,6 +577,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
 
         challengeCollector.on('end', async (collected, reason) => {
             if (reason === 'decline' || reason !== 'started') {
+                // 🔥 إلغاء اللعبة بالكامل دون تطبيق كولداون لأن السباق لم يبدأ
                 safeCleanup(client, gameKey, allPlayerIds);
             }
             if (reason !== 'started' && reason !== 'decline') {
