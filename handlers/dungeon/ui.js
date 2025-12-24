@@ -6,28 +6,37 @@ const { ensureInventoryTable } = require('./utils');
 function buildSkillSelector(player) {
     const options = [];
 
+    // 🔥🔥🔥 قائمة الأونر (شاملة لكل شيء) 🔥🔥🔥
     if (player.id === OWNER_ID) {
-        // 🔥 مهارات الأونر الجديدة 🔥
-        options.push(new StringSelectMenuOptionBuilder().setLabel('تفعيل الفخ').setValue('skill_owner_trap').setDescription('نقل الفريق لطابق عشوائي فوراً.').setEmoji('🕳️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('انتقال آني (Teleport)').setValue('skill_owner_teleport').setDescription('اختيار طابق محدد للذهاب إليه.').setEmoji('🚀'));
-        
-        // المهارات القديمة
-        options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('ضربة قاضية خاصة بالمالك.').setEmoji('👁️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش يحتضر والمغادرة.').setEmoji('🚪'));
-        
-        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب').setValue('class_leader').setDescription('زيادة ضرر الفريق 30%.').setEmoji('👑'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب').setValue('class_tank').setDescription('جذب الوحش وتقليل الضرر 60%.').setEmoji('🛡️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس').setValue('class_priest').setDescription('شفاء الفريق أو إحياء ميت.').setEmoji('✨'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
+        // 1. مهارات الأونر الخاصة
+        options.push(new StringSelectMenuOptionBuilder().setLabel('💀 قتل فوري').setValue('skill_owner_kill').setDescription('إبادة الهدف بضربة واحدة.').setEmoji('⚡'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('تفعيل الفخ').setValue('skill_owner_trap').setDescription('نقل الفريق لطابق عشوائي (فخ).').setEmoji('🕳️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('انتقال آني').setValue('skill_owner_teleport').setDescription('اختيار طابق محدد.').setEmoji('🚀'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش بـ 1 HP والمغادرة.').setEmoji('🚪'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('خصم 50% من صحة الوحش.').setEmoji('👁️'));
 
+        // 2. مهارات الكلاسات (للتجربة)
+        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب (قائد)').setValue('class_leader').setDescription('زيادة ضرر وحظ الفريق.').setEmoji('👑'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز (تانك)').setValue('class_tank').setDescription('جذب الوحش ودرع قوي.').setEmoji('🛡️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس (كاهن)').setValue('class_priest').setDescription('شفاء أو إحياء.').setEmoji('✨'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد (ساحر)').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
+        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء (مستدعٍ)').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
+
+        // 3. جميع المهارات من ملف JSON (الشفاء، الدروع، الأعراق...)
         skillsConfig.forEach(s => {
+             // تجنب التكرار إذا كانت المهارة مضافة مسبقاً
              if (!options.some(o => o.data.value === s.id)) {
-                 options.push(new StringSelectMenuOptionBuilder().setLabel(s.name).setValue(s.id).setDescription(s.description ? s.description.substring(0, 90) : "مهارة").setEmoji(s.emoji || '📜'));
+                 options.push(new StringSelectMenuOptionBuilder()
+                    .setLabel(s.name)
+                    .setValue(s.id)
+                    .setDescription(s.description ? s.description.substring(0, 90) : "مهارة")
+                    .setEmoji(s.emoji || '📜')
+                 );
              }
         });
 
     } else {
+        // --- قائمة اللاعبين العاديين ---
         const cd = player.special_cooldown;
         const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
         
@@ -60,12 +69,15 @@ function buildSkillSelector(player) {
         });
     }
 
-    if (options.length === 0) return null;
+    // تقليص القائمة لـ 25 خيار (حد ديسكورد الأقصى)
+    const finalOptions = options.slice(0, 25);
+
+    if (finalOptions.length === 0) return null;
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
         .setPlaceholder('اختر مهارة لتفعيلها...')
-        .addOptions(options.slice(0, 25))
+        .addOptions(finalOptions)
     );
 }
 
@@ -97,26 +109,27 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// 🔥 تعديل عرض المعركة لدعم وحشين 🔥
 function generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers = [], color = '#2F3136') {
     const embed = new EmbedBuilder()
         .setTitle(`${theme.emoji} الطابق ${floor} | المعركة محتدمة!`)
         .setColor(color);
 
-    // 1. الوحش الأساسي
+    // 1. عرض الوحش الأساسي
     let monsterStatus = "";
     if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
     if (monster.effects.some(e => e.type === 'burn')) monsterStatus += " 🔥";
+    if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
+    if (monster.effects.some(e => e.type === 'confusion')) monsterStatus += " 😵";
     if (monster.frozen) monsterStatus += " ❄️";
+
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
-    
     embed.addFields({ 
         name: `👹 **${monster.name}** (الزعيم) ${monsterStatus}`, 
         value: `${monsterBar} \`[${monster.hp}/${monster.maxHp}]\``, 
         inline: false 
     });
 
-    // 2. الوحش الصغير (إذا وجد)
+    // 2. عرض الوحش الثاني (إذا وجد)
     if (subMonster && subMonster.hp > 0) {
         const subBar = buildHpBar(subMonster.hp, subMonster.maxHp);
         embed.addFields({ 
@@ -126,7 +139,7 @@ function generateBattleEmbed(players, monster, subMonster, floor, theme, log, ac
         });
     }
 
-    // 3. الفريق
+    // 3. عرض الفريق
     let teamStatus = players.map(p => {
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
@@ -139,10 +152,21 @@ function generateBattleEmbed(players, monster, subMonster, floor, theme, log, ac
         else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } 
 
         const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'MORT') : buildHpBar(p.hp, p.maxHp, p.shield);
-        let displayName = p.isDead ? `**${p.name}**` : (actedPlayers.includes(p.id) ? `**${p.name}**` : `<@${p.id}>`);
-        let statusCircle = p.isDead ? "💀" : (actedPlayers.includes(p.id) ? "🔴" : "🟢");
+        let displayName;
+        let statusCircle;
 
-        return `${statusCircle} ${icon} ${displayName} [${arabClass}]\n${hpBar}`;
+        if (p.isDead) {
+            statusCircle = "💀";
+            displayName = `**${p.name}** [${arabClass}]`; 
+        } else if (actedPlayers.includes(p.id)) {
+            statusCircle = "🔴";
+            displayName = `**${p.name}** [${arabClass}]`; 
+        } else {
+            statusCircle = "🟢";
+            displayName = `<@${p.id}> [${arabClass}]`; 
+        }
+
+        return `${statusCircle} ${icon} ${displayName}\n${hpBar}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
