@@ -12,7 +12,19 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
-    // --- 1. مهارات المالك الخاصة ---
+    // 🔥🔥 مهارات الأونر الجديدة (الفخ والانتقال) 🔥🔥
+    if (skill.id === 'skill_owner_trap') {
+        log.push(`🕳️ **${player.name}** قام بتفعيل فخ البعد الآخر يدوياً!`);
+        // سيتم التعامل مع التايب 'force_trap' في الملف الرئيسي dungeon-battle.js
+        return { type: 'force_trap' };
+    }
+
+    if (skill.id === 'skill_owner_teleport') {
+        // سيتم التعامل مع التايب 'open_teleport_modal' في الملف الرئيسي لإظهار المودال
+        return { type: 'open_teleport_modal' };
+    }
+
+    // --- 1. مهارات المالك القتالية ---
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -73,7 +85,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     // 🔥🔥🔥 إصلاح مهارة الروح (Spirit) بشكل إجباري 🔥🔥🔥
-    // إذا كان اسم المهارة يحتوي على Spirit أو ID الخاص بها هو race_spirit_skill
     if (skill.id === 'race_spirit_skill' || skill.stat_type === 'Dmg_Evasion') {
         skillDmg = Math.floor(effectiveAtk * 1.3) * mult;
         monster.hp -= skillDmg;
@@ -83,7 +94,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         player.effects.push({ type: 'evasion', val: 1, turns: 1 });
         
         log.push(`👻 **${player.name}** ضرب واختفى كالشبح! (مراوغة تامة للجولة القادمة)`);
-        return; // الخروج لضمان عدم تنفيذ كود آخر
+        return; 
     }
 
     // --- 3. بقية أنواع المهارات ---
@@ -173,7 +184,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             log.push(`🌀 **${player.name}** أثار الفوضى بتأثير عشوائي (${randomEffect})!`);
             break;
         }
-        // حالة Dmg_Evasion موجودة هنا أيضاً كاحتياط للمهارات الأخرى
         case 'Dmg_Evasion': { 
             skillDmg = Math.floor(effectiveAtk * 1.3) * mult;
             monster.hp -= skillDmg;
