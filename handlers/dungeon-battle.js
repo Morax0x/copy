@@ -13,6 +13,34 @@ const {
     generateBattleEmbed, generateBattleRows, buildSkillSelector, buildPotionSelector 
 } = require('./dungeon/ui');
 
+// دالة مساعدة للتحقق من الموت فوراً
+function checkDeaths(players, threadChannel, log) {
+    let someoneDied = false;
+    players.forEach(p => {
+        if (p.hp <= 0 && !p.isDead) {
+            p.hp = 0;
+            p.isDead = true;
+            someoneDied = true;
+            // التحقق من الكاهن
+            if (p.class === 'Priest' && !p.isPermDead) {
+                players.forEach(ally => { if(!ally.isDead) ally.hp = Math.min(ally.maxHp, ally.hp + Math.floor(ally.maxHp * 0.4)); });
+                log.push(`⚰️ **سقـط الكـاهـن** - عالج الفريق قبل موته!`);
+                threadChannel.send(`✨⚰️ **${p.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
+            }
+            
+            if (p.reviveCount >= 1) {
+                p.isPermDead = true;
+                log.push(`💀 **${p.name}** سقط وتحللت جثته!`);
+                threadChannel.send(`💀 **${p.name}** سقط وتحللت جثته (لا يمكن إحياؤه)!`).catch(()=>{});
+            } else {
+                log.push(`💀 **${p.name}** سقط في المعركة!`);
+                threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
+            }
+        }
+    });
+    return someoneDied;
+}
+
 // 🟢 MAIN RUN DUNGEON FUNCTION
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
@@ -123,18 +151,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('collect', async i => {
                     if (processingUsers.has(i.user.id)) return i.reply({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
-                    if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
-                        let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
-                        if (!ownerPlayer) {
-                             const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
-                             if (member) {
-                                 ownerPlayer = getRealPlayerData(member, sql, '???'); 
-                                 players.push(ownerPlayer);
-                                 log.push(`👑 **اقتـحـام الأونـر!**`);
-                             }
-                        }
-                    }
-
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return i.deferUpdate().catch(()=>{});
@@ -197,40 +213,46 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let skillNameUsed = "مهارة";
                                     let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
                                     
-                                    if (skillId.startsWith('class_') || skillId === 'skill_secret_owner' || skillId === 'skill_owner_leave') {
-                                        // Pass directly
-                                    } else if (p.skills[skillId]) {
+                                    // جلب اسم المهارة الصحيح (إصلاح كلمة Skill)
+                                    if (p.skills[skillId]) {
                                         skillObj = p.skills[skillId];
-                                    } else if (p.id === OWNER_ID) {
-                                        // Owner skills logic
+                                        skillNameUsed = skillObj.name;
+                                    } else if (skillId.startsWith('class_') || skillId.startsWith('skill_owner')) {
+                                        // التعامل معها لاحقاً
                                     }
 
-                                    const res = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
+                                    // 🔥🔥 تمرير subMonster للمهارات 🔥🔥
+                                    const res = handleSkillUsage(p, skillObj, monster, subMonster, log, threadChannel, players);
                                     
                                     if (res && res.error) {
                                         await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
                                         processingUsers.delete(i.user.id); return;
                                     }
                                     
+                                    // تسمية المهارات الخاصة
                                     if (res && res.type === 'class_effect') {
                                         if (res.effect === 'priest_heal') skillNameUsed = "النور المقدس";
                                         else if (res.effect === 'leader_buff') skillNameUsed = "صرخة الحرب";
                                         else if (res.effect === 'tank_taunt') skillNameUsed = "استفزاز وتصليب";
                                         else if (res.effect === 'mage_freeze') skillNameUsed = "سجن الجليد";
                                         else if (res.effect === 'summon_pet') skillNameUsed = "استدعاء حارس الظل";
-                                        
                                         if (res.cooldown && res.effect !== 'priest_heal') p.special_cooldown = res.cooldown;
                                     } else if (res && res.type === 'owner_leave') {
                                         players = players.filter(pl => pl.id !== OWNER_ID);
                                         if (players.length === 0) { collector.stop('monster_dead'); return; }
                                         skillNameUsed = "رحيل بصمت";
                                     } else {
-                                        skillNameUsed = skillObj.name || skillId;
+                                        // إذا لم يكن لها اسم محدد، نأخذ الاسم من الكائن أو الـ ID
+                                        if (skillNameUsed === "مهارة") skillNameUsed = skillObj.name || skillId;
                                         if (skillId !== 'skill_secret_owner' && p.id !== OWNER_ID) p.skillCooldowns[skillId] = skillObj.cooldown || 3;
                                     }
 
                                     actedPlayers.push(p.id); 
                                     p.skipCount = 0; 
+                                    
+                                    // 🔥 فحص الموت بعد المهارة (مهم جداً) 🔥
+                                    checkDeaths(players, threadChannel, log);
+
                                     await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                     await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                                 }
@@ -266,6 +288,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                                 log.push(`**${p.name}**: ${actionMsg}`);
                                 actedPlayers.push(p.id); p.skipCount = 0;
+                                
+                                // 🔥 فحص الموت بعد الجرعة 🔥
+                                checkDeaths(players, threadChannel, log);
+
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
@@ -277,8 +303,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (i.customId === 'atk') {
                                 let canAttack = true;
                                 const confusion = p.effects.find(e => e.type === 'confusion');
-                                if (confusion && Math.random() < confusion.val) { canAttack = false; const selfDmg = Math.floor(p.maxHp * 0.15); applyDamageToPlayer(p, selfDmg); log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`); } 
-                                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) { canAttack = false; log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`); }
+                                if (confusion && Math.random() < confusion.val) { 
+                                    canAttack = false; 
+                                    const selfDmg = Math.floor(p.maxHp * 0.15); 
+                                    applyDamageToPlayer(p, selfDmg); 
+                                    log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`); 
+                                } 
+                                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) { 
+                                    canAttack = false; 
+                                    log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`); 
+                                }
 
                                 if (canAttack) {
                                     let atkMultiplier = 1.0;
@@ -286,13 +320,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     
-                                    // 🔥🔥 إصلاح توجيه الضرر للوحش الحي 🔥🔥
+                                    // 🔥🔥 تحديد الهدف الذكي 🔥🔥
                                     let targetToHit = null;
                                     const isMainAlive = monster.hp > 0;
                                     const isSubAlive = subMonster && subMonster.hp > 0;
 
                                     if (isMainAlive && isSubAlive) {
-                                        // 50% عشوائي
                                         targetToHit = Math.random() < 0.5 ? subMonster : monster;
                                     } else if (isMainAlive) {
                                         targetToHit = monster;
@@ -301,8 +334,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
 
                                     if (targetToHit) {
-                                        targetToHit.hp -= dmg; 
-                                        p.totalDamage += dmg; 
+                                        targetToHit.hp -= dmg; p.totalDamage += dmg; 
                                         const tName = targetToHit === monster ? "الزعيم" : "التابع";
                                         log.push(`🗡️ **${p.name}** ضرب **${targetToHit.name}** (${tName}) بـ ${dmg} ضرر.`);
                                     }
@@ -310,6 +342,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
+                            
+                            // 🔥 فحص الموت بعد الهجوم (مهم للتضحية والارتباك) 🔥
+                            checkDeaths(players, threadChannel, log);
+                            
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                         }
 
@@ -386,6 +422,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             });
                             if (monster.hp <= 0 && (!subMonster || subMonster.hp <= 0)) { ongoing = false; break; }
+                            
+                            // 🔥🔥 هجوم الوحش العادي 🔥🔥
                             let target = alive.find(p => p.id === monster.targetFocusId) || alive.find(p => p.effects.some(e => e.type === 'titan')) || getSmartTarget(players) || alive[Math.floor(Math.random() * alive.length)];
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
@@ -395,12 +433,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (reflectEffect) { const reflected = Math.floor(dmg * reflectEffect.val); dmg -= reflected; monster.hp -= reflected; log.push(`🔄 **${target.name}** عكس **${reflected}** ضرر للوحش!`); }
                                 const takenDmg = applyDamageToPlayer(target, dmg);
                                 if (takenDmg === 0 && dmg > 0) log.push(`👻 **${target.name}** راوغ الهجوم!`); else log.push(`👹 **${monster.name}** ضرب **${target.name}** (${takenDmg})`);
-                                if(target.hp <= 0 && !target.isDead) { 
-                                    target.hp = 0; target.isDead = true; 
-                                    if (target.class === 'Priest' && !target.isPermDead) { players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); }); log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`); threadChannel.send(`✨⚰️ **${target.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{}); }
-                                    if (target.reviveCount >= 1) { target.isPermDead = true; log.push(`💀 **${target.name}** سقط وتحللت جثته!`); threadChannel.send(`💀 **${target.name}** سقط وتحللت جثته (لا يمكن إحياؤه)!`).catch(()=>{}); } 
-                                    else { log.push(`💀 **${target.name}** سقط!`); threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{}); }
-                                }
+                                
+                                // 🔥 فحص الموت بعد ضربة الوحش (بالاعتماد على دالة المساعدة) 🔥
+                                checkDeaths(players, threadChannel, log);
                             }
                         }
                     }
@@ -414,6 +449,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if(target.defending) dmg = Math.floor(dmg * 0.5);
                         applyDamageToPlayer(target, dmg);
                         log.push(`👾 **${subMonster.name}** ضرب **${target.name}** (${dmg})`);
+                        
+                        // 🔥 فحص الموت بعد ضربة المساند 🔥
+                        checkDeaths(players, threadChannel, log);
                     }
                 }
 
