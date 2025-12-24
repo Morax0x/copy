@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ModalBuilder, TextInputBuilder, TextInputStyle, ComponentType } = require('discord.js');
 const { 
     dungeonConfig, EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF, 
     OWNER_ID, WIN_IMAGES, LOSE_IMAGES 
@@ -121,7 +121,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
+                    // 🔥 تصحيح: استخدام reply بدلاً من followUp للفحوصات الأولية 🔥
+                    if (processingUsers.has(i.user.id)) {
+                        return i.reply({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
+                    }
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
@@ -136,26 +139,27 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     }
 
                     let p = players.find(pl => pl.id === i.user.id);
-                    if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
-                    if (p.isDead || actedPlayers.includes(p.id)) return;
+                    // 🔥 تصحيح: استخدام reply
+                    if (!p) return i.reply({ content: "🚫 لست مشاركاً!", ephemeral: true });
+                    // إذا مات أو لعب دوره، فقط نؤجل الرد لكي لا يظهر خطأ التفاعل
+                    if (p.isDead || actedPlayers.includes(p.id)) return i.deferUpdate().catch(()=>{});
                     
                     processingUsers.add(i.user.id);
 
                     try {
-                        // --- معالجة زر المهارات (SKILL BUTTON FIX) ---
+                        // --- معالجة زر المهارات ---
                         if (i.customId === 'skill') {
-                            // إنشاء قائمة المهارات
                             const skillRow = buildSkillSelector(p);
                             if (!skillRow) {
-                                await i.followUp({ content: "❌ لا توجد مهارات.", ephemeral: true });
+                                // 🔥 تصحيح: reply لأنه أول رد
+                                await i.reply({ content: "❌ لا توجد مهارات.", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
                             
-                            // إرسال القائمة
-                            const skillMsg = await i.followUp({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
-                            
                             try {
-                                // انتظار اختيار اللاعب من القائمة
+                                // 🔥 تصحيح: reply لفتح القائمة
+                                const skillMsg = await i.reply({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true, fetchReply: true });
+                                
                                 const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'skill_select_menu', time: 15000 });
                                 
                                 const skillId = selection.values[0];
@@ -211,7 +215,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     } else if (p.skills[skillId]) {
                                         skillObj = p.skills[skillId];
                                     } else if (p.id === OWNER_ID) {
-                                        // For owner testing skills if needed
+                                        // For owner
                                     }
 
                                     const res = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
@@ -241,11 +245,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actedPlayers.push(p.id); 
                                     p.skipCount = 0; 
                                     await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
+                                    // نعدل الرسالة الرئيسية للمعركة
                                     await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, subMonster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                                 }
 
                             } catch (err) { 
-                                // إذا انتهى وقت اختيار المهارة أو حدث خطأ
+                                // إذا انتهى الوقت أو ألغى المستخدم
                                 processingUsers.delete(i.user.id); return; 
                             }
                         } 
@@ -253,11 +258,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
                             if (!potionRow) {
-                                await i.followUp({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
+                                // 🔥 تصحيح: reply
+                                await i.reply({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
                             try {
-                                const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true, fetchReply: true });
+                                // 🔥 تصحيح: reply
+                                const potionMsg = await i.reply({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true, fetchReply: true });
                                 const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id && subI.customId === 'potion_select_menu', time: 15000 });
                                 await selection.deferUpdate().catch(()=>{});
                                 
@@ -284,6 +291,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         }
                         // --- معالجة الهجوم والدفاع ---
                         else if (i.customId === 'atk' || i.customId === 'def') {
+                            // 🔥 تأجيل التحديث مباشرة لأننا سنعدل الرسالة الأصلية
                             if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                             actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
