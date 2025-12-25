@@ -243,17 +243,18 @@ module.exports = {
                     const oldLvl = level.level;
                     level.xp -= nextXP; level.level++;
                     
-                    // مكافآت التلفيل
-                    const rewardMora = level.level * 100;
-                    const rewardHP = 4;
-                    level.mora += rewardMora;
+                    // ❌ تم إزالة مكافآت المورا والصحة (لأنها مجرد عرض الآن) ❌
+                    // const rewardMora = level.level * 100; 
+                    // const rewardHP = 4;
+                    // level.mora += rewardMora;
 
-                    // حفظ البيانات الجديدة فوراً
+                    // حفظ البيانات الجديدة (المستوى والخبرة فقط)
                     client.setLevel.run(level);
 
                     // رسم وإرسال البطاقة
                     try {
-                        const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: rewardMora, hp: rewardHP });
+                        // نرسل 0 في الجوائز حتى لا تظهر في البطاقة
+                        const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: 0, hp: 0 });
                         
                         // تحديد القناة
                         const channelId = settings?.levelChannel || message.channel.id;
