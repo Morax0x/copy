@@ -2,13 +2,16 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const path = require('path');
 
 // --- ( 🌟 الحل الجذري للمسارات: استخدام المسار الرئيسي للبوت 🌟 ) ---
-const rootDir = process.cwd(); // هذا يجيب المسار الرئيسي للمشروع
+const rootDir = process.cwd(); 
 
-// بما أن الملف في commands/top.js، نحتاج للمسارات التالية:
 const weaponsConfigPath = path.join(rootDir, 'json', 'weapons-config.json');
 const pvpCorePath = path.join(rootDir, 'handlers', 'pvp-core.js');
 
-const weaponsConfig = require(weaponsConfigPath); 
+let weaponsConfig = [];
+try {
+    weaponsConfig = require(weaponsConfigPath); 
+} catch (e) { console.error("Error loading weapons config for top:", e); }
+
 const { getUserRace, getWeaponData, BASE_HP, HP_PER_LEVEL } = require(pvpCorePath); 
 // -------------------------------------------------------------------
 
@@ -137,22 +140,41 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
             allUsers = sql.prepare("SELECT userID, COUNT(*) as count FROM user_achievements WHERE guildID = ? GROUP BY userID ORDER BY count DESC").all(guild.id);
 
         } else if (type === 'strongest') {
-            embed.setTitle(`✥ لوحـة صـدارة الاقـوى`);
+            embed.setTitle(`✥ لوحـة صـدارة الاقـوى (Power Rating)`);
             const weapons = sql.prepare("SELECT * FROM user_weapons WHERE guildID = ?").all(guild.id);
             let stats = [];
             const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
-            const getSkills = sql.prepare("SELECT COUNT(*) as c FROM user_skills WHERE guildID = ? AND userID = ?");
+            // جلب مجموع مستويات المهارات بدلاً من عددها فقط
+            const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
             
             for (const w of weapons) {
                 const conf = weaponsConfig.find(c => c.race === w.raceName);
                 if(!conf) continue;
+                
                 const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
                 const lvlData = getLvl.get(guild.id, w.userID);
-                const hp = BASE_HP + ((lvlData?.level || 1) * HP_PER_LEVEL);
-                const skills = getSkills.get(guild.id, w.userID).c;
-                stats.push({ userID: w.userID, damage: dmg, hp, level: w.weaponLevel, skillCount: skills });
+                const playerLevel = lvlData?.level || 1;
+                const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
+                
+                // حساب مجموع لفلات المهارات (أدق من العدد فقط)
+                const skillData = getSkills.get(guild.id, w.userID);
+                const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
+
+                // 🔥 معادلة القوة الشاملة 🔥
+                // Power = DMG + (HP * 0.5) + (PlayerLevel * 10) + (SkillLevels * 20)
+                const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
+
+                stats.push({ 
+                    userID: w.userID, 
+                    damage: dmg, 
+                    hp, 
+                    level: playerLevel, 
+                    skillLevels: skillLevelsTotal, 
+                    powerScore 
+                });
             }
-            allUsers = stats.sort((a, b) => b.damage - a.damage);
+            // الترتيب حسب الـ Power Score
+            allUsers = stats.sort((a, b) => b.powerScore - a.powerScore);
         }
 
         if (targetUserId) {
@@ -187,7 +209,6 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 let line = `${rankEmoji} ${pin}<@${uID}>\n`;
 
                 if (type === 'level') line += `> ${styleStart}XP: \`${user.totalXP.toLocaleString()}\` (Lvl: ${user.level})${styleEnd}`;
-                // 🔥 التعديل هنا لعرض الرسائل والدقائق 🔥
                 else if (type === 'weekly_xp' || type === 'daily_xp') {
                     line += `> ${styleStart}TXT: \`${(user.messages||0).toLocaleString()}\` | VC: \`${(user.vc_minutes||0).toLocaleString()}\`${styleEnd}`;
                 }
@@ -197,7 +218,12 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 else if (type === 'mora') line += `> ${styleStart}Mora: \`${((user.mora||0) + (user.bank||0)).toLocaleString()}\` ${EMOJI_MORA}${styleEnd}`;
                 else if (type === 'streak' || type === 'media_streak') line += `> ${styleStart}Streak: \`${user.streakCount}\` ${type === 'media_streak' ? EMOJI_MEDIA_STREAK : '🔥'}${styleEnd}`;
                 else if (type === 'achievements') line += `> ${styleStart}Count: \`${user.count}\` 🏆${styleEnd}`;
-                else if (type === 'strongest') line += `> ${styleStart}DMG: \`${user.damage}\` | HP: \`${user.hp}\`${styleEnd}`;
+                
+                // 🔥 تنسيق عرض الأقوى الجديد 🔥
+                else if (type === 'strongest') {
+                    line += `> ${styleStart}🔥 **POWER:** \`${user.powerScore.toLocaleString()}\`\n`;
+                    line += `> ⚔️ DMG: \`${user.damage}\` | ❤️ HP: \`${user.hp}\` | ⚡ SKILLS: \`${user.skillLevels}\` (Lvl: ${user.level})${styleEnd}`;
+                }
 
                 description += line + "\n\n";
             }
