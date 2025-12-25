@@ -59,6 +59,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let isTrapActive = false;
     let trapStartFloor = 0;
     
+    // 🔥 متغير الكول داون (لمنع التكرار) 🔥
+    // نبدأ بقيمة سالبة لضمان إمكانية ظهور الأحداث في الطوابق الأولى
+    let lastEventFloor = -10; 
+
     // متغيرات التاجر (مشتركة)
     let merchantState = {
         skipFloors: 0,
@@ -118,7 +122,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 p.startingShield = 0; // تصفير المتغير المؤقت
 
                 // 2. الحفاظ فقط على البفات المهمة (السم، بف الهجوم من الصندوق/التاجر، الضعف)
-                // ومسح باقي التأثيرات المؤقتة الخاصة بالمعركة السابقة
                 p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness'].includes(e.type));
                 
                 p.defending = false; 
@@ -621,17 +624,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 await threadChannel.send({ embeds: [trapEmbed] });
             } else {
-                // 🔥🔥 1. ظهور التاجر المتجول (احتمال 15% بعد الطابق 5) 🔥🔥
-                if (floor > 5 && !isTrapActive && Math.random() < 0.15) {
+                // 🔥🔥 تعديل الكول داون (4 طوابق بين الأحداث) 🔥🔥
+                const canTriggerEvent = (floor - lastEventFloor) > 4;
+
+                // 1. التاجر المتجول
+                if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.15) {
                     await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
-                    // 76 ثانية
+                    lastEventFloor = floor; // تسجيل الحدث
                     await new Promise(r => setTimeout(r, 76000));
                 }
 
-                // 🔥🔥 2. ظهور صناديق الميميك (احتمال 20% بعد الطابق 5) 🔥🔥
-                else if (floor > 5 && Math.random() < 0.20) {
+                // 2. صناديق الميميك
+                else if (canTriggerEvent && floor > 5 && Math.random() < 0.20) {
                     await triggerMimicChest(threadChannel, players);
-                    // 62 ثانية
+                    lastEventFloor = floor; // تسجيل الحدث
                     await new Promise(r => setTimeout(r, 62000));
                 }
 
