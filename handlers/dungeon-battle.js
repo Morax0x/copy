@@ -42,7 +42,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     let players = [];
     let retreatedPlayers = [];
-      
+    
+    // --- متغيرات نظام الفخ ---
+    let isTrapActive = false;
+    let trapStartFloor = 0;
+    // -----------------------
+
     const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
     const members = await Promise.all(promises);
 
@@ -178,7 +183,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      }
                                 }
 
-                                // ⚡⚡ هنا يتم استدعاء المهارة وتنفيذها ⚡⚡
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
                                 if (res && res.error) {
@@ -191,7 +195,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (players.length === 0) { collector.stop('monster_dead'); return; }
                                 }
                                 
-                                // الحصول على اسم المهارة للعرض فقط
                                 if (res && res.name) skillNameUsed = res.name;
                                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
@@ -346,6 +349,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         monster.hp -= selfDmg;
                         log.push(`😵 **${monster.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg} HP)`);
                     } else {
+                        // AI Logic
                         const alive = players.filter(p => !p.isDead);
                         let skillUsed = false;
 
@@ -356,7 +360,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (monsterSkill) {
                                 let chance = monsterSkill.chance;
                                 if (monster.hp < monster.maxHp * 0.3) chance += 0.2; 
-
                                 if (Math.random() < chance) {
                                     monsterSkill.execute(monster, players, log);
                                     skillUsed = true;
@@ -396,7 +399,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
-                                
                                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
                                 if(target.defending) dmg = Math.floor(dmg * 0.5);
                                 
@@ -443,9 +445,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
 
+        // 🔥🔥 التحقق من حالة الخسارة والمكافآت (تعديل جوهري) 🔥🔥
         if (players.every(p => p.isDead)) {
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            // إذا ماتوا والفخ نشط، نستخدم طابق ما قبل الفخ
+            const finalFloor = isTrapActive ? trapStartFloor : floor;
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break;
+        }
+        
+        // 🔥🔥 إذا وصلنا هنا، يعني أنهم فازوا 🔥🔥
+        // إلغاء الفخ ليتمكنوا من إكمال التقدم بشكل طبيعي وحساب الجوائز للطوابق الجديدة
+        if (isTrapActive) {
+            isTrapActive = false;
+            // يمكن إضافة رسالة صغيرة هنا لو أردت، لكن سنكتفي بإكمال اللعب
         }
 
         let baseMora = Math.floor(getBaseFloorMora(floor));
@@ -480,10 +492,33 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         await restMsg.edit({ components: [] }).catch(()=>{});
 
         if (decision === 'retreat' || decision === 'time') { 
+            // إذا انسحبوا والفخ كان نشطاً (في حال عدلت المنطق مستقبلاً) أو انسحبوا بشكل طبيعي
+            // هنا isTrapActive سيكون false لأننا صفرناه بعد الفوز مباشرة في الأعلى
+            // لذا سيأخذون جوائز الطابق المتقدم الذي وصلوا إليه (وهذا منصف لأنهم فازوا فيه)
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
         } else if (decision === 'continue') {
-            await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
+            
+            // 🔥🔥 TRAP EVENT LOGIC 🔥🔥
+            if (floor > 10 && Math.random() < 0.01) { // نسبة 1%
+                isTrapActive = true;
+                trapStartFloor = floor;
+                
+                // الانتقال لطابق عشوائي بين 31 و 90
+                // ننقص 1 لأن حلقة الـ for ستزيد الطابق بمقدار 1 في نهاية الدورة
+                const targetFloor = Math.floor(Math.random() * (90 - 31 + 1)) + 31;
+                floor = targetFloor - 1; 
+
+                const trapEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
+                    .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم نقلكم قسراً إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم... النجاة شبه مستحيلة!`)
+                    .setColor(Colors.DarkRed)
+                    .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); // صورة تخيلية أو يمكنك استخدام أي رابط
+
+                await threadChannel.send({ content: `||@everyone||`, embeds: [trapEmbed] });
+            } else {
+                await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
+            }
         }
 
         players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
