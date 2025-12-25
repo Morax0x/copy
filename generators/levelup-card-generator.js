@@ -25,31 +25,21 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-// دالة ضبط حجم النص
-function applyText(canvas, text, baseSize) {
-    const ctx = canvas.getContext('2d');
-    let fontSize = baseSize;
-    do {
-        ctx.font = `bold ${fontSize -= 2}px "BeinAr", "Arial"`; 
-    } while (ctx.measureText(text).width > canvas.width - 350);
-    return ctx.font;
-}
-
 // 🔥 دالة اختيار تدرج لوني عشوائي متناسق وفخم 🔥
 function getHarmoniousGradient() {
     const gradients = [
-        ['#0f0c29', '#302b63', '#24243e'], // بنفسجي ليلي
-        ['#141E30', '#243B55'],             // أزرق ملكي معدني
-        ['#232526', '#414345'],             // أسود فاحم
-        ['#200122', '#6f0000'],             // أحمر ملكي داكن
-        ['#000428', '#004e92'],             // أزرق بحري عميق
-        ['#16222A', '#3A6073'],             // رصاصي مزرق هادئ
-        ['#191654', '#43C6AC'],             // أزرق غامق مع لمسة تركواز
-        ['#000000', '#434343'],             // أسود كلاسيكي
-        ['#1A2980', '#26D0CE'],             // أزرق كهربائي
-        ['#4B1248', '#F0C27B'],             // ذهبي مع بنفسجي
-        ['#8E0E00', '#1F1C18'],             // أحمر بركاني
-        ['#3a1c71', '#d76d77', '#ffaf7b']   // غروب الشمس
+        ['#0f0c29', '#302b63', '#24243e'],
+        ['#141E30', '#243B55'],
+        ['#232526', '#414345'],
+        ['#200122', '#6f0000'],
+        ['#000428', '#004e92'],
+        ['#16222A', '#3A6073'],
+        ['#191654', '#43C6AC'],
+        ['#000000', '#434343'],
+        ['#1A2980', '#26D0CE'],
+        ['#4B1248', '#F0C27B'],
+        ['#8E0E00', '#1F1C18'],
+        ['#3a1c71', '#d76d77', '#ffaf7b']
     ];
     return gradients[Math.floor(Math.random() * gradients.length)];
 }
@@ -57,50 +47,66 @@ function getHarmoniousGradient() {
 // 🛠️ دالة لاستخراج رابط الإيموجي
 function getEmojiUrl(emoji) {
     if (!emoji) return null;
-    // 1. إيموجي مخصص من ديسكورد (Custom Emoji)
+    
+    // 1. إيموجي مخصص من ديسكورد
     const customMatch = emoji.match(/<?(a)?:?(\w{2,32}):(\d{17,19})>?/);
     if (customMatch) {
         const ext = customMatch[1] ? 'gif' : 'png';
         return `https://cdn.discordapp.com/emojis/${customMatch[3]}.${ext}`;
     }
-    // 2. إيموجي عادي (Unicode Emoji) - نستخدم مكتبة twemoji
+
+    // 2. إيموجي عادي (Unicode)
+    // نتجاوز النصوص العادية والأرقام
+    if (/^[a-zA-Z0-9\u0600-\u06FF\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]*$/.test(emoji)) {
+        return null; 
+    }
+
     try {
-        // التحقق إذا كان النص حروفاً عادية وليس إيموجي
-        if (/^[a-zA-Z0-9\s]+$/.test(emoji)) return null;
-        
         const codePoints = [...emoji]
             .map(c => c.codePointAt(0).toString(16))
-            .filter(cp => cp !== 'fe0f') 
+            .filter(cp => cp !== 'fe0f')
             .join('-');
         return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${codePoints}.png`;
     } catch (e) {
-        return null; 
+        return null;
     }
 }
 
-// 🛠️ دالة لرسم النص مع دعم الإيموجي (الرسم كصورة)
-async function drawTextWithEmoji(ctx, text, x, y, fontSize = 30) {
-    const parts = text.split(/(\s+)/); // تقسيم النص بالمسافات للحفاظ عليها
+// 🛠️ دالة رسم النص المختلط مع الإيموجي
+async function fillMixedText(ctx, text, x, y, fontSize) {
+    // تعيين الخط الأساسي لحساب القياسات
+    ctx.font = `bold ${fontSize}px "BeinAr", "Arial"`;
+    
+    // تقسيم النص للحفاظ على الإيموجي منفصلاً
+    // التعبير النمطي يفصل الإيموجي المخصص واليونيكود والمسافات
+    const regex = /(<a?: \w+: \d+>|[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|\s+)/gu;
+    // ملاحظة: التقسيم البسيط قد لا يكفي، سنستخدم تقسيم ذكي
+    // لكن للأمان سنستخدم logic التقسيم البسيط مع فحص getEmojiUrl
+    
+    // تقسيم النص بذكاء: نفصل الكلمات والإيموجيات
+    const parts = text.split(/(\s+|<?a?:?\w{2,32}:\d{17,19}>?|[\uD800-\uDBFF][\uDC00-\uDFFF])/g).filter(p => p);
+
     let currentX = x;
+    const emojiSize = fontSize; // حجم الإيموجي نفس حجم الخط
+    const baselineOffset = fontSize * 0.15; // ضبط المحاذاة الرأسية
 
     for (const part of parts) {
+        if (!part) continue;
+
         const emojiUrl = getEmojiUrl(part);
-        
+
         if (emojiUrl) {
             try {
                 const img = await Canvas.loadImage(emojiUrl);
-                // رسم الإيموجي كصورة (أكبر قليلاً من النص ليكون واضحاً)
-                const size = fontSize * 1.2; 
-                const offset = size * 0.15; // رفع الصورة قليلاً للمحاذاة
-                ctx.drawImage(img, currentX, y - size + offset, size, size);
-                currentX += size + 5; 
+                ctx.drawImage(img, currentX, y - emojiSize + baselineOffset, emojiSize, emojiSize);
+                currentX += emojiSize + 5; // مسافة بعد الإيموجي
             } catch (e) {
-                // فشل تحميل الصورة، ارسم النص كما هو
+                // في حال الفشل، نرسمه كنص (قد يظهر مربع فارغ)
                 ctx.fillText(part, currentX, y);
                 currentX += ctx.measureText(part).width;
             }
         } else {
-            // نص عادي
+            // رسم النص العادي
             ctx.fillText(part, currentX, y);
             currentX += ctx.measureText(part).width;
         }
@@ -204,13 +210,10 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText('LEVEL UP!', textX, 70);
     ctx.shadowBlur = 0;
 
-    // الاسم (مع دعم الإيموجي إذا وجد)
+    // الاسم (مع رسم الإيموجي كصور) 🔥
     ctx.fillStyle = '#ffffff';
-    const nameFontSize = 50;
-    ctx.font = applyText(canvas, member.displayName, nameFontSize); 
-    // نستخدم الدالة العادية هنا لأن دمج الخط المتغير مع رسم الإيموجي معقد، 
-    // ولكن يمكننا استخدام drawTextWithEmoji لو أردت دعم إيموجي الاسم بشكل خاص
-    ctx.fillText(member.displayName, textX, 125); 
+    // نستخدم دالة الرسم المختلطة بدلاً من fillText العادية
+    await fillMixedText(ctx, member.displayName, textX, 125, 50);
 
     // المستوى القديم
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
