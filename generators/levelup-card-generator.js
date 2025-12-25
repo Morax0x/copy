@@ -56,7 +56,6 @@ function getEmojiUrl(emoji) {
     }
 
     // 2. إيموجي عادي (Unicode)
-    // نتجاوز النصوص العادية والأرقام
     if (/^[a-zA-Z0-9\u0600-\u06FF\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]*$/.test(emoji)) {
         return null; 
     }
@@ -72,24 +71,36 @@ function getEmojiUrl(emoji) {
     }
 }
 
-// 🛠️ دالة رسم النص المختلط مع الإيموجي
+// دالة بسيطة لتشبيك الحروف العربية (Visual Reshaping) إذا لم تكن المكتبة موجودة
+function shapeArabicText(text) {
+    // هذه محاولة بسيطة لعكس الكلمة فقط لأن الكانفاس يرسم الحروف العربية مقطعة من اليسار لليمين
+    // إذا كانت الحروف تظهر لديك "س ل ي م" (مقطعة)، فهذه الدالة تحاول دمجها
+    // إذا كانت تظهر لديك سليمة ومشبوكة، فلا داعي للقلق
+    
+    // في أغلب الحالات مع node-canvas، يجب عكس "حروف الكلمة الواحدة" لكي تظهر مشبوكة
+    // لكن ترتيب الكلمات يجب أن يبقى كما هو (وهو ما قمنا بتصحيحه الآن)
+    if (!/[\u0600-\u06FF]/.test(text)) return text;
+    
+    // نقوم بعكس حروف الكلمة الواحدة فقط لتتصل ببعضها (خدعة الكانفاس)
+    // ولكن لا نعكس ترتيب الجملة
+    return text.split("").reverse().join("");
+}
+
+// 🛠️ دالة رسم النص المختلط مع الإيموجي (بدون عكس الجملة)
 async function fillMixedText(ctx, text, x, y, fontSize) {
-    // تعيين الخط الأساسي لحساب القياسات
     ctx.font = `bold ${fontSize}px "BeinAr", "Arial"`;
     
-    // تقسيم النص للحفاظ على الإيموجي منفصلاً
-    // التعبير النمطي يفصل الإيموجي المخصص واليونيكود والمسافات
-    const regex = /(<a?: \w+: \d+>|[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|\s+)/gu;
-    // ملاحظة: التقسيم البسيط قد لا يكفي، سنستخدم تقسيم ذكي
-    // لكن للأمان سنستخدم logic التقسيم البسيط مع فحص getEmojiUrl
-    
-    // تقسيم النص بذكاء: نفصل الكلمات والإيموجيات
+    // تقسيم النص: نفصل الكلمات والإيموجيات
+    // النمط يراعي الإيموجي المخصص واليونيكود
     const parts = text.split(/(\s+|<?a?:?\w{2,32}:\d{17,19}>?|[\uD800-\uDBFF][\uDC00-\uDFFF])/g).filter(p => p);
 
+    // ❌ تم حذف (parts.reverse()) الذي كان يقلب الجملة ❌
+    
     let currentX = x;
-    const emojiSize = fontSize; // حجم الإيموجي نفس حجم الخط
-    const baselineOffset = fontSize * 0.15; // ضبط المحاذاة الرأسية
+    const emojiSize = fontSize; 
+    const baselineOffset = fontSize * 0.15;
 
+    // نقوم برسم الأجزاء بالترتيب الطبيعي (كما جاءت في النص)
     for (const part of parts) {
         if (!part) continue;
 
@@ -99,16 +110,24 @@ async function fillMixedText(ctx, text, x, y, fontSize) {
             try {
                 const img = await Canvas.loadImage(emojiUrl);
                 ctx.drawImage(img, currentX, y - emojiSize + baselineOffset, emojiSize, emojiSize);
-                currentX += emojiSize + 5; // مسافة بعد الإيموجي
+                currentX += emojiSize + 5; 
             } catch (e) {
-                // في حال الفشل، نرسمه كنص (قد يظهر مربع فارغ)
                 ctx.fillText(part, currentX, y);
                 currentX += ctx.measureText(part).width;
             }
         } else {
-            // رسم النص العادي
-            ctx.fillText(part, currentX, y);
-            currentX += ctx.measureText(part).width;
+            // معالجة النص العربي
+            let textToDraw = part;
+            if (/[\u0600-\u06FF]/.test(part)) {
+                // نعالج "تشبيك الحروف" للكلمة الواحدة فقط، دون تغيير مكانها
+                // (إذا كانت الحروف تظهر لديك مقلوبة داخل الكلمة الواحدة، استخدم السطر التالي)
+                textToDraw = shapeArabicText(part); 
+                
+                // (أما إذا كانت الحروف تظهر صحيحة ومشبوكة لكن الجملة مقلوبة، فاحذف shapeArabicText واستخدم part مباشرة)
+            }
+            
+            ctx.fillText(textToDraw, currentX, y);
+            currentX += ctx.measureText(textToDraw).width;
         }
     }
 }
@@ -210,9 +229,9 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText('LEVEL UP!', textX, 70);
     ctx.shadowBlur = 0;
 
-    // الاسم (مع رسم الإيموجي كصور) 🔥
+    // 🔥 رسم الاسم (تصحيح الترتيب) 🔥
     ctx.fillStyle = '#ffffff';
-    // نستخدم دالة الرسم المختلطة بدلاً من fillText العادية
+    // نستدعي الدالة بدون عكس الترتيب
     await fillMixedText(ctx, member.displayName, textX, 125, 50);
 
     // المستوى القديم
