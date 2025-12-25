@@ -20,7 +20,7 @@ async function triggerMimicChest(thread, players) {
         .setDescription(`✶ عثرتـم عـلى غرفـة مخفية في أعمـاق الدانجون يوجـد 3 صناديق القرار لكـم المخاطـرة وفتـح الصناديـق أم تخطيها ..\n\n✶ لديكـم **60 ثانيـة** قبل ان يبتلع الدانجـون غرفة الصناديق اختـر او دع !`)
         .setImage('https://i.postimg.cc/jdXLq52j/cges.png')
         .setColor(getRandomColor())
-        .setFooter({ text: '⚠️ انتبه: بعض الصناديق قد تكون فخاخاً (Mimic)!' });
+        .setFooter({ text: '⚠️ انتبه: بعض الصناديق قد تكون فخاخاً!' });
 
     // 3 أزرار بألوان مختلفة وايموجي الصندوق
     const row = new ActionRowBuilder().addComponents(
