@@ -1,8 +1,8 @@
-const { OWNER_ID } = require('./constants');
+const { OWNER_ID, skillsConfig } = require('./constants');
 const { applyDamageToPlayer } = require('./utils');
 
 // 🟢 SKILL USAGE FUNCTION
-// هذه الدالة الآن مسؤولة عن كل شيء: الخصم، التأثير، واللوجات
+// هذه الدالة تتولي تنفيذ جميع أنواع المهارات وتأثيراتها
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -14,7 +14,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
-    // --- 1. مهارات الأونر الخاصة ---
+    // 1. مهارات الأونر الخاصة
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
@@ -30,8 +30,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         return { type: 'owner_leave', success: true };
     }
 
-    // --- 2. منطق مهارات الكلاسات (Class Skills) ---
-    // تم نقل المنطق التنفيذي هنا بالكامل لضمان عدم ضياعه
+    // 2. منطق مهارات الكلاسات (Class Skills Logic)
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -41,13 +40,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     if (classType) {
-         // التحقق من الكولداون
          if (player.special_cooldown > 0 && player.id !== OWNER_ID) {
              return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
          }
 
          let skillName = "مهارة خاصة";
-         // تنفيذ التأثير
          switch(classType) {
              case 'Leader': 
                 players.forEach(m => { 
@@ -81,7 +78,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         t.isDead = false; 
                         t.hp = Math.floor(t.maxHp * 0.2);
                         t.reviveCount = (t.reviveCount || 0) + 1;
-                        applyDamageToPlayer(player, Math.floor(player.maxHp * 0.1)); // تضحية بجزء من صحة الكاهن
+                        applyDamageToPlayer(player, Math.floor(player.maxHp * 0.1)); 
                         log.push(`✨ **${player.name}** أحيا **${t.name}**!`);
                         if(threadChannel) threadChannel.send(`✨ **${player.name}** قام بإحياء **${t.name}** <@${t.id}>!`).catch(()=>{});
                         player.special_cooldown = 7;
@@ -111,25 +108,50 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
          return { success: true, name: skillName };
     }
 
-    // --- 3. المنطق للمهارات العادية (Standard Skills) ---
-    
-    // التحقق من الكولداون للمهارات العادية
+    // 3. التحقق من الكولداون للمهارات العادية
+    const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
+
     if (skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
         if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
             return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
         }
     }
 
-    // تطبيق الكولداون
+    // تطبيق وقت الانتظار (Race=5, Std=3)
     const setCD = (turns = 3) => {
         if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
     };
+    if (skill.id.startsWith('race_')) setCD(5); else setCD(3);
 
-    if (skill.id.startsWith('race_')) setCD(5); 
-    else setCD(3);
 
-    const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
+    // =================================================================
+    // 🔥🔥 مهارة عرق الألف (Elf Skill Update) 🔥🔥
+    // =================================================================
+    if (skill.id === 'race_elf_skill') {
+        // حساب الضرر: نعتبر الضرر 130% من الهجوم الأساسي (أو حسب القيمة في الكونفق إذا وجدت)
+        const damageMultiplier = (value > 0) ? (1 + (value / 100)) : 1.3;
+        skillDmg = Math.floor(effectiveAtk * damageMultiplier) * mult;
+        
+        monster.hp -= skillDmg;
+        player.totalDamage += skillDmg;
 
+        // منطق الـ 50% شلل
+        const isParalyzed = Math.random() < 0.5; // 50% chance
+        
+        if (isParalyzed) {
+            monster.frozen = true; // هذا سيمنع الوحش من الهجوم في دوره
+            log.push(`🏹 **${player.name}** سدد سهماً مشلاً! ⚡ **أصيب الوحش بالشلل!** (${skillDmg} ضرر)`);
+        } else {
+            log.push(`🏹 **${player.name}** سدد سهماً سريعاً! (${skillDmg} ضرر)`);
+        }
+        
+        return { success: true, name: skill.name };
+    }
+
+    // =================================================================
+    // 🔥🔥 بقية المهارات حسب النوع (Stat Type) 🔥🔥
+    // =================================================================
+    
     switch (skill.stat_type) {
         case 'TrueDMG_Burn': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
