@@ -1,7 +1,8 @@
 const { OWNER_ID } = require('./constants');
 const { applyDamageToPlayer } = require('./utils');
 
-// 🟢 SKILL USAGE FUNCTION (Updated Cooldowns & Strict Checks)
+// 🟢 SKILL USAGE FUNCTION
+// هذه الدالة الآن مسؤولة عن كل شيء: الخصم، التأثير، واللوجات
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
     const mult = (player.id === OWNER_ID) ? 10 : 1;
@@ -13,22 +14,24 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
+    // --- 1. مهارات الأونر الخاصة ---
     if (skill.id === 'skill_secret_owner') {
         skillDmg = Math.floor(monster.maxHp * 0.50); 
         monster.hp -= skillDmg;
         player.totalDamage += skillDmg;
         log.push(`👁️ **${player.name}** استخدم "تركيز تام" وقصم الوحش لنصفين! (**${skillDmg}** ضرر)`);
-        return;
+        return { success: true, name: "تركيز تام" };
     }
 
     if (skill.id === 'skill_owner_leave') {
         monster.hp = 1; 
         log.push(`🚪 **${player.name}** غادر بلمح البصر، وترك الوحش يترنح (HP: 1)!`);
         if (threadChannel) threadChannel.send(`🚪 **${player.name}** غادر الدانجون بلمح البصر!`).catch(()=>{});
-        return { type: 'owner_leave' };
+        return { type: 'owner_leave', success: true };
     }
 
-    // --- Class Skills Logic ---
+    // --- 2. منطق مهارات الكلاسات (Class Skills) ---
+    // تم نقل المنطق التنفيذي هنا بالكامل لضمان عدم ضياعه
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -38,41 +41,94 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     if (classType) {
+         // التحقق من الكولداون
          if (player.special_cooldown > 0 && player.id !== OWNER_ID) {
              return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
          }
 
-         // Set cooldown to 6 for all class skills
+         let skillName = "مهارة خاصة";
+         // تنفيذ التأثير
          switch(classType) {
-             case 'Leader': return { type: 'class_effect', effect: 'leader_buff', cooldown: 6 }; 
-             case 'Tank': return { type: 'class_effect', effect: 'tank_taunt', cooldown: 6 }; 
-             case 'Priest': return { type: 'class_effect', effect: 'priest_heal', cooldown: (player.id===OWNER_ID?0:6) }; 
-             case 'Mage': return { type: 'class_effect', effect: 'mage_freeze', cooldown: 6 }; 
-             case 'Summoner': return { type: 'class_effect', effect: 'summon_pet', cooldown: 6 }; 
+             case 'Leader': 
+                players.forEach(m => { 
+                    if(!m.isDead) {
+                        m.effects.push({ type: 'atk_buff', val: 0.3, turns: 2 });
+                        m.critRate = (m.critRate || 0) + 0.2; 
+                    } 
+                });
+                log.push(`⚔️ **${player.name}** أطلق صرخة الحرب! (ATK & Luck UP)`);
+                skillName = "صرخة الحرب";
+                player.special_cooldown = 6;
+                break;
+
+             case 'Tank': 
+                monster.targetFocusId = player.id;
+                player.effects.push({ type: 'def_buff', val: 0.6, turns: 2 }); 
+                log.push(`🛡️ **${player.name}** استفز الوحش وتصلب!`);
+                skillName = "استفزاز وتصليب";
+                player.special_cooldown = 6;
+                break;
+
+             case 'Priest': 
+                const dead = players.filter(m => m.isDead && !m.isPermDead); 
+                if (dead.length > 0) {
+                    const t = dead[0]; 
+                    if (t.reviveCount >= 1) {
+                        t.isPermDead = true;
+                        log.push(`💀 **${t.name}** تحللت جثته وزهقت روحه ولا يمكن إحياؤه!`);
+                        if(threadChannel) threadChannel.send(`💀 **${t.name}** <@${t.id}> تحللت جثته وزهقت روحه!`).catch(()=>{});
+                    } else {
+                        t.isDead = false; 
+                        t.hp = Math.floor(t.maxHp * 0.2);
+                        t.reviveCount = (t.reviveCount || 0) + 1;
+                        applyDamageToPlayer(player, Math.floor(player.maxHp * 0.1)); // تضحية بجزء من صحة الكاهن
+                        log.push(`✨ **${player.name}** أحيا **${t.name}**!`);
+                        if(threadChannel) threadChannel.send(`✨ **${player.name}** قام بإحياء **${t.name}** <@${t.id}>!`).catch(()=>{});
+                        player.special_cooldown = 7;
+                    }
+                } else {
+                    players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
+                    log.push(`✨ **${player.name}** عالج الفريق!`);
+                    player.special_cooldown = 6;
+                }
+                skillName = "النور المقدس";
+                break;
+
+             case 'Mage': 
+                monster.frozen = true;
+                log.push(`❄️ **${player.name}** جمد الوحش!`);
+                skillName = "سجن الجليد";
+                player.special_cooldown = 6;
+                break;
+
+             case 'Summoner': 
+                player.summon = { active: true, turns: 3 };
+                log.push(`🐺 **${player.name}** استدعى الحارس!`);
+                skillName = "استدعاء حارس الظل";
+                player.special_cooldown = 6;
+                break;
          }
-         return;
+         return { success: true, name: skillName };
     }
 
-    const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
-
-    // 🔥🔥🔥 FIX: Strict Cooldown Check for Standard/Race Skills 🔥🔥🔥
-    if (!classType && skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
+    // --- 3. المنطق للمهارات العادية (Standard Skills) ---
+    
+    // التحقق من الكولداون للمهارات العادية
+    if (skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
         if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
             return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
         }
     }
 
-    // Helper to set cooldown (Race=5, Std=3)
+    // تطبيق الكولداون
     const setCD = (turns = 3) => {
         if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = turns;
     };
 
-    // Race Skill Check for cooldown setting
-    if (skill.id.startsWith('race_')) {
-        setCD(5); 
-    } else {
-        setCD(3); // Default standard
-    }
+    if (skill.id.startsWith('race_')) setCD(5); 
+    else setCD(3);
+
+    const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
     switch (skill.stat_type) {
         case 'TrueDMG_Burn': { 
@@ -274,6 +330,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             break;
         }
     }
+    return { success: true, name: skill.name };
 }
 
 module.exports = { handleSkillUsage };
