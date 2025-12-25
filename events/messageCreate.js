@@ -243,17 +243,11 @@ module.exports = {
                     const oldLvl = level.level;
                     level.xp -= nextXP; level.level++;
                     
-                    // ❌ تم إزالة مكافآت المورا والصحة (لأنها مجرد عرض الآن) ❌
-                    // const rewardMora = level.level * 100; 
-                    // const rewardHP = 4;
-                    // level.mora += rewardMora;
-
                     // حفظ البيانات الجديدة (المستوى والخبرة فقط)
                     client.setLevel.run(level);
 
                     // رسم وإرسال البطاقة
                     try {
-                        // نرسل 0 في الجوائز حتى لا تظهر في البطاقة
                         const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: 0, hp: 0 });
                         
                         // تحديد القناة
@@ -261,8 +255,19 @@ module.exports = {
                         const channel = message.guild.channels.cache.get(channelId);
 
                         if (channel) {
-                            // 🔥🔥 النص الفخم (الإمبراطوري) 🔥🔥
-                            let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
+                            // 🔥🔥 التحقق من إعدادات الإشعارات (المنشن) من لوحة الإنجازات 🔥🔥
+                            // جدول quest_notifications يحتوي على عمود levelNotif
+                            const notifData = sql.prepare("SELECT levelNotif FROM quest_notifications WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
+                            
+                            // إذا لم يكن هناك سجل، الافتراضي هو 1 (تشغيل المنشن)
+                            // إذا كان levelNotif = 0 (طفى الإشعارات)، نستخدم الاسم فقط بدون منشن
+                            const isMentionOn = notifData ? notifData.levelNotif : 1; 
+                            
+                            // المتغير الذي سنستخدمه في الرسالة
+                            const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
+
+                            // 🔥🔥 النص الفخم (الإمبراطوري) مع استخدام userReference بدلاً من message.author 🔥🔥
+                            let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                                              `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                                              `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
 
@@ -279,7 +284,7 @@ module.exports = {
                         }
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
-                        // رسالة نصية احتياطية (النص الفخم أيضاً)
+                        // رسالة نصية احتياطية
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
                                         `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                                         `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
