@@ -249,10 +249,17 @@ async function checkDailyStreaks(client, sql) {
 
 async function handleStreakMessage(message) {
     const sql = message.client.sql;
+    
+    // 🔥🔥 ضمان وجود العمود لتجنب الأخطاء 🔥🔥
+    try {
+         sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
+    } catch (e) {}
 
     const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
-    const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak);");
-    const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak WHERE id = @id");
+    // 🔥🔥 إضافة has12hWarning للـ INSERT 🔥🔥
+    const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
+    // 🔥🔥 تحديث has12hWarning وتصفيره عند التفاعل 🔥🔥
+    const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, has12hWarning = 0 WHERE id = @id");
 
     const getLevel = message.client.getLevel;
     const setLevel = message.client.setLevel;
@@ -277,7 +284,8 @@ async function handleStreakMessage(message) {
             hasReceivedFreeShield: 1,
             separator: DEFAULT_SEPARATOR, 
             dmNotify: 1,
-            highestStreak: 1
+            highestStreak: 1,
+            has12hWarning: 0 // 🔥🔥 قيمة افتراضية 🔥🔥
         };
         setStreak.run(streakData);
         await updateNickname(message.member, sql);
@@ -308,6 +316,7 @@ async function handleStreakMessage(message) {
             streakData.hasGracePeriod = 0;
             streakData.hasItemShield = 0;
             if (streakData.highestStreak < 1) streakData.highestStreak = 1;
+            streakData.has12hWarning = 0; // 🔥🔥
             setStreak.run(streakData);
             await updateNickname(message.member, sql);
         } else {
@@ -330,7 +339,8 @@ async function handleStreakMessage(message) {
                 }
                 await updateNickname(message.member, sql);
             } else {
-                sql.prepare("UPDATE streaks SET lastMessageTimestamp = ? WHERE id = ?").run(now, id);
+                // تحديث الوقت فقط وتصفير التحذير
+                sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
             }
         }
     }
@@ -659,6 +669,11 @@ async function sendDailyMediaUpdate(client, sql) {
 
 async function sendStreakWarnings(client, sql) {
     console.log("[Streak Warning] ⏰ بدء فحص تحذيرات الـ 12 ساعة...");
+    // 🔥🔥 ضمان وجود العمود لتجنب الأخطاء 🔥🔥
+    try {
+         sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
+    } catch (e) {}
+
     const now = Date.now();
     const twelveHoursAgo = now - (12 * 60 * 60 * 1000);
     const thirtySixHoursAgo = now - (36 * 60 * 60 * 1000);
