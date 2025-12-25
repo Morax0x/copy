@@ -112,6 +112,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
+            // 🔥🔥 Anti-Spam Set: Tracks users currently processing an action 🔥🔥
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
@@ -130,6 +131,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('collect', async i => {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     
+                    // 🔥🔥 Spam Protection Check 🔥🔥
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
@@ -148,6 +150,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
                     
+                    // 🔥 Lock the user
                     processingUsers.add(i.user.id);
 
                     try {
@@ -193,12 +196,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (res && res.type === 'owner_leave') {
                                      players = players.filter(pl => pl.id !== OWNER_ID);
                                      if (players.length === 0) { collector.stop('monster_dead'); return; }
+                                     skillNameUsed = "رحيل بصمت";
                                 }
                                 
                                 if (res && res.name) skillNameUsed = res.name;
                                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
-                                actedPlayers.push(p.id); 
+                                actedPlayers.push(p.id); // 🔥 Mark as acted only on success
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
@@ -260,7 +264,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
+                                // 🔥 إصلاح الغلتش: التحقق من العمى والارتباك قبل الهجوم
                                 let canAttack = true;
+
+                                // 1. Confusion Check
                                 const confusion = p.effects.find(e => e.type === 'confusion');
                                 if (confusion && Math.random() < confusion.val) {
                                     canAttack = false;
@@ -268,6 +275,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     applyDamageToPlayer(p, selfDmg);
                                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                                 } 
+                                // 2. Blind Check
                                 else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
                                     canAttack = false;
                                     log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
@@ -324,6 +332,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 if (monster.frozen) { log.push(`❄️ **${monster.name}** متجمد!`); monster.frozen = false; } 
                 else {
+                    // 🔥🔥 Monster Effect Handling 🔥🔥
                     if (monster.effects) {
                         monster.effects = monster.effects.filter(e => {
                             if (e.type === 'burn') {
@@ -343,23 +352,30 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                     if (monster.hp <= 0) { ongoing = false; break; }
 
+                    // 🔥🔥 Check Confusion 🔥🔥
                     const confusion = monster.effects.find(e => e.type === 'confusion');
                     if (confusion && Math.random() < confusion.val) {
                         const selfDmg = Math.floor(monster.atk * 0.5);
                         monster.hp -= selfDmg;
                         log.push(`😵 **${monster.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg} HP)`);
                     } else {
-                        // AI Logic
+                        // ========================================================
+                        // 🔥 Monster AI & Skills Logic (SMART AI UPDATE) 🔥
+                        // ========================================================
+                        
                         const alive = players.filter(p => !p.isDead);
                         let skillUsed = false;
 
+                        // 1. Trigger Specific Boss/Guardian Skills (After Floor 17)
                         if (floor > 17 && alive.length > 0) {
                             const baseMonsterName = monster.name.split(' (Lv.')[0].trim();
                             const monsterSkill = MONSTER_SKILLS[baseMonsterName];
 
                             if (monsterSkill) {
+                                // Smart Trigger Chance: Increase probability if low HP (Desperation Mode)
                                 let chance = monsterSkill.chance;
-                                if (monster.hp < monster.maxHp * 0.3) chance += 0.2; 
+                                if (monster.hp < monster.maxHp * 0.3) chance += 0.2; // Increase by 20%
+
                                 if (Math.random() < chance) {
                                     monsterSkill.execute(monster, players, log);
                                     skillUsed = true;
@@ -367,6 +383,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
 
+                        // 2. Trigger Generic Skills for Minions/Elites (After Floor 17)
                         if (!skillUsed && floor > 17 && alive.length > 0) {
                             if (Math.random() < 0.20) {
                                 const randomGenericSkill = GENERIC_MONSTER_SKILLS[Math.floor(Math.random() * GENERIC_MONSTER_SKILLS.length)];
@@ -375,7 +392,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
 
+                        // 3. Normal Attack (if no skill used)
                         if (!skillUsed && alive.length > 0) {
+                            
+                            // Summoner Pet Attack Logic
                             players.forEach(p => {
                                 if (!p.isDead && p.summon && p.summon.active && p.summon.turns > 0) {
                                     const petDmg = Math.floor(p.atk * 0.5);
@@ -392,14 +412,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                             if (monster.hp <= 0) { ongoing = false; break; }
 
+                            // Smart Targeting for Normal Attacks
+                            // Priority: Taunted > Giant > Priest > Weakest > Random
                             let target = alive.find(p => p.id === monster.targetFocusId) || 
                                          alive.find(p => p.effects.some(e => e.type === 'titan')) ||
-                                         getSmartTarget(players) || 
+                                         getSmartTarget(players) || // Use AI Helper
                                          alive[Math.floor(Math.random() * alive.length)];
                             
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
+                                
                                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
+
                                 if(target.defending) dmg = Math.floor(dmg * 0.5);
                                 
                                 const reflectEffect = target.effects.find(e => e.type === 'reflect');
@@ -461,7 +485,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         let baseMora = Math.floor(getBaseFloorMora(floor));
-        let floorXp = Math.floor(baseMora / 3); 
+        // 🔥🔥🔥 تعديل الـ XP ليكون 5% من المورا 🔥🔥🔥
+        let floorXp = Math.floor(baseMora * 0.05);  
         players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
