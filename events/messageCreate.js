@@ -260,15 +260,29 @@ module.exports = {
                         const channel = message.guild.channels.cache.get(channelId);
 
                         if (channel) {
+                            // 🔥🔥 النص الفخم (الإمبراطوري) 🔥🔥
+                            let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
+                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
+
+                            // 🔥🔥 التحقق من المستويات المميزة (Milestones) 🔥🔥
+                            const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
+                            if (milestones.includes(level.level)) {
+                                contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
+                            }
+
                             await channel.send({ 
-                                content: `🎉 **مبروك التلفيل!** ${message.author}\nلقد وصلت للمستوى **${level.level}**!`, 
+                                content: contentMsg,
                                 files: [card] 
                             });
                         }
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
-                        // رسالة نصية احتياطية
-                        if(client.sendLevelUpMessage) await client.sendLevelUpMessage(message, message.member, level.level, level.level-1, level);
+                        // رسالة نصية احتياطية (النص الفخم أيضاً)
+                        let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
+                                        `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
+                        message.channel.send(backupMsg);
                     }
                 } else {
                     client.setLevel.run(level);
