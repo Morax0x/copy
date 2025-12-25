@@ -34,6 +34,19 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
+// 🔥 دالة لتنظيف الاسم من أرقام الستريك والفواصل 🔥
+function cleanName(name) {
+    if (!name) return "Unknown";
+    // الفواصل التي نريد الحذف بعدها
+    // التعبير النمطي: يبحث عن الفاصلة وما بعدها ويحذفها
+    // الفواصل: » • ✦ ★ ❖ ✧ ✬ ~ | 〢 ┇
+    const separators = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|', '~'];
+    const regex = new RegExp(`\\s*([${separators.join('')}]).*`, 'g');
+    
+    // يحذف الفاصلة وكل ما بعدها، ثم يزيل المسافات الزائدة
+    return name.replace(regex, '').trim();
+}
+
 // --- Main Dungeon Execution Logic ---
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
@@ -41,7 +54,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     ensureInventoryTable(sql); 
 
     let players = [];
-    let retreatedPlayers = []; // مصفوفة لحفظ اللاعبين المنسحبين
+    let retreatedPlayers = []; 
     
     // --- متغيرات نظام الفخ ---
     let isTrapActive = false;
@@ -54,7 +67,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     members.forEach((m, index) => {
         if (m) {
             const cls = partyClasses.get(m.id) || 'Adventurer';
-            players.push(getRealPlayerData(m, sql, cls));
+            let playerData = getRealPlayerData(m, sql, cls);
+            
+            // 🔥🔥 تنظيف الاسم فوراً عند الإنشاء 🔥🔥
+            playerData.name = cleanName(playerData.name);
+            
+            players.push(playerData);
         }
     });
 
@@ -127,7 +145,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 afkP.hp = 0;
                                 afkP.isDead = true;
                                 afkP.isPermDead = true; 
-                                afkP.deathFloor = floor; // تسجيل طابق الموت
+                                afkP.deathFloor = floor; 
                                 
                                 const debuffDuration = 60 * 60 * 1000; 
                                 const expiresAt = Date.now() + debuffDuration;
@@ -163,6 +181,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
                              if (member) {
                                  ownerPlayer = getRealPlayerData(member, sql, '???'); 
+                                 // 🔥 تنظيف اسم المالك أيضاً 🔥
+                                 ownerPlayer.name = cleanName(ownerPlayer.name);
                                  players.push(ownerPlayer);
                                  log.push(`👑 **الأمبراطـور اقتحـم المعركـة!**`);
                              }
@@ -264,7 +284,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actionMsg = "🔥 تحول لعملاق!";
                                 } else if (potionId === 'potion_sacrifice') {
                                     p.hp = 0; p.isDead = true; p.isPermDead = true;
-                                    p.deathFloor = floor; // تسجيل طابق الموت
+                                    p.deathFloor = floor; 
                                     players.forEach(ally => {
                                         if (ally.id !== p.id) {
                                             ally.isDead = false;
@@ -445,7 +465,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if(target.hp <= 0 && !target.isDead) { 
                                     target.hp = 0; 
                                     target.isDead = true; 
-                                    target.deathFloor = floor; // تسجيل طابق الموت
+                                    target.deathFloor = floor; 
                                     
                                     if (target.class === 'Priest' && !target.isPermDead) {
                                         players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
@@ -492,7 +512,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         const restEmbed = new EmbedBuilder()
             .setTitle('❖ استـراحـة بيـن الطـوابـق')
-            .setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ <a:buff:1438796257522094081> تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`)
+            .setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`)
             .setColor(Colors.Red)
             .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
 
@@ -516,15 +536,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 if (i.customId === 'retreat') {
                     if (i.user.id === hostId) {
-                        // إذا القائد انسحب، ينهي الدانجون للكل
                         await i.deferUpdate();
                         return decCollector.stop('retreat');
                     } else {
-                        // إذا عضو عادي انسحب، يخرج هو فقط
                         const pIndex = players.findIndex(p => p.id === i.user.id);
                         if (pIndex > -1) {
                             const leavingPlayer = players[pIndex];
-                            leavingPlayer.retreatFloor = floor; // تسجيل طابق الانسحاب
+                            leavingPlayer.retreatFloor = floor; 
                             retreatedPlayers.push(leavingPlayer);
                             players.splice(pIndex, 1); 
                             
@@ -538,7 +556,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     }
                 }
             });
-            
             decCollector.on('end', (c, reason) => res(reason));
         });
 
@@ -548,20 +565,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
         } else if (decision === 'continue') {
-            
             if (floor > 10 && Math.random() < 0.01) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
-                
                 const targetFloor = Math.floor(Math.random() * (90 - 31 + 1)) + 31;
                 floor = targetFloor - 1; 
-
                 const trapEmbed = new EmbedBuilder()
                     .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
                     .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم نقلكم قسراً إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم... النجاة شبه مستحيلة!`)
                     .setColor(Colors.DarkRed)
                     .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
-
                 await threadChannel.send({ content: `||@everyone||`, embeds: [trapEmbed] });
             } else {
                 await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
@@ -607,7 +620,6 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
 
-    // 🔥 دمج معلومات نجم المعركة داخل الـ Embed إذا كان الطابق >= 10
     if (floor >= 10 && mvpPlayer) {
         description += `\n\n**✨ جائـزة نجـم المعركـة:**\n<@${mvpPlayer.id}> (ضرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحصل على تعزيز **15%** مورا واكس بي لـ **15د** ${EMOJI_BUFF}`;
     }
@@ -632,7 +644,6 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             await mainChannel.send(`**💀 لعنـة الهزيمـة:** أصابت اللعنة جميع المشاركين! (-15% مورا واكس بي لـ 15د) ${EMOJI_NERF}`).catch(()=>{});
 
         } else if (mvpPlayer) {
-            // يتم إضافة البف في الداتابيس فقط، الرسالة أصبحت داخل الإيمبد
             const buffDuration = 15 * 60 * 1000; 
             const expiresAt = Date.now() + buffDuration;
               
