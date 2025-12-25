@@ -4,7 +4,7 @@ module.exports = {
     name: 'setlevelchannel',
     description: 'تحديد القناة التي سيتم إرسال رسائل الترقية (Level Up) فيها.',
     aliases: ['setlvlchannel', 'setlevel-channel', 'تحديد-روم-اللفل', 'روم-اللفل'],
-    category: 'Admin', // تأكد من أن هذا التصنيف صحيح
+    category: 'Admin',
 
     async execute(message, args) {
         const client = message.client;
@@ -20,10 +20,11 @@ module.exports = {
         // الخيار 1: إعادة التعيين إلى الوضع الافتراضي (الإرسال في نفس روم الرسالة)
         if (args[0] && (args[0].toLowerCase() === 'reset' || args[0].toLowerCase() === 'default' || args[0] === 'افتراضي' || args[0] === 'تصفير')) {
             try {
-                sql.prepare("INSERT OR REPLACE INTO channel (guild, channel) VALUES (?, ?)")
-                   .run(message.guild.id, 'Default');
+                // 🔥 التعديل هنا: الحفظ في جدول settings وعمود levelChannel بقيمة NULL للوضع الافتراضي
+                sql.prepare("INSERT INTO settings (guild, levelChannel) VALUES (?, NULL) ON CONFLICT(guild) DO UPDATE SET levelChannel = NULL")
+                    .run(message.guild.id);
 
-                embed.setDescription("✅ تم إعادة تعيين إعدادات قناة الترقية. سيتم الآن إرسال الرسائل في نفس القناة التي يكتب فيها العضو.");
+                embed.setDescription("✅ تم إعادة تعيين إعدادات قناة الترقية. سيتم الآن إرسال البطاقة في نفس القناة التي يتفاعل فيها العضو.");
                 return message.reply({ embeds: [embed] });
             } catch (err) {
                 console.error("Error resetting level channel:", err);
@@ -47,18 +48,19 @@ module.exports = {
 
         // التأكد من أن البوت يستطيع الكتابة في القناة
         const botPermissions = targetChannel.permissionsFor(message.guild.members.me);
-        if (!botPermissions.has(PermissionsBitField.Flags.SendMessages) || !botPermissions.has(PermissionsBitField.Flags.EmbedLinks)) {
+        if (!botPermissions.has(PermissionsBitField.Flags.SendMessages) || !botPermissions.has(PermissionsBitField.Flags.EmbedLinks) || !botPermissions.has(PermissionsBitField.Flags.AttachFiles)) {
             embed.setColor(Colors.Red)
-                 .setDescription(`❌ ليس لدي صلاحيات \`SendMessages\` و \`EmbedLinks\` في القناة ${targetChannel}. الرجاء تعديل الصلاحيات أولاً.`);
+                 .setDescription(`❌ ليس لدي الصلاحيات الكافية في القناة ${targetChannel}.\nأحتاج إلى: \`SendMessages\`, \`EmbedLinks\`, \`AttachFiles\`.`);
             return message.reply({ embeds: [embed] });
         }
 
         // حفظ الإعدادات
         try {
-            sql.prepare("INSERT OR REPLACE INTO channel (guild, channel) VALUES (?, ?)")
-               .run(message.guild.id, targetChannel.id);
+            // 🔥 التعديل هنا: الحفظ في جدول settings وعمود levelChannel
+            sql.prepare("INSERT INTO settings (guild, levelChannel) VALUES (?, ?) ON CONFLICT(guild) DO UPDATE SET levelChannel = excluded.levelChannel")
+                .run(message.guild.id, targetChannel.id);
 
-            embed.setDescription(`✅ تم تحديد قناة ${targetChannel} كقناة رسمية لرسائل الترقية (Level Up).`);
+            embed.setDescription(`✅ تم تحديد قناة ${targetChannel} كقناة رسمية لبطاقات الترقية (Level Up).`);
             await message.reply({ embeds: [embed] });
 
         } catch (err) {
