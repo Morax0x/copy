@@ -14,34 +14,33 @@ const QUOTES = [
     "«إن كنت تبحث عن الأمل… فهو ليس مجانيًا.»"
 ];
 
-// قائمة البضائع وأسعارها وتأثيراتها
 const SHOP_ITEMS = [
     {
         id: 'buy_elixir',
         name: 'إكسيـر الحيـاة',
-        price: 5000,
-        desc: 'يعيد إحياءك بـ 50% HP (يعمل حتى للموت النهائي).',
+        price: 3000,
+        desc: 'يعيد إحياءك بـ 50% HP (أو يعالجك بالكامل).',
         emoji: '🩸'
     },
     {
         id: 'buy_blood',
         name: 'عقـد الـدم',
-        price: 3000,
-        desc: 'خصم 30% من صحتك القصوى مقابل +40% هجوم.',
+        price: 1500,
+        desc: 'خصم 30% من صحتك القصوى مقابل +40% هجوم دائم.',
         emoji: '📜'
     },
     {
         id: 'buy_map',
         name: 'خريطـة مختصـرة',
-        price: 4000,
+        price: 3000,
         desc: 'تخطي طابقين فوراً مع الحصول على نصف جوائزهم.',
         emoji: '🗺️'
     },
     {
         id: 'buy_shield',
         name: 'درع المرتزقـة',
-        price: 1500,
-        desc: 'يمنحك درعاً مؤقتاً يمتص 5000 ضرر.',
+        price: 1000,
+        desc: 'تبدأ الطابق القادم بدرع يمتص 5000 ضرر.',
         emoji: '🛡️'
     },
     {
@@ -54,7 +53,6 @@ const SHOP_ITEMS = [
 ];
 
 async function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
-    // اختيار جملة عشوائية
     const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
 
     const embed = new EmbedBuilder()
@@ -73,22 +71,25 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const msg = await thread.send({ embeds: [embed], components: [row] });
 
-    // كوليكتر الزر (القاء نظرة)
     const buttonCollector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 75000 });
 
     buttonCollector.on('collect', async (i) => {
-        // التحقق من أن اللاعب من الفريق
-        const player = players.find(p => p.id === i.user.id);
-        if (!player) return i.reply({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
+        if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
 
-        // إنشاء قائمة الشراء (Select Menu)
+        const player = players.find(p => p.id === i.user.id);
+        if (!player) return i.followUp({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
+
+        // جلب الرصيد الحالي للعرض
+        const userBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
+        const currentMora = userBalance ? userBalance.mora : 0;
+
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('merchant_select')
             .setPlaceholder('اختر سلعة للشراء...')
             .addOptions(
                 SHOP_ITEMS.map(item => ({
                     label: item.name,
-                    description: `${item.desc} | السعر: ${item.price} مورا`,
+                    description: `${item.desc} | السعر: ${item.price}`,
                     value: item.id,
                     emoji: item.emoji
                 }))
@@ -96,79 +97,73 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
         const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
-        // إرسال المنيو بشكل خاص (Ephemeral)
-        const reply = await i.reply({ 
-            content: `💰 **رصيدك الحالي:** جاري التحقق...\nاختر ما تريد شراءه بعناية:`, 
+        const reply = await i.followUp({ 
+            content: `💰 **رصيدك الحالي:** ${currentMora.toLocaleString()} ${EMOJI_MORA}\nاختر ما تريد شراءه بعناية:`, 
             components: [selectRow], 
             ephemeral: true,
             fetchReply: true 
         });
 
-        // كوليكتر للقائمة المنسدلة (داخل الرد الخاص)
         const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 60000 });
 
         selectCollector.on('collect', async (si) => {
             const selectedId = si.values[0];
             const item = SHOP_ITEMS.find(it => it.id === selectedId);
 
-            // جلب رصيد اللاعب من الداتابيس الرئيسية
-            const userBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(si.user.id, guildId);
-            const currentMora = userBalance ? userBalance.mora : 0;
+            // التحقق من الرصيد مرة أخرى عند الضغط
+            const freshBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(si.user.id, guildId);
+            const actualMora = freshBalance ? freshBalance.mora : 0;
 
-            if (currentMora < item.price) {
+            if (actualMora < item.price) {
                 return si.reply({ content: `❌ **لا تملك مورا كافية!** تحتاج ${item.price} مورا.`, ephemeral: true });
             }
 
             // خصم المبلغ
             sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(item.price, si.user.id, guildId);
 
-            // تطبيق التأثير
+            // تطبيق التأثيرات
             let effectMsg = "";
-            
+
             if (selectedId === 'buy_elixir') {
                 if (!player.isDead) {
-                    // إذا كان حي، نعالجه بالكامل
                     player.hp = player.maxHp;
                     effectMsg = "شرب إكسير الحياة وشعر بقوة الخلود (HP كامل)!";
                 } else {
-                    // إحياء
                     player.isDead = false;
-                    player.isPermDead = false; // كسر الموت النهائي
+                    player.isPermDead = false;
                     player.hp = Math.floor(player.maxHp * 0.5);
-                    player.reviveCount = 0; // تصفير عداد الموت
+                    player.reviveCount = 0;
                     effectMsg = "عاد من الموت بفضل إكسير الحياة!";
                 }
             } 
             else if (selectedId === 'buy_blood') {
-                player.maxHp = Math.floor(player.maxHp * 0.7); // خصم 30%
+                player.maxHp = Math.floor(player.maxHp * 0.7); 
                 if (player.hp > player.maxHp) player.hp = player.maxHp;
-                player.effects.push({ type: 'atk_buff', val: 0.4, turns: 999 }); // بف دائم لنهاية الدانجون
+                // البف الدائم (تأكدنا من السماح به في runDungeon)
+                player.effects.push({ type: 'atk_buff', val: 0.4, turns: 999 }); 
                 effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 40% لنهاية الرحلة)";
             }
             else if (selectedId === 'buy_shield') {
-                player.shield = (player.shield || 0) + 5000;
-                effectMsg = "تجهز بدرع المرتزقة الصلب! (+5000 درع)";
+                // نستخدم متغير خاص لكي لا يُمسح عند بداية الطابق
+                player.startingShield = 5000;
+                effectMsg = "تجهز بدرع المرتزقة الصلب! (سيبدأ الطابق القادم بـ 5000 درع)";
             }
             else if (selectedId === 'buy_map') {
-                // تعديل المتغير المشترك للخريطة
                 merchantState.skipFloors += 2;
                 effectMsg = "اشترى خريطة سرية! سيتم تخطي الطابقين القادمين.";
             }
             else if (selectedId === 'buy_eye') {
-                // تعديل المتغير المشترك للعين
                 merchantState.weaknessActive = true;
                 effectMsg = "حصل على عين البصيرة! وحش الطابق القادم سيكون مكشوفاً.";
             }
 
-            await si.update({ content: `✅ **تم الشراء بنجاح!** خصم ${item.price} مورا.`, components: [] });
+            await si.update({ content: `✅ **تم الشراء بنجاح!** خصم ${item.price} مورا.\nالمتبقي: ${(actualMora - item.price).toLocaleString()}`, components: [] });
             
-            // رسالة عامة في الثريد
             await thread.send(`🤝 **أبـرم ${player.name} صفـقـة مع التاجر واشتـرى ${item.name} مقابل ${item.price} ${EMOJI_MORA}**\n*${effectMsg}*`);
         });
     });
 
     buttonCollector.on('end', async () => {
-        // تعطيل الزر الرئيسي
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('merchant_view')
