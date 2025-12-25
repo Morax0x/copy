@@ -3,6 +3,8 @@ const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
 const { checkPermissions, checkCooldown } = require("../permission-handler.js");
 const { processReportLogic, sendReportError } = require("../handlers/report-handler.js");
+// 🔥 إضافة استدعاء مولد بطاقة التلفيل 🔥
+const { generateLevelUpCard } = require('../generators/levelup-card-generator');
 
 const DISBOARD_BOT_ID = '302050872383242240'; 
 
@@ -235,11 +237,43 @@ module.exports = {
                 const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
                 level.xp += xp; level.totalXP += xp;
                 const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
+                
+                // 🔥🔥 التحقق من التلفيل (Level Up) مع البطاقة الجديدة 🔥🔥
                 if (level.xp >= nextXP) {
+                    const oldLvl = level.level;
                     level.xp -= nextXP; level.level++;
-                    if(client.sendLevelUpMessage) await client.sendLevelUpMessage(message, message.member, level.level, level.level-1, level);
+                    
+                    // مكافآت التلفيل
+                    const rewardMora = level.level * 100;
+                    const rewardHP = 4;
+                    level.mora += rewardMora;
+
+                    // حفظ البيانات الجديدة فوراً
+                    client.setLevel.run(level);
+
+                    // رسم وإرسال البطاقة
+                    try {
+                        const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: rewardMora, hp: rewardHP });
+                        
+                        // تحديد القناة
+                        const channelId = settings?.levelChannel || message.channel.id;
+                        const channel = message.guild.channels.cache.get(channelId);
+
+                        if (channel) {
+                            await channel.send({ 
+                                content: `🎉 **مبروك التلفيل!** ${message.author}\nلقد وصلت للمستوى **${level.level}**!`, 
+                                files: [card] 
+                            });
+                        }
+                    } catch (error) {
+                        console.error("فشل في رسم بطاقة التلفيل:", error);
+                        // رسالة نصية احتياطية
+                        if(client.sendLevelUpMessage) await client.sendLevelUpMessage(message, message.member, level.level, level.level-1, level);
+                    }
+                } else {
+                    client.setLevel.run(level);
                 }
-                client.setLevel.run(level);
+
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
