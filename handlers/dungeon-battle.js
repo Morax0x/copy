@@ -34,8 +34,9 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// 🔥 استدعاء ملف الصناديق الجديد 🔥
+// 🔥 استدعاء ملف الصناديق والتاجر الجديدين 🔥
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
+const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
 
 // 🔥 دالة لتنظيف الاسم من أرقام الستريك والفواصل 🔥
 function cleanName(name) {
@@ -54,9 +55,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let players = [];
     let retreatedPlayers = []; 
     
-    // --- متغيرات نظام الفخ ---
+    // --- متغيرات الأحداث ---
     let isTrapActive = false;
     let trapStartFloor = 0;
+    
+    // متغيرات التاجر (مشتركة بين التاجر وحلقة اللعبة)
+    let merchantState = {
+        skipFloors: 0,
+        weaknessActive: false
+    };
     // -----------------------
 
     const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
@@ -86,6 +93,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     for (let floor = 1; floor <= maxFloors; floor++) {
         // التحقق من أن هناك لاعبين أحياء وموجودين
         if (players.length === 0 || players.every(p => p.isDead)) break; 
+
+        // 🔥 تطبيق تخطي الطوابق (الخريطة) 🔥
+        if (merchantState.skipFloors > 0) {
+            merchantState.skipFloors--;
+            
+            // إضافة جوائز الطابق الذي تم تخطيه (نصف الجائزة)
+            let skipMora = Math.floor(getBaseFloorMora(floor) * 0.5);
+            let skipXp = Math.floor(skipMora * 0.03);
+            
+            players.forEach(p => { if (!p.isDead) { p.loot.mora += skipMora; p.loot.xp += skipXp; } });
+            totalAccumulatedCoins += skipMora;
+            totalAccumulatedXP += skipXp;
+
+            await threadChannel.send(`🗺️ **تم استخدام الخريطة المختصرة!** تم تجاوز الطابق ${floor} وحصل الفريق على نصف الغنائم (${skipMora} مورا).`);
+            
+            // استمرار للحلقة التالية فوراً (تخطي القتال)
+            continue; 
+        }
 
         for (let p of players) {
             if (!p.isDead) { 
@@ -117,7 +142,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             enraged: false, effects: [], targetFocusId: null, frozen: false 
         };
 
+        // 🔥 تطبيق عين البصيرة (Eye of Insight) 🔥
+        if (merchantState.weaknessActive) {
+            monster.effects.push({ type: 'weakness', val: 0.25, turns: 99 }); // تأثير دائم للمعركة
+            merchantState.weaknessActive = false; // استهلاك العين
+        }
+
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()} | DMG: ${monster.atk})`];
+        if (monster.effects.some(e => e.type === 'weakness')) log.push(`👁️ **تم كشف نقطة ضعف الوحش!** (+25% ضرر إضافي)`);
+
         let ongoing = true;
         let turnCount = 0;
 
@@ -129,6 +162,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
+            // 🔥🔥 Anti-Spam Set: Tracks users currently processing an action 🔥🔥
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
@@ -139,6 +173,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         for (const afkP of afkPlayers) {
                             afkP.skipCount = (afkP.skipCount || 0) + 1;
                             
+                            // 🔥🔥 التحقق من الموت بسبب الخمول (5 مرات) 🔥🔥
                             if (afkP.skipCount >= 5) {
                                 afkP.hp = 0;
                                 afkP.isDead = true;
@@ -171,6 +206,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('collect', async i => {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     
+                    // 🔥🔥 Spam Protection Check 🔥🔥
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة حاول الهجوم بعد قليل", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
@@ -191,6 +227,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
                     
+                    // 🔥 Lock the user
                     processingUsers.add(i.user.id);
 
                     try {
@@ -585,8 +622,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 await threadChannel.send({ content: `||@everyone||`, embeds: [trapEmbed] });
             } else {
-                // 🔥🔥 إضافة نظام صناديق الميميك 🔥🔥
-                if (floor > 5 && Math.random() < 0.20) {
+                // 🔥🔥 1. ظهور التاجر المتجول (احتمال 15% بعد الطابق 5) 🔥🔥
+                if (floor > 5 && !isTrapActive && Math.random() < 0.15) {
+                    await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
+                    // انتظار 75 ثانية (مدة بقاء التاجر) لضمان عدم التداخل
+                    await new Promise(r => setTimeout(r, 76000));
+                }
+
+                // 🔥🔥 2. ظهور صناديق الميميك (احتمال 20% بعد الطابق 5) 🔥🔥
+                // يظهر فقط إذا لم يظهر التاجر، لتجنب التكرار الكثير
+                else if (floor > 5 && Math.random() < 0.20) {
                     await triggerMimicChest(threadChannel, players);
                     await new Promise(r => setTimeout(r, 62000));
                 }
@@ -667,7 +712,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     }
 
     try {
-        await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة ...**` });
+        await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة <:emoji_69:1451172248173023263> ...**` });
         setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
     } catch(e) { }
 }
