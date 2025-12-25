@@ -107,7 +107,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
-            // 🔥🔥 Anti-Spam Set: Tracks users currently processing an action 🔥🔥
             let processingUsers = new Set(); 
 
             await new Promise(resolve => {
@@ -126,7 +125,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('collect', async i => {
                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
                     
-                    // 🔥🔥 Spam Protection Check 🔥🔥
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
@@ -145,7 +143,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
                     
-                    // 🔥 Lock the user
                     processingUsers.add(i.user.id);
 
                     try {
@@ -169,16 +166,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
 
                                 let skillNameUsed = "مهارة";
-
-                                // Check if it's a class skill or standard skill
                                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
                                 
-                                // Logic handled inside handleSkillUsage for class skills too, 
-                                // but we need to pass basic info if it's a standard skill
-                                
-                                // We check if it's a simple skill to get its name/stats for logging/cooldowns
-                                // Note: handleSkillUsage handles the heavy lifting
-                                const { skillsConfig } = require('./dungeon/constants'); // Require here to avoid circular dep issues if any, or just rely on passed data
+                                const { skillsConfig } = require('./dungeon/constants'); 
                                 
                                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
@@ -188,6 +178,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      }
                                 }
 
+                                // ⚡⚡ هنا يتم استدعاء المهارة وتنفيذها ⚡⚡
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
                                 if (res && res.error) {
@@ -198,25 +189,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (res && res.type === 'owner_leave') {
                                      players = players.filter(pl => pl.id !== OWNER_ID);
                                      if (players.length === 0) { collector.stop('monster_dead'); return; }
-                                     skillNameUsed = "رحيل بصمت";
-                                } else if (res && res.type === 'class_effect') {
-                                     // Names are handled in logs inside handleSkillUsage, but we can set a generic name here
-                                     if(res.effect === 'leader_buff') skillNameUsed = "صرخة الحرب";
-                                     else if(res.effect === 'tank_taunt') skillNameUsed = "استفزاز وتصليب";
-                                     else if(res.effect === 'priest_heal') skillNameUsed = "النور المقدس";
-                                     else if(res.effect === 'mage_freeze') skillNameUsed = "سجن الجليد";
-                                     else if(res.effect === 'summon_pet') skillNameUsed = "استدعاء حارس الظل";
-                                     
-                                     // Apply cooldown
-                                     if (res.cooldown && res.effect !== 'priest_heal') p.special_cooldown = res.cooldown;
-                                } else {
-                                     if(skillId === 'skill_secret_owner') skillNameUsed = "تركيز تام";
-                                     else skillNameUsed = skillObj.name;
-                                     
-                                     // Cooldowns are set inside handleSkillUsage helper for standard skills
                                 }
+                                
+                                // الحصول على اسم المهارة للعرض فقط
+                                if (res && res.name) skillNameUsed = res.name;
+                                else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
-                                actedPlayers.push(p.id); // 🔥 Mark as acted only on success
+                                actedPlayers.push(p.id); 
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
@@ -278,10 +257,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             actedPlayers.push(p.id); p.skipCount = 0;
                             if (i.customId === 'atk') {
-                                // 🔥 إصلاح الغلتش: التحقق من العمى والارتباك قبل الهجوم
                                 let canAttack = true;
-
-                                // 1. Confusion Check
                                 const confusion = p.effects.find(e => e.type === 'confusion');
                                 if (confusion && Math.random() < confusion.val) {
                                     canAttack = false;
@@ -289,7 +265,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     applyDamageToPlayer(p, selfDmg);
                                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                                 } 
-                                // 2. Blind Check
                                 else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
                                     canAttack = false;
                                     log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
@@ -346,7 +321,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 if (monster.frozen) { log.push(`❄️ **${monster.name}** متجمد!`); monster.frozen = false; } 
                 else {
-                    // 🔥🔥 Monster Effect Handling 🔥🔥
                     if (monster.effects) {
                         monster.effects = monster.effects.filter(e => {
                             if (e.type === 'burn') {
@@ -366,29 +340,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                     if (monster.hp <= 0) { ongoing = false; break; }
 
-                    // 🔥🔥 Check Confusion 🔥🔥
                     const confusion = monster.effects.find(e => e.type === 'confusion');
                     if (confusion && Math.random() < confusion.val) {
                         const selfDmg = Math.floor(monster.atk * 0.5);
                         monster.hp -= selfDmg;
                         log.push(`😵 **${monster.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg} HP)`);
                     } else {
-                        // ========================================================
-                        // 🔥 Monster AI & Skills Logic (SMART AI UPDATE) 🔥
-                        // ========================================================
-                        
                         const alive = players.filter(p => !p.isDead);
                         let skillUsed = false;
 
-                        // 1. Trigger Specific Boss/Guardian Skills (After Floor 17)
                         if (floor > 17 && alive.length > 0) {
                             const baseMonsterName = monster.name.split(' (Lv.')[0].trim();
                             const monsterSkill = MONSTER_SKILLS[baseMonsterName];
 
                             if (monsterSkill) {
-                                // Smart Trigger Chance: Increase probability if low HP (Desperation Mode)
                                 let chance = monsterSkill.chance;
-                                if (monster.hp < monster.maxHp * 0.3) chance += 0.2; // Increase by 20%
+                                if (monster.hp < monster.maxHp * 0.3) chance += 0.2; 
 
                                 if (Math.random() < chance) {
                                     monsterSkill.execute(monster, players, log);
@@ -397,7 +364,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
 
-                        // 2. Trigger Generic Skills for Minions/Elites (After Floor 17)
                         if (!skillUsed && floor > 17 && alive.length > 0) {
                             if (Math.random() < 0.20) {
                                 const randomGenericSkill = GENERIC_MONSTER_SKILLS[Math.floor(Math.random() * GENERIC_MONSTER_SKILLS.length)];
@@ -406,10 +372,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
 
-                        // 3. Normal Attack (if no skill used)
                         if (!skillUsed && alive.length > 0) {
-                            
-                            // Summoner Pet Attack Logic
                             players.forEach(p => {
                                 if (!p.isDead && p.summon && p.summon.active && p.summon.turns > 0) {
                                     const petDmg = Math.floor(p.atk * 0.5);
@@ -426,18 +389,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                             if (monster.hp <= 0) { ongoing = false; break; }
 
-                            // Smart Targeting for Normal Attacks
-                            // Priority: Taunted > Giant > Priest > Weakest > Random
                             let target = alive.find(p => p.id === monster.targetFocusId) || 
                                          alive.find(p => p.effects.some(e => e.type === 'titan')) ||
-                                         getSmartTarget(players) || // Use AI Helper
+                                         getSmartTarget(players) || 
                                          alive[Math.floor(Math.random() * alive.length)];
                             
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                                 
                                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
-
                                 if(target.defending) dmg = Math.floor(dmg * 0.5);
                                 
                                 const reflectEffect = target.effects.find(e => e.type === 'reflect');
