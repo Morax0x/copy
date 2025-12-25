@@ -140,7 +140,8 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
             allUsers = sql.prepare("SELECT userID, COUNT(*) as count FROM user_achievements WHERE guildID = ? GROUP BY userID ORDER BY count DESC").all(guild.id);
 
         } else if (type === 'strongest') {
-            embed.setTitle(`✥ لوحـة صـدارة الاقـوى (Power Rating)`);
+            // 🔥 تم حذف Power Rating من العنوان 🔥
+            embed.setTitle(`✥ لوحـة صـدارة الاقـوى`);
             const weapons = sql.prepare("SELECT * FROM user_weapons WHERE guildID = ?").all(guild.id);
             let stats = [];
             const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
@@ -156,12 +157,11 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 const playerLevel = lvlData?.level || 1;
                 const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
                 
-                // حساب مجموع لفلات المهارات (أدق من العدد فقط)
+                // حساب مجموع لفلات المهارات
                 const skillData = getSkills.get(guild.id, w.userID);
                 const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
 
-                // 🔥 معادلة القوة الشاملة 🔥
-                // Power = DMG + (HP * 0.5) + (PlayerLevel * 10) + (SkillLevels * 20)
+                // معادلة القوة الشاملة
                 const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
 
                 stats.push({ 
@@ -219,10 +219,10 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 else if (type === 'streak' || type === 'media_streak') line += `> ${styleStart}Streak: \`${user.streakCount}\` ${type === 'media_streak' ? EMOJI_MEDIA_STREAK : '🔥'}${styleEnd}`;
                 else if (type === 'achievements') line += `> ${styleStart}Count: \`${user.count}\` 🏆${styleEnd}`;
                 
-                // 🔥 تنسيق عرض الأقوى الجديد 🔥
+                // 🔥 تنسيق عرض الأقوى الجديد بدون LVL في النهاية 🔥
                 else if (type === 'strongest') {
                     line += `> ${styleStart}🔥 **POWER:** \`${user.powerScore.toLocaleString()}\`\n`;
-                    line += `> ⚔️ DMG: \`${user.damage}\` | ❤️ HP: \`${user.hp}\` | ⚡ SKILLS: \`${user.skillLevels}\` (Lvl: ${user.level})${styleEnd}`;
+                    line += `> ⚔️ DMG: \`${user.damage}\` | ❤️ HP: \`${user.hp}\` | ⚡ SKILLS: \`${user.skillLevels}\`${styleEnd}`;
                 }
 
                 description += line + "\n\n";
