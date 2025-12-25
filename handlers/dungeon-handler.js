@@ -1,20 +1,11 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
-const path = require('path');
 
-// استدعاء محرك المعركة
+// استدعاء محرك المعركة والثوابت
 const { runDungeon } = require('./dungeon-battle.js');
-
-// --- تحميل الإعدادات ---
-const rootDir = process.cwd();
-let dungeonConfig = {};
-try {
-    dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
-} catch (e) { console.error("Error loading dungeon config:", e); }
+const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants');
 
 // --- ثوابت النظام ---
-const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
-const OWNER_ID = "1145327691772481577"; 
 
 const activeDungeonRequests = new Set();
 
@@ -62,7 +53,7 @@ async function startDungeon(interaction, sql) {
 
     const row1 = new ActionRowBuilder();
     const row2 = new ActionRowBuilder();
-     
+      
     // توزيع الأزرار 5 في كل صف
     if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
     if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
