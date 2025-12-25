@@ -56,6 +56,7 @@ function getEmojiUrl(emoji) {
     }
 
     // 2. إيموجي عادي (Unicode)
+    // نتجاوز النصوص العادية والأرقام (نعتبر أي شيء ليس حرفاً أو رقماً أو رمزاً خاصاً كإيموجي محتمل)
     if (/^[a-zA-Z0-9\u0600-\u06FF\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]*$/.test(emoji)) {
         return null; 
     }
@@ -74,15 +75,8 @@ function getEmojiUrl(emoji) {
 // دالة بسيطة لتشبيك الحروف العربية (Visual Reshaping) إذا لم تكن المكتبة موجودة
 function shapeArabicText(text) {
     // هذه محاولة بسيطة لعكس الكلمة فقط لأن الكانفاس يرسم الحروف العربية مقطعة من اليسار لليمين
-    // إذا كانت الحروف تظهر لديك "س ل ي م" (مقطعة)، فهذه الدالة تحاول دمجها
-    // إذا كانت تظهر لديك سليمة ومشبوكة، فلا داعي للقلق
-    
-    // في أغلب الحالات مع node-canvas، يجب عكس "حروف الكلمة الواحدة" لكي تظهر مشبوكة
-    // لكن ترتيب الكلمات يجب أن يبقى كما هو (وهو ما قمنا بتصحيحه الآن)
     if (!/[\u0600-\u06FF]/.test(text)) return text;
-    
     // نقوم بعكس حروف الكلمة الواحدة فقط لتتصل ببعضها (خدعة الكانفاس)
-    // ولكن لا نعكس ترتيب الجملة
     return text.split("").reverse().join("");
 }
 
@@ -91,16 +85,13 @@ async function fillMixedText(ctx, text, x, y, fontSize) {
     ctx.font = `bold ${fontSize}px "BeinAr", "Arial"`;
     
     // تقسيم النص: نفصل الكلمات والإيموجيات
-    // النمط يراعي الإيموجي المخصص واليونيكود
     const parts = text.split(/(\s+|<?a?:?\w{2,32}:\d{17,19}>?|[\uD800-\uDBFF][\uDC00-\uDFFF])/g).filter(p => p);
 
-    // ❌ تم حذف (parts.reverse()) الذي كان يقلب الجملة ❌
-    
     let currentX = x;
     const emojiSize = fontSize; 
     const baselineOffset = fontSize * 0.15;
 
-    // نقوم برسم الأجزاء بالترتيب الطبيعي (كما جاءت في النص)
+    // نقوم برسم الأجزاء بالترتيب الطبيعي
     for (const part of parts) {
         if (!part) continue;
 
@@ -120,10 +111,7 @@ async function fillMixedText(ctx, text, x, y, fontSize) {
             let textToDraw = part;
             if (/[\u0600-\u06FF]/.test(part)) {
                 // نعالج "تشبيك الحروف" للكلمة الواحدة فقط، دون تغيير مكانها
-                // (إذا كانت الحروف تظهر لديك مقلوبة داخل الكلمة الواحدة، استخدم السطر التالي)
                 textToDraw = shapeArabicText(part); 
-                
-                // (أما إذا كانت الحروف تظهر صحيحة ومشبوكة لكن الجملة مقلوبة، فاحذف shapeArabicText واستخدم part مباشرة)
             }
             
             ctx.fillText(textToDraw, currentX, y);
@@ -229,10 +217,11 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText('LEVEL UP!', textX, 70);
     ctx.shadowBlur = 0;
 
-    // 🔥 رسم الاسم (تصحيح الترتيب) 🔥
+    // 🔥 رسم اليوزرنيم الأصلي (Username) بدلاً من الاسم المزخرف 🔥
+    // هذا يضمن ظهور الاسم بشكل صحيح ونظيف دائماً
     ctx.fillStyle = '#ffffff';
-    // نستدعي الدالة بدون عكس الترتيب
-    await fillMixedText(ctx, member.displayName, textX, 125, 50);
+    // نستخدم member.user.username بدلاً من member.displayName
+    await fillMixedText(ctx, member.user.username, textX, 125, 50);
 
     // المستوى القديم
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
