@@ -35,61 +35,64 @@ function applyText(canvas, text, baseSize) {
     return ctx.font;
 }
 
-// دالة توليد لون عشوائي داكن (لخلفية فخمة)
-function getRandomDarkColor() {
-    const letters = '0123456789'; // نستخدم أرقاماً فقط لضمان ألوان داكنة
-    let color = '#';
-    for (let i = 0; i < 6; i++) {
-        color += letters[Math.floor(Math.random() * 10)];
-    }
-    return color;
+// 🔥 دالة اختيار تدرج لوني متناسق وفخم (بدل العشوائي القبيح) 🔥
+function getHarmoniousGradient() {
+    const gradients = [
+        ['#0f0c29', '#302b63', '#24243e'], // بنفسجي ليلي غامق
+        ['#141E30', '#243B55'],             // أزرق ملكي معدني
+        ['#232526', '#414345'],             // أسود فاحم (Midnight City)
+        ['#200122', '#6f0000'],             // أحمر ملكي داكن
+        ['#000428', '#004e92'],             // أزرق بحري عميق
+        ['#16222A', '#3A6073'],             // رصاصي مزرق هادئ
+        ['#191654', '#43C6AC'],             // أزرق غامق مع لمسة تركواز
+        ['#000000', '#434343']              // أسود كلاسيكي
+    ];
+    // اختيار تدرج واحد عشوائياً من القائمة المتناسقة
+    return gradients[Math.floor(Math.random() * gradients.length)];
 }
 
 async function generateLevelUpCard(member, oldLevel, newLevel) {
     const canvas = Canvas.createCanvas(900, 280);
     const ctx = canvas.getContext('2d');
 
-    // 1. الخلفية (تدرج لوني عشوائي)
-    const color1 = getRandomDarkColor();
-    const color2 = getRandomDarkColor();
+    // 1. الخلفية (ألوان متناسقة وجذابة)
+    const colors = getHarmoniousGradient();
     
     const grd = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    grd.addColorStop(0, color1); 
-    grd.addColorStop(1, color2); 
+    // توزيع الألوان حسب عددها في المصفوفة المختارة
+    colors.forEach((color, index) => {
+        grd.addColorStop(index / (colors.length - 1), color);
+    });
+    
     ctx.fillStyle = grd;
     
     // رسم الخلفية الأساسية
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.fill();
 
-    // 🔥 2. إضافة تأثير التموجات (Waves) في الخلفية 🔥
-    // نقوم بقص الرسم ليكون داخل المستطيل فقط
+    // 2. إضافة تأثير التموجات (Waves) في الخلفية
     ctx.save();
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.clip();
 
-    // رسم 3 طبقات من الأمواج لتعطي عمقاً
     for (let i = 0; i < 3; i++) {
         ctx.beginPath();
         ctx.moveTo(0, Math.random() * canvas.height);
         
-        // رسم منحنى بيزيه (Bezier Curve) متموج
         ctx.bezierCurveTo(
             canvas.width / 3, Math.random() * canvas.height,
             (canvas.width / 3) * 2, Math.random() * canvas.height,
             canvas.width, Math.random() * canvas.height
         );
         
-        // إغلاق الشكل للأسفل لملئه
         ctx.lineTo(canvas.width, canvas.height);
         ctx.lineTo(0, canvas.height);
         ctx.closePath();
 
-        // لون أبيض شفاف جداً
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.05 + (i * 0.02)})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.03 + (i * 0.02)})`;
         ctx.fill();
     }
-    ctx.restore(); // إلغاء القص
+    ctx.restore();
 
     // زخرفة إضافية (دوائر خفيفة)
     ctx.globalAlpha = 0.05;
@@ -142,7 +145,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     const textX = 280;
     
     // العنوان
-    ctx.fillStyle = '#00d2ff'; // أزرق سماوي
+    ctx.fillStyle = '#00d2ff'; 
     ctx.font = 'bold 30px "BeinAr", "Arial"';
     ctx.fillText('LEVEL UP!', textX, 70);
 
@@ -152,26 +155,26 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText(member.displayName, textX, 125);
 
     // المستوى القديم (خافت)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // أبيض شفاف (خافت)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.font = 'bold 40px "BeinAr", "Arial"';
     ctx.fillText(`Lvl ${oldLevel}`, textX, 200);
 
-    // حساب موقع السهم بناءً على طول نص المستوى القديم
+    // السهم الجديد (»)
     const oldLevelWidth = ctx.measureText(`Lvl ${oldLevel}`).width;
     const arrowX = textX + oldLevelWidth + 20;
 
-    // السهم (خافت جداً)
-    ctx.fillStyle = 'rgba(0, 210, 255, 0.3)'; // أزرق خافت
-    ctx.font = 'bold 35px "BeinAr", "Arial"';
-    ctx.fillText('➜', arrowX, 200);
+    ctx.fillStyle = 'rgba(0, 210, 255, 0.3)';
+    ctx.font = 'bold 40px "BeinAr", "Arial"'; // تكبير الخط قليلاً للسهم الجديد
+    // 🔥 تغيير السهم هنا 🔥
+    ctx.fillText('»', arrowX, 200);
 
     // المستوى الجديد (يلمع بقوة)
     ctx.save();
-    ctx.fillStyle = '#FFD700'; // ذهبي
-    ctx.shadowColor = '#FFD700'; // توهج ذهبي
+    ctx.fillStyle = '#FFD700'; 
+    ctx.shadowColor = '#FFD700'; 
     ctx.shadowBlur = 25; 
-    ctx.font = 'bold 65px "BeinAr", "Arial"'; // أكبر حجماً
-    ctx.fillText(`${newLevel}`, arrowX + 60, 205);
+    ctx.font = 'bold 65px "BeinAr", "Arial"'; 
+    ctx.fillText(`${newLevel}`, arrowX + 50, 205);
     ctx.restore();
 
     return new AttachmentBuilder(canvas.toBuffer(), { name: 'levelup.png' });
