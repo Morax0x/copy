@@ -1,4 +1,4 @@
-const { BASE_HP, HP_PER_LEVEL, dungeonConfig, weaponsConfig, skillsConfig } = require('./constants');
+const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig } = require('./constants');
 
 function ensureInventoryTable(sql) {
     if (!sql.open) return;
@@ -26,14 +26,23 @@ function getBaseFloorMora(floor) {
 
 function applyDamageToPlayer(player, damageAmount) {
     let remainingDamage = damageAmount;
-    
-    if (player.effects.some(e => e.type === 'evasion')) return 0;
+     
+    // Check for Evasion
+    if (player.effects.some(e => e.type === 'evasion')) {
+        return 0; // Full dodge
+    }
 
+    // Check for Defense Buff
     const defBuff = player.effects.find(e => e.type === 'def_buff');
-    if (defBuff) remainingDamage = Math.floor(remainingDamage * (1 - defBuff.val));
+    if (defBuff) {
+        remainingDamage = Math.floor(remainingDamage * (1 - defBuff.val));
+    }
 
+    // Check for Damage Reduction
     const dmgReduction = player.effects.find(e => e.type === 'dmg_reduce');
-    if (dmgReduction) remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
+    if (dmgReduction) {
+        remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
+    }
 
     if (player.shield > 0) {
         if (remainingDamage <= player.shield) {
@@ -64,16 +73,6 @@ function buildHpBar(currentHp, maxHp, shield = 0) {
     let bar = `[${filled.repeat(Math.max(0, Math.floor(percentage))) + empty.repeat(Math.max(0, 10 - Math.floor(percentage)))}] ${currentHp}/${maxHp}`;
     if (shield > 0) bar += ` 🛡️(${shield})`;
     return bar;
-}
-
-function getSmartTarget(players) {
-    const alive = players.filter(p => !p.isDead);
-    if (alive.length === 0) return null;
-    const priest = alive.find(p => p.class === 'Priest');
-    if (priest && Math.random() < 0.7) return priest;
-    const lowestHp = alive.sort((a, b) => a.hp - b.hp)[0];
-    if (lowestHp.hp < lowestHp.maxHp * 0.3 && Math.random() < 0.8) return lowestHp;
-    return alive[Math.floor(Math.random() * alive.length)];
 }
 
 function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
@@ -150,19 +149,6 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
-function getRandomMonster(type, theme) {
-    let pool = [];
-    if (type === 'boss') pool = dungeonConfig.monsters.bosses;
-    else if (type === 'guardian') pool = dungeonConfig.monsters.guardians;
-    else if (type === 'elite') pool = dungeonConfig.monsters.elites;
-    else pool = dungeonConfig.monsters.minions;
-      
-    if (!pool || pool.length === 0) pool = dungeonConfig.monsters.minions;
-
-    const name = pool[Math.floor(Math.random() * pool.length)];
-    return { name, emoji: theme.emoji };
-}
-
 module.exports = {
     ensureInventoryTable,
     getRandomImage,
@@ -170,7 +156,5 @@ module.exports = {
     applyDamageToPlayer,
     cleanDisplayName,
     buildHpBar,
-    getSmartTarget,
-    getRealPlayerData,
-    getRandomMonster
+    getRealPlayerData
 };
