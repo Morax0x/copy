@@ -35,19 +35,23 @@ function applyText(canvas, text, baseSize) {
     return ctx.font;
 }
 
-// 🔥 دالة اختيار تدرج لوني متناسق وفخم (بدل العشوائي القبيح) 🔥
+// 🔥 دالة اختيار تدرج لوني عشوائي متناسق وفخم 🔥
 function getHarmoniousGradient() {
     const gradients = [
-        ['#0f0c29', '#302b63', '#24243e'], // بنفسجي ليلي غامق
-        ['#141E30', '#243B55'],             // أزرق ملكي معدني
+        ['#0f0c29', '#302b63', '#24243e'], // بنفسجي ليلي (Purple Night)
+        ['#141E30', '#243B55'],             // أزرق ملكي معدني (Royal Blue)
         ['#232526', '#414345'],             // أسود فاحم (Midnight City)
-        ['#200122', '#6f0000'],             // أحمر ملكي داكن
-        ['#000428', '#004e92'],             // أزرق بحري عميق
-        ['#16222A', '#3A6073'],             // رصاصي مزرق هادئ
-        ['#191654', '#43C6AC'],             // أزرق غامق مع لمسة تركواز
-        ['#000000', '#434343']              // أسود كلاسيكي
+        ['#200122', '#6f0000'],             // أحمر ملكي داكن (Blood Red)
+        ['#000428', '#004e92'],             // أزرق بحري عميق (Deep Sea)
+        ['#16222A', '#3A6073'],             // رصاصي مزرق هادئ (Cool Gray)
+        ['#191654', '#43C6AC'],             // أزرق غامق مع لمسة تركواز (Ocean Life)
+        ['#000000', '#434343'],             // أسود كلاسيكي (Classic Black)
+        ['#1A2980', '#26D0CE'],             // أزرق كهربائي (Electric Blue)
+        ['#4B1248', '#F0C27B'],             // ذهبي مع بنفسجي (Gold Purple)
+        ['#8E0E00', '#1F1C18'],             // أحمر بركاني (Volcano)
+        ['#3a1c71', '#d76d77', '#ffaf7b']   // غروب الشمس (Sunset)
     ];
-    // اختيار تدرج واحد عشوائياً من القائمة المتناسقة
+    // اختيار تدرج واحد عشوائياً من القائمة
     return gradients[Math.floor(Math.random() * gradients.length)];
 }
 
@@ -55,18 +59,28 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     const canvas = Canvas.createCanvas(900, 280);
     const ctx = canvas.getContext('2d');
 
-    // 1. الخلفية (ألوان متناسقة وجذابة)
+    // 1. إعداد الخلفية (اختيار لون عشوائي متناسق)
     const colors = getHarmoniousGradient();
     
+    // إنشاء التدرج بناءً على الألوان المختارة
     const grd = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    // توزيع الألوان حسب عددها في المصفوفة المختارة
-    colors.forEach((color, index) => {
-        grd.addColorStop(index / (colors.length - 1), color);
-    });
+    
+    // توزيع الألوان بالتساوي
+    if (colors.length === 2) {
+        grd.addColorStop(0, colors[0]);
+        grd.addColorStop(1, colors[1]);
+    } else if (colors.length === 3) {
+        grd.addColorStop(0, colors[0]);
+        grd.addColorStop(0.5, colors[1]);
+        grd.addColorStop(1, colors[2]);
+    } else {
+        // احتياط لأي عدد آخر
+        colors.forEach((color, index) => {
+            grd.addColorStop(index / (colors.length - 1), color);
+        });
+    }
     
     ctx.fillStyle = grd;
-    
-    // رسم الخلفية الأساسية
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.fill();
 
@@ -104,10 +118,12 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     }
     ctx.globalAlpha = 1;
 
-    // 3. الإطار المتوهج
-    ctx.shadowColor = '#00d2ff';
+    // 3. الإطار المتوهج (نستخدم اللون الثاني من التدرج ليكون متناسقاً)
+    const glowColor = colors[1] || '#00d2ff'; // لون احتياطي
+    
+    ctx.shadowColor = glowColor;
     ctx.shadowBlur = 15;
-    ctx.strokeStyle = '#00d2ff';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; // إطار أبيض نصف شفاف ليناسب أي لون
     ctx.lineWidth = 3;
     drawRoundedRect(ctx, 10, 10, canvas.width - 20, canvas.height - 20, 15);
     ctx.stroke();
@@ -138,16 +154,19 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.beginPath();
     ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
     ctx.lineWidth = 5;
-    ctx.strokeStyle = '#00d2ff';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // إطار أبيض حول الصورة
     ctx.stroke();
 
     // 5. النصوص
     const textX = 280;
     
     // العنوان
-    ctx.fillStyle = '#00d2ff'; 
+    ctx.fillStyle = '#ffffff'; 
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 5;
     ctx.font = 'bold 30px "BeinAr", "Arial"';
     ctx.fillText('LEVEL UP!', textX, 70);
+    ctx.shadowBlur = 0;
 
     // الاسم
     ctx.fillStyle = '#ffffff';
@@ -155,7 +174,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText(member.displayName, textX, 125);
 
     // المستوى القديم (خافت)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.font = 'bold 40px "BeinAr", "Arial"';
     ctx.fillText(`Lvl ${oldLevel}`, textX, 200);
 
@@ -163,14 +182,13 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     const oldLevelWidth = ctx.measureText(`Lvl ${oldLevel}`).width;
     const arrowX = textX + oldLevelWidth + 20;
 
-    ctx.fillStyle = 'rgba(0, 210, 255, 0.3)';
-    ctx.font = 'bold 40px "BeinAr", "Arial"'; // تكبير الخط قليلاً للسهم الجديد
-    // 🔥 تغيير السهم هنا 🔥
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.font = 'bold 40px "BeinAr", "Arial"'; 
     ctx.fillText('»', arrowX, 200);
 
     // المستوى الجديد (يلمع بقوة)
     ctx.save();
-    ctx.fillStyle = '#FFD700'; 
+    ctx.fillStyle = '#FFD700'; // ذهبي
     ctx.shadowColor = '#FFD700'; 
     ctx.shadowBlur = 25; 
     ctx.font = 'bold 65px "BeinAr", "Arial"'; 
