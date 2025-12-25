@@ -204,7 +204,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 actedPlayers.push(p.id); 
                                 p.skipCount = 0; 
-                                await selection.editReply({ content: `✅ تم استخدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
+                                await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                             } catch (err) { 
