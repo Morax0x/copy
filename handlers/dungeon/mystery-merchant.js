@@ -57,7 +57,8 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const embed = new EmbedBuilder()
         .setTitle('★ التـاجـر المتجـول ظهـر !')
-        .setDescription(`> **"${randomQuote}"**\n\nيَعرض بضائع نادرة هل تجرؤ على الشراء؟\n\n⏳ **يغادر بعد 75 ثانية...**`)
+        // 🔥 تم تعديل الوقت هنا إلى 45 ثانية 🔥
+        .setDescription(`> **"${randomQuote}"**\n\nيَعرض بضائع نادرة هل تجرؤ على الشراء؟\n\n⏳ **يغادر بعد 45 ثانية...**`)
         .setImage('https://i.postimg.cc/DypZtNmr/00000.png')
         .setColor(Colors.Grey);
 
@@ -71,7 +72,8 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const msg = await thread.send({ embeds: [embed], components: [row] });
 
-    const buttonCollector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 75000 });
+    // 🔥 تم تعديل وقت الكوليكتر إلى 45000 (45 ثانية) 🔥
+    const buttonCollector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 45000 });
 
     buttonCollector.on('collect', async (i) => {
         if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
@@ -104,7 +106,7 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             fetchReply: true 
         });
 
-        const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 60000 });
+        const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 30000 }); // جعلنا وقت الاختيار أقصر قليلاً ليتناسب مع السرعة
 
         selectCollector.on('collect', async (si) => {
             const selectedId = si.values[0];
@@ -139,12 +141,10 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             else if (selectedId === 'buy_blood') {
                 player.maxHp = Math.floor(player.maxHp * 0.7); 
                 if (player.hp > player.maxHp) player.hp = player.maxHp;
-                // البف الدائم (تأكدنا من السماح به في runDungeon)
                 player.effects.push({ type: 'atk_buff', val: 0.4, turns: 999 }); 
                 effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 40% لنهاية الرحلة)";
             }
             else if (selectedId === 'buy_shield') {
-                // نستخدم متغير خاص لكي لا يُمسح عند بداية الطابق
                 player.startingShield = 5000;
                 effectMsg = "تجهز بدرع المرتزقة الصلب! (سيبدأ الطابق القادم بـ 5000 درع)";
             }
