@@ -3,6 +3,9 @@ const shopItems = require('../../json/shop-items.json');
 const farmAnimals = require('../../json/farm-animals.json');
 const marketItems = require('../../json/market-items.json');
 const questsConfig = require('../../json/quests-config.json');
+// 🔥 استيراد ملفات الأسلحة والمهارات 🔥
+const weaponsConfig = require('../../json/weapons-config.json');
+const skillsConfig = require('../../json/skills-config.json');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -143,6 +146,17 @@ module.exports = {
                 await this.checkUser(message, client, sql, targetUser, embed);
                 break;
 
+            // 🔥🔥🔥 الأوامر الجديدة 🔥🔥🔥
+            case 'set-weapon-level':
+            case 'ضبط-سلاح':
+                await this.setWeaponLevel(message, sql, targetUser, args, embed);
+                break;
+
+            case 'set-skill-level':
+            case 'ضبط-مهارة':
+                await this.setSkillLevel(message, sql, targetUser, args, embed);
+                break;
+
             default:
                 message.reply({ embeds: [this.getHelpEmbed()] });
         }
@@ -167,7 +181,9 @@ module.exports = {
                 "`-ادمن اعطاء-عنصر @user [اسم العنصر] [الكمية]`\n" +
                 "`-ادمن اضافة-مورا @user [المبلغ]`\n" +
                 "`-ادمن اضافة-خبرة @user [القدر]`\n" +
-                "`-ادمن اعطاء-انجاز @user [اسم الانجاز]`"
+                "`-ادمن اعطاء-انجاز @user [اسم الانجاز]`\n" +
+                "`-ادمن ضبط-سلاح @user [اسم العرق] [المستوى]`\n" +
+                "`-ادمن ضبط-مهارة @user [ID المهارة] [المستوى]`"
             );
     },
 
@@ -715,6 +731,59 @@ module.exports = {
         try { await client.sendQuestAnnouncement(message.guild, targetMember, quest, questType); } catch (e) {}
 
         embed.setDescription(`✅ تم إعطاء المهمة **${quest.name}** لـ ${targetUser}.`);
+        await message.reply({ embeds: [embed] });
+    },
+
+    // =========================================================
+    // ⚔️ دوال الأسلحة والمهارات (جديد)
+    // =========================================================
+    async setWeaponLevel(message, sql, targetUser, args, embed) {
+        const raceName = args[2];
+        const level = parseInt(args[3]);
+
+        if (!raceName || isNaN(level)) return message.reply("❌ الاستخدام: `-ادمن ضبط-سلاح @user [اسم العرق] [المستوى]`");
+
+        const weapon = weaponsConfig.find(w => w.race.toLowerCase() === raceName.toLowerCase());
+        
+        if (!weapon) return message.reply(`❌ لم يتم العثور على سلاح لعرق "${raceName}".`);
+
+        const guildID = message.guild.id;
+        const userID = targetUser.id;
+
+        const existing = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(userID, guildID, weapon.race);
+        
+        if (existing) {
+            sql.prepare("UPDATE user_weapons SET weaponLevel = ? WHERE id = ?").run(level, existing.id);
+        } else {
+            sql.prepare("INSERT INTO user_weapons (userID, guildID, raceName, weaponLevel) VALUES (?, ?, ?, ?)").run(userID, guildID, weapon.race, level);
+        }
+
+        embed.setDescription(`✅ تم ضبط مستوى سلاح **${weapon.name}** لـ ${targetUser} إلى المستوى **${level}**.`);
+        await message.reply({ embeds: [embed] });
+    },
+
+    async setSkillLevel(message, sql, targetUser, args, embed) {
+        const skillID = args[2]; 
+        const level = parseInt(args[3]);
+
+        if (!skillID || isNaN(level)) return message.reply("❌ الاستخدام: `-ادمن ضبط-مهارة @user [ID المهارة] [المستوى]`");
+
+        const skill = skillsConfig.find(s => s.id.toLowerCase() === skillID.toLowerCase());
+
+        if (!skill) return message.reply(`❌ المهارة غير موجودة. تأكد من الآيدي (ID).`);
+
+        const guildID = message.guild.id;
+        const userID = targetUser.id;
+
+        const existing = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ? AND skillID = ?").get(userID, guildID, skill.id);
+
+        if (existing) {
+            sql.prepare("UPDATE user_skills SET skillLevel = ? WHERE id = ?").run(level, existing.id);
+        } else {
+            sql.prepare("INSERT INTO user_skills (userID, guildID, skillID, skillLevel) VALUES (?, ?, ?, ?)").run(userID, guildID, skill.id, level);
+        }
+
+        embed.setDescription(`✅ تم ضبط مستوى مهارة **${skill.name}** لـ ${targetUser} إلى المستوى **${level}**.`);
         await message.reply({ embeds: [embed] });
     }
 };
