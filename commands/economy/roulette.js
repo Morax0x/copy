@@ -4,7 +4,7 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 20;
 const MAX_BET_SOLO = 100; 
-const MAX_LOAN_BET = 500; // 🔒 الحد الأقصى للمقترضين في الجماعي
+const MAX_LOAN_BET = 500; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; 
 const CHAMBER_COUNT = 6;
 const OWNER_ID = "1145327691772481577";
@@ -92,10 +92,9 @@ module.exports = {
             return message.channel.send(payload);
         };
 
-        // تم إزالة تعريف activeGames لأنه لم يعد مستخدمًا
         if (!client.activePlayers) client.activePlayers = new Set(); 
         
-        // التحقق فقط من اللاعب، وليس القناة
+        // التحقق من اللاعب
         if (client.activePlayers.has(user.id)) return reply({ content: "🚫 لديك لعبة نشطة! أكملها أولاً.", ephemeral: true });
 
         const sql = client.sql;
@@ -118,7 +117,7 @@ module.exports = {
             );
             const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
             
-            // قفل اللاعب فقط
+            // قفل اللاعب
             client.activePlayers.add(user.id);
             const filter = i => i.user.id === user.id && ['rl_auto_confirm', 'rl_auto_cancel'].includes(i.customId);
             
@@ -126,7 +125,7 @@ module.exports = {
                 const conf = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
                 if (conf.customId === 'rl_auto_cancel') {
                     await conf.update({ content: '❌ ألغيت.', embeds: [], components: [] });
-                    client.activePlayers.delete(user.id); // تحرير اللاعب
+                    client.activePlayers.delete(user.id); // تحرير
                     return;
                 }
                 await conf.deferUpdate();
@@ -135,7 +134,7 @@ module.exports = {
                 client.activePlayers.delete(user.id); // تحرير مؤقت للدخول في الدالة الرئيسية
                 return startRoulette(channel, user, member, opponents, proposedBet, client, guild, sql, isSlash ? interaction : null);
             } catch (e) {
-                client.activePlayers.delete(user.id); // تحرير اللاعب عند انتهاء الوقت
+                client.activePlayers.delete(user.id); // تحرير عند الخطأ أو الوقت
                 if (!isSlash) await confirmMsg.delete().catch(() => {}); else await interaction.editReply({ content: '⏰ الوقت انتهى.', embeds: [], components: [] });
             }
         } else {
@@ -145,9 +144,7 @@ module.exports = {
 };
 
 async function startRoulette(channel, user, member, opponents, bet, client, guild, sql, interaction) {
-    // تم إزالة التحقق من القناة (client.activeGames)
-
-    if (client.activePlayers.has(user.id)) return; // حماية إضافية
+    if (client.activePlayers.has(user.id)) return;
 
     let userData = client.getLevel.get(user.id, guild.id);
     if (!userData || userData.mora < bet) {
@@ -158,8 +155,6 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
 
     if (opponents.size > 0) {
         // --- PvP (الجماعي) ---
-        
-        // 🔥 1. فحص قرض المتحدي 🔥
         if (bet > MAX_LOAN_BET) {
             const myLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(user.id, guild.id);
             if (myLoan && myLoan.remainingAmount > 0) {
@@ -170,7 +165,6 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
         }
 
         for (const opp of opponents.values()) {
-            // 🔥 2. فحص قروض الخصوم 🔥
             if (bet > MAX_LOAN_BET) {
                 const oppLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(opp.id, guild.id);
                 if (oppLoan && oppLoan.remainingAmount > 0) {
@@ -210,8 +204,15 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
         const embed = new EmbedBuilder().setTitle(`🔫 روليت جماعي!`).setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\nالجائزة: **${totalPot}** ${EMOJI_MORA}`).setColor(Colors.Orange).setImage('https://i.postimg.cc/J44F9YWS/gun.gif');
 
         let inviteMsg;
-        if (interaction) inviteMsg = await interaction.editReply({ content: `${opponents.map(o => o.toString()).join(' ')}`, embeds: [embed], components: [row] });
-        else inviteMsg = await channel.send({ content: `${opponents.map(o => o.toString()).join(' ')}`, embeds: [embed], components: [row] });
+        try {
+            if (interaction) inviteMsg = await interaction.editReply({ content: `${opponents.map(o => o.toString()).join(' ')}`, embeds: [embed], components: [row] });
+            else inviteMsg = await channel.send({ content: `${opponents.map(o => o.toString()).join(' ')}`, embeds: [embed], components: [row] });
+        } catch (err) {
+            // 🔥🔥 إصلاح: إذا فشل إرسال الرسالة، حرر اللاعبين فوراً 🔥🔥
+            client.activePlayers.delete(user.id);
+            opponents.forEach(o => client.activePlayers.delete(o.id));
+            return;
+        }
 
         const accepted = new Set([user.id]);
         const collector = inviteMsg.createMessageComponentCollector({ time: 60000 });
@@ -234,9 +235,8 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
 
         collector.on('end', async (c, reason) => {
             if (reason !== 'start') {
-                // تحرير اللاعبين عند انتهاء/إلغاء اللعبة
                 players.forEach(p => client.activePlayers.delete(p.id));
-                if (reason !== 'declined') inviteMsg.edit({ content: "⏰ انتهى الوقت.", embeds: [], components: [] });
+                if (reason !== 'declined') inviteMsg.edit({ content: "⏰ انتهى الوقت.", embeds: [], components: [] }).catch(() => {});
                 return;
             }
             for (const p of players) {
@@ -256,7 +256,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             return;
         }
 
-        // قفل اللاعب فقط
+        // قفل اللاعب
         client.activePlayers.add(user.id);
         userData.mora -= bet;
         if (user.id !== OWNER_ID) userData.lastRoulette = Date.now();
@@ -269,10 +269,16 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
         );
 
         let msg;
-        if (interaction) msg = await interaction.editReply({ content: " ", embeds: [initialEmbed], components: [row] });
-        else msg = await channel.send({ content: " ", embeds: [initialEmbed], components: [row] });
-
-        await playSoloRound(msg, user, member, bet, userData, client, sql);
+        try {
+            if (interaction) msg = await interaction.editReply({ content: " ", embeds: [initialEmbed], components: [row] });
+            else msg = await channel.send({ content: " ", embeds: [initialEmbed], components: [row] });
+            
+            await playSoloRound(msg, user, member, bet, userData, client, sql);
+        } catch (err) {
+            // 🔥🔥 إصلاح: إذا حدث خطأ، حرر اللاعب 🔥🔥
+            client.activePlayers.delete(user.id);
+            if (interaction) await interaction.followUp({ content: "حدث خطأ.", ephemeral: true });
+        }
     }
 }
 
@@ -293,57 +299,65 @@ async function playSoloRound(message, user, member, bet, userData, client, sql) 
     const collector = message.createMessageComponentCollector({ filter: i => i.user.id === user.id, time: 120000 });
 
     collector.on('collect', async i => {
-        await i.deferUpdate().catch(() => {});
+        try {
+            await i.deferUpdate().catch(() => {});
 
-        if (i.customId === 'rl_cashout') {
-            const win = Math.floor(bet * currentMultiplier * calculateMoraBuff(member, sql));
-            userData.mora += win; client.setLevel.run(userData);
-            
-            const winEmbed = new EmbedBuilder()
-                .setTitle('✅ نجاة!')
-                .setDescription(`انـسـحبـت من اللعـبـة ونجـوت بـ: **${win}** ${EMOJI_MORA}`)
-                .setColor(Colors.Green)
-                .setImage('https://i.postimg.cc/K8QBCQmS/download-1.gif')
-                .setThumbnail(user.displayAvatarURL());
+            if (i.customId === 'rl_cashout') {
+                const win = Math.floor(bet * currentMultiplier * calculateMoraBuff(member, sql));
+                userData.mora += win; client.setLevel.run(userData);
+                
+                const winEmbed = new EmbedBuilder()
+                    .setTitle('✅ نجاة!')
+                    .setDescription(`انـسـحبـت من اللعـبـة ونجـوت بـ: **${win}** ${EMOJI_MORA}`)
+                    .setColor(Colors.Green)
+                    .setImage('https://i.postimg.cc/K8QBCQmS/download-1.gif')
+                    .setThumbnail(user.displayAvatarURL());
 
-            await message.edit({ embeds: [winEmbed], components: [] });
-            collector.stop('finished');
-        } 
-        else if (i.customId === 'rl_pull') {
-            if (chambers[currentTurn] === 1) {
-                const loseEmbed = new EmbedBuilder().setTitle('💥 بــــووم!').setDescription(`خسرت **${bet}** ${EMOJI_MORA}`).setColor(Colors.Red).setImage('https://i.postimg.cc/3Np26Tx9/download.gif').setThumbnail(user.displayAvatarURL());
-                await message.edit({ embeds: [loseEmbed], components: [] });
+                await message.edit({ embeds: [winEmbed], components: [] });
                 collector.stop('finished');
-            } else {
-                currentMultiplier = MULTIPLIERS[currentTurn];
-                currentTurn++;
-                if (currentTurn === 5) {
-                    const win = Math.floor(bet * MULTIPLIERS[4] * calculateMoraBuff(member, sql));
-                    userData.mora += win; client.setLevel.run(userData);
-                    const maxEmbed = new EmbedBuilder().setTitle('🏆 نجاة أسطورية!').setDescription(`ربحت **${win}** ${EMOJI_MORA}`).setColor("Gold").setImage('https://i.postimg.cc/K8QBCQmS/download-1.gif').setThumbnail(user.displayAvatarURL());
-                    await message.edit({ embeds: [maxEmbed], components: [] });
+            } 
+            else if (i.customId === 'rl_pull') {
+                if (chambers[currentTurn] === 1) {
+                    const loseEmbed = new EmbedBuilder().setTitle('💥 بــــووم!').setDescription(`خسرت **${bet}** ${EMOJI_MORA}`).setColor(Colors.Red).setImage('https://i.postimg.cc/3Np26Tx9/download.gif').setThumbnail(user.displayAvatarURL());
+                    await message.edit({ embeds: [loseEmbed], components: [] });
                     collector.stop('finished');
                 } else {
-                    const win = Math.floor(bet * currentMultiplier * calculateMoraBuff(member, sql));
-                    const nextEmbed = updateEmbed();
-                    nextEmbed.setDescription(`*كليك*... فارغة! 😅`);
-                    
-                    const randomStyle = buttonStyles[Math.floor(Math.random() * buttonStyles.length)];
+                    currentMultiplier = MULTIPLIERS[currentTurn];
+                    currentTurn++;
+                    if (currentTurn === 5) {
+                        const win = Math.floor(bet * MULTIPLIERS[4] * calculateMoraBuff(member, sql));
+                        userData.mora += win; client.setLevel.run(userData);
+                        const maxEmbed = new EmbedBuilder().setTitle('🏆 نجاة أسطورية!').setDescription(`ربحت **${win}** ${EMOJI_MORA}`).setColor("Gold").setImage('https://i.postimg.cc/K8QBCQmS/download-1.gif').setThumbnail(user.displayAvatarURL());
+                        await message.edit({ embeds: [maxEmbed], components: [] });
+                        collector.stop('finished');
+                    } else {
+                        const win = Math.floor(bet * currentMultiplier * calculateMoraBuff(member, sql));
+                        const nextEmbed = updateEmbed();
+                        nextEmbed.setDescription(`*كليك*... فارغة! 😅`);
+                        
+                        const randomStyle = buttonStyles[Math.floor(Math.random() * buttonStyles.length)];
 
-                    const newRow = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId('rl_pull').setLabel('سحب الزناد مجدداً').setStyle(randomStyle),
-                        new ButtonBuilder().setCustomId('rl_cashout').setLabel(`انسحاب (${win})`).setStyle(ButtonStyle.Success)
-                    );
-                    await message.edit({ embeds: [nextEmbed], components: [newRow] });
+                        const newRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId('rl_pull').setLabel('سحب الزناد مجدداً').setStyle(randomStyle),
+                            new ButtonBuilder().setCustomId('rl_cashout').setLabel(`انسحاب (${win})`).setStyle(ButtonStyle.Success)
+                        );
+                        await message.edit({ embeds: [nextEmbed], components: [newRow] });
+                    }
                 }
             }
+        } catch (error) {
+            console.error("Roulette Error:", error);
+            collector.stop('error'); // إيقاف الكوليكتر عند الخطأ لضمان التحرير
         }
     });
 
     collector.on('end', async (collected, reason) => {
-        // تحرير اللاعب فقط
+        // 🔥🔥🔥 الإصلاح النهائي: تحرير اللاعب دائماً عند انتهاء اللعب 🔥🔥🔥
         client.activePlayers.delete(user.id);
-        if (reason === 'time') message.edit({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
+        
+        if (reason === 'time') {
+            await message.edit({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
+        }
     });
 }
 
@@ -362,28 +376,32 @@ async function playMultiplayerGame(msg, players, bet, totalPot, client, guild) {
     const collector = msg.createMessageComponentCollector({ time: 90000 });
 
     collector.on('collect', async i => {
-        await i.deferUpdate().catch(()=>{}); 
-        const state = gameStates.get(i.user.id);
-        if (!state || state.status !== 'playing') return;
+        try {
+            await i.deferUpdate().catch(()=>{}); 
+            const state = gameStates.get(i.user.id);
+            if (!state || state.status !== 'playing') return;
 
-        if (i.customId === 'rl_race_out') {
-            state.status = 'cashed_out';
-            await i.followUp({ content: `انسحبت x${state.multiplier}`, ephemeral: true });
-        } else {
-            if (state.chambers[state.turn] === 1) {
-                state.status = 'dead'; state.multiplier = 0;
-                await i.followUp({ content: `💥 مت!`, ephemeral: true });
+            if (i.customId === 'rl_race_out') {
+                state.status = 'cashed_out';
+                await i.followUp({ content: `انسحبت x${state.multiplier}`, ephemeral: true });
             } else {
-                state.multiplier = MULTIPLIERS[state.turn]; state.turn++;
-                if (state.turn === 5) { state.status = 'max_win'; await i.followUp({ content: `🏆 Max!`, ephemeral: true }); }
-                else await i.followUp({ content: `نجاة! التالي x${MULTIPLIERS[state.turn]}`, ephemeral: true });
+                if (state.chambers[state.turn] === 1) {
+                    state.status = 'dead'; state.multiplier = 0;
+                    await i.followUp({ content: `💥 مت!`, ephemeral: true });
+                } else {
+                    state.multiplier = MULTIPLIERS[state.turn]; state.turn++;
+                    if (state.turn === 5) { state.status = 'max_win'; await i.followUp({ content: `🏆 Max!`, ephemeral: true }); }
+                    else await i.followUp({ content: `نجاة! التالي x${MULTIPLIERS[state.turn]}`, ephemeral: true });
+                }
             }
+            if (Array.from(gameStates.values()).every(s => s.status !== 'playing')) collector.stop();
+        } catch (e) {
+            console.error("Multiplayer Roulette Error:", e);
         }
-        if (Array.from(gameStates.values()).every(s => s.status !== 'playing')) collector.stop();
     });
 
     collector.on('end', () => {
-        // تحرير جميع اللاعبين
+        // 🔥 تحرير جميع اللاعبين دائماً 🔥
         players.forEach(p => client.activePlayers.delete(p.id));
         
         let winner = null, maxMult = 0;
@@ -393,11 +411,11 @@ async function playMultiplayerGame(msg, players, bet, totalPot, client, guild) {
         if (winner && maxMult > 1) {
             let d = client.getLevel.get(winner.id, guild.id); d.mora += totalPot; client.setLevel.run(d);
             const embed = new EmbedBuilder().setTitle(`🏆 الفائز: ${winner.displayName}`).setDescription(`ربـح **${totalPot}** ${EMOJI_MORA}`).setColor("Gold");
-            msg.edit({ embeds: [embed], components: [] });
+            msg.edit({ embeds: [embed], components: [] }).catch(()=>{});
         } else {
             const embed = new EmbedBuilder().setTitle("💀 لا فائز").setDescription(`استرجاع الأموال.`).setColor("Red");
             players.forEach(p => { let d = client.getLevel.get(p.id, guild.id); d.mora += bet; client.setLevel.run(d); });
-            msg.edit({ embeds: [embed], components: [] });
+            msg.edit({ embeds: [embed], components: [] }).catch(()=>{});
         }
     });
 }
