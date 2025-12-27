@@ -359,16 +359,18 @@ async function playSoloRaceSelection(channel, author, bet, authorData, getScore,
     try {
         const shuffledIcons = shuffleArray([...RACE_ICONS]);
         const raceOptions = shuffledIcons.slice(0, 4); 
+        
+        // ألوان مختلفة لكل زر
+        const buttonStyles = [ButtonStyle.Primary, ButtonStyle.Secondary, ButtonStyle.Success, ButtonStyle.Danger];
 
-        // 🔥 استبدال القائمة بالأزرار 🔥
+        // 🔥 استبدال القائمة بالأزرار الملونة بدون نص 🔥
         const row = new ActionRowBuilder();
         raceOptions.forEach((icon, index) => {
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`race_pick_${index}`)
-                    .setEmoji(icon)
-                    .setLabel(`حصان ${index + 1}`)
-                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji(icon) // إيموجي فقط
+                    .setStyle(buttonStyles[index % buttonStyles.length]) // لون مختلف لكل زر
             );
         });
 
@@ -386,8 +388,7 @@ async function playSoloRaceSelection(channel, author, bet, authorData, getScore,
             await selection.deferUpdate();
             
             const selectedIndex = parseInt(selection.customId.split('_')[2]);
-            // const selectedIcon = raceOptions[selectedIndex]; // ليس ضرورياً هنا، نمرر الإندكس للدالة التالية
-
+            
             // تحديث الكولداون
             if (author.id !== OWNER_ID) {
                  try {
