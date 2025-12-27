@@ -29,6 +29,10 @@ function normalize(str) {
     return str.toString().toLowerCase()
         .replace(/[أإآ]/g, 'ا')
         .replace(/ة/g, 'ه')
+        .replace(/ي/g, 'ى')
+        .replace(/ؤ/g, 'و')
+        .replace(/ئ/g, 'ي')
+        .replace(/_/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -135,6 +139,11 @@ module.exports = {
             case 'اضافة-خبرة':
                 await this.modifyEconomy(message, client, sql, targetUser, args[2], 'add', 'xp', embed);
                 break;
+            case 'remove-xp':
+            case 'خصم-خبرة':
+                await this.modifyEconomy(message, client, sql, targetUser, args[2], 'remove', 'xp', embed);
+                break;
+
             case 'reset-user':
             case 'تصفير-المستخدم':
                 await this.resetUser(message, client, sql, targetUser, embed);
@@ -149,7 +158,7 @@ module.exports = {
             // 🔥🔥🔥 الأوامر الجديدة 🔥🔥🔥
             case 'set-weapon-level':
             case 'ضبط-سلاح':
-                await this.setWeaponLevel(message, sql, targetUser, args, embed);
+                await this.setWeaponLevel(message, sql, targetUser, targetMember, args, embed);
                 break;
 
             case 'set-skill-level':
@@ -180,10 +189,12 @@ module.exports = {
                 "`-ادمن اعطاء-درع-ميديا @user`\n" +
                 "`-ادمن اعطاء-عنصر @user [اسم العنصر] [الكمية]`\n" +
                 "`-ادمن اضافة-مورا @user [المبلغ]`\n" +
+                "`-ادمن خصم-مورا @user [المبلغ]`\n" +
                 "`-ادمن اضافة-خبرة @user [القدر]`\n" +
+                "`-ادمن خصم-خبرة @user [القدر]`\n" +
                 "`-ادمن اعطاء-انجاز @user [اسم الانجاز]`\n" +
-                "`-ادمن ضبط-سلاح @user [اسم العرق] [المستوى]`\n" +
-                "`-ادمن ضبط-مهارة @user [ID المهارة] [المستوى]`"
+                "`-ادمن ضبط-سلاح @user [المستوى]` (تلقائي)\n" +
+                "`-ادمن ضبط-مهارة @user [اسم المهارة] [المستوى]`"
             );
     },
 
@@ -293,10 +304,7 @@ module.exports = {
             await message.reply({ embeds: [embed] });
         }
 
-        // 🔥 الأمر الجديد: تصفير السوق وإنعاشه مع إشعارات الكازينو 🔥
         else if (subcommand === 'reset-market' || subcommand === 'تصفير-السوق') {
-            
-            // 1. التحقق من وجود روم الكازينو
             const settings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guildID);
             const casinoChannel = settings && settings.casinoChannelID ? message.guild.channels.cache.get(settings.casinoChannelID) : null;
 
@@ -306,14 +314,12 @@ module.exports = {
 
             const msg = await message.reply("⚠️ **جاري حساب قيمة الأصول وبيعها لجميع الأعضاء وإرسال الإشعارات... يرجى الانتظار.**");
 
-            // 2. جلب جميع المحافظ
             const allPortfolios = sql.prepare("SELECT * FROM user_portfolio WHERE guildID = ?").all(guildID);
             
             if (allPortfolios.length === 0) {
                 return msg.edit("❌ لا توجد أصول في السوق للبيع.");
             }
 
-            // 3. جلب الأسعار الحالية
             const dbItems = sql.prepare("SELECT * FROM market_items").all();
             const priceMap = new Map();
             const nameMap = new Map();
@@ -324,8 +330,7 @@ module.exports = {
             });
             dbItems.forEach(i => priceMap.set(i.id, i.currentPrice));
 
-            // 4. تجميع البيانات لكل مستخدم
-            const userAssets = {}; // { userID: { total: 0, items: ["name x5: 500", ...] } }
+            const userAssets = {};
 
             for (const entry of allPortfolios) {
                 const price = priceMap.get(entry.itemID);
@@ -343,36 +348,29 @@ module.exports = {
                 userAssets[entry.userID].items.push(`✶ ${name} (x${entry.quantity}): **${value.toLocaleString()}**`);
             }
 
-            // 5. التنفيذ (تحديث الرصيد + إرسال الرسائل + الحذف)
             const transaction = sql.transaction(() => {
                 const updateMora = sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?");
                 
                 for (const [userID, data] of Object.entries(userAssets)) {
-                    // حساب التعويض المخفي (0.05%)
                     const bonus = Math.floor(data.total * 0.0005);
                     const finalRefund = data.total + bonus;
-
-                    // تحديث الرصيد
                     updateMora.run(finalRefund, userID, guildID);
                 }
 
-                // حذف جميع المحافظ
                 sql.prepare("DELETE FROM user_portfolio WHERE guildID = ?").run(guildID);
-                // إعادة حالة السوق
                 sql.prepare("UPDATE settings SET marketStatus = 'normal' WHERE guild = ?").run(guildID);
             });
 
             transaction();
 
-            // 6. إرسال الإشعارات في الكازينو (خارج الترانزاكشن لتجنب البطء)
             for (const [userID, data] of Object.entries(userAssets)) {
                 const bonus = Math.floor(data.total * 0.0005);
                 const finalRefund = data.total + bonus;
 
                 const userEmbed = new EmbedBuilder()
                     .setTitle('❖ مــرســوم امبـراطـوري !')
-                    .setColor("Random") // لون عشوائي
-                    .setThumbnail('https://i.postimg.cc/CdpdVfxQ/5902480522066201408-120-removebg-preview.png') // الصورة الصغيرة
+                    .setColor("Random")
+                    .setThumbnail('https://i.postimg.cc/CdpdVfxQ/5902480522066201408-120-removebg-preview.png')
                     .setImage('https://media.discordapp.net/attachments/1394280285289320550/1432409477272965190/line.png?ex=690eca88&is=690d7908&hm=b21b91d8e7b66da4c28a29dd513bd1104c76ab6c875f23cd9405daf3ce48c050&=&format=webp&quality=lossless')
                     .setDescription(
                         `بـ أمـر من الامبـراطـور تـم بيـع كـل اصولـك بـسبب الركود الحالي بسوق الاسهم والاستثمارات لننتقل للمرحلة التالية من انعاش السـوق ستحصـل عـلى تعويض بمقدار ممتلكاتك الحالية\n\n` +
@@ -383,7 +381,6 @@ module.exports = {
                     );
 
                 await casinoChannel.send({ content: `<@${userID}>`, embeds: [userEmbed] }).catch(() => {});
-                // تأخير بسيط لتجنب الريت ليميت (اختياري)
                 await new Promise(res => setTimeout(res, 500));
             }
 
@@ -391,9 +388,6 @@ module.exports = {
         }
     },
 
-    // =========================================================
-    // 💰 دوال الاقتصاد
-    // =========================================================
     async modifyEconomy(message, client, sql, targetUser, amountArg, type, currency, embed) {
         const amount = parseInt(amountArg);
         if (isNaN(amount) || amount <= 0) return message.reply("❌ رقم غير صالح.");
@@ -414,8 +408,12 @@ module.exports = {
                     userData.level++;
                     userData.xp -= nextXP;
                 }
+                embed.setDescription(`✅ **تم إضافة** \`${amount.toLocaleString()}\` XP لـ ${targetUser}.`);
+            } else {
+                userData.xp = Math.max(0, userData.xp - amount);
+                userData.totalXP = Math.max(0, userData.totalXP - amount);
+                embed.setDescription(`✅ **تم خصم** \`${amount.toLocaleString()}\` XP من ${targetUser}.`);
             }
-            embed.setDescription(`✅ **تم إضافة** \`${amount.toLocaleString()}\` XP لـ ${targetUser}.`);
         }
 
         client.setLevel.run(userData);
@@ -436,9 +434,6 @@ module.exports = {
         await message.reply({ embeds: [embed] });
     },
 
-    // =========================================================
-    // 🔥 دوال الستريك
-    // =========================================================
     async setMediaStreak(message, sql, targetUser, countArg, embed) {
         const count = parseInt(countArg);
         if (isNaN(count) || count < 0) return message.reply("❌ رقم غير صالح.");
@@ -484,23 +479,17 @@ module.exports = {
         await message.reply({ embeds: [embed] });
     },
 
-    // =========================================================
-    // 🎒 دوال العناصر (بحث ذكي بالاسم)
-    // =========================================================
     findItem(nameOrID) {
         const input = normalize(nameOrID);
         
-        // البحث في المتجر (أولوية للعناصر الخاصة)
         let item = shopItems.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item && !marketItems.some(m => m.id === item.id) && !farmAnimals.some(f => f.id === item.id)) {
              return { ...item, type: 'shop_special' };
         }
 
-        // البحث في السوق
         item = marketItems.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'market' };
 
-        // البحث في المزرعة
         item = farmAnimals.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'farm' };
 
@@ -508,7 +497,6 @@ module.exports = {
     },
 
     async giveItem(message, client, sql, targetUser, args, embed) {
-        // محاولة استخراج الكمية (آخر مدخل إذا كان رقم)
         let quantity = 1;
         let itemNameRaw = "";
         
@@ -528,7 +516,6 @@ module.exports = {
         const guildID = message.guild.id;
         const userID = targetUser.id;
 
-        // منطق الإضافة حسب النوع
         if (item.type === 'market') {
             const pfItem = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userID, guildID, item.id);
             if (pfItem) sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(quantity, pfItem.id);
@@ -619,9 +606,6 @@ module.exports = {
         await message.reply({ embeds: [embed] });
     },
 
-    // =========================================================
-    // 🏆 دوال الإنجازات والمهام
-    // =========================================================
     findAchievement(nameOrID) {
         const input = normalize(nameOrID);
         return questsConfig.achievements.find(a => normalize(a.name) === input || a.id.toLowerCase() === nameOrID.toLowerCase());
@@ -639,7 +623,6 @@ module.exports = {
 
         sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES (?, ?, ?, ?)").run(targetUser.id, message.guild.id, ach.id, Date.now());
         
-        // إضافة الجوائز
         let ld = client.getLevel.get(targetUser.id, message.guild.id) || { ...client.defaultData, user: targetUser.id, guild: message.guild.id };
         ld.mora += ach.reward.mora;
         ld.xp += ach.reward.xp;
@@ -670,10 +653,8 @@ module.exports = {
         const guildID = message.guild.id;
         const userID = targetUser.id;
 
-        // محاولة التحديث في عدة جداول
         let updated = false;
         
-        // 1. Levels table
         let ld = client.getLevel.get(userID, guildID);
         if (ld && ld.hasOwnProperty(statName)) {
             ld[statName] = val;
@@ -681,7 +662,6 @@ module.exports = {
             updated = true;
         }
 
-        // 2. Total Stats
         let ts = client.getTotalStats.get(`${userID}-${guildID}`);
         if (ts && ts.hasOwnProperty(statName)) {
             ts[statName] = val;
@@ -689,7 +669,6 @@ module.exports = {
             updated = true;
         }
 
-        // 3. Streaks
         if (!updated) {
             try {
                 sql.prepare(`UPDATE streaks SET ${statName} = ? WHERE guildID = ? AND userID = ?`).run(val, guildID, userID);
@@ -735,17 +714,31 @@ module.exports = {
     },
 
     // =========================================================
-    // ⚔️ دوال الأسلحة والمهارات (جديد)
+    // ⚔️ دوال الأسلحة والمهارات (بحث ذكي)
     // =========================================================
-    async setWeaponLevel(message, sql, targetUser, args, embed) {
-        const raceName = args[2];
-        const level = parseInt(args[3]);
+    async setWeaponLevel(message, sql, targetUser, targetMember, args, embed) {
+        let level, weaponInput, weapon;
 
-        if (!raceName || isNaN(level)) return message.reply("❌ الاستخدام: `-ادمن ضبط-سلاح @user [اسم العرق] [المستوى]`");
+        // الحالة 1: تحديد المستوى فقط (اكتشاف تلقائي)
+        if (!isNaN(parseInt(args[2])) && !args[3]) {
+            level = parseInt(args[2]);
+            const raceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(message.guild.id);
+            const userRace = raceRoles.find(r => targetMember.roles.cache.has(r.roleID));
 
-        const weapon = weaponsConfig.find(w => w.race.toLowerCase() === raceName.toLowerCase());
-        
-        if (!weapon) return message.reply(`❌ لم يتم العثور على سلاح لعرق "${raceName}".`);
+            if (!userRace) return message.reply("❌ هذا العضو ليس لديه رول عرق! يرجى تحديد اسم السلاح يدوياً.");
+            weapon = weaponsConfig.find(w => w.race.toLowerCase() === userRace.raceName.toLowerCase());
+        } 
+        // الحالة 2: تحديد الاسم يدوياً
+        else if (args[2] && !isNaN(parseInt(args[args.length - 1]))) {
+            weaponInput = args.slice(2, args.length - 1).join(' ');
+            level = parseInt(args[args.length - 1]);
+            const normalizedInput = normalize(weaponInput);
+            weapon = weaponsConfig.find(w => normalize(w.name).includes(normalizedInput) || normalize(w.race).includes(normalizedInput));
+        } else {
+            return message.reply("❌ الاستخدام:\n- تلقائي: `-ادمن ضبط-سلاح @user [المستوى]`\n- يدوي: `-ادمن ضبط-سلاح @user [اسم السلاح] [المستوى]`");
+        }
+
+        if (!weapon) return message.reply(`❌ لم يتم العثور على سلاح مناسب.`);
 
         const guildID = message.guild.id;
         const userID = targetUser.id;
@@ -758,19 +751,24 @@ module.exports = {
             sql.prepare("INSERT INTO user_weapons (userID, guildID, raceName, weaponLevel) VALUES (?, ?, ?, ?)").run(userID, guildID, weapon.race, level);
         }
 
-        embed.setDescription(`✅ تم ضبط مستوى سلاح **${weapon.name}** لـ ${targetUser} إلى المستوى **${level}**.`);
+        embed.setDescription(`✅ تم ضبط مستوى سلاح **${weapon.name}** (عرق ${weapon.race}) لـ ${targetUser} إلى المستوى **${level}**.`);
         await message.reply({ embeds: [embed] });
     },
 
     async setSkillLevel(message, sql, targetUser, args, embed) {
-        const skillID = args[2]; 
-        const level = parseInt(args[3]);
+        const skillInput = args.slice(2, args.length - 1).join(' ');
+        const level = parseInt(args[args.length - 1]);
 
-        if (!skillID || isNaN(level)) return message.reply("❌ الاستخدام: `-ادمن ضبط-مهارة @user [ID المهارة] [المستوى]`");
+        if (!skillInput || isNaN(level)) return message.reply("❌ الاستخدام: `-ادمن ضبط-مهارة @user [اسم المهارة] [المستوى]`");
 
-        const skill = skillsConfig.find(s => s.id.toLowerCase() === skillID.toLowerCase());
+        const normalizedInput = normalize(skillInput);
 
-        if (!skill) return message.reply(`❌ المهارة غير موجودة. تأكد من الآيدي (ID).`);
+        const skill = skillsConfig.find(s => 
+            normalize(s.name).includes(normalizedInput) || 
+            s.id.toLowerCase().includes(normalizedInput)
+        );
+
+        if (!skill) return message.reply(`❌ المهارة غير موجودة. جرب كتابة جزء من اسمها.`);
 
         const guildID = message.guild.id;
         const userID = targetUser.id;
