@@ -27,7 +27,8 @@ const LOSE_IMAGES = [
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
-const SKILL_COOLDOWN_TURNS = 3;
+// لم نعد نعتمد على هذا الثابت بشكل كلي، التحديد يتم داخل الدالة
+const SKILL_COOLDOWN_TURNS = 3; 
 
 const activePvpChallenges = new Set();
 const activePvpBattles = new Map();
@@ -174,7 +175,7 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         const navRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('pvp_skill_back').setLabel('العودة').setStyle(ButtonStyle.Danger));
         if (totalPages > 1) {
             navRow.addComponents(
-                new ButtonBuilder().setCustomId(`pvp_skill_page_${page - 1}`).setLabel('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId(`pvp_skill_page_${page - 1}`).setLabel('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
                 new ButtonBuilder().setCustomId(`pvp_skill_page_${page + 1}`).setLabel('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages - 1)
             );
         }
@@ -190,6 +191,12 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 }
 
 function applySkillEffect(battleState, attackerId, skill) {
+    // 🔥 تطبيق نظام الكولداون الجديد (مثل الدانجون) 🔥
+    const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
+    if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
+    battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
+    // ----------------------------------------------------
+
     const attacker = battleState.players.get(attackerId);
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
@@ -490,9 +497,8 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
         winnerData.mora += finalWinnings;
         setScore.run(winnerData);
 
-        // استخدام buffCalculator إذا تم توفيره (لحساب MoraBuff بناءً على الستريك مثلاً)
         if (buffCalculator) {
-             // يمكنك استدعاء buffCalculator هنا إذا لزم الأمر، لكننا حالياً نستخدم قيم ثابتة للـ PvP
+             // يمكن استدعاء buffCalculator هنا إذا لزم الأمر
         }
 
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
