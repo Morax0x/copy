@@ -270,8 +270,8 @@ module.exports = {
 
                 await i.editReply({ embeds: [biteEmbed], components: [gameRow] });
 
-                // زيادة الوقت للمستويات العليا (5 ثواني)
-                const reactionTime = requiredSequenceLength > 1 ? 5000 : 2500;
+                // 🔥🔥 زيادة الوقت للمستويات (5 ثواني للسهل و 8 ثواني للصعب) 🔥🔥
+                const reactionTime = requiredSequenceLength > 1 ? 8000 : 5000;
 
                 const pullFilter = j => j.user.id === user.id && j.customId.startsWith('fish_click_');
                 // نطلب عدد ضغطات يساوي طول السلسلة
