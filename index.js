@@ -508,14 +508,17 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
         const existingAch = sql.prepare("SELECT * FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").get(userID, guildID, achievementId);
         const ach = questsConfig.achievements.find(a => a.id === achievementId);
         if (!ach) return;
+        
         let hasRole = false;
         if (achievementId === 'ach_race_role') {
             const raceRoles = sql.prepare("SELECT roleID FROM race_roles WHERE guildID = ?").all(guildID);
             const raceRoleIDs = raceRoles.map(r => r.roleID);
             hasRole = member.roles.cache.some(role => raceRoleIDs.includes(role.id));
         } else { hasRole = member.roles.cache.has(roleId); }
+        
+        // 🔥🔥 التعديل: إذا حقق الإنجاز، سجله. إذا خسره، لا تحذف السجل أبداً (One-time) 🔥🔥
         if (hasRole) {
-            if (existingAch) return; 
+            if (existingAch) return; // مسجل مسبقاً، اخرج
             sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES (?, ?, ?, ?)").run(userID, guildID, ach.id, Date.now());
             let ld = client.getLevel.get(userID, guildID);
             if (!ld) ld = { ...client.defaultData, user: userID, guild: guildID };
@@ -524,11 +527,8 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
             ld.totalXP += ach.reward.xp;
             client.setLevel.run(ld);
             await client.sendQuestAnnouncement(member.guild, member, ach, 'achievement');
-        } else {
-            if (existingAch) {
-                sql.prepare("DELETE FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").run(userID, guildID, achievementId);
-            }
-        }
+        } 
+        // 🛑 تم حذف الجزء الذي يحذف الإنجاز عند إزالة الرول (else { delete... })
     } catch (err) { console.error(`[checkRoleAchievement] Error:`, err.message); }
 }
 
