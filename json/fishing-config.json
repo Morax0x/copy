@@ -32,11 +32,11 @@
   ],
   "rods": [
     { "level": 1, "name": "سنارة خشبية", "price": 0, "cooldown": 3600000, "luck_bonus": 0, "max_fish": 1, "max_rarity": 2 },
-    { "level": 2, "name": "سنارة البرونز", "price": 5000, "cooldown": 3300000, "luck_bonus": 5, "max_fish": 1, "max_rarity": 2 },
-    { "level": 3, "name": "سنارة الحديد", "price": 15000, "cooldown": 3000000, "luck_bonus": 10, "max_fish": 2, "max_rarity": 3 },
-    { "level": 4, "name": "سنارة الفولاذ", "price": 30000, "cooldown": 2700000, "luck_bonus": 15, "max_fish": 2, "max_rarity": 3 },
-    { "level": 5, "name": "سنارة التيتانيوم", "price": 50000, "cooldown": 2400000, "luck_bonus": 20, "max_fish": 2, "max_rarity": 4 },
-    { "level": 6, "name": "سنارة الذهب", "price": 80000, "cooldown": 2100000, "luck_bonus": 25, "max_fish": 3, "max_rarity": 4 },
+    { "level": 2, "name": "سنارة البرونز", "price": 2000, "cooldown": 3300000, "luck_bonus": 5, "max_fish": 1, "max_rarity": 2 },
+    { "level": 3, "name": "سنارة الحديد", "price": 5000, "cooldown": 3000000, "luck_bonus": 10, "max_fish": 2, "max_rarity": 3 },
+    { "level": 4, "name": "سنارة الفولاذ", "price": 10000, "cooldown": 2700000, "luck_bonus": 15, "max_fish": 2, "max_rarity": 3 },
+    { "level": 5, "name": "سنارة التيتانيوم", "price": 25000, "cooldown": 2400000, "luck_bonus": 20, "max_fish": 2, "max_rarity": 4 },
+    { "level": 6, "name": "سنارة الذهب", "price": 50000, "cooldown": 2100000, "luck_bonus": 25, "max_fish": 3, "max_rarity": 4 },
     { "level": 7, "name": "سنارة الماس", "price": 120000, "cooldown": 1800000, "luck_bonus": 35, "max_fish": 3, "max_rarity": 5 },
     { "level": 8, "name": "سنارة الملوك", "price": 200000, "cooldown": 1500000, "luck_bonus": 50, "max_fish": 3, "max_rarity": 5 },
     { "level": 9, "name": "سنارة التنانين", "price": 350000, "cooldown": 1200000, "luck_bonus": 70, "max_fish": 4, "max_rarity": 6 },
@@ -44,12 +44,12 @@
   ],
   "boats": [
     { "level": 1, "name": "قـارب خـشيـبـي", "price": 0, "location_id": "beach", "speed_bonus": 0 },
-    { "level": 2, "name": "قـارب بـمحـرك", "price": 10000, "location_id": "shallow", "speed_bonus": 60000 },
-    { "level": 3, "name": "يـخـت الصيـد", "price": 50000, "location_id": "deep", "speed_bonus": 120000 },
-    { "level": 4, "name": "سفيـنة", "price": 100000, "location_id": "bermuda", "speed_bonus": 180000 },
-    { "level": 5, "name": "غـواصــة", "price": 200000, "location_id": "trench", "speed_bonus": 240000 },
-    { "level": 6, "name": "غـواصــة أطلانتس", "price": 350000, "location_id": "atlantis", "speed_bonus": 300000 },
-    { "level": 7, "name": "سفـينـة الاشبـاح", "price": 500000, "location_id": "dark_sea", "speed_bonus": 600000 }
+    { "level": 2, "name": "قـارب بـمحـرك", "price": 50000, "location_id": "shallow", "speed_bonus": 60000 },
+    { "level": 3, "name": "يـخـت الصيـد", "price": 10000, "location_id": "deep", "speed_bonus": 120000 },
+    { "level": 4, "name": "سفيـنة", "price": 500000, "location_id": "bermuda", "speed_bonus": 180000 },
+    { "level": 5, "name": "غـواصــة", "price": 150000, "location_id": "trench", "speed_bonus": 240000 },
+    { "level": 6, "name": "غـواصــة أطلانتس", "price": 200000, "location_id": "atlantis", "speed_bonus": 300000 },
+    { "level": 7, "name": "سفـينـة الاشبـاح", "price": 300000, "location_id": "dark_sea", "speed_bonus": 600000 }
   ],
   "baits": [
     { "id": "bait_worm", "name": "دودة", "price": 50, "luck": 5, "description": "طعم بسيط يزيد الحظ قليلاً." },
