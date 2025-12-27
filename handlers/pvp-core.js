@@ -446,7 +446,6 @@ async function startPveBattle(interaction, client, sql, playerMember, monsterDat
 async function endBattle(battleState, winnerId, sql, reason = "win", buffCalculator = null) {
     if (!battleState.message) return;
 
-    // 🔥🔥 تحديث الرسالة لآخر مرة قبل إعلان النتيجة (لإظهار الـ 0 HP) 🔥🔥
     const { embeds: finalEmbeds } = buildBattleEmbed(battleState, false);
     await battleState.message.edit({ embeds: finalEmbeds, components: [] }).catch(() => {});
 
@@ -497,10 +496,6 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
         winnerData.mora += finalWinnings;
         setScore.run(winnerData);
 
-        if (buffCalculator) {
-             // يمكن استدعاء buffCalculator هنا إذا لزم الأمر
-        }
-
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
 
@@ -509,9 +504,17 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, loserId, 0, loserExpiresAt, 'pvp_wounded', 0);
 
         const randomWinImage = WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)];
-        embed.setColor(Colors.Gold).setThumbnail(winner.member.displayAvatarURL()).setImage(randomWinImage)
-            .setTitle(`🏆 الفائز هو ${cleanDisplayName(winner.member.user.displayName)}!`)
-            .setDescription(`💰 **الرهان:** ${finalWinnings.toLocaleString()} ${EMOJI_MORA}\n\n👑 **الفائز:** ${winner.member} (+15% Buff)\n💀 **الخاسر:** ${loser.member} (-15% Nerf)`);
+        
+        // 🔥🔥 رسالة الفوز المعدلة 🔥🔥
+        embed.setColor('Random')
+            .setThumbnail(winner.member.displayAvatarURL())
+            .setImage(randomWinImage)
+            .setTitle(`★ الـفـائـز هـو ${cleanDisplayName(winner.member.user.displayName)}`)
+            .setDescription(
+                `✶ مبـلغ الرهـان: ${finalWinnings.toLocaleString()} ${EMOJI_MORA}\n\n` +
+                `✶ الـفائـز: ${winner.member} حصل علـى تعزيـز 15% مورا واكس بي لـ 15د <a:buff:1438796257522094081>\n\n` +
+                `✶ الـخـاسـر: ${loser.member} اصبح جريح وبطور الشفـاء اصابته لعـنة -15% مورا واكس بي لـ 15د <a:Nerf:1438795685280612423>`
+            );
     }
 
     await battleState.message.channel.send({ embeds: [embed] });
@@ -522,7 +525,6 @@ function applyPersistentEffects(battleState, attackerId) {
     let logEntries = [];
     let skipTurn = false;
 
-    // 1. تقليل عدادات الأدوار
     const effectsList = ['buff', 'weaken', 'rebound_active', 'stun', 'confusion', 'evasion', 'blind'];
     effectsList.forEach(eff => {
         if (attacker.effects[eff + '_turns'] > 0) {
@@ -534,7 +536,6 @@ function applyPersistentEffects(battleState, attackerId) {
         }
     });
 
-    // 2. تطبيق أضرار التأثيرات المستمرة
     if (attacker.effects.poison > 0) {
         attacker.hp -= attacker.effects.poison;
         logEntries.push(`☠️ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يتألم من السم (-${attacker.effects.poison})!`);
@@ -549,7 +550,6 @@ function applyPersistentEffects(battleState, attackerId) {
         if (attacker.effects.burn_turns <= 0) attacker.effects.burn = 0;
     }
 
-    // 3. التحقق من الشلل
     if (attacker.effects.stun) {
         logEntries.push(`⚡ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} مشلول ولا يستطيع الحركة!`);
         skipTurn = true;
