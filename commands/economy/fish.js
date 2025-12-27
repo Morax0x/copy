@@ -42,12 +42,34 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 // 🎨 قائمة الألوان
 const COLOR_GAME_OPTIONS = [
-    { id: 'red', emoji: '🔴' }, { id: 'blue', emoji: '🔵' }, { id: 'green', emoji: '🟢' },
-    { id: 'yellow', emoji: '🟡' }, { id: 'purple', emoji: '🟣' }, { id: 'white', emoji: '⚪' }
+    { id: 'red', emoji: '🔴', label: 'أحمر' }, 
+    { id: 'blue', emoji: '🔵', label: 'أزرق' }, 
+    { id: 'green', emoji: '🟢', label: 'أخضر' },
+    { id: 'yellow', emoji: '🟡', label: 'أصفر' }, 
+    { id: 'purple', emoji: '🟣', label: 'بفسجي' }, 
+    { id: 'white', emoji: '⚪', label: 'أبيض' }
+];
+
+// 🎞️ قائمة صور الصيد المتحركة
+const FISHING_GIFS = [
+    "https://i.postimg.cc/CMRynd7X/DIYGl5S.gif",
+    "https://i.postimg.cc/kGzfWJJm/e741917b220a9f554ea765a7c4f9294d.gif",
+    "https://i.postimg.cc/VNWG2PRD/original-e9123b1d533d02beb5d566d087247ab5.gif",
+    "https://i.postimg.cc/m2PnkqLb/6b22a575b0c783615c2b77e67951758c.gif",
+    "https://i.postimg.cc/NMbn2v26/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f776174747061642d6d656469612d736572766963652f53746f.gif"
 ];
 
 // 🔥🔥 القائمة المؤقتة لمنع التكرار (Anti-Spam) 🔥🔥
 const activeFishingSessions = new Set();
+
+// دالة خلط المصفوفة
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -133,16 +155,47 @@ module.exports = {
             });
         }
 
+        // --- البحث عن طعم ---
+        let usedBaitName = null;
+        let baitLuckBonus = 0;
+        const userBaits = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(user.id, guild.id);
+        const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === invItem.itemID && invItem.quantity > 0));
+
+        if (availableBaits.length > 0) {
+            const richBaits = availableBaits.map(invItem => {
+                const config = fishingConfig.baits.find(b => b.id === invItem.itemID);
+                return { ...invItem, luck: config.luck, name: config.name };
+            });
+            richBaits.sort((a, b) => b.luck - a.luck);
+            const bestBait = richBaits[0];
+            
+            // نستخدم الطعم (مجرد تحديد، الخصم يتم عند النجاح أو الفشل)
+            usedBaitName = bestBait.name;
+            baitLuckBonus = bestBait.luck;
+            
+            // خصم الطعم فوراً لضمان عدم التكرار
+            if (bestBait.quantity > 1) sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE id = ?").run(bestBait.id);
+            else sql.prepare("DELETE FROM user_inventory WHERE id = ?").run(bestBait.id);
+        }
+
         // 🔥 إضافة المستخدم للقائمة النشطة
         activeFishingSessions.add(user.id);
 
         if (isSlash) await interactionOrMessage.deferReply();
 
         // واجهة الانتظار
+        const randomGif = FISHING_GIFS[Math.floor(Math.random() * FISHING_GIFS.length)];
+        
+        let desc = `**عدتك الحالية:**\n🎣 **السنارة:** ${currentRod.name}\n🚤 **القارب:** ${currentBoat.name}\n🌊 **المنطقة:** ${currentLocation.name}`;
+        if (usedBaitName) {
+            desc += `\n🪱 **الطعم:** ${usedBaitName}`;
+        }
+
         const startEmbed = new EmbedBuilder()
             .setTitle(`🎣 رحلة صيد: ${currentLocation.name}`)
             .setColor(Colors.Blue)
-            .setDescription(`**عدتك الحالية:**\n🎣 **السنارة:** ${currentRod.name}\n🚤 **القارب:** ${currentBoat.name}\n🌊 **المنطقة:** ${currentLocation.name}`)
+            .setDescription(desc)
+            .setImage(randomGif)
             .setFooter({ text: "اضغط الزر أدناه لرمي السنارة..." });
 
         const startRow = new ActionRowBuilder().addComponents(
@@ -153,14 +206,11 @@ module.exports = {
         try {
             msg = await reply({ embeds: [startEmbed], components: [startRow] });
         } catch (err) {
-            // في حال فشل الإرسال نحذف المستخدم
             activeFishingSessions.delete(user.id);
             return;
         }
 
         const filter = i => i.user.id === user.id && i.customId === 'cast_rod';
-        
-        // 🔥🔥 التعديل هنا: جعلنا الوقت 60000 ملي ثانية (60 ثانية) 🔥🔥
         const collector = msg.createMessageComponentCollector({ filter, time: 60000, max: 1 });
 
         collector.on('collect', async i => {
@@ -170,7 +220,7 @@ module.exports = {
                 .setTitle("🌊 السنارة في الماء...")
                 .setDescription("انتظر... لا تسحب السنارة حتى تشعر بالاهتزاز!")
                 .setColor(Colors.Grey)
-                .setImage("https://i.postimg.cc/Wz0g0Zg0/fishing.png");
+                .setImage(randomGif);
 
             const disabledRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('pull_rod').setLabel('...').setStyle(ButtonStyle.Secondary).setDisabled(true)
@@ -178,157 +228,214 @@ module.exports = {
 
             await i.editReply({ embeds: [waitingEmbed], components: [disabledRow] });
 
-            const waitTime = Math.floor(Math.random() * 3000) + 2000;
+            // وقت انتظار عشوائي (3.5 ثانية إلى 6.5 ثانية)
+            const waitTime = Math.floor(Math.random() * 3000) + 3500;
 
             setTimeout(async () => {
-                // 🎲 لعبة الألوان
-                const targetColor = COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)];
-                
-                let distractors = COLOR_GAME_OPTIONS.filter(c => c.id !== targetColor.id);
-                distractors = distractors.sort(() => 0.5 - Math.random()).slice(0, 3);
-                let gameButtons = [targetColor, ...distractors].sort(() => 0.5 - Math.random());
+                // 🎮 إعداد لعبة الألوان (Mini-Game)
+                // تحديد عدد الأزرار المطلوبة حسب مستوى السنارة
+                let requiredSequenceLength = 1;
+                if (currentRod.level === 2) requiredSequenceLength = 2;
+                if (currentRod.level >= 3) requiredSequenceLength = 3;
+
+                // اختيار سلسلة الألوان المطلوبة
+                const sequence = [];
+                for(let k=0; k<requiredSequenceLength; k++) {
+                    sequence.push(COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)]);
+                }
+
+                // إعداد الأزرار (خلط الألوان + إضافة ألوان إضافية للتمويه)
+                let gameButtonsData = [...new Set(sequence)]; // نبدأ بالألوان المطلوبة لضمان وجودها
+                // نكمل الباقي عشوائي حتى نصل لـ 5 أزرار
+                while(gameButtonsData.length < 5) {
+                    const randomBtn = COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)];
+                    if(!gameButtonsData.find(b => b.id === randomBtn.id)) gameButtonsData.push(randomBtn);
+                }
+                gameButtonsData = shuffleArray(gameButtonsData);
 
                 const gameRow = new ActionRowBuilder();
-                gameButtons.forEach(btn => {
+                gameButtonsData.forEach(btn => {
                     gameRow.addComponents(
                         new ButtonBuilder().setCustomId(`fish_click_${btn.id}`).setEmoji(btn.emoji).setStyle(ButtonStyle.Secondary)
                     );
                 });
 
+                const sequenceEmojis = sequence.map(s => s.emoji).join(' ➡️ ');
                 const randomEmbedColor = Math.floor(Math.random() * 0xFFFFFF);
+                
                 const biteEmbed = new EmbedBuilder()
                     .setTitle("🎣 الـسنـارة تهـتز اسحـب الان !")
-                    .setDescription(`**اسحـب السنـارة بسـرعة اضغـط على** ${targetColor.emoji}`)
+                    .setDescription(`**اضغـط الأزرار بالترتيـب:**\n# ${sequenceEmojis}`)
                     .setColor(randomEmbedColor);
 
                 await i.editReply({ embeds: [biteEmbed], components: [gameRow] });
 
+                // زيادة الوقت للمستويات العليا (5 ثواني)
+                const reactionTime = requiredSequenceLength > 1 ? 5000 : 2500;
+
                 const pullFilter = j => j.user.id === user.id && j.customId.startsWith('fish_click_');
-                const pullCollector = msg.createMessageComponentCollector({ filter: pullFilter, time: 2000, max: 1 }); 
+                // نطلب عدد ضغطات يساوي طول السلسلة
+                const pullCollector = msg.createMessageComponentCollector({ filter: pullFilter, time: reactionTime, max: requiredSequenceLength }); 
+
+                let currentStep = 0;
+                let failed = false;
 
                 pullCollector.on('collect', async j => {
                     await j.deferUpdate();
                     
-                    const clickedColorId = j.customId.replace('fish_click_', '');
+                    if (failed) return; // إذا أخطأ سابقاً لا نتابع
 
-                    if (clickedColorId !== targetColor.id) {
+                    const clickedColorId = j.customId.replace('fish_click_', '');
+                    const expectedColor = sequence[currentStep];
+
+                    if (clickedColorId !== expectedColor.id) {
+                        failed = true;
                         pullCollector.stop('wrong_color');
+                        
                         const clickedButtonObj = COLOR_GAME_OPTIONS.find(c => c.id === clickedColorId);
                         const wrongEmoji = clickedButtonObj ? clickedButtonObj.emoji : '❓';
-                        const failEmbed = new EmbedBuilder().setTitle("❌ أفلتت السنارة!").setDescription(`سحـبت السنـارة من المـكان الغـلط ضغـطت زر ${wrongEmoji}`).setColor(Colors.Red);
-                        userData.lastFish = Date.now();
-                        client.setLevel.run(userData);
                         
-                        // 🔥 حذف المستخدم عند الفشل
-                        activeFishingSessions.delete(user.id);
-                        
-                        await j.editReply({ embeds: [failEmbed], components: [] });
-                        return;
-                    }
-
-                    pullCollector.stop('success');
-
-                    // ========================================================
-                    // 🦑 منطق الوحوش (PvE)
-                    // ========================================================
-                    const monsterChanceBase = Math.random();
-                    const isOwner = user.id === OWNER_ID;
-                    const monsterTriggered = isOwner ? (monsterChanceBase < 0.50) : (monsterChanceBase < 0.10);
-
-                    let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
-                    if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
-                    
-                    if (possibleMonsters.length > 0 && monsterTriggered) {
-                        const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        
-                        let playerWeapon = pvpCore.getWeaponData(sql, j.member);
-                        if (!playerWeapon || playerWeapon.currentLevel === 0) {
-                            playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
-                        }
-
-                        if (pvpCore.startPveBattle) {
-                            // 🔥 حذف المستخدم قبل بدء القتال
-                            activeFishingSessions.delete(user.id);
-                            await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
-                            return; 
-                        } else {
-                            console.error("pvpCore.startPveBattle is missing!");
-                        }
-                    }
-
-                    // --- الصيد الطبيعي (بدون وحوش) ---
-                    const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
-                    let caughtFish = [];
-                    let totalValue = 0;
-
-                    for (let k = 0; k < fishCount; k++) {
-                        const roll = Math.random() * 100 + (currentRod.luck_bonus || 0);
-                        let rarity = 1;
-                        if (roll > 95) rarity = 6;        
-                        else if (roll > 85) rarity = 5;   
-                        else if (roll > 70) rarity = 4;   
-                        else if (roll > 50) rarity = 3;   
-                        else if (roll > 30) rarity = 2;   
-                        else rarity = 1;                  
-
-                        let possibleFish = [];
-                        while (possibleFish.length === 0 && rarity >= 1) {
-                             possibleFish = fishItems.filter(f => f.rarity === rarity); 
-                             if (possibleFish.length === 0) rarity--;
-                        }
-                        
-                        if (possibleFish.length > 0) {
-                            const fish = possibleFish[Math.floor(Math.random() * possibleFish.length)];
-                            caughtFish.push(fish);
-                            totalValue += fish.price;
-                        }
-                    }
-
-                    userData.lastFish = Date.now();
-                    userData.mora = (userData.mora || 0) + totalValue;
-                    client.setLevel.run(userData);
-
-                    const summary = {};
-                    caughtFish.forEach(f => {
-                        summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
-                    });
-
-                    let description = "✶ قمـت بصيـد:\n";
-                    for (const [name, info] of Object.entries(summary)) {
-                        let rarityStar = "";
-                        if (info.rarity >= 5) rarityStar = "🌟"; else if (info.rarity === 4) rarityStar = "✨";
-                        
-                        description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
-                    }
-                    description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-
-                    const resultEmbed = new EmbedBuilder()
-                        .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
-                        .setDescription(description)
-                        .setColor(Colors.Green)
-                        .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png')
-                        .setFooter({ text: `السنارة: ${currentRod.name} (Lvl ${currentRod.level})` });
-
-                    // 🔥 حذف المستخدم عند النجاح
-                    activeFishingSessions.delete(user.id);
-
-                    await j.editReply({ embeds: [resultEmbed], components: [] });
-                });
-
-                pullCollector.on('end', async (collected) => {
-                    if (collected.size === 0) {
-                        // انتهى الوقت ولم يضغط
                         const failEmbed = new EmbedBuilder()
-                            .setTitle("💨 هربت السمكة!")
-                            .setDescription("تأخرت في السحب! حاول مرة أخرى لاحقاً.")
+                            .setTitle("❌ انقطع الخيط!")
+                            .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
                             .setColor(Colors.Red);
                         
                         userData.lastFish = Date.now();
                         client.setLevel.run(userData);
-
-                        // 🔥 حذف المستخدم عند انتهاء الوقت
                         activeFishingSessions.delete(user.id);
+                        await j.editReply({ embeds: [failEmbed], components: [] });
+                        return;
+                    }
 
+                    currentStep++;
+                    
+                    // إذا أنهى السلسلة بنجاح
+                    if (currentStep === requiredSequenceLength) {
+                        pullCollector.stop('success');
+                        
+                        // --- 🎣 بدء منطق الصيد (بعد النجاح في اللعبة) ---
+                        
+                        // 1. حساب الحظ
+                        const totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
+
+                        // 2. التحقق من الوحوش
+                        const monsterChanceBase = Math.random();
+                        const isOwner = user.id === OWNER_ID;
+                        // الطعم يزيد فرصة الوحش قليلاً
+                        const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
+                        const monsterTriggered = monsterChanceBase < monsterChance;
+
+                        let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
+                        if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
+                        
+                        if (possibleMonsters.length > 0 && monsterTriggered) {
+                            const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
+                            
+                            let playerWeapon = pvpCore.getWeaponData(sql, j.member);
+                            if (!playerWeapon || playerWeapon.currentLevel === 0) {
+                                playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
+                            }
+
+                            if (pvpCore.startPveBattle) {
+                                activeFishingSessions.delete(user.id);
+                                await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
+                                return; 
+                            }
+                        }
+
+                        // 3. الصيد العادي
+                        const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
+                        let caughtFish = [];
+                        let totalValue = 0;
+
+                        // حدود الندرة للمكان الحالي
+                        const allowedRarities = currentLocation.fish_types;
+                        const maxRarity = currentRod.max_rarity || 2;
+
+                        for (let k = 0; k < fishCount; k++) {
+                            // إعادة السحب (Reroll) بناءً على الحظ
+                            // كل 20 حظ = محاولة إضافية لأخذ الأفضل
+                            const rerolls = 1 + Math.floor(totalLuck / 20);
+                            
+                            let bestFish = null;
+
+                            for(let r=0; r<rerolls; r++) {
+                                // اختيار ندرة عشوائية مسموحة
+                                // نميل للندرة الأعلى قليلاً
+                                let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
+                                
+                                // إذا الندرة أعلى من قدرة السنارة، ننزلها للحد الأقصى
+                                if (rarity > maxRarity) rarity = maxRarity;
+
+                                const possibleFishList = fishItems.filter(f => f.rarity === rarity);
+                                if (possibleFishList.length > 0) {
+                                    const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
+                                    
+                                    if (!bestFish) bestFish = candidate;
+                                    else {
+                                        // مقارنة: نفضل الندرة الأعلى، ثم السعر الأعلى
+                                        if (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price)) {
+                                            bestFish = candidate;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (bestFish) {
+                                caughtFish.push(bestFish);
+                                totalValue += bestFish.price;
+                                // إضافة للمخزون
+                                sql.prepare(`INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?`).run(guild.id, user.id, bestFish.id, 1, 1);
+                            }
+                        }
+
+                        userData.lastFish = Date.now();
+                        userData.mora = (userData.mora || 0) + totalValue;
+                        // XP للصيد
+                        const xpGain = caughtFish.reduce((acc, f) => acc + (f.rarity * 5), 0);
+                        userData.xp += xpGain;
+                        userData.totalXP += xpGain;
+                        
+                        client.setLevel.run(userData);
+
+                        // تجهيز التقرير
+                        const summary = {};
+                        caughtFish.forEach(f => {
+                            summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
+                        });
+
+                        let description = "✶ قمـت بصيـد:\n";
+                        for (const [name, info] of Object.entries(summary)) {
+                            let rarityStar = "";
+                            if (info.rarity >= 5) rarityStar = "🌟"; else if (info.rarity === 4) rarityStar = "✨";
+                            description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
+                        }
+                        description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
+                        if (xpGain > 0) description += ` | ✨ \`+${xpGain} XP\``;
+
+                        const resultEmbed = new EmbedBuilder()
+                            .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
+                            .setDescription(description)
+                            .setColor(Colors.Green)
+                            .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png')
+                            .setFooter({ text: `السنارة: ${currentRod.name} (Lvl ${currentRod.level})` });
+
+                        activeFishingSessions.delete(user.id);
+                        await j.editReply({ embeds: [resultEmbed], components: [] });
+                    }
+                });
+
+                pullCollector.on('end', async (collected, reason) => {
+                    if (reason !== 'success' && reason !== 'wrong_color') {
+                        // انتهى الوقت
+                        const failEmbed = new EmbedBuilder()
+                            .setTitle("💨 هربت السمكة!")
+                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
+                            .setColor(Colors.Red);
+                        
+                        userData.lastFish = Date.now();
+                        client.setLevel.run(userData);
+                        activeFishingSessions.delete(user.id);
                         await i.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
                     }
                 });
