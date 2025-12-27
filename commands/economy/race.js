@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors, Collection } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, Collection } = require("discord.js");
 const { calculateMoraBuff } = require('../../streak-handler.js'); 
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -46,7 +46,28 @@ const COMMENTS = [
     "🚽 أحد الخيول طلب إذن يروح الحمام!",
     "🔭 الحكم يحتاج نظارة مو شايف شي!",
     "🎈 بالونة خوفت الخيول ورجعتهم ورا!",
-    "🚧 تحويلة مرورية في المسار رقم 3!"
+    "🚧 تحويلة مرورية في المسار رقم 3!",
+    "🌮 الحصان اشتم ريحة كبسة وراح يركض لها!",
+    "🦎 ضب دخل المضمار والخيول هربت!",
+    "💍 حصان وقف يخطب فرس بنص السباق!",
+    "🚁 هليكوبتر الشرطة تلاحق المتصدر للسرعة الزائدة!",
+    "🤡 مهرج نزل الحلبة وضحك الخيول!",
+    "🧊 الأرضية تجمدت! الخيول تتزحلق!",
+    "🔥 حماس المعلق خلى الحصان يركض أسرع!",
+    "🥊 ملاكمة مفاجئة بين حصانين في الخلف!",
+    "🕶️ الحصان لبس نظارة شمسية وشاف نفسه!",
+    "🏃‍♂️ متسابق نزل من الحصان وقام يركض بنفسه!",
+    "🛑 رادار ساهر صور الحصان رقم 2!",
+    "🕊️ حمامة وقفت على راس المتسابق وشتت انتباهه!",
+    "🎶 دي جي اشتغل والخيول قامت تهز!",
+    "🧹 عامل النظافة يكنس المضمار والسباق شغال!",
+    "💰 كيس فلوس طاح والخيول تهاوشت عليه!",
+    "🌧️ مطرت فجأة والخيول خايفة تتبلل!",
+    "🚗 سيارة دخلت بالغلط تحسبه شارع عام!",
+    "🧙‍♂️ ساحر حول الحصان الأول لأرنب!",
+    "💤 الجمهور نام من الملل.. اصحوا!",
+    "🍔 راعي الحصان يلوح له ببرجر عشان يسرع!",
+    "🧘‍♂️ حصان قرر يسوي يوغا بنص الطريق!"
 ];
 
 function formatTime(ms) {
@@ -59,7 +80,7 @@ function formatTime(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// دالة تنظيف آمنة ومحدثة
+// دالة تنظيف آمنة
 function safeCleanup(client, gameKey, playerIds) {
     try {
         if (client.activeGames) client.activeGames.delete(gameKey);
@@ -105,7 +126,7 @@ module.exports = {
         .addUserOption(option => option.setName('الخصم5').setDescription('الخصم الخامس').setRequired(false)),
 
     name: 'race',
-    aliases: ['سباق', 'سابق', 'سباق_خيول', 'r', 'race'],
+    aliases: ['سباق', 'سابق', 'سباق_خيول', 'race'],
     category: "Economy",
     description: `تحدي البوت أو تحدي أصدقائك في سباق الخيول.`,
 
@@ -162,17 +183,15 @@ module.exports = {
 
             if (!client.activeGames) client.activeGames = new Set();
             if (!client.activePlayers) client.activePlayers = new Set();
-            if (!client.raceTimestamps) client.raceTimestamps = new Map(); // تتبع وقت البدء
+            if (!client.raceTimestamps) client.raceTimestamps = new Map(); 
 
             // 🔥🔥 المنطق الجديد لإصلاح التعليق 🔥🔥
             if (client.activePlayers.has(author.id)) {
                 const startTime = client.raceTimestamps.get(author.id) || 0;
                 const timeDiff = Date.now() - startTime;
 
-                // إذا مر أكثر من 5 دقائق، نعتبر اللعبة معلقة ونحذفها
                 if (timeDiff > STUCK_TIMEOUT || startTime === 0) {
                     safeCleanup(client, `${channel.id}-${author.id}`, author.id);
-                    // نكمل التنفيذ
                 } else {
                     return reply({ content: `🚫 **لديك سباق جارٍ حالياً!**\nإذا كان السباق معلقاً، سيتم فتحه تلقائياً بعد مرور 5 دقائق.`, ephemeral: true });
                 }
@@ -335,42 +354,39 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
     }
 }
 
-// 🟢 دالة اختيار الحصان للسباق الفردي 🟢
+// 🟢 دالة اختيار الحصان للسباق الفردي (أزرار بدلاً من قائمة) 🟢
 async function playSoloRaceSelection(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey) {
     try {
         const shuffledIcons = shuffleArray([...RACE_ICONS]);
         const raceOptions = shuffledIcons.slice(0, 4); 
 
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('select_horse')
-            .setPlaceholder('اختر الحصان الذي تراهن عليه...')
-            .addOptions(
-                raceOptions.map((icon, index) => 
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel(`المتسابق رقم ${index + 1}`)
-                        .setDescription(`راهن على ${icon}`)
-                        .setValue(index.toString())
-                        .setEmoji(icon)
-                )
+        // 🔥 استبدال القائمة بالأزرار 🔥
+        const row = new ActionRowBuilder();
+        raceOptions.forEach((icon, index) => {
+            row.addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`race_pick_${index}`)
+                    .setEmoji(icon)
+                    .setLabel(`حصان ${index + 1}`)
+                    .setStyle(ButtonStyle.Primary)
             );
-
-        const row = new ActionRowBuilder().addComponents(selectMenu);
+        });
 
         const embed = new EmbedBuilder()
             .setTitle('🐎 اختر متسابقك!')
-            .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\n\nاختر الحصان الذي تتوقع فوزه من القائمة بالأسفل!`)
+            .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\n\nاضغط على الزر الخاص بالحصان الذي تراهن عليه!`)
             .setColor("Blue");
 
         const msg = await replyFunction({ embeds: [embed], components: [row], fetchReply: true });
 
-        const filter = i => i.user.id === author.id && i.customId === 'select_horse';
+        const filter = i => i.user.id === author.id && i.customId.startsWith('race_pick_');
         
         try {
             const selection = await msg.awaitMessageComponent({ filter, time: 30000 });
             await selection.deferUpdate();
             
-            const selectedIndex = parseInt(selection.values[0]);
-            const selectedIcon = raceOptions[selectedIndex];
+            const selectedIndex = parseInt(selection.customId.split('_')[2]);
+            // const selectedIcon = raceOptions[selectedIndex]; // ليس ضرورياً هنا، نمرر الإندكس للدالة التالية
 
             // تحديث الكولداون
             if (author.id !== OWNER_ID) {
@@ -455,7 +471,6 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                     safeCleanup(client, gameKey, author.id);
 
                     if (winner.isPlayer) {
-                        // حساب البوف والجوائز
                         const moraMultiplier = calculateMoraBuff(author, sql); 
                         const totalWin = Math.floor(bet * moraMultiplier); 
                         const finalPayout = bet + totalWin;
@@ -466,7 +481,6 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                             setScore.run(currentData);
                         }
 
-                        // نص البوف
                         const buffPercent = Math.floor((moraMultiplier - 1) * 100);
                         const buffText = buffPercent > 0 ? ` (+%${buffPercent})` : '';
 
@@ -571,7 +585,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     participants.forEach(p => {
                         const chance = Math.random();
                         let move = 0;
-                        p.status = "";
+                        p.status = ""; 
                         if (chance < 0.05) { move = 0; p.status = "💤"; }
                         else if (chance < 0.15) { move = 0.3; p.status = "🥕"; }
                         else if (chance > 0.90) { move = 4; p.status = "🚀"; }
