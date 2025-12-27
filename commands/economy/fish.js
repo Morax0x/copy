@@ -300,10 +300,8 @@ module.exports = {
                             .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
                             .setColor(Colors.Red);
                         
-                        // 🔥 تحديث: إعادة جلب البيانات لضمان عدم مسح كولداون العمل
-                        const freshData = client.getLevel.get(user.id, guild.id);
-                        freshData.lastFish = Date.now();
-                        client.setLevel.run(freshData);
+                        // 🔥 تحديث الكولداون فقط دون التأثير على العمل
+                        sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
 
                         activeFishingSessions.delete(user.id);
                         await j.editReply({ embeds: [failEmbed], components: [] });
@@ -392,12 +390,8 @@ module.exports = {
                             }
                         }
 
-                        // 🔥🔥🔥 الإصلاح الجذري: إعادة جلب البيانات لتجنب Overwrite للكولداونات الأخرى 🔥🔥🔥
-                        const freshData = client.getLevel.get(user.id, guild.id);
-                        freshData.lastFish = Date.now();
-                        freshData.mora = (freshData.mora || 0) + totalValue;
-                        
-                        client.setLevel.run(freshData);
+                        // 🔥🔥🔥 الإصلاح الجذري: استخدام UPDATE بدلاً من REPLACE لمنع مسح كولداون العمل 🔥🔥🔥
+                        sql.prepare("UPDATE levels SET mora = mora + ?, lastFish = ? WHERE user = ? AND guild = ?").run(totalValue, Date.now(), user.id, guild.id);
 
                         // تجهيز التقرير
                         const summary = {};
@@ -426,20 +420,22 @@ module.exports = {
                 });
 
                 pullCollector.on('end', async (collected, reason) => {
-                    if (reason !== 'success' && reason !== 'wrong_color') {
-                        // انتهى الوقت
-                        const failEmbed = new EmbedBuilder()
-                            .setTitle("💨 هربت السمكة!")
-                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
-                            .setColor(Colors.Red);
-                        
-                        // 🔥 تحديث: إعادة جلب البيانات
-                        const freshData = client.getLevel.get(user.id, guild.id);
-                        freshData.lastFish = Date.now();
-                        client.setLevel.run(freshData);
+                    try {
+                        if (reason !== 'success' && reason !== 'wrong_color') {
+                            // انتهى الوقت
+                            const failEmbed = new EmbedBuilder()
+                                .setTitle("💨 هربت السمكة!")
+                                .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
+                                .setColor(Colors.Red);
+                            
+                            // 🔥 تحديث الكولداون فقط
+                            sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
 
+                            await i.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
+                        }
+                    } finally {
+                        // 🛑 تأكد دائماً من الحذف
                         activeFishingSessions.delete(user.id);
-                        await i.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
                     }
                 });
 
