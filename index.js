@@ -231,7 +231,62 @@ function getWeekStartDateString() {
 }
 
 // ... (بقية دوال المساعدة كما هي تماماً) ...
-client.checkAndAwardLevelRoles = async function(member, newLevel) { if (!client.sql.open) return; try { const guild = member.guild; const allLevelRoles = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id); if (allLevelRoles.length === 0) return; const botMember = guild.members.me; if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) return; let roleToAdd = null; const rolesToRemove = []; let highestRoleFound = false; for (const row of allLevelRoles) { const role = guild.roles.cache.get(row.roleID); if (!role) continue; if (row.level <= newLevel && !highestRoleFound) { highestRoleFound = true; if (!member.roles.cache.has(role.id)) roleToAdd = role; } else { if (member.roles.cache.has(role.id)) rolesToRemove.push(role); } } if (roleToAdd && roleToAdd.position < botMember.roles.highest.position) { await member.roles.add(roleToAdd); } if (rolesToRemove.length > 0) { try { await member.roles.remove(rolesToRemove); } catch (e) {} } } catch (err) { console.error("[Level Roles] Error:", err.message); } }
+// 🔥🔥🔥 تم التعديل هنا: دالة توزيع الرتب الجديدة (تمنع التكرار) 🔥🔥🔥
+client.checkAndAwardLevelRoles = async function(member, newLevel) {
+    if (!client.sql.open) return;
+    try {
+        const guild = member.guild;
+        // جلب جميع رتب اللفلات من قاعدة البيانات
+        const allLevelRoles = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
+        if (allLevelRoles.length === 0) return;
+
+        const botMember = guild.members.me;
+        if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) return;
+
+        // 1. تحديد الرتبة "الوحيدة" التي يستحقها العضو حالياً بناءً على لفله
+        let targetRoleID = null;
+        for (const row of allLevelRoles) {
+            if (newLevel >= row.level) {
+                targetRoleID = row.roleID;
+                break; // وجدنا أعلى رتبة يستحقها، نتوقف عن البحث
+            }
+        }
+
+        let roleToAdd = null;
+        const rolesToRemove = [];
+
+        // 2. المرور على جميع رتب اللفلات المسجلة في السيرفر
+        for (const row of allLevelRoles) {
+            const role = guild.roles.cache.get(row.roleID);
+            if (!role) continue; // الرتبة محذوفة من الديسكورد، نتخطاها
+
+            // هل هذه هي الرتبة التي يجب أن يحصل عليها؟
+            if (targetRoleID && row.roleID === targetRoleID) {
+                // إذا كان لا يملكها، نضيفها له
+                if (!member.roles.cache.has(role.id) && role.position < botMember.roles.highest.position) {
+                    roleToAdd = role;
+                }
+            } else {
+                // أي رتبة لفل أخرى (قديمة أو غير مستحقة) يملكها العضو، نزيلها
+                if (member.roles.cache.has(role.id) && role.position < botMember.roles.highest.position) {
+                    rolesToRemove.push(role);
+                }
+            }
+        }
+
+        // 3. تنفيذ الإضافة والحذف
+        if (roleToAdd) {
+            await member.roles.add(roleToAdd).catch(console.error);
+        }
+        
+        if (rolesToRemove.length > 0) {
+            await member.roles.remove(rolesToRemove).catch(console.error);
+        }
+
+    } catch (err) {
+        console.error("[Level Roles] Error:", err.message);
+    }
+}
 
 // 🔥 تعديل دالة إرسال رسالة اللفل لتوجيه الكازينو الإضافي إلى الأساسي 🔥
 client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) {
