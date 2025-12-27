@@ -169,7 +169,7 @@ module.exports = {
             richBaits.sort((a, b) => b.luck - a.luck);
             const bestBait = richBaits[0];
             
-            // نستخدم الطعم (مجرد تحديد، الخصم يتم عند النجاح أو الفشل)
+            // نستخدم الطعم
             usedBaitName = bestBait.name;
             baitLuckBonus = bestBait.luck;
             
@@ -391,10 +391,7 @@ module.exports = {
 
                         userData.lastFish = Date.now();
                         userData.mora = (userData.mora || 0) + totalValue;
-                        // XP للصيد
-                        const xpGain = caughtFish.reduce((acc, f) => acc + (f.rarity * 5), 0);
-                        userData.xp += xpGain;
-                        userData.totalXP += xpGain;
+                        // 🔥🔥🔥 تم حذف كود الـ XP من هنا 🔥🔥🔥
                         
                         client.setLevel.run(userData);
 
@@ -411,7 +408,6 @@ module.exports = {
                             description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
                         }
                         description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-                        if (xpGain > 0) description += ` | ✨ \`+${xpGain} XP\``;
 
                         const resultEmbed = new EmbedBuilder()
                             .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
