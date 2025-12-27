@@ -783,6 +783,37 @@ client.on(Events.ClientReady, async () => {
     
     const lastRandomGiveawayDate = new Map(); setInterval(async () => { const today = new Date().toISOString().split('T')[0]; const now = Date.now(); for (const guild of client.guilds.cache.values()) { const guildID = guild.id; if (lastRandomGiveawayDate.get(guildID) === today) continue; const guildTimestamps = client.recentMessageTimestamps.get(guildID) || []; while (guildTimestamps.length > 0 && guildTimestamps[0] < (now - RECENT_MESSAGE_WINDOW)) { guildTimestamps.shift(); } const totalMessagesLast2Hours = guildTimestamps.length; if (totalMessagesLast2Hours < 200) continue; const roll = Math.random(); if (roll < 0.10) { try { const success = await createRandomDropGiveaway(client, guild); if (success) { lastRandomGiveawayDate.set(guildID, today); console.log(`[DropGA] Success: ${guild.name}`); } } catch (err) { console.error(`[DropGA] Error:`, err.message); } } } }, 30 * 60 * 1000); 
     
+    // 🔥🔥🔥 المكنسة التلقائية (الحل الجذري للتعليق) 🔥🔥🔥
+    setInterval(() => {
+        try {
+            // 1. تنظيف قائمة اللاعبين إذا كانت ممتلئة بشكل مريب لفترة طويلة
+            // (نقوم بتصفيرها كل 30 دقيقة لضمان عدم بقاء أحد عالقاً للأبد)
+            // ملاحظة: هذا قد يقطع لعبة جارية في تلك اللحظة بالضبط، لكنه يضمن حل مشكلة التعليق الدائم
+            if (client.activePlayers && client.activePlayers.size > 0) {
+                console.log(`[Auto-Cleanup] 🧹 Cleaning up ${client.activePlayers.size} active players states.`);
+                client.activePlayers.clear();
+            }
+
+            // 2. تنظيف قنوات الألعاب العالقة
+            if (client.activeGames && client.activeGames.size > 0) {
+                client.activeGames.clear();
+            }
+
+            // 3. تنظيف مؤقتات السباق
+            if (client.raceTimestamps && client.raceTimestamps.size > 0) {
+                client.raceTimestamps.clear();
+            }
+            
+            // 4. تنظيف قفل السوق (احتياطاً)
+            if (client.marketLocks && client.marketLocks.size > 0) {
+                 client.marketLocks.clear();
+            }
+
+        } catch (e) {
+            console.error("[Auto-Cleanup Error]", e);
+        }
+    }, 30 * 60 * 1000); // تكرار كل 30 دقيقة
+
     sendDailyMediaUpdate(client, sql);
 }); 
 
