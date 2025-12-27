@@ -270,8 +270,8 @@ module.exports = {
 
                 await i.editReply({ embeds: [biteEmbed], components: [gameRow] });
 
-                // 🔥🔥 زيادة الوقت للمستويات (5 ثواني للسهل و 8 ثواني للصعب) 🔥🔥
-                const reactionTime = requiredSequenceLength > 1 ? 8000 : 5000;
+                // 🔥🔥 زيادة الوقت للمستويات (8 ثواني للسهل و 12 ثواني للصعب) 🔥🔥
+                const reactionTime = requiredSequenceLength > 1 ? 12000 : 8000;
 
                 const pullFilter = j => j.user.id === user.id && j.customId.startsWith('fish_click_');
                 // نطلب عدد ضغطات يساوي طول السلسلة
@@ -300,8 +300,11 @@ module.exports = {
                             .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
                             .setColor(Colors.Red);
                         
-                        userData.lastFish = Date.now();
-                        client.setLevel.run(userData);
+                        // 🔥 تحديث: إعادة جلب البيانات لضمان عدم مسح كولداون العمل
+                        const freshData = client.getLevel.get(user.id, guild.id);
+                        freshData.lastFish = Date.now();
+                        client.setLevel.run(freshData);
+
                         activeFishingSessions.delete(user.id);
                         await j.editReply({ embeds: [failEmbed], components: [] });
                         return;
@@ -389,11 +392,12 @@ module.exports = {
                             }
                         }
 
-                        userData.lastFish = Date.now();
-                        userData.mora = (userData.mora || 0) + totalValue;
-                        // 🔥🔥🔥 تم حذف كود الـ XP من هنا 🔥🔥🔥
+                        // 🔥🔥🔥 الإصلاح الجذري: إعادة جلب البيانات لتجنب Overwrite للكولداونات الأخرى 🔥🔥🔥
+                        const freshData = client.getLevel.get(user.id, guild.id);
+                        freshData.lastFish = Date.now();
+                        freshData.mora = (freshData.mora || 0) + totalValue;
                         
-                        client.setLevel.run(userData);
+                        client.setLevel.run(freshData);
 
                         // تجهيز التقرير
                         const summary = {};
@@ -429,8 +433,11 @@ module.exports = {
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
-                        userData.lastFish = Date.now();
-                        client.setLevel.run(userData);
+                        // 🔥 تحديث: إعادة جلب البيانات
+                        const freshData = client.getLevel.get(user.id, guild.id);
+                        freshData.lastFish = Date.now();
+                        client.setLevel.run(freshData);
+
                         activeFishingSessions.delete(user.id);
                         await i.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
                     }
