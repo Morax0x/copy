@@ -835,6 +835,12 @@ async function _handleBuySellModal(i, client, sql, types) {
         
         // --- قسم السوق (Market) ---
         const assetId = i.customId.replace(isBuyMarket ? 'buy_modal_' : 'sell_modal_', '');
+        
+        // 🔥 إضافة فحص القفل هنا 🔥
+        if (isBuyMarket && client.marketLocks && client.marketLocks.has(assetId)) {
+             return await i.editReply({ content: `🚫 **السهم في حالة انهيار وإعادة هيكلة!**\nيرجى الانتظار قليلاً حتى يتم طرحه بالسعر الجديد.` });
+        }
+
         const item = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
         if (!item) return await i.editReply({ content: '❌ الأصل غير موجود.' });
         
