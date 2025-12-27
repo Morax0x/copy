@@ -3,6 +3,10 @@ const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
+// 🔥🔥🔥 مكاتب التصويت (Top.gg) 🔥🔥🔥
+const express = require('express');
+const { Webhook } = require('@top-gg/sdk');
+
 // ⬇️⬇️⬇️ آيدي سيرفرك الرئيسي ⬇️⬇️⬇️
 const MAIN_GUILD_ID = "952732360074494003"; 
 
@@ -119,6 +123,9 @@ const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
 const { handleShopInteractions } = require('./handlers/shop-handler.js'); 
 const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
+
+// 🔥🔥🔥 استدعاء هاندلر الانهيار الجديد 🔥🔥🔥
+const handleMarketCrash = require('./handlers/market-crash-handler.js');
 
 // ==================================================================
 // 5. إعداد العميل (Client)
@@ -478,48 +485,54 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
 // 5. Economy, Farm, and Loans
 // ==================================================================
 
-// 🔥 دالة تحديث أسعار السوق 🔥
+// 🔥 دالة تحديث أسعار السوق (محدثة للربط مع ملف الانهيار) 🔥
 function updateMarketPrices() {
     if (!sql.open) return;
     try {
+        // تهيئة المتغير إذا لم يكن موجوداً
+        if (!client.marketLocks) client.marketLocks = new Set();
+
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
 
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
         
-        const SATURATION_POINT = 2000; 
-        const MIN_PRICE = 10;           
-        const MAX_PRICE = 50000;        
+        const CRASH_PRICE = 10; 
 
-        const transaction = sql.transaction(() => {
-            for (const item of allItems) {
-                const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
-                const totalOwned = result.total || 0;
+        // لا نستخدم transaction هنا لأننا سنعالج كل سهم على حدة، والانهيار له transaction خاص به
+        for (const item of allItems) {
+            // تخطي الأسهم المقفلة (التي تنهار حالياً)
+            if (client.marketLocks.has(item.id)) continue;
 
-                let randomPercent = (Math.random() * 0.20) - 0.10;
-                const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
-                let finalChangePercent = randomPercent - saturationPenalty;
+            const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
+            const totalOwned = result.total || 0;
 
-                if (item.currentPrice > 5000 && finalChangePercent > 0) {
-                    finalChangePercent /= 2; 
-                }
+            let randomPercent = (Math.random() * 0.20) - 0.10;
+            const saturationPenalty = (totalOwned / 2000) * 0.02;
+            let finalChangePercent = randomPercent - saturationPenalty;
 
-                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
+            if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
+            if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
-                const oldPrice = item.currentPrice;
-                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
+            const oldPrice = item.currentPrice;
+            let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
-                if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
-                if (newPrice > MAX_PRICE) newPrice = MAX_PRICE;
-
-                const changeAmount = newPrice - oldPrice;
-                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-                
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+            // 🛑🛑🛑 فحص الانهيار واستدعاء الملف الخارجي 🛑🛑🛑
+            if (newPrice <= CRASH_PRICE) {
+                // استدعاء الهاندلر الجديد
+                handleMarketCrash(client, sql, item); 
+                continue; // ننتقل للسهم التالي ولا نحدث السعر هنا (الهاندلر سيتكفل بالباقي)
             }
-        });
-        transaction();
-        console.log(`[Market] Prices updated (Saturation Logic Applied).`);
+            
+            // حدود السعر العادية
+            if (newPrice > 50000) newPrice = 50000;
+
+            const changeAmount = newPrice - oldPrice;
+            const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
+            
+            updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+        }
+        console.log(`[Market] Prices updated.`);
     } catch (err) { console.error("[Market] Error updating prices:", err.message); }
 }
 
@@ -783,5 +796,31 @@ const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 for (const file of eventFiles) { const filePath = path.join(eventsPath, file); const event = require(filePath); if (event.once) { client.once(event.name, (...args) => event.execute(...args)); } else { client.on(event.name, (...args) => event.execute(...args)); } }
 console.log("[System] Events Loaded.");
+
+// 🔥🔥🔥 إعداد سيرفر استقبال التصويت 🔥🔥🔥
+const app = express();
+const webhook = new Webhook('اكتب_كلمة_سر_صعبة_من_راسك_هنا'); 
+
+app.post('/vote', webhook.listener(async vote => {
+    const userId = vote.user;
+    console.log(`📝 [Top.gg] تصويت جديد من: ${userId}`);
+    try {
+        const userExists = sql.prepare("SELECT * FROM levels WHERE user = ?").get(userId);
+        if (userExists) {
+            // الجائزة: 1000 مورا
+            sql.prepare("UPDATE levels SET mora = mora + 1000 WHERE user = ?").run(userId);
+            const user = await client.users.fetch(userId).catch(() => null);
+            if (user) {
+                user.send("✅ **شكراً لتصويتك للسيرفر!**\nحصلت على **1000** مورا كجائزة 🎉").catch(() => {});
+            }
+        }
+    } catch (error) {
+        console.error('[Top.gg] حدث خطأ أثناء معالجة التصويت:', error);
+    }
+}));
+
+app.listen(3000, () => {
+    console.log('[Top.gg] Webhook is listening on port 3000');
+});
 
 client.login(botToken);
