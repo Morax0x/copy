@@ -3,10 +3,6 @@ const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
-// 🔥🔥🔥 مكاتب التصويت (Top.gg) 🔥🔥🔥
-const express = require('express');
-const { Webhook } = require('@top-gg/sdk');
-
 // ⬇️⬇️⬇️ آيدي سيرفرك الرئيسي ⬇️⬇️⬇️
 const MAIN_GUILD_ID = "952732360074494003"; 
 
@@ -796,31 +792,5 @@ const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 for (const file of eventFiles) { const filePath = path.join(eventsPath, file); const event = require(filePath); if (event.once) { client.once(event.name, (...args) => event.execute(...args)); } else { client.on(event.name, (...args) => event.execute(...args)); } }
 console.log("[System] Events Loaded.");
-
-// 🔥🔥🔥 إعداد سيرفر استقبال التصويت 🔥🔥🔥
-const app = express();
-const webhook = new Webhook('اكتب_كلمة_سر_صعبة_من_راسك_هنا'); 
-
-app.post('/vote', webhook.listener(async vote => {
-    const userId = vote.user;
-    console.log(`📝 [Top.gg] تصويت جديد من: ${userId}`);
-    try {
-        const userExists = sql.prepare("SELECT * FROM levels WHERE user = ?").get(userId);
-        if (userExists) {
-            // الجائزة: 1000 مورا
-            sql.prepare("UPDATE levels SET mora = mora + 1000 WHERE user = ?").run(userId);
-            const user = await client.users.fetch(userId).catch(() => null);
-            if (user) {
-                user.send("✅ **شكراً لتصويتك للسيرفر!**\nحصلت على **1000** مورا كجائزة 🎉").catch(() => {});
-            }
-        }
-    } catch (error) {
-        console.error('[Top.gg] حدث خطأ أثناء معالجة التصويت:', error);
-    }
-}));
-
-app.listen(3000, () => {
-    console.log('[Top.gg] Webhook is listening on port 3000');
-});
 
 client.login(botToken);
