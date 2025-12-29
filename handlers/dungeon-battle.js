@@ -58,6 +58,33 @@ function cleanName(name) {
     return name.replace(regex, '').trim();
 }
 
+// 🔥 دالة فحص الموت (تستخدم لتحديث الحالة فوراً) 🔥
+function checkDeaths(players, floor, log, threadChannel) {
+    players.forEach(p => {
+        if (!p.isDead && p.hp <= 0) {
+            p.hp = 0;
+            p.isDead = true;
+            p.deathFloor = floor;
+            
+            // لو كان كاهن، يعالج الفريق قبل موته
+            if (p.class === 'Priest' && !p.isPermDead) {
+                players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
+                log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
+                threadChannel.send(`✨⚰️ **${p.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
+            }
+
+            if (p.reviveCount >= 1) {
+                p.isPermDead = true;
+                log.push(`💀 **${p.name}** سقط وتحللت جثته!`);
+                threadChannel.send(`💀 **${p.name}** سقط وتحللت جثته - لا يمكن إحياؤه!`).catch(()=>{});
+            } else {
+                log.push(`💀 **${p.name}** سقط!`);
+                threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
+            }
+        }
+    });
+}
+
 // --- Main Dungeon Execution Logic ---
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
@@ -575,7 +602,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                                // 🔥 فحص الموت الجماعي بعد المهارة (مثل Sacrifice) 🔥
+                                checkDeaths(players, floor, log, threadChannel); // 🔥 فحص الموت
                                 if (players.every(p => p.isDead)) {
                                     ongoing = false;
                                     collector.stop('all_dead');
@@ -647,7 +674,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                                // 🔥 فحص الموت الجماعي بعد الجرعة 🔥
+                                checkDeaths(players, floor, log, threadChannel); // 🔥 فحص الموت
                                 if (players.every(p => p.isDead)) {
                                     ongoing = false;
                                     collector.stop('all_dead');
@@ -694,6 +721,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     if (isCrit) dmg = Math.floor(dmg * 1.5);
+
+                                    // 🔥🔥 سقف الدمج (Damage Cap) 🔥🔥
+                                    if (floor <= 10 && dmg > 120) dmg = 120;
+                                    else if (floor >= 11 && floor <= 14 && dmg > 150) dmg = 150;
+
                                     monster.hp -= dmg; p.totalDamage += dmg; 
                                     log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
                                 }
@@ -703,7 +735,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                            // 🔥 فحص الموت الجماعي بعد الهجوم (الانتحار بالخطأ) 🔥
+                            checkDeaths(players, floor, log, threadChannel); // 🔥 فحص الموت
                             if (players.every(p => p.isDead)) {
                                 ongoing = false;
                                 collector.stop('all_dead');
@@ -729,6 +761,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp <= 0) { ongoing = false; await battleMsg.edit({ components: [] }).catch(()=>{}); }
 
+            // تحديث التهدئة
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
@@ -769,6 +802,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         });
                     }
 
+                    // 🔥 تحديث فوري إذا مات الوحش من السم 🔥
                     if (monster.hp <= 0) {
                          monster.hp = 0;
                          ongoing = false;
@@ -846,30 +880,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (takenDmg === 0 && dmg > 0) log.push(`👻 **${target.name}** راوغ الهجوم!`);
                                 else log.push(`👹 **${monster.name}** ضرب **${target.name}** (${takenDmg})`);
                                 
-                                if(target.hp <= 0 && !target.isDead) { 
-                                    target.hp = 0; 
-                                    target.isDead = true; 
-                                    target.deathFloor = floor; 
-                                    
-                                    if (target.class === 'Priest' && !target.isPermDead) {
-                                        players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
-                                        log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
-                                        threadChannel.send(`✨⚰️ **${target.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
-                                    }
-
-                                    if (target.reviveCount >= 1) {
-                                        target.isPermDead = true;
-                                        log.push(`💀 **${target.name}** سقط وتحللت جثته!`);
-                                        threadChannel.send(`💀 **${target.name}** سقط وتحللت جثته - لا يمكن إحياؤه)!`).catch(()=>{});
-                                    } else {
-                                        log.push(`💀 **${target.name}** سقط!`);
-                                        threadChannel.send(`💀 **${target.name}** سقط في أرض المعركة!`).catch(()=>{});
-                                    }
-                                }
+                                // 🔥 فحص الموت الشامل بعد هجوم الوحش 🔥
+                                checkDeaths(players, floor, log, threadChannel);
                             }
                         }
                     }
                 }
+                
                 if (players.every(p => p.isDead)) ongoing = false;
                 else {
                     if (log.length > 5) log = log.slice(-5);
@@ -898,7 +915,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ❖ تعديل منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
         
+        // 1. تحديد الطوابق الخاصة التي يسمح فيها بالانسحاب (فوق الـ 20)
         const specificRetreatFloors = [33, 50, 80];
+        
+        // 2. التحقق مما إذا كان الانسحاب مسموحاً:
         const canRetreat = floor <= 20 || specificRetreatFloors.includes(floor);
 
         let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
@@ -908,6 +928,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         );
 
         if (floor === 20) {
+             // تنبيه خاص للطابق 20
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في أغلب الطوابق!`;
@@ -915,6 +936,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
         }
 
+        // إضافة زر الانسحاب فقط إذا كان الشرط متحققاً
         if (canRetreat) {
              restRow.addComponents(
                 new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
@@ -935,14 +957,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
+        // 🔥 مؤقت التنبيه قبل النهاية بـ 10 ثواني 🔥
         const warningTimeout = setTimeout(() => {
             threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
-        }, 50000); 
+        }, 50000); // 50 ثانية
         
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
-                clearTimeout(warningTimeout); 
+                clearTimeout(warningTimeout); // إيقاف التنبيه عند التفاعل
 
                 if (i.customId === 'continue') {
                     if (i.user.id !== hostId) {
@@ -976,7 +999,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
             
             decCollector.on('end', (c, reason) => {
-                clearTimeout(warningTimeout); 
+                clearTimeout(warningTimeout); // التأكد من إيقاف المؤقت
                 res(reason);
             });
         });
@@ -984,10 +1007,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         await restMsg.edit({ components: [] }).catch(()=>{});
 
         if (decision === 'time') { 
+            // 🔥🔥 موت الفريق بالكامل عند انتهاء الوقت 🔥🔥
             players.forEach(p => { p.isDead = true; p.hp = 0; });
             await threadChannel.send(`☠️ **انتهى الوقت!** ابتلع الدانجون الفريق بأكمله بسبب تردد القائد...`).catch(()=>{});
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            break; 
+            break; // إنهاء الدانجون
         } 
         else if (decision === 'retreat') {
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
@@ -995,15 +1019,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         } 
         else if (decision === 'continue') {
             
+            // فخ الشذوذ الزمكاني (بدون منشن)
             if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
                 
                 const minTarget = floor + 2;
                 const maxTarget = 95;
-                
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
-
                 floor = targetFloor - 1; 
 
                 const trapEmbed = new EmbedBuilder()
@@ -1015,8 +1038,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await threadChannel.send({ embeds: [trapEmbed] }).catch(()=>{});
             } else {
                 
+                // رسالة التوغل
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
+                // نظام الأحداث
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
 
                 if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
