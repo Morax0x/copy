@@ -326,7 +326,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
-                                // ⚡🔥 معالجة بوابة الأبعاد (نقل الطوابق) 🔥⚡
+                                // ⚡🔥 معالجة بوابة الأبعاد (نقل الطوابق) - تم الإصلاح هنا 🔥⚡
                                 if (result.type === 'dimension_gate_request') {
                                     const modal = new ModalBuilder()
                                         .setCustomId('modal_dimension_gate')
@@ -345,9 +345,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         .setRequired(false);
                                     modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
                                     
+                                    // عرض المودال
                                     await subI.showModal(modal);
 
-                                    // انتظار الاستجابة للمودال فوراً
+                                    // ⚠️ انتظار الاستجابة للمودال فوراً (هذا هو الإصلاح)
                                     try {
                                         const modalInteraction = await subI.awaitModalSubmit({
                                             filter: (m) => m.customId === 'modal_dimension_gate' && m.user.id === subI.user.id,
@@ -375,15 +376,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
                                         await modalInteraction.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
                                         
+                                        // إيقاف الكوليكتور الرئيسي لتحديث اللوب
                                         collector.stop('monster_dead');
                                         return; 
 
                                     } catch (err) {
+                                        // انتهاء الوقت او خطأ في المودال
                                         return;
                                     }
                                 }
 
-                                // ⚡🔥 معالجة انسحاب الإمبراطور (تمت الإضافة هنا) 🔥⚡
+                                // ⚡🔥 معالجة انسحاب الإمبراطور (المهارة) 🔥⚡
                                 if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                                      const index = players.findIndex(p => p.id === OWNER_ID);
                                      if (index > -1) {
@@ -400,14 +403,21 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actedPlayers.push(p.id);
                                     p.skipCount = 0;
                                     await subI.update({ content: "✅ تم التنفيذ!", components: [] });
-                                    // التحقق من موت الوحش بعد المهارة مباشرة
+                                    
+                                    // 🔥🔥 إصلاح التعليق: التحقق من موت الوحش + إنهاء الدور 🔥🔥
                                     if (monster.hp <= 0) {
                                         monster.hp = 0;
                                         ongoing = false;
                                         collector.stop('monster_dead');
-                                        return;
+                                        return; // إنهاء فوري
                                     }
-                                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
+                                    // التأكد من أن الدور يمشي اذا الكل لعب
+                                    if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
+                                        clearTimeout(turnTimeout); collector.stop('turn_end'); 
+                                    } else {
+                                        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+                                    }
                                 }
                             }
                         });
@@ -792,8 +802,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // 1. تحديد الطوابق الخاصة التي يسمح فيها بالانسحاب (فوق الـ 20)
         const specificRetreatFloors = [33, 50, 80];
         
-        // 2. التحقق مما إذا كان الانسحاب مسموحاً
-        const canRetreat = floor < 20 || specificRetreatFloors.includes(floor);
+        // 2. التحقق مما إذا كان الانسحاب مسموحاً:
+        // - إذا كان الطابق 20 أو أقل: مسموح.
+        // - إذا كان الطابق هو أحد نقاط التفتيش (33, 50, 80): مسموح.
+        // - غير ذلك: ممنوع.
+        const canRetreat = floor <= 20 || specificRetreatFloors.includes(floor);
 
         let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
 
@@ -801,8 +814,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success)
         );
 
-        if (floor >= 20) {
-             restDesc += `\n\n✥ تحذيـر: التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
+        if (floor === 20) {
+             // تنبيه خاص للطابق 20
+             restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
+        } else if (floor > 20) {
+             restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في أغلب الطوابق!`;
         } else {
              restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
         }
