@@ -3,17 +3,15 @@ const { PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
 module.exports = {
     name: 'warn',
     description: 'توجيه تحذير رسمي لعضو',
-    aliases: ['تحذير', 'انذار'],
+    aliases: ['ت', 'تحذير', 'انذار'],
     category: 'Admin',
     usage: 'warn <@user> [reason]',
     
     async execute(message, args) {
         const sql = message.client.sql;
 
-        // 1. التحقق من الصلاحيات (Kick Members كحد أدنى للتحذير الرسمي)
-        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
-            return message.reply('❌ **ليس لديك صلاحية لتوجيه تحذيرات رسمية.**');
-        }
+        // 1. التحقق من الصلاحيات (تجاهل تام إذا لم يملك صلاحية)
+        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) return;
 
         // 2. جلب العضو
         const targetArg = args[0];
@@ -38,31 +36,31 @@ module.exports = {
         let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
 
-        // 4. إشعار الخاص
+        // 4. إشعار الخاص (التصميم المطلوب)
         let dmSent = false;
         try {
             const dmEmbed = new EmbedBuilder()
-                .setTitle(`⚠️ تلقيت تحذيراً في: ${message.guild.name}`)
-                .setColor(Colors.Yellow)
+                .setTitle('✥ تـلـقـيت تـحذيـر')
+                .setColor(Colors.Red) // لون أحمر
                 .addFields(
-                    { name: 'السبب', value: reason },
-                    { name: 'بواسطة', value: message.author.tag }
+                    { name: '✶ السبب:', value: reason, inline: false },
+                    { name: '✶ السيرفر:', value: message.guild.name, inline: false },
+                    { name: '✶ بواسـطـة:', value: `<@${message.author.id}>`, inline: false }
                 )
-                .setDescription('تكرار المخالفات قد يؤدي إلى الطرد أو الحظر.')
+                .setImage('https://i.postimg.cc/VkD37Gqk/a5d06761d4d3fed9158d034359c934b4.gif')
                 .setTimestamp();
             await targetMember.send({ embeds: [dmEmbed] });
             dmSent = true;
         } catch (e) { dmSent = false; }
 
-        // 5. حفظ التحذير
-        // لاحظ النوع 'WARN'
+        // 5. حفظ التحذير في قاعدة البيانات
         sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
                      VALUES (?, ?, ?, 'WARN', ?, ?, ?, ?)`)
-           .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
+            .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
 
-        // 6. الرد
+        // 6. الرد في الشات
         const successEmbed = new EmbedBuilder()
-            .setColor(Colors.Yellow)
+            .setColor(Colors.Red)
             .setDescription(`⚠️ **تم تحذير ${targetMember.user.tag}**\n📁 **القضية رقم:** \`#${newCaseID}\`\n📝 **السبب:** ${reason}`)
             .setFooter({ text: dmSent ? 'تم إشعاره بالخاص' : 'لم يتم إشعاره (الخاص مغلق)' });
         
@@ -73,7 +71,6 @@ module.exports = {
     }
 };
 
-// دالة اللوق (نفس الدالة السابقة ولكن بلون أصفر)
 function sendModLog(message, targetMember, type, reason, caseID) {
     const sql = message.client.sql;
     const settings = sql.prepare("SELECT modLogChannelID FROM settings WHERE guild = ?").get(message.guild.id);
