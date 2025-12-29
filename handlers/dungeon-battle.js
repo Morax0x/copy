@@ -99,44 +99,56 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             // تهيئة متغير الدرع المشتراة
             playerData.startingShield = 0; 
             
-            // 🔥🔥🔥 فحص ذكي للختم (مهارات واسلحة) بدون لوج 🔥🔥🔥
+            // ============================================================
+            // 🔥🔥🔥 الفحص النووي للختم (Deep Scan) 🔥🔥🔥
+            // ============================================================
             playerData.isSealed = false;
             
             if (m.id !== OWNER_ID) {
-                let allItemsLevel = [];
+                let levelsFound = [];
 
-                // 1. معالجة المهارات (تفكيك النص اذا كان JSON)
+                // دالة مساعدة لاستخراج الرقم مهما كان نوعه
+                const extractLvl = (obj) => {
+                    if (!obj) return;
+                    if (obj.level) levelsFound.push(parseInt(obj.level) || 0);
+                    if (obj.lvl) levelsFound.push(parseInt(obj.lvl) || 0);
+                };
+
+                // 1. فحص المهارات (Skills)
                 let rawSkills = playerData.skills;
+                // إذا كانت نص JSON، قم بفكها
                 if (typeof rawSkills === 'string') {
                     try { rawSkills = JSON.parse(rawSkills); } catch(e) { rawSkills = {}; }
                 }
                 
-                // تحويل المهارات لمصفوفة
                 if (Array.isArray(rawSkills)) {
-                    rawSkills.forEach(s => allItemsLevel.push(s.level || s.lvl || 0));
+                    rawSkills.forEach(s => extractLvl(s));
                 } else if (rawSkills && typeof rawSkills === 'object') {
-                    Object.values(rawSkills).forEach(s => allItemsLevel.push(s.level || s.lvl || 0));
+                    Object.values(rawSkills).forEach(s => extractLvl(s));
                 }
 
-                // 2. معالجة السلاح (إذا كان موجود في الداتا)
+                // 2. فحص السلاح (Weapon)
                 let rawWeapon = playerData.weapon;
                 if (rawWeapon) {
                     if (typeof rawWeapon === 'string') {
                         try { rawWeapon = JSON.parse(rawWeapon); } catch(e) {}
                     }
                     if (typeof rawWeapon === 'object') {
-                        allItemsLevel.push(rawWeapon.level || rawWeapon.lvl || 0);
+                        extractLvl(rawWeapon);
                     }
                 }
 
-                // 3. الفحص النهائي: هل يوجد أي شيء فوق لفل 10؟
-                const isOverpowered = allItemsLevel.some(lvl => lvl > 10);
+                // 3. فحص احتياطي مباشر على اللاعب (بعض الأنظمة تخزن الليفل مباشرة)
+                if (playerData.weaponLevel) levelsFound.push(parseInt(playerData.weaponLevel) || 0);
+
+                // 4. القرار النهائي: هل يوجد أي رقم أكبر من 10؟
+                const isOverpowered = levelsFound.some(lvl => lvl > 10);
                 
                 if (isOverpowered) {
                     playerData.isSealed = true;
                 }
             }
-            // ------------------------------------------------
+            // ============================================================
 
             players.push(playerData);
         }
