@@ -108,11 +108,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
-    // 🔥🔥🔥 رسالة الختم (تظهر في البداية) 🔥🔥🔥
-    const ownerPlayerStart = players.find(p => p.id === OWNER_ID);
-    if (ownerPlayerStart) {
-        threadChannel.send(`✶ <@${ownerPlayerStart.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
-    }
+    // 🔥🔥🔥 رسالة الختم (للجميع ما عدا الاونر) 🔥🔥🔥
+    // نفترض هنا أن المشاركين مستواهم عالي لأنهم في دانجون
+    players.forEach(p => {
+        if (p.id !== OWNER_ID) {
+             threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
+        }
+    });
 
     const maxFloors = 100; 
     let totalAccumulatedCoins = 0;
@@ -142,12 +144,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
 
-        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19) 🔥🔥🔥
+        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19 للجميع ما عدا الاونر) 🔥🔥🔥
         if (floor === 19) {
-            const ownerPlayerAlive = players.find(p => p.id === OWNER_ID && !p.isDead);
-            if (ownerPlayerAlive) {
-                await threadChannel.send(`✶ <@${ownerPlayerAlive.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
-            }
+            players.forEach(p => {
+                if (p.id !== OWNER_ID && !p.isDead) {
+                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                }
+            });
         }
 
         // 🔥 الحفاظ على الدروع والبفات المهمة فقط 🔥
