@@ -5,56 +5,55 @@ const { ensureInventoryTable, buildHpBar } = require('./utils');
 function buildSkillSelector(player) {
     const options = [];
 
-    if (player.id === OWNER_ID) {
-        options.push(new StringSelectMenuOptionBuilder().setLabel('تركيز تام').setValue('skill_secret_owner').setDescription('ضربة قاضية خاصة بالمالك.').setEmoji('👁️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('رحيل بصمت').setValue('skill_owner_leave').setDescription('ترك الوحش يحتضر والمغادرة.').setEmoji('🚪'));
-        
-        options.push(new StringSelectMenuOptionBuilder().setLabel('صرخة الحرب').setValue('class_leader').setDescription('زيادة ضرر الفريق 30%.').setEmoji('👑'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استفزاز وتصليب').setValue('class_tank').setDescription('جذب الوحش وتقليل الضرر 60%.').setEmoji('🛡️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('النور المقدس').setValue('class_priest').setDescription('شفاء الفريق أو إحياء ميت.').setEmoji('✨'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('سجن الجليد').setValue('class_mage').setDescription('تجميد الوحش.').setEmoji('❄️'));
-        options.push(new StringSelectMenuOptionBuilder().setLabel('استدعاء حارس الظل').setValue('class_summoner').setDescription('استدعاء وحش مساند.').setEmoji('🐺'));
+    // --- تعديل: إزالة القائمة الخاصة بالأونر من هنا ---
+    // لأن الأونر أصبح يستخدم زر "الدفاع" لفتح لوحة التحكم الشاملة.
+    // زر "المهارات" العادي سيعرض المهارات المتاحة بشكل طبيعي (أو يمكن تعطيله للأونر).
+    
+    // إذا ضغط الأونر زر المهارات العادي، نعرض له مهارات الكلاس والمهارات العادية فقط
+    // (المهارات الخاصة جداً "محو الوجود" وغيرها مكانها في زر الدفاع)
 
-        skillsConfig.forEach(s => {
-             if (!options.some(o => o.data.value === s.id)) {
-                 options.push(new StringSelectMenuOptionBuilder().setLabel(s.name).setValue(s.id).setDescription(s.description ? s.description.substring(0, 90) : "مهارة").setEmoji(s.emoji || '📜'));
-             }
-        });
+    const cd = player.special_cooldown;
+    const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
+    
+    let myClassSkill = null;
+    // تعريب أسماء الكلاسات والمهارات
+    if (player.class === 'Leader') myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30%.", emoji: "👑" };
+    else if (player.class === 'Tank') myClassSkill = { name: "استفزاز وتصليب", desc: "جذب الوحش وتقليل الضرر 60%.", emoji: "🛡️" };
+    else if (player.class === 'Priest') myClassSkill = { name: "النور المقدس", desc: "شفاء الفريق أو إحياء ميت.", emoji: "✨" };
+    else if (player.class === 'Mage') myClassSkill = { name: "سجن الجليد", desc: "تجميد الوحش.", emoji: "❄️" };
+    else if (player.class === 'Summoner') myClassSkill = { name: "استدعاء حارس الظل", desc: "استدعاء وحش مساند.", emoji: "🐺" };
 
-    } else {
-        const cd = player.special_cooldown;
-        const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
-        
-        let myClassSkill = null;
-        if (player.class === 'Leader') myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30%.", emoji: "👑" };
-        else if (player.class === 'Tank') myClassSkill = { name: "استفزاز وتصليب", desc: "جذب الوحش وتقليل الضرر 60%.", emoji: "🛡️" };
-        else if (player.class === 'Priest') myClassSkill = { name: "النور المقدس", desc: "شفاء الفريق أو إحياء ميت.", emoji: "✨" };
-        else if (player.class === 'Mage') myClassSkill = { name: "سجن الجليد", desc: "تجميد الوحش.", emoji: "❄️" };
-        else if (player.class === 'Summoner') myClassSkill = { name: "استدعاء حارس الظل", desc: "استدعاء وحش مساند.", emoji: "🐺" };
-
-        if (myClassSkill) {
-            options.push(new StringSelectMenuOptionBuilder()
-                .setLabel(myClassSkill.name)
-                .setValue('class_special_skill')
-                .setDescription(`${myClassSkill.desc}${cdText}`)
-                .setEmoji(myClassSkill.emoji));
-        }
-
-        const userSkills = player.skills || {};
-        const availableSkills = Object.values(userSkills).filter(s => s.currentLevel > 0 || s.id.startsWith('race_'));
-        
-        availableSkills.forEach(skill => {
-            const cooldown = player.skillCooldowns[skill.id] || 0;
-            const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
-            options.push(new StringSelectMenuOptionBuilder()
-                .setLabel(skill.name)
-                .setValue(skill.id)
-                .setDescription(description.substring(0, 100))
-                .setEmoji(skill.emoji || '✨'));
-        });
+    if (myClassSkill) {
+        options.push(new StringSelectMenuOptionBuilder()
+            .setLabel(myClassSkill.name)
+            .setValue('class_special_skill')
+            .setDescription(`${myClassSkill.desc}${cdText}`)
+            .setEmoji(myClassSkill.emoji));
     }
 
+    const userSkills = player.skills || {};
+    // فلترة المهارات: إما مهارة مشتراة (Level > 0) أو مهارة عرقية (race_)
+    // ونستثني مهارات الأونر الخاصة من الظهور هنا لتجنب الازدحام
+    const availableSkills = Object.values(userSkills).filter(s => 
+        (s.currentLevel > 0 || s.id.startsWith('race_')) && 
+        s.stat_type !== 'Owner' // إخفاء مهارات الأونر من القائمة العادية
+    );
+    
+    availableSkills.forEach(skill => {
+        // للأونر: الكولداون دائماً 0
+        const cooldown = (player.id === OWNER_ID) ? 0 : (player.skillCooldowns[skill.id] || 0);
+        const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
+        
+        options.push(new StringSelectMenuOptionBuilder()
+            .setLabel(skill.name)
+            .setValue(skill.id)
+            .setDescription(description.substring(0, 100))
+            .setEmoji(skill.emoji || '✨'));
+    });
+
     if (options.length === 0) return null;
+    
+    // التأكد من عدم تجاوز الحد الأقصى (25 خيار)
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
@@ -119,9 +118,10 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === 'Priest') arabClass = 'كاهن';
         else if (p.class === 'Mage') arabClass = 'ساحر';
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
-        else if (p.class === '???') { arabClass = '؟؟؟'; icon += '👁️'; } 
+        // تعديل بسيط لإظهار كلاس الأونر بشكل مميز
+        else if (p.id === OWNER_ID) { arabClass = 'الإمبراطور'; icon += '👁️'; } 
 
-        const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'MORT') : buildHpBar(p.hp, p.maxHp, p.shield);
+        const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
         let displayName;
         let statusCircle;
 
@@ -156,6 +156,7 @@ function generateBattleRows() {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('heal').setLabel('جرعة').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
+        // هذا الزر سيتحول إلى "لوحة التحكم" للأونر تلقائياً في ملف المعركة
         new ButtonBuilder().setCustomId('def').setLabel('دفاع').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
     );
 
