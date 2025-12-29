@@ -100,7 +100,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
+            // 🔥🔥🔥 الفحص الحقيقي للختم 🔥🔥🔥
             // ============================================================
             playerData.isSealed = false;
             
@@ -108,17 +108,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 let maxItemLevel = 0;
 
                 // 1. فحص المهارات (Skills)
-                // المهارات عبارة عن Object والمفتاح هو currentLevel
                 if (playerData.skills && typeof playerData.skills === 'object') {
                     const skillValues = Object.values(playerData.skills);
                     for (const skill of skillValues) {
-                        // نحاول قراءة currentLevel، وإذا مو موجود نجرب level
                         const lvl = parseInt(skill.currentLevel) || parseInt(skill.level) || 0;
                         if (lvl > maxItemLevel) maxItemLevel = lvl;
                     }
                 }
 
-                // 2. فحص السلاح (Weapon) - مع الحماية من undefined
+                // 2. فحص السلاح (Weapon)
                 if (playerData.weapon && typeof playerData.weapon === 'object') {
                     const wLvl = parseInt(playerData.weapon.currentLevel) || parseInt(playerData.weapon.level) || parseInt(playerData.weapon.lvl) || 0;
                     if (wLvl > maxItemLevel) maxItemLevel = wLvl;
@@ -652,7 +650,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (canAttack) {
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                                    const currentAtk = Math.floor(p.atk * atkMultiplier);
+                                    // 🔥🔥 تصحيح الخطأ: استخدام let بدلاً من const 🔥🔥
+                                    let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
                                     // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
                                     if (p.isSealed) {
