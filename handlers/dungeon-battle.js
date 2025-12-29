@@ -100,10 +100,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم مع المضاعف المتدرج 🔥🔥🔥
+            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
             // ============================================================
             playerData.isSealed = false;
-            playerData.sealMultiplier = 1.0; // الافتراضي 100%
+            playerData.sealMultiplier = 1.0; 
             
             if (m.id !== OWNER_ID) {
                 let maxItemLevel = 0;
@@ -126,7 +126,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // 3. قرار الختم
                 if (maxItemLevel > 10) {
                     playerData.isSealed = true;
-                    playerData.sealMultiplier = 0.2; // البداية: القوة 20% فقط
+                    playerData.sealMultiplier = 0.2; // البداية 20%
                 }
             }
             // ============================================================
@@ -181,7 +181,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
-                    p.sealMultiplier = 0.4; // رفع القوة إلى 40%
+                    p.sealMultiplier = 0.4;
                     threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
                 }
             });
@@ -192,7 +192,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
                     p.isSealed = false; 
-                    p.sealMultiplier = 1.0; // رجوع القوة كاملة
+                    p.sealMultiplier = 1.0;
                     threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                 }
             });
@@ -512,11 +512,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
 
-                    // 🔥🔥 تحقق من الشلل (Stun Check) 🔥🔥
+                    // 🔥🔥 تحقق من الشلل (Stun Check) - مع التحديث 🔥🔥
                     if (p.effects.some(e => e.type === 'stun')) {
                         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
                         actedPlayers.push(p.id); 
                         p.skipCount = 0; 
+                        log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
+                        
+                        // 🔥 تحديث الرسالة لكي لا تعلق اللعبة 🔥
+                        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                             clearTimeout(turnTimeout); 
                             collector.stop('turn_end'); 
@@ -555,7 +560,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 // 🔥🔥🔥 نيرف المهارات (Skill Nerf) مع المضاعف المتغير 🔥🔥🔥
                                 let originalAtk = p.atk;
-                                // نستخدم sealMultiplier بدل الرقم الثابت
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     if (skillObj.effectValue) {
@@ -680,7 +684,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
-                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي مع المضاعف المتغير 🔥🔥🔥
+                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
                                     if (p.isSealed) {
                                         currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
                                     }
