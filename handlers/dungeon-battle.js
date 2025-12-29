@@ -240,7 +240,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     }
 
                     // ============================================================
-                    // 👑 منطق لوحة تحكم الإمبراطور (زر الدفاع) 👑
+                    // 👑 منطق لوحة تحكم الإمبراطور (زر الدفاع) - تم الإصلاح باستخدام Collector مستقل 👑
                     // ============================================================
                     if (i.customId === 'def' && i.user.id === OWNER_ID) {
                         const menu = new StringSelectMenuBuilder()
@@ -253,105 +253,120 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 { label: 'مهـارات عامة', description: 'المهارات الأساسية بقوة مضاعفة', value: 'cat_skills', emoji: '📜' },
                             ]);
                         
-                        return i.reply({ 
+                        // نرسل الرسالة ونحفظ الرد في متغير لنستقبل التفاعلات عليه
+                        const ownerMenuMsg = await i.reply({ 
                             content: `**👑 مرحباً مولاي الإمبراطور..**\nاختر التصنيف لاستدعاء القوة:`, 
                             components: [new ActionRowBuilder().addComponents(menu)], 
-                            ephemeral: true 
+                            ephemeral: true,
+                            fetchReply: true 
                         });
-                    }
 
-                    // 🛠️ معالجة اختيارات قوائم الإمبراطور
-                    if (i.isStringSelectMenu()) {
-                        if (i.customId === 'owner_god_menu_category') {
-                            const category = i.values[0];
-                            let options = [];
+                        // إنشاء كوليكتور خاص لهذه القائمة فقط
+                        const menuCollector = ownerMenuMsg.createMessageComponentCollector({ 
+                            filter: subI => subI.user.id === i.user.id, 
+                            time: 60000 
+                        });
 
-                            if (category === 'cat_emperor') {
-                                options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
-                                    label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
-                                }));
-                            } else if (category === 'cat_races') {
-                                options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
-                                    label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
-                                }));
-                            } else if (category === 'cat_classes') {
-                                options = [
-                                    { label: 'صرخة الحرب', description: 'بفات للفريق', value: 'class_Leader', emoji: '⚔️' },
-                                    { label: 'استفزاز', description: 'سحب الضرر ودفاع', value: 'class_Tank', emoji: '🛡️' },
-                                    { label: 'النور المقدس', description: 'إحياء وعلاج', value: 'class_Priest', emoji: '✨' },
-                                    { label: 'سجن الجليد', description: 'تجميد الوحش', value: 'class_Mage', emoji: '❄️' },
-                                    { label: 'حارس الظل', description: 'استدعاء وحش', value: 'class_Summoner', emoji: '🐺' }
-                                ];
-                            } else if (category === 'cat_skills') {
-                                options = skillsConfig.filter(s => !s.id.startsWith('race_') && s.stat_type !== 'Owner').map(s => ({
-                                    label: s.name, description: `(x10 Effect) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
-                                }));
+                        menuCollector.on('collect', async subI => {
+                            // 🛠️ معالجة اختيار التصنيف
+                            if (subI.customId === 'owner_god_menu_category') {
+                                const category = subI.values[0];
+                                let options = [];
+
+                                if (category === 'cat_emperor') {
+                                    options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
+                                        label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
+                                    }));
+                                } else if (category === 'cat_races') {
+                                    options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
+                                        label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
+                                    }));
+                                } else if (category === 'cat_classes') {
+                                    options = [
+                                        { label: 'صرخة الحرب', description: 'بفات للفريق', value: 'class_Leader', emoji: '⚔️' },
+                                        { label: 'استفزاز', description: 'سحب الضرر ودفاع', value: 'class_Tank', emoji: '🛡️' },
+                                        { label: 'النور المقدس', description: 'إحياء وعلاج', value: 'class_Priest', emoji: '✨' },
+                                        { label: 'سجن الجليد', description: 'تجميد الوحش', value: 'class_Mage', emoji: '❄️' },
+                                        { label: 'حارس الظل', description: 'استدعاء وحش', value: 'class_Summoner', emoji: '🐺' }
+                                    ];
+                                } else if (category === 'cat_skills') {
+                                    options = skillsConfig.filter(s => !s.id.startsWith('race_') && s.stat_type !== 'Owner').map(s => ({
+                                        label: s.name, description: `(x10 Effect) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
+                                    }));
+                                }
+
+                                if (options.length === 0) return subI.reply({ content: "لا توجد مهارات هنا.", ephemeral: true });
+
+                                const skillMenu = new StringSelectMenuBuilder()
+                                    .setCustomId('owner_god_menu_execute')
+                                    .setPlaceholder('⚡ اختر المهارة للتنفيذ فوراً')
+                                    .addOptions(options.slice(0, 25));
+
+                                await subI.update({ 
+                                    content: `**👑 تصنيف: ${category.replace('cat_', '').toUpperCase()}**\nاختر المهارة لإطلاقها:`, 
+                                    components: [new ActionRowBuilder().addComponents(skillMenu)] 
+                                });
                             }
 
-                            if (options.length === 0) return i.reply({ content: "لا توجد مهارات هنا.", ephemeral: true });
+                            // 🛠️ معالجة تنفيذ المهارة
+                            if (subI.customId === 'owner_god_menu_execute') {
+                                const skillID = subI.values[0];
+                                let skillObj = skillsConfig.find(s => s.id === skillID);
+                                if (!skillObj && skillID.startsWith('class_')) skillObj = { id: skillID, name: skillID, base_price: 0 };
+                                
+                                let p = players.find(pl => pl.id === subI.user.id);
+                                if (!p) return;
 
-                            const skillMenu = new StringSelectMenuBuilder()
-                                .setCustomId('owner_god_menu_execute')
-                                .setPlaceholder('⚡ اختر المهارة للتنفيذ فوراً')
-                                .addOptions(options.slice(0, 25));
+                                const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
-                            return i.update({ 
-                                content: `**👑 تصنيف: ${category.replace('cat_', '').toUpperCase()}**\nاختر المهارة لإطلاقها:`, 
-                                components: [new ActionRowBuilder().addComponents(skillMenu)] 
-                            });
-                        }
+                                if (result.type === 'dimension_gate_request') {
+                                    const modal = new ModalBuilder()
+                                        .setCustomId('modal_dimension_gate')
+                                        .setTitle('🌌 بوابة الأبعاد');
+                                    const floorInput = new TextInputBuilder()
+                                        .setCustomId('gate_floor_number')
+                                        .setLabel("رقم الطابق الذي تريد الانتقال له؟")
+                                        .setStyle(TextInputStyle.Short)
+                                        .setPlaceholder("مثال: 50")
+                                        .setRequired(true);
+                                    const rewardInput = new TextInputBuilder()
+                                        .setCustomId('gate_rewards_choice')
+                                        .setLabel("هل تريد جوائز الطوابق المتخطاة؟")
+                                        .setStyle(TextInputStyle.Short)
+                                        .setPlaceholder("نعم / لا")
+                                        .setRequired(false);
+                                    modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
+                                    await subI.showModal(modal);
+                                    // المودال سيتم معالجته في الكوليكتور الرئيسي (i.isModalSubmit)
+                                    // لأنه عند إرسال المودال، الإيفنت ينتقل للمستوى الأعلى
+                                    return; 
+                                }
 
-                        if (i.customId === 'owner_god_menu_execute') {
-                            const skillID = i.values[0];
-                            let skillObj = skillsConfig.find(s => s.id === skillID);
-                            if (!skillObj && skillID.startsWith('class_')) skillObj = { id: skillID, name: skillID, base_price: 0 };
-                            
-                            let p = players.find(pl => pl.id === i.user.id);
-                            if (!p) return;
+                                if (result.type === 'owner_leave') {
+                                     const index = players.findIndex(p => p.id === OWNER_ID);
+                                     if (index > -1) {
+                                         players.splice(index, 1);
+                                         await subI.update({ content: "💨 تم تنفيذ الانسحاب!", components: [] });
+                                         if (players.length === 0) { collector.stop('monster_dead'); return; }
+                                         actedPlayers.push(subI.user.id); 
+                                         return;
+                                     }
+                                }
 
-                            const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
-
-                            if (result.type === 'dimension_gate_request') {
-                                const modal = new ModalBuilder()
-                                    .setCustomId('modal_dimension_gate')
-                                    .setTitle('🌌 بوابة الأبعاد');
-                                const floorInput = new TextInputBuilder()
-                                    .setCustomId('gate_floor_number')
-                                    .setLabel("رقم الطابق الذي تريد الانتقال له؟")
-                                    .setStyle(TextInputStyle.Short)
-                                    .setPlaceholder("مثال: 50")
-                                    .setRequired(true);
-                                const rewardInput = new TextInputBuilder()
-                                    .setCustomId('gate_rewards_choice')
-                                    .setLabel("هل تريد جوائز الطوابق المتخطاة؟")
-                                    .setStyle(TextInputStyle.Short)
-                                    .setPlaceholder("نعم / لا")
-                                    .setRequired(false);
-                                modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
-                                return i.showModal(modal);
+                                if (result.success) {
+                                    actedPlayers.push(p.id);
+                                    p.skipCount = 0;
+                                    await subI.update({ content: "✅ تم التنفيذ!", components: [] });
+                                    // تحديث رسالة المعركة الرئيسية
+                                    await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+                                }
                             }
-
-                            if (result.type === 'owner_leave') {
-                                 const index = players.findIndex(p => p.id === OWNER_ID);
-                                 if (index > -1) {
-                                     players.splice(index, 1);
-                                     await i.update({ content: "💨 تم تنفيذ الانسحاب!", components: [] });
-                                     if (players.length === 0) { collector.stop('monster_dead'); return; }
-                                     actedPlayers.push(i.user.id); 
-                                     return;
-                                 }
-                            }
-
-                            if (result.success) {
-                                actedPlayers.push(p.id);
-                                p.skipCount = 0;
-                                await i.update({ content: "✅ تم التنفيذ!", components: [] });
-                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
-                            }
-                        }
+                        });
+                        return; // نخرج من الدالة الحالية لمنع تنفيذ الكود المتبقي بالخطأ
                     }
 
                     // 📝 معالجة المودال (بوابة الأبعاد)
+                    // (يتم التقاطه هنا لأن المودال يعتبر تفاعل جديد منفصل عن الرسالة المخفية)
                     if (i.isModalSubmit() && i.customId === 'modal_dimension_gate') {
                         const floorNum = parseInt(i.fields.getTextInputValue('gate_floor_number'));
                         const wantRewards = i.fields.getTextInputValue('gate_rewards_choice')?.toLowerCase().includes('نعم');
