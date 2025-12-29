@@ -386,7 +386,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
 
-                                // ⚡🔥 معالجة انسحاب الإمبراطور (المهارة) 🔥⚡
+                                // ⚡🔥 معالجة انسحاب الإمبراطور (تمت الإضافة هنا) 🔥⚡
                                 if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                                      const index = players.findIndex(p => p.id === OWNER_ID);
                                      if (index > -1) {
@@ -505,13 +505,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
+                                // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
+                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
                                 if (monster.hp <= 0) {
                                     monster.hp = 0;
                                     ongoing = false;
                                     collector.stop('monster_dead');
                                     return;
                                 }
-                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                             } catch (err) { 
                                 processingUsers.delete(i.user.id); return; 
@@ -569,13 +571,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
+                                // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
+                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
                                 if (monster.hp <= 0) {
                                     monster.hp = 0;
                                     ongoing = false;
                                     collector.stop('monster_dead');
                                     return;
                                 }
-                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                             } catch (err) { processingUsers.delete(i.user.id); return; }
                         }
@@ -612,6 +616,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
                             
+                            // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
+                            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
                             // 🔥 التحقق من الموت الفوري (للضربات العادية) 🔥
                             if (monster.hp <= 0) {
                                 monster.hp = 0;
@@ -619,8 +626,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 collector.stop('monster_dead');
                                 return; 
                             }
-
-                            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                         }
 
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
@@ -675,7 +680,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         });
                     }
 
-                    if (monster.hp <= 0) { ongoing = false; break; }
+                    // 🔥 تحديث فوري إذا مات الوحش من السم 🔥
+                    if (monster.hp <= 0) {
+                         monster.hp = 0;
+                         ongoing = false;
+                         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], components: [] }).catch(()=>{});
+                         break; 
+                    }
 
                     const confusion = monster.effects.find(e => e.type === 'confusion');
                     if (confusion && Math.random() < confusion.val) {
