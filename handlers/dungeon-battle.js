@@ -100,37 +100,36 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🛑 منطقة التشخيص (أرسل لي الناتج من هنا) 🛑
+            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
             // ============================================================
-            if (m.id !== OWNER_ID) {
-                console.log(`\n🔍 [فحص بيانات اللاعب]: ${playerData.name}`);
-                
-                // طباعة المهارات
-                console.log("Skills Type:", typeof playerData.skills);
-                try {
-                    console.log("Skills Content:", JSON.stringify(playerData.skills, null, 2));
-                } catch(e) {
-                    console.log("Skills Content (Raw):", playerData.skills);
-                }
-
-                // طباعة السلاح
-                console.log("Weapon Type:", typeof playerData.weapon);
-                try {
-                    console.log("Weapon Content:", JSON.stringify(playerData.weapon, null, 2));
-                } catch(e) {
-                    console.log("Weapon Content (Raw):", playerData.weapon);
-                }
-                
-                console.log("Level:", playerData.level);
-                console.log("------------------------------------------------\n");
-            }
-            // ============================================================
-
-            // كود الختم المؤقت (احتياطي عشان اللعب يمشي)
             playerData.isSealed = false;
-            if (m.id !== OWNER_ID && playerData.level > 999) { // رقم تعجيزي عشان بس نشوف اللوج
-                playerData.isSealed = true;
+            
+            if (m.id !== OWNER_ID) {
+                let maxItemLevel = 0;
+
+                // 1. فحص المهارات (Skills)
+                // المهارات عبارة عن Object والمفتاح هو currentLevel
+                if (playerData.skills && typeof playerData.skills === 'object') {
+                    const skillValues = Object.values(playerData.skills);
+                    for (const skill of skillValues) {
+                        // نحاول قراءة currentLevel، وإذا مو موجود نجرب level
+                        const lvl = parseInt(skill.currentLevel) || parseInt(skill.level) || 0;
+                        if (lvl > maxItemLevel) maxItemLevel = lvl;
+                    }
+                }
+
+                // 2. فحص السلاح (Weapon) - مع الحماية من undefined
+                if (playerData.weapon && typeof playerData.weapon === 'object') {
+                    const wLvl = parseInt(playerData.weapon.currentLevel) || parseInt(playerData.weapon.level) || parseInt(playerData.weapon.lvl) || 0;
+                    if (wLvl > maxItemLevel) maxItemLevel = wLvl;
+                }
+
+                // 3. قرار الختم
+                if (maxItemLevel > 10) {
+                    playerData.isSealed = true;
+                }
             }
+            // ============================================================
 
             players.push(playerData);
         }
@@ -140,6 +139,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         activeDungeonRequests.delete(hostId);
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
+
+    // 🔥🔥🔥 رسالة الختم (تظهر في البداية للمختومين فقط) 🔥🔥🔥
+    players.forEach(p => {
+        if (p.isSealed) {
+             threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
+        }
+    });
 
     const maxFloors = 100; 
     let totalAccumulatedCoins = 0;
@@ -167,6 +173,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 break; // نوقف الدانجون إذا الروم انحذف
             }
             continue; // ننتقل للدورة التالية (الطابق الجديد)
+        }
+
+        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19 للمختومين) 🔥🔥🔥
+        if (floor === 19) {
+            players.forEach(p => {
+                if (p.isSealed && !p.isDead) {
+                    p.isSealed = false; // فك الختم فعلياً
+                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                }
+            });
         }
 
         // 🔥 الحفاظ على الدروع والبفات المهمة فقط 🔥
@@ -637,6 +653,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
+                                    
+                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
+                                    if (p.isSealed) {
+                                        currentAtk = Math.floor(currentAtk * 0.2); // تقليل القوة إلى 20%
+                                    }
+
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
                                     
