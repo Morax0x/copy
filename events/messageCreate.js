@@ -314,6 +314,7 @@ module.exports = {
                 );
 
                 if (cmd) {
+                    // الاختصارات تعتبر "استثناء" ومسموحة تلقائياً إذا وجدت في القناة الصحيحة
                     if (checkPermissions(message, cmd)) {
                         const cooldownMsg = checkCooldown(message, cmd);
                         if (cooldownMsg) {
@@ -355,26 +356,31 @@ module.exports = {
                     args.prefix = Prefix;
                     let isAllowed = false;
                     
-                    if (message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    // ========================================================
+                    // ⛔ نظام الحظر الشامل ⛔
+                    // ========================================================
+                    
+                    // 1. السماح للأدمن (Administrator)
+                    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                         isAllowed = true;
                     } 
-                    // 🔥 تعديل: السماح في الكازينو الأول أو الثاني 🔥
+                    // 2. السماح في الكازينو (اقتصاد فقط)
                     else if (settings && (settings.casinoChannelID === message.channel.id || settings.casinoChannelID2 === message.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     }
+                    // 3. السماح بالقنوات المحددة يدوياً (عن طريق allow-command)
                     else {
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.id);
-                            const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId);
+                            // التحقق من الكاتجوري إذا لزم الأمر
+                            const categoryPerm = message.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId) : null;
                             
                             if (channelPerm || categoryPerm) {
                                 isAllowed = true;
-                            } else {
-                                const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(message.guild.id, command.name);
-                                if (!hasRestrictions) isAllowed = true;
                             }
-                        } catch (err) { isAllowed = true; }
+                        } catch (err) { isAllowed = false; }
                     }
+                    // ========================================================
 
                     if (isAllowed) {
                         try {
