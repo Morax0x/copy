@@ -100,7 +100,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
+            // 🔥🔥🔥 الفحص الحقيقي للختم (Deep Scan) 🔥🔥🔥
             // ============================================================
             playerData.isSealed = false;
             playerData.sealMultiplier = 1.0; 
@@ -297,6 +297,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
                         
+                        // 🔥🔥 تحقق من موت الجميع بسبب الخمول 🔥🔥
+                        if (players.every(p => p.isDead)) {
+                            ongoing = false;
+                            collector.stop('all_dead');
+                            return;
+                        }
+                        
                         log.push(`⚠️ تم تخطي دور اللاعبين الخاملين.`);
                         collector.stop('turn_end'); 
                     } else {
@@ -310,7 +317,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // 👑 القسم الأول: منطق الإمبراطور (القوائم والمهارات) 👑
                     // ============================================================
                     
-                    // 1. فتح القائمة عند الضغط على زر الدفاع للاونر
                     if (i.customId === 'def' && i.user.id === OWNER_ID) {
                         const menu = new StringSelectMenuBuilder()
                             .setCustomId('owner_god_menu_category')
@@ -322,7 +328,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 { label: 'مهـارات عامة', description: 'المهارات الأساسية بقوة مضاعفة', value: 'cat_skills', emoji: '📜' },
                             ]);
                         
-                        // نرسل الرسالة ونحفظ الرد في متغير لنستقبل التفاعلات عليه
                         const ownerMenuMsg = await i.reply({ 
                             content: `**👑 مرحباً مولاي الإمبراطور..**\nاختر التصنيف لاستدعاء القوة:`, 
                             components: [new ActionRowBuilder().addComponents(menu)], 
@@ -330,14 +335,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             fetchReply: true 
                         });
 
-                        // إنشاء كوليكتور خاص لهذه القائمة فقط لتجنب التعارض
                         const menuCollector = ownerMenuMsg.createMessageComponentCollector({ 
                             filter: subI => subI.user.id === i.user.id, 
                             time: 60000 
                         });
 
                         menuCollector.on('collect', async subI => {
-                            // 🛠️ معالجة اختيار التصنيف
                             if (subI.customId === 'owner_god_menu_category') {
                                 const category = subI.values[0];
                                 let options = [];
@@ -377,7 +380,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 });
                             }
 
-                            // 🛠️ معالجة تنفيذ المهارة
                             if (subI.customId === 'owner_god_menu_execute') {
                                 const skillID = subI.values[0];
                                 let skillObj = skillsConfig.find(s => s.id === skillID);
@@ -388,7 +390,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
-                                // ⚡🔥 معالجة بوابة الأبعاد (نقل الطوابق) - تم الإصلاح هنا 🔥⚡
                                 if (result.type === 'dimension_gate_request') {
                                     const modal = new ModalBuilder()
                                         .setCustomId('modal_dimension_gate')
@@ -407,10 +408,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         .setRequired(false);
                                     modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
                                     
-                                    // عرض المودال
                                     await subI.showModal(modal);
 
-                                    // ⚠️ انتظار الاستجابة للمودال فوراً (هذا هو الإصلاح)
                                     try {
                                         const modalInteraction = await subI.awaitModalSubmit({
                                             filter: (m) => m.customId === 'modal_dimension_gate' && m.user.id === subI.user.id,
@@ -438,23 +437,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
                                         await modalInteraction.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
                                         
-                                        // إيقاف الكوليكتور الرئيسي لتحديث اللوب
                                         collector.stop('monster_dead');
                                         return; 
 
                                     } catch (err) {
-                                        // انتهاء الوقت او خطأ في المودال
                                         return;
                                     }
                                 }
 
-                                // ⚡🔥 معالجة انسحاب الإمبراطور (تمت الإضافة هنا) 🔥⚡
                                 if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                                      const index = players.findIndex(p => p.id === OWNER_ID);
                                      if (index > -1) {
                                          players.splice(index, 1);
                                          await subI.update({ content: "💨 تم تنفيذ الانسحاب!", components: [] });
-                                         // إذا لم يتبقى أحد نوقف الدانجون
                                          if (players.length === 0) { collector.stop('monster_dead'); return; }
                                          actedPlayers.push(subI.user.id); 
                                          return;
@@ -466,15 +461,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.skipCount = 0;
                                     await subI.update({ content: "✅ تم التنفيذ!", components: [] });
                                     
-                                    // 🔥🔥 إصلاح التعليق: التحقق من موت الوحش + إنهاء الدور 🔥🔥
                                     if (monster.hp <= 0) {
                                         monster.hp = 0;
                                         ongoing = false;
                                         collector.stop('monster_dead');
-                                        return; // إنهاء فوري
+                                        return; 
                                     }
 
-                                    // التأكد من أن الدور يمشي اذا الكل لعب
                                     if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                                         clearTimeout(turnTimeout); collector.stop('turn_end'); 
                                     } else {
@@ -483,7 +476,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
                         });
-                        return; // نخرج من الدالة الحالية
+                        return; 
                     }
 
                     // ============================================================
@@ -519,7 +512,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         p.skipCount = 0; 
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
-                        // 🔥 تحديث الرسالة لكي لا تعلق اللعبة 🔥
                         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
@@ -558,7 +550,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
-                                // 🔥🔥🔥 نيرف المهارات (Skill Nerf) مع المضاعف المتغير 🔥🔥🔥
                                 let originalAtk = p.atk;
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
@@ -568,8 +559,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
-                                
-                                // 🔥🔥🔥 إرجاع القيم الأصلية بعد التنفيذ 🔥🔥🔥
                                 p.atk = originalAtk;
 
                                 if (res && res.error) {
@@ -584,8 +573,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
-                                // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
+                                // 🔥 فحص الموت الجماعي بعد المهارة (مثل Sacrifice) 🔥
+                                if (players.every(p => p.isDead)) {
+                                    ongoing = false;
+                                    collector.stop('all_dead');
+                                    return;
+                                }
 
                                 if (monster.hp <= 0) {
                                     monster.hp = 0;
@@ -650,8 +645,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
-                                // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+
+                                // 🔥 فحص الموت الجماعي بعد الجرعة 🔥
+                                if (players.every(p => p.isDead)) {
+                                    ongoing = false;
+                                    collector.stop('all_dead');
+                                    return;
+                                }
 
                                 if (monster.hp <= 0) {
                                     monster.hp = 0;
@@ -684,7 +685,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
-                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
                                     if (p.isSealed) {
                                         currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
                                     }
@@ -701,10 +701,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
                             
-                            // 🔥 تحديث الرسالة أولاً لإظهار الموت 🔥
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                            // 🔥 التحقق من الموت الفوري (للضربات العادية) 🔥
+                            // 🔥 فحص الموت الجماعي بعد الهجوم (الانتحار بالخطأ) 🔥
+                            if (players.every(p => p.isDead)) {
+                                ongoing = false;
+                                collector.stop('all_dead');
+                                return;
+                            }
+
                             if (monster.hp <= 0) {
                                 monster.hp = 0;
                                 ongoing = false;
@@ -724,7 +729,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp <= 0) { ongoing = false; await battleMsg.edit({ components: [] }).catch(()=>{}); }
 
-            // تحديث التهدئة
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
@@ -765,7 +769,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         });
                     }
 
-                    // 🔥 تحديث فوري إذا مات الوحش من السم 🔥
                     if (monster.hp <= 0) {
                          monster.hp = 0;
                          ongoing = false;
@@ -895,13 +898,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ❖ تعديل منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
         
-        // 1. تحديد الطوابق الخاصة التي يسمح فيها بالانسحاب (فوق الـ 20)
         const specificRetreatFloors = [33, 50, 80];
-        
-        // 2. التحقق مما إذا كان الانسحاب مسموحاً:
-        // - إذا كان الطابق 20 أو أقل: مسموح.
-        // - إذا كان الطابق هو أحد نقاط التفتيش (33, 50, 80): مسموح.
-        // - غير ذلك: ممنوع.
         const canRetreat = floor <= 20 || specificRetreatFloors.includes(floor);
 
         let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
@@ -911,7 +908,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         );
 
         if (floor === 20) {
-             // تنبيه خاص للطابق 20
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في أغلب الطوابق!`;
@@ -919,7 +915,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
         }
 
-        // إضافة زر الانسحاب فقط إذا كان الشرط متحققاً
         if (canRetreat) {
              restRow.addComponents(
                 new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
@@ -940,15 +935,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
-        // 🔥 مؤقت التنبيه قبل النهاية بـ 10 ثواني 🔥
         const warningTimeout = setTimeout(() => {
             threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
-        }, 50000); // 50 ثانية
+        }, 50000); 
         
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
-                clearTimeout(warningTimeout); // إيقاف التنبيه عند التفاعل
+                clearTimeout(warningTimeout); 
 
                 if (i.customId === 'continue') {
                     if (i.user.id !== hostId) {
@@ -982,7 +976,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
             
             decCollector.on('end', (c, reason) => {
-                clearTimeout(warningTimeout); // التأكد من إيقاف المؤقت
+                clearTimeout(warningTimeout); 
                 res(reason);
             });
         });
@@ -990,11 +984,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         await restMsg.edit({ components: [] }).catch(()=>{});
 
         if (decision === 'time') { 
-            // 🔥🔥 موت الفريق بالكامل عند انتهاء الوقت 🔥🔥
             players.forEach(p => { p.isDead = true; p.hp = 0; });
             await threadChannel.send(`☠️ **انتهى الوقت!** ابتلع الدانجون الفريق بأكمله بسبب تردد القائد...`).catch(()=>{});
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            break; // إنهاء الدانجون
+            break; 
         } 
         else if (decision === 'retreat') {
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
@@ -1002,8 +995,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         } 
         else if (decision === 'continue') {
             
-            // فخ الشذوذ الزمكاني (بدون منشن)
-            // شرط إضافي: floor < 90 لضمان وجود مساحة للقفز للأمام
             if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
@@ -1024,26 +1015,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await threadChannel.send({ embeds: [trapEmbed] }).catch(()=>{});
             } else {
                 
-                // ==========================================
-                // ❖ رسالة التوغل (تظهر قبل التاجر/الصندوق) ❖
-                // ==========================================
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
-                // 🔥🔥 نظام الأحداث المتساوي والمتناوب 🔥🔥
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
 
-                // 1. هل سيحدث حدث؟ (نسبة 30%)
                 if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
                     
                     let eventToTrigger = '';
 
-                    // 2. تحديد النوع بناءً على التناوب
                     if (lastEventType === 'merchant') {
-                        eventToTrigger = 'chest'; // إذا كان تاجر، المرة الجاية صناديق
+                        eventToTrigger = 'chest'; 
                     } else if (lastEventType === 'chest') {
-                        eventToTrigger = 'merchant'; // إذا كان صناديق، المرة الجاية تاجر
+                        eventToTrigger = 'merchant'; 
                     } else {
-                        // أول مرة: 50/50
                         eventToTrigger = Math.random() < 0.5 ? 'merchant' : 'chest';
                     }
 
@@ -1051,13 +1035,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
                         lastEventType = 'merchant';
                         lastEventFloor = floor;
-                        // 🔥 تقليل الانتظار لـ 46 ثانية (45+1) 🔥
                         await new Promise(r => setTimeout(r, 46000));
                     } else {
                         await triggerMimicChest(threadChannel, players);
                         lastEventType = 'chest';
                         lastEventFloor = floor;
-                        // الصناديق 62 ثانية
                         await new Promise(r => setTimeout(r, 62000));
                     }
                 }
@@ -1085,15 +1067,10 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalMora = 0;
         let finalXp = 0;
 
-        // ==========================================
-        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
-        // ==========================================
         if (status === 'lose' && floor > 20) {
-            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
             finalMora = 1000;
             finalXp = 100;
         } else {
-            // الحساب الطبيعي
             finalMora = Math.floor(p.loot.mora);
             finalXp = Math.floor(p.loot.xp);
             
