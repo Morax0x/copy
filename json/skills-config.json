@@ -98,7 +98,7 @@
     "base_price": 1500,
     "price_increment": 700,
     "base_value": 15,
-    "value_increment": 2, 
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 3
@@ -262,7 +262,7 @@
   {
     "id": "race_elf_skill",
     "name": "وابل السهام",
-    "description": "تشل حركة الخصم وتجعل دفاعه هشاً (يتلقى ضرراً مضاعفاً).",
+    "description": "هجوم قوي مع احتمالية 50% لشل حركة الخصم وجعل دفاعه هشاً.",
     "emoji": "🏹",
     "base_price": 1000,
     "price_increment": 600,
