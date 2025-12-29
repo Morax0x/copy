@@ -715,16 +715,31 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
-        const restEmbed = new EmbedBuilder()
-            .setTitle('❖ استـراحـة بيـن الطـوابـق')
-            .setDescription(`✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`)
-            .setColor(Colors.Red)
-            .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
+        // ==========================================
+        // ❖ تعديل منطقة الاستراحة (Floor Rest) ❖
+        // ==========================================
+        let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
 
         const restRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success)
         );
+
+        // إذا وصل الطابق 20 أو أعلى: يختفي زر الانسحاب ويظهر التحذير
+        if (floor >= 20) {
+             restDesc += `\n\n✥ تحذيـر: التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب حتى تصفية الدانجون بشكل كامل`;
+        } else {
+             // إذا تحت 20: يظهر الخيارين
+             restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
+             restRow.addComponents(
+                new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
+             );
+        }
+
+        const restEmbed = new EmbedBuilder()
+            .setTitle('❖ استـراحـة بيـن الطـوابـق')
+            .setDescription(restDesc)
+            .setColor(Colors.Red)
+            .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
 
         const restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
         
@@ -739,7 +754,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     return decCollector.stop('continue');
                 }
 
-                if (i.customId === 'retreat') {
+                // شرط الانسحاب: يجب أن يكون الطابق أقل من 20 (حماية إضافية)
+                if (i.customId === 'retreat' && floor < 20) {
                     if (i.user.id === hostId) {
                         await i.deferUpdate();
                         return decCollector.stop('retreat');
@@ -789,6 +805,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await threadChannel.send({ embeds: [trapEmbed] });
             } else {
                 
+                // ==========================================
+                // ❖ رسالة التوغل (تظهر قبل التاجر/الصندوق) ❖
+                // ==========================================
+                await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
+
                 // 🔥🔥 نظام الأحداث المتساوي والمتناوب 🔥🔥
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
 
@@ -821,8 +842,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         await new Promise(r => setTimeout(r, 62000));
                     }
                 }
-
-                await threadChannel.send(`**⚔️ قـرر القائد الاستمرار! يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
             }
         }
 
@@ -844,13 +863,29 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
       
     let lootString = "";
     allParticipants.forEach(p => {
-        let finalMora = Math.floor(p.loot.mora);
-        let finalXp = Math.floor(p.loot.xp);
+        let finalMora = 0;
+        let finalXp = 0;
+
+        // ==========================================
+        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
+        // ==========================================
+        if (status === 'lose' && floor > 20) {
+            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
+            finalMora = 1000;
+            finalXp = 100;
+        } else {
+            // الحساب الطبيعي
+            finalMora = Math.floor(p.loot.mora);
+            finalXp = Math.floor(p.loot.xp);
+            
+            if (p.isDead) { 
+                finalMora = Math.floor(finalMora * 0.5); 
+                finalXp = Math.floor(finalXp * 0.5); 
+            }
+        }
         
         let statusEmoji = "";
         if (p.isDead) { 
-            finalMora = Math.floor(finalMora * 0.5); 
-            finalXp = Math.floor(finalXp * 0.5); 
             const deathFloorInfo = p.deathFloor ? `(مات في ${p.deathFloor})` : "(مات)";
             statusEmoji = `💀 ${deathFloorInfo}`;
         } else if (p.retreatFloor) {
