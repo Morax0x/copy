@@ -99,8 +99,10 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, theme, sql) {
     const host = interaction.user;
     
+    // Map لتخزين تخصص كل لاعب: Key=UserID, Value=ClassName
     let partyClasses = new Map();
-    partyClasses.set(host.id, 'Leader');
+    partyClasses.set(host.id, 'Leader'); // القائد دائماً Leader
+    
     let party = [host.id];
       
     const updateEmbed = () => {
@@ -118,7 +120,7 @@ async function lobbyPhase(interaction, theme, sql) {
 
         return new EmbedBuilder()
             .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
-            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 اخـتر التخصص الذي يناسبك!\n\n👥 **الفريق:**\n${memberList}`)
+            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 اخـتر التخصص الذي يناسبك (لا يمكن تكرار التخصص)!\n\n👥 **الفريق:**\n${memberList}`)
             .setColor('DarkRed')
             .setThumbnail(host.displayAvatarURL());
     };
@@ -142,14 +144,16 @@ async function lobbyPhase(interaction, theme, sql) {
             if (i.customId === 'join') {
                 // الفحوصات الأولية (ردود سريعة ephemeral)
                 if (i.user.id === host.id) {
-                    return i.reply({ content: "👑 أنت القائد (Leader).", flags: [MessageFlags.Ephemeral] });
+                    return i.reply({ content: "👑 أنت القائد (Leader) ولا يمكنك تغيير تخصصك.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 if (party.includes(i.user.id)) {
-                    return i.reply({ content: "✅ أنت منضم بالفعل.", flags: [MessageFlags.Ephemeral] });
+                    // نسمح له بتغيير التخصص إذا كان منضم، لكن الرد هنا بسيط
+                    // سنكمل لإظهار القائمة له ليغير تخصصه
                 } else if (party.length >= 5) {
                     return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
                 } else {
+                    // فحص الشروط للمنضمين الجدد
                     if (i.user.id !== OWNER_ID) {
                         const joinData = sql.prepare("SELECT dungeon_join_count, last_join_reset FROM levels WHERE user = ? AND guild = ?").get(i.user.id, i.guild.id);
                         const now = Date.now();
@@ -167,34 +171,40 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                 }
 
-                // 🔥 تعديل: تصفية الكلاسات المتاحة فقط (إزالة المأخوذة) 🔥
-                const takenClasses = Array.from(partyClasses.values());
+                // 🔥 تعديل جوهري: منع التكرار 🔥
+                // نحصل على قائمة التخصصات المحجوزة حالياً (باستثناء تخصص اللاعب الحالي لو كان بيغير)
+                const takenClasses = [];
+                partyClasses.forEach((cls, uid) => {
+                    if (uid !== i.user.id) takenClasses.push(cls);
+                });
+
                 const availableOptions = [];
 
-                // دالة للتحقق إذا الكلاس متاح (غير مأخوذ من قبل لاعب آخر)
-                // اللاعب نفسه يقدر يغير كلاسه إذا كان مختار واحد مسبقاً
-                const isAvailable = (clsName) => {
-                    return !takenClasses.includes(clsName) || partyClasses.get(i.user.id) === clsName;
+                // دالة مساعدة
+                const addIfAvailable = (val, label, desc, emoji) => {
+                    if (!takenClasses.includes(val)) {
+                        availableOptions.push(new StringSelectMenuOptionBuilder().setLabel(label).setValue(val).setDescription(desc).setEmoji(emoji));
+                    }
                 };
 
-                if (isAvailable('Tank')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المُدرّع (Tank)').setValue('Tank').setDescription('دفاع وحماية.').setEmoji('🛡️'));
-                if (isAvailable('Priest')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الكاهن (Priest)').setValue('Priest').setDescription('شفاء وإحياء.').setEmoji('✨'));
-                if (isAvailable('Mage')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('الساحر (Mage)').setValue('Mage').setDescription('تجميد وتحكم.').setEmoji('❄️'));
-                if (isAvailable('Summoner')) availableOptions.push(new StringSelectMenuOptionBuilder().setLabel('المستدعي (Summoner)').setValue('Summoner').setDescription('استدعاء وهجوم.').setEmoji('🐺'));
+                addIfAvailable('Tank', 'المُدرّع (Tank)', 'دفاع وحماية.', '🛡️');
+                addIfAvailable('Priest', 'الكاهن (Priest)', 'شفاء وإحياء.', '✨');
+                addIfAvailable('Mage', 'الساحر (Mage)', 'تجميد وتحكم.', '❄️');
+                addIfAvailable('Summoner', 'المستدعي (Summoner)', 'استدعاء وهجوم.', '🐺');
 
                 // إذا كانت القائمة فارغة (كل الكلاسات مأخوذة)
                 if (availableOptions.length === 0) {
-                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة! تأخرت يا صديقي.", flags: [MessageFlags.Ephemeral] });
+                    return i.reply({ content: "🚫 جميع التخصصات مأخوذة! لا يوجد مكان شاغر.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const classRow = new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder()
                         .setCustomId('class_select')
-                        .setPlaceholder('اختر تخصصاً...')
+                        .setPlaceholder('اختر تخصصاً (المتاح فقط)...')
                         .addOptions(availableOptions)
                 );
 
-                const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:**", components: [classRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
+                const selectMsg = await i.reply({ content: "🛡️ **اختر تخصصك:** (التخصصات المحجوزة لا تظهر)", components: [classRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
                 
                 try {
                     const selection = await selectMsg.awaitMessageComponent({ 
@@ -203,13 +213,16 @@ async function lobbyPhase(interaction, theme, sql) {
                         componentType: ComponentType.StringSelect 
                     });
                     
-                    // 🔥🔥 الحماية النهائية (Race Condition Check) 🔥🔥
                     const selectedClass = selection.values[0];
-                    // نعيد جلب الكلاسات المحجوزة حالياً (لأن ممكن واحد ثاني اختاره في نفس اللحظة)
-                    const currentTaken = Array.from(partyClasses.entries()).filter(([uid, cls]) => uid !== i.user.id).map(([_, cls]) => cls);
+
+                    // 🔥🔥 الحماية النهائية (Double Check) 🔥🔥
+                    // نتأكد مرة ثانية قبل الحفظ، عشان لو اثنين اختاروا نفس الشي بنفس الثانية
+                    const currentTaken = Array.from(partyClasses.entries())
+                        .filter(([uid, cls]) => uid !== i.user.id)
+                        .map(([_, cls]) => cls);
                     
                     if (currentTaken.includes(selectedClass)) {
-                        return selection.update({ content: `🚫 **سبقك بها عكاشة!** هذا التخصص تم أخذه للتو.`, components: [] });
+                        return selection.update({ content: `🚫 **سبقك بها عكاشة!** التخصص **${selectedClass}** تم أخذه للتو من لاعب آخر. حاول مجدداً.`, components: [] });
                     }
 
                     // قبول الاختيار
