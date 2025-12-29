@@ -220,7 +220,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 if (p.isSealed && !p.isDead) {
                     p.isSealed = false; 
                     p.sealMultiplier = 1.0;
-                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك اطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                 }
             });
         }
@@ -1061,6 +1061,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // رسالة التوغل
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
+                // 🔥🔥 نقل القيادة للأقوى إذا مات القائد (تحديث جديد) 🔥🔥
+                const currentHost = players.find(p => p.id === hostId);
+                if (currentHost && currentHost.isDead) {
+                    const livingCandidates = players.filter(p => !p.isDead);
+                    if (livingCandidates.length > 0) {
+                        livingCandidates.sort((a, b) => b.totalDamage - a.totalDamage);
+                        const newHost = livingCandidates[0];
+                        hostId = newHost.id; // تحديث القائد للمرحلة القادمة
+                        
+                        await threadChannel.send(`👑 **سقط القائد في المعركة!**\nانتقلت القيادة تلقائياً إلى صاحب أعلى ضرر: <@${newHost.id}>`).catch(()=>{});
+                    }
+                }
+
                 // نظام الأحداث
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
 
@@ -1112,15 +1125,10 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalMora = 0;
         let finalXp = 0;
 
-        // ==========================================
-        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
-        // ==========================================
         if (status === 'lose' && floor > 20) {
-            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
             finalMora = 1000;
             finalXp = 100;
         } else {
-            // الحساب الطبيعي
             finalMora = Math.floor(p.loot.mora);
             finalXp = Math.floor(p.loot.xp);
             
