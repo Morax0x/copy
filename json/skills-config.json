@@ -98,7 +98,7 @@
     "base_price": 1500,
     "price_increment": 700,
     "base_value": 15,
-    "value_increment": 4, 
+    "value_increment": 2, 
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 3
@@ -110,8 +110,8 @@
     "emoji": "🛡️",
     "base_price": 1200,
     "price_increment": 600,
-    "base_value": 20,
-    "value_increment": 5,
+    "base_value": 15,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 3
@@ -123,8 +123,8 @@
     "emoji": "💪",
     "base_price": 2000,
     "price_increment": 1000,
-    "base_value": 15,
-    "value_increment": 5,
+    "base_value": 10,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 4
@@ -136,8 +136,8 @@
     "emoji": "🔄",
     "base_price": 1000,
     "price_increment": 500,
-    "base_value": 20,
-    "value_increment": 4,
+    "base_value": 15,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 4
@@ -149,8 +149,8 @@
     "emoji": "📉",
     "base_price": 2500,
     "price_increment": 1200,
-    "base_value": 20,
-    "value_increment": 4,
+    "base_value": 15,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 3
@@ -175,8 +175,8 @@
     "emoji": "✨",
     "base_price": 2800,
     "price_increment": 900,
-    "base_value": 8,
-    "value_increment": 3,
+    "base_value": 10,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 4
@@ -188,8 +188,8 @@
     "emoji": "☠️",
     "base_price": 2200,
     "price_increment": 1100,
-    "base_value": 15,
-    "value_increment": 4,
+    "base_value": 20,
+    "value_increment": 3,
     "max_level": 20,
     "stat_type": "%",
     "cooldown": 3
@@ -214,8 +214,8 @@
     "emoji": "🐲",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 40,
-    "value_increment": 8,
+    "base_value": 50,
+    "value_increment": 5,
     "max_level": 20,
     "stat_type": "TrueDMG_Burn",
     "cooldown": 3
@@ -228,7 +228,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 15,
-    "value_increment": 4,
+    "value_increment": 2,
     "max_level": 20,
     "stat_type": "Cleanse_Buff_Shield",
     "cooldown": 4
@@ -241,7 +241,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 25,
-    "value_increment": 6,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Scale_MissingHP_Heal",
     "cooldown": 3
@@ -253,8 +253,8 @@
     "emoji": "🩸",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 180,
-    "value_increment": 15,
+    "base_value": 160,
+    "value_increment": 8,
     "max_level": 20,
     "stat_type": "Sacrifice_Crit",
     "cooldown": 3
@@ -267,7 +267,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 30,
-    "value_increment": 6,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Stun_Vulnerable",
     "cooldown": 5
@@ -279,8 +279,8 @@
     "emoji": "🗡️",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 25,
-    "value_increment": 5,
+    "base_value": 30,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Confusion",
     "cooldown": 4
@@ -293,7 +293,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 35,
-    "value_increment": 6,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Lifesteal_Overheal",
     "cooldown": 3
@@ -306,7 +306,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 30,
-    "value_increment": 6,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Chaos_RNG",
     "cooldown": 4
@@ -319,7 +319,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 30,
-    "value_increment": 5,
+    "value_increment": 4,
     "max_level": 20,
     "stat_type": "Dmg_Evasion",
     "cooldown": 5
@@ -331,8 +331,8 @@
     "emoji": "🛡️",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 40,
-    "value_increment": 6,
+    "base_value": 35,
+    "value_increment": 3,
     "max_level": 20,
     "stat_type": "Reflect_Tank",
     "cooldown": 4
@@ -345,7 +345,7 @@
     "base_price": 1000,
     "price_increment": 600,
     "base_value": 50,
-    "value_increment": 8,
+    "value_increment": 5,
     "max_level": 20,
     "stat_type": "Execute_Heal",
     "cooldown": 3
