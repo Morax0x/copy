@@ -100,7 +100,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم 🔥🔥🔥
+            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
             // ============================================================
             playerData.isSealed = false;
             
@@ -538,8 +538,26 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
+                                // 🔥🔥🔥 نيرف المهارات (Skill Nerf) 🔥🔥🔥
+                                // نحتفظ بالقيم الأصلية
+                                let originalAtk = p.atk;
+                                let originalEffect = skillObj.effectValue;
+
+                                // نطبق الختم إذا اللاعب مختوم
+                                if (p.isSealed) {
+                                    p.atk = Math.floor(p.atk * 0.2); // تقليل الهجوم للمهارة
+                                    if (skillObj.effectValue) {
+                                        // نستخدم نسخة من المهارة عشان ما نخرب الأصلية
+                                        skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * 0.2) };
+                                    }
+                                }
+
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
+                                // 🔥🔥🔥 إرجاع القيم الأصلية بعد التنفيذ 🔥🔥🔥
+                                p.atk = originalAtk;
+                                // ملاحظة: skillObj كان نسخة محلية (اذا دخلنا الـ if) فما يحتاج نرجعه، الأساسي سليم
+
                                 if (res && res.error) {
                                     await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
                                     processingUsers.delete(i.user.id); return;
@@ -650,7 +668,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (canAttack) {
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                                    // 🔥🔥 تصحيح الخطأ: استخدام let بدلاً من const 🔥🔥
+                                    // استخدام let لتغيير القيمة مؤقتاً
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
                                     // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
