@@ -10,10 +10,8 @@ module.exports = {
     async execute(message, args) {
         const sql = message.client.sql;
 
-        // 1. التحقق من الصلاحيات (تجاهل تام إذا لم يملك صلاحية)
         if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) return;
 
-        // 2. جلب العضو
         const targetArg = args[0];
         if (!targetArg) return message.reply('❓ **الرجاء تحديد العضو.**');
         
@@ -30,35 +28,29 @@ module.exports = {
             return message.reply('❌ **لا يمكنك تحذير شخص رتبته أعلى منك.**');
         }
 
-        // 3. تجهيز السبب والقضية
         const reason = args.slice(1).join(" ") || "مخالفة القوانين";
         let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
         let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
 
-        // 4. إشعار الخاص (التصميم المطلوب)
+        // إشعار الخاص (معدل ليكون بسطر واحد)
         let dmSent = false;
         try {
             const dmEmbed = new EmbedBuilder()
                 .setTitle('✥ تـلـقـيت تـحذيـر')
-                .setColor(Colors.Red) // لون أحمر
-                .addFields(
-                    { name: '✶ السبب:', value: reason, inline: false },
-                    { name: '✶ السيرفر:', value: message.guild.name, inline: false },
-                    { name: '✶ بواسـطـة:', value: `<@${message.author.id}>`, inline: false }
-                )
-                .setImage('https://i.postimg.cc/VkD37Gqk/a5d06761d4d3fed9158d034359c934b4.gif')
-                .setTimestamp();
+                .setColor(Colors.Red)
+                // استخدام Description لدمج العنوان والقيمة
+                .setDescription(`**✶ السبب:** ${reason}\n**✶ السيرفر:** ${message.guild.name}\n**✶ بواسـطـة:** <@${message.author.id}>`)
+                .setImage('https://i.postimg.cc/VkD37Gqk/a5d06761d4d3fed9158d034359c934b4.gif');
+
             await targetMember.send({ embeds: [dmEmbed] });
             dmSent = true;
         } catch (e) { dmSent = false; }
 
-        // 5. حفظ التحذير في قاعدة البيانات
         sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
                      VALUES (?, ?, ?, 'WARN', ?, ?, ?, ?)`)
             .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
 
-        // 6. الرد في الشات
         const successEmbed = new EmbedBuilder()
             .setColor(Colors.Red)
             .setDescription(`⚠️ **تم تحذير ${targetMember.user.tag}**\n📁 **القضية رقم:** \`#${newCaseID}\`\n📝 **السبب:** ${reason}`)
@@ -66,7 +58,6 @@ module.exports = {
         
         message.reply({ embeds: [successEmbed], allowedMentions: { repliedUser: false } });
 
-        // 7. اللوق
         sendModLog(message, targetMember, 'WARN', reason, newCaseID);
     }
 };
