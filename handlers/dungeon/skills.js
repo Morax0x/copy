@@ -3,6 +3,7 @@ const { applyDamageToPlayer } = require('./utils');
 
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     let skillDmg = 0;
+    // مضاعف للأونر للمهارات العادية فقط (x10)
     const mult = (player.id === OWNER_ID) ? 10 : 1;
 
     // 🔥 حساب البفات (Buffs) 🔥
@@ -13,22 +14,73 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
     // ====================================================
-    // 1. مهارات الأونر الخاصة
+    // 1. مهارات الإمبـراطـور (GOD MODE) 👑
     // ====================================================
-    if (skill.id === 'skill_secret_owner') {
-        skillDmg = Math.floor(monster.maxHp * 0.50); 
-        monster.hp -= skillDmg;
-        player.totalDamage += skillDmg;
-        log.push(`👁️ **${player.name}** استخدم "تركيز تام" وقصم الوحش لنصفين! (**${skillDmg}** ضرر)`);
-        return { success: true, name: "تركيز تام" };
+    
+    // 💀 محو الوجود (قتل فوري)
+    if (skill.id === 'skill_erasure') {
+        skillDmg = monster.maxHp * 9999; // رقم فلكي لضمان القتل
+        monster.hp = 0;
+        log.push(`💀 **${player.name}** أشار بيده.. ومُحي الوحش من الوجود تماماً!`);
+        return { success: true, name: "مَحـو الوجـود" };
     }
 
-    if (skill.id === 'skill_owner_leave') {
-        monster.hp = 1; 
-        log.push(`🚪 **${player.name}** غادر بلمح البصر، وترك الوحش يترنح (HP: 1)!`);
-        if (threadChannel) threadChannel.send(`🚪 **${player.name}** غادر الدانجون بلمح البصر!`).catch(()=>{});
-        return { type: 'owner_leave', success: true };
+    // 🌌 بوابة الأبعاد (نقل)
+    if (skill.id === 'skill_dimension_gate') {
+        // نرسل إشارة لملف المعركة لفتح المودال والسؤال
+        log.push(`🌌 **${player.name}** يمزق نسيج الزمكان لفتح بوابة!`);
+        return { success: true, type: 'dimension_gate_request', name: "بوابة الأبعاد" };
     }
+
+    // 👑 نفس الإمبراطور (دعم مطلق)
+    if (skill.id === 'skill_emperor_breath') {
+        players.forEach(p => {
+            p.isDead = false;
+            p.isPermDead = false;
+            p.reviveCount = 0; // تصفير عداد الموت
+            p.hp = p.maxHp;    // شفاء كامل
+            p.shield = p.maxHp; // درع كامل
+            // إضافة بف هجومي 100% (val: 1.0)
+            p.effects.push({ type: 'atk_buff', val: 1.0, turns: 10 });
+        });
+        log.push(`👑 **${player.name}** وهب الحياة للفريق! (إحياء + شفاء + قوة مضاعفة)`);
+        return { success: true, name: "نَفَس الإمبراطور" };
+    }
+
+    // ⚔️ انشطار الروح (50% ضرر)
+    if (skill.id === 'skill_soul_fissure') {
+        skillDmg = Math.floor(monster.hp * 0.50);
+        monster.hp -= skillDmg;
+        player.totalDamage += skillDmg;
+        log.push(`⚔️ **${player.name}** قصم روح الوحش لنصفين! (**${skillDmg}** ضرر)`);
+        return { success: true, name: "انشطـار الـروح" };
+    }
+
+    // ✋ الرمق الأخير (1HP + مغادرة)
+    if (skill.id === 'skill_last_gasp') {
+        monster.hp = 1;
+        log.push(`✋ **${player.name}** ترك الوحش يلفظ أنفاسه الأخيرة (1 HP) وغادر بسلام.`);
+        if (threadChannel) threadChannel.send(`🚪 **${player.name}** ترفع عن القتال وغادر المعركة!`).catch(()=>{});
+        return { success: true, type: 'owner_leave', name: "الرمـق الأخيـر" };
+    }
+
+    // ⛓️ هيمنة الإمبراطور (الوحش يضرب نفسه)
+    if (skill.id === 'skill_emperor_domination') {
+        // الوحش يضرب نفسه بضعف هجومه
+        const selfDmg = Math.floor(monster.atk * 3); 
+        monster.hp -= selfDmg;
+        log.push(`⛓️ **${player.name}** أجبر الوحش على ضرب نفسه بوحشية! (**${selfDmg}** ضرر)`);
+        return { success: true, name: "هيمنـة الإمبـراطـور" };
+    }
+
+    // 📜 دستور الموت (ضعف x2 للوحش)
+    if (skill.id === 'skill_death_constitution') {
+        // val: 1.0 تعني زيادة الضرر المتلقى بنسبة 100% (أي الضعف)
+        monster.effects.push({ type: 'weakness', val: 1.0, turns: 99 });
+        log.push(`📜 **${player.name}** سن قانون الموت! الوحش يتلقى ضرراً مضاعفاً الآن.`);
+        return { success: true, name: "دستـور المـوت" };
+    }
+
 
     // ====================================================
     // 2. منطق مهارات الكلاسات (Class Skills Logic)
@@ -116,13 +168,13 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     // القيمة الأساسية للمهارة (من الكونفق أو المعدلة)
     const value = skill.effectValue || (skill.base_value ? skill.base_value * (player.id === OWNER_ID ? 2 : 1) : 0); 
 
-    if (skill.id !== 'skill_secret_owner' && skill.id !== 'skill_owner_leave') {
+    if (!skill.id.startsWith('skill_') || (player.id !== OWNER_ID)) {
         if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
             return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
         }
     }
 
-    // ضبط الكولداون بناءً على الملف المرسل (أو الافتراضي)
+    // ضبط الكولداون
     const skillCooldown = skill.cooldown || (skill.id.startsWith('race_') ? 5 : 3);
     if (player.id !== OWNER_ID) player.skillCooldowns[skill.id] = skillCooldown;
 
@@ -131,16 +183,15 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     // 🔥🔥 تنفيذ المهارات بناءً على stat_type 🔥🔥
     // =================================================================
     
-    // أولاً: التحقق من مهارة الألف (Elf) الخاصة التي طلبت تعديلها (50% شلل)
+    // أولاً: التحقق من مهارة الألف (Elf) الخاصة
     if (skill.id === 'race_elf_skill') {
-        // كما هو موضح في الملف: "Stun_Vulnerable" لكنك طلبت تعديلها لتكون 50% شلل
         skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
         monster.hp -= skillDmg;
         player.totalDamage += skillDmg;
 
         if (Math.random() < 0.5) { // احتمالية 50%
-            monster.frozen = true; // شلل (يمنع الهجوم)
-            monster.effects.push({ type: 'weakness', val: 0.5, turns: 1 }); // زيادة الضرر عليه
+            monster.frozen = true; // شلل
+            monster.effects.push({ type: 'weakness', val: 0.5, turns: 1 });
             log.push(`🏹 **${player.name}** أصاب الوحش بالشلل في مقتل! (${skillDmg} ضرر)`);
         } else {
             log.push(`🏹 **${player.name}** أطلق وابلاً من السهام! (${skillDmg} ضرر)`);
@@ -161,7 +212,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
         // --- 2. Cleanse_Buff_Shield (Human) ---
         case 'Cleanse_Buff_Shield': { 
-            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff'); // إبقاء البفات ومسح الديبفات
+            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff');
             const shieldVal = Math.floor(player.maxHp * (value / 100));
             player.shield += shieldVal;
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
@@ -185,7 +236,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         // --- 4. Sacrifice_Crit (Demon) ---
         case 'Sacrifice_Crit': { 
             const selfDmg = Math.floor(player.maxHp * 0.10);
-            // القيمة هنا تمثل نسبة الضرر (مثلاً 180%)
             skillDmg = Math.floor(effectiveAtk * (value / 100)) * mult;
             applyDamageToPlayer(player, selfDmg);
             monster.hp -= skillDmg;
@@ -194,7 +244,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             break;
         }
 
-        // --- 5. Stun_Vulnerable (Elf - النسخة العامة لو لم يكن الـ ID مخصصاً) ---
+        // --- 5. Stun_Vulnerable (Elf Generic) ---
         case 'Stun_Vulnerable': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             monster.hp -= skillDmg;
@@ -263,8 +313,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
         // --- 10. Reflect_Tank (Dwarf) ---
         case 'Reflect_Tank': { 
-            // القيمة هنا هي نسبة تخفيض الضرر وعكسه
-            const reduction = Math.min(0.8, value / 100 + 0.2); // حد أقصى 80%
+            const reduction = Math.min(0.8, value / 100 + 0.2); 
             player.effects.push({ type: 'dmg_reduce', val: reduction, turns: 2 });
             player.effects.push({ type: 'reflect', val: 0.5, turns: 2 }); 
             log.push(`🛡️ **${player.name}** تحصن بـ ${skill.name}! (دفاع وعكس ضرر)`);
@@ -273,7 +322,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
         // --- 11. Execute_Heal (Ghoul) ---
         case 'Execute_Heal': { 
-            skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult; // ضرر عالٍ
+            skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult; 
             if (monster.hp - skillDmg <= 0) {
                 monster.hp = 0;
                 player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * 0.25));
@@ -286,7 +335,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             break;
         }
         
-        // --- 12. Utility (Dispel) ---
+        // --- 12. Utility ---
         case 'Utility': {
              if (skill.id === 'skill_dispel') {
                 monster.effects = []; 
@@ -315,14 +364,13 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
 
         // --- 14. Standard Skills (%) ---
-        // أي مهارة نوعها % (شفاء، درع، سم، إضعاف، بوف)
         case '%': {
             switch (skill.id) {
                 case 'skill_healing':
                 case 'skill_cleanse': {
                     let healAmount = Math.floor(player.maxHp * (value / 100)) * mult;
                     if (skill.id === 'skill_cleanse') {
-                        player.effects = []; // مسح الآثار السلبية
+                        player.effects = []; 
                         log.push(`✨ **${player.name}** تطهر وشفى **${healAmount}** HP.`);
                     } else {
                         log.push(`❤️‍🩹 **${player.name}** استخدم ${skill.name} واستعاد **${healAmount}** HP.`);
@@ -365,7 +413,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      break;
                 }
                 default: {
-                    // في حال كان هناك مهارة % غير معروفة، نعتبرها ضرر مباشر
                     let multiplier = 1 + (value / 100);
                     skillDmg = Math.floor(effectiveAtk * multiplier) * mult;
                     monster.hp -= skillDmg;
@@ -378,7 +425,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
 
         default: {
-             // Fallback لأي شيء آخر
              skillDmg = Math.floor(effectiveAtk) * mult;
              monster.hp -= skillDmg;
              player.totalDamage += skillDmg; 
