@@ -275,7 +275,7 @@
       "name": "امير القاعة الصوتية",
       "description": "اقضِ 10 دقائق بالقنوات الصوتية",
       "stat": "totalVCTime",
-      "goal": 600,
+      "goal": 10,
       "reward": { "mora": 300, "xp": 300 },
       "emoji": "🎙️",
       "rarity": "common"
@@ -375,7 +375,7 @@
       "name": "ملك القاعة الصوتية",
       "description": "اقضِ 3 ساعات بالقنوات الصوتية",
       "stat": "totalVCTime",
-      "goal": 10800,
+      "goal": 180,
       "reward": { "mora": 1500, "xp": 1000 },
       "emoji": "🎙️",
       "rarity": "rare"
@@ -435,7 +435,7 @@
       "name": "عاهل القاعة الصوتية",
       "description": "اقضِ 24 ساعة بالقنوات الصوتية",
       "stat": "totalVCTime",
-      "goal": 86400,
+      "goal": 1440,
       "reward": { "mora": 3000, "xp": 2000 },
       "emoji": "🎙️",
       "rarity": "rare"
@@ -475,7 +475,7 @@
       "name": "سلطان القاعة الصوتية",
       "description": "اقضِ 3 ايام بالقنوات الصوتية",
       "stat": "totalVCTime",
-      "goal": 259200,
+      "goal": 4320,
       "reward": { "mora": 4000, "xp": 2500 },
       "emoji": "🎙️",
       "rarity": "epic"
@@ -525,7 +525,7 @@
       "name": "امبراطور القاعة الصوتية",
       "description": "اقضِ 7 ايام بالقنوات الصوتية",
       "stat": "totalVCTime",
-      "goal": 604800,
+      "goal": 10080,
       "reward": { "mora": 7600, "xp": 5000 },
       "emoji": "👑",
       "rarity": "epic"
