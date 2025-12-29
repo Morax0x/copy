@@ -108,6 +108,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
+    // 🔥🔥🔥 رسالة الختم (تظهر في البداية) 🔥🔥🔥
+    const ownerPlayerStart = players.find(p => p.id === OWNER_ID);
+    if (ownerPlayerStart) {
+        threadChannel.send(`✶ <@${ownerPlayerStart.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
+    }
+
     const maxFloors = 100; 
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
@@ -134,6 +140,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 break; // نوقف الدانجون إذا الروم انحذف
             }
             continue; // ننتقل للدورة التالية (الطابق الجديد)
+        }
+
+        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19) 🔥🔥🔥
+        if (floor === 19) {
+            const ownerPlayerAlive = players.find(p => p.id === OWNER_ID && !p.isDead);
+            if (ownerPlayerAlive) {
+                await threadChannel.send(`✶ <@${ownerPlayerAlive.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+            }
         }
 
         // 🔥 الحفاظ على الدروع والبفات المهمة فقط 🔥
@@ -801,7 +815,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         let baseMora = Math.floor(getBaseFloorMora(floor));
-        let floorXp = Math.floor(baseMora * 0.03);  
+        let floorXp = Math.floor(baseMora * 0.03);  
         players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
@@ -854,15 +868,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             console.log("Thread likely deleted during rest.");
             break;
         }
+
+        // 🔥 مؤقت التنبيه قبل النهاية بـ 10 ثواني 🔥
+        const warningTimeout = setTimeout(() => {
+            threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
+        }, 50000); // 50 ثانية
         
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
+                clearTimeout(warningTimeout); // إيقاف التنبيه عند التفاعل
+
                 if (i.customId === 'continue') {
                     if (i.user.id !== hostId) {
                         return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
                     }
-                    await i.deferUpdate(); 
+                    await i.deferUpdate(); 
                     return decCollector.stop('continue');
                 }
 
@@ -876,7 +897,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             const leavingPlayer = players[pIndex];
                             leavingPlayer.retreatFloor = floor;
                             retreatedPlayers.push(leavingPlayer);
-                            players.splice(pIndex, 1); 
+                            players.splice(pIndex, 1); 
                             
                             await i.reply({ content: `👋 **لقد انسحبت من الدانجون واكتفيت بغنائمك!**`, ephemeral: true });
                             await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`).catch(()=>{});
@@ -889,19 +910,30 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
             });
             
-            decCollector.on('end', (c, reason) => res(reason));
+            decCollector.on('end', (c, reason) => {
+                clearTimeout(warningTimeout); // التأكد من إيقاف المؤقت
+                res(reason);
+            });
         });
 
         await restMsg.edit({ components: [] }).catch(()=>{});
 
-        if (decision === 'retreat' || decision === 'time') { 
+        if (decision === 'time') { 
+            // 🔥🔥 موت الفريق بالكامل عند انتهاء الوقت 🔥🔥
+            players.forEach(p => { p.isDead = true; p.hp = 0; });
+            await threadChannel.send(`☠️ **انتهى الوقت!** ابتلع الدانجون الفريق بأكمله بسبب تردد القائد...`).catch(()=>{});
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            break; // إنهاء الدانجون
+        } 
+        else if (decision === 'retreat') {
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
-        } else if (decision === 'continue') {
+        } 
+        else if (decision === 'continue') {
             
             // فخ الشذوذ الزمكاني (بدون منشن)
             // شرط إضافي: floor < 90 لضمان وجود مساحة للقفز للأمام
-            if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
+            if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
                 
@@ -910,13 +942,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
 
-                floor = targetFloor - 1; 
+                floor = targetFloor - 1; 
 
                 const trapEmbed = new EmbedBuilder()
                     .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
                     .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم... النجاة شبه مستحيلة!`)
                     .setColor(Colors.DarkRed)
-                    .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
+                    .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
 
                 await threadChannel.send({ embeds: [trapEmbed] }).catch(()=>{});
             } else {
@@ -969,8 +1001,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     if (!sql || !sql.open) return;
     let title = "", color = "", randomImage = null;
 
-    if (status === 'win') { title = "❖ أسطـورة الدانـجون !"; color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); } 
-    else if (status === 'retreat') { title = "❖ انـسـحـاب تـكـتيـكـي !"; color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); } 
+    if (status === 'win') { title = "❖ أسطـورة الدانـجون !"; color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); } 
+    else if (status === 'retreat') { title = "❖ انـسـحـاب تـكـتيـكـي !"; color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); } 
     else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
@@ -994,14 +1026,14 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             finalMora = Math.floor(p.loot.mora);
             finalXp = Math.floor(p.loot.xp);
             
-            if (p.isDead) { 
-                finalMora = Math.floor(finalMora * 0.5); 
-                finalXp = Math.floor(finalXp * 0.5); 
+            if (p.isDead) { 
+                finalMora = Math.floor(finalMora * 0.5); 
+                finalXp = Math.floor(finalXp * 0.5); 
             }
         }
         
         let statusEmoji = "";
-        if (p.isDead) { 
+        if (p.isDead) { 
             const deathFloorInfo = p.deathFloor ? `(مات في ${p.deathFloor})` : "(مات)";
             statusEmoji = `💀 ${deathFloorInfo}`;
         } else if (p.retreatFloor) {
@@ -1034,13 +1066,13 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             const expiresAt = Date.now() + debuffDuration;
             
             allParticipants.forEach(p => {
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, -15, expiresAt, 'mora', -0.15);
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, p.id, -15, expiresAt, 'xp', -0.15);
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'mora', -0.15);
+                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'xp', -0.15);
             });
             await mainChannel.send(`**💀 لعنـة الهزيمـة:** أصابت اللعنة جميع المشاركين! (-15% مورا واكس بي لـ 15د) ${EMOJI_NERF}`).catch(()=>{});
 
         } else if (mvpPlayer) {
-            const buffDuration = 15 * 60 * 1000; 
+            const buffDuration = 15 * 60 * 1000; 
             const expiresAt = Date.now() + buffDuration;
             
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
@@ -1050,7 +1082,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     try {
         await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة <:emoji_69:1451172248173023263> ...**` });
-        setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
+        setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
     } catch(e) { }
 }
 
