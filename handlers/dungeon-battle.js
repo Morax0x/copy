@@ -100,9 +100,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             playerData.startingShield = 0; 
             
             // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم (Fix: checking currentLevel) 🔥🔥🔥
+            // 🔥🔥🔥 الفحص الحقيقي للختم مع المضاعف المتدرج 🔥🔥🔥
             // ============================================================
             playerData.isSealed = false;
+            playerData.sealMultiplier = 1.0; // الافتراضي 100%
             
             if (m.id !== OWNER_ID) {
                 let maxItemLevel = 0;
@@ -125,6 +126,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 // 3. قرار الختم
                 if (maxItemLevel > 10) {
                     playerData.isSealed = true;
+                    playerData.sealMultiplier = 0.2; // البداية: القوة 20% فقط
                 }
             }
             // ============================================================
@@ -173,11 +175,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
 
-        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19 للمختومين) 🔥🔥🔥
+        // 🔥🔥🔥 التدرج في فك الختم 🔥🔥🔥
+        
+        // 1. الطابق 15: فك جزئي (تصير القوة 40%)
+        if (floor === 15) {
+            players.forEach(p => {
+                if (p.isSealed && !p.isDead) {
+                    p.sealMultiplier = 0.4; // رفع القوة إلى 40%
+                    threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
+                }
+            });
+        }
+
+        // 2. الطابق 19: فك كامل (تصير القوة 100%)
         if (floor === 19) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
-                    p.isSealed = false; // فك الختم فعلياً
+                    p.isSealed = false; 
+                    p.sealMultiplier = 1.0; // رجوع القوة كاملة
                     threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                 }
             });
@@ -538,17 +553,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
-                                // 🔥🔥🔥 نيرف المهارات (Skill Nerf) 🔥🔥🔥
-                                // نحتفظ بالقيم الأصلية
+                                // 🔥🔥🔥 نيرف المهارات (Skill Nerf) مع المضاعف المتغير 🔥🔥🔥
                                 let originalAtk = p.atk;
-                                let originalEffect = skillObj.effectValue;
-
-                                // نطبق الختم إذا اللاعب مختوم
+                                // نستخدم sealMultiplier بدل الرقم الثابت
                                 if (p.isSealed) {
-                                    p.atk = Math.floor(p.atk * 0.2); // تقليل الهجوم للمهارة
+                                    p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     if (skillObj.effectValue) {
-                                        // نستخدم نسخة من المهارة عشان ما نخرب الأصلية
-                                        skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * 0.2) };
+                                        skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * p.sealMultiplier) };
                                     }
                                 }
 
@@ -556,7 +567,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 // 🔥🔥🔥 إرجاع القيم الأصلية بعد التنفيذ 🔥🔥🔥
                                 p.atk = originalAtk;
-                                // ملاحظة: skillObj كان نسخة محلية (اذا دخلنا الـ if) فما يحتاج نرجعه، الأساسي سليم
 
                                 if (res && res.error) {
                                     await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
@@ -668,12 +678,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (canAttack) {
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                                    // استخدام let لتغيير القيمة مؤقتاً
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
-                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
+                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي مع المضاعف المتغير 🔥🔥🔥
                                     if (p.isSealed) {
-                                        currentAtk = Math.floor(currentAtk * 0.2); // تقليل القوة إلى 20%
+                                        currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
                                     }
 
                                     const baseCrit = p.critRate || 0.2;
