@@ -91,7 +91,7 @@ module.exports = {
         const chatEmbed = new EmbedBuilder()
             .setDescription('✶ تـم الاسـكـات ...')
             .setColor('Random')
-            .setImage('https://tenor.com/view/amagami-amagami-sister-tying-the-knot-with-an-amagami-sister-mahiru-anekouji-gif-17869569217293962202');
+            .setImage('https://i.postimg.cc/3rDRFSGW/amagami-amagami-sister.gif');
         
         message.reply({ embeds: [chatEmbed], allowedMentions: { repliedUser: false } });
 
