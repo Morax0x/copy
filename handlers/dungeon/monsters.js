@@ -12,7 +12,7 @@ function getSmartTarget(players) {
 
     // 2. الأولوية للأضعف (Kill Confirm)
     const lowestHp = alive.sort((a, b) => a.hp - b.hp)[0];
-    if (lowestHp.hp < lowestHp.maxHp * 0.3 && Math.random() < 0.8) return lowestHp; // 80% فرصة لقتل الضعيف
+    if (lowestHp && lowestHp.hp < lowestHp.maxHp * 0.3 && Math.random() < 0.8) return lowestHp; // 80% فرصة لقتل الضعيف
 
     // 3. عشوائي
     return alive[Math.floor(Math.random() * alive.length)];
@@ -21,14 +21,17 @@ function getSmartTarget(players) {
 // --- ⚔️ مهارات الوحوش العامة (للمينيون والنخبة) ---
 const GENERIC_MONSTER_SKILLS = [
     { name: "ضربة قاصمة", emoji: "🔨", chance: 0.3, execute: (m, p, l) => { 
-        const target = getSmartTarget(p); // استخدام الاستهداف الذكي
+        const target = getSmartTarget(p); 
         if(target){ applyDamageToPlayer(target, Math.floor(m.atk * 1.5)); l.push(`🔨 **${m.name}** رصد نقطة ضعف **${target.name}** وسدد ضربة قاصمة!`); }
     }},
     { name: "عضة سامة", emoji: "🤮", chance: 0.3, execute: (m, p, l) => { 
-        const target = p.filter(pl=>!pl.isDead)[Math.floor(Math.random()*p.filter(pl=>!pl.isDead).length)];
+        const alive = p.filter(pl=>!pl.isDead);
+        if (alive.length === 0) return;
+        const target = alive[Math.floor(Math.random()*alive.length)];
         if(target){ target.effects.push({type:'poison', val: Math.floor(m.atk*0.2), turns:3}); l.push(`🤮 **${m.name}** نفث سماً على **${target.name}**!`); }
     }},
     { name: "صرخة مرعبة", emoji: "🗣️", chance: 0.2, execute: (m, p, l) => { 
+        // تم التعديل: الصرخة الآن تسبب "ارتباك" أو "ضعف"
         p.forEach(pl=>{if(!pl.isDead && Math.random()<0.5) pl.effects.push({type:'weakness',val:0.3,turns:2})}); l.push(`🗣️ **${m.name}** أطلق صرخة أضعفت عزيمة البعض!`);
     }},
     { name: "هجوم متوحش", emoji: "🐾", chance: 0.3, execute: (m, p, l) => { 
@@ -86,8 +89,16 @@ const MONSTER_SKILLS = {
         emoji: "🌋",
         chance: 0.25,
         execute: (monster, players, log) => {
-            players.forEach(p => { if (!p.isDead) { applyDamageToPlayer(p, Math.floor(monster.atk * 0.9)); if (Math.random() < 0.5) p.skipCount = (p.skipCount || 0) + 1; } });
-            log.push(`🌋 **غودفري** مزق الأرض! (ضرر + إسقاط)`);
+            // 🔥 تم الإصلاح: الآن يطبق Stun بدلاً من skipCount
+            players.forEach(p => { 
+                if (!p.isDead) { 
+                    applyDamageToPlayer(p, Math.floor(monster.atk * 0.9)); 
+                    if (Math.random() < 0.5) {
+                        p.effects.push({ type: 'stun', val: 1, turns: 1 }); // شلل لمدة جولة
+                    }
+                } 
+            });
+            log.push(`🌋 **غودفري** مزق الأرض! (ضرر + طرح أرضاً "شلل")`);
         }
     },
     "الساحرة راني": {
@@ -107,7 +118,11 @@ const MONSTER_SKILLS = {
         chance: 0.30,
         execute: (monster, players, log) => {
             const target = getSmartTarget(players);
-            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 2.2)); log.push(`⚡ **إيشين** صعق **${target.name}** بالبرق!`); }
+            if(target) { 
+                applyDamageToPlayer(target, Math.floor(monster.atk * 2.2)); 
+                target.effects.push({ type: 'stun', val: 1, turns: 1 }); // البرق يسبب شلل
+                log.push(`⚡ **إيشين** صعق **${target.name}** بالبرق وشل حركته!`); 
+            }
         }
     },
     "النامليس كينج": {
@@ -192,8 +207,15 @@ const MONSTER_SKILLS = {
         emoji: "🕶️",
         chance: 0.30,
         execute: (monster, players, log) => {
-            const target = players.filter(p => !p.isDead).sort((a,b) => b.atk - a.atk)[0]; // استهداف الأقوى هجوماً (DPS)
-            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); target.skipCount = (target.skipCount||0)+1; log.push(`🕶️ **ويسكر** باغث **${target.name}** بسرعة خارقة!`); }
+            const alive = players.filter(p => !p.isDead);
+            if(alive.length === 0) return;
+            const target = alive.sort((a,b) => b.atk - a.atk)[0]; 
+            if(target) { 
+                applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); 
+                // 🔥 تم الإصلاح: Stun بدلاً من skipCount
+                target.effects.push({ type: 'stun', val: 1, turns: 1 });
+                log.push(`🕶️ **ويسكر** باغث **${target.name}** وشل حركته!`); 
+            }
         }
     },
     "بيراميد هيد": {
@@ -213,7 +235,11 @@ const MONSTER_SKILLS = {
         chance: 0.25,
         execute: (monster, players, log) => {
             const target = getSmartTarget(players);
-            if(target) { applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); target.effects.push({ type: 'weakness', val: 0.5, turns: 3 }); log.push(`❄️ **آرثاس** جمد روح **${target.name}**!`); }
+            if(target) { 
+                applyDamageToPlayer(target, Math.floor(monster.atk * 1.5)); 
+                target.effects.push({ type: 'stun', val: 1, turns: 1 }); // تجميد = شلل
+                log.push(`❄️ **آرثاس** جمد **${target.name}** بالكامل!`); 
+            }
         }
     },
     "إليدان ستورمريج": {
@@ -266,8 +292,13 @@ const MONSTER_SKILLS = {
         emoji: "🦖",
         chance: 0.30,
         execute: (monster, players, log) => {
-            players.forEach(p => { if(!p.isDead && Math.random()<0.5) p.skipCount = (p.skipCount||0)+1; });
-            log.push(`🦖 **تيرانيوس** زأر بقوة مرعبة! (إلغاء أدوار)`);
+            // 🔥 تم الإصلاح: Stun بدلاً من skipCount
+            players.forEach(p => { 
+                if(!p.isDead && Math.random()<0.5) {
+                    p.effects.push({ type: 'stun', val: 1, turns: 1 });
+                }
+            });
+            log.push(`🦖 **تيرانيوس** زأر بقوة مرعبة! (شلل بسبب الخوف)`);
         }
     },
 
