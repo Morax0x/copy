@@ -1,4 +1,15 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require('discord.js');
+const { 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    Colors,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
+} = require('discord.js');
+
 const { 
     dungeonConfig, 
     EMOJI_MORA, 
@@ -7,7 +18,8 @@ const {
     EMOJI_NERF, 
     OWNER_ID, 
     WIN_IMAGES, 
-    LOSE_IMAGES 
+    LOSE_IMAGES,
+    skillsConfig // 🔥 ضروري جداً للقوائم
 } = require('./dungeon/constants');
 
 const { 
@@ -99,19 +111,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // التحقق من اللاعبين
         if (players.length === 0 || players.every(p => p.isDead)) break; 
 
-        // 🔥 تطبيق تخطي الطوابق (الخريطة المختصرة) 🔥
+        // 🔥 تطبيق تخطي الطوابق (الخريطة المختصرة أو بوابة الأبعاد) 🔥
         if (merchantState.skipFloors > 0) {
-            merchantState.skipFloors--;
+            // نأخذ القفزة كاملة في دورة واحدة
+            const floorsSkipped = merchantState.skipFloors;
+            merchantState.skipFloors = 0; // تصفير
             
-            let skipMora = Math.floor(getBaseFloorMora(floor) * 0.5);
-            let skipXp = Math.floor(skipMora * 0.03);
-            
-            players.forEach(p => { if (!p.isDead) { p.loot.mora += skipMora; p.loot.xp += skipXp; } });
-            totalAccumulatedCoins += skipMora;
-            totalAccumulatedXP += skipXp;
+            // تحديث رقم الطابق
+            const oldFloor = floor;
+            floor += floorsSkipped; 
+            if (floor > maxFloors) floor = maxFloors; // سقف للطوابق
 
-            await threadChannel.send(`🗺️ **تم استخدام الخريطة المختصرة!** تم تجاوز الطابق ${floor} وحصل الفريق على نصف الغنائم (${skipMora} مورا).`);
-            continue; 
+            // حساب الجوائز التقريبية (اختياري، هنا نعتمد على ما تم إضافته في المودال أو التاجر)
+            // إذا كان التخطي من التاجر (يدفع الثمن) أما البوابة (بالخيار)
+            
+            await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
+            continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
 
         // 🔥 الحفاظ على الدروع والبفات المهمة فقط 🔥
@@ -195,9 +210,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, afkP.id, -100, expiresAt, 'mora', -1.0);
                                 sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guild.id, afkP.id, -100, expiresAt, 'xp', -1.0);
 
-                                log.push(`☠️ **${afkP.name}** مات وتحللت جثته بسبب الخمول!`);
+                                log.push(`☠️ **${afkP.name}** ابتـلعـه الدانـجون بسبب الخمـول!`);
                                 
-                                await threadChannel.send(`✶ <@${afkP.id}> <:emoji_69:1451172248173023263> خـرقـت قوانين الدانجـون بسبب خمولك المستمـر، تـم لعنـك بمقدار 100%- على مكاسب المورا والاكس بي 60د <a:Nerf:1438795685280612423>`).catch(()=>{});
+                                await threadChannel.send(`✶ <@${afkP.id}> <:emoji_69:1451172248173023263> خـرقـت قوانين الدانجـون بسبب خمولك المستمـر ابتعلك الدانجـون و تـم لعنـك بمقدار 100%- على مكاسب المورا والاكس بي 60د <a:Nerf:1438795685280612423>`).catch(()=>{});
                             } else {
                                 monster.targetFocusId = afkP.id; 
                                 actedPlayers.push(afkP.id); 
@@ -213,10 +228,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
-                    
-                    if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة، انتظر لحظة.", ephemeral: true }).catch(()=>{});
-                    
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
                         if (!ownerPlayer) {
@@ -230,6 +241,151 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         }
                     }
 
+                    // ============================================================
+                    // 👑 منطق لوحة تحكم الإمبراطور (زر الدفاع) 👑
+                    // ============================================================
+                    if (i.customId === 'def' && i.user.id === OWNER_ID) {
+                        const menu = new StringSelectMenuBuilder()
+                            .setCustomId('owner_god_menu_category')
+                            .setPlaceholder('👑 اختر قسم القوة المطلقة')
+                            .addOptions([
+                                { label: 'الإمبراطـور', description: 'مهارات الوجود والعدم', value: 'cat_emperor', emoji: '👑' },
+                                { label: 'الأعـراق', description: 'جميع مهارات الأعراق', value: 'cat_races', emoji: '🧬' },
+                                { label: 'التصنيفـات', description: 'مهارات الكلاسات الخاصة', value: 'cat_classes', emoji: '⚔️' },
+                                { label: 'مهـارات عامة', description: 'المهارات الأساسية بقوة مضاعفة', value: 'cat_skills', emoji: '📜' },
+                            ]);
+                        
+                        return i.reply({ 
+                            content: `**👑 مرحباً مولاي الإمبراطور..**\nاختر التصنيف لاستدعاء القوة:`, 
+                            components: [new ActionRowBuilder().addComponents(menu)], 
+                            ephemeral: true 
+                        });
+                    }
+
+                    // 🛠️ معالجة اختيارات قوائم الإمبراطور (Select Menus)
+                    if (i.isStringSelectMenu()) {
+                        if (i.customId === 'owner_god_menu_category') {
+                            const category = i.values[0];
+                            let options = [];
+
+                            if (category === 'cat_emperor') {
+                                options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
+                                    label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
+                                }));
+                            } else if (category === 'cat_races') {
+                                options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
+                                    label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
+                                }));
+                            } else if (category === 'cat_classes') {
+                                options = [
+                                    { label: 'صرخة الحرب', description: 'بفات للفريق', value: 'class_Leader', emoji: '⚔️' },
+                                    { label: 'استفزاز', description: 'سحب الضرر ودفاع', value: 'class_Tank', emoji: '🛡️' },
+                                    { label: 'النور المقدس', description: 'إحياء وعلاج', value: 'class_Priest', emoji: '✨' },
+                                    { label: 'سجن الجليد', description: 'تجميد الوحش', value: 'class_Mage', emoji: '❄️' },
+                                    { label: 'حارس الظل', description: 'استدعاء وحش', value: 'class_Summoner', emoji: '🐺' }
+                                ];
+                            } else if (category === 'cat_skills') {
+                                options = skillsConfig.filter(s => !s.id.startsWith('race_') && s.stat_type !== 'Owner').map(s => ({
+                                    label: s.name, description: `(x10 Effect) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
+                                }));
+                            }
+
+                            if (options.length === 0) return i.reply({ content: "لا توجد مهارات هنا.", ephemeral: true });
+
+                            const skillMenu = new StringSelectMenuBuilder()
+                                .setCustomId('owner_god_menu_execute')
+                                .setPlaceholder('⚡ اختر المهارة للتنفيذ فوراً')
+                                .addOptions(options.slice(0, 25));
+
+                            return i.update({ 
+                                content: `**👑 تصنيف: ${category.replace('cat_', '').toUpperCase()}**\nاختر المهارة لإطلاقها:`, 
+                                components: [new ActionRowBuilder().addComponents(skillMenu)] 
+                            });
+                        }
+
+                        if (i.customId === 'owner_god_menu_execute') {
+                            const skillID = i.values[0];
+                            let skillObj = skillsConfig.find(s => s.id === skillID);
+                            if (!skillObj && skillID.startsWith('class_')) skillObj = { id: skillID, name: skillID, base_price: 0 };
+                            
+                            let p = players.find(pl => pl.id === i.user.id);
+                            if (!p) return;
+
+                            const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
+
+                            if (result.type === 'dimension_gate_request') {
+                                const modal = new ModalBuilder()
+                                    .setCustomId('modal_dimension_gate')
+                                    .setTitle('🌌 بوابة الأبعاد');
+                                const floorInput = new TextInputBuilder()
+                                    .setCustomId('gate_floor_number')
+                                    .setLabel("رقم الطابق الذي تريد الانتقال له؟")
+                                    .setStyle(TextInputStyle.Short)
+                                    .setPlaceholder("مثال: 50")
+                                    .setRequired(true);
+                                const rewardInput = new TextInputBuilder()
+                                    .setCustomId('gate_rewards_choice')
+                                    .setLabel("هل تريد جوائز الطوابق المتخطاة؟")
+                                    .setStyle(TextInputStyle.Short)
+                                    .setPlaceholder("نعم / لا")
+                                    .setRequired(false);
+                                modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
+                                return i.showModal(modal);
+                            }
+
+                            if (result.type === 'owner_leave') {
+                                 const index = players.findIndex(p => p.id === OWNER_ID);
+                                 if (index > -1) {
+                                     players.splice(index, 1);
+                                     await i.update({ content: "💨 تم تنفيذ الانسحاب!", components: [] });
+                                     if (players.length === 0) { collector.stop('monster_dead'); return; }
+                                     actedPlayers.push(i.user.id); 
+                                     return;
+                                 }
+                            }
+
+                            if (result.success) {
+                                actedPlayers.push(p.id);
+                                p.skipCount = 0;
+                                await i.update({ content: "✅ تم التنفيذ!", components: [] });
+                                await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+                            }
+                        }
+                    }
+
+                    // 📝 معالجة المودال (بوابة الأبعاد)
+                    if (i.isModalSubmit() && i.customId === 'modal_dimension_gate') {
+                        const floorNum = parseInt(i.fields.getTextInputValue('gate_floor_number'));
+                        const wantRewards = i.fields.getTextInputValue('gate_rewards_choice')?.toLowerCase().includes('نعم');
+
+                        if (isNaN(floorNum) || floorNum <= floor) {
+                            return i.reply({ content: "❌ رقم طابق غير صالح!", ephemeral: true });
+                        }
+
+                        const jump = floorNum - floor - 1; // -1 because loop increments
+                        merchantState.skipFloors = jump; 
+                        
+                        if (wantRewards) {
+                            const extraMora = jump * 500;
+                            players.forEach(p => { if (!p.isDead) p.loot.mora += extraMora; });
+                            log.push(`💰 **الإمبراطور** نهب جوائز ${jump} طابق! (+${extraMora} مورا)`);
+                        }
+
+                        monster.hp = 0; // kill monster to proceed
+                        log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
+                        await i.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
+                        collector.stop('monster_dead');
+                        return;
+                    }
+
+
+                    // ============================================================
+                    // ⚔️ المنطق العادي (للبقية)
+                    // ============================================================
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
+                    
+                    if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
+                    
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
@@ -258,7 +414,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let skillNameUsed = "مهارة";
                                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
-                                const { skillsConfig } = require('./dungeon/constants'); 
                                 
                                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
@@ -488,6 +643,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
+                                // هنا نضاعف الضرر إذا كانت "دستور الموت" مفعل (weakness: 1.0)
+                                const weakEffect = monster.effects.find(e => e.type === 'weakness');
+                                if (weakEffect && weakEffect.val >= 1.0) dmg = Math.floor(dmg * 0.5); // إذا الوحش ضعيف جداً، هجومه يضعف أيضاً (اختياري)
+
                                 if(target.defending) dmg = Math.floor(dmg * 0.5);
                                 
                                 const reflectEffect = target.effects.find(e => e.type === 'reflect');
