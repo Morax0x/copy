@@ -99,19 +99,44 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             // تهيئة متغير الدرع المشتراة
             playerData.startingShield = 0; 
             
-            // 🔥🔥🔥 فحص مستوى المهارات للختم 🔥🔥🔥
+            // 🔥🔥🔥 فحص ذكي للختم (مهارات واسلحة) بدون لوج 🔥🔥🔥
             playerData.isSealed = false;
+            
             if (m.id !== OWNER_ID) {
-                // نفترض أن playerData.skills عبارة عن كائن يحتوي المهارات
-                // نقوم بفحص ما إذا كان هناك أي مهارة مستواها أعلى من 10
-                const skills = playerData.skills || {};
-                const hasOverpoweredSkill = Object.values(skills).some(skill => skill.level > 10);
+                let allItemsLevel = [];
+
+                // 1. معالجة المهارات (تفكيك النص اذا كان JSON)
+                let rawSkills = playerData.skills;
+                if (typeof rawSkills === 'string') {
+                    try { rawSkills = JSON.parse(rawSkills); } catch(e) { rawSkills = {}; }
+                }
                 
-                // إذا كان لديه مهارة قوية، يتم ختمه
-                if (hasOverpoweredSkill) {
+                // تحويل المهارات لمصفوفة
+                if (Array.isArray(rawSkills)) {
+                    rawSkills.forEach(s => allItemsLevel.push(s.level || s.lvl || 0));
+                } else if (rawSkills && typeof rawSkills === 'object') {
+                    Object.values(rawSkills).forEach(s => allItemsLevel.push(s.level || s.lvl || 0));
+                }
+
+                // 2. معالجة السلاح (إذا كان موجود في الداتا)
+                let rawWeapon = playerData.weapon;
+                if (rawWeapon) {
+                    if (typeof rawWeapon === 'string') {
+                        try { rawWeapon = JSON.parse(rawWeapon); } catch(e) {}
+                    }
+                    if (typeof rawWeapon === 'object') {
+                        allItemsLevel.push(rawWeapon.level || rawWeapon.lvl || 0);
+                    }
+                }
+
+                // 3. الفحص النهائي: هل يوجد أي شيء فوق لفل 10؟
+                const isOverpowered = allItemsLevel.some(lvl => lvl > 10);
+                
+                if (isOverpowered) {
                     playerData.isSealed = true;
                 }
             }
+            // ------------------------------------------------
 
             players.push(playerData);
         }
@@ -638,7 +663,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     
                                     // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
                                     if (p.isSealed) {
-                                        currentAtk = Math.floor(currentAtk * 0.3); // قوة 30% فقط
+                                        currentAtk = Math.floor(currentAtk * 0.2); // تقليل القوة إلى 20%
                                     }
 
                                     const baseCrit = p.critRate || 0.2;
