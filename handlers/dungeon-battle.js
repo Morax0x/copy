@@ -204,11 +204,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         // 🔥🔥🔥 التدرج في فك الختم 🔥🔥🔥
         
-        // 1. الطابق 15: فك جزئي (تصير القوة 40%)
+        // 1. الطابق 15: فك جزئي (تصير القوة 50% - نصف الختم)
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
-                    p.sealMultiplier = 0.4;
+                    p.sealMultiplier = 0.5; // نصف القوة
                     threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
                 }
             });
@@ -220,7 +220,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 if (p.isSealed && !p.isDead) {
                     p.isSealed = false; 
                     p.sealMultiplier = 1.0;
-                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك اطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                 }
             });
         }
@@ -488,13 +488,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.skipCount = 0;
                                     await subI.update({ content: "✅ تم التنفيذ!", components: [] });
                                     
+                                    // 🔥🔥 إصلاح التعليق: التحقق من موت الوحش + إنهاء الدور 🔥🔥
                                     if (monster.hp <= 0) {
                                         monster.hp = 0;
                                         ongoing = false;
                                         collector.stop('monster_dead');
-                                        return; 
+                                        return; // إنهاء فوري
                                     }
 
+                                    // التأكد من أن الدور يمشي اذا الكل لعب
                                     if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                                         clearTimeout(turnTimeout); collector.stop('turn_end'); 
                                     } else {
@@ -503,7 +505,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
                         });
-                        return; 
+                        return; // نخرج من الدالة الحالية
                     }
 
                     // ============================================================
@@ -577,15 +579,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
+                                // 🔥🔥🔥 نيرف المهارات مع سقف الدمج 🔥🔥🔥
                                 let originalAtk = p.atk;
+                                
+                                // تطبيق الختم (فقط للمختومين)
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     if (skillObj.effectValue) {
                                         skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * p.sealMultiplier) };
                                     }
                                 }
+                                // تطبيق سقف الدمج الصارم (للجميع) في الطوابق الأولى
+                                // هنا نضعف الـ ATK نفسه قبل المعادلة لضمان عدم تجاوز السقف
+                                if (floor <= 5 && p.atk > 47) p.atk = 47;
+                                else if (floor <= 10 && p.atk > 88) p.atk = 88;
+                                else if (floor <= 14 && p.atk > 120) p.atk = 120;
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
+                                
+                                // 🔥🔥🔥 إرجاع القيم الأصلية بعد التنفيذ 🔥🔥🔥
                                 p.atk = originalAtk;
 
                                 if (res && res.error) {
@@ -602,7 +614,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                                checkDeaths(players, floor, log, threadChannel); // 🔥 فحص الموت
+                                // 🔥 فحص الموت الجماعي بعد المهارة (مثل Sacrifice) 🔥
+                                checkDeaths(players, floor, log, threadChannel);
                                 if (players.every(p => p.isDead)) {
                                     ongoing = false;
                                     collector.stop('all_dead');
@@ -674,7 +687,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
-                                checkDeaths(players, floor, log, threadChannel); // 🔥 فحص الموت
+                                // 🔥 فحص الموت الجماعي بعد الجرعة 🔥
+                                checkDeaths(players, floor, log, threadChannel);
                                 if (players.every(p => p.isDead)) {
                                     ongoing = false;
                                     collector.stop('all_dead');
@@ -712,6 +726,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
                                     
+                                    // 1. تطبيق الختم للمختومين
                                     if (p.isSealed) {
                                         currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
                                     }
@@ -722,9 +737,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     if (isCrit) dmg = Math.floor(dmg * 1.5);
 
-                                    // 🔥🔥 سقف الدمج (Damage Cap) 🔥🔥
-                                    if (floor <= 10 && dmg > 120) dmg = 120;
-                                    else if (floor >= 11 && floor <= 14 && dmg > 150) dmg = 150;
+                                    // 2. تطبيق سقف الدمج الصارم (Hard Caps) للجميع
+                                    if (floor <= 5) {
+                                        if (dmg > 47) dmg = 47;
+                                    } else if (floor <= 10) {
+                                        if (dmg > 88) dmg = 88;
+                                    } else if (floor <= 14) {
+                                        if (dmg > 120) dmg = 120;
+                                    }
 
                                     monster.hp -= dmg; p.totalDamage += dmg; 
                                     log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
@@ -1092,10 +1112,15 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalMora = 0;
         let finalXp = 0;
 
+        // ==========================================
+        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
+        // ==========================================
         if (status === 'lose' && floor > 20) {
+            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
             finalMora = 1000;
             finalXp = 100;
         } else {
+            // الحساب الطبيعي
             finalMora = Math.floor(p.loot.mora);
             finalXp = Math.floor(p.loot.xp);
             
