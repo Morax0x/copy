@@ -65,7 +65,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     
     // حماية إضافية للتحقق من اتصال قاعدة البيانات
     if (!sql || !sql.open) {
-        return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً، الرجاء المحاولة لاحقاً.");
+        return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً، الرجاء المحاولة لاحقاً.").catch(() => {});
     }
     ensureInventoryTable(sql); 
 
@@ -105,7 +105,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     if (players.length === 0) {
         activeDungeonRequests.delete(hostId);
-        return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.");
+        return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
     const maxFloors = 100; 
@@ -127,7 +127,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             floor += floorsSkipped; 
             if (floor > maxFloors) floor = maxFloors; // سقف للطوابق
 
-            await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
+            try {
+                await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
+            } catch (err) {
+                console.log("Error sending message (Unknown Channel likely):", err.message);
+                break; // نوقف الدانجون إذا الروم انحذف
+            }
             continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
 
@@ -182,10 +187,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let ongoing = true;
         let turnCount = 0;
 
-        let battleMsg = await threadChannel.send({ 
-            embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
-            components: generateBattleRows() 
-        });
+        let battleMsg;
+        try {
+            battleMsg = await threadChannel.send({ 
+                embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
+                components: generateBattleRows() 
+            });
+        } catch (err) {
+            console.log("Dungeon Stop: Thread likely deleted.");
+            break;
+        }
 
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
@@ -315,6 +326,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
+                                // ⚡🔥 معالجة بوابة الأبعاد (نقل الطوابق) - تم الإصلاح هنا 🔥⚡
                                 if (result.type === 'dimension_gate_request') {
                                     const modal = new ModalBuilder()
                                         .setCustomId('modal_dimension_gate')
@@ -332,12 +344,49 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         .setPlaceholder("نعم / لا")
                                         .setRequired(false);
                                     modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
+                                    
+                                    // عرض المودال
                                     await subI.showModal(modal);
-                                    // المودال سيتم معالجته في الكوليكتور الرئيسي (i.isModalSubmit)
-                                    // لأنه عند إرسال المودال، الإيفنت ينتقل للمستوى الأعلى
-                                    return; 
+
+                                    // ⚠️ انتظار الاستجابة للمودال فوراً (هذا هو الإصلاح)
+                                    try {
+                                        const modalInteraction = await subI.awaitModalSubmit({
+                                            filter: (m) => m.customId === 'modal_dimension_gate' && m.user.id === subI.user.id,
+                                            time: 30000 
+                                        });
+
+                                        const floorNum = parseInt(modalInteraction.fields.getTextInputValue('gate_floor_number'));
+                                        const wantRewards = modalInteraction.fields.getTextInputValue('gate_rewards_choice')?.toLowerCase().includes('نعم');
+
+                                        if (isNaN(floorNum) || floorNum <= floor) {
+                                            await modalInteraction.reply({ content: "❌ رقم طابق غير صالح!", ephemeral: true });
+                                            return;
+                                        }
+
+                                        const jump = floorNum - floor - 1; 
+                                        merchantState.skipFloors = jump; 
+                                        
+                                        if (wantRewards) {
+                                            const extraMora = jump * 500;
+                                            players.forEach(p => { if (!p.isDead) p.loot.mora += extraMora; });
+                                            log.push(`💰 **الإمبراطور** نهب جوائز ${jump} طابق! (+${extraMora} مورا)`);
+                                        }
+
+                                        monster.hp = 0; 
+                                        log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
+                                        await modalInteraction.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
+                                        
+                                        // إيقاف الكوليكتور الرئيسي لتحديث اللوب
+                                        collector.stop('monster_dead');
+                                        return; 
+
+                                    } catch (err) {
+                                        // انتهاء الوقت او خطأ في المودال
+                                        return;
+                                    }
                                 }
 
+                                // ⚡🔥 معالجة انسحاب الإمبراطور (المهارة) 🔥⚡
                                 if (result.type === 'owner_leave') {
                                      const index = players.findIndex(p => p.id === OWNER_ID);
                                      if (index > -1) {
@@ -358,40 +407,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
                         });
-                        return; // نخرج من الدالة الحالية لمنع تنفيذ الكود المتبقي بالخطأ
+                        return; // نخرج من الدالة الحالية
                     }
-
-                    // 4. معالجة المودال (بوابة الأبعاد)
-                    if (i.isModalSubmit() && i.customId === 'modal_dimension_gate') {
-                        const floorNum = parseInt(i.fields.getTextInputValue('gate_floor_number'));
-                        const wantRewards = i.fields.getTextInputValue('gate_rewards_choice')?.toLowerCase().includes('نعم');
-
-                        if (isNaN(floorNum) || floorNum <= floor) {
-                            return i.reply({ content: "❌ رقم طابق غير صالح!", ephemeral: true });
-                        }
-
-                        const jump = floorNum - floor - 1; 
-                        merchantState.skipFloors = jump; 
-                        
-                        if (wantRewards) {
-                            const extraMora = jump * 500;
-                            players.forEach(p => { if (!p.isDead) p.loot.mora += extraMora; });
-                            log.push(`💰 **الإمبراطور** نهب جوائز ${jump} طابق! (+${extraMora} مورا)`);
-                        }
-
-                        monster.hp = 0; 
-                        log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
-                        await i.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
-                        collector.stop('monster_dead');
-                        return;
-                    }
-
 
                     // ============================================================
                     // 👑 القسم الثاني: التحقق التلقائي لدخول الاونر 👑
                     // ============================================================
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
-                        // الاونر يضغط اي زر وهو غير مسجل في القائمة -> يدخل تلقائياً
                         const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
                         if (member) {
                              const ownerPlayer = getRealPlayerData(member, sql, '???'); 
@@ -406,7 +428,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // ⚔️ القسم الثالث: المنطق العادي (اللاعبين العاديين) ⚔️
                     // ============================================================
                     
-                    // منع تكرار الردود (Defer)
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
                     
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
@@ -587,11 +608,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
 
             if (turnCount % 3 === 0 && ongoing) {
-                await battleMsg.delete().catch(()=>{});
-                battleMsg = await threadChannel.send({ 
-                    embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
-                    components: generateBattleRows() 
-                });
+                try {
+                    await battleMsg.delete();
+                    battleMsg = await threadChannel.send({ 
+                        embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
+                        components: generateBattleRows() 
+                    });
+                } catch(e) {
+                    console.log("Battle message deleted or thread gone.");
+                    break;
+                }
             }
 
             if (monster.hp > 0 && ongoing) {
@@ -770,7 +796,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             .setColor(Colors.Red)
             .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
 
-        const restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
+        let restMsg;
+        try {
+            restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
+        } catch (err) {
+            console.log("Thread likely deleted during rest.");
+            break;
+        }
         
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
@@ -783,7 +815,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     return decCollector.stop('continue');
                 }
 
-                // نتحقق من إمكانية الانسحاب مرة أخرى هنا للحماية
                 if (i.customId === 'retreat' && canRetreat) {
                     if (i.user.id === hostId) {
                         await i.deferUpdate();
@@ -797,7 +828,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             players.splice(pIndex, 1); 
                             
                             await i.reply({ content: `👋 **لقد انسحبت من الدانجون واكتفيت بغنائمك!**`, ephemeral: true });
-                            await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`);
+                            await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`).catch(()=>{});
                             
                             if (players.length === 0) decCollector.stop('retreat');
                         } else {
@@ -823,13 +854,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 isTrapActive = true;
                 trapStartFloor = floor;
                 
-                // التعديل: القفز دائماً للأمام
-                // الحد الأدنى: الطابق الحالي + 2
-                // الحد الأقصى: 95
                 const minTarget = floor + 2;
                 const maxTarget = 95;
                 
-                // معادلة الراندوم بين القيمتين
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
 
                 floor = targetFloor - 1; 
@@ -840,13 +867,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     .setColor(Colors.DarkRed)
                     .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
 
-                await threadChannel.send({ embeds: [trapEmbed] });
+                await threadChannel.send({ embeds: [trapEmbed] }).catch(()=>{});
             } else {
                 
                 // ==========================================
                 // ❖ رسالة التوغل (تظهر قبل التاجر/الصندوق) ❖
                 // ==========================================
-                await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`);
+                await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
                 // 🔥🔥 نظام الأحداث المتساوي والمتناوب 🔥🔥
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
@@ -947,7 +974,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         .setDescription(description)
         .setColor(color).setImage(randomImage).setTimestamp();
 
-    await mainChannel.send({ content: allParticipants.map(p => `<@${p.id}>`).join(' '), embeds: [embed] });
+    await mainChannel.send({ content: allParticipants.map(p => `<@${p.id}>`).join(' '), embeds: [embed] }).catch(()=>{});
     activeDungeonRequests.delete(hostId);
       
     if (floor >= 10) {
