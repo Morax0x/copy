@@ -1,0 +1,136 @@
+const { PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
+
+module.exports = {
+    name: 'timeout',
+    description: 'إسكات عضو لفترة محددة',
+    aliases: ['mute', 'اسكات', 'تايم'],
+    category: 'Admin',
+    usage: 'timeout <@user> <time> [reason]',
+    
+    async execute(message, args) {
+        const sql = message.client.sql;
+
+        // 1. التحقق من الصلاحيات
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+            return message.reply('❌ **ليس لديك صلاحية لإسكات الأعضاء (Moderate Members).**');
+        }
+        if (!message.guild.members.me.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+            return message.reply('❌ **لا أملك صلاحية لإسكات الأعضاء.**');
+        }
+
+        // 2. جلب العضو
+        const targetArg = args[0];
+        if (!targetArg) return message.reply('❓ **الرجاء تحديد العضو.**');
+        
+        let targetMember;
+        try {
+            targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg);
+        } catch (err) {
+            return message.reply('❌ **لم يتم العثور على العضو داخل السيرفر.**');
+        }
+
+        // 3. التحقق من الرتب (Hierarchy)
+        if (targetMember.id === message.author.id) return message.reply('❌ **لا يمكنك إسكات نفسك.**');
+        if (targetMember.id === message.guild.ownerId) return message.reply('❌ **لا يمكنك إسكات المالك.**');
+        if (message.author.id !== message.guild.ownerId && targetMember.roles.highest.position >= message.member.roles.highest.position) {
+            return message.reply('❌ **لا يمكنك إسكات شخص رتبته أعلى منك أو مساوية لك.**');
+        }
+        if (!targetMember.moderatable) {
+            return message.reply('❌ **لا يمكنني إسكات هذا العضو (رتبته أعلى مني).**');
+        }
+
+        // 4. معالجة الوقت
+        const timeArg = args[1];
+        if (!timeArg) return message.reply('❓ **الرجاء تحديد الوقت (مثال: 10m, 1h).**');
+
+        const ms = parseDuration(timeArg);
+        if (!ms || ms > 28 * 24 * 60 * 60 * 1000) { // الحد الأقصى للتايم أوت في ديسكورد هو 28 يوم
+            return message.reply('❌ **صيغة الوقت غير صحيحة أو المدة طويلة جداً (الحد الأقصى 28 يوم).**\n> أمثلة: `60s`, `5m`, `10h`, `1d`');
+        }
+
+        // 5. السبب والقضية
+        const reason = args.slice(2).join(" ") || "غير محدد";
+        let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
+        let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
+        const uniqueID = `${message.guild.id}-${newCaseID}`;
+
+        // 6. إشعار الخاص
+        let dmSent = false;
+        try {
+            const dmEmbed = new EmbedBuilder()
+                .setTitle(`🔇 تم إسكاتك في سيرفر: ${message.guild.name}`)
+                .setColor(Colors.Orange)
+                .addFields(
+                    { name: 'المدة', value: timeArg, inline: true },
+                    { name: 'السبب', value: reason, inline: true },
+                    { name: 'بواسطة', value: message.author.tag }
+                )
+                .setTimestamp();
+            await targetMember.send({ embeds: [dmEmbed] });
+            dmSent = true;
+        } catch (e) { dmSent = false; }
+
+        // 7. تنفيذ التايم أوت
+        try {
+            await targetMember.timeout(ms, `[Timeout by ${message.author.tag}] Reason: ${reason}`);
+        } catch (err) {
+            return message.reply('❌ **حدث خطأ غير متوقع أثناء الإسكات.**');
+        }
+
+        // 8. الحفظ والرد
+        sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
+                     VALUES (?, ?, ?, 'TIMEOUT', ?, ?, ?, ?)`)
+           .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
+
+        const successEmbed = new EmbedBuilder()
+            .setColor(Colors.Green)
+            .setDescription(`✅ **تم إسكات ${targetMember.user.tag} لمدة \`${timeArg}\`**\n📁 **القضية رقم:** \`#${newCaseID}\`\n📝 **السبب:** ${reason}`)
+            .setFooter({ text: dmSent ? 'تم إشعاره بالخاص' : 'لم يتم إشعاره (الخاص مغلق)' });
+        
+        message.reply({ embeds: [successEmbed], allowedMentions: { repliedUser: false } });
+
+        // 9. اللوق
+        sendModLog(message, targetMember, 'TIMEOUT', reason, newCaseID, timeArg);
+    }
+};
+
+// دالة تحويل النص إلى وقت (milli-seconds)
+function parseDuration(str) {
+    if (!str) return null;
+    const match = str.match(/^(\d+)(s|m|h|d|w)$/);
+    if (!match) return null;
+    const value = parseInt(match[1]);
+    const unit = match[2];
+    switch (unit) {
+        case 's': return value * 1000;
+        case 'm': return value * 60 * 1000;
+        case 'h': return value * 60 * 60 * 1000;
+        case 'd': return value * 24 * 60 * 60 * 1000;
+        case 'w': return value * 7 * 24 * 60 * 60 * 1000;
+        default: return null;
+    }
+}
+
+// دالة اللوق (مشتركة)
+function sendModLog(message, targetMember, type, reason, caseID, duration = null) {
+    const sql = message.client.sql;
+    const settings = sql.prepare("SELECT modLogChannelID FROM settings WHERE guild = ?").get(message.guild.id);
+    if (settings && settings.modLogChannelID) {
+        const logChannel = message.guild.channels.cache.get(settings.modLogChannelID);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle(`🟡 New Timeout | Case #${caseID}`)
+                .setColor(Colors.Orange)
+                .setThumbnail(targetMember.user.displayAvatarURL())
+                .addFields(
+                    { name: '👤 العضو', value: `${targetMember.user.tag} (${targetMember.id})`, inline: true },
+                    { name: '👮 المشرف', value: `${message.author.tag} (${message.author.id})`, inline: true },
+                    { name: '⏱️ المدة', value: duration || 'N/A', inline: true },
+                    { name: '📝 السبب', value: reason },
+                    { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:F>` }
+                )
+                .setFooter({ text: `EMorax Security System` });
+            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+        }
+    }
+}
