@@ -10,8 +10,8 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
     // ✅ تحسين الأداء: جلب البيانات مرة واحدة خارج التكرار
     const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
     const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-    // جلب إعدادات التاق مرة واحدة فقط
-    const settings = sql.prepare("SELECT serverTag FROM settings WHERE guild = ?").get(member.guild.id);
+    
+    // (تم الحذف) لم نعد بحاجة لجلب إعدادات التاق لأننا ألغينا التحقق التلقائي منه ليكون شكلياً فقط
 
     const perPage = ROWS_PER_PAGE_ACH;
     const totalPages = Math.ceil(achievements.length / perPage);
@@ -44,15 +44,8 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
                 currentProgress = streakData[ach.stat];
             }
             
-            // 🔥🔥 التعديل: دعم server_tag والمهام الخاصة 🔥🔥
-            else if (ach.stat === 'server_tag') {
-                // التحقق باستخدام المتغير settings الذي جلبناه في الأعلى
-                if (settings && settings.serverTag && member.displayName.includes(settings.serverTag)) {
-                    currentProgress = 1; 
-                } else {
-                    currentProgress = 0;
-                }
-            }
+            // ❌ (تم الحذف) تم إزالة كود server_tag نهائياً عشان ما يحسب أي شيء ❌
+            
             // مهام الرتب الخاصة
             else if (ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
                 currentProgress = 0;
