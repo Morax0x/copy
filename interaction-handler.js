@@ -95,11 +95,21 @@ module.exports = (client, sql, antiRolesCache) => {
                 const command = i.client.commands.get(i.commandName);
                 if (!command) return;
                 
-                // التحقق من الصلاحيات
+                // 🔥 التحقق من البلاك ليست أولاً 🔥
+                try {
+                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(i.user.id);
+                    if (isBlacklisted) {
+                         return i.reply({ content: "🚫 **أنت في القائمة السوداء ولا يمكنك استخدام الأوامر.**", flags: [MessageFlags.Ephemeral] });
+                    }
+                } catch(e) {}
+
+                // التحقق من الصلاحيات (نظام الحظر الشامل)
                 let isAllowed = false;
                 
-                // أ) صلاحية إدارة السيرفر
-                if (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) isAllowed = true;
+                // أ) السماح للأدمن (Administrator)
+                if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    isAllowed = true;
+                }
                 else {
                     // ب) التحقق إذا كان الأمر اقتصادي وفي قناة الكازينو (الأساسية أو الإضافية)
                     const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
@@ -107,21 +117,25 @@ module.exports = (client, sql, antiRolesCache) => {
                         isAllowed = true;
                     } 
                     else {
-                        // ج) التحقق من جدول الصلاحيات المخصصة
+                        // ج) التحقق من جدول الصلاحيات المخصصة (Allow Command)
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
-                            const categoryPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId);
-                            if (channelPerm || categoryPerm) isAllowed = true;
-                            else {
+                            // التحقق من الكاتجوري (إذا كانت القناة داخل كاتجوري مسموح)
+                            const categoryPerm = i.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId) : null;
+                            
+                            if (channelPerm || categoryPerm) {
+                                isAllowed = true;
+                            } else {
+                                // التحقق مما إذا كان الأمر محظوراً بشكل عام في السيرفر لكنه مسموح هنا
                                 const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
                                 if (!hasRestrictions) isAllowed = true; 
                             }
-                        } catch(e) { isAllowed = true; }
+                        } catch(e) { isAllowed = true; } // في حال حدوث خطأ، نسمح بالأمر افتراضياً
                     }
                 }
 
                 if (!isAllowed) {
-                    return i.reply({ content: "❌ لا يمكنك استخدام هذا الأمر في هذه القناة.", flags: [MessageFlags.Ephemeral] });
+                    return i.reply({ content: "❌ **لا يمكنك استخدام هذا الأمر في هذه القناة.**", flags: [MessageFlags.Ephemeral] });
                 }
 
                 try {
