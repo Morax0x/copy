@@ -60,7 +60,7 @@ module.exports = {
                 .setTitle('✥ تـم نفـيـك من الامبراطورية')
                 .setDescription('✶ تـم حرمانـك من دخـول اراضي الامبراطوريـة مدى الحـياة')
                 .setColor('Random')
-                .setImage('https://tenor.com/view/lick-gif-9232876');
+                .setImage('https://i.postimg.cc/V62NcMxz/lick-(1).gif');
 
             await targetMember.send({ embeds: [dmEmbed] });
         } catch (e) { }
