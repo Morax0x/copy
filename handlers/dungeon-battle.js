@@ -19,7 +19,7 @@ const {
     OWNER_ID, 
     WIN_IMAGES, 
     LOSE_IMAGES,
-    skillsConfig // 🔥 ضروري جداً للقوائم
+    skillsConfig 
 } = require('./dungeon/constants');
 
 const { 
@@ -122,9 +122,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             floor += floorsSkipped; 
             if (floor > maxFloors) floor = maxFloors; // سقف للطوابق
 
-            // حساب الجوائز التقريبية (اختياري، هنا نعتمد على ما تم إضافته في المودال أو التاجر)
-            // إذا كان التخطي من التاجر (يدفع الثمن) أما البوابة (بالخيار)
-            
             await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
             continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
@@ -228,6 +225,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
+                    // التحقق من دخول الاونر تلقائياً
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         let ownerPlayer = players.find(pl => pl.id === OWNER_ID);
                         if (!ownerPlayer) {
@@ -262,7 +260,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         });
                     }
 
-                    // 🛠️ معالجة اختيارات قوائم الإمبراطور (Select Menus)
+                    // 🛠️ معالجة اختيارات قوائم الإمبراطور
                     if (i.isStringSelectMenu()) {
                         if (i.customId === 'owner_god_menu_category') {
                             const category = i.values[0];
@@ -362,7 +360,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             return i.reply({ content: "❌ رقم طابق غير صالح!", ephemeral: true });
                         }
 
-                        const jump = floorNum - floor - 1; // -1 because loop increments
+                        const jump = floorNum - floor - 1; 
                         merchantState.skipFloors = jump; 
                         
                         if (wantRewards) {
@@ -371,7 +369,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             log.push(`💰 **الإمبراطور** نهب جوائز ${jump} طابق! (+${extraMora} مورا)`);
                         }
 
-                        monster.hp = 0; // kill monster to proceed
+                        monster.hp = 0; 
                         log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال إلى الطابق ${floorNum}...`);
                         await i.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
                         collector.stop('monster_dead');
@@ -382,13 +380,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // ============================================================
                     // ⚔️ المنطق العادي (للبقية)
                     // ============================================================
-                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
+                    if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
                     
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
                     
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
+
+                    // 🔥🔥 تحقق من الشلل (Stun Check) - هنا تم الإصلاح 🔥🔥
+                    if (p.effects.some(e => e.type === 'stun')) {
+                        await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
+                        actedPlayers.push(p.id); // نحسبه كأنه لعب دوره (تخطى)
+                        p.skipCount = 0; 
+                        if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
+                            clearTimeout(turnTimeout); 
+                            collector.stop('turn_end'); 
+                        }
+                        return; // نوقف التنفيذ
+                    }
                     
                     processingUsers.add(i.user.id);
 
@@ -643,10 +653,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (target) {
                                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.75);
-                                // هنا نضاعف الضرر إذا كانت "دستور الموت" مفعل (weakness: 1.0)
-                                const weakEffect = monster.effects.find(e => e.type === 'weakness');
-                                if (weakEffect && weakEffect.val >= 1.0) dmg = Math.floor(dmg * 0.5); // إذا الوحش ضعيف جداً، هجومه يضعف أيضاً (اختياري)
-
                                 if(target.defending) dmg = Math.floor(dmg * 0.5);
                                 
                                 const reflectEffect = target.effects.find(e => e.type === 'reflect');
