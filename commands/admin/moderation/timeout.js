@@ -36,72 +36,58 @@ module.exports = {
             return message.reply('❌ **لا يمكنني إسكات هذا العضو (رتبته أعلى مني).**');
         }
 
-        // 4. معالجة الوقت والسبب (الذكاء في التحديد)
+        // 4. معالجة الوقت والسبب
         let timeArg = args[1];
         let reason;
         let finalTimeMs;
-
-        // دالة للتحقق هل النص هو وقت أم لا
         const isTimeFormat = (str) => /^(\d+)(s|m|h|d|w)$/.test(str);
 
         if (timeArg && isTimeFormat(timeArg)) {
-            // المستخدم حدد وقت صحيح في الخانة الثانية
             finalTimeMs = parseDuration(timeArg);
             reason = args.slice(2).join(" ") || "مخالفة القوانين";
         } else {
-            // المستخدم لم يحدد وقت (أو كتب السبب مباشرة مكان الوقت)
-            timeArg = '30m'; // القيمة الافتراضية
+            timeArg = '30m'; // افتراضي
             finalTimeMs = parseDuration(timeArg);
-            // إذا كان الخانة الثانية موجودة بس مو وقت، نعتبرها بداية السبب
             reason = args.slice(1).join(" ") || "مخالفة القوانين";
         }
 
         if (!finalTimeMs || finalTimeMs > 28 * 24 * 60 * 60 * 1000) { 
-            return message.reply('❌ **الوقت غير صحيح أو طويل جداً (الحد الأقصى 28 يوم).**');
+            return message.reply('❌ **الوقت غير صحيح أو طويل جداً.**');
         }
 
-        // تحويل الوقت للعربية (للعرض في الخاص واللوق)
         let arabicTime = timeArg
-            .replace('s', ' ثانية')
-            .replace('m', ' دقيقة')
-            .replace('h', ' ساعة')
-            .replace('d', ' يوم')
-            .replace('w', ' اسبوع');
+            .replace('s', ' ثانية').replace('m', ' دقيقة').replace('h', ' ساعة').replace('d', ' يوم').replace('w', ' اسبوع');
 
         // 5. تجهيز رقم القضية
         let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
         let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
 
-        // 6. إشعار الخاص (بالتفاصيل)
+        // 6. إشعار الخاص (التعديل هنا ليكون بسطر واحد)
         try {
             const dmEmbed = new EmbedBuilder()
                 .setTitle('✥ تـم اسـكـاتـك')
                 .setColor('Random')
-                .addFields(
-                    { name: '✶ السبب:', value: reason, inline: false },
-                    { name: '✶ المـدة:', value: arabicTime, inline: false },
-                    { name: '✶ السيرفر:', value: message.guild.name, inline: false },
-                    { name: '✶ بواسـطـة:', value: `<@${message.author.id}>`, inline: false }
-                )
+                // استخدام Description لدمج العنوان والقيمة في سطر واحد
+                .setDescription(`**✶ السبب:** ${reason}\n**✶ المـدة:** ${arabicTime}\n**✶ السيرفر:** ${message.guild.name}\n**✶ بواسـطـة:** <@${message.author.id}>`)
                 .setImage('https://tenor.com/view/amagami-amagami-sister-tying-the-knot-with-an-amagami-sister-mahiru-anekouji-gif-17869569217293962202');
 
             await targetMember.send({ embeds: [dmEmbed] });
         } catch (e) { }
 
-        // 7. تنفيذ التايم أوت
+        // 7. التنفيذ
         try {
             await targetMember.timeout(finalTimeMs, `[Timeout by ${message.author.tag}] Reason: ${reason}`);
         } catch (err) {
-            return message.reply('❌ **حدث خطأ غير متوقع أثناء الإسكات.**');
+            return message.reply('❌ **حدث خطأ غير متوقع.**');
         }
 
-        // 8. الحفظ في الداتابيس
+        // 8. الحفظ
         sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
                      VALUES (?, ?, ?, 'TIMEOUT', ?, ?, ?, ?)`)
             .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
 
-        // 9. الرد في الشات (الشكل الجديد المطلوب)
+        // 9. الرد
         const chatEmbed = new EmbedBuilder()
             .setDescription('✶ تـم الاسـكـات ...')
             .setColor('Random')
@@ -114,7 +100,6 @@ module.exports = {
     }
 };
 
-// دالة تحويل النص إلى وقت
 function parseDuration(str) {
     if (!str) return null;
     const match = str.match(/^(\d+)(s|m|h|d|w)$/);
@@ -131,7 +116,6 @@ function parseDuration(str) {
     }
 }
 
-// دالة اللوق
 function sendModLog(message, targetMember, type, reason, caseID, duration = null) {
     const sql = message.client.sql;
     const settings = sql.prepare("SELECT modLogChannelID FROM settings WHERE guild = ?").get(message.guild.id);
