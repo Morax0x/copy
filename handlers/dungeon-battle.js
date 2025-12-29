@@ -99,6 +99,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             // تهيئة متغير الدرع المشتراة
             playerData.startingShield = 0; 
             
+            // 🔥🔥🔥 فحص مستوى المهارات للختم 🔥🔥🔥
+            playerData.isSealed = false;
+            if (m.id !== OWNER_ID) {
+                // نفترض أن playerData.skills عبارة عن كائن يحتوي المهارات
+                // نقوم بفحص ما إذا كان هناك أي مهارة مستواها أعلى من 10
+                const skills = playerData.skills || {};
+                const hasOverpoweredSkill = Object.values(skills).some(skill => skill.level > 10);
+                
+                // إذا كان لديه مهارة قوية، يتم ختمه
+                if (hasOverpoweredSkill) {
+                    playerData.isSealed = true;
+                }
+            }
+
             players.push(playerData);
         }
     });
@@ -108,10 +122,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
-    // 🔥🔥🔥 رسالة الختم (للجميع ما عدا الاونر) 🔥🔥🔥
-    // نفترض هنا أن المشاركين مستواهم عالي لأنهم في دانجون
+    // 🔥🔥🔥 رسالة الختم (تظهر في البداية للمختومين فقط) 🔥🔥🔥
     players.forEach(p => {
-        if (p.id !== OWNER_ID) {
+        if (p.isSealed) {
              threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
         }
     });
@@ -144,10 +157,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; // ننتقل للدورة التالية (الطابق الجديد)
         }
 
-        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19 للجميع ما عدا الاونر) 🔥🔥🔥
+        // 🔥🔥🔥 رسالة كسر الختم (تظهر عند الطابق 19 للمختومين) 🔥🔥🔥
         if (floor === 19) {
             players.forEach(p => {
-                if (p.id !== OWNER_ID && !p.isDead) {
+                if (p.isSealed && !p.isDead) {
+                    p.isSealed = false; // فك الختم فعلياً
                     threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                 }
             });
@@ -621,6 +635,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     const currentAtk = Math.floor(p.atk * atkMultiplier);
+                                    
+                                    // 🔥🔥🔥 تطبيق نيرف الختم على الهجوم العادي 🔥🔥🔥
+                                    if (p.isSealed) {
+                                        currentAtk = Math.floor(currentAtk * 0.3); // قوة 30% فقط
+                                    }
+
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
                                     
