@@ -6,6 +6,7 @@ const potionItems = require('../../json/potions.json');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const ITEMS_PER_PAGE = 3;
+const OWNER_ID = "1145327691772481577"; // آيدي الأونر (أنت)
 
 function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsList, potionsList, totalSpent, page = 0) {
     const embed = new EmbedBuilder()
@@ -148,12 +149,11 @@ module.exports = {
 
         // ب) تحديد هوية مهارة العرق (للمقارنة لاحقاً)
         if (userRace) {
-            // استخدام trim و replace لضمان تطابق الآيدي
             const cleanRaceName = userRace.raceName.toLowerCase().trim().replace(/\s+/g, '_');
             raceSkillId = `race_${cleanRaceName}_skill`;
         }
 
-        // ج) عرض المهارات الموجودة في الداتابيس (سواء عرق أو عامة)
+        // ج) عرض المهارات وتصفيتها
         let hasRaceSkillInDB = false;
 
         if (userSkillsDB.length > 0) {
@@ -161,12 +161,27 @@ module.exports = {
                 const skillConfig = skillsConfig.find(s => s.id === dbSkill.skillID);
                 
                 if (skillConfig) {
-                    // التحقق هل هذه هي مهارة العرق؟
+                    // ========================================================
+                    // 🔥 1. فلتر الأونر (يخفي شق زمكان عن أي أحد غيرك)
+                    // ========================================================
+                    if (skillConfig.name.includes("شق زمكان") && targetUser.id !== OWNER_ID) {
+                        continue; // تخطي هذه المهارة، لا تعرضها ولا تحسب سعرها
+                    }
+
+                    // ========================================================
+                    // 🔥 2. فلتر العرق (يخفي مهارات العروق السابقة)
+                    // ========================================================
+                    // إذا كانت المهارة تبدأ بـ race_ وليست هي مهارة العرق الحالي -> تخطي
+                    if (dbSkill.skillID.startsWith('race_') && raceSkillId && dbSkill.skillID !== raceSkillId) {
+                        continue; 
+                    }
+
+                    // التحقق هل هذه هي مهارة العرق الحالي؟
                     if (raceSkillId && dbSkill.skillID === raceSkillId) {
                         hasRaceSkillInDB = true;
                     }
 
-                    // إضافة المهارة للقائمة مع اللفل الحقيقي من الداتابيس
+                    // إضافة المهارة للقائمة
                     skillsList.push(`✶ ${skillConfig.emoji} ${skillConfig.name} : (Lv.${dbSkill.skillLevel})\n✶ وصف المهارة: ${skillConfig.description}`);
                     
                     // حساب تكلفة التطويرات لهذه المهارة
@@ -178,12 +193,14 @@ module.exports = {
             }
         }
 
-        // د) إذا كان لديه عرق، ولكن المهارة غير مسجلة في الداتابيس (لم يشتريها/يطورها بعد)
-        // نعرضها كمستوى 1 افتراضي
+        // د) إذا كان لديه عرق، ولكن المهارة غير مسجلة في الداتابيس
         if (userRace && raceSkillId && !hasRaceSkillInDB) {
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             if (raceSkillConfig) {
-                skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1) [غير مفعلة]\n✶ وصف المهارة: ${raceSkillConfig.description}`);
+                // تأكد أيضاً إن مهارة العرق هذي مو "شق زمكان" (ولو إن المفروض لها عرق خاص، بس احتياط)
+                if (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID) {
+                     skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1) [غير مفعلة]\n✶ وصف المهارة: ${raceSkillConfig.description}`);
+                }
             }
         }
 
