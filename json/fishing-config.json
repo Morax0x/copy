@@ -1,7 +1,7 @@
 {
   "fishItems": [
     { "id": "fish_trash", "name": "علبة فارغة", "price": 5, "rarity": 1, "emoji": "🥫" },
-    { "id": "fish_boot", "name": "حذاء قديم", "price": 5, "rarity": 1, "emoji": "👢" },
+    { "id": "fish_boot", "name": "حذاء قديم", "price": 10, "rarity": 1, "emoji": "👢" },
     { "id": "fish_seaweed", "name": "عشب بحري", "price": 20, "rarity": 1, "emoji": "🌿" },
     { "id": "fish_branch", "name": "غصن مكسور", "price": 20, "rarity": 1, "emoji": "🪵" },
     { "id": "fish_sock", "name": "جورب مبلل", "price": 30, "rarity": 1, "emoji": "🧦" },
