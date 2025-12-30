@@ -1,34 +1,34 @@
 {
   "fishItems": [
-    { "id": "fish_trash", "name": "علبة فارغة", "price": 1, "rarity": 1, "emoji": "🥫" },
-    { "id": "fish_boot", "name": "حذاء قديم", "price": 2, "rarity": 1, "emoji": "👢" },
-    { "id": "fish_seaweed", "name": "عشب بحري", "price": 5, "rarity": 1, "emoji": "🌿" },
-    { "id": "fish_branch", "name": "غصن مكسور", "price": 3, "rarity": 1, "emoji": "🪵" },
-    { "id": "fish_sock", "name": "جورب مبلل", "price": 4, "rarity": 1, "emoji": "🧦" },
-    { "id": "fish_sardine", "name": "سردين", "price": 10, "rarity": 1, "emoji": "🐟" },
-    { "id": "fish_shrimp", "name": "روبيان", "price": 15, "rarity": 1, "emoji": "🦐" },
+    { "id": "fish_trash", "name": "علبة فارغة", "price": 5, "rarity": 1, "emoji": "🥫" },
+    { "id": "fish_boot", "name": "حذاء قديم", "price": 5, "rarity": 1, "emoji": "👢" },
+    { "id": "fish_seaweed", "name": "عشب بحري", "price": 20, "rarity": 1, "emoji": "🌿" },
+    { "id": "fish_branch", "name": "غصن مكسور", "price": 20, "rarity": 1, "emoji": "🪵" },
+    { "id": "fish_sock", "name": "جورب مبلل", "price": 30, "rarity": 1, "emoji": "🧦" },
+    { "id": "fish_sardine", "name": "سردين", "price": 100, "rarity": 1, "emoji": "🐟" },
+    { "id": "fish_shrimp", "name": "روبيان", "price": 115, "rarity": 1, "emoji": "🦐" },
     
-    { "id": "fish_goldfish", "name": "سمكة ذهبية", "price": 25, "rarity": 2, "emoji": "🐠" },
-    { "id": "fish_tuna", "name": "تونا", "price": 30, "rarity": 2, "emoji": "🐟" },
-    { "id": "fish_squid", "name": "حبار", "price": 35, "rarity": 2, "emoji": "🦑" },
-    { "id": "fish_mackerel", "name": "ماكريل", "price": 40, "rarity": 2, "emoji": "🐟" },
+    { "id": "fish_goldfish", "name": "سمكة ذهبية", "price": 150, "rarity": 2, "emoji": "🐠" },
+    { "id": "fish_tuna", "name": "تونا", "price": 170, "rarity": 2, "emoji": "🐟" },
+    { "id": "fish_squid", "name": "حبار", "price": 180, "rarity": 2, "emoji": "🦑" },
+    { "id": "fish_mackerel", "name": "ماكريل", "price": 190, "rarity": 2, "emoji": "🐟" },
     
-    { "id": "fish_salmon", "name": "سلمون", "price": 60, "rarity": 3, "emoji": "🍣" },
-    { "id": "fish_lobster", "name": "كركند", "price": 70, "rarity": 3, "emoji": "🦞" },
-    { "id": "fish_clown", "name": "سمكة المهرج", "price": 80, "rarity": 3, "emoji": "🐠" },
-    { "id": "fish_octopus", "name": "أخطبوط", "price": 90, "rarity": 3, "emoji": "🐙" },
+    { "id": "fish_salmon", "name": "سلمون", "price": 200, "rarity": 3, "emoji": "🍣" },
+    { "id": "fish_lobster", "name": "كركند", "price": 220, "rarity": 3, "emoji": "🦞" },
+    { "id": "fish_clown", "name": "سمكة المهرج", "price": 250, "rarity": 3, "emoji": "🐠" },
+    { "id": "fish_octopus", "name": "أخطبوط", "price": 300, "rarity": 3, "emoji": "🐙" },
     
-    { "id": "fish_puffer", "name": "سمكة البالون", "price": 120, "rarity": 4, "emoji": "🐡" },
-    { "id": "fish_turtle", "name": "سلحفاة بحرية", "price": 150, "rarity": 4, "emoji": "🐢" },
-    { "id": "fish_ray", "name": "سمكة الراي", "price": 180, "rarity": 4, "emoji": "🦇" },
+    { "id": "fish_puffer", "name": "سمكة البالون", "price": 400, "rarity": 4, "emoji": "🐡" },
+    { "id": "fish_turtle", "name": "سلحفاة بحرية", "price": 700, "rarity": 4, "emoji": "🐢" },
+    { "id": "fish_ray", "name": "سمكة الراي", "price": 750, "rarity": 4, "emoji": "🦇" },
     
-    { "id": "fish_shark", "name": "قرش أبيض", "price": 300, "rarity": 5, "emoji": "🦈" },
-    { "id": "fish_dolphin", "name": "دلفين", "price": 350, "rarity": 5, "emoji": "🐬" },
-    { "id": "fish_whale", "name": "حوت أزرق", "price": 400, "rarity": 5, "emoji": "🐋" },
+    { "id": "fish_shark", "name": "قرش أبيض", "price": 777, "rarity": 5, "emoji": "🦈" },
+    { "id": "fish_dolphin", "name": "دلفين", "price": 790, "rarity": 5, "emoji": "🐬" },
+    { "id": "fish_whale", "name": "حوت أزرق", "price": 800, "rarity": 5, "emoji": "🐋" },
     
-    { "id": "fish_treasure", "name": "كنز غارق", "price": 600, "rarity": 6, "emoji": "⚱️" },
-    { "id": "fish_kraken", "name": "وحش الكراكن", "price": 800, "rarity": 6, "emoji": "🦑" },
-    { "id": "fish_golden_whale", "name": "حوت ذهبي", "price": 950, "rarity": 6, "emoji": "🌕" }
+    { "id": "fish_treasure", "name": "كنز غارق", "price": 900, "rarity": 6, "emoji": "⚱️" },
+    { "id": "fish_kraken", "name": "وحش الكراكن", "price": 900, "rarity": 6, "emoji": "🦑" },
+    { "id": "fish_golden_whale", "name": "حوت ذهبي", "price": 1000, "rarity": 6, "emoji": "🌕" }
   ],
   "rods": [
     { "level": 1, "name": "سنارة خشبية", "price": 0, "cooldown": 3600000, "luck_bonus": 0, "max_fish": 1, "max_rarity": 2 },
