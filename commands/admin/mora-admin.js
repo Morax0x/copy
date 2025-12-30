@@ -75,16 +75,14 @@ module.exports = {
             method = interaction.options.getSubcommand();
             targetMember = interaction.options.getMember('المستخدم');
             amount = interaction.options.getInteger('المبلغ');
-            place = interaction.options.getString('المكان') || 'cash'; // الافتراضي كاش
+            place = interaction.options.getString('المكان') || 'cash'; 
 
-            // توحيد المسميات للكود
             if (method === 'اضافة') method = 'add';
             else if (method === 'ازالة') method = 'remove';
             else if (method === 'تحديد') method = 'set';
 
             await interaction.deferReply();
         } else {
-            // دعم الأوامر العادية (Prefix) بشكل بسيط
             message = interactionOrMessage;
             member = message.member;
             guild = message.guild;
@@ -93,7 +91,7 @@ module.exports = {
             method = args[0] ? args[0].toLowerCase() : null;
             targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[1]);
             amount = parseInt(args[2]);
-            place = 'cash'; // في البريفكس نفترض دائماً كاش للتبسيط
+            place = 'cash'; 
         }
 
         const reply = async (payload) => {
@@ -124,13 +122,12 @@ module.exports = {
             data = { ...client.defaultData, user: targetMember.id, guild: guild.id };
         }
 
-        // التأكد من وجود القيم
         data.mora = data.mora || 0;
         data.bank = data.bank || 0;
 
         let actionWord = "";
         
-        // --- المنطق البرمجي ---
+        // --- العمليات الحسابية ---
 
         if (method === 'add') {
             actionWord = "اضـافـة";
@@ -144,14 +141,12 @@ module.exports = {
             actionWord = "ازالـة";
             
             if (place === 'bank') {
-                // إذا حدد البنك، نسحب من البنك فقط
                 data.bank = Math.max(0, data.bank - amount);
             } else {
-                // إذا كاش (الافتراضي)، نسحب من الكاش، وإذا نقص نسحب من البنك
+                // سحب من الكاش، وإذا لم يكفِ يسحب من البنك
                 if (data.mora >= amount) {
                     data.mora -= amount;
                 } else {
-                    // الكاش ما يكفي، ناخذ كل الكاش ونكمل من البنك
                     let remaining = amount - data.mora;
                     data.mora = 0;
                     data.bank = Math.max(0, data.bank - remaining);
@@ -159,7 +154,7 @@ module.exports = {
             }
 
         } else if (method === 'set') {
-            actionWord = "تحديد"; // أو تغيير، لكن سنستخدم الصيغة للتوافق
+            actionWord = "تحديد"; 
             if (place === 'bank') {
                 data.bank = amount;
             } else {
@@ -167,26 +162,21 @@ module.exports = {
             }
         }
 
-        // حفظ البيانات
         setScore.run(data);
 
-        // تجهيز القيم للعرض
-        // نعرض الرصيد الذي تم التأثير عليه (أو المجموع حسب رغبتك، هنا سأعرض رصيد الكاش الحالي للتوافق مع الرسالة المطلوبة)
-        // لكن بما أن الطلب "الرصيد الجديد"، الأفضل نعرض المكان اللي تعدل
-        let finalDisplayAmount = (place === 'bank') ? data.bank : data.mora; 
+        // --- حساب المجموع الكلي للعرض ---
+        let totalBalance = data.mora + data.bank;
         
-        // النص: "تمت اضافة" أو "تمت ازالة"
         let statusText = `تـمـت ${actionWord}`;
 
         const embed = new EmbedBuilder()
             .setColor(0xFFD700) // لون ذهبي
             .setTitle(`✥ تـم تحديـث الرصيـد`)
-            .setThumbnail('https://i.postimg.cc/NfH9T3CN/5953886680689347550-120.jpg') // الصورة المطلوبة
+            .setThumbnail('https://i.postimg.cc/NfH9T3CN/5953886680689347550-120.jpg') 
             .setDescription(`
 ✶ الاسـم: <@${targetMember.id}>
 ✶ ${statusText} **${amount.toLocaleString()}** <:mora:1435647151349698621>
-✶ الرصيـد الجديـد: **${finalDisplayAmount.toLocaleString()}** <:mora:1435647151349698621>`)
-            // يمكنك إزالة الفوتر والوقت إذا أردت تطابق تام مع "نص" فقط، لكن سأبقيهم للمنظر العام
+✶ الرصيـد الجديـد: **${totalBalance.toLocaleString()}** <:mora:1435647151349698621>`)
             .setTimestamp();
 
         await reply({ embeds: [embed] });
