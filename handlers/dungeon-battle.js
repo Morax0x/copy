@@ -368,14 +368,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         });
 
                         menuCollector.on('collect', async subI => {
+                            // 🛠️ معالجة اختيار التصنيف
                             if (subI.customId === 'owner_god_menu_category') {
                                 const category = subI.values[0];
                                 let options = [];
 
                                 if (category === 'cat_emperor') {
-                                    options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
+                                    // 🔥 إضافة مهارة شق الزمكان هنا يدوياً للمالك فقط 🔥
+                                    options.push({ label: 'شق الزمكان', description: 'إنهاء الدانجون فوراً واحتساب الغنائم (انسحاب تكتيكي)', value: 'skill_owner_leave', emoji: '🌌' });
+                                    
+                                    const otherSkills = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
                                         label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
                                     }));
+                                    options.push(...otherSkills);
+
                                 } else if (category === 'cat_races') {
                                     options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
                                         label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
@@ -407,16 +413,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 });
                             }
 
+                            // 🛠️ معالجة تنفيذ المهارة
                             if (subI.customId === 'owner_god_menu_execute') {
                                 const skillID = subI.values[0];
+                                
+                                // تعريف مهارة شق الزمكان يدوياً في كائن المهارة لتجنب الخطأ
                                 let skillObj = skillsConfig.find(s => s.id === skillID);
-                                if (!skillObj && skillID.startsWith('class_')) skillObj = { id: skillID, name: skillID, base_price: 0 };
+                                if (skillID === 'skill_owner_leave') {
+                                    skillObj = { id: 'skill_owner_leave', name: 'شق الزمكان', base_price: 0 };
+                                } else if (!skillObj && skillID.startsWith('class_')) {
+                                    skillObj = { id: skillID, name: skillID, base_price: 0 };
+                                }
                                 
                                 let p = players.find(pl => pl.id === subI.user.id);
                                 if (!p) return;
 
                                 const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
+                                // ⚡🔥 معالجة بوابة الأبعاد (نقل الطوابق) 🔥⚡
                                 if (result.type === 'dimension_gate_request') {
                                     const modal = new ModalBuilder()
                                         .setCustomId('modal_dimension_gate')
@@ -472,15 +486,19 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
 
+                                // ⚡🔥 معالجة شق الزمكان (انسحاب الاونر والفريق) 🔥⚡
                                 if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
-                                     const index = players.findIndex(p => p.id === OWNER_ID);
-                                     if (index > -1) {
-                                         players.splice(index, 1);
-                                         await subI.update({ content: "💨 تم تنفيذ الانسحاب!", components: [] });
-                                         if (players.length === 0) { collector.stop('monster_dead'); return; }
-                                         actedPlayers.push(subI.user.id); 
-                                         return;
-                                     }
+                                     // التحقق الصارم
+                                     if (subI.user.id !== OWNER_ID) return;
+
+                                     await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! إنهاء المعركة فوراً...**", components: [] });
+                                     
+                                     // إنهاء الدانجون كـ "انسحاب" للجميع
+                                     // نقوم بإيقاف الكوليكتور ونرسل رسالة الانسحاب
+                                     await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+                                     ongoing = false; // إيقاف اللوب
+                                     collector.stop('owner_force_leave');
+                                     return;
                                 }
 
                                 if (result.success) {
@@ -488,15 +506,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.skipCount = 0;
                                     await subI.update({ content: "✅ تم التنفيذ!", components: [] });
                                     
-                                    // 🔥🔥 إصلاح التعليق: التحقق من موت الوحش + إنهاء الدور 🔥🔥
                                     if (monster.hp <= 0) {
                                         monster.hp = 0;
                                         ongoing = false;
                                         collector.stop('monster_dead');
-                                        return; // إنهاء فوري
+                                        return; 
                                     }
 
-                                    // التأكد من أن الدور يمشي اذا الكل لعب
                                     if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                                         clearTimeout(turnTimeout); collector.stop('turn_end'); 
                                     } else {
