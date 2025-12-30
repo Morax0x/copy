@@ -1,5 +1,4 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require('discord.js');
-// تأكدنا أن المسار صحيح حسب ترتيب ملفاتك
 const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF } = require('./constants'); 
 
 // دالة توليد لون عشوائي للإيمبد
@@ -52,7 +51,7 @@ async function triggerMimicChest(thread, players) {
             const amount = Math.floor(Math.random() * (1500 - 800 + 1)) + 800;
             player.loot.mora += amount;
             resultMsg = `💰 **${player.name}** فتح صندوقاً ووجـد **${amount}** مورا! (تمت إضافتها لغنائمك)`;
-        
+         
         } else if (roll < 40) { 
             const amount = Math.floor(Math.random() * (500 - 10 + 1)) + 10;
             player.loot.xp += amount;
@@ -69,12 +68,10 @@ async function triggerMimicChest(thread, players) {
             resultMsg = `💖 **${player.name}** وجـد زجاجة شفاء واستعاد **${heal}** من صحته!`;
 
         } else if (roll < 85) { 
-            // 💪 هذا هو البف الذي نريد الحفاظ عليه
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 5 });
             resultMsg = `💪 **${player.name}** حصل على بركة القوة! (+20% هجوم لـ 5 جولات) ${EMOJI_BUFF}`;
 
         } else if (roll < 95) { 
-            // ☠️ وهذا هو السم الذي نريد الحفاظ عليه
             player.effects.push({ type: 'poison', val: Math.floor(player.maxHp * 0.05), turns: 5 });
             resultMsg = `☠️ **${player.name}** استنشق غازاً ساماً من الصندوق! (تسمم لـ 5 جولات) ${EMOJI_NERF}`;
 
@@ -86,6 +83,11 @@ async function triggerMimicChest(thread, players) {
 
         embed.setColor(getRandomColor());
         await message.edit({ embeds: [embed] }).catch(() => {});
+
+        // 🔥 إنهاء التجميع فوراً إذا فتح الجميع الصناديق 🔥
+        if (openedPlayers.size >= alivePlayers.length) {
+            collector.stop('all_opened');
+        }
     });
 
     collector.on('end', async () => {
@@ -95,10 +97,11 @@ async function triggerMimicChest(thread, players) {
             new ButtonBuilder().setCustomId('chest_3').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Secondary).setDisabled(true)
         );
         
-        embed.setDescription(`🔒 **اختفت الغرفة المخفية...** تابعوا طريقكم!`);
+        embed.setDescription(`🔒 **أغلقت الصناديق أبوابها...** تابعوا طريقكم!`);
         embed.setColor(Colors.Grey);
         
         await message.edit({ embeds: [embed], components: [disabledRow] }).catch(() => {});
+        // رسالة الإغلاق تختلف قليلاً إذا فتح الجميع بسرعة
         await thread.send("🌪️ تلاشت الصناديق في الظلام... الفريق يكمل مسيره.");
     });
 }
