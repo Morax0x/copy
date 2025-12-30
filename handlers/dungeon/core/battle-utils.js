@@ -1,5 +1,4 @@
-// dungeon/core/battle-utils.js
-
+// 🔥 دالة لتنظيف الاسم 🔥
 function cleanName(name) {
     if (!name) return "Unknown";
     const separators = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|', '~', '⚡'];
@@ -7,7 +6,7 @@ function cleanName(name) {
     return name.replace(regex, '').trim();
 }
 
-// دالة فحص الموت
+// 🔥 دالة فحص الموت (تستخدم لتحديث الحالة فوراً) 🔥
 function checkDeaths(players, floor, log, threadChannel) {
     players.forEach(p => {
         if (!p.isDead && p.hp <= 0) {
@@ -19,7 +18,7 @@ function checkDeaths(players, floor, log, threadChannel) {
             if (p.class === 'Priest' && !p.isPermDead) {
                 players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
                 log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
-                threadChannel.send(`✨⚰️ **${p.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
+                threadChannel.send(`✨⚰️ **${p.name}**سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`).catch(()=>{});
             }
 
             if (p.reviveCount >= 1) {
