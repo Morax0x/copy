@@ -374,14 +374,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 let options = [];
 
                                 if (category === 'cat_emperor') {
-                                    // 🔥 إضافة مهارة شق الزمكان هنا يدوياً للمالك فقط 🔥
-                                    options.push({ label: 'شق الزمكان', description: 'إنهاء الدانجون فوراً واحتساب الغنائم (انسحاب تكتيكي)', value: 'skill_owner_leave', emoji: '🌌' });
-                                    
-                                    const otherSkills = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
+                                    // 🔥 نفلتر المهارات من الكونفيق مباشرة (لأنك أضفتها في JSON) 🔥
+                                    options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
                                         label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
                                     }));
-                                    options.push(...otherSkills);
-
+                                    
                                 } else if (category === 'cat_races') {
                                     options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
                                         label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
@@ -417,11 +414,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (subI.customId === 'owner_god_menu_execute') {
                                 const skillID = subI.values[0];
                                 
-                                // تعريف مهارة شق الزمكان يدوياً في كائن المهارة لتجنب الخطأ
                                 let skillObj = skillsConfig.find(s => s.id === skillID);
-                                if (skillID === 'skill_owner_leave') {
-                                    skillObj = { id: 'skill_owner_leave', name: 'شق الزمكان', base_price: 0 };
-                                } else if (!skillObj && skillID.startsWith('class_')) {
+                                if (!skillObj && skillID.startsWith('class_')) {
                                     skillObj = { id: skillID, name: skillID, base_price: 0 };
                                 }
                                 
@@ -1141,10 +1135,15 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalMora = 0;
         let finalXp = 0;
 
+        // ==========================================
+        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
+        // ==========================================
         if (status === 'lose' && floor > 20) {
+            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
             finalMora = 1000;
             finalXp = 100;
         } else {
+            // الحساب الطبيعي
             finalMora = Math.floor(p.loot.mora);
             finalXp = Math.floor(p.loot.xp);
             
