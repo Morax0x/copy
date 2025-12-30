@@ -935,8 +935,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ❖ تعديل منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
         
-        // 1. تحديد الطوابق الخاصة التي يسمح فيها بالانسحاب (فوق الـ 20)
-        const specificRetreatFloors = [33, 50, 80];
+        // 1. تحديد الطوابق الخاصة التي يسمح فيها بالانسحاب (33 تحولت لـ 38)
+        const specificRetreatFloors = [38, 50, 80];
         
         // 2. التحقق مما إذا كان الانسحاب مسموحاً:
         const canRetreat = floor <= 20 || specificRetreatFloors.includes(floor);
