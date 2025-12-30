@@ -3,11 +3,11 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    Colors,
-    StringSelectMenuBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle
+    Colors, 
+    StringSelectMenuBuilder, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle 
 } = require('discord.js');
 
 const { 
@@ -18,8 +18,9 @@ const {
     EMOJI_NERF, 
     OWNER_ID, 
     WIN_IMAGES, 
-    LOSE_IMAGES,
-    skillsConfig 
+    LOSE_IMAGES, 
+    skillsConfig, // المهارات العامة
+    ownerSkills   // 🔥 مهارات الأونر المضافة حديثاً 🔥
 } = require('./dungeon/constants');
 
 const { 
@@ -374,8 +375,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 let options = [];
 
                                 if (category === 'cat_emperor') {
-                                    // 🔥 نفلتر المهارات من الكونفيق مباشرة (لأنك أضفتها في JSON) 🔥
-                                    options = skillsConfig.filter(s => s.stat_type === 'Owner').map(s => ({
+                                    // 🔥 التعديل: القراءة من ملف الأونر مباشرة 🔥
+                                    options = ownerSkills.map(s => ({
                                         label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
                                     }));
                                     
@@ -414,7 +415,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (subI.customId === 'owner_god_menu_execute') {
                                 const skillID = subI.values[0];
                                 
-                                let skillObj = skillsConfig.find(s => s.id === skillID);
+                                // 🔥 التعديل: البحث في القائمتين (العادية + الأونر) 🔥
+                                let skillObj = skillsConfig.find(s => s.id === skillID) || ownerSkills.find(s => s.id === skillID);
+
                                 if (!skillObj && skillID.startsWith('class_')) {
                                     skillObj = { id: skillID, name: skillID, base_price: 0 };
                                 }
