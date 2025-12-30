@@ -25,8 +25,14 @@ const LOSE_IMAGES = [
 // ---------------------------
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const BASE_HP = 100;
-const HP_PER_LEVEL = 4;
+
+// ==========================================
+// ⚖️ تعديلات الموازنة (Balance Patch)
+// ==========================================
+const BASE_HP = 800;      // تم الرفع من 100
+const HP_PER_LEVEL = 60;  // تم الرفع من 4
+// ==========================================
+
 // لم نعد نعتمد على هذا الثابت بشكل كلي، التحديد يتم داخل الدالة
 const SKILL_COOLDOWN_TURNS = 3; 
 
@@ -242,7 +248,8 @@ function applySkillEffect(battleState, attackerId, skill) {
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
             attacker.hp -= selfDmg;
-            const dmg = Math.floor(baseAtk * 2.5);
+            // ⚖️ موازنة: تقليل الضرب من 2.5 إلى 2.0
+            const dmg = Math.floor(baseAtk * 2.0);
             defender.hp -= dmg;
             return `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
         }
@@ -305,7 +312,8 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
         case 'Execute_Heal': {
-            const dmg = Math.floor(baseAtk * 1.8);
+            // ⚖️ موازنة: تقليل الضرب من 1.8 إلى 1.6
+            const dmg = Math.floor(baseAtk * 1.6);
             if (defender.hp - dmg <= 0) {
                 defender.hp = 0;
                 attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.floor(attacker.maxHp * 0.25));
