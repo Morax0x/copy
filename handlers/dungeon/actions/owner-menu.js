@@ -1,13 +1,30 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const { skillsConfig, ownerSkills, OWNER_ID } = require('../constants'); // تعديل المسار ليعود خطوة للخلف
+const { 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle 
+} = require('discord.js');
+
+const { 
+    skillsConfig, 
+    ownerSkills, 
+    OWNER_ID 
+} = require('../constants');
+
 const { handleSkillUsage } = require('../skills');
 const { generateBattleEmbed } = require('../ui');
 const { sendEndMessage } = require('../core/end-game');
-const { getRealPlayerData, cleanName } = require('../utils'); // نحتاج cleanName هنا أيضاً إذا تم استدعاء الاونر
+const { getRealPlayerData } = require('../utils'); 
+const { cleanName } = require('../core/battle-utils'); 
 
-async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef) {
+/**
+ * دالة معالجة قائمة الإمبراطور (الأونر)
+ * تقوم بعرض القوائم، تنفيذ المهارات، ومعالجة بوابة الأبعاد وشق الزمكان
+ */
+async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, mainCollector, ongoingRef) {
     
-    // القائمة الرئيسية
+    // 1. إنشاء القائمة الرئيسية
     const menu = new StringSelectMenuBuilder()
         .setCustomId('owner_god_menu_category')
         .setPlaceholder('👑 اختر قسم القوة المطلقة')
@@ -25,13 +42,14 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
         fetchReply: true 
     });
 
+    // كوليكتور خاص بالقائمة المؤقتة (لمدة دقيقة)
     const menuCollector = ownerMenuMsg.createMessageComponentCollector({ 
         filter: subI => subI.user.id === i.user.id, 
         time: 60000 
     });
 
     menuCollector.on('collect', async subI => {
-        // 🛠️ معالجة اختيار التصنيف
+        // 🛠️ معالجة اختيار التصنيف (Category Selection)
         if (subI.customId === 'owner_god_menu_category') {
             const category = subI.values[0];
             let options = [];
@@ -71,10 +89,11 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             });
         }
 
-        // 🛠️ معالجة تنفيذ المهارة
+        // 🛠️ معالجة تنفيذ المهارة (Skill Execution)
         if (subI.customId === 'owner_god_menu_execute') {
             const skillID = subI.values[0];
             
+            // البحث عن المهارة في القائمتين
             let skillObj = skillsConfig.find(s => s.id === skillID) || ownerSkills.find(s => s.id === skillID);
 
             if (!skillObj && skillID.startsWith('class_')) {
@@ -82,25 +101,31 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             }
             
             let p = players.find(pl => pl.id === subI.user.id);
-            // إذا لم يكن اللاعب موجوداً (لأنه دخل كأونر فجأة)، نضيفه
+            
+            // إضافة الأونر للقائمة إذا لم يكن موجوداً (Dungeon Entry via Cheat)
             if (!p && subI.user.id === OWNER_ID) {
                  const member = await subI.guild.members.fetch(OWNER_ID).catch(() => null);
                  if(member) {
                      const ownerPlayer = getRealPlayerData(member, sql, '???');
-                     ownerPlayer.name = "Unknown"; // أو دالة cleanName لو استوردتها
+                     ownerPlayer.name = cleanName(ownerPlayer.name);
                      players.push(ownerPlayer);
                      p = ownerPlayer;
+                     log.push(`👑 **الأمبراطـور انضم للمعركة عبر القائمة السرية!**`);
                  }
             }
+
             if (!p) return;
 
             const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
-            // ⚡🔥 معالجة بوابة الأبعاد 🔥⚡
+            // ==========================================
+            // 🌌 بوابة الأبعاد (Dimension Gate Logic) 🌌
+            // ==========================================
             if (result.type === 'dimension_gate_request') {
                 const modal = new ModalBuilder().setCustomId('modal_dimension_gate').setTitle('🌌 بوابة الأبعاد');
-                const floorInput = new TextInputBuilder().setCustomId('gate_floor_number').setLabel("رقم الطابق؟").setStyle(TextInputStyle.Short).setRequired(true);
-                const rewardInput = new TextInputBuilder().setCustomId('gate_rewards_choice').setLabel("جوائز؟ (نعم/لا)").setStyle(TextInputStyle.Short).setRequired(false);
+                const floorInput = new TextInputBuilder().setCustomId('gate_floor_number').setLabel("رقم الطابق الذي تريد الانتقال له؟").setStyle(TextInputStyle.Short).setPlaceholder("مثال: 50").setRequired(true);
+                const rewardInput = new TextInputBuilder().setCustomId('gate_rewards_choice').setLabel("هل تريد جوائز الطوابق المتخطاة؟").setStyle(TextInputStyle.Short).setPlaceholder("نعم / لا").setRequired(false);
+                
                 modal.addComponents(new ActionRowBuilder().addComponents(floorInput), new ActionRowBuilder().addComponents(rewardInput));
                 
                 await subI.showModal(modal);
@@ -119,50 +144,57 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                         return;
                     }
 
-                    // حساب القفزة (نحتاج معرفة الطابق الحالي، لكن هنا سنفترض التعديل المباشر على الحالة)
-                    // ملاحظة: بما أننا فصلنا الملف، الوصول لـ floor متغير صعب.
-                    // الحل: نعدل merchantState ليقرأه الملف الرئيسي
-                    const jump = floorNum; // سنضع الرقم هنا والملف الرئيسي يعالجه
-                    merchantState.skipFloors = floorNum; // *تعديل بسيط: نمرر الطابق المستهدف مباشرة*
-                    merchantState.isGateJump = true; // علامة لنميزها
+                    // إعداد القفزة (يتم معالجتها في الملف الرئيسي عبر merchantState)
+                    merchantState.skipFloors = floorNum; // نخزن الطابق المستهدف
+                    merchantState.isGateJump = true; // علامة لتمييز أنها قفزة بوابة وليست تاجر
 
                     if (wantRewards) {
-                        const extraMora = 50000; // مبلغ ثابت للتبسيط أو نعالجه في الرئيسي
+                        // بما أننا لا نعرف الطابق الحالي بدقة هنا، سنعطي مبلغاً تقريبياً ضخماً
+                        // أو نعتمد على أن القفزة تحسب في الملف الرئيسي (الخيار الآمن: مكافأة فورية)
+                        const extraMora = 50000; 
                         players.forEach(pl => { if (!pl.isDead) pl.loot.mora += extraMora; });
-                        log.push(`💰 **الإمبراطور** منح الجميع ثروة طائلة!`);
+                        log.push(`💰 **الإمبراطور** نهب جوائز الطوابق! (+${extraMora} مورا)`);
                     }
 
                     monster.hp = 0; 
                     log.push(`🌌 **بوابة الأبعاد** فُتحت! الانتقال...`);
                     await modalInteraction.reply({ content: "🌌 جاري الانتقال...", ephemeral: true });
                     
-                    collector.stop('monster_dead');
+                    // إيقاف المعركة الحالية للانتقال
+                    mainCollector.stop('monster_dead');
                     return; 
 
                 } catch (err) { return; }
             }
 
-            // ⚡🔥 معالجة شق الزمكان 🔥⚡
+            // ==========================================
+            // ⚡ شق الزمكان (Force Leave Logic) ⚡
+            // ==========================================
             if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                     if (subI.user.id !== OWNER_ID) return;
-                    await subI.update({ content: "💨 **تم تنفيذ شق الزمكان!**", components: [] });
-                    await sendEndMessage(threadChannel.guild.channels.cache.get(mainChannel?.id) || threadChannel, threadChannel, players, [], 999, "retreat", sql, guild.id, hostId, activeDungeonRequests);
-                    ongoingRef.value = false; // إيقاف اللوب عبر المرجع
-                    collector.stop('owner_force_leave');
+
+                    await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! إنهاء المعركة فوراً...**", components: [] });
+                    
+                    // إنهاء الدانجون كـ "انسحاب" للجميع
+                    await sendEndMessage(mainChannel, threadChannel, players, [], 999, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+                    
+                    ongoingRef.value = false; // إيقاف اللوب في الملف الرئيسي
+                    mainCollector.stop('owner_force_leave');
                     return;
             }
 
+            // نجاح تنفيذ مهارة عادية
             if (result.success) {
                 await subI.update({ content: "✅ تم التنفيذ!", components: [] });
                 
                 if (monster.hp <= 0) {
                     monster.hp = 0;
-                    ongoingRef.value = false;
-                    collector.stop('monster_dead');
+                    ongoingRef.value = false; // مؤقت حتى يعالج اللوب الموت
+                    mainCollector.stop('monster_dead');
                     return; 
                 }
                 
-                // تحديث الواجهة
+                // تحديث واجهة المعركة ليرى الجميع التأثير
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, 0, 'theme', log, [])] }).catch(()=>{});
             }
         }
