@@ -47,7 +47,6 @@ function getUniqueOptions(items, isDamageDesc = false) {
 
 /**
  * دالة معالجة قائمة الإمبراطور (الأونر)
- * ⚠️ ملاحظة: تم إضافة retreatedPlayers للمعلمات لنقل اللاعب عند استخدام الرمق الأخير
  */
 async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, mainCollector, ongoingRef, retreatedPlayers = []) {
     
@@ -214,23 +213,18 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                 if (playerIndex > -1) {
                     const leavingPlayer = players[playerIndex];
                     
-                    // نحتاج معرفة الطابق الحالي لحفظه
                     const currentFloorMatch = monster.name.match(/Lv\.(\d+)/);
                     const currentFloor = currentFloorMatch ? parseInt(currentFloorMatch[1]) : 0;
                     leavingPlayer.retreatFloor = currentFloor;
 
-                    // ننقله لقائمة المنسحبين
                     if (retreatedPlayers) retreatedPlayers.push(leavingPlayer);
-                    players.splice(playerIndex, 1); // حذفه من القائمة النشطة
+                    players.splice(playerIndex, 1); 
                 }
 
                 await subI.update({ content: "✋ **تم تنفيذ الرمق الأخير! تركت الوحش يحتضر وغادرت المعركة...**", components: [] });
                 log.push(`✋ **الإمبراطور** جعل الوحش بـ 1 HP وغادر المعركة وحيداً!`);
                 
-                // تحديث الواجهة للباقين
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, 0, 'theme', log, [])] }).catch(()=>{});
-                
-                // لا نوقف اللوب (ongoingRef) لأن الفريق سيكمل
                 return;
             }
 
@@ -242,6 +236,10 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
 
                     await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! إنهاء المعركة فوراً...**", components: [] });
                     
+                    // --- 🛠️ الإصلاح هنا: تعريف mainChannel ---
+                    const mainChannel = threadChannel.parent || threadChannel; 
+                    // ------------------------------------
+
                     await sendEndMessage(mainChannel, threadChannel, players, [], 999, "retreat", sql, guild.id, hostId, activeDungeonRequests);
                     
                     ongoingRef.value = false; 
