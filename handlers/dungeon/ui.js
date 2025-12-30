@@ -7,11 +7,7 @@ function buildSkillSelector(player) {
 
     // --- تعديل: إزالة القائمة الخاصة بالأونر من هنا ---
     // لأن الأونر أصبح يستخدم زر "الدفاع" لفتح لوحة التحكم الشاملة.
-    // زر "المهارات" العادي سيعرض المهارات المتاحة بشكل طبيعي (أو يمكن تعطيله للأونر).
     
-    // إذا ضغط الأونر زر المهارات العادي، نعرض له مهارات الكلاس والمهارات العادية فقط
-    // (المهارات الخاصة جداً "محو الوجود" وغيرها مكانها في زر الدفاع)
-
     const cd = player.special_cooldown;
     const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
     
@@ -32,15 +28,12 @@ function buildSkillSelector(player) {
     }
 
     const userSkills = player.skills || {};
-    // فلترة المهارات: إما مهارة مشتراة (Level > 0) أو مهارة عرقية (race_)
-    // ونستثني مهارات الأونر الخاصة من الظهور هنا لتجنب الازدحام
     const availableSkills = Object.values(userSkills).filter(s => 
         (s.currentLevel > 0 || s.id.startsWith('race_')) && 
         s.stat_type !== 'Owner' // إخفاء مهارات الأونر من القائمة العادية
     );
     
     availableSkills.forEach(skill => {
-        // للأونر: الكولداون دائماً 0
         const cooldown = (player.id === OWNER_ID) ? 0 : (player.skillCooldowns[skill.id] || 0);
         const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
         
@@ -53,7 +46,6 @@ function buildSkillSelector(player) {
 
     if (options.length === 0) return null;
     
-    // التأكد من عدم تجاوز الحد الأقصى (25 خيار)
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
@@ -118,7 +110,6 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === 'Priest') arabClass = 'كاهن';
         else if (p.class === 'Mage') arabClass = 'ساحر';
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
-        // تعديل بسيط لإظهار كلاس الأونر بشكل مميز
         else if (p.id === OWNER_ID) { arabClass = 'الإمبراطور'; icon += '👁️'; } 
 
         const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
@@ -141,9 +132,12 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
-    if (log.length > 0) {
-        embed.addFields({ name: "سجل المعركة:", value: log.join('\n'), inline: false });
-    }
+    // ============================================================
+    // 🛠️ التعديل هنا: عرض آخر 8 أسطر فقط (سجل متحرك)
+    // ============================================================
+    const logText = log.slice(-8).join('\n') || "بانتظار بدء الاشتباك...";
+    
+    embed.addFields({ name: "📜 آخر الأحداث:", value: logText, inline: false });
 
     return embed;
 }
@@ -156,7 +150,6 @@ function generateBattleRows() {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('heal').setLabel('جرعة').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
-        // هذا الزر سيتحول إلى "لوحة التحكم" للأونر تلقائياً في ملف المعركة
         new ButtonBuilder().setCustomId('def').setLabel('دفاع').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
     );
 
