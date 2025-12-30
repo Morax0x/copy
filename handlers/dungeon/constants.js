@@ -4,20 +4,14 @@ const path = require('path');
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
+
+// 1. تحميل المهارات العامة (للاعبين)
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// 🔥 إضافة مهارة "شق الزمكان" الخاصة بالاونر 🔥
-skillsConfig.push({
-    id: 'skill_owner_leave',
-    name: 'شق الزمكان',
-    description: 'تقنية محرمة: سحب الفريق قسراً من الدانجون وإنهاء المعركة فوراً واحتساب الغنائم.',
-    emoji: '🌌',
-    stat_type: 'Owner', // تصنيف الامبراطور
-    base_price: 0,
-    cooldown: 0
-});
+// 2. 🔥 تحميل مهارات الأونر (لك أنت فقط) 🔥
+const ownerSkills = require(path.join(rootDir, 'json', 'owner-skills.json'));
 
-// تحميل ملفات العناصر
+// تحميل ملفات العناصر (الجرعات)
 let potionItems = [];
 try {
     potionItems = require(path.join(rootDir, 'json', 'potions.json'));
@@ -59,6 +53,7 @@ module.exports = {
     dungeonConfig,
     weaponsConfig,
     skillsConfig,
+    ownerSkills, // ✅ تم تصديرها بشكل منفصل لتستخدمها في كود الدانجون فقط
     potionItems,
     EMOJI_MORA,
     EMOJI_XP,
