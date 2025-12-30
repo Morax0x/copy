@@ -19,8 +19,39 @@ const { getRealPlayerData } = require('../utils');
 const { cleanName } = require('../core/battle-utils'); 
 
 /**
+ * دالة مساعدة لفلترة الخيارات المكررة
+ * تمنع الخطأ: SELECT_COMPONENT_OPTION_VALUE_DUPLICATED
+ */
+function getUniqueOptions(items, isDamageDesc = false) {
+    const seenIds = new Set();
+    const options = [];
+
+    for (const s of items) {
+        // إذا كان الـ ID مر علينا سابقاً، نتخطاه
+        if (seenIds.has(s.id)) continue;
+        
+        seenIds.add(s.id);
+        
+        // تجهيز الوصف بناءً على النوع
+        let description = s.description || "لا يوجد وصف";
+        if (isDamageDesc) {
+            description = `(x10 DMG) ${description}`;
+        } else if (!isDamageDesc && description.length < 10) {
+            description = `(x10 Effect) ${description}`; // للمهارات العامة
+        }
+
+        options.push({
+            label: s.name.substring(0, 100), // ضمان عدم تجاوز الحد
+            description: description.substring(0, 100), // ضمان عدم تجاوز الحد
+            value: s.id,
+            emoji: s.emoji || '🔸'
+        });
+    }
+    return options;
+}
+
+/**
  * دالة معالجة قائمة الإمبراطور (الأونر)
- * تقوم بعرض القوائم، تنفيذ المهارات، ومعالجة بوابة الأبعاد وشق الزمكان
  */
 async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, mainCollector, ongoingRef) {
     
@@ -55,33 +86,41 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             let options = [];
 
             if (category === 'cat_emperor') {
-                options = ownerSkills.map(s => ({
-                    label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
-                }));
+                // استخدام دالة الحماية من التكرار
+                options = getUniqueOptions(ownerSkills);
+
             } else if (category === 'cat_races') {
-                options = skillsConfig.filter(s => s.id.startsWith('race_')).map(s => ({
-                    label: s.name, description: `(x10 DMG) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
-                }));
+                const raceSkills = skillsConfig.filter(s => s.id.startsWith('race_'));
+                options = getUniqueOptions(raceSkills, true);
+
             } else if (category === 'cat_classes') {
-                options = [
-                    { label: 'صرخة الحرب', description: 'بفات للفريق', value: 'class_Leader', emoji: '⚔️' },
-                    { label: 'استفزاز', description: 'سحب الضرر ودفاع', value: 'class_Tank', emoji: '🛡️' },
-                    { label: 'النور المقدس', description: 'إحياء وعلاج', value: 'class_Priest', emoji: '✨' },
-                    { label: 'سجن الجليد', description: 'تجميد الوحش', value: 'class_Mage', emoji: '❄️' },
-                    { label: 'حارس الظل', description: 'استدعاء وحش', value: 'class_Summoner', emoji: '🐺' }
+                // الكلاسات ثابتة يدوياً، لا تحتاج فلترة عادةً ولكن للتأكيد
+                const classOptionsRaw = [
+                    { name: 'صرخة الحرب', description: 'بفات للفريق', id: 'class_Leader', emoji: '⚔️' },
+                    { name: 'استفزاز', description: 'سحب الضرر ودفاع', id: 'class_Tank', emoji: '🛡️' },
+                    { name: 'النور المقدس', description: 'إحياء وعلاج', id: 'class_Priest', emoji: '✨' },
+                    { name: 'سجن الجليد', description: 'تجميد الوحش', id: 'class_Mage', emoji: '❄️' },
+                    { name: 'حارس الظل', description: 'استدعاء وحش', id: 'class_Summoner', emoji: '🐺' }
                 ];
-            } else if (category === 'cat_skills') {
-                options = skillsConfig.filter(s => !s.id.startsWith('race_') && s.stat_type !== 'Owner').map(s => ({
-                    label: s.name, description: `(x10 Effect) ${s.description}`.substring(0, 100), value: s.id, emoji: s.emoji
+                // تحويلها للشكل المناسب يدوياً لأنها ليست من الكونفق
+                options = classOptionsRaw.map(c => ({
+                    label: c.name, description: c.description, value: c.id, emoji: c.emoji
                 }));
+
+            } else if (category === 'cat_skills') {
+                const generalSkills = skillsConfig.filter(s => !s.id.startsWith('race_') && s.stat_type !== 'Owner');
+                options = getUniqueOptions(generalSkills, false);
             }
 
-            if (options.length === 0) return subI.reply({ content: "لا توجد مهارات هنا.", ephemeral: true });
+            if (options.length === 0) return subI.reply({ content: "⚠️ لا توجد مهارات متاحة في هذا القسم.", ephemeral: true });
+
+            // حماية إضافية: التأكد من عدم تجاوز 25 خيار (حد ديسكورد الأقصى)
+            const safeOptions = options.slice(0, 25);
 
             const skillMenu = new StringSelectMenuBuilder()
                 .setCustomId('owner_god_menu_execute')
                 .setPlaceholder('⚡ اختر المهارة للتنفيذ فوراً')
-                .addOptions(options.slice(0, 25));
+                .addOptions(safeOptions);
 
             await subI.update({ 
                 content: `**👑 تصنيف: ${category.replace('cat_', '').toUpperCase()}**\nاختر المهارة لإطلاقها:`, 
@@ -145,12 +184,10 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                     }
 
                     // إعداد القفزة (يتم معالجتها في الملف الرئيسي عبر merchantState)
-                    merchantState.skipFloors = floorNum; // نخزن الطابق المستهدف
-                    merchantState.isGateJump = true; // علامة لتمييز أنها قفزة بوابة وليست تاجر
+                    merchantState.skipFloors = floorNum; 
+                    merchantState.isGateJump = true; 
 
                     if (wantRewards) {
-                        // بما أننا لا نعرف الطابق الحالي بدقة هنا، سنعطي مبلغاً تقريبياً ضخماً
-                        // أو نعتمد على أن القفزة تحسب في الملف الرئيسي (الخيار الآمن: مكافأة فورية)
                         const extraMora = 50000; 
                         players.forEach(pl => { if (!pl.isDead) pl.loot.mora += extraMora; });
                         log.push(`💰 **الإمبراطور** نهب جوائز الطوابق! (+${extraMora} مورا)`);
@@ -189,7 +226,7 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                 
                 if (monster.hp <= 0) {
                     monster.hp = 0;
-                    ongoingRef.value = false; // مؤقت حتى يعالج اللوب الموت
+                    ongoingRef.value = false; 
                     mainCollector.stop('monster_dead');
                     return; 
                 }
