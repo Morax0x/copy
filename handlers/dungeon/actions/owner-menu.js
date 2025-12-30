@@ -229,22 +229,31 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             }
 
             // ==========================================
-            // ⚡ شق الزمكان (Force Leave Logic) ⚡
+            // ⚡ شق الزمكان (Force Leave Logic) - المصحح ⚡
             // ==========================================
             if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
-                    if (subI.user.id !== OWNER_ID) return;
+                if (subI.user.id !== OWNER_ID) return;
 
-                    await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! إنهاء المعركة فوراً...**", components: [] });
-                    
-                    // --- 🛠️ الإصلاح هنا: تعريف mainChannel ---
+                // 1. رسالة تأكيد فورية
+                await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! جاري الانسحاب القسري...**", components: [] });
+                
+                // 2. إيقاف اللعبة فوراً (قبل محاولة الإرسال لتجنب التعليق)
+                ongoingRef.value = false; 
+                monster.hp = 0; // تصفير دم الوحش
+                mainCollector.stop('owner_force_leave');
+
+                // 3. محاولة إنهاء المعركة
+                try {
+                    // تعريف الروم بشكل آمن (يدعم الثريد والروم العادية)
                     const mainChannel = threadChannel.parent || threadChannel; 
-                    // ------------------------------------
 
                     await sendEndMessage(mainChannel, threadChannel, players, [], 999, "retreat", sql, guild.id, hostId, activeDungeonRequests);
-                    
-                    ongoingRef.value = false; 
-                    mainCollector.stop('owner_force_leave');
-                    return;
+                } catch (err) {
+                    console.error("Error inside Force Leave:", err);
+                    await threadChannel.send({ content: "⚠️ **حدث خطأ أثناء إنهاء المعركة، ولكن تم إيقاف اللعبة قسرياً.**" }).catch(() => {});
+                }
+
+                return;
             }
 
             // نجاح تنفيذ مهارة عادية
