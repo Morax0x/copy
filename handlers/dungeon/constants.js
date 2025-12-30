@@ -6,6 +6,17 @@ const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'))
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
+// 🔥 إضافة مهارة "شق الزمكان" الخاصة بالاونر 🔥
+skillsConfig.push({
+    id: 'skill_owner_leave',
+    name: 'شق الزمكان',
+    description: 'تقنية محرمة: سحب الفريق قسراً من الدانجون وإنهاء المعركة فوراً واحتساب الغنائم.',
+    emoji: '🌌',
+    stat_type: 'Owner', // تصنيف الامبراطور
+    base_price: 0,
+    cooldown: 0
+});
+
 // تحميل ملفات العناصر
 let potionItems = [];
 try {
