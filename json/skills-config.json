@@ -1,5 +1,18 @@
 [
   {
+    "id": "skill_owner_leave",
+    "name": "شق الزمكان",
+    "description": "تقنية محرمة: سحب الفريق قسراً من الدانجون وإنهاء المعركة فوراً واحتساب الغنائم.",
+    "emoji": "🌌",
+    "base_price": 9999999,
+    "price_increment": 0,
+    "base_value": 0,
+    "value_increment": 0,
+    "max_level": 1,
+    "stat_type": "Owner",
+    "cooldown": 0
+  },
+  {
     "id": "skill_erasure",
     "name": "مَحـو الوجـود",
     "description": "قتل فوري للوحش وإخفاؤه من الوجود.",
