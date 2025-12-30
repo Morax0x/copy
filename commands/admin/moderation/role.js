@@ -3,7 +3,7 @@ const { PermissionsBitField } = require('discord.js');
 module.exports = {
     name: 'role',
     description: 'إعطاء أو إزالة رتبة من عضو',
-    aliases: ['ر'''رول', 'رتبة'],
+    aliases: ['ر', 'رول', 'رتبة'], // ✅ تم تصحيح الخطأ هنا
     category: 'Admin',
     usage: 'role <@user> <role name/id>',
 
@@ -34,7 +34,7 @@ module.exports = {
         const roleQuery = args.slice(1).join(" "); 
         if (!roleQuery) return message.reply('❓ **حدد الرتبة: بالاسم، المنشن، أو الآيدي.**');
 
-        // أولويات البحث: منشن > آيدي > تطابق الاسم بالكامل > جزء من الاسم
+        // البحث: منشن > آيدي > تطابق الاسم
         let role = message.mentions.roles.first() || 
                    message.guild.roles.cache.get(args[1]) || 
                    message.guild.roles.cache.find(r => r.name.toLowerCase() === roleQuery.toLowerCase()) ||
@@ -45,6 +45,7 @@ module.exports = {
         }
 
         // 5. التحقق من الهرمية (Hierarchy)
+        // 
         // التأكد أن رتبة البوت أعلى من الرتبة المراد إعطاؤها
         if (role.position >= message.guild.members.me.roles.highest.position) {
             return message.reply('❌ **لا يمكنني التحكم بهذه الرتبة لأنها أعلى مني أو مساوية لي.**');
@@ -59,23 +60,21 @@ module.exports = {
             if (targetMember.roles.cache.has(role.id)) {
                 // العضو يملك الرتبة -> إزالة
                 await targetMember.roles.remove(role);
-                // الرد بدون منشن الرتبة
                 message.reply({ 
-                    content: `✥ تـم ازالـة الرتـبـة ${role.name}`, 
+                    content: `✅ **تـم ازالـة الرتـبـة ${role.name} من ${targetMember.user.username}**`, 
                     allowedMentions: { roles: [], repliedUser: false } 
                 });
             } else {
                 // العضو لا يملك الرتبة -> منح
                 await targetMember.roles.add(role);
-                // الرد بدون منشن الرتبة
                 message.reply({ 
-                    content: `✥ تـم منـح رتـبـة ${role.name}`, 
+                    content: `✅ **تـم منـح رتـبـة ${role.name} الى ${targetMember.user.username}**`, 
                     allowedMentions: { roles: [], repliedUser: false } 
                 });
             }
         } catch (error) {
             console.error(error);
-            message.reply('❌ **حدث خطأ أثناء تعديل الرتب.**');
+            message.reply('❌ **حدث خطأ أثناء تعديل الرتب (تأكد من صلاحياتي وترتيب الرتب).**');
         }
     }
 };
