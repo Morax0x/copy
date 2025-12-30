@@ -19,8 +19,8 @@ const {
     OWNER_ID, 
     WIN_IMAGES, 
     LOSE_IMAGES, 
-    skillsConfig, // المهارات العامة
-    ownerSkills   // 🔥 مهارات الأونر المضافة حديثاً 🔥
+    skillsConfig, 
+    ownerSkills   
 } = require('./dungeon/constants');
 
 const { 
@@ -51,40 +51,10 @@ const {
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
 const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
 
-// 🔥 دالة لتنظيف الاسم 🔥
-function cleanName(name) {
-    if (!name) return "Unknown";
-    const separators = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|', '~', '⚡'];
-    const regex = new RegExp(`\\s*([${separators.join('')}]).*`, 'g');
-    return name.replace(regex, '').trim();
-}
-
-// 🔥 دالة فحص الموت (تستخدم لتحديث الحالة فوراً) 🔥
-function checkDeaths(players, floor, log, threadChannel) {
-    players.forEach(p => {
-        if (!p.isDead && p.hp <= 0) {
-            p.hp = 0;
-            p.isDead = true;
-            p.deathFloor = floor;
-            
-            // لو كان كاهن، يعالج الفريق قبل موته
-            if (p.class === 'Priest' && !p.isPermDead) {
-                players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
-                log.push(`⚰️ **سقـط الكـاهـن** - قـام بعلاج الفريق على الرمق الاخـير!`);
-                threadChannel.send(`✨⚰️ **${p.name}** سقـط ولكنه عالج الفريق قبل موته!`).catch(()=>{});
-            }
-
-            if (p.reviveCount >= 1) {
-                p.isPermDead = true;
-                log.push(`💀 **${p.name}** سقط وتحللت جثته!`);
-                threadChannel.send(`💀 **${p.name}** سقط وتحللت جثته - لا يمكن إحياؤه!`).catch(()=>{});
-            } else {
-                log.push(`💀 **${p.name}** سقط!`);
-                threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
-            }
-        }
-    });
-}
+// 🔥 استدعاءات الـ Core الجديدة (التنظيم الاحترافي) 🔥
+const { cleanName, checkDeaths } = require('./dungeon/core/battle-utils');
+const { setupPlayers } = require('./dungeon/core/setup');
+const { sendEndMessage } = require('./dungeon/core/end-game');
 
 // --- Main Dungeon Execution Logic ---
 
@@ -114,54 +84,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         weaknessActive: false
     };
 
-    const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
-    const members = await Promise.all(promises);
-
-    members.forEach((m, index) => {
-        if (m) {
-            const cls = partyClasses.get(m.id) || 'Adventurer';
-            let playerData = getRealPlayerData(m, sql, cls);
-            
-            // تنظيف الاسم فوراً
-            playerData.name = cleanName(playerData.name);
-            // تهيئة متغير الدرع المشتراة
-            playerData.startingShield = 0; 
-            
-            // ============================================================
-            // 🔥🔥🔥 الفحص الحقيقي للختم (Deep Scan) 🔥🔥🔥
-            // ============================================================
-            playerData.isSealed = false;
-            playerData.sealMultiplier = 1.0; 
-            
-            if (m.id !== OWNER_ID) {
-                let maxItemLevel = 0;
-
-                // 1. فحص المهارات (Skills)
-                if (playerData.skills && typeof playerData.skills === 'object') {
-                    const skillValues = Object.values(playerData.skills);
-                    for (const skill of skillValues) {
-                        const lvl = parseInt(skill.currentLevel) || parseInt(skill.level) || 0;
-                        if (lvl > maxItemLevel) maxItemLevel = lvl;
-                    }
-                }
-
-                // 2. فحص السلاح (Weapon)
-                if (playerData.weapon && typeof playerData.weapon === 'object') {
-                    const wLvl = parseInt(playerData.weapon.currentLevel) || parseInt(playerData.weapon.level) || parseInt(playerData.weapon.lvl) || 0;
-                    if (wLvl > maxItemLevel) maxItemLevel = wLvl;
-                }
-
-                // 3. قرار الختم
-                if (maxItemLevel > 10) {
-                    playerData.isSealed = true;
-                    playerData.sealMultiplier = 0.2; // البداية 20%
-                }
-            }
-            // ============================================================
-
-            players.push(playerData);
-        }
-    });
+    // 🔥🔥🔥 استخدام دالة Setup الجديدة لتجهيز اللاعبين 🔥🔥🔥
+    players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID);
 
     if (players.length === 0) {
         activeDungeonRequests.delete(hostId);
@@ -375,7 +299,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 let options = [];
 
                                 if (category === 'cat_emperor') {
-                                    // 🔥 التعديل: القراءة من ملف الأونر مباشرة 🔥
                                     options = ownerSkills.map(s => ({
                                         label: s.name, description: s.description.substring(0, 100), value: s.id, emoji: s.emoji
                                     }));
@@ -415,7 +338,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             if (subI.customId === 'owner_god_menu_execute') {
                                 const skillID = subI.values[0];
                                 
-                                // 🔥 التعديل: البحث في القائمتين (العادية + الأونر) 🔥
                                 let skillObj = skillsConfig.find(s => s.id === skillID) || ownerSkills.find(s => s.id === skillID);
 
                                 if (!skillObj && skillID.startsWith('class_')) {
@@ -485,15 +407,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 // ⚡🔥 معالجة شق الزمكان (انسحاب الاونر والفريق) 🔥⚡
                                 if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
-                                     // التحقق الصارم
                                      if (subI.user.id !== OWNER_ID) return;
 
                                      await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! إنهاء المعركة فوراً...**", components: [] });
                                      
-                                     // إنهاء الدانجون كـ "انسحاب" للجميع
-                                     // نقوم بإيقاف الكوليكتور ونرسل رسالة الانسحاب
+                                     // إنهاء الدانجون كـ "انسحاب" للجميع (باستخدام الدالة المستوردة)
                                      await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
-                                     ongoing = false; // إيقاف اللوب
+                                     ongoing = false; 
                                      collector.stop('owner_force_leave');
                                      return;
                                 }
@@ -1119,95 +1039,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
     }
-}
-
-async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests) {
-    if (!sql || !sql.open) return;
-    let title = "", color = "", randomImage = null;
-
-    if (status === 'win') { title = "❖ أسطـورة الدانـجون !"; color = "#00FF00"; randomImage = getRandomImage(WIN_IMAGES); } 
-    else if (status === 'retreat') { title = "❖ انـسـحـاب تـكـتيـكـي !"; color = "#FFFF00"; randomImage = getRandomImage(WIN_IMAGES); } 
-    else { title = "❖ هزيمـة ساحقـة ..."; color = "#FF0000"; randomImage = getRandomImage(LOSE_IMAGES); }
-
-    const allParticipants = [...activePlayers, ...retreatedPlayers];
-    
-    let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
-    
-    let lootString = "";
-    allParticipants.forEach(p => {
-        let finalMora = 0;
-        let finalXp = 0;
-
-        // ==========================================
-        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
-        // ==========================================
-        if (status === 'lose' && floor > 20) {
-            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
-            finalMora = 1000;
-            finalXp = 100;
-        } else {
-            // الحساب الطبيعي
-            finalMora = Math.floor(p.loot.mora);
-            finalXp = Math.floor(p.loot.xp);
-            
-            if (p.isDead) { 
-                finalMora = Math.floor(finalMora * 0.5); 
-                finalXp = Math.floor(finalXp * 0.5); 
-            }
-        }
-        
-        let statusEmoji = "";
-        if (p.isDead) { 
-            const deathFloorInfo = p.deathFloor ? `(مات في ${p.deathFloor})` : "(مات)";
-            statusEmoji = `💀 ${deathFloorInfo}`;
-        } else if (p.retreatFloor) {
-            statusEmoji = `🏃‍♂️ (انسحب في ${p.retreatFloor})`;
-        } else {
-            statusEmoji = "✅ (صمد للنهاية)";
-        }
-
-        sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-        lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
-    });
-
-    let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
-
-    if (floor >= 10 && mvpPlayer) {
-        description += `\n\n**✨ جائـزة نجـم المعركـة:**\n<@${mvpPlayer.id}> (ضرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحصل على تعزيز **15%** مورا واكس بي لـ **15د** ${EMOJI_BUFF}`;
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(description)
-        .setColor(color).setImage(randomImage).setTimestamp();
-
-    await mainChannel.send({ content: allParticipants.map(p => `<@${p.id}>`).join(' '), embeds: [embed] }).catch(()=>{});
-    activeDungeonRequests.delete(hostId);
-    
-    if (floor >= 10) {
-        if (status === 'lose') {
-            const debuffDuration = 15 * 60 * 1000;
-            const expiresAt = Date.now() + debuffDuration;
-            
-            allParticipants.forEach(p => {
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'mora', -0.15);
-                sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, p.id, -15, expiresAt, 'xp', -0.15);
-            });
-            await mainChannel.send(`**💀 لعنـة الهزيمـة:** أصابت اللعنة جميع المشاركين! (-15% مورا واكس بي لـ 15د) ${EMOJI_NERF}`).catch(()=>{});
-
-        } else if (mvpPlayer) {
-            const buffDuration = 15 * 60 * 1000; 
-            const expiresAt = Date.now() + buffDuration;
-            
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15);
-        }
-    }
-
-    try {
-        await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة <:emoji_69:1451172248173023263> ...**` });
-        setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
-    } catch(e) { }
 }
 
 module.exports = { runDungeon };
