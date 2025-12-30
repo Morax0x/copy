@@ -13,7 +13,7 @@ module.exports = {
         if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) return;
 
         const targetArg = args[0];
-        if (!targetArg) return message.reply('❓ **الرجاء تحديد العضو.**');
+        if (!targetArg) return message.reply('❓ **الرجاء تحديد العضـو.**');
         
         let targetMember;
         try {
