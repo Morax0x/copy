@@ -2,10 +2,11 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = r
 const path = require('path');
 
 const rootDir = process.cwd();
+// تأكد أن مسارات الجيسون صحيحة لديك
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// --- تعريف مصفوفات الصور ---
+// --- صور الفوز والخسارة ---
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
@@ -22,19 +23,16 @@ const LOSE_IMAGES = [
     'https://i.postimg.cc/rmSwjvkV/download-1.gif',
     'https://i.postimg.cc/8PyPZRqt/download.jpg'
 ];
-// ---------------------------
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 // ==========================================
-// ⚖️ تعديلات الموازنة (Balance Patch)
+// ⚖️ إعدادات الصحة (تأكد أن هذه هي القيم الموجودة)
 // ==========================================
-const BASE_HP = 800;      // تم الرفع من 100
-const HP_PER_LEVEL = 60;  // تم الرفع من 4
-// ==========================================
-
-// لم نعد نعتمد على هذا الثابت بشكل كلي، التحديد يتم داخل الدالة
+const BASE_HP = 800;      // الصحة الأساسية
+const HP_PER_LEVEL = 60;  // زيادة الصحة لكل ليفل
 const SKILL_COOLDOWN_TURNS = 3; 
+// ==========================================
 
 const activePvpChallenges = new Set();
 const activePvpBattles = new Map();
@@ -197,11 +195,9 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 }
 
 function applySkillEffect(battleState, attackerId, skill) {
-    // 🔥 تطبيق نظام الكولداون الجديد (مثل الدانجون) 🔥
     const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
     battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
-    // ----------------------------------------------------
 
     const attacker = battleState.players.get(attackerId);
     const defenderId = battleState.turn.find(id => id !== attackerId);
@@ -248,7 +244,6 @@ function applySkillEffect(battleState, attackerId, skill) {
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
             attacker.hp -= selfDmg;
-            // ⚖️ موازنة: تقليل الضرب من 2.5 إلى 2.0
             const dmg = Math.floor(baseAtk * 2.0);
             defender.hp -= dmg;
             return `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
@@ -312,7 +307,6 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
         case 'Execute_Heal': {
-            // ⚖️ موازنة: تقليل الضرب من 1.8 إلى 1.6
             const dmg = Math.floor(baseAtk * 1.6);
             if (defender.hp - dmg <= 0) {
                 defender.hp = 0;
@@ -392,6 +386,7 @@ function calculateDamage(attacker, defender, multiplier = 1) {
     return Math.max(0, finalDmg);
 }
 
+// ⚠️ هذه هي الدالة التي تحسب الصحة عند بدء المعركة (PvP)
 async function startPvpBattle(i, client, sql, challengerMember, opponentMember, bet) {
     const getLevel = i.client.getLevel;
     const setLevel = i.client.setLevel;
@@ -401,6 +396,7 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
     challengerData.mora -= bet; opponentData.mora -= bet;
     setLevel.run(challengerData); setLevel.run(opponentData);
     
+    // 🔥🔥 هنا يتم استخدام القيم الجديدة (BASE_HP = 800) 🔥🔥
     const cMaxHp = BASE_HP + (challengerData.level * HP_PER_LEVEL);
     const oMaxHp = BASE_HP + (opponentData.level * HP_PER_LEVEL);
     
@@ -415,6 +411,10 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
             [opponentMember.id, { member: opponentMember, hp: oMaxHp, maxHp: oMaxHp, weapon: getWeaponData(sql, opponentMember), skills: getAllSkillData(sql, opponentMember), effects: defEffects() }]
         ])
     };
+    
+    // طباعة للكونسول للتأكد
+    console.log(`[PVP DEBUG] Challenger HP: ${cMaxHp}, Opponent HP: ${oMaxHp}`);
+
     activePvpBattles.set(i.channel.id, battleState);
     const { embeds, components } = buildBattleEmbed(battleState);
     battleState.message = await i.channel.send({ content: `${challengerMember} 🆚 ${opponentMember}`, embeds, components });
