@@ -8,8 +8,9 @@ const { handleReroll } = require('./handlers/reroll-handler.js');
 const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
-// 🔥 استيراد معالج السوق الجديد (مهم جداً) 🔥
-const handleMarketInteraction = require('./handlers/interaction-handler.js'); // تأكد أن هذا هو الملف الذي يحتوي على كود الشراء/البيع الذي أرسلته لك سابقاً
+
+// 🔥 استيراد إعدادات السوق (مهم للأسهم) 🔥
+const marketConfig = require('./json/market-items.json'); 
 
 // محاولة استيراد المزرعة إذا كانت موجودة
 let handleFarmInteractions;
@@ -97,42 +98,36 @@ module.exports = (client, sql, antiRolesCache) => {
                 const command = i.client.commands.get(i.commandName);
                 if (!command) return;
                 
-                // 🔥 التحقق من البلاك ليست أولاً 🔥
+                // التحقق من البلاك ليست
                 try {
-                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id); // تأكد من اسم الجدول الصحيح (blacklistTable)
+                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id);
                     if (isBlacklisted) {
                          return i.reply({ content: "🚫 **أنت في القائمة السوداء ولا يمكنك استخدام الأوامر.**", flags: [MessageFlags.Ephemeral] });
                     }
                 } catch(e) {}
 
-                // التحقق من الصلاحيات (نظام الحظر الشامل)
+                // التحقق من الصلاحيات
                 let isAllowed = false;
-                
-                // أ) السماح للأدمن (Administrator)
                 if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                     isAllowed = true;
                 }
                 else {
-                    // ب) التحقق إذا كان الأمر اقتصادي وفي قناة الكازينو (الأساسية أو الإضافية)
                     const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
                     if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     } 
                     else {
-                        // ج) التحقق من جدول الصلاحيات المخصصة (Allow Command)
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
-                            // التحقق من الكاتجوري (إذا كانت القناة داخل كاتجوري مسموح)
                             const categoryPerm = i.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId) : null;
                             
                             if (channelPerm || categoryPerm) {
                                 isAllowed = true;
                             } else {
-                                // التحقق مما إذا كان الأمر محظوراً بشكل عام في السيرفر لكنه مسموح هنا
                                 const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
                                 if (!hasRestrictions) isAllowed = true; 
                             }
-                        } catch(e) { isAllowed = true; } // في حال حدوث خطأ، نسمح بالأمر افتراضياً
+                        } catch(e) { isAllowed = true; } 
                     }
                 }
 
@@ -167,49 +162,46 @@ module.exports = (client, sql, antiRolesCache) => {
             // ====================================================
             // 3. Buttons & Select Menus (الأزرار والقوائم)
             // ====================================================
-            
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
-                // --- توزيع المهام حسب المعرف (Custom ID) ---
-
-                // 1. نظام القيفاواي (Giveaway)
+                // 1. القيفاواي
                 if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) await handleGiveawayInteraction(client, i);
                 }
-                // 2. نظام الرتب الخاصة
+                // 2. الرتب الخاصة
                 else if (id.startsWith('customrole_')) {
                     await handleCustomRoleInteraction(i, client, sql);
                 }
-                // 3. نظام الزعماء (Bosses)
+                // 3. الزعماء
                 else if (id.startsWith('boss_')) {
                     await handleBossInteraction(i, client, sql);
                 }
-                // 4. المزرعة (Farm)
+                // 4. المزرعة
                 else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
                     await handleFarmInteractions(i, client, sql);
                 }
-                // 5. الستريك (Streak)
+                // 5. الستريك
                 else if (id.startsWith('streak_panel_')) { 
                     await handleStreakPanel(i, client, sql);
                 }
-                // 6. الرتب التفاعلية (Reaction Roles)
+                // 6. الرتب التفاعلية
                 else if (id.startsWith('rr_')) { 
                     await handleReactionRole(i, client, sql, antiRolesCache); 
                 } 
-                // 7. إعادة السحب (Reroll)
+                // 7. إعادة السحب
                 else if (id === 'g_reroll_select') {
                     await handleReroll(i, client, sql);
                 } 
-                // 8. لوحة المهام (Quests)
+                // 8. لوحة المهام
                 else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
                     await handleQuestPanel(i, client, sql);
                 } 
-                // 9. المبارزات (PVP)
+                // 9. المبارزات
                 else if (id.startsWith('pvp_')) { 
                     await handlePvpInteraction(i, client, sql);
                 }
-                // 10. المتجر والصيد (Shop & Fishing)
+                // 10. المتجر والصيد
                 else if (
                     id.startsWith('buy_') || id.startsWith('upgrade_') || id.startsWith('shop_') || 
                     id.startsWith('replace_') || id === 'cancel_purchase' || id === 'open_xp_modal' ||
@@ -221,17 +213,16 @@ module.exports = (client, sql, antiRolesCache) => {
                     id === 'fishing_gear_sub_menu' || id === 'shop_buy_bait_menu' ||
                     id === 'shop_buy_potion_menu'
                 ) {
-                    // 🔥🔥 استثناء أزرار السوق الجديدة (Market) من معالج المتجر القديم 🔥🔥
+                    // استثناء أزرار السوق من المتجر القديم
                     if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
-                        // سيتم التعامل معها في المودال أو الزر لاحقاً، لا تفعل شيئاً هنا أو مررها لمعالج السوق
-                        // ولكن بما أن أزرار الشراء تفتح مودال، فهي لا تحتاج لمعالجة هنا إلا إذا كان الكود القديم يعترضها
+                        // لا تفعل شيئاً هنا، المودال هو من سيعالج الأمر
                     } else {
                         if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
                         else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
                         else await handleShopInteractions(i, client, sql);
                     }
                 }
-                // 11. منشئ القيفاواي (Giveaway Builder Buttons)
+                // 11. منشئ القيفاواي
                 else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
                     await handleGiveawayBuilderButtons(i, client, sql); 
                 }
@@ -267,11 +258,9 @@ module.exports = (client, sql, antiRolesCache) => {
                      giveawayBuilders.set(i.user.id, data);
                      await updateBuilderEmbed(i, data);
                 }
-                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) 🔥🔥
+                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) المدمجة 🔥🔥
                 else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
-                    // استدعاء الدالة من ملف interaction-handler.js الذي أرسلته لك سابقاً
-                    // ملاحظة: تأكد أنك قمت بعمل require له في الأعلى باسم handleMarketInteraction
-                    if (handleMarketInteraction) await handleMarketInteraction(i, client);
+                    await handleMarketInteraction(i, client, sql);
                 }
                 // المتجر القديم
                 else if (await handleShopModal(i, client, sql)) {
@@ -285,19 +274,147 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
-            // تجاهل أخطاء "التفاعل غير معروف" لأنها تعني انتهاء الوقت أو تعامل ملف آخر معه
             if (error.code === 10062 || error.code === 40060) return;
             console.error("خطأ غير متوقع في المعالج الرئيسي:", error);
         } finally {
-            // إزالة المستخدم من قائمة الانتظار للسماح له بالضغط مرة أخرى
             processingInteractions.delete(i.user.id);
         }
     });
 };
 
 // ==========================================
-// دوال مساعدة منفصلة لتقليل الازدحام
+// دوال مساعدة منفصلة
 // ==========================================
+
+// 🔥 دالة معالجة السوق المدمجة (تم إضافتها هنا لتجنب الاستيراد الخارجي) 🔥
+async function handleMarketInteraction(interaction, client, sql) {
+    const user = interaction.user;
+    const guild = interaction.guild;
+
+    // === الشراء ===
+    if (interaction.customId.startsWith('buy_modal_')) {
+        await interaction.deferReply({ ephemeral: true });
+
+        const assetId = interaction.customId.replace('buy_modal_', '');
+        const quantityInput = interaction.fields.getTextInputValue('quantity_input');
+        const quantity = parseInt(quantityInput);
+
+        if (isNaN(quantity) || quantity <= 0) {
+            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
+        }
+
+        const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
+        
+        let currentPrice = 0;
+        let itemName = assetId;
+
+        if (marketItem) {
+            currentPrice = marketItem.currentPrice;
+            itemName = marketItem.name;
+        } else {
+            const configItem = marketConfig.find(i => i.id === assetId);
+            if (!configItem) return interaction.editReply({ content: '❌ حدث خطأ: هذا الأصل غير موجود.' });
+            currentPrice = configItem.price;
+            itemName = configItem.name;
+        }
+
+        const userData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(user.id, guild.id);
+        const userMora = userData ? userData.mora : 0;
+        const totalCost = currentPrice * quantity;
+
+        if (userMora < totalCost) {
+            return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**، رصيدك: **${userMora.toLocaleString()}**.` });
+        }
+
+        // حساب متوسط السعر
+        const portfolioItem = sql.prepare("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
+
+        let newPurchasePrice = currentPrice;
+
+        if (portfolioItem) {
+            const oldQty = portfolioItem.quantity;
+            const oldPrice = portfolioItem.purchasePrice || 0; 
+            const oldTotalCost = oldQty * oldPrice;
+            const newTotalCost = quantity * currentPrice;
+            const totalQty = oldQty + quantity;
+            newPurchasePrice = Math.floor((oldTotalCost + newTotalCost) / totalQty);
+        }
+
+        try {
+            const transaction = sql.transaction(() => {
+                sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(totalCost, user.id, guild.id);
+                if (portfolioItem) {
+                    sql.prepare("UPDATE user_portfolio SET quantity = quantity + ?, purchasePrice = ? WHERE userID = ? AND guildID = ? AND itemID = ?")
+                       .run(quantity, newPurchasePrice, user.id, guild.id, assetId);
+                } else {
+                    sql.prepare("INSERT INTO user_portfolio (userID, guildID, itemID, quantity, purchasePrice) VALUES (?, ?, ?, ?, ?)")
+                       .run(user.id, guild.id, assetId, quantity, newPurchasePrice);
+                }
+            });
+            transaction();
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ تمت عملية الشراء بنجاح')
+                .setDescription(`تم شراء **${quantity}** من **${itemName}**\nبسعر **${currentPrice}** للوحدة.\n\n💰 التكلفة الإجمالية: **${totalCost.toLocaleString()}**\n📉 متوسط سعر الشراء الجديد: **${newPurchasePrice.toLocaleString()}**`)
+                .setColor(Colors.Green);
+
+            await interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+            console.error(err);
+            await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
+        }
+    }
+
+    // === البيع ===
+    else if (interaction.customId.startsWith('sell_modal_')) {
+        await interaction.deferReply({ ephemeral: true });
+
+        const assetId = interaction.customId.replace('sell_modal_', '');
+        const quantityInput = interaction.fields.getTextInputValue('quantity_input');
+        const quantity = parseInt(quantityInput);
+
+        if (isNaN(quantity) || quantity <= 0) {
+            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
+        }
+
+        const portfolioItem = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
+
+        if (!portfolioItem || portfolioItem.quantity < quantity) {
+            return interaction.editReply({ content: `🚫 لا تملك هذه الكمية للبيع! لديك: **${portfolioItem ? portfolioItem.quantity : 0}**` });
+        }
+
+        const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
+        let currentPrice = marketItem ? marketItem.currentPrice : 0;
+        if (currentPrice === 0) {
+             const configItem = marketConfig.find(i => i.id === assetId);
+             currentPrice = configItem ? configItem.price : 0;
+        }
+
+        const totalEarned = Math.floor(currentPrice * quantity);
+
+        try {
+            const transaction = sql.transaction(() => {
+                sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(totalEarned, user.id, guild.id);
+                if (portfolioItem.quantity === quantity) {
+                    sql.prepare("DELETE FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").run(user.id, guild.id, assetId);
+                } else {
+                    sql.prepare("UPDATE user_portfolio SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(quantity, user.id, guild.id, assetId);
+                }
+            });
+            transaction();
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ تمت عملية البيع بنجاح')
+                .setDescription(`تم بيع **${quantity}** من **${marketItem ? marketItem.name : assetId}**\nبسعر **${currentPrice}** للوحدة.\n\n💰 المبلغ المستلم: **${totalEarned.toLocaleString()}**`)
+                .setColor(Colors.Red);
+
+            await interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+            console.error(err);
+            await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
+        }
+    }
+}
 
 async function handleGiveawayBuilderButtons(i, client, sql) {
     const id = i.customId;
