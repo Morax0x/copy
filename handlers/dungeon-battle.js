@@ -54,7 +54,7 @@ const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
 // ============================================================
 // 🔥 استدعاءات التنظيم الجديدة (CORE, ACTIONS, LOGIC) 🔥
 // ============================================================
-const { cleanName, checkDeaths } = require('./dungeon/core/battle-utils');
+const { cleanName, checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils'); // ✅ تم إضافة handleLeaderSuccession هنا
 const { setupPlayers } = require('./dungeon/core/setup');
 const { sendEndMessage } = require('./dungeon/core/end-game');
 const { handleOwnerMenu } = require('./dungeon/actions/owner-menu');
@@ -254,6 +254,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await threadChannel.send(`<:downward:1435880484046372914> <@${afkP.id}> تم تخطي دورك بسبب عدم الاستجابة! (تحذير ${afkP.skipCount}/5)`).catch(()=>{});
                             }
                         }
+                        
+                        // 🔥🔥 نقل القيادة إذا مات القائد بسبب الخمول 🔥🔥
+                        handleLeaderSuccession(players, log);
+
                         if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                         log.push(`⚠️ تم تخطي دور اللاعبين الخاملين.`);
                         collector.stop('turn_end'); 
@@ -389,6 +393,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
+                                // 🔥🔥🔥 تعديل جرعة العملاق 🔥🔥🔥
+                                if (potionId === 'potion_titan') {
+                                    p.titanPotionUses = p.titanPotionUses || 0;
+                                    if (p.titanPotionUses >= 3) {
+                                        await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
+                                        processingUsers.delete(i.user.id);
+                                        return;
+                                    }
+                                    p.titanPotionUses++; // زيادة العداد
+                                }
+                                
                                 if (sql.open) {
                                     sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
                                 }
@@ -407,7 +422,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.maxHp *= 2; p.hp = p.maxHp;
                                     p.effects.push({ type: 'titan', turns: 3 }); 
                                     monster.targetFocusId = p.id;
-                                    actionMsg = "🔥 تحول لعملاق!";
+                                    actionMsg = `🔥 تحول لعملاق! (${p.titanPotionUses}/3)`;
                                 } else if (potionId === 'potion_sacrifice') {
                                     p.hp = 0; p.isDead = true; p.isPermDead = true; p.deathFloor = floor; 
                                     players.forEach(ally => {
@@ -418,6 +433,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     });
                                     actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
                                     threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
+                                    
+                                    // 🔥🔥 نقل القيادة إذا مات القائد بجرعة التضحية 🔥🔥
+                                    handleLeaderSuccession(players, log);
                                 }
                                 log.push(`**${p.name}**: ${actionMsg}`);
                                 actedPlayers.push(p.id); p.skipCount = 0; 
@@ -512,6 +530,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 // الدالة تعيد false إذا مات الوحش أو انتهت المعركة
                 ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
+                
+                // 🔥🔥 التحقق من نقل القيادة بعد هجمة الوحش 🔥🔥
+                if (ongoing) {
+                    handleLeaderSuccession(players, log);
+                }
             }
         }
 
@@ -574,17 +597,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 clearTimeout(warningTimeout); 
 
                 if (i.customId === 'continue') {
-                    if (i.user.id !== hostId) return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
+                    // 🔥🔥 نستخدم كلاس القائد للتحقق بدل الهوست آيدي 🔥🔥
+                    // إذا كان اللاعب القائد، يسمح له بالضغط
+                    let p = players.find(pl => pl.id === i.user.id);
+                    if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
+                    
                     await i.deferUpdate(); 
                     return decCollector.stop('continue');
                 }
 
                 if (i.customId === 'retreat' && canRetreat) {
-                    if (i.user.id === hostId) {
+                    let p = players.find(pl => pl.id === i.user.id);
+                    
+                    if (p && p.class === 'Leader') {
+                        // إذا القائد انسحب، ننهي الدنجن للجميع
                         await i.deferUpdate();
                         return decCollector.stop('retreat');
                     } else {
-                        const pIndex = players.findIndex(p => p.id === i.user.id);
+                        // انسحاب فردي
+                        const pIndex = players.findIndex(pl => pl.id === i.user.id);
                         if (pIndex > -1) {
                             const leavingPlayer = players[pIndex];
                             leavingPlayer.retreatFloor = floor;
@@ -592,6 +623,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             players.splice(pIndex, 1); 
                             await i.reply({ content: `👋 **لقد انسحبت من الدانجون واكتفيت بغنائمك!**`, ephemeral: true });
                             await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`).catch(()=>{});
+                            
+                            // 🔥🔥 نقل القيادة إذا كان القائد السابق هو من انسحب (للاحتياط) 🔥🔥
+                            // رغم أن الشرط أعلاه يمنع القائد من الانسحاب الفردي، لكن هذا أمان إضافي
+                            if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
+
                             if (players.length === 0) decCollector.stop('retreat');
                         } else {
                             await i.reply({ content: "أنت لست في قائمة المشاركين النشطين.", ephemeral: true });
@@ -633,17 +669,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } else {
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
-                // نقل القيادة
-                const currentHost = players.find(p => p.id === hostId);
-                if (currentHost && currentHost.isDead) {
-                    const livingCandidates = players.filter(p => !p.isDead);
-                    if (livingCandidates.length > 0) {
-                        livingCandidates.sort((a, b) => b.totalDamage - a.totalDamage);
-                        const newHost = livingCandidates[0];
-                        hostId = newHost.id; 
-                        await threadChannel.send(`👑 **سقط القائد في المعركة!**\nانتقلت القيادة تلقائياً إلى صاحب أعلى ضرر: <@${newHost.id}>`).catch(()=>{});
-                    }
-                }
+                // 🔥🔥 تم إلغاء كود نقل القيادة القديم هنا لأنه أصبح مكرراً وغير ضروري 🔥🔥
+                // 🔥🔥 نعتمد الآن كلياً على handleLeaderSuccession 🔥🔥
 
                 // نظام الأحداث
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
