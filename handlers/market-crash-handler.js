@@ -2,7 +2,7 @@ const { EmbedBuilder, Colors } = require("discord.js");
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const CRASH_PRICE_TRIGGER = 10; // السعر الذي يسبب الانهيار
-const RESET_PRICE = 100; // السعر الجديد بعد الانهيار
+const RESET_PRICE = 500; // 🔥 التعديل هنا: السعر الجديد بعد الانهيار (كان 100)
 const MESSAGE_DELAY = 4000; // 4 ثواني بين كل رسالة لمنع السبام
 
 module.exports = async function handleMarketCrash(client, sql, item) {
@@ -13,7 +13,7 @@ module.exports = async function handleMarketCrash(client, sql, item) {
     try {
         console.log(`[Market Crash] Stock ${item.id} crashed! Processing...`);
 
-        // 2. إعادة تعيين سعر السهم فوراً إلى 100
+        // 2. إعادة تعيين سعر السهم فوراً إلى 500
         sql.prepare("UPDATE market_items SET currentPrice = ?, lastChangePercent = 0, lastChange = 0 WHERE id = ?").run(RESET_PRICE, item.id);
 
         // 3. جلب جميع المستثمرين في هذا السهم
@@ -26,8 +26,6 @@ module.exports = async function handleMarketCrash(client, sql, item) {
         }
 
         // 4. تحديد قناة الكازينو لإرسال الإشعارات
-        // نفترض أن السيرفر الرئيسي هو أول سيرفر تم العثور فيه على الإعدادات أو مرر MAIN_GUILD_ID
-        // يفضل تمرير guildID للدالة، لكن سنجلبها من أول مستثمر أو الإعدادات العامة
         const settings = sql.prepare("SELECT casinoChannelID FROM settings WHERE casinoChannelID IS NOT NULL LIMIT 1").get();
         let channel = null;
         if (settings && settings.casinoChannelID) {
