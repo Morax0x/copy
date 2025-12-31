@@ -9,8 +9,9 @@ const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
 
-// 🔥 استيراد إعدادات السوق (مهم للأسهم) 🔥
+// 🔥 استيراد إعدادات السوق 🔥
 const marketConfig = require('./json/market-items.json'); 
+const EMOJI_MORA = '<:mora:1435647151349698621>'; // تعريف ايموجي المورا
 
 // محاولة استيراد المزرعة إذا كانت موجودة
 let handleFarmInteractions;
@@ -258,7 +259,7 @@ module.exports = (client, sql, antiRolesCache) => {
                      giveawayBuilders.set(i.user.id, data);
                      await updateBuilderEmbed(i, data);
                 }
-                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) المدمجة 🔥🔥
+                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) 🔥🔥
                 else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
                     await handleMarketInteraction(i, client, sql);
                 }
@@ -286,21 +287,22 @@ module.exports = (client, sql, antiRolesCache) => {
 // دوال مساعدة منفصلة
 // ==========================================
 
-// 🔥 دالة معالجة السوق المدمجة (تم إضافتها هنا لتجنب الاستيراد الخارجي) 🔥
+// 🔥 دالة معالجة السوق المدمجة 🔥
 async function handleMarketInteraction(interaction, client, sql) {
     const user = interaction.user;
     const guild = interaction.guild;
 
     // === الشراء ===
     if (interaction.customId.startsWith('buy_modal_')) {
-        await interaction.deferReply({ ephemeral: true });
+        // 🔥 جعل الرد علنياً حسب طلبك 🔥
+        await interaction.deferReply({ ephemeral: false });
 
         const assetId = interaction.customId.replace('buy_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityInput);
 
         if (isNaN(quantity) || quantity <= 0) {
-            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
+            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.', ephemeral: true });
         }
 
         const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
@@ -353,9 +355,16 @@ async function handleMarketInteraction(interaction, client, sql) {
             });
             transaction();
 
+            // 🔥 الشكل الجديد للرسالة حسب الطلب 🔥
             const embed = new EmbedBuilder()
-                .setTitle('✅ تمت عملية الشراء بنجاح')
-                .setDescription(`تم شراء **${quantity}** من **${itemName}**\nبسعر **${currentPrice}** للوحدة.\n\n💰 التكلفة الإجمالية: **${totalCost.toLocaleString()}**\n📉 متوسط سعر الشراء الجديد: **${newPurchasePrice.toLocaleString()}**`)
+                .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
+                .setTitle('✶ تـم شـراء الاصـل')
+                .setDescription(
+                    `★ **${quantity}** x **${itemName}**\n` +
+                    `★ **التكـلفـة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}\n` +
+                    `★ **سعر الشـراء للاصل:** ${currentPrice.toLocaleString()} ${EMOJI_MORA}`
+                )
+                .setThumbnail('https://i.postimg.cc/0QgvCMBN/5956138480503032828-120-removebg-preview.png')
                 .setColor(Colors.Green);
 
             await interaction.editReply({ embeds: [embed] });
