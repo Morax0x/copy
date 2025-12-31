@@ -270,7 +270,7 @@ module.exports = {
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
                             .setDescription(
                                 `✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}\n\n` +
-                                `★ حـراس القـصـر يراقبونـك لمـدة: <t:${nextPardonTimestamp}:R>`
+                                `★ حـراس القـصـر يرقبونـك لمـدة 24 سـاعـة`
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
@@ -284,7 +284,7 @@ module.exports = {
                             .setTitle('❖ الـسـجـن !')
                             .setColor(Colors.Red)
                             .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                            .setDescription(`لقد نفد صبر الإمبراطور!\nتم القبض عليك وتغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك.`);
+                            .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
                         
                         await i.update({ embeds: [loseEmbed], components: [] });
                     }
