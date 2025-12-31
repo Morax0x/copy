@@ -105,12 +105,14 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
         
-        if (p.class === 'Leader') { arabClass = 'القائد'; icon += '👑'; }
-        else if (p.class === 'Tank') arabClass = 'مُدرّع';
-        else if (p.class === 'Priest') arabClass = 'كاهن';
-        else if (p.class === 'Mage') arabClass = 'ساحر';
+        // 🔥🔥 التعديل الجديد: دعم القائد السابق والجديد 🔥🔥
+        if (p.class === 'Leader') { arabClass = 'القائد'; icon += '👑 '; }
+        else if (p.class === 'Former Leader') { arabClass = 'قائد سابق'; icon += '🥀 '; }
+        else if (p.class === 'Tank') { arabClass = 'مُدرّع'; icon += '🛡️ '; }
+        else if (p.class === 'Priest') { arabClass = 'كاهن'; icon += '✨ '; }
+        else if (p.class === 'Mage') { arabClass = 'ساحر'; icon += '🔮 '; }
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
-        else if (p.id === OWNER_ID) { arabClass = 'الإمبراطور'; icon += '👁️'; } 
+        else if (p.id === OWNER_ID) { arabClass = 'الإمبراطور'; icon += '👁️ '; } 
 
         const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
         let displayName;
