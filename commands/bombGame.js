@@ -4,7 +4,7 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    ComponentType,
+    ComponentType, 
     PermissionsBitField 
 } = require('discord.js');
 
@@ -145,8 +145,8 @@ async function startGameLoop(channel, players) {
             .setImage(EXPLOSION_GIFS[Math.floor(Math.random() * EXPLOSION_GIFS.length)]) 
             .setFooter({ text: `عدد اللاعبين المتبقين: ${players.length - 1}` });
 
-        // 🔥🔥 التعديل هنا: تحويل ID إلى منشن 🔥🔥
-        await channel.send({ content: `💀 **مات <@${players[currentHolderIndex]}>**`, embeds: [explodedEmbed] });
+        // 🔥🔥 التعديل هنا: استخدام currentHolderId لضمان المنشن الصحيح 🔥🔥
+        await channel.send({ content: `💀 **مات <@${currentHolderId}>**`, embeds: [explodedEmbed] });
 
         const loserIndex = players.indexOf(currentHolderId);
         if (loserIndex > -1) {
