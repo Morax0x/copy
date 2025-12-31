@@ -275,9 +275,11 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
+            // تجاهل أخطاء "التفاعل غير معروف" لأنها تعني انتهاء الوقت أو تعامل ملف آخر معه
             if (error.code === 10062 || error.code === 40060) return;
             console.error("خطأ غير متوقع في المعالج الرئيسي:", error);
         } finally {
+            // إزالة المستخدم من قائمة الانتظار للسماح له بالضغط مرة أخرى
             processingInteractions.delete(i.user.id);
         }
     });
@@ -294,8 +296,7 @@ async function handleMarketInteraction(interaction, client, sql) {
 
     // === الشراء ===
     if (interaction.customId.startsWith('buy_modal_')) {
-        // 🔥 جعل الرد علنياً حسب طلبك 🔥
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ ephemeral: false }); // رد علني
 
         const assetId = interaction.customId.replace('buy_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
