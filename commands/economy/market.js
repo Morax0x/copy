@@ -71,8 +71,7 @@ function cleanEmojiFromName(name) {
 function buildGridView(allItems, pageIndex, timeRemaining) {
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-    // const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE); // (غير مستخدم حالياً لكن مفيد مستقبلاً)
-
+    
     const col1 = [], col2 = [], col3 = [];
     itemsOnPage.forEach((item, index) => {
         const changeEmoji = getItemChangeEmoji(item.lastChangePercent);
@@ -192,7 +191,6 @@ module.exports = {
         const dbItems = sql.prepare("SELECT * FROM market_items").all();
 
         // 🔥 2. تصفية العناصر: نعرض فقط العناصر الموجودة في ملف JSON (الأسهم والعقارات)
-        // هذا سيستبعد الطعوم وأي شيء آخر غير معرف في ملف market-items.json
         const validItemIds = new Set(marketConfig.map(i => i.id));
         const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
@@ -290,6 +288,7 @@ module.exports = {
                     if (i.replied || i.deferred) { 
                         await i.followUp({ content: '❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.', ephemeral: true });
                     } else {
+                        await i.reply({ content: '❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.', ephemeral: true });
                     }
                 } catch (e) {
                     console.error("لا يمكن إرسال رسالة الخطأ:", e);
