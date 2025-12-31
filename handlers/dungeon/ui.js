@@ -27,6 +27,18 @@ function buildSkillSelector(player) {
             .setEmoji(myClassSkill.emoji));
     }
 
+    // 🔥🔥 إضافة مهارة الكاهن الهجين (Hybrid Priest) 🔥🔥
+    // تظهر فقط إذا كان اللاعب قائداً وأصله كاهن
+    if (player.isHybridPriest) {
+        // نستخدم كولداون خاص أو نفس كولداون المهارة الخاصة
+        // هنا نفترض أن لها كولداون مستقل أو تعتمد على التجهيز في skills.js
+        options.push(new StringSelectMenuOptionBuilder()
+            .setLabel("النور المقدس (إرث)")
+            .setValue('hybrid_heal') 
+            .setDescription("شفاء الفريق (مهارة الكاهن المحتفظ بها).")
+            .setEmoji("✨"));
+    }
+
     const userSkills = player.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => 
         (s.currentLevel > 0 || s.id.startsWith('race_')) && 
@@ -105,8 +117,16 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
         
-        // 🔥🔥 التعديل الجديد: دعم القائد السابق والجديد 🔥🔥
-        if (p.class === 'Leader') { arabClass = 'القائد'; icon += '👑 '; }
+        // 🔥🔥 التعديل الجديد: دعم القائد السابق والقائد الكاهن 🔥🔥
+        if (p.class === 'Leader') { 
+            if (p.isHybridPriest) {
+                arabClass = 'القائد الكاهن'; // اللقب المدمج
+                icon += '👑✨ '; 
+            } else {
+                arabClass = 'القائد'; 
+                icon += '👑 '; 
+            }
+        }
         else if (p.class === 'Former Leader') { arabClass = 'قائد سابق'; icon += '🥀 '; }
         else if (p.class === 'Tank') { arabClass = 'مُدرّع'; icon += '🛡️ '; }
         else if (p.class === 'Priest') { arabClass = 'كاهن'; icon += '✨ '; }
@@ -135,7 +155,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
     // ============================================================
-    // 🛠️ التعديل هنا: عرض آخر 8 أسطر فقط (سجل متحرك)
+    // 🛠️ عرض آخر 8 أسطر فقط (سجل متحرك)
     // ============================================================
     const logText = log.slice(-8).join('\n') || "بانتظار بدء الاشتباك...";
     
