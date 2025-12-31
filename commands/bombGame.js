@@ -8,11 +8,6 @@ const {
     PermissionsBitField 
 } = require('discord.js');
 
-// ==========================================
-// 🎨 المكتبة البصرية (الصور الجديدة)
-// ==========================================
-
-// صور الانفجار (عند الخسارة)
 const EXPLOSION_GIFS = [
     'https://i.postimg.cc/0yKcSPb4/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f776174747061642d6d656469612d736572766963652f53746f.gif',
     'https://i.postimg.cc/sg0CjVtr/explosion-anime.gif',
@@ -20,7 +15,6 @@ const EXPLOSION_GIFS = [
     'https://i.postimg.cc/qMkP2hrp/5m3hx4c835i51.gif'
 ];
 
-// صور التوتر وقبل الانفجار (تظهر أثناء اللعب وعند الرمي)
 const TICKING_GIFS = [
     'https://i.postimg.cc/254GHGd2/10a0d135574b9c9c7071e22a202f28d8.gif',
     'https://i.postimg.cc/fT99jLfR/elmo-fire.gif',
@@ -31,22 +25,18 @@ const TICKING_GIFS = [
     'https://i.postimg.cc/k51QYH6v/47f13b34c588306cec12449fd49d9293-8514783385207371970.gif'
 ];
 
-// صور الفوز (احتفال)
 const WIN_GIFS = [
     'https://media1.tenor.com/m/9yX5X5X5X5X5X5X5/anime-victory.gif',
     'https://media1.tenor.com/m/7zX6X6X6X6X6X6X6/anime-celebrate.gif',
     'https://media1.tenor.com/m/PcPcPcPcPcPcPcPc/anime-win-happy.gif'
 ];
 
-// صورة اللوبي (اخترت إلمو والنار لأنه معبر جداً عن انتظار المصيبة 😂)
 const LOBBY_GIF = 'https://i.postimg.cc/fT99jLfR/elmo-fire.gif';
-
-// ==========================================
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('bomb-game')
-        .setDescription('بدء فعالية القنبلة الموقوتة 💣 (للإداريين فقط)')
+        .setDescription('بدء فعالية القنبلة الموقوتة 💣')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageEvents),
 
     async execute(interaction) {
@@ -61,7 +51,7 @@ module.exports = {
                 `1️⃣ ستبدأ القنبلة عند لاعب عشوائي.\n` +
                 `2️⃣ القنبلة ستنفجر في وقت **عشوائي ومجهول**!\n` +
                 `3️⃣ إذا كانت القنبلة معك، ستصلك رسالة جديدة بزر **"ارمِ القنبلة"**.\n` +
-                `4️⃣ اضغط الزر فوراً لتمرير القنبلة لشخص آخر (رسالة جديدة).\n` +
+                `4️⃣ اضغط الزر فوراً لتمرير القنبلة لشخص آخر \n` +
                 `5️⃣ اللاعب الذي تنفجر القنبلة بيده **يخرج من اللعبة**.\n\n` +
                 `**👇 اضغط "دخول" للمشاركة الآن!**`
             )
@@ -116,11 +106,11 @@ async function startGameLoop(channel, players) {
     // شرط الفوز
     if (players.length === 1) {
         const winEmbed = new EmbedBuilder()
-            .setTitle('🏆 انتهت اللعبة!')
-            .setDescription(`🎉 **الفائز هو:** <@${players[0]}>\nنجوت من جميع الانفجارات!`)
+            .setTitle('🏆 انتــهـت اللعبة!')
+            .setDescription(`🎉 **الفائز هو:** <@${players[0]}>\nنجوت من جميع الانفجارات <a:MugiStronk:1438795606872166462>!`)
             .setColor('Gold')
             .setImage(WIN_GIFS[Math.floor(Math.random() * WIN_GIFS.length)]);
-        return channel.send({ content: `👑 الفائز: <@${players[0]}>`, embeds: [winEmbed] });
+        return channel.send({ content: `👑 الفائــز: <@${players[0]}>`, embeds: [winEmbed] });
     }
 
     // تجهيز وقت الانفجار
@@ -142,20 +132,21 @@ async function startGameLoop(channel, players) {
 
         if (activeMessage) {
             const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('disabled').setLabel('💥 انتهى الوقت!').setStyle(ButtonStyle.Secondary).setDisabled(true)
+                new ButtonBuilder().setCustomId('disabled').setLabel('💥 انتـهى الوقـت!').setStyle(ButtonStyle.Secondary).setDisabled(true)
             );
             await activeMessage.edit({ components: [disabledRow] }).catch(() => {});
         }
 
         // إرسال رسالة الانفجار
         const explodedEmbed = new EmbedBuilder()
-            .setTitle('💥 بووووووم!')
+            .setTitle('💥 بـــووم!')
             .setDescription(`انفجرت القنبلة في يد <@${currentHolderId}>!\n\n**تم إقصاؤه من اللعبة!** 💀`)
             .setColor('DarkButNotBlack')
-            .setImage(EXPLOSION_GIFS[Math.floor(Math.random() * EXPLOSION_GIFS.length)]) // صورة عشوائية من القائمة الجديدة
+            .setImage(EXPLOSION_GIFS[Math.floor(Math.random() * EXPLOSION_GIFS.length)]) 
             .setFooter({ text: `عدد اللاعبين المتبقين: ${players.length - 1}` });
 
-        await channel.send({ content: `💀 **مات ${players[currentHolderIndex]}**`, embeds: [explodedEmbed] });
+        // 🔥🔥 التعديل هنا: تحويل ID إلى منشن 🔥🔥
+        await channel.send({ content: `💀 **مات <@${players[currentHolderIndex]}>**`, embeds: [explodedEmbed] });
 
         const loserIndex = players.indexOf(currentHolderId);
         if (loserIndex > -1) {
@@ -176,7 +167,7 @@ async function startGameLoop(channel, players) {
             .setTitle('💣 القنبلة تكتك...')
             .setDescription(`القنبلة الآن عند: <@${holderId}>\n\n**بسرعة! ارمها لشخص آخر!**`)
             .setColor('Red')
-            .setImage(TICKING_GIFS[Math.floor(Math.random() * TICKING_GIFS.length)]); // صورة عشوائية من القائمة الجديدة
+            .setImage(TICKING_GIFS[Math.floor(Math.random() * TICKING_GIFS.length)]); 
 
         const throwRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -186,7 +177,7 @@ async function startGameLoop(channel, players) {
         );
 
         const msg = await channel.send({ 
-            content: `🚨 **انتباه!** القنبلة مع <@${holderId}>!`, 
+            content: `<a:Nerf:1438795685280612423> القنبـلة عنـد <@${holderId}>!`, 
             embeds: [gameEmbed], 
             components: [throwRow] 
         });
@@ -203,7 +194,7 @@ async function startGameLoop(channel, players) {
             if (roundEnded) return;
 
             if (i.user.id !== holderId) {
-                return i.reply({ content: '😤 **مهلاً!** القنبلة ليست بيدك!', ephemeral: true });
+                return i.reply({ content: 'القنبلة مو عندك يا سبـك <:stop:1436337453098340442>', ephemeral: true });
             }
 
             collector.stop('passed');
