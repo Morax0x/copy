@@ -47,10 +47,10 @@ module.exports = {
         const sql = client.sql;
 
         // جلب ممتلكات المستخدم من القاعدة
+        // 🔥 ملاحظة: يجب التأكد أن عمود purchasePrice تمت إضافته للقاعدة ليعمل الكود بدقة
         const portfolio = sql.prepare("SELECT * FROM user_portfolio WHERE guildID = ? AND userID = ?").all(guild.id, user.id);
         
-        // 🔥 التعديل هنا: استخدام ملف JSON لتحديد ما هي عناصر السوق المسموح عرضها فقط
-        // هذا سيمنع ظهور الطعوم أو أي أغراض أخرى ليست في ملف market-items.json
+        // استخدام ملف JSON لتحديد ما هي عناصر السوق المسموح عرضها فقط
         const market = new Map(marketConfig.map(item => [item.id, item]));
 
         const embed = new EmbedBuilder()
@@ -70,10 +70,7 @@ module.exports = {
             // إذا لم يكن موجوداً في ملف السوق (مثل الطعوم)، يتم تجاهله
             if (!marketItem) continue;
 
-            const currentValue = marketItem.price * item.quantity; // ملاحظة: في ملف JSON السعر اسمه price وليس currentPrice
-            // إذا كنت تستخدم نظام تغير الأسعار في الداتابيس، سنحاول جلب السعر المحدث أولاً
-            
-            // محاولة جلب السعر المحدث من الداتابيس إذا وجد، وإلا استخدام السعر الأساسي من الملف
+            // محاولة جلب السعر المحدث (الحالي) من الداتابيس
             let currentPrice = marketItem.price;
             try {
                 const dbItem = sql.prepare("SELECT currentPrice FROM market_items WHERE id = ?").get(item.itemID);
@@ -83,11 +80,15 @@ module.exports = {
             const itemTotalValue = currentPrice * item.quantity;
             totalValue += itemTotalValue;
 
+            // 🔥 جلب سعر الشراء المخزن (إذا وجد)
+            let purchasePrice = item.purchasePrice || 0;
+
             validItems.push({
                 name: marketItem.name,
                 quantity: item.quantity,
                 value: itemTotalValue,
-                price: currentPrice
+                price: currentPrice,
+                buyPrice: purchasePrice // السعر الذي اشترى به
             });
         }
 
@@ -99,7 +100,13 @@ module.exports = {
             for (const vItem of validItems) {
                 descriptionLines.push(`**✶ ${vItem.name} العدد: ${vItem.quantity.toLocaleString()}**`);
                 descriptionLines.push(`✬ قيمـة الاصـل: ${vItem.value.toLocaleString()} ${EMOJI_MORA}`);
-                descriptionLines.push(`✦ سعـر الاصـل: ${vItem.price.toLocaleString()} ${EMOJI_MORA}`);
+                descriptionLines.push(`✦ سعـر الاصـل الحالي: ${vItem.price.toLocaleString()} ${EMOJI_MORA}`);
+                
+                // 🔥 إضافة سطر سعر الشراء 🔥
+                if (vItem.buyPrice > 0) {
+                    descriptionLines.push(`✦ سعـر الشـراء : ${vItem.buyPrice.toLocaleString()} ${EMOJI_MORA}`);
+                }
+                
                 descriptionLines.push(`\u200B`); // سطر فاصل
             }
 
