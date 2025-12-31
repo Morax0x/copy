@@ -230,57 +230,64 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-// ... (بقية دوال المساعدة كما هي تماماً) ...
-// 🔥🔥🔥 تم التعديل هنا: دالة توزيع الرتب الجديدة (تمنع التكرار) 🔥🔥🔥
+// 🔥🔥 الدالة المعدلة: توزيع الرتب (إزالة القديم وإعطاء الجديد فقط) 🔥🔥
 client.checkAndAwardLevelRoles = async function(member, newLevel) {
     if (!client.sql.open) return;
     try {
         const guild = member.guild;
-        // جلب جميع رتب اللفلات من قاعدة البيانات
-        const allLevelRoles = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
-        if (allLevelRoles.length === 0) return;
-
         const botMember = guild.members.me;
+
+        // التحقق من صلاحية البوت
         if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) return;
 
-        // 1. تحديد الرتبة "الوحيدة" التي يستحقها العضو حالياً بناءً على لفله
+        // 1. جلب رتب اللفلات المسجلة في السيرفر فقط
+        const allLevelRolesConfig = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
+        
+        if (allLevelRolesConfig.length === 0) return;
+
+        // 2. تحديث بيانات العضو
+        member = await member.fetch().catch(() => null);
+        if (!member) return;
+
+        // 3. تحديد الرتبة المستهدفة (أعلى رتبة يستحقها)
         let targetRoleID = null;
-        for (const row of allLevelRoles) {
+        for (const row of allLevelRolesConfig) {
             if (newLevel >= row.level) {
                 targetRoleID = row.roleID;
-                break; // وجدنا أعلى رتبة يستحقها، نتوقف عن البحث
+                break; 
             }
         }
 
         let roleToAdd = null;
         const rolesToRemove = [];
 
-        // 2. المرور على جميع رتب اللفلات المسجلة في السيرفر
-        for (const row of allLevelRoles) {
+        // 4. الفرز: العمل فقط على الرتب الموجودة في القائمة
+        for (const row of allLevelRolesConfig) {
             const role = guild.roles.cache.get(row.roleID);
-            if (!role) continue; // الرتبة محذوفة من الديسكورد، نتخطاها
+            
+            // تجاهل الرتب المحذوفة أو التي لا يستطيع البوت إدارتها
+            if (!role || role.position >= botMember.roles.highest.position) continue;
 
-            // هل هذه هي الرتبة التي يجب أن يحصل عليها؟
             if (targetRoleID && row.roleID === targetRoleID) {
-                // إذا كان لا يملكها، نضيفها له
-                if (!member.roles.cache.has(role.id) && role.position < botMember.roles.highest.position) {
+                // هذه هي الرتبة الجديدة
+                if (!member.roles.cache.has(role.id)) {
                     roleToAdd = role;
                 }
             } else {
-                // أي رتبة لفل أخرى (قديمة أو غير مستحقة) يملكها العضو، نزيلها
-                if (member.roles.cache.has(role.id) && role.position < botMember.roles.highest.position) {
+                // هذه رتبة لفل "سابقة" أو غير مستحقة، يجب إزالتها
+                if (member.roles.cache.has(role.id)) {
                     rolesToRemove.push(role);
                 }
             }
         }
 
-        // 3. تنفيذ الإضافة والحذف
-        if (roleToAdd) {
-            await member.roles.add(roleToAdd).catch(console.error);
-        }
-        
+        // 5. التنفيذ (حذف القديم أولاً ثم إضافة الجديد)
         if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove).catch(console.error);
+            await member.roles.remove(rolesToRemove).catch(err => console.error(`[Level Roles] Failed to remove old roles: ${err.message}`));
+        }
+
+        if (roleToAdd) {
+            await member.roles.add(roleToAdd).catch(err => console.error(`[Level Roles] Failed to add new role: ${err.message}`));
         }
 
     } catch (err) {
@@ -842,8 +849,6 @@ client.on(Events.ClientReady, async () => {
     setInterval(() => {
         try {
             // 1. تنظيف قائمة اللاعبين إذا كانت ممتلئة بشكل مريب لفترة طويلة
-            // (نقوم بتصفيرها كل 30 دقيقة لضمان عدم بقاء أحد عالقاً للأبد)
-            // ملاحظة: هذا قد يقطع لعبة جارية في تلك اللحظة بالضبط، لكنه يضمن حل مشكلة التعليق الدائم
             if (client.activePlayers && client.activePlayers.size > 0) {
                 console.log(`[Auto-Cleanup] 🧹 Cleaning up ${client.activePlayers.size} active players states.`);
                 client.activePlayers.clear();
