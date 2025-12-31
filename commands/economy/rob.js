@@ -270,7 +270,7 @@ module.exports = {
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
                             .setDescription(
                                 `✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}\n\n` +
-                                `★ حـراس القـصـر يرقبونـك لمـدة 24 سـاعـة`
+                                `★ حـراس القـصـر يراقبونـك لمـدة 24 سـاعـة`
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
