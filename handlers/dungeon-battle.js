@@ -64,7 +64,7 @@ const { processMonsterTurn } = require('./dungeon/logic/monster-turn');
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
-    
+     
     // حماية إضافية للتحقق من اتصال قاعدة البيانات
     if (!sql || !sql.open) {
         return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً، الرجاء المحاولة لاحقاً.").catch(() => {});
@@ -72,11 +72,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     ensureInventoryTable(sql); 
 
     let retreatedPlayers = []; 
-    
+     
     // --- متغيرات الأحداث ---
     let isTrapActive = false;
     let trapStartFloor = 0;
-    
+     
     // 🔥 متغيرات التحكم في التكرار والتناوب 🔥
     let lastEventFloor = -10; 
     let lastEventType = null; 
@@ -135,7 +135,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             merchantState.skipFloors = 0; // تصفير
             const oldFloor = floor;
             floor = targetFloor; 
-            
+             
             if (floor > maxFloors) floor = maxFloors; 
 
             try {
@@ -235,7 +235,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(async () => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
-                    
+                     
                     if (afkPlayers.length > 0) {
                         for (const afkP of afkPlayers) {
                             afkP.skipCount = (afkP.skipCount || 0) + 1;
@@ -267,7 +267,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                    
+                     
                     // ============================================================
                     // 🔥 القسم الأول: قائمة الإمبراطور (تم فصلها) 🔥
                     // ============================================================
@@ -299,11 +299,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // ============================================================
                     // ⚔️ القسم الثالث: المنطق العادي (اللاعبين) 
                     // ============================================================
-                    
+                     
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
-                    
+                     
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
-                    
+                     
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
@@ -317,7 +317,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
-                    
+                     
                     processingUsers.add(i.user.id);
 
                     try {
@@ -333,7 +333,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{}); 
 
                                 const skillId = selection.values[0];
-                                
+                                 
                                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                                 if (shieldSkills.includes(skillId) && p.shield > 0) {
                                     await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
@@ -342,13 +342,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let skillNameUsed = "مهارة";
                                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
-                                
+                                 
                                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
                                 let originalAtk = p.atk;
-                                
+                                 
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     if (skillObj.effectValue) {
@@ -360,14 +360,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 else if (floor <= 14 && p.atk > 120) p.atk = 120;
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
-                                
+                                 
                                 p.atk = originalAtk;
 
                                 if (res && res.error) {
                                     await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
                                     processingUsers.delete(i.user.id); return;
                                 }
-                                
+                                 
                                 if (res && res.name) skillNameUsed = res.name;
                                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
@@ -392,7 +392,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 15000 });
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
-                                
+                                 
                                 // 🔥🔥🔥 تعديل جرعة العملاق 🔥🔥🔥
                                 if (potionId === 'potion_titan') {
                                     p.titanPotionUses = p.titanPotionUses || 0;
@@ -403,7 +403,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                     p.titanPotionUses++; // زيادة العداد
                                 }
-                                
+                                 
                                 if (sql.open) {
                                     sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
                                 }
@@ -433,7 +433,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     });
                                     actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
                                     threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
-                                    
+                                     
                                     // 🔥🔥 نقل القيادة إذا مات القائد بجرعة التضحية 🔥🔥
                                     handleLeaderSuccession(players, log);
                                 }
@@ -468,12 +468,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let atkMultiplier = 1.0;
                                     p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
                                     let currentAtk = Math.floor(p.atk * atkMultiplier);
-                                    
+                                     
                                     if (p.isSealed) currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
 
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
-                                    
+                                     
                                     let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
                                     if (isCrit) dmg = Math.floor(dmg * 1.5);
 
@@ -487,7 +487,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
                             }
-                            
+                             
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
                             checkDeaths(players, floor, log, threadChannel);
@@ -510,7 +510,21 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
-                p.effects = p.effects.filter(e => { e.turns--; return e.turns > 0; });
+                
+                // ✅✅ التعديل المطلوب هنا: التحقق من التأثيرات قبل حذفها ✅✅
+                p.effects = p.effects.filter(e => { 
+                    e.turns--; 
+                    if (e.turns <= 0) {
+                        // إلغاء تأثير العملاق وإرجاع الحجم الطبيعي
+                        if (e.type === 'titan') {
+                            p.maxHp = Math.floor(p.maxHp / 2); // استعادة الـ MaxHP الأصلي
+                            if (p.hp > p.maxHp) p.hp = p.maxHp; // ضبط الـ HP الحالي
+                            log.push(`✨ **${p.name}** عاد لحجمه الطبيعي وتلاشى مفعول العملاق.`);
+                        }
+                        return false; // حذف التأثير
+                    }
+                    return true; // إبقاء التأثير
+                });
             });
 
             if (turnCount % 3 === 0 && ongoing) {
@@ -530,7 +544,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 // الدالة تعيد false إذا مات الوحش أو انتهت المعركة
                 ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
-                
+                 
                 // 🔥🔥 التحقق من نقل القيادة بعد هجمة الوحش 🔥🔥
                 if (ongoing) {
                     handleLeaderSuccession(players, log);
@@ -543,7 +557,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break;
         }
-        
+         
         if (isTrapActive) isTrapActive = false;
 
         let baseMora = Math.floor(getBaseFloorMora(floor));
@@ -590,7 +604,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const warningTimeout = setTimeout(() => {
             threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
         }, 50000); 
-        
+         
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
@@ -601,14 +615,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // إذا كان اللاعب القائد، يسمح له بالضغط
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
-                    
+                     
                     await i.deferUpdate(); 
                     return decCollector.stop('continue');
                 }
 
                 if (i.customId === 'retreat' && canRetreat) {
                     let p = players.find(pl => pl.id === i.user.id);
-                    
+                     
                     if (p && p.class === 'Leader') {
                         // إذا القائد انسحب، ننهي الدنجن للجميع
                         await i.deferUpdate();
@@ -623,7 +637,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             players.splice(pIndex, 1); 
                             await i.reply({ content: `👋 **لقد انسحبت من الدانجون واكتفيت بغنائمك!**`, ephemeral: true });
                             await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`).catch(()=>{});
-                            
+                             
                             // 🔥🔥 نقل القيادة إذا كان القائد السابق هو من انسحب (للاحتياط) 🔥🔥
                             // رغم أن الشرط أعلاه يمنع القائد من الانسحاب الفردي، لكن هذا أمان إضافي
                             if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
