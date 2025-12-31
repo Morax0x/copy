@@ -8,6 +8,8 @@ const { handleReroll } = require('./handlers/reroll-handler.js');
 const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
+// 🔥 استيراد معالج السوق الجديد (مهم جداً) 🔥
+const handleMarketInteraction = require('./handlers/interaction-handler.js'); // تأكد أن هذا هو الملف الذي يحتوي على كود الشراء/البيع الذي أرسلته لك سابقاً
 
 // محاولة استيراد المزرعة إذا كانت موجودة
 let handleFarmInteractions;
@@ -97,7 +99,7 @@ module.exports = (client, sql, antiRolesCache) => {
                 
                 // 🔥 التحقق من البلاك ليست أولاً 🔥
                 try {
-                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(i.user.id);
+                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id); // تأكد من اسم الجدول الصحيح (blacklistTable)
                     if (isBlacklisted) {
                          return i.reply({ content: "🚫 **أنت في القائمة السوداء ولا يمكنك استخدام الأوامر.**", flags: [MessageFlags.Ephemeral] });
                     }
@@ -219,9 +221,15 @@ module.exports = (client, sql, antiRolesCache) => {
                     id === 'fishing_gear_sub_menu' || id === 'shop_buy_bait_menu' ||
                     id === 'shop_buy_potion_menu'
                 ) {
-                    if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
-                    else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
-                    else await handleShopInteractions(i, client, sql);
+                    // 🔥🔥 استثناء أزرار السوق الجديدة (Market) من معالج المتجر القديم 🔥🔥
+                    if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
+                        // سيتم التعامل معها في المودال أو الزر لاحقاً، لا تفعل شيئاً هنا أو مررها لمعالج السوق
+                        // ولكن بما أن أزرار الشراء تفتح مودال، فهي لا تحتاج لمعالجة هنا إلا إذا كان الكود القديم يعترضها
+                    } else {
+                        if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
+                        else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
+                        else await handleShopInteractions(i, client, sql);
+                    }
                 }
                 // 11. منشئ القيفاواي (Giveaway Builder Buttons)
                 else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
@@ -259,7 +267,13 @@ module.exports = (client, sql, antiRolesCache) => {
                      giveawayBuilders.set(i.user.id, data);
                      await updateBuilderEmbed(i, data);
                 }
-                // المتجر
+                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) 🔥🔥
+                else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
+                    // استدعاء الدالة من ملف interaction-handler.js الذي أرسلته لك سابقاً
+                    // ملاحظة: تأكد أنك قمت بعمل require له في الأعلى باسم handleMarketInteraction
+                    if (handleMarketInteraction) await handleMarketInteraction(i, client);
+                }
+                // المتجر القديم
                 else if (await handleShopModal(i, client, sql)) {
                     // تم التعامل معه في المتجر
                 } 
