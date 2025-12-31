@@ -261,11 +261,17 @@ module.exports = {
                         robberData.mora += 100; // إعطاء هدية
                         robberyPardons.set(robber.id, now); // تحديث وقت العفو
 
+                        // حساب وقت المراقبة (24 ساعة من الآن)
+                        const nextPardonTimestamp = Math.floor((now + oneDay) / 1000);
+
                         const pardonEmbed = new EmbedBuilder()
                             .setTitle('❖ مـحاولـة سـطـو فـاشـلـة')
                             .setColor('#FFD700') // ذهبي
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
-                            .setDescription(`✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}`);
+                            .setDescription(
+                                `✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}\n\n` +
+                                `★ حـراس القـصـر يرقبونـك لمـدة: <t:${nextPardonTimestamp}:R>`
+                            );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
 
@@ -317,7 +323,7 @@ module.exports = {
         ];
 
         if (targetPool === 'bank') {
-            descArray.push(`||حماية البنك عالية لذا مبلغ السرقة سيكون اقل من الكاش||`);
+            descArray.push(`حماية البنك عالية لذا مبلغ السرقة سيكون اقل من الكاش`);
         }
 
         const description = descArray.join('\n');
