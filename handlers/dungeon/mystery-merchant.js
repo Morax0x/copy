@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, StringSelectMenuBuilder, ButtonStyle, ComponentType, Colors } = require('discord.js');
-const { EMOJI_MORA, EMOJI_BUFF, EMOJI_NERF } = require('./constants');
+const { EMOJI_MORA, EMOJI_BUFF, EMOJI_NERF } = require('./constants'); // تأكد من وجود ملف constants.js
 
+// قائمة الجمل العشوائية للتاجر
 const QUOTES = [
     "«المورا تشتري السلاح… وما أملكه يشتري نجاتك.»",
     "«قد تمشي حيًّا بلا صفقة… لكنك لن تعود.»",
@@ -23,6 +24,7 @@ const QUOTES = [
     "«الوحوش لا تفاوض… أنا أفعل.»"
 ];
 
+// قائمة البضائع
 const SHOP_ITEMS = [
     // --- البضائع القديمة (الخاصة) ---
     {
@@ -50,7 +52,7 @@ const SHOP_ITEMS = [
         id: 'buy_shield',
         name: 'درع المرتزقـة',
         price: 1000,
-        desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر.', // 🔥 تم التعديل لـ 2500
+        desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر.',
         emoji: '🛡️'
     },
     {
@@ -118,6 +120,7 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const msg = await thread.send({ embeds: [embed], components: [row] });
 
+    // كوليكتور الزر الرئيسي (إلقاء نظرة)
     const buttonCollector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 45000 });
 
     buttonCollector.on('collect', async (i) => {
@@ -126,9 +129,11 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
         const player = players.find(p => p.id === i.user.id);
         if (!player) return i.followUp({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
 
+        // جلب رصيد اللاعب من قاعدة البيانات
         const userBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
         const currentMora = userBalance ? userBalance.mora : 0;
 
+        // إنشاء قائمة المنتجات
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('merchant_select')
             .setPlaceholder('اختر سلعة للشراء...')
@@ -150,12 +155,14 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             fetchReply: true 
         });
 
+        // كوليكتور القائمة (الشراء الفعلي)
         const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 30000 });
 
         selectCollector.on('collect', async (si) => {
             const selectedId = si.values[0];
             const item = SHOP_ITEMS.find(it => it.id === selectedId);
 
+            // التحقق من الرصيد مرة أخرى قبل الخصم
             const freshBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(si.user.id, guildId);
             const actualMora = freshBalance ? freshBalance.mora : 0;
 
@@ -167,6 +174,8 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(item.price, si.user.id, guildId);
 
             let effectMsg = "";
+
+            // --- تطبيق تأثير المشتريات ---
 
             if (selectedId === 'buy_elixir') {
                 if (!player.isDead) {
@@ -187,12 +196,12 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
                 effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 60% لنهاية الرحلة)";
             }
             else if (selectedId === 'buy_shield') {
-                player.startingShield = 2500; // 🔥 تم التعديل لـ 2500
-                player.shieldPersistent = true; // 🔥 تفعيل استمرار الدرع (حسب طلبك السابق)
+                player.startingShield = 2500; // الدرع 2500
+                player.shieldPersistent = true; // يستمر حتى ينكسر
                 effectMsg = "تجهز بدرع المرتزقة الصلب! (2500 درع يستمر حتى ينكسر)";
             }
             else if (selectedId === 'buy_map') {
-                merchantState.skipFloors += 3; 
+                merchantState.skipFloors += 3; // تعديل الحالة العامة للتاجر/المرحلة
                 effectMsg = "اشترى خريطة سرية! سيتم تخطي 3 طوابق قادمة.";
             }
             else if (selectedId === 'buy_eye') {
@@ -200,12 +209,14 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
                 effectMsg = "حصل على عين البصيرة! وحش الطابق القادم سيتلقى 50% ضرر إضافي.";
             }
             
+            // --- عناصر المخزون (تخزن في الداتا بيس) ---
             else if (selectedId.startsWith('buy_stock_')) {
                 let potionId = '';
                 if (selectedId === 'buy_stock_titan') potionId = 'potion_titan';
                 else if (selectedId === 'buy_stock_time') potionId = 'potion_time';
                 else if (selectedId === 'buy_stock_reflect') potionId = 'potion_reflect';
 
+                // إضافة للحقيبة (SQL)
                 sql.prepare(`
                     INSERT INTO user_inventory (userID, guildID, itemID, quantity) 
                     VALUES (?, ?, ?, 1) 
@@ -216,9 +227,11 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
                 effectMsg = `اشترى ${item.name} وتم إخفاؤها في حقيبته لاستخدامها لاحقاً.`;
             }
 
+            // --- جرعات فورية التأثير ---
             else if (selectedId === 'buy_instant_elder') {
                 player.maxHp *= 2; 
                 player.hp = player.maxHp;
+                // ملاحظة: تأكد أن اللوب الرئيسي يعالج خاصية 'floors' في التأثيرات
                 player.effects.push({ type: 'titan', floors: 8 }); 
                 effectMsg = "تجرع شراب العمالقة العتيق! تضاعفت صحته لمدة 8 طوابق!";
             }
@@ -227,12 +240,15 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
                 effectMsg = "شرب سم التخفي! اختفى عن الأنظار لمدة 3 جولات.";
             }
 
+            // تأكيد الشراء للمستخدم وتحديث التفاعل
             await si.update({ content: `✅ **تم الشراء بنجاح!** خصم ${item.price} مورا.\nالمتبقي: ${(actualMora - item.price).toLocaleString()}`, components: [] });
             
+            // إرسال رسالة عامة للشات
             await thread.send(`🤝 **أبـرم ${player.name} صفـقـة رابحة مع التاجر واشتـرى ${item.name} مقابل ${item.price} ${EMOJI_MORA}**\n*${effectMsg}*`);
         });
     });
 
+    // عند انتهاء وقت التاجر
     buttonCollector.on('end', async () => {
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
