@@ -150,15 +150,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
         }
 
+        // 🔥🔥🔥 التعديل هنا: منع تصفير الدرع إذا كان دائماً (Mercenary Shield) 🔥🔥🔥
         for (let p of players) {
             if (!p.isDead) { 
                 if (p.shieldPersistent) {
+                    // إذا كان الدرع مستمراً، نجمعه مع أي درع جديد ولا نصفره
                     p.shield = (p.shield || 0) + (p.startingShield || 0);
                 } else {
+                    // السلوك الطبيعي: تصفير الدرع القديم وبدء الجديد
                     p.shield = p.startingShield || 0;
                 }
                 
-                p.startingShield = 0; 
+                p.startingShield = 0; // تصفير "القادم"
                 p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type));
                 p.defending = false; 
                 p.summon = null; 
@@ -189,6 +192,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         };
 
         if (merchantState.weaknessActive) {
+            // 🔥🔥🔥 تعديل: نقطة الضعف أصبحت 50% بدلاً من 25% 🔥🔥🔥
             monster.effects.push({ type: 'weakness', val: 0.50, turns: 99 });
             merchantState.weaknessActive = false;
         }
@@ -317,6 +321,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
+                                // 🔥 تطبيق الختم مع استثناء الشفاء 🔥
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
@@ -516,6 +521,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
+        // 🔥🔥 إنقاص عداد طوابق التايتن في نهاية كل طابق 🔥🔥
         players.forEach(p => {
             p.effects = p.effects.filter(e => {
                 if (e.type === 'titan') {
@@ -649,6 +655,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 const maxTarget = 95;
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
                 floor = targetFloor - 1; 
+
+                // 🔥🔥🔥 التعديل الجديد: فك الختم فوراً عند الانتقال لطوابق عالية 🔥🔥🔥
+                if (targetFloor >= 19) {
+                    let sealBroken = false;
+                    players.forEach(p => {
+                        if (p.isSealed) {
+                            p.isSealed = false;
+                            p.sealMultiplier = 1.0;
+                            sealBroken = true;
+                        }
+                    });
+                    if (sealBroken) {
+                        await threadChannel.send(`🔓 **بسبب الضغط الهائل للانتقال عبر الأبعاد.. تحطمت الأختام عن الجميع واستعدتم كامل قوتكم!**`).catch(()=>{});
+                    }
+                }
+                // 🔥🔥🔥 نهاية التعديل 🔥🔥🔥
 
                 const trapEmbed = new EmbedBuilder()
                     .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
