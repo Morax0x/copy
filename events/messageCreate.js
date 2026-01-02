@@ -141,6 +141,26 @@ module.exports = {
 
         if (message.author.bot) return;
 
+        // =========================================================
+        // 🚫 نظام منع اللفل (XP Ignore) - [الكود الجديد]
+        // =========================================================
+        if (sql && sql.open) {
+            // 1. فحص هل القناة نفسها محظورة؟
+            const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
+            
+            // 2. فحص هل الكاتيغوري (الأب) محظور؟
+            let isCategoryIgnored = false;
+            if (message.channel.parentId) {
+                isCategoryIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.parentId);
+            }
+
+            // إذا كانت القناة أو الكاتيغوري في القائمة، نوقف الدالة فوراً ولا نحسب أي شيء
+            if (isChannelIgnored || isCategoryIgnored) {
+                return; // 🛑 توقف هنا، لن يتم احتساب أي لفل أو رسائل
+            }
+        }
+        // =========================================================
+
         // ============================================================
         // نظام الإحصائيات والـ XP
         // ============================================================
