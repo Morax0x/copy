@@ -1,108 +1,121 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require('discord.js');
-const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF } = require('./constants'); 
-
-// دالة توليد لون عشوائي للإيمبد
-function getRandomColor() {
-    const colors = [Colors.Red, Colors.Blue, Colors.Green, Colors.Gold, Colors.Purple, Colors.Aqua];
-    return colors[Math.floor(Math.random() * colors.length)];
-}
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require('discord.js');
+const { EMOJI_MORA, EMOJI_XP } = require('./constants');
 
 async function triggerMimicChest(thread, players) {
-    const alivePlayers = players.filter(p => !p.isDead);
-    if (alivePlayers.length === 0) return;
+    return new Promise(async (resolve) => {
+        // إنشاء 3 صناديق عشوائية
+        // true = ميميك (فخ)، false = كنز
+        // نسبة الميميك 30%
+        const chestConfig = [
+            Math.random() < 0.3, 
+            Math.random() < 0.3, 
+            Math.random() < 0.3
+        ];
 
-    const openedPlayers = new Set();
+        const embed = new EmbedBuilder()
+            .setTitle('📦 صنـاديـق غـامضـة!')
+            .setDescription('ظهرت 3 صناديق أمامكم...\nبعضها يحتوي على كنوز، والبعض الآخر قد يكون وحشاً (ميميك)!\n\n**اختر صندوقاً لفتحه:**')
+            .setColor(Colors.Gold)
+            .setImage('https://i.postimg.cc/Qt8w2Cs3/mimic.png'); // صورة تعبيرية
 
-    const embed = new EmbedBuilder()
-        .setTitle('★ غرفـة مخفيـة ...')
-        .setDescription(`✶ عثرتـم عـلى غرفـة مخفية في أعمـاق الدانجون يوجـد 3 صناديق القرار لكـم المخاطـرة وفتـح الصناديـق أم تخطيها ..\n\n✶ لديكـم **60 ثانيـة** قبل ان يبتلع الدانجـون غرفة الصناديق اختـر او دع !`)
-        .setImage('https://i.postimg.cc/jdXLq52j/cges.png')
-        .setColor(getRandomColor())
-        .setFooter({ text: '⚠️ انتبه: بعض الصناديق قد تكون فخاخاً!' });
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('chest_1').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('chest_2').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('chest_3').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Success)
-    );
-
-    const message = await thread.send({ embeds: [embed], components: [row] });
-
-    const collector = message.createMessageComponentCollector({ time: 60000 });
-
-    collector.on('collect', async (i) => {
-        if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
-
-        const player = players.find(p => p.id === i.user.id);
-        if (!player || player.isDead) {
-            return i.followUp({ content: '🚫 أنت لست مشاركاً أو أنك ميت!', ephemeral: true });
-        }
-
-        if (openedPlayers.has(player.id)) {
-            return i.followUp({ content: '🔒 لقد فتحت صندوقاً بالفعل! اترك الباقي لزملائك.', ephemeral: true });
-        }
-
-        openedPlayers.add(player.id);
-
-        const roll = Math.random() * 100;
-        let resultMsg = "";
-
-        if (roll < 20) { 
-            const amount = Math.floor(Math.random() * (1500 - 800 + 1)) + 800;
-            player.loot.mora += amount;
-            resultMsg = `💰 **${player.name}** فتح صندوقاً ووجـد **${amount}** مورا! (تمت إضافتها لغنائمك)`;
-         
-        } else if (roll < 40) { 
-            const amount = Math.floor(Math.random() * (500 - 10 + 1)) + 10;
-            player.loot.xp += amount;
-            resultMsg = `✨ **${player.name}** وجـد مخطوطـات قديمة وحصل على **${amount}** XP! (تمت إضافتها لغنائمك)`;
-
-        } else if (roll < 55) { 
-            const dmg = Math.floor(player.maxHp * 0.25);
-            player.hp = Math.max(1, player.hp - dmg); 
-            resultMsg = `👹 **${player.name}** الصنـدوق كـان ميميـك! قام بعضـه وسبب **${dmg}** ضرر!`;
-
-        } else if (roll < 70) { 
-            const heal = Math.floor(player.maxHp * 0.40);
-            player.hp = Math.min(player.maxHp, player.hp + heal);
-            resultMsg = `💖 **${player.name}** وجـد زجاجة شفاء واستعاد **${heal}** من صحته!`;
-
-        } else if (roll < 85) { 
-            player.effects.push({ type: 'atk_buff', val: 0.2, turns: 5 });
-            resultMsg = `💪 **${player.name}** حصل على بركة القوة! (+20% هجوم لـ 5 جولات) ${EMOJI_BUFF}`;
-
-        } else if (roll < 95) { 
-            player.effects.push({ type: 'poison', val: Math.floor(player.maxHp * 0.05), turns: 5 });
-            resultMsg = `☠️ **${player.name}** استنشق غازاً ساماً من الصندوق! (تسمم لـ 5 جولات) ${EMOJI_NERF}`;
-
-        } else { 
-            resultMsg = `💨 **${player.name}** فتح الصندوق ووجـده فارغاً تماماً...`;
-        }
-
-        await thread.send(resultMsg);
-
-        embed.setColor(getRandomColor());
-        await message.edit({ embeds: [embed] }).catch(() => {});
-
-        // 🔥 إنهاء التجميع فوراً إذا فتح الجميع الصناديق 🔥
-        if (openedPlayers.size >= alivePlayers.length) {
-            collector.stop('all_opened');
-        }
-    });
-
-    collector.on('end', async () => {
-        const disabledRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('chest_1').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Secondary).setDisabled(true),
-            new ButtonBuilder().setCustomId('chest_2').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Secondary).setDisabled(true),
-            new ButtonBuilder().setCustomId('chest_3').setEmoji('<a:chest:1453751227664826450>').setStyle(ButtonStyle.Secondary).setDisabled(true)
+        // إنشاء الأزرار
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('chest_0').setLabel('صندوق 1').setStyle(ButtonStyle.Primary).setEmoji('📦'),
+            new ButtonBuilder().setCustomId('chest_1').setLabel('صندوق 2').setStyle(ButtonStyle.Primary).setEmoji('📦'),
+            new ButtonBuilder().setCustomId('chest_2').setLabel('صندوق 3').setStyle(ButtonStyle.Primary).setEmoji('📦')
         );
-        
-        embed.setDescription(`🔒 **أغلقت الصناديق أبوابها...** تابعوا طريقكم!`);
-        embed.setColor(Colors.Grey);
-        
-        await message.edit({ embeds: [embed], components: [disabledRow] }).catch(() => {});
-        // رسالة الإغلاق تختلف قليلاً إذا فتح الجميع بسرعة
-        await thread.send("🌪️ تلاشت الصناديق في الظلام... الفريق يكمل مسيره.");
+
+        const msg = await thread.send({ embeds: [embed], components: [row] });
+
+        // مدة الصناديق 45 ثانية
+        const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 45000 });
+
+        // لتتبع الصناديق المفتوحة
+        let openedChests = [false, false, false];
+
+        collector.on('collect', async (i) => {
+            const player = players.find(p => p.id === i.user.id);
+            if (!player) return i.reply({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
+            if (player.isDead) return i.reply({ content: '💀 الموتى لا يفتحون الصناديق!', ephemeral: true });
+
+            const chestIndex = parseInt(i.customId.split('_')[1]);
+
+            if (openedChests[chestIndex]) {
+                return i.reply({ content: '❌ هذا الصندوق فُتح بالفعل!', ephemeral: true });
+            }
+
+            // تسجيل أن الصندوق فُتح
+            openedChests[chestIndex] = true;
+            
+            // تحديث الأزرار لتعطيل الصندوق المفتوح
+            const updatedRow = new ActionRowBuilder();
+            msg.components[0].components.forEach((btn, index) => {
+                const newBtn = ButtonBuilder.from(btn);
+                if (index === chestIndex || openedChests[index]) {
+                    newBtn.setDisabled(true).setStyle(ButtonStyle.Secondary);
+                }
+                updatedRow.addComponents(newBtn);
+            });
+            await msg.edit({ components: [updatedRow] }).catch(() => {});
+
+            // التعامل مع النتيجة (فخ أم كنز)
+            const isMimic = chestConfig[chestIndex];
+
+            if (isMimic) {
+                // فخ الميميك: خصم HP
+                const dmg = Math.floor(player.maxHp * 0.25); // 25% ضرر
+                player.hp = Math.max(0, player.hp - dmg);
+                
+                await i.reply({ 
+                    content: `👹 **يا للهول!** كان الصندوق **ميميك** وعض يدك!\n💥 تلقيت **${dmg}** ضرر.` 
+                });
+
+                if (player.hp <= 0) {
+                    player.isDead = true;
+                    player.deathFloor = "Mimic Trap";
+                    await thread.send(`☠️ **${player.name}** مات بسبب جشع الصناديق!`);
+                }
+
+            } else {
+                // كنز: مورا وخبرة
+                const moraReward = Math.floor(Math.random() * 500) + 300; // 300-800
+                const xpReward = Math.floor(Math.random() * 100) + 50;
+                
+                // إضافة الجوائز (تضاف للمخزون المؤقت أو الداتابيس مباشرة حسب نظامك)
+                // هنا نضيفها للـ Loot المؤقت الخاص باللاعب
+                player.loot.mora += moraReward;
+                player.loot.xp += xpReward;
+
+                await i.reply({ 
+                    content: `🎉 **كنز!** حصلت على **${moraReward}** ${EMOJI_MORA} و **${xpReward}** ${EMOJI_XP}.` 
+                });
+            }
+
+            // 🔥 التحقق: هل فُتحت كل الصناديق؟
+            if (openedChests.every(c => c === true)) {
+                collector.stop('all_opened'); // إنهاء الحدث فوراً
+            }
+        });
+
+        collector.on('end', async (collected, reason) => {
+            // تعطيل كل الأزرار عند الانتهاء
+            const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('chest_0').setLabel('صندوق 1').setStyle(ButtonStyle.Secondary).setEmoji('📦').setDisabled(true),
+                new ButtonBuilder().setCustomId('chest_1').setLabel('صندوق 2').setStyle(ButtonStyle.Secondary).setEmoji('📦').setDisabled(true),
+                new ButtonBuilder().setCustomId('chest_2').setLabel('صندوق 3').setStyle(ButtonStyle.Secondary).setEmoji('📦').setDisabled(true)
+            );
+            
+            await msg.edit({ components: [disabledRow] }).catch(() => {});
+
+            if (reason === 'all_opened') {
+                await thread.send("💨 **تم نهب جميع الصناديق! يكمل الفريق طريقه...**");
+            } else {
+                await thread.send("⏳ **تلاشت الصناديق المتبقية في الظلام...**");
+            }
+
+            // ✅ السماح للدانجون بالاستمرار
+            resolve();
+        });
     });
 }
 
