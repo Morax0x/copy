@@ -3,8 +3,11 @@ const { PermissionsBitField } = require("discord.js");
 module.exports = {
     name: "fixroles",
     description: "إصلاح رتب اللفلات لجميع الأعضاء (إزالة التراكم)",
-    // تأكد من أن البوت والادمن لديهم صلاحية
-    execute: async (client, message, args) => {
+    
+    // 🔥 التعديل هنا: إزالة client من المدخلات وجلبه من message.client 🔥
+    execute: async (message, args) => {
+        const client = message.client; // تعريف العميل من الرسالة
+
         // 1. التحقق من الصلاحيات (للمالك أو الأدمن فقط)
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ هذا الأمر للمسؤولين فقط.");
