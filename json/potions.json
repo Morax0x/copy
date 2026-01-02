@@ -39,10 +39,10 @@
     "id": "potion_titan",
     "name": "جرعة العملاق",
     "price": 1500,
-    "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك",
+    "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك (تستمر لـ 5 طوابق).",
     "category": "potions",
     "emoji": "🔥",
-    "effect": { "type": "titan", "duration": 3 }
+    "effect": { "type": "titan", "floors": 5 }
   },
   {
     "id": "potion_sacrifice",
