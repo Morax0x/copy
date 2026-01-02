@@ -54,7 +54,7 @@ const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
 // ============================================================
 // 🔥 استدعاءات التنظيم الجديدة (CORE, ACTIONS, LOGIC) 🔥
 // ============================================================
-const { cleanName, checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils'); // ✅ تم إضافة handleLeaderSuccession هنا
+const { cleanName, checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils'); 
 const { setupPlayers } = require('./dungeon/core/setup');
 const { sendEndMessage } = require('./dungeon/core/end-game');
 const { handleOwnerMenu } = require('./dungeon/actions/owner-menu');
@@ -65,7 +65,6 @@ const { processMonsterTurn } = require('./dungeon/logic/monster-turn');
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests) {
     const guild = threadChannel.guild;
      
-    // حماية إضافية للتحقق من اتصال قاعدة البيانات
     if (!sql || !sql.open) {
         return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً، الرجاء المحاولة لاحقاً.").catch(() => {});
     }
@@ -73,24 +72,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     let retreatedPlayers = []; 
      
-    // --- متغيرات الأحداث ---
     let isTrapActive = false;
     let trapStartFloor = 0;
      
-    // 🔥 متغيرات التحكم في التكرار والتناوب 🔥
     let lastEventFloor = -10; 
     let lastEventType = null; 
 
-    // متغيرات التاجر (مشتركة)
     let merchantState = {
         skipFloors: 0,
         weaknessActive: false,
-        isGateJump: false // للتفريق بين قفزة التاجر وقفزة البوابة
+        isGateJump: false 
     };
 
-    // ============================================================
-    // 1️⃣ تجهيز اللاعبين (Setup Phase)
-    // ============================================================
     let players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID);
 
     if (players.length === 0) {
@@ -98,7 +91,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
-    // رسالة الختم
     players.forEach(p => {
         if (p.isSealed) {
              threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
@@ -109,30 +101,23 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
 
-    // ============================================================
-    // 2️⃣ حلقة اللعب الرئيسية (Main Loop)
-    // ============================================================
     for (let floor = 1; floor <= maxFloors; floor++) {
-        // التحقق من اللاعبين
         if (players.length === 0 || players.every(p => p.isDead)) break; 
 
-        // 🔥 تطبيق تخطي الطوابق (الخريطة المختصرة أو بوابة الأبعاد) 🔥
         if (merchantState.skipFloors > 0) {
             let floorsSkipped = 0;
             let targetFloor = 0;
 
             if (merchantState.isGateJump) {
-                // قفزة محددة برقم الطابق (بوابة الأبعاد)
                 targetFloor = merchantState.skipFloors;
-                floorsSkipped = targetFloor - floor; // مجرد للعرض
+                floorsSkipped = targetFloor - floor; 
                 merchantState.isGateJump = false;
             } else {
-                // قفزة بعدد محدد (التاجر)
                 floorsSkipped = merchantState.skipFloors;
                 targetFloor = floor + floorsSkipped;
             }
 
-            merchantState.skipFloors = 0; // تصفير
+            merchantState.skipFloors = 0; 
             const oldFloor = floor;
             floor = targetFloor; 
              
@@ -147,7 +132,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; 
         }
 
-        // 🔥🔥🔥 التدرج في فك الختم 🔥🔥🔥
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
@@ -166,18 +150,21 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
         }
 
-        // تهيئة اللاعبين للدور (إزالة الدروع القديمة وبفات معينة)
         for (let p of players) {
             if (!p.isDead) { 
-                p.shield = p.startingShield || 0;
+                if (p.shieldPersistent) {
+                    p.shield = (p.shield || 0) + (p.startingShield || 0);
+                } else {
+                    p.shield = p.startingShield || 0;
+                }
+                
                 p.startingShield = 0; 
-                p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type)); // 🔥 إبقاء التايتن
+                p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type));
                 p.defending = false; 
                 p.summon = null; 
             } 
         }
 
-        // تجهيز الوحش
         const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
         const randomMob = getRandomMonster(floorConfig.type, theme);
 
@@ -202,12 +189,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         };
 
         if (merchantState.weaknessActive) {
-            monster.effects.push({ type: 'weakness', val: 0.25, turns: 99 });
+            monster.effects.push({ type: 'weakness', val: 0.50, turns: 99 });
             merchantState.weaknessActive = false;
         }
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()} | DMG: ${monster.atk})`];
-        if (monster.effects.some(e => e.type === 'weakness')) log.push(`👁️ **تم كشف نقطة ضعف الوحش!** (+25% ضرر إضافي)`);
+        if (monster.effects.some(e => e.type === 'weakness')) log.push(`👁️ **تم كشف نقطة ضعف الوحش!** (+50% ضرر إضافي)`);
 
         let ongoing = true;
         let turnCount = 0;
@@ -223,14 +210,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
-        // ============================================================
-        // 3️⃣ حلقة المعركة (Battle Loop)
-        // ============================================================
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
             let processingUsers = new Set(); 
-            let ongoingRef = { value: true }; // مرجع للتحكم بالحالة
+            let ongoingRef = { value: true }; 
 
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(async () => { 
@@ -255,7 +239,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                         }
                         
-                        // 🔥🔥 نقل القيادة إذا مات القائد بسبب الخمول 🔥🔥
                         handleLeaderSuccession(players, log);
 
                         if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
@@ -267,13 +250,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                      
-                    // ============================================================
-                    // 🔥 القسم الأول: قائمة الإمبراطور (تم فصلها) 🔥
-                    // ============================================================
                     if (i.customId === 'def' && i.user.id === OWNER_ID) {
                         await handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef);
-                        // إذا قامت القائمة بإنهاء المعركة (مثل شق الزمكان أو قتل الوحش فوراً)
                         if (!ongoingRef.value) {
                              ongoing = false;
                              if (!collector.ended) collector.stop('owner_action'); 
@@ -281,9 +259,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         return;
                     }
 
-                    // ============================================================
-                    // 👑 القسم الثاني: دخول الاونر التلقائي
-                    // ============================================================
                     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
                         const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
                         if (member) {
@@ -293,10 +268,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              log.push(`👑 **الأمبراطـور اقتحـم المعركـة!**`);
                         }
                     }
-
-                    // ============================================================
-                    // ⚔️ القسم الثالث: المنطق العادي (اللاعبين) 
-                    // ============================================================
                       
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
                       
@@ -306,7 +277,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
 
-                    // تحقق من الشلل
                     if (p.effects.some(e => e.type === 'stun')) {
                         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
                         actedPlayers.push(p.id); p.skipCount = 0; 
@@ -347,7 +317,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
-                                // 🔥 تطبيق الختم مع استثناء الشفاء 🔥
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
@@ -394,7 +363,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
-                                // 🔥 تعديل جرعة العملاق 🔥
                                 if (potionId === 'potion_titan') {
                                     p.titanPotionUses = p.titanPotionUses || 0;
                                     if (p.titanPotionUses >= 3) {
@@ -421,7 +389,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
                                 } else if (potionId === 'potion_titan') {
                                     p.maxHp *= 2; p.hp = p.maxHp;
-                                    // 🔥🔥 تعديل: تستمر لمدة 5 طوابق 🔥🔥
                                     p.effects.push({ type: 'titan', floors: 5 }); 
                                     monster.targetFocusId = p.id;
                                     actionMsg = `🔥 تحول لعملاق! (يستمر لـ 5 طوابق) (${p.titanPotionUses}/3)`;
@@ -506,15 +473,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp <= 0) { ongoing = false; await battleMsg.edit({ components: [] }).catch(()=>{}); }
 
-            // تحديث التهدئة
             players.forEach(p => { 
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
                 
-                // ✅✅ التعديل هنا: منع اختفاء التايتن بالجولات ✅✅
                 p.effects = p.effects.filter(e => { 
-                    if (e.type === 'titan') return true; // لا تنقص العداد هنا (بالجولات)
-
+                    if (e.type === 'titan') return true; 
                     e.turns--; 
                     if (e.turns <= 0) return false; 
                     return true; 
@@ -552,11 +516,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
-        // 🔥🔥 إنقاص عداد طوابق التايتن في نهاية كل طابق 🔥🔥
         players.forEach(p => {
             p.effects = p.effects.filter(e => {
                 if (e.type === 'titan') {
-                    e.floors--; // ينقص هنا (بالطوابق)
+                    e.floors--; 
                     if (e.floors <= 0) {
                         p.maxHp = Math.floor(p.maxHp / 2);
                         if (p.hp > p.maxHp) p.hp = p.maxHp;
@@ -571,8 +534,26 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ==========================================
         // ❖ منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
-        const specificRetreatFloors = [38, 50, 80];
-        const canRetreat = floor <= 20 || specificRetreatFloors.includes(floor);
+        
+        // 🔥🔥 التعديل هنا: منطق ظهور زر الانسحاب 🔥🔥
+        let canRetreat = false;
+
+        // 1. من 1 إلى 20: متاح دائماً
+        if (floor <= 20) {
+            canRetreat = true;
+        } 
+        // 2. الطوابق الثابتة (38, 50, 80)
+        else if ([38, 50, 80].includes(floor)) {
+            canRetreat = true;
+        } 
+        // 3. النطاقات العشوائية (30-40، 50-60، 70-80)
+        else if ((floor >= 30 && floor <= 40) || (floor >= 50 && floor <= 60) || (floor >= 70 && floor <= 80)) {
+            // فرصة عشوائية (مثلاً 40% فرصة ظهور في كل طابق داخل النطاق)
+            // هذا يعني أنه قد يظهر في طابق 32 ويختفي في 33
+            if (Math.random() < 0.4) {
+                canRetreat = true;
+            }
+        }
 
         let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
 
@@ -583,7 +564,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 20) {
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
-             restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في أغلب الطوابق!`;
+             if (canRetreat) {
+                 restDesc += `\n\n✨ **فرصة نادرة:** زر الانسحاب متاح الآن!`;
+             } else {
+                 restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
+             }
         } else {
              restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
         }
