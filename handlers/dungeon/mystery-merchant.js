@@ -11,44 +11,91 @@ const QUOTES = [
     "«من دوني أنت شجاع… ومعي أنت حي.»",
     "«الظلام يساومك بالموت… وأنا أساومك بالمورا.»",
     "«ليس كل من اشترى نجا… لكن كل ناجٍ اشترى.»",
-    "«إن كنت تبحث عن الأمل… فهو ليس مجانيًا.»"
+    "«إن كنت تبحث عن الأمل… فهو ليس مجانيًا.»",
+    "«الموت مجاني… أما النجاة فلها ثمن.»",
+    "«ادخل الدانجون بثقة… واخرج إن دفعت.»",
+    "«عناصري لا تلمع… لكنها تبقيك حيًّا.»",
+    "«الجبن يقتلك أسرع من الوحوش.»",
+    "«الصفقة الآن… أو العظام لاحقًا.»",
+    "«الكنز ينتظر الشجعان… وأنا أنتظر المورا.»",
+    "«الخطوة الخاطئة تكلف روحك… إلا إن اشتريت.»",
+    "«ليست بضاعة… إنها فرصة للعودة.»",
+    "«الوحوش لا تفاوض… أنا أفعل.»"
 ];
 
 const SHOP_ITEMS = [
+    // --- البضائع القديمة (الخاصة) ---
     {
         id: 'buy_elixir',
         name: 'إكسيـر الحيـاة',
         price: 3000,
-        desc: 'يعيد إحياءك بـ 50% HP (أو يعالجك بالكامل).',
+        desc: 'يعيد إحياءك بـ 100% HP (أو يعالجك بالكامل).',
         emoji: '🩸'
     },
     {
         id: 'buy_blood',
         name: 'عقـد الـدم',
         price: 1500,
-        desc: 'خصم 30% من صحتك القصوى مقابل +40% هجوم دائم.',
+        desc: 'خصم 30% من صحتك القصوى مقابل +60% هجوم دائم.',
         emoji: '📜'
     },
     {
         id: 'buy_map',
         name: 'خريطـة مختصـرة',
         price: 3000,
-        desc: 'تخطي طابقين فوراً مع الحصول على نصف جوائزهم.',
+        desc: 'تخطي 3 طوابق فوراً مع الحصول على جوائزهم.',
         emoji: '🗺️'
     },
     {
         id: 'buy_shield',
         name: 'درع المرتزقـة',
         price: 1000,
-        desc: 'تبدأ الطابق القادم بدرع يمتص 5000 ضرر.',
+        desc: 'يمنحك درعاً بـ 8000 نقطة يستمر حتى ينكسر.', // 🔥 تم تعديل الوصف
         emoji: '🛡️'
     },
     {
         id: 'buy_eye',
         name: 'عين البصيـرة',
-        price: 1000,
-        desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +25%).',
+        price: 800,
+        desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +50%).',
         emoji: '👁️'
+    },
+    // --- الفكرة 1: مخزون الطوارئ (تضاف للمخزون) ---
+    {
+        id: 'buy_stock_titan',
+        name: 'مخزون: جرعة العملاق',
+        price: 1000, 
+        desc: 'تضاف للحقيبة. (تضاعف الصحة لـ 5 طوابق).',
+        emoji: '📦'
+    },
+    {
+        id: 'buy_stock_time',
+        name: 'مخزون: جرعة الزمن',
+        price: 600, 
+        desc: 'تضاف للحقيبة. (تصفير المهارات).',
+        emoji: '📦'
+    },
+    {
+        id: 'buy_stock_reflect',
+        name: 'مخزون: جرعة الانعكاس',
+        price: 350, 
+        desc: 'تضاف للحقيبة. (تعكس الضرر).',
+        emoji: '📦'
+    },
+    // --- الفكرة 2: الجرعات المركزة (تأثير فوري) ---
+    {
+        id: 'buy_instant_elder',
+        name: 'شراب العمالقة العتيق',
+        price: 2500,
+        desc: 'تأثير فوري: يضاعف الصحة لمدة 8 طوابق!',
+        emoji: '🍷'
+    },
+    {
+        id: 'buy_instant_assassin',
+        name: 'سم التخفي',
+        price: 2000,
+        desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.',
+        emoji: '🌫️'
     }
 ];
 
@@ -57,8 +104,7 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const embed = new EmbedBuilder()
         .setTitle('★ التـاجـر المتجـول ظهـر !')
-        // 🔥 تم تعديل الوقت هنا إلى 45 ثانية 🔥
-        .setDescription(`> **"${randomQuote}"**\n\nيَعرض بضائع نادرة هل تجرؤ على الشراء؟\n\n⏳ **يغادر بعد 45 ثانية...**`)
+        .setDescription(`> **"${randomQuote}"**\n\nيَعرض بضائع نادرة بأسعار سوق سوداء.. هل تجرؤ على الشراء؟\n\n⏳ **يغادر بعد 45 ثانية...**`)
         .setImage('https://i.postimg.cc/DypZtNmr/00000.png')
         .setColor(Colors.Grey);
 
@@ -72,7 +118,6 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
 
     const msg = await thread.send({ embeds: [embed], components: [row] });
 
-    // 🔥 تم تعديل وقت الكوليكتر إلى 45000 (45 ثانية) 🔥
     const buttonCollector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 45000 });
 
     buttonCollector.on('collect', async (i) => {
@@ -81,7 +126,6 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
         const player = players.find(p => p.id === i.user.id);
         if (!player) return i.followUp({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
 
-        // جلب الرصيد الحالي للعرض
         const userBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
         const currentMora = userBalance ? userBalance.mora : 0;
 
@@ -106,13 +150,12 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             fetchReply: true 
         });
 
-        const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 30000 }); // جعلنا وقت الاختيار أقصر قليلاً ليتناسب مع السرعة
+        const selectCollector = reply.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 30000 });
 
         selectCollector.on('collect', async (si) => {
             const selectedId = si.values[0];
             const item = SHOP_ITEMS.find(it => it.id === selectedId);
 
-            // التحقق من الرصيد مرة أخرى عند الضغط
             const freshBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(si.user.id, guildId);
             const actualMora = freshBalance ? freshBalance.mora : 0;
 
@@ -123,43 +166,70 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
             // خصم المبلغ
             sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(item.price, si.user.id, guildId);
 
-            // تطبيق التأثيرات
             let effectMsg = "";
 
             if (selectedId === 'buy_elixir') {
                 if (!player.isDead) {
                     player.hp = player.maxHp;
-                    effectMsg = "شرب إكسير الحياة وشعر بقوة الخلود (HP كامل)!";
+                    effectMsg = "شرب إكسير الحياة وشعر بقوة الخلود (100% HP)!";
                 } else {
                     player.isDead = false;
                     player.isPermDead = false;
-                    player.hp = Math.floor(player.maxHp * 0.5);
+                    player.hp = player.maxHp; 
                     player.reviveCount = 0;
-                    effectMsg = "عاد من الموت بفضل إكسير الحياة!";
+                    effectMsg = "عاد من الموت بكامل قوته بفضل إكسير الحياة!";
                 }
             } 
             else if (selectedId === 'buy_blood') {
                 player.maxHp = Math.floor(player.maxHp * 0.7); 
                 if (player.hp > player.maxHp) player.hp = player.maxHp;
-                player.effects.push({ type: 'atk_buff', val: 0.4, turns: 999 }); 
-                effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 40% لنهاية الرحلة)";
+                player.effects.push({ type: 'atk_buff', val: 0.6, turns: 999 }); 
+                effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 60% لنهاية الرحلة)";
             }
             else if (selectedId === 'buy_shield') {
-                player.startingShield = 5000;
-                effectMsg = "تجهز بدرع المرتزقة الصلب! (سيبدأ الطابق القادم بـ 5000 درع)";
+                player.startingShield = 8000; 
+                player.shieldPersistent = true; // 🔥🔥🔥 هذا هو التعديل المهم: تفعيل استمرار الدرع
+                effectMsg = "تجهز بدرع المرتزقة الأسطوري! (8000 درع يستمر حتى ينكسر)";
             }
             else if (selectedId === 'buy_map') {
-                merchantState.skipFloors += 2;
-                effectMsg = "اشترى خريطة سرية! سيتم تخطي الطابقين القادمين.";
+                merchantState.skipFloors += 3; 
+                effectMsg = "اشترى خريطة سرية! سيتم تخطي 3 طوابق قادمة.";
             }
             else if (selectedId === 'buy_eye') {
                 merchantState.weaknessActive = true;
-                effectMsg = "حصل على عين البصيرة! وحش الطابق القادم سيكون مكشوفاً.";
+                effectMsg = "حصل على عين البصيرة! وحش الطابق القادم سيتلقى 50% ضرر إضافي.";
+            }
+            
+            else if (selectedId.startsWith('buy_stock_')) {
+                let potionId = '';
+                if (selectedId === 'buy_stock_titan') potionId = 'potion_titan';
+                else if (selectedId === 'buy_stock_time') potionId = 'potion_time';
+                else if (selectedId === 'buy_stock_reflect') potionId = 'potion_reflect';
+
+                sql.prepare(`
+                    INSERT INTO user_inventory (userID, guildID, itemID, quantity) 
+                    VALUES (?, ?, ?, 1) 
+                    ON CONFLICT(userID, guildID, itemID) 
+                    DO UPDATE SET quantity = quantity + 1
+                `).run(player.id, guildId, potionId);
+
+                effectMsg = `اشترى ${item.name} وتم إخفاؤها في حقيبته لاستخدامها لاحقاً.`;
+            }
+
+            else if (selectedId === 'buy_instant_elder') {
+                player.maxHp *= 2; 
+                player.hp = player.maxHp;
+                player.effects.push({ type: 'titan', floors: 8 }); 
+                effectMsg = "تجرع شراب العمالقة العتيق! تضاعفت صحته لمدة 8 طوابق!";
+            }
+            else if (selectedId === 'buy_instant_assassin') {
+                player.effects.push({ type: 'stealth', turns: 3 });
+                effectMsg = "شرب سم التخفي! اختفى عن الأنظار لمدة 3 جولات.";
             }
 
             await si.update({ content: `✅ **تم الشراء بنجاح!** خصم ${item.price} مورا.\nالمتبقي: ${(actualMora - item.price).toLocaleString()}`, components: [] });
             
-            await thread.send(`🤝 **أبـرم ${player.name} صفـقـة مع التاجر واشتـرى ${item.name} مقابل ${item.price} ${EMOJI_MORA}**\n*${effectMsg}*`);
+            await thread.send(`🤝 **أبـرم ${player.name} صفـقـة رابحة مع التاجر واشتـرى ${item.name} مقابل ${item.price} ${EMOJI_MORA}**\n*${effectMsg}*`);
         });
     });
 
