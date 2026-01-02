@@ -57,7 +57,7 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
             // 🔥🔥 هذا هو الزر الذي كان ناقصاً 🔥🔥
             new ButtonBuilder()
                 .setCustomId('merchant_attack')
-                .setLabel('اضربه! (تخطي)')
+                .setLabel('اضربــه')
                 .setEmoji('⚔️')
                 .setStyle(ButtonStyle.Danger)
         );
