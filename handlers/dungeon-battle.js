@@ -150,18 +150,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
         }
 
-        // 🔥🔥🔥 التعديل هنا: منع تصفير الدرع إذا كان دائماً (Mercenary Shield) 🔥🔥🔥
         for (let p of players) {
             if (!p.isDead) { 
                 if (p.shieldPersistent) {
-                    // إذا كان الدرع مستمراً، نجمعه مع أي درع جديد ولا نصفره
                     p.shield = (p.shield || 0) + (p.startingShield || 0);
                 } else {
-                    // السلوك الطبيعي: تصفير الدرع القديم وبدء الجديد
                     p.shield = p.startingShield || 0;
                 }
                 
-                p.startingShield = 0; // تصفير "القادم"
+                p.startingShield = 0; 
                 p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type));
                 p.defending = false; 
                 p.summon = null; 
@@ -192,7 +189,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         };
 
         if (merchantState.weaknessActive) {
-            // 🔥🔥🔥 تعديل: نقطة الضعف أصبحت 50% بدلاً من 25% 🔥🔥🔥
             monster.effects.push({ type: 'weakness', val: 0.50, turns: 99 });
             merchantState.weaknessActive = false;
         }
@@ -321,7 +317,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
-                                // 🔥 تطبيق الختم مع استثناء الشفاء 🔥
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
@@ -555,7 +550,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // 3. النطاقات العشوائية (30-40، 50-60، 70-80)
         else if ((floor >= 30 && floor <= 40) || (floor >= 50 && floor <= 60) || (floor >= 70 && floor <= 80)) {
             // فرصة عشوائية (مثلاً 40% فرصة ظهور في كل طابق داخل النطاق)
-            // هذا يعني أنه قد يظهر في طابق 32 ويختفي في 33
             if (Math.random() < 0.4) {
                 canRetreat = true;
             }
@@ -682,6 +676,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
+                // 🔥🔥🔥 تم حذف setTimeout من هنا لتفادي المؤقت المزدوج 🔥🔥🔥
                 if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
                     let eventToTrigger = '';
                     if (lastEventType === 'merchant') eventToTrigger = 'chest'; 
@@ -689,13 +684,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     else eventToTrigger = Math.random() < 0.5 ? 'merchant' : 'chest';
 
                     if (eventToTrigger === 'merchant') {
+                        // الآن الدالة تنتظر تلقائياً بفضل الـ Promise المعدل في ملف التاجر
                         await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
                         lastEventType = 'merchant'; lastEventFloor = floor;
-                        await new Promise(r => setTimeout(r, 46000));
                     } else {
+                        // كذلك الصناديق تنتظر وقتها الخاص
                         await triggerMimicChest(threadChannel, players);
                         lastEventType = 'chest'; lastEventFloor = floor;
-                        await new Promise(r => setTimeout(r, 62000));
                     }
                 }
             }
