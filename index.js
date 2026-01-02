@@ -102,6 +102,9 @@ try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giv
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
 
+// 🔥 إضافة جدول منع اللفل (XP Ignore) [التحديث الجديد] 🔥
+try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS xp_ignore (guildID TEXT, id TEXT, type TEXT, PRIMARY KEY (guildID, id))").run(); } catch(e) {}
+
 // ==================================================================
 // 4. استيراد الهاندلرز
 // ==================================================================
