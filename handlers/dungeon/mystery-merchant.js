@@ -50,7 +50,7 @@ const SHOP_ITEMS = [
         id: 'buy_shield',
         name: 'درع المرتزقـة',
         price: 1000,
-        desc: 'يمنحك درعاً بـ 8000 نقطة يستمر حتى ينكسر.', // 🔥 تم تعديل الوصف
+        desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر.', // 🔥 تم التعديل لـ 2500
         emoji: '🛡️'
     },
     {
@@ -187,9 +187,9 @@ async function triggerMysteryMerchant(thread, players, sql, guildId, merchantSta
                 effectMsg = "وقّع عقد الدم! (HP انخفض، وهجومه زاد 60% لنهاية الرحلة)";
             }
             else if (selectedId === 'buy_shield') {
-                player.startingShield = 8000; 
-                player.shieldPersistent = true; // 🔥🔥🔥 هذا هو التعديل المهم: تفعيل استمرار الدرع
-                effectMsg = "تجهز بدرع المرتزقة الأسطوري! (8000 درع يستمر حتى ينكسر)";
+                player.startingShield = 2500; // 🔥 تم التعديل لـ 2500
+                player.shieldPersistent = true; // 🔥 تفعيل استمرار الدرع (حسب طلبك السابق)
+                effectMsg = "تجهز بدرع المرتزقة الصلب! (2500 درع يستمر حتى ينكسر)";
             }
             else if (selectedId === 'buy_map') {
                 merchantState.skipFloors += 3; 
