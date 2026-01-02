@@ -171,7 +171,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             if (!p.isDead) { 
                 p.shield = p.startingShield || 0;
                 p.startingShield = 0; 
-                p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness'].includes(e.type));
+                p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type)); // 🔥 إبقاء التايتن
                 p.defending = false; 
                 p.summon = null; 
             } 
@@ -276,8 +276,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         // إذا قامت القائمة بإنهاء المعركة (مثل شق الزمكان أو قتل الوحش فوراً)
                         if (!ongoingRef.value) {
                              ongoing = false;
-                             // لا نوقف الكوليكتور هنا لأن handleOwnerMenu ربما أوقفه بالفعل، 
-                             // لكن للتأكد إذا لم يتوقف:
                              if (!collector.ended) collector.stop('owner_action'); 
                         }
                         return;
@@ -349,20 +347,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
-                                // 🔥🔥🔥🔥 هنا التعديل: تطبيق الختم مع استثناء الشفاء 🔥🔥🔥🔥
+                                // 🔥 تطبيق الختم مع استثناء الشفاء 🔥
                                 if (p.isSealed) {
-                                    // تقليل الهجوم العادي (Base ATK) دائماً
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
-
-                                    // التحقق هل المهارة مهارة شفاء؟
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
-
-                                    // إذا لم تكن شفاء، نقلل قوتها
                                     if (skillObj.effectValue && !isHealSkill) {
                                         skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * p.sealMultiplier) };
                                     }
                                 }
-                                // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
                                 if (floor <= 5 && p.atk > 47) p.atk = 47;
                                 else if (floor <= 10 && p.atk > 88) p.atk = 88;
@@ -402,7 +394,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
-                                // 🔥🔥🔥 تعديل جرعة العملاق 🔥🔥🔥
+                                // 🔥 تعديل جرعة العملاق 🔥
                                 if (potionId === 'potion_titan') {
                                     p.titanPotionUses = p.titanPotionUses || 0;
                                     if (p.titanPotionUses >= 3) {
@@ -410,7 +402,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         processingUsers.delete(i.user.id);
                                         return;
                                     }
-                                    p.titanPotionUses++; // زيادة العداد
+                                    p.titanPotionUses++; 
                                 }
                                 
                                 if (sql.open) {
@@ -429,9 +421,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
                                 } else if (potionId === 'potion_titan') {
                                     p.maxHp *= 2; p.hp = p.maxHp;
-                                    p.effects.push({ type: 'titan', turns: 3 }); 
+                                    // 🔥🔥 تعديل: تستمر لمدة 5 طوابق 🔥🔥
+                                    p.effects.push({ type: 'titan', floors: 5 }); 
                                     monster.targetFocusId = p.id;
-                                    actionMsg = `🔥 تحول لعملاق! (${p.titanPotionUses}/3)`;
+                                    actionMsg = `🔥 تحول لعملاق! (يستمر لـ 5 طوابق) (${p.titanPotionUses}/3)`;
                                 } else if (potionId === 'potion_sacrifice') {
                                     p.hp = 0; p.isDead = true; p.isPermDead = true; p.deathFloor = floor; 
                                     players.forEach(ally => {
@@ -442,8 +435,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     });
                                     actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
                                     threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
-                                     
-                                    // 🔥🔥 نقل القيادة إذا مات القائد بجرعة التضحية 🔥🔥
                                     handleLeaderSuccession(players, log);
                                 }
                                 log.push(`**${p.name}**: ${actionMsg}`);
@@ -520,19 +511,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
                 
-                // ✅✅ التعديل المطلوب هنا: التحقق من التأثيرات قبل حذفها ✅✅
+                // ✅✅ التعديل هنا: منع اختفاء التايتن بالجولات ✅✅
                 p.effects = p.effects.filter(e => { 
+                    if (e.type === 'titan') return true; // لا تنقص العداد هنا (بالجولات)
+
                     e.turns--; 
-                    if (e.turns <= 0) {
-                        // إلغاء تأثير العملاق وإرجاع الحجم الطبيعي
-                        if (e.type === 'titan') {
-                            p.maxHp = Math.floor(p.maxHp / 2); // استعادة الـ MaxHP الأصلي
-                            if (p.hp > p.maxHp) p.hp = p.maxHp; // ضبط الـ HP الحالي
-                            log.push(`✨ **${p.name}** عاد لحجمه الطبيعي وتلاشى مفعول العملاق.`);
-                        }
-                        return false; // حذف التأثير
-                    }
-                    return true; // إبقاء التأثير
+                    if (e.turns <= 0) return false; 
+                    return true; 
                 });
             });
 
@@ -546,18 +531,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 } catch(e) { break; }
             }
 
-            // ============================================================
-            // 🔥 منطق الوحش (تم فصله) 🔥
-            // ============================================================
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                // الدالة تعيد false إذا مات الوحش أو انتهت المعركة
                 ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
-                 
-                // 🔥🔥 التحقق من نقل القيادة بعد هجمة الوحش 🔥🔥
-                if (ongoing) {
-                    handleLeaderSuccession(players, log);
-                }
+                if (ongoing) handleLeaderSuccession(players, log);
             }
         }
 
@@ -574,6 +551,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
+
+        // 🔥🔥 إنقاص عداد طوابق التايتن في نهاية كل طابق 🔥🔥
+        players.forEach(p => {
+            p.effects = p.effects.filter(e => {
+                if (e.type === 'titan') {
+                    e.floors--; // ينقص هنا (بالطوابق)
+                    if (e.floors <= 0) {
+                        p.maxHp = Math.floor(p.maxHp / 2);
+                        if (p.hp > p.maxHp) p.hp = p.maxHp;
+                        threadChannel.send(`✨ **${p.name}** عاد لحجمه الطبيعي وتلاشى مفعول العملاق.`).catch(()=>{});
+                        return false;
+                    }
+                }
+                return true;
+            });
+        });
 
         // ==========================================
         // ❖ منطقة الاستراحة (Floor Rest) ❖
@@ -620,24 +613,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 clearTimeout(warningTimeout); 
 
                 if (i.customId === 'continue') {
-                    // 🔥🔥 نستخدم كلاس القائد للتحقق بدل الهوست آيدي 🔥🔥
-                    // إذا كان اللاعب القائد، يسمح له بالضغط
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
-                      
                     await i.deferUpdate(); 
                     return decCollector.stop('continue');
                 }
 
                 if (i.customId === 'retreat' && canRetreat) {
                     let p = players.find(pl => pl.id === i.user.id);
-                      
                     if (p && p.class === 'Leader') {
-                        // إذا القائد انسحب، ننهي الدنجن للجميع
                         await i.deferUpdate();
                         return decCollector.stop('retreat');
                     } else {
-                        // انسحاب فردي
                         const pIndex = players.findIndex(pl => pl.id === i.user.id);
                         if (pIndex > -1) {
                             const leavingPlayer = players[pIndex];
@@ -646,11 +633,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             players.splice(pIndex, 1); 
                             await i.reply({ content: `👋 **لقد انسحبت من الدانجون واكتفيت بغنائمك!**`, ephemeral: true });
                             await threadChannel.send(`💨 **${leavingPlayer.name}** قـرر الانسحاب والاكتفاء بما حصد من غنائم!`).catch(()=>{});
-                             
-                            // 🔥🔥 نقل القيادة إذا كان القائد السابق هو من انسحب (للاحتياط) 🔥🔥
-                            // رغم أن الشرط أعلاه يمنع القائد من الانسحاب الفردي، لكن هذا أمان إضافي
                             if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
-
                             if (players.length === 0) decCollector.stop('retreat');
                         } else {
                             await i.reply({ content: "أنت لست في قائمة المشاركين النشطين.", ephemeral: true });
@@ -674,7 +657,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             return;
         } 
         else if (decision === 'continue') {
-            // فخ الشذوذ الزمكاني
             if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
@@ -692,10 +674,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } else {
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
-                // 🔥🔥 تم إلغاء كود نقل القيادة القديم هنا لأنه أصبح مكرراً وغير ضروري 🔥🔥
-                // 🔥🔥 نعتمد الآن كلياً على handleLeaderSuccession 🔥🔥
-
-                // نظام الأحداث
                 const canTriggerEvent = (floor - lastEventFloor) > 4;
                 if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
                     let eventToTrigger = '';
