@@ -150,15 +150,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             });
         }
 
+        // 🔥🔥🔥 منع تصفير الدرع إذا كان دائماً (Mercenary Shield) 🔥🔥🔥
         for (let p of players) {
             if (!p.isDead) { 
                 if (p.shieldPersistent) {
+                    // إذا كان الدرع مستمراً، نجمعه مع أي درع جديد ولا نصفره
                     p.shield = (p.shield || 0) + (p.startingShield || 0);
                 } else {
+                    // السلوك الطبيعي: تصفير الدرع القديم وبدء الجديد
                     p.shield = p.startingShield || 0;
                 }
                 
-                p.startingShield = 0; 
+                p.startingShield = 0; // تصفير "القادم"
                 p.effects = p.effects.filter(e => ['poison', 'atk_buff', 'weakness', 'titan'].includes(e.type));
                 p.defending = false; 
                 p.summon = null; 
@@ -189,6 +192,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         };
 
         if (merchantState.weaknessActive) {
+            // 🔥🔥🔥 تعديل: نقطة الضعف أصبحت 50% بدلاً من 25% 🔥🔥🔥
             monster.effects.push({ type: 'weakness', val: 0.50, turns: 99 });
             merchantState.weaknessActive = false;
         }
