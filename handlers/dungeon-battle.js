@@ -267,7 +267,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }, 45000); 
 
                 collector.on('collect', async i => {
-                     
+                      
                     // ============================================================
                     // 🔥 القسم الأول: قائمة الإمبراطور (تم فصلها) 🔥
                     // ============================================================
@@ -299,11 +299,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // ============================================================
                     // ⚔️ القسم الثالث: المنطق العادي (اللاعبين) 
                     // ============================================================
-                     
+                      
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
-                     
+                      
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
-                     
+                      
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
@@ -317,7 +317,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
-                     
+                      
                     processingUsers.add(i.user.id);
 
                     try {
@@ -333,7 +333,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.deferUpdate().catch(()=>{}); 
 
                                 const skillId = selection.values[0];
-                                 
+                                
                                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                                 if (shieldSkills.includes(skillId) && p.shield > 0) {
                                     await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
@@ -342,32 +342,41 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let skillNameUsed = "مهارة";
                                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
-                                 
+                                
                                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
                                 let originalAtk = p.atk;
-                                 
+                                
+                                // 🔥🔥🔥🔥 هنا التعديل: تطبيق الختم مع استثناء الشفاء 🔥🔥🔥🔥
                                 if (p.isSealed) {
+                                    // تقليل الهجوم العادي (Base ATK) دائماً
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
-                                    if (skillObj.effectValue) {
+
+                                    // التحقق هل المهارة مهارة شفاء؟
+                                    const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
+
+                                    // إذا لم تكن شفاء، نقلل قوتها
+                                    if (skillObj.effectValue && !isHealSkill) {
                                         skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * p.sealMultiplier) };
                                     }
                                 }
+                                // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
                                 if (floor <= 5 && p.atk > 47) p.atk = 47;
                                 else if (floor <= 10 && p.atk > 88) p.atk = 88;
                                 else if (floor <= 14 && p.atk > 120) p.atk = 120;
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
-                                 
+                                
                                 p.atk = originalAtk;
 
                                 if (res && res.error) {
                                     await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
                                     processingUsers.delete(i.user.id); return;
                                 }
-                                 
+                                
                                 if (res && res.name) skillNameUsed = res.name;
                                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
@@ -392,7 +401,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 15000 });
                                 await selection.deferUpdate().catch(()=>{});
                                 const potionId = selection.values[0].replace('use_potion_', '');
-                                 
+                                
                                 // 🔥🔥🔥 تعديل جرعة العملاق 🔥🔥🔥
                                 if (potionId === 'potion_titan') {
                                     p.titanPotionUses = p.titanPotionUses || 0;
@@ -403,7 +412,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                     p.titanPotionUses++; // زيادة العداد
                                 }
-                                 
+                                
                                 if (sql.open) {
                                     sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
                                 }
@@ -615,14 +624,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // إذا كان اللاعب القائد، يسمح له بالضغط
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
-                     
+                      
                     await i.deferUpdate(); 
                     return decCollector.stop('continue');
                 }
 
                 if (i.customId === 'retreat' && canRetreat) {
                     let p = players.find(pl => pl.id === i.user.id);
-                     
+                      
                     if (p && p.class === 'Leader') {
                         // إذا القائد انسحب، ننهي الدنجن للجميع
                         await i.deferUpdate();
