@@ -47,6 +47,46 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
+// 🔥 دالة مساعدة لحساب ترتيب القوة بنفس منطق top.js بالضبط 🔥
+function calculateStrongestRank(sql, guildID, targetUserID) {
+    // جلب جميع الأسلحة في السيرفر
+    const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ?").all(guildID);
+    
+    // تجهيز استعلامات اللفل والمهارات
+    const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
+    const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
+
+    let stats = [];
+    for (const w of weapons) {
+        const conf = weaponsConfig.find(c => c.race === w.raceName);
+        if(!conf) continue;
+        
+        // 1. حساب الضرر
+        const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
+        
+        // 2. حساب الصحة بناءً على اللفل
+        const lvlData = getLvl.get(guildID, w.userID);
+        const playerLevel = lvlData?.level || 1;
+        const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
+        
+        // 3. حساب مجموع المهارات
+        const skillData = getSkills.get(guildID, w.userID);
+        const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
+
+        // 4. معادلة القوة الشاملة (نفس الموجودة في top.js)
+        const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
+
+        stats.push({ userID: w.userID, powerScore });
+    }
+
+    // ترتيب اللاعبين حسب القوة تنازلياً
+    stats.sort((a, b) => b.powerScore - a.powerScore);
+    
+    // إيجاد ترتيب العضو المستهدف
+    const rank = stats.findIndex(s => s.userID === targetUserID) + 1;
+    return rank; 
+}
+
 async function buildGeneralProfile(client, member, targetUser) {
     const sql = client.sql;
     const getLevel = client.getLevel;
@@ -58,24 +98,26 @@ async function buildGeneralProfile(client, member, targetUser) {
     const mora = score ? (score.mora || 0) : 0;
     const bank = score ? (score.bank || 0) : 0;
     const totalMora = mora + bank;
+
+    // 1. ترتيب اللفل (XP)
     const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? ORDER BY totalXP DESC").all(member.guild.id);
     const rank = allScores.findIndex(s => s.user === targetUser.id) + 1;
     const rankStr = rank > 0 ? `${rank}` : "0";
+
+    // 2. ترتيب المورا
     const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? ORDER BY (mora + bank) DESC").all(member.guild.id);
     const moraRank = allMora.findIndex(s => s.user === targetUser.id) + 1;
     const moraRankStr = moraRank > 0 ? `${moraRank}` : "0";
+
+    // 3. ترتيب الستريك
     const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? ORDER BY streakCount DESC").all(member.guild.id);
     const streakRank = allStreaks.findIndex(s => s.userID === targetUser.id) + 1;
     const streakRankStr = streakRank > 0 ? `${streakRank}` : "0";
-    const allStrongest = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND weaponLevel > 0").all(member.guild.id)
-        .map(w => {
-            const config = weaponsConfig.find(c => c.race === w.raceName);
-            const damage = config ? config.base_damage + (config.damage_increment * (w.weaponLevel - 1)) : 0;
-            return { userID: w.userID, damage: damage };
-        })
-        .sort((a, b) => b.damage - a.damage);
-    const strongestRank = allStrongest.findIndex(s => s.userID === targetUser.id) + 1;
+
+    // 4. ترتيب القوة (Strongest) باستخدام الدالة المصححة
+    const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
     const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
+
     const buffMultiplier = calculateBuffMultiplier(member, sql);
     const totalBuffPercent = (buffMultiplier - 1) * 100;
     const buffString = `${totalBuffPercent.toFixed(0)}%`;
@@ -240,15 +282,10 @@ async function buildPvpProfile(client, member, targetUser) {
         return attachment;
     }
 
-    const allStrongest = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND weaponLevel > 0").all(member.guild.id)
-        .map(w => {
-            const config = weaponsConfig.find(c => c.race === w.raceName);
-            const damage = config ? config.base_damage + (config.damage_increment * (w.weaponLevel - 1)) : 0;
-            return { userID: w.userID, damage: damage };
-        })
-        .sort((a, b) => b.damage - a.damage);
-    const strongestRank = allStrongest.findIndex(s => s.userID === targetUser.id) + 1;
+    // 🔥 ترتيب القوة (Strongest) باستخدام الدالة المصححة 🔥
+    const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
     const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
+
     const maxHp = BASE_HP + (level * HP_PER_LEVEL);
     const arabicRaceName = RACE_TRANSLATIONS.get(userRace.raceName) || userRace.raceName;
 
