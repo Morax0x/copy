@@ -220,11 +220,13 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أحرق خصمه! (${dmg} ضرر + حرق)`;
         }
         case 'Cleanse_Buff_Shield': {
-            attacker.effects.poison = 0;
-            attacker.effects.burn = 0;
-            attacker.effects.weaken = 0;
-            attacker.effects.stun = false;
-            attacker.effects.confusion = false;
+            // تطهير السلبيات فقط
+            attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
+            attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
+            attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
+            attacker.effects.stun = false; attacker.effects.stun_turns = 0;
+            attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
+            attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
             
             const shieldVal = Math.floor(attacker.maxHp * 0.25);
             attacker.effects.shield += shieldVal;
@@ -342,10 +344,27 @@ function applySkillEffect(battleState, attackerId, skill) {
                     defender.effects.weaken_turns = 3;
                     return `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
                 case 'skill_dispel':
-                    defender.effects = { shield: 0, buff: 0, weaken: 0, poison: 0, rebound_active: 0, penetrate: 0, burn: 0, stun: false, confusion: false, evasion: 0, blind: 0 };
+                    // تبديد: تصفير كل التأثيرات الإيجابية والسلبية للخصم
+                    defender.effects = { 
+                        shield: 0, buff: 0, buff_turns: 0, 
+                        weaken: 0, weaken_turns: 0, 
+                        poison: 0, poison_turns: 0, 
+                        rebound_active: 0, rebound_turns: 0, 
+                        penetrate: 0, burn: 0, burn_turns: 0, 
+                        stun: false, stun_turns: 0, 
+                        confusion: false, confusion_turns: 0, 
+                        evasion: 0, evasion_turns: 0, 
+                        blind: 0, blind_turns: 0 
+                    };
                     return `💨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** بدد كل سحر الخصم!`;
                 case 'skill_cleanse':
-                    attacker.effects = { shield: attacker.effects.shield, buff: attacker.effects.buff, weaken: 0, poison: 0, rebound_active: attacker.effects.rebound_active, penetrate: 0, burn: 0, stun: false, confusion: false, evasion: 0, blind: 0 };
+                    // تطهير: إزالة السلبيات فقط
+                    attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
+                    attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
+                    attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
+                    attacker.effects.stun = false; attacker.effects.stun_turns = 0;
+                    attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
+                    attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
                     return `✨ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه من اللعنات!`;
                 default:
                     const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1);
@@ -363,6 +382,7 @@ function calculateDamage(attacker, defender, multiplier = 1) {
 
     let finalDmg = Math.floor(baseDmg * multiplier);
 
+    // التحقق من المراوغة (Flight/Evasion) - يمنع الضرر تماماً
     if (defender.effects.evasion > 0) {
         return 0;
     }
