@@ -127,7 +127,10 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
                 icon += '👑 '; 
             }
         }
-        else if (p.class === 'Former Leader') { arabClass = 'قائد سابق'; icon += '🥀 '; }
+        else if (p.class === 'Former Leader') { 
+            arabClass = 'قائد سابق'; 
+            icon += '🥀 '; 
+        }
         else if (p.class === 'Tank') { arabClass = 'مُدرّع'; icon += '🛡️ '; }
         else if (p.class === 'Priest') { arabClass = 'كاهن'; icon += '✨ '; }
         else if (p.class === 'Mage') { arabClass = 'ساحر'; icon += '🔮 '; }
