@@ -4,15 +4,15 @@ const sql = new SQLite('./mainDB.sqlite');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('موراا')
-        .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين.')
+        .setName('mora-admin') // تم تعديل الاسم ليكون بالإنجليزية لضمان عمله كـ Slash Command
+        .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين (حتى للمغادرين).')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
         // --- أمر الإضافة ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('اضافة')
                 .setDescription('إضافة مورا إلى رصيد مستخدم')
-                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم الذي تريد إضافة الرصيد له').setRequired(true))
+                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم (منشن أو آيدي)').setRequired(true))
                 .addIntegerOption(option => option.setName('المبلغ').setDescription('المبلغ الذي تريد إضافته').setRequired(true).setMinValue(1))
                 .addStringOption(option => 
                     option.setName('المكان')
@@ -28,7 +28,7 @@ module.exports = {
             subcommand
                 .setName('ازالة')
                 .setDescription('إزالة مورا من رصيد مستخدم')
-                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم الذي تريد إزالة الرصيد منه').setRequired(true))
+                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم (منشن أو آيدي)').setRequired(true))
                 .addIntegerOption(option => option.setName('المبلغ').setDescription('المبلغ الذي تريد إزالته').setRequired(true).setMinValue(1))
                 .addStringOption(option => 
                     option.setName('المكان')
@@ -44,7 +44,7 @@ module.exports = {
             subcommand
                 .setName('تحديد')
                 .setDescription('تحديد رصيد المورا لمستخدم')
-                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم الذي تريد تحديد رصيده').setRequired(true))
+                .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم (منشن أو آيدي)').setRequired(true))
                 .addIntegerOption(option => option.setName('المبلغ').setDescription('الرصيد الجديد').setRequired(true).setMinValue(0))
                 .addStringOption(option => 
                     option.setName('المكان')
@@ -64,7 +64,7 @@ module.exports = {
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, member, guild, client;
-        let method, targetMember, amount, place;
+        let method, targetUser, amount, place;
 
         if (isSlash) {
             interaction = interactionOrMessage;
@@ -73,7 +73,8 @@ module.exports = {
             client = interaction.client;
 
             method = interaction.options.getSubcommand();
-            targetMember = interaction.options.getMember('المستخدم');
+            // 🔥 التعديل الأساسي: استخدام getUser بدلاً من getMember لجلب بيانات المغادرين
+            targetUser = interaction.options.getUser('المستخدم'); 
             amount = interaction.options.getInteger('المبلغ');
             place = interaction.options.getString('المكان') || 'cash'; 
 
@@ -89,7 +90,17 @@ module.exports = {
             client = message.client;
 
             method = args[0] ? args[0].toLowerCase() : null;
-            targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[1]);
+            
+            // 🔥 التعديل للبريفكس: محاولة جلب المستخدم بالآيدي إذا لم يكن موجوداً كمنشن
+            targetUser = message.mentions.users.first();
+            if (!targetUser && args[1]) {
+                try {
+                    targetUser = await client.users.fetch(args[1]);
+                } catch (e) {
+                    targetUser = null;
+                }
+            }
+
             amount = parseInt(args[2]);
             place = 'cash'; 
         }
@@ -109,17 +120,19 @@ module.exports = {
             return replyError(`⛔️ يجب أن تكون لديك صلاحية **Administrator** لاستخدام هذا الأمر!`);
         }
 
-        if (!targetMember || isNaN(amount) || amount < 0 || !['add', 'remove', 'set'].includes(method)) {
-            return replyError("البيانات غير صحيحة.");
+        if (!targetUser || isNaN(amount) || amount < 0 || !['add', 'remove', 'set'].includes(method)) {
+            return replyError("البيانات غير صحيحة أو المستخدم غير موجود (تأكد من الآيدي).");
         }
 
         const getScore = client.getLevel;
         const setScore = client.setLevel;
 
-        let data = getScore.get(targetMember.id, guild.id);
+        // استخدام targetUser.id وهو يعمل سواء كان العضو في السيرفر أم غادره
+        let data = getScore.get(targetUser.id, guild.id);
 
         if (!data) {
-            data = { ...client.defaultData, user: targetMember.id, guild: guild.id };
+            // إذا لم يكن لديه داتا سابقة، ننشئ له داتا جديدة (حتى لو غادر)
+            data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
         }
 
         data.mora = data.mora || 0;
@@ -174,9 +187,10 @@ module.exports = {
             .setTitle(`✥ تـم تحديـث الرصيـد`)
             .setThumbnail('https://i.postimg.cc/NfH9T3CN/5953886680689347550-120.jpg') 
             .setDescription(`
-✶ الاسـم: <@${targetMember.id}>
+✶ الاسـم: <@${targetUser.id}>
 ✶ ${statusText} **${amount.toLocaleString()}** <:mora:1435647151349698621>
 ✶ الرصيـد الجديـد: **${totalBalance.toLocaleString()}** <:mora:1435647151349698621>`)
+            .setFooter({ text: `UserID: ${targetUser.id}` }) // إضافة الآيدي للتوضيح
             .setTimestamp();
 
         await reply({ embeds: [embed] });
