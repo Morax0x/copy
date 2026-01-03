@@ -704,7 +704,37 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
         players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
+    } // <--- هذا قوس إغلاق الـ for loop
+
+    // 🔥🔥🔥 الإضافة هنا: التحقق من الفوز بالدانجون كاملاً 🔥🔥🔥
+    
+    // إذا وصلوا هنا، فهذا يعني أنهم لم يموتوا جميعاً (الشرط في بداية اللوب)
+    // وأن اللوب انتهت (وصلوا للطابق 100 وخلصوه)
+    
+    const alivePlayers = players.filter(p => !p.isDead);
+    if (alivePlayers.length > 0) {
+        const winEmbed = new EmbedBuilder()
+            .setTitle('🏆👑 النـصـر المـبـيـن! 👑🏆')
+            .setDescription(`**لقد فعلتم المستحيل!**\nتمت هزيمة **الامبراطور موراكس** وسقطت الامبراطورية تحت أقدامكم!\n\n💎 **الجوائز الكبرى:**\n- لقب "قاهر موراكس"\n- 1,000,000 مورا\n- سلاح أسطوري عشوائي`)
+            .setColor(Colors.Gold)
+            .setImage('https://i.postimg.cc/Hx8d7XpD/morax.jpg') // صورة النصر
+            .setTimestamp();
+
+        await threadChannel.send({ content: `@everyone`, embeds: [winEmbed] });
+
+        // توزيع الجوائز الختامية
+        alivePlayers.forEach(p => {
+            if (sql.open) {
+                // إضافة مورا ضخمة
+                sql.prepare("UPDATE levels SET mora = mora + 1000000, xp = xp + 50000 WHERE user = ? AND guild = ?").run(p.id, guild.id);
+                // هنا يمكنك إضافة كود لمنح رتبة أو سلاح خاص
+            }
+        });
+        
+        // إرسال رسالة النهاية الرسمية
+        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
     }
-}
+
+} // <--- نهاية دالة runDungeon
 
 module.exports = { runDungeon };
