@@ -50,8 +50,10 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function calculateStrongestRank(sql, guildID, targetUserID) {
-    if (targetUserID === OWNER_ID) return 0; // الأونر رتبته 0
+    // إذا كان الهدف هو الأونر، نرجع 0 مباشرة
+    if (targetUserID === OWNER_ID) return 0;
 
+    // استثناء الأونر من قائمة الأسلحة
     const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, OWNER_ID);
     
     const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
@@ -66,14 +68,18 @@ function calculateStrongestRank(sql, guildID, targetUserID) {
         const lvlData = getLvl.get(guildID, w.userID);
         const playerLevel = lvlData?.level || 1;
         const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
+        
         const skillData = getSkills.get(guildID, w.userID);
         const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
+
         const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
 
         stats.push({ userID: w.userID, powerScore });
     }
 
     stats.sort((a, b) => b.powerScore - a.powerScore);
+    
+    // البحث عن الترتيب في القائمة المفلترة
     const rank = stats.findIndex(s => s.userID === targetUserID) + 1;
     return rank; 
 }
@@ -89,7 +95,7 @@ async function buildGeneralProfile(client, member, targetUser) {
     const bank = score ? (score.bank || 0) : 0;
     const totalMora = mora + bank;
 
-    // المنطق الجديد للرتب مع استثناء الأونر
+    // --- حساب الرتب مع استثناء الأونر ---
     let rankStr, moraRankStr, streakRankStr, strongestRankStr;
 
     if (targetUser.id === OWNER_ID) {
@@ -98,25 +104,26 @@ async function buildGeneralProfile(client, member, targetUser) {
         streakRankStr = "0";
         strongestRankStr = "0";
     } else {
-        // 1. رتبة XP
+        // 1. ترتيب اللفل (XP) - استثناء الأونر
         const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(member.guild.id, OWNER_ID);
         const rank = allScores.findIndex(s => s.user === targetUser.id) + 1;
-        rankStr = rank > 0 ? `${rank}` : "؟";
+        rankStr = rank > 0 ? `${rank}` : "0";
 
-        // 2. رتبة المورا
+        // 2. ترتيب المورا - استثناء الأونر
         const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(member.guild.id, OWNER_ID);
         const moraRank = allMora.findIndex(s => s.user === targetUser.id) + 1;
-        moraRankStr = moraRank > 0 ? `${moraRank}` : "؟";
+        moraRankStr = moraRank > 0 ? `${moraRank}` : "0";
 
-        // 3. رتبة الستريك
+        // 3. ترتيب الستريك - استثناء الأونر
         const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(member.guild.id, OWNER_ID);
         const streakRank = allStreaks.findIndex(s => s.userID === targetUser.id) + 1;
-        streakRankStr = streakRank > 0 ? `${streakRank}` : "؟";
+        streakRankStr = streakRank > 0 ? `${streakRank}` : "0";
 
-        // 4. رتبة القوة
+        // 4. ترتيب القوة - الدالة المعدلة تقوم بالاستثناء داخلياً
         const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
-        strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "؟";
+        strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
     }
+    // ------------------------------------------
 
     const buffMultiplier = calculateBuffMultiplier(member, sql);
     const totalBuffPercent = (buffMultiplier - 1) * 100;
@@ -157,8 +164,10 @@ async function buildGeneralProfile(client, member, targetUser) {
     ctx.restore();
 
     const requiredXP = 5 * (level ** 2) + (50 * level) + 100;
-    let percentage = Math.max(0, Math.min(1, currentXP_Progress / requiredXP));
-    
+    let percentage = 0;
+    if (requiredXP > 0) {
+        percentage = Math.max(0, Math.min(1, currentXP_Progress / requiredXP));
+    }
     const barWidth = 250;
     const barHeight = 20;
     const barX = (canvas.width - barWidth) / 2;
@@ -193,18 +202,21 @@ async function buildGeneralProfile(client, member, targetUser) {
     ctx.font = `20px "${FONT_MAIN}"`; 
     ctx.textAlign = 'right';
 
+    let moraX = 310;
+    let streakX = 305; 
+    let bottomX = 275;
     let rightY = 215;
     const rightLineHeight = 28;
 
-    ctx.fillText(totalMora.toLocaleString(), 310, rightY);
+    ctx.fillText(totalMora.toLocaleString(), moraX, rightY);
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, streakCount.toLocaleString(), 305, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f525.png');
+    await drawTextWithIcon(ctx, streakCount.toLocaleString(), streakX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f525.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, moraBuffString, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png');
+    await drawTextWithIcon(ctx, moraBuffString, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, buffString, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/26a1.png');
+    await drawTextWithIcon(ctx, buffString, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/26a1.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, shieldText, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6e1.png');
+    await drawTextWithIcon(ctx, shieldText, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6e1.png');
 
     ctx.textAlign = 'right';
     let leftX = 50;
@@ -269,11 +281,13 @@ async function buildPvpProfile(client, member, targetUser) {
 
     if (!userRace || !weaponData) {
         ctx.shadowBlur = 0;
-        return new AttachmentBuilder(canvas.toBuffer(), { name: 'profile-pvp.png' });
+        const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'profile-pvp.png' });
+        return attachment;
     }
 
+    // 🔥 ترتيب القوة (Strongest) باستخدام الدالة المصححة 🔥
     const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
-    const strongestRankStr = targetUser.id === OWNER_ID ? "0" : (strongestRank > 0 ? `${strongestRank}` : "؟");
+    const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0"; // الأونر سيحصل على 0 من الدالة
 
     const maxHp = BASE_HP + (level * HP_PER_LEVEL);
     const arabicRaceName = RACE_TRANSLATIONS.get(userRace.raceName) || userRace.raceName;
@@ -360,8 +374,11 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) return interaction.editReply(payload);
-            else return message.channel.send(payload);
+            if (isSlash) {
+                return interaction.editReply(payload);
+            } else {
+                return message.channel.send(payload);
+            }
         };
 
         try {
@@ -394,16 +411,18 @@ module.exports = {
 
             collector.on('collect', async (i) => {
                 await i.deferUpdate();
+
                 let newPayload = {};
                 if (i.customId === 'profile_general') {
                     currentProfile = 'general';
                     const generalCard = await buildGeneralProfile(client, targetMember, targetUser);
-                    newPayload = { files: [generalCard] };
+                    newPayload = { files: [generalCard], embeds: [] };
                 } else {
                     currentProfile = 'pvp';
                     const pvpCard = await buildPvpProfile(client, targetMember, targetUser);
-                    newPayload = { files: [pvpCard] };
+                    newPayload = { files: [pvpCard], embeds: [] };
                 }
+
                 const newRow = createButtons(currentProfile);
                 await profileMessage.edit({ ...newPayload, components: [newRow] });
             });
