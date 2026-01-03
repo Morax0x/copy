@@ -68,7 +68,10 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS boss_leaderboard (guildID TEXT, userID TEXT, totalDamage INTEGER DEFAULT 0, PRIMARY KEY(guildID, userID))",
         "CREATE TABLE IF NOT EXISTS role_coupons_config (guildID TEXT, roleID TEXT, discountPercent INTEGER, PRIMARY KEY (guildID, roleID))",
         "CREATE TABLE IF NOT EXISTS user_role_coupon_usage (guildID TEXT, userID TEXT, lastUsedTimestamp INTEGER, PRIMARY KEY (guildID, userID))",
-        "CREATE TABLE IF NOT EXISTS mod_cases (id TEXT PRIMARY KEY, guildID TEXT, caseID INTEGER, type TEXT, targetID TEXT, moderatorID TEXT, reason TEXT, timestamp INTEGER)"
+        "CREATE TABLE IF NOT EXISTS mod_cases (id TEXT PRIMARY KEY, guildID TEXT, caseID INTEGER, type TEXT, targetID TEXT, moderatorID TEXT, reason TEXT, timestamp INTEGER)",
+        
+        // 🔥🔥🔥 الجدول الجديد لحفظ حالة الدانجون 🔥🔥🔥
+        "CREATE TABLE IF NOT EXISTS active_dungeons (channelID TEXT PRIMARY KEY, guildID TEXT, hostID TEXT, data TEXT)"
     ];
 
     sql.transaction((tbls) => {
@@ -96,7 +99,7 @@ function setupDatabase(clientOrSql) {
         ensureColumn('user_daily_stats', col, 'INTEGER DEFAULT 0');
     });
     ensureColumn('user_weekly_stats', 'emojis_sent', 'INTEGER DEFAULT 0');
-    
+     
     ensureColumn('user_total_stats', 'total_vc_minutes', 'INTEGER DEFAULT 0');
     ensureColumn('user_total_stats', 'total_disboard_bumps', 'INTEGER DEFAULT 0');
     ensureColumn('user_total_stats', 'total_emojis_sent', 'INTEGER DEFAULT 0');
@@ -108,7 +111,7 @@ function setupDatabase(clientOrSql) {
     ensureColumn('streaks', 'dmNotify', 'INTEGER DEFAULT 1');
     ensureColumn('streaks', 'highestStreak', 'INTEGER DEFAULT 0');
     ensureColumn('streaks', 'has12hWarning', 'INTEGER DEFAULT 0');
-    
+     
     try { sql.prepare("ALTER TABLE settings ADD COLUMN prefix TEXT DEFAULT '-'").run(); } catch (e) {} 
     try { sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
@@ -127,7 +130,7 @@ function setupDatabase(clientOrSql) {
     try { sql.prepare("ALTER TABLE levels ADD COLUMN last_join_reset INTEGER DEFAULT 0").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) {}
     try { sql.prepare("ALTER TABLE settings ADD COLUMN levelChannel TEXT").run(); } catch (e) {}
-    
+     
     try { sql.prepare("ALTER TABLE settings ADD COLUMN modLogChannelID TEXT").run(); } catch (e) {}
 
     // 🔥🔥🔥🔥 الإضافة الأهم هنا 🔥🔥🔥🔥
@@ -137,7 +140,7 @@ function setupDatabase(clientOrSql) {
 
     const settingsCols = ["questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", "dropColor", "dropFooter", "dropButtonLabel", "dropButtonEmoji", "dropMessageContent", "lastMediaUpdateSent", "lastMediaUpdateMessageID", "lastMediaUpdateChannelID", "shopChannelID", "bumpChannelID", "customRoleAnchorID", "customRolePanelTitle", "customRolePanelDescription", "customRolePanelImage", "customRolePanelColor", "lastQuestPanelChannelID", "streakTimerChannelID", "dailyTimerChannelID", "weeklyTimerChannelID", "img_level", "img_mora", "img_streak", "img_media_streak", "img_strongest", "img_weekly_xp", "img_daily_xp", "img_achievements", "voiceChannelID", "savedStatusType", "savedStatusText", "marketStatus", "boostChannelID", "shopLogChannelID", "serverTag", "levelChannel", "modLogChannelID"];
     settingsCols.forEach(col => ensureColumn('settings', col, 'TEXT'));
-    
+     
     ensureColumn('quest_notifications', 'levelNotif', 'INTEGER DEFAULT 1');
     ensureColumn('active_giveaways', 'xpReward', 'INTEGER DEFAULT 0');
     ensureColumn('active_giveaways', 'moraReward', 'INTEGER DEFAULT 0');
@@ -146,7 +149,7 @@ function setupDatabase(clientOrSql) {
 
     // ( 🌟 Market Items Sync (Default ONLY) 🌟 )
     const insertItem = sql.prepare("INSERT OR IGNORE INTO market_items (id, name, description, currentPrice) VALUES (@id, @name, @description, @price)");
-    
+     
     sql.transaction(() => {
         defaultMarketItems.forEach((item) => insertItem.run(item));
     })();
