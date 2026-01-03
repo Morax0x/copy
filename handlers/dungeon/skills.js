@@ -11,6 +11,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     if (player.effects) {
         player.effects.forEach(e => { if (e.type === 'atk_buff') atkMultiplier += e.val; });
     }
+    // حساب الهجوم الفعلي بعد تطبيق المضاعفات (بدون تأثير الأونر هنا لأنه يطبق لاحقاً)
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
     // ====================================================
@@ -87,11 +88,20 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     } else if (skill.id.startsWith('class_')) {
         let rawType = skill.id.split('_')[1]; 
         classType = rawType.charAt(0).toUpperCase() + rawType.slice(1);
+    } else if (skill.id === 'hybrid_heal' && player.isHybridPriest) { // مهارة الهجين
+        classType = 'Priest';
     }
 
     if (classType) {
-         if (player.special_cooldown > 0 && player.id !== OWNER_ID) {
+         // التحقق من الكولداون للمهارة الخاصة (باستثناء الأونر)
+         // ملاحظة: مهارة الهجين تعامل معاملة مهارة خاصة منفصلة أو يمكن دمجها حسب الرغبة
+         // هنا نفترض أنها تستخدم نفس الـ special_cooldown للكاهن الأصلي
+         if (player.special_cooldown > 0 && player.id !== OWNER_ID && skill.id !== 'hybrid_heal') {
              return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
+         }
+         // مهارة الهجين يمكن أن يكون لها كولداون خاص أو نفس الكولداون، سنفترض أنها تستخدم نفس الكولداون للتبسيط
+         if (skill.id === 'hybrid_heal' && player.skillCooldowns['hybrid_heal'] > 0 && player.id !== OWNER_ID) {
+             return { error: `⏳ مهارة الإرث في وقت انتظار (${player.skillCooldowns['hybrid_heal']} جولات)!` };
          }
 
          let skillName = "مهارة خاصة";
@@ -128,17 +138,31 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                         t.isDead = false; 
                         t.hp = Math.floor(t.maxHp * 0.2);
                         t.reviveCount = (t.reviveCount || 0) + 1;
+                        
+                        // 🔥🔥 إعادة الكلاس الأصلي للقائد السابق عند الإحياء (إذا وجد قائد حالي) 🔥🔥
+                        // هذا المنطق تم إضافته في skill.js كما طلبت سابقاً لضمان عدم التكرار
+                        if (t.class === 'Former Leader') {
+                             const currentLeader = players.find(p => p.class === 'Leader' && !p.isDead);
+                             if (currentLeader) {
+                                 t.class = t.originalClass || 'Adventurer';
+                                 log.push(`♻️ **${t.name}** عاد للحياة واستعاد دوره كـ ${t.class}!`);
+                             }
+                        }
+
                         applyDamageToPlayer(player, Math.floor(player.maxHp * 0.1)); 
                         log.push(`✨ **${player.name}** أحيا **${t.name}**!`);
                         if(threadChannel) threadChannel.send(`✨ **${player.name}** قام بإحياء **${t.name}** <@${t.id}>!`).catch(()=>{});
-                        player.special_cooldown = 7;
+                        
+                        if (skill.id === 'hybrid_heal') player.skillCooldowns['hybrid_heal'] = 7;
+                        else player.special_cooldown = 7;
                     }
                 } else {
                     players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
                     log.push(`✨ **${player.name}** عالج الفريق!`);
-                    player.special_cooldown = 6;
+                    if (skill.id === 'hybrid_heal') player.skillCooldowns['hybrid_heal'] = 6;
+                    else player.special_cooldown = 6;
                 }
-                skillName = "النور المقدس";
+                skillName = (skill.id === 'hybrid_heal') ? "النور المقدس (إرث)" : "النور المقدس";
                 break;
 
              case 'Mage': 
