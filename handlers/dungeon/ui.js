@@ -7,10 +7,10 @@ function buildSkillSelector(player) {
 
     // --- تعديل: إزالة القائمة الخاصة بالأونر من هنا ---
     // لأن الأونر أصبح يستخدم زر "الدفاع" لفتح لوحة التحكم الشاملة.
-    
+     
     const cd = player.special_cooldown;
     const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
-    
+     
     let myClassSkill = null;
     // تعريب أسماء الكلاسات والمهارات
     if (player.class === 'Leader') myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30%.", emoji: "👑" };
@@ -44,11 +44,11 @@ function buildSkillSelector(player) {
         (s.currentLevel > 0 || s.id.startsWith('race_')) && 
         s.stat_type !== 'Owner' // إخفاء مهارات الأونر من القائمة العادية
     );
-    
+     
     availableSkills.forEach(skill => {
         const cooldown = (player.id === OWNER_ID) ? 0 : (player.skillCooldowns[skill.id] || 0);
         const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
-        
+         
         options.push(new StringSelectMenuOptionBuilder()
             .setLabel(skill.name)
             .setValue(skill.id)
@@ -57,7 +57,7 @@ function buildSkillSelector(player) {
     });
 
     if (options.length === 0) return null;
-    
+     
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
@@ -69,7 +69,7 @@ function buildSkillSelector(player) {
 function buildPotionSelector(player, sql, guildID) {
     ensureInventoryTable(sql); 
     const userItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(player.id, guildID);
-    
+     
     const potions = userItems.map(ui => {
         const itemDef = potionItems.find(si => si.id === ui.itemID);
         if (itemDef) return { ...itemDef, quantity: ui.quantity };
@@ -116,7 +116,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     let teamStatus = players.map(p => {
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
-        
+         
         // 🔥🔥 التعديل الجديد: دعم القائد السابق والقائد الكاهن 🔥🔥
         if (p.class === 'Leader') { 
             if (p.isHybridPriest) {
@@ -132,9 +132,20 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         else if (p.class === 'Priest') { arabClass = 'كاهن'; icon += '✨ '; }
         else if (p.class === 'Mage') { arabClass = 'ساحر'; icon += '🔮 '; }
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
-        else if (p.id === OWNER_ID) { arabClass = 'الإمبراطور'; icon += '👁️ '; } 
+        
+        // --- 🔥 تعديل عرض الأونر 🔥 ---
+        let hpDisplay;
+        if (p.id === OWNER_ID) {
+            arabClass = 'الإمبراطور';
+            icon += '👁️ ';
+            // إخفاء الصحة للأونر
+            hpDisplay = `[▓▓▓▓▓▓▓▓▓▓] ???/???`; 
+        } else {
+            // العرض الطبيعي لبقية اللاعبين
+            hpDisplay = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
+        }
+        // --------------------------------
 
-        const hpBar = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
         let displayName;
         let statusCircle;
 
@@ -149,7 +160,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
             displayName = `<@${p.id}> [${arabClass}]`; 
         }
 
-        return `${statusCircle} ${icon} ${displayName}\n${hpBar}`;
+        return `${statusCircle} ${icon} ${displayName}\n${hpDisplay}`;
     }).join('\n\n');
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
@@ -158,8 +169,8 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     // 🛠️ عرض آخر 8 أسطر فقط (سجل متحرك)
     // ============================================================
     const logText = log.slice(-8).join('\n') || "بانتظار بدء الاشتباك...";
-    
-    embed.addFields({ name: "📜 آخر الأحداث:", value: logText, inline: false });
+     
+    embed.addFields({ name: "📜 احـداث المعـركـة:", value: logText, inline: false });
 
     return embed;
 }
