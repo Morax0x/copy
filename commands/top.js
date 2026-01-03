@@ -1,17 +1,19 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
 const path = require('path');
 
-// --- ( 🌟 الحل الجذري للمسارات: استخدام المسار الرئيسي للبوت 🌟 ) ---
+// --- ( 🌟 الحل الجذري للمسارات واستدعاء الثوابت 🌟 ) ---
 const rootDir = process.cwd(); 
 
 const weaponsConfigPath = path.join(rootDir, 'json', 'weapons-config.json');
 const pvpCorePath = path.join(rootDir, 'handlers', 'pvp-core.js');
+const constantsPath = path.join(rootDir, 'handlers', 'dungeon', 'constants.js');
 
 let weaponsConfig = [];
 try {
     weaponsConfig = require(weaponsConfigPath); 
 } catch (e) { console.error("Error loading weapons config for top:", e); }
 
+const { OWNER_ID } = require(constantsPath); // استدعاء آيدي الأونر
 const { getUserRace, getWeaponData, BASE_HP, HP_PER_LEVEL } = require(pvpCorePath); 
 // -------------------------------------------------------------------
 
@@ -92,20 +94,21 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
     let totalPages = 0;
 
     try {
+        // 🔥 تم إضافة شرط استثناء الأونر (user != OWNER_ID) في كل الاستعلامات 🔥
         if (type === 'level') {
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن بالمسـتويات`);
-            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? ORDER BY totalXP DESC").all(guild.id);
+            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guild.id, OWNER_ID);
             
         } else if (type === 'weekly_xp') {
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن في الاسبـوع`);
             const weekStart = getWeekStartDateString();
-            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildID = ? AND weekStartDate = ? AND score > 0 ORDER BY score DESC`).all(guild.id, weekStart);
+            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildID = ? AND userID != ? AND weekStartDate = ? AND score > 0 ORDER BY score DESC`).all(guild.id, OWNER_ID, weekStart);
             embed.setFooter({ text: `باقي: ${getTimeRemaining('weekly')} لتـحديـث الترتيـب` });
 
         } else if (type === 'daily_xp') {
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن اليـوم`);
             const today = getTodayDateString();
-            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildID = ? AND date = ? AND score > 0 ORDER BY score DESC`).all(guild.id, today);
+            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildID = ? AND userID != ? AND date = ? AND score > 0 ORDER BY score DESC`).all(guild.id, OWNER_ID, today);
             embed.setFooter({ text: `باقي: ${getTimeRemaining('daily')} لتـحديـث الترتيـب` });
 
         } else if (type === 'monthly_xp') {
@@ -114,38 +117,36 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
             allUsers = sql.prepare(`
                 SELECT userID, SUM(messages) as total_messages, SUM(vc_minutes) as total_vc, SUM(messages * 15 + vc_minutes * 10) as score 
                 FROM user_daily_stats 
-                WHERE guildID = ? AND date >= ? 
+                WHERE guildID = ? AND userID != ? AND date >= ? 
                 GROUP BY userID 
                 HAVING score > 0 
                 ORDER BY score DESC
-            `).all(guild.id, monthStart);
+            `).all(guild.id, OWNER_ID, monthStart);
             embed.setFooter({ text: `باقي: ${getTimeRemaining('monthly')} لتـحديـث الترتيـب` });
 
         } else if (type === 'mora') {
             embed.setTitle(`<:mora:1435647151349698621> اثـريـاء الـسيرفـر`);
-            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? ORDER BY (mora + bank) DESC").all(guild.id);
-            const totalMora = sql.prepare("SELECT SUM(mora + bank) as t FROM levels WHERE guild = ?").get(guild.id).t || 0;
+            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(guild.id, OWNER_ID);
+            const totalMora = sql.prepare("SELECT SUM(mora + bank) as t FROM levels WHERE guild = ? AND user != ?").get(guild.id, OWNER_ID).t || 0;
             embed.setFooter({ text: `اجمالي المورا: ${totalMora.toLocaleString()}` });
 
         } else if (type === 'streak') {
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن بالـستـريـك`);
-            allUsers = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id);
+            allUsers = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID != ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id, OWNER_ID);
             
         } else if (type === 'media_streak') {
             embed.setTitle(`✥ اعـلـى الـمصـنـفـيـن بستـريـك المـيـديـا`);
-            allUsers = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id);
+            allUsers = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID != ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id, OWNER_ID);
 
         } else if (type === 'achievements') {
             embed.setTitle(`🏆 اعـلـى الـمصـنـفـيـن بالإنجازات`);
-            allUsers = sql.prepare("SELECT userID, COUNT(*) as count FROM user_achievements WHERE guildID = ? GROUP BY userID ORDER BY count DESC").all(guild.id);
+            allUsers = sql.prepare("SELECT userID, COUNT(*) as count FROM user_achievements WHERE guildID = ? AND userID != ? GROUP BY userID ORDER BY count DESC").all(guild.id, OWNER_ID);
 
         } else if (type === 'strongest') {
-            // 🔥 تم حذف Power Rating من العنوان 🔥
             embed.setTitle(`✥ لوحـة صـدارة الاقـوى`);
-            const weapons = sql.prepare("SELECT * FROM user_weapons WHERE guildID = ?").all(guild.id);
+            const weapons = sql.prepare("SELECT * FROM user_weapons WHERE guildID = ? AND userID != ?").all(guild.id, OWNER_ID);
             let stats = [];
             const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
-            // جلب مجموع مستويات المهارات بدلاً من عددها فقط
             const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
             
             for (const w of weapons) {
@@ -157,11 +158,9 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 const playerLevel = lvlData?.level || 1;
                 const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
                 
-                // حساب مجموع لفلات المهارات
                 const skillData = getSkills.get(guild.id, w.userID);
                 const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
 
-                // معادلة القوة الشاملة
                 const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
 
                 stats.push({ 
@@ -173,14 +172,19 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                     powerScore 
                 });
             }
-            // الترتيب حسب الـ Power Score
             allUsers = stats.sort((a, b) => b.powerScore - a.powerScore);
         }
 
+        // حساب رقم الصفحة بناءً على المستخدم المستهدف (مع تجاهل الأونر)
         if (targetUserId) {
-            const index = allUsers.findIndex(u => (u.user || u.userID) === targetUserId);
-            if (index !== -1) {
-                page = Math.ceil((index + 1) / ROWS_PER_PAGE);
+            if (targetUserId === OWNER_ID) {
+                // إذا كان الأونر يبحث عن نفسه، سنعيده للصفحة الأولى افتراضياً لأنه غير موجود بالقائمة
+                page = 1;
+            } else {
+                const index = allUsers.findIndex(u => (u.user || u.userID) === targetUserId);
+                if (index !== -1) {
+                    page = Math.ceil((index + 1) / ROWS_PER_PAGE);
+                }
             }
         }
 
@@ -218,8 +222,6 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 else if (type === 'mora') line += `> ${styleStart}Mora: \`${((user.mora||0) + (user.bank||0)).toLocaleString()}\` ${EMOJI_MORA}${styleEnd}`;
                 else if (type === 'streak' || type === 'media_streak') line += `> ${styleStart}Streak: \`${user.streakCount}\` ${type === 'media_streak' ? EMOJI_MEDIA_STREAK : '🔥'}${styleEnd}`;
                 else if (type === 'achievements') line += `> ${styleStart}Count: \`${user.count}\` 🏆${styleEnd}`;
-                
-                // 🔥 تنسيق عرض الأقوى الجديد بدون LVL في النهاية 🔥
                 else if (type === 'strongest') {
                     line += `> ${styleStart}🔥 **POWER:** \`${user.powerScore.toLocaleString()}\`\n`;
                     line += `> ⚔️ DMG: \`${user.damage}\` | ❤️ HP: \`${user.hp}\` | ⚡ SKILLS: \`${user.skillLevels}\`${styleEnd}`;
@@ -296,7 +298,6 @@ module.exports = {
             user = message.author;
             channelId = message.channel.id;
             
-            // ( 🌟 الكشف التلقائي عن الكازينو 🌟 )
             const settings = client.sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guild.id);
             if (settings && settings.casinoChannelID === channelId) {
                 argType = 'mora'; 
@@ -358,7 +359,7 @@ module.exports = {
                 const clicked = i.customId.replace('top_', '');
                 if (clicked === 'level') {
                     if (argType === 'level') argType = 'weekly_xp';
-                    else if (argType === 'weekly_xp') argType = 'monthly_xp'; // (إضافة الشهري للتدوير)
+                    else if (argType === 'weekly_xp') argType = 'monthly_xp';
                     else if (argType === 'monthly_xp') argType = 'daily_xp';
                     else argType = 'level';
                 } else if (clicked === 'streak') {
