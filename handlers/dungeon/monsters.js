@@ -339,16 +339,46 @@ const MONSTER_SKILLS = {
     "حارس الجحيم الأزلي": { name: "نفس اللهب", emoji: "🔥", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) pl.effects.push({type:'burn',val:Math.floor(m.atk*0.2),turns:3})}); l.push(`🔥 **الحارس** نفث نيران الجحيم!`); } }
 };
 
-function getRandomMonster(type, theme) {
-    let pool = [];
-    if (type === 'boss') pool = dungeonConfig.monsters.bosses;
-    else if (type === 'guardian') pool = dungeonConfig.monsters.guardians;
-    else if (type === 'elite') pool = dungeonConfig.monsters.elites;
-    else pool = dungeonConfig.monsters.minions;
-      
-    if (!pool || pool.length === 0) pool = dungeonConfig.monsters.minions;
+function getRandomMonster(type, theme, currentFloor = 1) {
+    // 1. تحديد القائمة
+    let listKey = type;
+    if (type === 'minion') listKey = 'minions';
+    else if (type === 'elite') listKey = 'elites';
+    else if (type === 'boss') listKey = 'bosses';
+    else if (type === 'guardian') listKey = 'guardians';
 
-    const name = pool[Math.floor(Math.random() * pool.length)];
+    const list = dungeonConfig.monsters[listKey];
+    if (!list || list.length === 0) return { name: "وحش مجهول", hp: 100, atk: 10 };
+
+    // 2. حساب نسبة التقدم (0 - 1)
+    const maxFloors = 100;
+    const progress = Math.min(Math.max(currentFloor, 1), maxFloors) / maxFloors;
+
+    // 3. تحديد مؤشر الهدف (Index)
+    const targetIndex = Math.floor(progress * (list.length - 1));
+
+    // 4. إضافة تباين (Random Variance) بسيط حول الهدف
+    let variance = 2; // يمكن أن نختار وحشين قبل أو بعد الهدف
+    let minIndex = Math.max(0, targetIndex - variance);
+    let maxIndex = Math.min(list.length - 1, targetIndex + variance);
+
+    // للطوابق الأولى جداً، نضمن البداية من الصفر
+    if (currentFloor <= 5) {
+        minIndex = 0;
+        maxIndex = Math.min(3, list.length - 1);
+    }
+    
+    // للطوابق الأخيرة، نضمن الوصول للنهاية
+    if (currentFloor >= 95) {
+        minIndex = Math.max(0, list.length - 5);
+        maxIndex = list.length - 1;
+    }
+
+    // اختيار عشوائي ضمن النطاق المحسوب
+    const finalIndex = Math.floor(Math.random() * (maxIndex - minIndex + 1)) + minIndex;
+    const safeIndex = Math.min(Math.max(0, finalIndex), list.length - 1);
+
+    const name = list[safeIndex];
     return { name, emoji: theme.emoji };
 }
 
