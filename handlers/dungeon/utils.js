@@ -1,4 +1,4 @@
-const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig } = require('./constants');
+const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig, OWNER_ID } = require('./constants');
 
 function ensureInventoryTable(sql) {
     if (!sql.open) return;
@@ -25,6 +25,29 @@ function getBaseFloorMora(floor) {
 }
 
 function applyDamageToPlayer(player, damageAmount) {
+    // 1. إذا كان اللاعب ميتاً أصلاً، لا داعي لحساب الضرر
+    if (player.isDead) return 0;
+
+    // 🔥🔥🔥 2. منطق مناعة الأونر (Immunity) 🔥🔥🔥
+    if (player.id === OWNER_ID) {
+        // ننقص الصحة شكلياً ليرى الأونر الضرر، لكن نمنع الموت
+        let actualDamage = damageAmount;
+        
+        // التحقق من المراوغة (Evasion) للأونر أيضاً
+        if (player.effects.some(e => e.type === 'evasion')) return 0;
+
+        player.hp -= actualDamage;
+        
+        // إذا وصلت الصحة للصفر أو أقل، نثبتها على 1 ولا يموت
+        if (player.hp <= 0) {
+            player.hp = 1;
+        }
+        
+        player.isDead = false; // مستحيل يموت
+        return actualDamage; // نرجع قيمة الضرر للعرض في السجل
+    }
+    // ----------------------------------------------------
+
     let remainingDamage = damageAmount;
      
     // Check for Evasion
@@ -44,6 +67,7 @@ function applyDamageToPlayer(player, damageAmount) {
         remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
     }
 
+    // Shield Logic
     if (player.shield > 0) {
         if (remainingDamage <= player.shield) {
             player.shield -= remainingDamage;
@@ -53,8 +77,16 @@ function applyDamageToPlayer(player, damageAmount) {
             player.shield = 0;
         }
     }
+
+    // Apply Final Damage to HP
     player.hp -= remainingDamage;
-    if (player.hp < 0) player.hp = 0;
+    
+    // Check Death
+    if (player.hp <= 0) {
+        player.hp = 0;
+        player.isDead = true;
+    }
+    
     return remainingDamage; 
 }
 
@@ -70,7 +102,11 @@ function buildHpBar(currentHp, maxHp, shield = 0) {
     const percentage = (currentHp / maxHp) * 10;
     const filled = '█';
     const empty = '░';
+    
+    // البار يعرض الشكل + الأرقام (500/1000)
+    // إذا كنت ترى الرقم مكرر في الديسكورد، فذلك لأن ملف ui.js يضيف الرقم مرة أخرى بجانب هذا البار
     let bar = `[${filled.repeat(Math.max(0, Math.floor(percentage))) + empty.repeat(Math.max(0, 10 - Math.floor(percentage)))}] ${currentHp}/${maxHp}`;
+    
     if (shield > 0) bar += ` 🛡️(${shield})`;
     return bar;
 }
