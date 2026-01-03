@@ -220,7 +220,7 @@ async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalP
 async function processFinalPurchase(interaction, itemData, quantity, finalPrice, discountUsed, couponType, client, sql, callbackType, couponIdToDelete = null) {
     let userData = client.getLevel.get(interaction.user.id, interaction.guild.id);
     if (!userData) userData = { ...client.defaultData, user: interaction.user.id, guild: interaction.guild.id };
-    
+     
     const safeReply = async (payload) => {
         payload.flags = MessageFlags.Ephemeral; 
         if (interaction.deferred || interaction.replied) return await interaction.followUp(payload); else return await interaction.reply(payload);
@@ -236,7 +236,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     // خصم المبلغ وتحديث المشتريات
     userData.mora -= finalPrice; 
     userData.shop_purchases = (userData.shop_purchases || 0) + 1;
-    
+     
     if (couponType === 'boss' && couponIdToDelete) sql.prepare("DELETE FROM user_coupons WHERE id = ?").run(couponIdToDelete);
     else if (couponType === 'role') sql.prepare("INSERT OR REPLACE INTO user_role_coupon_usage (guildID, userID, lastUsedTimestamp) VALUES (?, ?, ?)").run(interaction.guild.id, interaction.user.id, Date.now());
 
@@ -283,11 +283,22 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         }
         else if (itemData.id === 'change_race') {
             try {
+                // 1. إزالة رتبة العرق الحالية من الديسكورد
                 const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(interaction.guild.id);
                 const raceRoleIDs = allRaceRoles.map(r => r.roleID);
                 const userRaceRole = interaction.member.roles.cache.find(r => raceRoleIDs.includes(r.id));
                 if (userRaceRole) { await interaction.member.roles.remove(userRaceRole); }
-            } catch (err) {}
+
+                // 2. 🔥 حذف سلاح العرق القديم من الداتا بيس 🔥
+                sql.prepare("DELETE FROM user_weapons WHERE userID = ? AND guildID = ?").run(interaction.user.id, interaction.guild.id);
+
+                // 3. 🔥 حذف مهارة العرق القديمة (التي تبدأ بـ race_) 🔥
+                sql.prepare("DELETE FROM user_skills WHERE userID = ? AND guildID = ? AND skillID LIKE 'race_%'").run(interaction.user.id, interaction.guild.id);
+
+            } catch (err) {
+                console.error("Error in change_race cleanup:", err);
+            }
+            
             const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.guild.id, interaction.user.id, -5, expiresAt, 'xp', -0.05);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.guild.id, interaction.user.id, -5, expiresAt, 'mora', -0.05);
