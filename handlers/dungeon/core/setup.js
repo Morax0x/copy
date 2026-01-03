@@ -12,6 +12,9 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID) {
             const cls = partyClasses.get(m.id) || 'Adventurer';
             let playerData = getRealPlayerData(m, sql, cls);
             
+            // 🔥🔥🔥 إضافة الكلاس الأصلي (لحل مشكلة الإحياء) 🔥🔥🔥
+            playerData.originalClass = cls;
+
             // تنظيف الاسم فوراً
             playerData.name = cleanName(playerData.name);
             // تهيئة متغير الدرع المشتراة
