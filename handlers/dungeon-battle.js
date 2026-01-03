@@ -168,8 +168,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } 
         }
 
-        const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || dungeonConfig.floors[dungeonConfig.floors.length - 1];
-        const randomMob = getRandomMonster(floorConfig.type, theme);
+        // 🔥🔥🔥 التعديل هنا: تحديد نوع الطابق بشكل صحيح وتمرير رقم الطابق 🔥🔥🔥
+        // 1. إذا لم يكن الطابق في القائمة، نعتبره 'minion' بدلاً من أخذ الأخير
+        const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || { type: 'minion' };
+        
+        // 2. نمرر 'floor' للدالة لضمان تدرج الصعوبة وظهور موراكس في 100 فقط
+        const randomMob = getRandomMonster(floorConfig.type, theme, floor);
 
         let finalHp, finalAtk;
         if (floor <= 10) {
