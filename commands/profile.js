@@ -5,7 +5,9 @@ const weaponsConfig = require('../json/weapons-config.json');
 const { createCanvas, loadImage } = require('canvas'); 
 const path = require('path');
 
-// ✅ استخدام اسم Cairo (لأنه الخط الذي ضبط معك في البالانس)
+// استدعاء OWNER_ID من ملف الثوابت
+const { OWNER_ID } = require('../handlers/dungeon/constants.js');
+
 const FONT_MAIN = 'Cairo'; 
 
 const RACE_TRANSLATIONS = new Map([
@@ -47,12 +49,11 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-// 🔥 دالة مساعدة لحساب ترتيب القوة بنفس منطق top.js بالضبط 🔥
 function calculateStrongestRank(sql, guildID, targetUserID) {
-    // جلب جميع الأسلحة في السيرفر
-    const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ?").all(guildID);
+    if (targetUserID === OWNER_ID) return 0; // الأونر رتبته 0
+
+    const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, OWNER_ID);
     
-    // تجهيز استعلامات اللفل والمهارات
     const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
     const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
 
@@ -61,28 +62,18 @@ function calculateStrongestRank(sql, guildID, targetUserID) {
         const conf = weaponsConfig.find(c => c.race === w.raceName);
         if(!conf) continue;
         
-        // 1. حساب الضرر
         const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
-        
-        // 2. حساب الصحة بناءً على اللفل
         const lvlData = getLvl.get(guildID, w.userID);
         const playerLevel = lvlData?.level || 1;
         const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
-        
-        // 3. حساب مجموع المهارات
         const skillData = getSkills.get(guildID, w.userID);
         const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
-
-        // 4. معادلة القوة الشاملة (نفس الموجودة في top.js)
         const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
 
         stats.push({ userID: w.userID, powerScore });
     }
 
-    // ترتيب اللاعبين حسب القوة تنازلياً
     stats.sort((a, b) => b.powerScore - a.powerScore);
-    
-    // إيجاد ترتيب العضو المستهدف
     const rank = stats.findIndex(s => s.userID === targetUserID) + 1;
     return rank; 
 }
@@ -93,30 +84,39 @@ async function buildGeneralProfile(client, member, targetUser) {
     const score = getLevel.get(targetUser.id, member.guild.id);
 
     const level = score ? score.level : 0;
-    const totalXP = score ? score.totalXP : 0;
     const currentXP_Progress = score ? score.xp : 0;
     const mora = score ? (score.mora || 0) : 0;
     const bank = score ? (score.bank || 0) : 0;
     const totalMora = mora + bank;
 
-    // 1. ترتيب اللفل (XP)
-    const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? ORDER BY totalXP DESC").all(member.guild.id);
-    const rank = allScores.findIndex(s => s.user === targetUser.id) + 1;
-    const rankStr = rank > 0 ? `${rank}` : "0";
+    // المنطق الجديد للرتب مع استثناء الأونر
+    let rankStr, moraRankStr, streakRankStr, strongestRankStr;
 
-    // 2. ترتيب المورا
-    const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? ORDER BY (mora + bank) DESC").all(member.guild.id);
-    const moraRank = allMora.findIndex(s => s.user === targetUser.id) + 1;
-    const moraRankStr = moraRank > 0 ? `${moraRank}` : "0";
+    if (targetUser.id === OWNER_ID) {
+        rankStr = "0";
+        moraRankStr = "0";
+        streakRankStr = "0";
+        strongestRankStr = "0";
+    } else {
+        // 1. رتبة XP
+        const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(member.guild.id, OWNER_ID);
+        const rank = allScores.findIndex(s => s.user === targetUser.id) + 1;
+        rankStr = rank > 0 ? `${rank}` : "؟";
 
-    // 3. ترتيب الستريك
-    const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? ORDER BY streakCount DESC").all(member.guild.id);
-    const streakRank = allStreaks.findIndex(s => s.userID === targetUser.id) + 1;
-    const streakRankStr = streakRank > 0 ? `${streakRank}` : "0";
+        // 2. رتبة المورا
+        const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(member.guild.id, OWNER_ID);
+        const moraRank = allMora.findIndex(s => s.user === targetUser.id) + 1;
+        moraRankStr = moraRank > 0 ? `${moraRank}` : "؟";
 
-    // 4. ترتيب القوة (Strongest) باستخدام الدالة المصححة
-    const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
-    const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
+        // 3. رتبة الستريك
+        const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(member.guild.id, OWNER_ID);
+        const streakRank = allStreaks.findIndex(s => s.userID === targetUser.id) + 1;
+        streakRankStr = streakRank > 0 ? `${streakRank}` : "؟";
+
+        // 4. رتبة القوة
+        const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
+        strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "؟";
+    }
 
     const buffMultiplier = calculateBuffMultiplier(member, sql);
     const totalBuffPercent = (buffMultiplier - 1) * 100;
@@ -157,10 +157,8 @@ async function buildGeneralProfile(client, member, targetUser) {
     ctx.restore();
 
     const requiredXP = 5 * (level ** 2) + (50 * level) + 100;
-    let percentage = 0;
-    if (requiredXP > 0) {
-        percentage = Math.max(0, Math.min(1, currentXP_Progress / requiredXP));
-    }
+    let percentage = Math.max(0, Math.min(1, currentXP_Progress / requiredXP));
+    
     const barWidth = 250;
     const barHeight = 20;
     const barX = (canvas.width - barWidth) / 2;
@@ -183,36 +181,30 @@ async function buildGeneralProfile(client, member, targetUser) {
     ctx.shadowBlur = 4;
     const xpText = `${currentXP_Progress.toLocaleString()} / ${requiredXP.toLocaleString()} XP`;
 
-    // 🔥🔥 تصحيح: إزالة bold واستخدام خط Cairo 🔥🔥
     ctx.font = `14px "${FONT_MAIN}"`; 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFAA40';
     ctx.fillText(xpText, barX + (barWidth / 2), barY - 8);
 
-    // 🔥🔥 تصحيح: إزالة bold 🔥🔥
     ctx.font = `30px "${FONT_MAIN}"`;
     ctx.textAlign = 'left';
     ctx.fillText(level, 40, 150);
 
-    // ( البروفايل العام )
     ctx.font = `20px "${FONT_MAIN}"`; 
     ctx.textAlign = 'right';
 
-    let moraX = 310;
-    let streakX = 305; 
-    let bottomX = 275;
     let rightY = 215;
     const rightLineHeight = 28;
 
-    ctx.fillText(totalMora.toLocaleString(), moraX, rightY);
+    ctx.fillText(totalMora.toLocaleString(), 310, rightY);
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, streakCount.toLocaleString(), streakX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f525.png');
+    await drawTextWithIcon(ctx, streakCount.toLocaleString(), 305, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f525.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, moraBuffString, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png');
+    await drawTextWithIcon(ctx, moraBuffString, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, buffString, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/26a1.png');
+    await drawTextWithIcon(ctx, buffString, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/26a1.png');
     rightY += rightLineHeight;
-    await drawTextWithIcon(ctx, shieldText, bottomX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6e1.png');
+    await drawTextWithIcon(ctx, shieldText, 275, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6e1.png');
 
     ctx.textAlign = 'right';
     let leftX = 50;
@@ -269,7 +261,6 @@ async function buildPvpProfile(client, member, targetUser) {
     ctx.shadowColor = '#FFAA40';
     ctx.shadowBlur = 4;
 
-    // 🔥🔥 تصحيح: إزالة bold واستخدام خط Cairo 🔥🔥
     ctx.font = `30px "${FONT_MAIN}"`; 
     ctx.textAlign = 'left';
     ctx.fillText(level, 40, 150);
@@ -278,13 +269,11 @@ async function buildPvpProfile(client, member, targetUser) {
 
     if (!userRace || !weaponData) {
         ctx.shadowBlur = 0;
-        const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'profile-pvp.png' });
-        return attachment;
+        return new AttachmentBuilder(canvas.toBuffer(), { name: 'profile-pvp.png' });
     }
 
-    // 🔥 ترتيب القوة (Strongest) باستخدام الدالة المصححة 🔥
     const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
-    const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
+    const strongestRankStr = targetUser.id === OWNER_ID ? "0" : (strongestRank > 0 ? `${strongestRank}` : "؟");
 
     const maxHp = BASE_HP + (level * HP_PER_LEVEL);
     const arabicRaceName = RACE_TRANSLATIONS.get(userRace.raceName) || userRace.raceName;
@@ -371,11 +360,8 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.channel.send(payload);
-            }
+            if (isSlash) return interaction.editReply(payload);
+            else return message.channel.send(payload);
         };
 
         try {
@@ -387,7 +373,8 @@ module.exports = {
                 settings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guild.id);
             } catch (e) { settings = null; }
 
-            const isCasinoChannel = settings && settings.casinoChannelID === interactionOrMessage.channel.id;
+            const channelId = isSlash ? interaction.channelId : message.channel.id;
+            const isCasinoChannel = settings && settings.casinoChannelID === channelId;
             let currentProfile = isCasinoChannel ? 'pvp' : 'general';
 
             let messagePayload = {};
@@ -407,18 +394,16 @@ module.exports = {
 
             collector.on('collect', async (i) => {
                 await i.deferUpdate();
-
                 let newPayload = {};
                 if (i.customId === 'profile_general') {
                     currentProfile = 'general';
                     const generalCard = await buildGeneralProfile(client, targetMember, targetUser);
-                    newPayload = { files: [generalCard], embeds: [] };
+                    newPayload = { files: [generalCard] };
                 } else {
                     currentProfile = 'pvp';
                     const pvpCard = await buildPvpProfile(client, targetMember, targetUser);
-                    newPayload = { files: [pvpCard], embeds: [] };
+                    newPayload = { files: [pvpCard] };
                 }
-
                 const newRow = createButtons(currentProfile);
                 await profileMessage.edit({ ...newPayload, components: [newRow] });
             });
