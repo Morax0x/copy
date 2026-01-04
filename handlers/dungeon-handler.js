@@ -79,7 +79,8 @@ async function startDungeon(interaction, sql) {
             collector.stop('selected'); 
 
             const themeKey = i.customId.replace('dungeon_theme_', '');
-            const theme = dungeonConfig.themes[themeKey];
+            // 🔥 إضافة المفتاح (key) للكائن لتسهيل تحديد الوحوش لاحقاً
+            const theme = { ...dungeonConfig.themes[themeKey], key: themeKey };
             
             await lobbyPhase(i, theme, sql); 
         } catch (err) {
