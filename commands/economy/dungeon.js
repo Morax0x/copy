@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { startDungeon } = require("../../handlers/dungeon-handler.js"); // يستدعي الهاندلر الوسيط
+const { startDungeon } = require("../../handlers/dungeon-handler.js"); // استدعاء الهاندلر الوسيط
 
 const OWNER_ID = "1145327691772481577"; // الآيدي الخاص بك
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000; // 3 ساعات
@@ -16,7 +16,7 @@ module.exports = {
     description: "نظام الدانجون المتقدم (PvE)",
 
     async execute(interactionOrMessage, args) {
-        // تجهيز المتغيرات لدعم السلاش والرسائل العادية
+        // 1. تجهيز المتغيرات لدعم السلاش والرسائل العادية
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction;
 
@@ -48,12 +48,12 @@ module.exports = {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
 
-        // 🛠️ إصلاح تلقائي: التأكد من وجود عمود last_dungeon
+        // 2. إصلاح تلقائي لقاعدة البيانات
         try {
             client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
         } catch (e) { }
 
-        // --- ⏳ التحقق من الكولداون ---
+        // 3. التحقق من الكولداون
         if (userId !== OWNER_ID) {
             let userData = client.getLevel.get(userId, guildId);
             if (!userData) {
@@ -82,7 +82,7 @@ module.exports = {
         }
 
         try {
-            // ✅ استدعاء الهاندلر لبدء اللوبي
+            // 4. تشغيل الدانجون عبر الهاندلر الوسيط
             await startDungeon(interaction, client.sql);
 
         } catch (error) {
