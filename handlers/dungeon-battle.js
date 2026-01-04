@@ -48,20 +48,15 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// 🔥 استدعاء ملف الصناديق والتاجر 🔥
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
 const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
 
-// ============================================================
-// 🔥 استدعاءات التنظيم الجديدة (CORE, ACTIONS, LOGIC) 🔥
-// ============================================================
 const { cleanName, checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils'); 
 const { setupPlayers } = require('./dungeon/core/setup');
 const { sendEndMessage } = require('./dungeon/core/end-game');
 const { handleOwnerMenu } = require('./dungeon/actions/owner-menu');
 const { processMonsterTurn } = require('./dungeon/logic/monster-turn');
 
-// 🔥🔥🔥 استدعاء ملف توزيع الجوائز (The Reward Handler) 🔥🔥🔥
 const { 
     handleMemberRetreat, 
     handleTeamWipe, 
@@ -150,7 +145,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // 🔥 فحص الموت الجماعي قبل بداية الطابق
         if (players.length === 0 || players.every(p => p.isDead)) {
             deleteDungeonState(sql, threadChannel.id); 
-            // 💀 توزيع جوائز الخسارة (Wipe Logic)
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break; 
@@ -179,7 +173,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             try {
                 await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
             } catch (err) {
-                console.log("Error sending message (Unknown Channel likely):", err.message);
+                console.log("Error sending message:", err.message);
                 break; 
             }
             
@@ -304,7 +298,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 enraged: false, effects: [], targetFocusId: null, frozen: false 
             };
 
-            // 🔥🔥🔥 سقف أمان إضافي (Safety Caps) 🔥🔥🔥
+            // 🔥🔥🔥 سقف أمان إضافي 🔥🔥🔥
             if (floor <= 15) {
                 monster.atk = Math.min(monster.atk, 45); 
             } else if (floor <= 25) {
@@ -325,7 +319,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             monsterData: monster // 🔥 حفظنا الوحش هنا
         });
 
-        let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.maxHp.toLocaleString()} | DMG: ${monster.atk})`];
+        let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.hp.toLocaleString()} | DMG: ${monster.atk})`];
         if (monster.effects.some(e => e.type === 'weakness')) log.push(`👁️ **تم كشف نقطة ضعف الوحش!** (+50% ضرر إضافي)`);
 
         let ongoing = true;
@@ -502,13 +496,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
                                 if (potionId === 'potion_titan') {
-                                    // 🛡️🛡️🛡️ إغلاق ثغرة التايتن: منع التدبيل إذا كان مفعلاً 🛡️🛡️🛡️
-                                    if (p.effects.some(e => e.type === 'titan')) {
-                                        await selection.followUp({ content: "🚫 **تأثير العملاق مفعل بالفعل! لا يمكنك مضاعفة القوة أكثر.**", ephemeral: true });
-                                        processingUsers.delete(i.user.id);
-                                        return;
-                                    }
-
                                     p.titanPotionUses = p.titanPotionUses || 0;
                                     if (p.titanPotionUses >= 3) {
                                         await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
@@ -814,10 +801,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (decision === 'time') { 
             deleteDungeonState(sql, threadChannel.id); 
             
-            // 🔥 إضافة: قتل الجميع برمجياً لتوحيد الحالة قبل الإرسال 🔥
-            players.forEach(p => {
-                p.isDead = true;
-                p.hp = 0;
+            // 🔥 إصلاح: قتل جميع اللاعبين برمجياً لمنع اعتبارهم ناجين بالخطأ 🔥
+            players.forEach(p => { 
+                p.isDead = true; 
+                p.hp = 0; 
                 p.deathFloor = floor; 
             });
 
@@ -825,7 +812,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            break; 
+            return; // 🔥 إصلاح: الخروج فوراً من الدالة لمنع الوصول لرسالة الفوز بالأسفل
         } 
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
