@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { startDungeon } = require("../../handlers/dungeon-handler.js");
+const { startDungeon } = require("../../handlers/dungeon-handler.js"); 
 
 const OWNER_ID = "1145327691772481577"; 
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000; 
