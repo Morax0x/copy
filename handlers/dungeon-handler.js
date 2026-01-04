@@ -1,11 +1,9 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
-
-// 🔥 ربطنا هنا مع ملف المعركة الجديد
 const { runDungeon } = require('./dungeon-battle.js'); 
-const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants');
+const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
 
-const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
-const activeDungeonRequests = new Set(); // استخدام Set كما في كودك الأصلي
+const activeDungeonRequests = new Map();
+const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
@@ -15,22 +13,11 @@ async function startDungeon(interaction, sql) {
     }
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-    if (!leaderData || leaderData.level < 10) {
-        return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **10** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
+    if (!leaderData || leaderData.level < 5) {
+        return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    activeDungeonRequests.add(user.id);
-
-    if (user.id !== OWNER_ID) {
-        const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-        const lastDungeon = lastRun?.last_dungeon || 0;
-        const now = Date.now();
-        if (now - lastDungeon < DUNGEON_COOLDOWN) {
-             const finishTimeUnix = Math.floor((lastDungeon + DUNGEON_COOLDOWN) / 1000);
-             activeDungeonRequests.delete(user.id);
-             return interaction.reply({ content: `⏳ **استرح قليلاً!** يمكنك بدء غارة جديدة <t:${finishTimeUnix}:R>.`, flags: [MessageFlags.Ephemeral] });
-        }
-    }
+    activeDungeonRequests.set(user.id, { status: 'selecting_theme' });
 
     const themes = Object.keys(dungeonConfig.themes || {});
     if (themes.length === 0) {
@@ -63,11 +50,13 @@ async function startDungeon(interaction, sql) {
 
     const msg = await interaction.reply({ embeds: [embed], components: components, fetchReply: true });
     
-    // حفظ الرد للرسائل العادية
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
 
-    const filter = i => i.user.id === user.id && i.customId.startsWith('dungeon_theme_');
-    const collector = msg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
+    const collector = msg.createMessageComponentCollector({ 
+        filter: i => i.user.id === user.id && i.customId.startsWith('dungeon_theme_'), 
+        time: 30000, 
+        max: 1 
+    });
 
     collector.on('collect', async i => {
         try {
@@ -75,7 +64,7 @@ async function startDungeon(interaction, sql) {
             collector.stop('selected');
 
             const themeKey = i.customId.replace('dungeon_theme_', '');
-            const theme = { ...dungeonConfig.themes[themeKey], key: themeKey }; // إضافة key
+            const theme = { ...dungeonConfig.themes[themeKey], key: themeKey };
             
             await lobbyPhase(interaction, msg, theme, sql);
         } catch (err) {
@@ -141,14 +130,18 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط.", flags: [MessageFlags.Ephemeral] });
                     const now = Date.now();
                     const reset = jData.last_join_reset || 0;
-                    if (now - reset < DUNGEON_COOLDOWN && (jData.dungeon_join_count || 0) >= 3) return i.reply({ content: "🚫 استنفذت المحاولات.", flags: [MessageFlags.Ephemeral] });
+                    if (now - reset < COOLDOWN_TIME && (jData.dungeon_join_count || 0) >= 3) return i.reply({ content: "🚫 استنفذت المحاولات.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const takenClasses = [];
                 partyClasses.forEach((c, u) => { if(u !== i.user.id) takenClasses.push(c); });
                 const opts = [];
                 const addOpt = (v, l, e) => { if(!takenClasses.includes(v)) opts.push(new StringSelectMenuOptionBuilder().setLabel(l).setValue(v).setEmoji(e)); };
-                addOpt('Tank', 'المُدرّع', '🛡️'); addOpt('Priest', 'الكاهن', '✨'); addOpt('Mage', 'الساحر', '❄️'); addOpt('Summoner', 'المستدعي', '🐺');
+                
+                addOpt('Tank', 'المُدرّع', '🛡️'); 
+                addOpt('Priest', 'الكاهن', '✨'); 
+                addOpt('Mage', 'الساحر', '❄️'); 
+                addOpt('Summoner', 'المستدعي', '🐺');
 
                 if (opts.length === 0) return i.reply({ content: "🚫 جميع التخصصات مأخوذة.", flags: [MessageFlags.Ephemeral] });
 
@@ -156,6 +149,7 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 const sMsg = await i.reply({ content: "🛡️ اختر تخصصك:", components: [sRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
 
                 const sel = await sMsg.awaitMessageComponent({ filter: x => x.user.id === i.user.id, time: 20000, componentType: ComponentType.StringSelect }).catch(() => null);
+                
                 if (sel) {
                     const chosen = sel.values[0];
                     const dCheck = Array.from(partyClasses.entries()).filter(x => x[0] !== i.user.id).map(x => x[1]);
@@ -187,7 +181,7 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 if (id === host.id && id !== OWNER_ID) sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
                 else if (id !== OWNER_ID) {
                     const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
-                    if (now - (d?.last_join_reset||0) > DUNGEON_COOLDOWN) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
+                    if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
                     else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
                 }
             });
@@ -205,7 +199,6 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 await thread.send(`🔔 **بدأت المعركة!** ${party.map(id=>`<@${id}>`).join(' ')}`);
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // 🔥🔥🔥 تشغيل المعركة الجديدة 🔥🔥🔥
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
             } catch (e) {
@@ -221,3 +214,4 @@ async function lobbyPhase(interaction, msg, theme, sql) {
 }
 
 module.exports = { startDungeon };
+// نهاية الملف
