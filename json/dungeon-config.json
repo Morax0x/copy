@@ -4,10 +4,26 @@
     "max_floors": 100
   },
   "themes": {
-    "fire": { "emoji": "🌋", "name": "تارتاروس" },
-    "ice": { "emoji": "❄️", "name": "القمة المتجمدة" },
-    "forest": { "emoji": "🌲", "name": "مدينة الرماد" },
-    "dark": { "emoji": "🌑", "name": "الهـاويــة" }
+    "fire": { 
+      "emoji": "🌋", 
+      "name": "مدينة الرماد", 
+      "image": "https://i.postimg.cc/nrV0wMK8/br.png"
+    },
+    "ice": { 
+      "emoji": "❄️", 
+      "name": "القمة المتجمدة", 
+      "image": "https://i.postimg.cc/NGP6wNBX/fr.png"
+    },
+    "forest": { 
+      "emoji": "🌲", 
+      "name": "الغابة الملعونة", 
+      "image": "https://i.postimg.cc/brd1tnHQ/gn.png"
+    },
+    "dark": { 
+      "emoji": "🌑", 
+      "name": "الهـاويــة", 
+      "image": "https://i.postimg.cc/wMbcf2TR/tar.png"
+    }
   },
   "monsters": {
     "fire": {
