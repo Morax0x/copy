@@ -162,12 +162,20 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 5: العلاج الذاتي (إذا دمه قليل) 🔥
-    if (!skillUsed && monster.hp < monster.maxHp * 0.25 && monster.memory.healsUsed < 2) {
+    // 🔥 أولوية 5: العلاج الذاتي (التعديل الجديد) 🔥
+    // الشرط: الطابق 21 فما فوق، الدم أقل من 25%، ولم يستخدم العلاج أكثر من مرتين
+    if (!skillUsed && floor >= 21 && monster.hp < monster.maxHp * 0.25 && monster.memory.healsUsed < 2) {
         if (Math.random() < 0.5) {
-            const healAmount = Math.floor(monster.maxHp * 0.30);
+            // حساب نسبة الشفاء: تبدأ بـ 2% وتزيد 0.1% لكل طابق بعد الـ 20
+            let healPercent = 0.02 + ((floor - 20) * 0.001);
+            
+            // سقف الشفاء 10% (تعجيزي خفيف)
+            healPercent = Math.min(healPercent, 0.10); 
+
+            const healAmount = Math.floor(monster.maxHp * healPercent);
             monster.hp += healAmount;
             monster.memory.healsUsed++;
+            
             log.push(`💚 **${monster.name}** شرب جرعة دماء واستعاد عافيته! (+${healAmount})`);
             skillUsed = true;
         }
