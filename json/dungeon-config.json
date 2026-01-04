@@ -7,22 +7,26 @@
     "fire": { 
       "emoji": "🌋", 
       "name": "تارتاروس", 
-      "image": "https://i.postimg.cc/nrV0wMK8/br.png"
+      "image": "https://i.postimg.cc/nrV0wMK8/br.png",
+      "color": "#F07424"
     },
     "ice": { 
       "emoji": "❄️", 
       "name": "القمة المتجمدة", 
-      "image": "https://i.postimg.cc/NGP6wNBX/fr.png"
+      "image": "https://i.postimg.cc/NGP6wNBX/fr.png",
+      "color": "#1EDCEB"
     },
     "forest": { 
       "emoji": "🌲", 
       "name": "الغابة الملعونة", 
-      "image": "https://i.postimg.cc/brd1tnHQ/gn.png"
+      "image": "https://i.postimg.cc/brd1tnHQ/gn.png",
+      "color": "#2DAD52"
     },
     "dark": { 
       "emoji": "🌑", 
       "name": "الهـاويــة", 
-      "image": "https://i.postimg.cc/wMbcf2TR/tar.png"
+      "image": "https://i.postimg.cc/wMbcf2TR/tar.png",
+      "color": "#4E1870"
     }
   },
   "monsters": {
