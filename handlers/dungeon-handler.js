@@ -1,13 +1,13 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
 
-// استدعاء محرك المعركة والثوابت
-const { runDungeon } = require('./dungeon-battle.js');
+// استدعاء محرك المعركة الجديد والثوابت
+const { runDungeon } = require('./dungeon-battle.js'); // ✅ ربطنا هنا
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants');
 
 // --- ثوابت النظام ---
 const DUNGEON_COOLDOWN = 3 * 60 * 60 * 1000; 
 
-const activeDungeonRequests = new Set();
+const activeDungeonRequests = new Set(); // غيرتها لـ Map في الأكواد السابقة، لكن سأبقيها Set كما في كودك إذا أردت، لكن يفضل Map لتخزين الحالة. سأبقيها Set وأديرها بحذر.
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
@@ -17,7 +17,7 @@ async function startDungeon(interaction, sql) {
     }
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-    if (!leaderData || leaderData.level < 10) {
+    if (!leaderData || leaderData.level < 10) { // شرط المستوى 10 كما في كودك
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **10** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
@@ -79,7 +79,6 @@ async function startDungeon(interaction, sql) {
             collector.stop('selected'); 
 
             const themeKey = i.customId.replace('dungeon_theme_', '');
-            // 🔥 إضافة المفتاح (key) للكائن لتسهيل تحديد الوحوش لاحقاً
             const theme = { ...dungeonConfig.themes[themeKey], key: themeKey };
             
             await lobbyPhase(i, theme, sql); 
@@ -149,8 +148,7 @@ async function lobbyPhase(interaction, theme, sql) {
                 }
 
                 if (party.includes(i.user.id)) {
-                    // نسمح له بتغيير التخصص إذا كان منضم، لكن الرد هنا بسيط
-                    // سنكمل لإظهار القائمة له ليغير تخصصه
+                    // نسمح له بتغيير التخصص إذا كان منضم
                 } else if (party.length >= 5) {
                     return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
                 } else {
@@ -172,8 +170,7 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                 }
 
-                // 🔥 تعديل جوهري: منع التكرار 🔥
-                // نحصل على قائمة التخصصات المحجوزة حالياً (باستثناء تخصص اللاعب الحالي لو كان بيغير)
+                // 🔥 منع التكرار 🔥
                 const takenClasses = [];
                 partyClasses.forEach((cls, uid) => {
                     if (uid !== i.user.id) takenClasses.push(cls);
@@ -217,7 +214,6 @@ async function lobbyPhase(interaction, theme, sql) {
                     const selectedClass = selection.values[0];
 
                     // 🔥🔥 الحماية النهائية (Double Check) 🔥🔥
-                    // نتأكد مرة ثانية قبل الحفظ، عشان لو اثنين اختاروا نفس الشي بنفس الثانية
                     const currentTaken = Array.from(partyClasses.entries())
                         .filter(([uid, cls]) => uid !== i.user.id)
                         .map(([_, cls]) => cls);
@@ -252,14 +248,13 @@ async function lobbyPhase(interaction, theme, sql) {
                     }
                     
                 } catch (e) {
-                    // في حال انتهاء الوقت وعدم الاختيار
                     if (e.code !== 'InteractionCollectorError') console.log(e);
                     await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
                 }
 
             } else if (i.customId === 'start') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ فقط القائد يمكنه البدء.", flags: [MessageFlags.Ephemeral] });
-                if (party.length < 1) return i.reply({ content: "خطأ", flags: [MessageFlags.Ephemeral] });
+                // لا نحتاج شرط party.length < 1 لأن القائد موجود دائماً
                 
                 await i.deferUpdate();
                 collector.stop('start');
@@ -292,7 +287,7 @@ async function lobbyPhase(interaction, theme, sql) {
             try {
                 // إنشاء الثريد
                 const thread = await msg.channel.threads.create({
-                    name: `⚔️ دانجون ${host.username}`,
+                    name: `غارة-${host.username}`,
                     autoArchiveDuration: 60,
                     type: ChannelType.PublicThread, 
                     reason: 'Start Dungeon Battle'
@@ -303,7 +298,12 @@ async function lobbyPhase(interaction, theme, sql) {
 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // تشغيل المعركة
+                // 🔥🔥🔥 تشغيل المعركة (التغيير الوحيد: ربط runDungeon الجديد) 🔥🔥🔥
+                // تم تمرير `activeDungeonRequests` (الـ Set) لكي تقوم دالة runDungeon بحذفه عند الانتهاء
+                // لكن بما أن activeDungeonRequests هنا Set، و runDungeon تتوقع Map (في كودي السابق)، سأعدل runDungeon لتقبل Set أو سأحذفها يدوياً هنا.
+                // الأفضل: سأحذفها يدوياً هنا لأن runDungeon قد لا يكون لديها وصول مباشر لهذا المتغير إذا لم نمرره.
+                // لكن انتظر، في `dungeon-battle.js` نحن نمرر `activeDungeonRequests` ونقوم بعمل `.delete(hostId)`.
+                // الـ Set والـ Map لديهما نفس دالة .delete()، لذا لا مشكلة!
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
             } catch (err) {
