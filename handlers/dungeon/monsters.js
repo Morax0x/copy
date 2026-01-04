@@ -3,7 +3,7 @@ const { applyDamageToPlayer } = require('./utils');
 
 // --- 🧠 دوال الذكاء الاصطناعي (Smart AI Helpers) ---
 function getSmartTarget(players) {
-    // 🔥 التعديل هنا: استبعاد الموتى واللاعبين الذين لديهم تأثير 'stealth'
+    // 🔥 استبعاد الموتى واللاعبين الذين لديهم تأثير 'stealth'
     let alive = players.filter(p => !p.isDead && !p.effects.some(e => e.type === 'stealth'));
 
     // إذا كان الجميع مخفيين (أو ماتوا)، نضطر لمهاجمة أي شخص حي (حتى لو مخفي) لكي لا تتوقف اللعبة
@@ -340,45 +340,44 @@ const MONSTER_SKILLS = {
 };
 
 function getRandomMonster(type, theme, currentFloor = 1) {
-    // 1. تحديد القائمة
-    let listKey = type;
-    if (type === 'minion') listKey = 'minions';
-    else if (type === 'elite') listKey = 'elites';
-    else if (type === 'boss') listKey = 'bosses';
-    else if (type === 'guardian') listKey = 'guardians';
+    // 1. التعامل مع الحالة الخاصة للإمبراطور موراكس
+    if (type === 'morax') {
+        return { name: "الامبراطور موراكس", emoji: "👑" };
+    }
 
-    const list = dungeonConfig.monsters[listKey];
+    let list = [];
+
+    // 2. تحديد القائمة المناسبة
+    if (type === 'boss') {
+        list = dungeonConfig.monsters.bosses;
+    } else if (type === 'guardian') {
+        list = dungeonConfig.monsters.guardians;
+    } else {
+        // للوحوش العادية والنخبة، نعتمد على الثيم (theme key)
+        let themeKey = 'dark'; // افتراضي
+        
+        // البحث عن مفتاح الثيم (fire, ice...) بناءً على اسم الثيم الممرر
+        const foundKey = Object.keys(dungeonConfig.themes).find(k => dungeonConfig.themes[k].name === theme.name);
+        if (foundKey) themeKey = foundKey;
+
+        if (dungeonConfig.monsters[themeKey]) {
+            if (type === 'minion') list = dungeonConfig.monsters[themeKey].minions;
+            else if (type === 'elite') list = dungeonConfig.monsters[themeKey].elites;
+        }
+        
+        // احتياط في حال كان الثيم غير معرف في الوحوش
+        if (!list || list.length === 0) {
+            list = dungeonConfig.monsters['dark'][type === 'elite' ? 'elites' : 'minions'];
+        }
+    }
+
     if (!list || list.length === 0) return { name: "وحش مجهول", hp: 100, atk: 10 };
 
-    // 2. حساب نسبة التقدم (0 - 1)
-    const maxFloors = 100;
-    const progress = Math.min(Math.max(currentFloor, 1), maxFloors) / maxFloors;
-
-    // 3. تحديد مؤشر الهدف (Index)
-    const targetIndex = Math.floor(progress * (list.length - 1));
-
-    // 4. إضافة تباين (Random Variance) بسيط حول الهدف
-    let variance = 2; // يمكن أن نختار وحشين قبل أو بعد الهدف
-    let minIndex = Math.max(0, targetIndex - variance);
-    let maxIndex = Math.min(list.length - 1, targetIndex + variance);
-
-    // للطوابق الأولى جداً، نضمن البداية من الصفر
-    if (currentFloor <= 5) {
-        minIndex = 0;
-        maxIndex = Math.min(3, list.length - 1);
-    }
+    // 3. الاختيار العشوائي
+    // بما أن القوائم مقسمة حسب الثيم، فالاختيار العشوائي الكامل هو الأفضل للتنويع
+    const randomIndex = Math.floor(Math.random() * list.length);
+    const name = list[randomIndex];
     
-    // للطوابق الأخيرة، نضمن الوصول للنهاية
-    if (currentFloor >= 95) {
-        minIndex = Math.max(0, list.length - 5);
-        maxIndex = list.length - 1;
-    }
-
-    // اختيار عشوائي ضمن النطاق المحسوب
-    const finalIndex = Math.floor(Math.random() * (maxIndex - minIndex + 1)) + minIndex;
-    const safeIndex = Math.min(Math.max(0, finalIndex), list.length - 1);
-
-    const name = list[safeIndex];
     return { name, emoji: theme.emoji };
 }
 
