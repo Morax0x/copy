@@ -1,6 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-// تأكد أن هذا المسار صحيح ويشير للملف الوسيط الذي أرسلته لك سابقاً
-const { startDungeon } = require("../../handlers/dungeon-handler.js"); 
+const { startDungeon } = require("../../handlers/dungeon-handler.js"); // يستدعي الهاندلر الوسيط
 
 const OWNER_ID = "1145327691772481577"; // الآيدي الخاص بك
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000; // 3 ساعات
@@ -49,31 +48,25 @@ module.exports = {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
 
-        // 🛠️ إصلاح تلقائي: التأكد من وجود عمود last_dungeon في قاعدة البيانات
+        // 🛠️ إصلاح تلقائي: التأكد من وجود عمود last_dungeon
         try {
             client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
-        } catch (e) {
-            // نتجاهل الخطأ إذا كان العمود موجوداً بالفعل
-        }
+        } catch (e) { }
 
-        // --- ⏳ التحقق من الكولداون من قاعدة البيانات ⏳ ---
+        // --- ⏳ التحقق من الكولداون ---
         if (userId !== OWNER_ID) {
-            // جلب بيانات المستخدم
             let userData = client.getLevel.get(userId, guildId);
             if (!userData) {
-                // إذا لم يوجد، ننشئ له سجل
                 client.setLevel.run({
                     id: `${guildId}-${userId}`,
                     user: userId,
                     guild: guildId,
-                    xp: 0,
-                    level: 1,
-                    mora: 0
+                    xp: 0, level: 1, mora: 0
                 });
                 userData = client.getLevel.get(userId, guildId);
             }
 
-            const lastDungeon = userData.last_dungeon || 0; 
+            const lastDungeon = userData.last_dungeon || 0;
             const now = Date.now();
 
             if (now - lastDungeon < COOLDOWN_TIME) {
@@ -84,12 +77,12 @@ module.exports = {
                 const msg = { content: `⏳ **هدئ من روعك أيها المحارب!**\nيجب أن تستريح قبل فتح بوابة دانجون جديدة.\nالوقت المتبقي: **${hours} ساعة و ${minutes} دقيقة**.\n\n*💡 يمكنك الانضمام لدانجون شخص آخر في أي وقت!*`, ephemeral: true };
                 
                 if (isSlash && !interaction.replied) return await interaction.reply(msg);
-                else return await interaction.reply(msg); 
+                else return await interaction.reply(msg);
             }
         }
 
         try {
-            // ✅ بدء الدانجون
+            // ✅ استدعاء الهاندلر لبدء اللوبي
             await startDungeon(interaction, client.sql);
 
         } catch (error) {
