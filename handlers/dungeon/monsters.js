@@ -68,7 +68,8 @@ const GENERIC_MONSTER_SKILLS = [
         if(target){ 
             // 🔥 تعديل: تخفيف الضرر في الطوابق الأولى (1-18)
             let dmg = Math.floor(m.atk * 1.5);
-            if (currentFloor <= 18) {
+            // التأكد من وجود الطابق وتطبيق السقف
+            if (currentFloor && currentFloor <= 18) {
                 // سقف الضرر لا يتجاوز 40% من صحة اللاعب المتوسطة (350)
                 dmg = Math.min(dmg, 140); 
             }
@@ -100,18 +101,18 @@ const GENERIC_MONSTER_SKILLS = [
         p.forEach(pl=>{if(!pl.isDead) {
             let dmg = Math.floor(m.atk*0.8);
             // 🔥 تعديل: تخفيف الضرر الجماعي في الطوابق الأولى
-            if (currentFloor <= 18) {
+            if (currentFloor && currentFloor <= 18) {
                 dmg = Math.min(dmg, 60); // لا يتجاوز 60 لكل لاعب
             }
             applyDamageToPlayer(pl, dmg);
         }}); 
         l.push(`🐾 **${m.name}** هاجم الجميع بوحشية!`);
     }},
-    // 🔥🔥🔥 تعديل مهارة الشفاء (تصلب) 🔥🔥🔥
+    // 🔥🔥🔥 تعديل مهارة الشفاء (تصلب) - تأمين ضد الأخطاء 🔥🔥🔥
     { name: "تصلب", emoji: "🛡️", chance: 0.15, execute: (m, p, l, currentFloor) => { 
-        // ⛔ منع الاستخدام قبل الطابق 21
-        if (currentFloor < 21) {
-            // استبدالها بهجوم عادي ضعيف إذا ظهرت بالخطأ
+        // ⛔ منع الاستخدام قبل الطابق 21 أو إذا كان الطابق غير معروف
+        if (!currentFloor || currentFloor < 21) {
+            // استبدالها بهجوم عادي ضعيف
             const target = getSmartTarget(p, m);
             if(target) {
                 applyDamageToPlayer(target, Math.floor(m.atk * 0.8));
@@ -134,9 +135,6 @@ const GENERIC_MONSTER_SKILLS = [
 
 // --- 👹 قاعدة بيانات مهارات الزعماء والنخبة والحراس ---
 const MONSTER_SKILLS = {
-    // ... (نفس القائمة الضخمة السابقة - سأختصرها هنا للوضوح، لكن في ملفك يجب أن تبقى كاملة)
-    // سأضع النخبة والزعماء كما هم لأنك لم تطلب تعديلهم، التعديل كان على الطوابق الأولى (Generic)
-    
     // ========================
     // 🔥 وحوش النخبة: النار
     // ========================
