@@ -772,7 +772,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              if (canRetreat) {
-                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! (لن تظهر مجدداً في هذا النطاق)`;
+                 restDesc += `\n\n✨ وجـدتـم بوابـة انسـحـاب!`;
              } else {
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
