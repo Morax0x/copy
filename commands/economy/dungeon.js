@@ -16,6 +16,7 @@ module.exports = {
     description: "نظام الدانجون المتقدم (PvE)",
 
     async execute(interactionOrMessage, args) {
+        // 1. توحيد طريقة التعامل (سواء سلاش أو رسالة عادية)
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction;
 
@@ -47,10 +48,12 @@ module.exports = {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
 
+        // 2. التأكد من قاعدة البيانات
         try {
             client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
         } catch (e) { }
 
+        // 3. التحقق من الكولداون (وقت الانتظار)
         if (userId !== OWNER_ID) {
             let userData = client.getLevel.get(userId, guildId);
             if (!userData) {
@@ -79,7 +82,9 @@ module.exports = {
         }
 
         try {
+            // 4. تشغيل الدانجون (هنا يتم استدعاء الهاندلر)
             await startDungeon(interaction, client.sql);
+
         } catch (error) {
             console.error("[Dungeon Error]", error);
             const msg = { content: "❌ حدث خطأ غير متوقع في الدانجون.", ephemeral: true };
