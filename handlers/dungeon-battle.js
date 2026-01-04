@@ -34,6 +34,7 @@ const {
 const { 
     getRandomMonster, 
     getSmartTarget, 
+    checkBossPhase, // 🔥 استدعاء دالة المراحل
     GENERIC_MONSTER_SKILLS, 
     MONSTER_SKILLS 
 } = require('./dungeon/monsters');
@@ -439,10 +440,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (res && res.name) skillNameUsed = res.name;
                                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
+                                // 🔥 حساب التهديد للمهارات (بسيط مؤقتاً)
+                                // يمكن تحسينه ليكون بناءً على الضرر الفعلي
+                                p.threat = (p.threat || 0) + 100;
+
                                 actedPlayers.push(p.id); p.skipCount = 0; 
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
 
+                                checkBossPhase(monster, log); // 🔥 فحص المرحلة
                                 checkDeaths(players, floor, log, threadChannel);
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
@@ -479,6 +485,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 if (potionId === 'potion_heal') {
                                     p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.5));
                                     actionMsg = "🧪 استعاد 50% HP!";
+                                    
+                                    // 🔥 تهديد العلاج 🔥
+                                    const threatGen = Math.floor((p.maxHp * 0.5) / 2);
+                                    p.threat = (p.threat || 0) + threatGen;
+
                                 } else if (potionId === 'potion_reflect') {
                                     p.effects.push({ type: 'reflect', val: 0.5, turns: 2 });
                                     actionMsg = "🌵 جهز درع الأشواك!";
@@ -490,6 +501,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.effects.push({ type: 'titan', floors: 5 }); 
                                     monster.targetFocusId = p.id;
                                     actionMsg = `🔥 تحول لعملاق! (يستمر لـ 5 طوابق) (${p.titanPotionUses}/3)`;
+                                    
+                                    // 🔥 التايتن يولد تهديد هائل فورياً
+                                    p.threat = (p.threat || 0) + 1000;
+
                                 } else if (potionId === 'potion_sacrifice') {
                                     p.hp = 0; p.isDead = true; p.isPermDead = true; p.deathFloor = floor; 
                                     players.forEach(ally => {
@@ -549,10 +564,21 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     // 🔥🔥🔥 نهاية كبت الضرر 🔥🔥🔥
 
                                     monster.hp -= dmg; p.totalDamage += dmg; 
+                                    
+                                    // 🔥 حساب التهديد (Threat Calculation) 🔥
+                                    let threatGen = dmg;
+                                    if (p.class === 'Tank') threatGen *= 3; // التانك يولد 3 أضعاف التهديد
+                                    p.threat = (p.threat || 0) + threatGen;
+
                                     log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
+                                    
+                                    // 🔥 فحص مرحلة الزعيم (Boss Phase) 🔥
+                                    checkBossPhase(monster, log);
                                 }
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
+                                // الدفاع قد يولد تهديداً صغيراً للتانك
+                                if (p.class === 'Tank') p.threat = (p.threat || 0) + 200;
                             }
                              
                             await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
@@ -597,6 +623,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
+                // 🔥 تمرير 'monster' لدالة الذكاء الاصطناعي يحدث ضمنياً داخل processMonsterTurn
                 ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 if (ongoing) handleLeaderSuccession(players, log);
             }
