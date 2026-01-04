@@ -26,22 +26,35 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let finalMora = 0;
         let finalXp = 0;
 
-        // ==========================================
-        // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
-        // ==========================================
-        if (status === 'lose' && floor > 20) {
-            // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
-            finalMora = 1000;
-            finalXp = 100;
+        // 🔥🔥🔥 التعديل هنا: التحقق هل تم توزيع الجوائز مسبقاً؟ 🔥🔥🔥
+        if (p.rewardsClaimed) {
+            // الحالة 1: الجوائز تم حسابها وحفظها في rewards.js (انسحاب فردي أو جماعي منظم)
+            // نأخذ القيم النهائية للعرض فقط
+            finalMora = p.finalMora || 0;
+            finalXp = p.finalXp || 0;
+            // ⚠️ ملاحظة: لا نقوم بـ UPDATE levels هنا لأنها حُفظت بالفعل
         } else {
-            // الحساب الطبيعي
-            finalMora = Math.floor(p.loot.mora);
-            finalXp = Math.floor(p.loot.xp);
-            
-            if (p.isDead) { 
-                finalMora = Math.floor(finalMora * 0.5); 
-                finalXp = Math.floor(finalXp * 0.5); 
+            // الحالة 2: الطريقة القديمة (احتياط في حال لم يمر عبر rewards.js)
+            // ==========================================
+            // ❖ نظام عقوبة الموت بعد الطابق 20 ❖
+            // ==========================================
+            if (status === 'lose' && floor > 20) {
+                // تجاهل الغنائم المتراكمة وإعطاء تعويض بسيط فقط
+                finalMora = 1000;
+                finalXp = 100;
+            } else {
+                // الحساب الطبيعي من المحفظة
+                finalMora = Math.floor(p.loot.mora || 0);
+                finalXp = Math.floor(p.loot.xp || 0);
+                
+                if (p.isDead) { 
+                    finalMora = Math.floor(finalMora * 0.5); 
+                    finalXp = Math.floor(finalXp * 0.5); 
+                }
             }
+            
+            // حفظ في الداتابيس (لأنها لم تحفظ مسبقاً)
+            sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
         }
         
         let statusEmoji = "";
@@ -54,8 +67,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             statusEmoji = "✅";
         }
 
-        sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
-        lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora} ${EMOJI_MORA} | ${finalXp} XP\n`;
+        lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP\n`;
     });
 
     let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
