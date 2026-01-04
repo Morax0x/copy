@@ -25,18 +25,28 @@ function getBaseFloorMora(floor) {
 }
 
 function applyDamageToPlayer(player, damageAmount) {
+    // 🛡️ حماية 1: التأكد من أن الضرر رقم صحيح وليس NaN
+    damageAmount = Math.floor(damageAmount);
+    if (isNaN(damageAmount)) damageAmount = 0;
+
+    // 🛡️ حماية 2: التأكد من أن دم اللاعب رقم صحيح حالياً
+    player.hp = Math.floor(player.hp);
+    if (isNaN(player.hp)) {
+        player.hp = player.maxHp || 100; // قيمة افتراضية في حال الخطأ الكارثي
+    }
+
     // 1. إذا كان اللاعب ميتاً أصلاً، لا داعي لحساب الضرر
     if (player.isDead) return 0;
 
     // 🔥🔥🔥 2. منطق مناعة الأونر (Immunity) 🔥🔥🔥
     if (player.id === OWNER_ID) {
-        // ننقص الصحة شكلياً ليرى الأونر الضرر، لكن نمنع الموت
-        let actualDamage = damageAmount;
-        
         // التحقق من المراوغة (Evasion) للأونر أيضاً
         if (player.effects.some(e => e.type === 'evasion')) return 0;
 
-        player.hp -= actualDamage;
+        // ننقص الصحة شكلياً ليرى الأونر الضرر، لكن نمنع الموت
+        let actualDamage = damageAmount;
+        
+        player.hp = Math.floor(player.hp - actualDamage); // 🛡️ استخدام Math.floor
         
         // إذا وصلت الصحة للصفر أو أقل، نثبتها على 1 ولا يموت
         if (player.hp <= 0) {
@@ -69,17 +79,22 @@ function applyDamageToPlayer(player, damageAmount) {
 
     // Shield Logic
     if (player.shield > 0) {
+        // 🛡️ تأكد أن الدرع رقم صحيح
+        player.shield = Math.floor(player.shield);
+        
         if (remainingDamage <= player.shield) {
-            player.shield -= remainingDamage;
+            player.shield = Math.floor(player.shield - remainingDamage);
             remainingDamage = 0;
         } else {
-            remainingDamage -= player.shield;
+            remainingDamage = Math.floor(remainingDamage - player.shield);
             player.shield = 0;
         }
     }
 
     // Apply Final Damage to HP
-    player.hp -= remainingDamage;
+    // 🛡️ التأكد النهائي من الأرقام الصحيحة
+    remainingDamage = Math.floor(remainingDamage);
+    player.hp = Math.floor(player.hp - remainingDamage);
     
     // Check Death
     if (player.hp <= 0) {
@@ -98,13 +113,16 @@ function cleanDisplayName(name) {
 }
 
 function buildHpBar(currentHp, maxHp, shield = 0) {
-    currentHp = Math.max(0, currentHp);
+    // 🛡️ حماية العرض من الكسور و NaN
+    currentHp = Math.floor(Math.max(0, currentHp || 0));
+    maxHp = Math.floor(maxHp || 100);
+    shield = Math.floor(shield || 0);
+
     const percentage = (currentHp / maxHp) * 10;
     const filled = '█';
     const empty = '░';
     
     // البار يعرض الشكل + الأرقام (500/1000)
-    // إذا كنت ترى الرقم مكرر في الديسكورد، فذلك لأن ملف ui.js يضيف الرقم مرة أخرى بجانب هذا البار
     let bar = `[${filled.repeat(Math.max(0, Math.floor(percentage))) + empty.repeat(Math.max(0, 10 - Math.floor(percentage)))}] ${currentHp}/${maxHp}`;
     
     if (shield > 0) bar += ` 🛡️(${shield})`;
@@ -116,7 +134,9 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     const userID = member.id;
     const userData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     const level = userData ? userData.level : 1;
-    const maxHp = BASE_HP + (level * HP_PER_LEVEL);
+    
+    // 🛡️ التأكد من MaxHP كرقم صحيح
+    const maxHp = Math.floor(BASE_HP + (level * HP_PER_LEVEL));
 
     let damage = 15;
     let weaponName = "قبضة اليد";
@@ -164,7 +184,7 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
         level: level,
         hp: maxHp,
         maxHp: maxHp,
-        atk: damage,
+        atk: Math.floor(damage), // 🛡️ ضمان أن الهجوم رقم صحيح
         weaponName: weaponName,
         skills: skillsOutput,
         isDead: false,
