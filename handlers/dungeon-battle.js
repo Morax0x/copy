@@ -118,7 +118,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
     
-    // متغير لحفظ وحش الاستكمال (عشان ما يرجع يفلل دمه)
     let resumedMonsterData = null;
 
     // ============================================================
@@ -127,15 +126,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (resumeData) {
         players = resumeData.players;
         merchantState = resumeData.merchantState;
-        // استرجاع حالة الانسحاب
         retreatState = resumeData.retreatState || retreatState; 
-        
         totalAccumulatedCoins = resumeData.loot.coins;
         totalAccumulatedXP = resumeData.loot.xp;
         startFloor = resumeData.floor;
         retreatedPlayers = resumeData.retreatedPlayers || [];
         isTrapActive = resumeData.isTrapActive || false;
-        resumedMonsterData = resumeData.monsterData || null; // 🛡️ استعادة بيانات الوحش
+        resumedMonsterData = resumeData.monsterData || null;
         
         await threadChannel.send(`🔄 **تم استعادة البيانات!** جاري استكمال المعركة من الطابق **${startFloor}**...`).catch(()=>{});
     } else {
@@ -162,7 +159,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // 🔥 فحص الموت الجماعي قبل بداية الطابق
         if (players.length === 0 || players.every(p => p.isDead)) {
             deleteDungeonState(sql, threadChannel.id); 
-            // 💀 توزيع جوائز الخسارة (Wipe Logic)
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break; 
@@ -195,17 +191,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 break; 
             }
             
-            // نحفظ الحالة الجديدة بعد القفز (مع retreatState)
             saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                 floor: floor,
                 players: players,
                 merchantState: merchantState,
-                retreatState: retreatState, // 🟢 حفظ حالة الانسحاب
+                retreatState: retreatState,
                 retreatedPlayers: retreatedPlayers,
                 isTrapActive: isTrapActive,
                 loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                 themeName: theme.name,
-                monsterData: null // وحش جديد للطابق الجديد
+                monsterData: null
             });
             
             continue; 
@@ -272,15 +267,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         let monster;
 
-        // 🛡️🛡️🛡️ إصلاح: استعادة الوحش القديم إذا وجد (لمنع إعادة تعيين دم الزعيم عند الريستارت) 🛡️🛡️🛡️
         if (resumedMonsterData) {
             monster = resumedMonsterData;
-            resumedMonsterData = null; // تفريغ بعد الاستخدام
+            resumedMonsterData = null;
         } else {
             const randomMob = getRandomMonster(monsterType, theme, floor);
             let finalHp, finalAtk;
             
-            // 🔥🔥🔥 توازن الطوابق الأولى (Anti-One-Shot) 🔥🔥🔥
+            // 🔥🔥🔥 توازن قوة الوحوش 🔥🔥🔥
             if (floor <= 10) {
                 finalHp = 300 + ((floor - 1) * 120);
                 finalAtk = 10 + (floor * 1.5); 
@@ -314,15 +308,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 hp: Math.floor(finalHp), 
                 maxHp: Math.floor(finalHp), 
                 atk: Math.floor(finalAtk), 
-                shield: 0, // ✅ إصلاح ضروري: تهيئة الدرع بـ 0 لمنع NaN
+                shield: 0, 
                 enraged: false, 
                 effects: [], 
                 targetFocusId: null, 
                 frozen: false,
-                memory: { healsUsed: 0, comboStep: 0, lastMove: null } // ✅ تهيئة الذاكرة
+                memory: { healsUsed: 0, comboStep: 0, lastMove: null }
             };
 
-            // 🔥🔥🔥 سقف أمان إضافي (Safety Caps) 🔥🔥🔥
+            // 🔥🔥🔥 سقف أمان إضافي 🔥🔥🔥
             if (floor <= 15) {
                 monster.atk = Math.min(monster.atk, 45); 
             } else if (floor <= 25) {
@@ -335,10 +329,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
 
-        // 🛡️ حفظ الحالة الأولية للطابق مع بيانات الوحش وحالة الانسحاب 🛡️
         saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
             floor: floor, players, merchantState, retreatedPlayers, isTrapActive,
-            retreatState: retreatState, // 🟢 حفظ
+            retreatState, 
             loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
             themeName: theme.name,
             monsterData: monster 
@@ -521,7 +514,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
                                 if (potionId === 'potion_titan') {
-                                    // 🛡️🛡️🛡️ إغلاق ثغرة التايتن: منع التدبيل إذا كان مفعلاً 🛡️🛡️🛡️
                                     if (p.effects.some(e => e.type === 'titan')) {
                                         await selection.followUp({ content: "🚫 **تأثير العملاق مفعل بالفعل! لا يمكنك مضاعفة القوة أكثر.**", ephemeral: true });
                                         processingUsers.delete(i.user.id);
@@ -581,7 +573,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 // 🛡️ حفظ الحالة فوراً بعد استخدام الجرعة لمنع الضياع 🛡️
                                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                                    retreatState, // 🟢 حفظ
+                                    retreatState,
                                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                                     themeName: theme.name,
                                     monsterData: monster
@@ -619,8 +611,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
                                      
-                                    let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
-                                    if (isCrit) dmg = Math.floor(dmg * 1.5);
+                                    // 🔥🔥🔥 تعديل التوازن: تقليل العشوائية وتقليل الكريتيكال 🔥🔥🔥
+                                    let dmg = Math.floor(currentAtk * (0.95 + Math.random() * 0.10)); // تذبذب قليل جداً (95% - 105%)
+                                    
+                                    if (isCrit) dmg = Math.floor(dmg * 1.3); // تقليل مضاعف الكريتيكال من 1.5 إلى 1.3
 
                                     if (floor <= 5 && dmg > 47) dmg = 47;
                                     else if (floor <= 10 && dmg > 88) dmg = 88;
@@ -691,10 +685,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                // 🛡️ حفظ الحالة قبل دور الوحش
                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                    retreatState, // 🟢 حفظ
+                    retreatState,
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                     themeName: theme.name,
                     monsterData: monster
@@ -740,13 +733,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         // 🟢🟢🟢 منطق الانسحاب الجديد (مرة واحدة لكل نطاق) 🟢🟢🟢
         if (floor <= 20) {
-            // من 1 إلى 20: الانسحاب متاح دائماً
             canRetreat = true;
         } 
         else if (floor >= 30 && floor <= 40) {
             if (!retreatState.range_30_40 && Math.random() < 0.25) { 
                 canRetreat = true;
-                retreatState.range_30_40 = true; // تم الاستهلاك
+                retreatState.range_30_40 = true; 
             }
         }
         else if (floor >= 41 && floor <= 50) {
@@ -756,7 +748,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
         else if (floor >= 51 && floor <= 70) {
-            if (!retreatState.range_51_70 && Math.random() < 0.15) { // فرصة أقل لأن النطاق أوسع
+            if (!retreatState.range_51_70 && Math.random() < 0.15) { 
                 canRetreat = true;
                 retreatState.range_51_70 = true;
             }
