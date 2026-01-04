@@ -74,10 +74,15 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         // 🔥 سحب الصورة من ملف الكونفج 🔥
         const imageUrl = theme.image || 'https://i.postimg.cc/NMkWVyLV/line.png';
 
+        // 🔥🔥🔥 التعديلات هنا (العنوان واللون) 🔥🔥🔥
         return new EmbedBuilder()
-            .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
+            // العنوان بصيغة: دانجون: اسم البوابة
+            .setTitle(`دانجون: ${theme.name}`) 
+            
+            // اللون يتم سحبه من الكونفج (واذا مو موجود ياخذ لون احتياطي)
+            .setColor(theme.color || '#2F3136') 
+            
             .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 **تم فتح البوابة إلى ${theme.name}!**\nاختر تخصصك واستعد للمعركة.\n\n👥 **الفريق:**\n${memberList}`)
-            .setColor('DarkRed')
             .setImage(imageUrl) 
             .setThumbnail(host.displayAvatarURL());
     };
@@ -162,8 +167,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             });
 
             try {
+                // 🔥🔥🔥 تعديل اسم الثريد هنا ليصبح (دانجون-اسم البوابة) 🔥🔥🔥
                 const thread = await msg.channel.threads.create({
-                    name: `غارة-${host.username}`,
+                    name: `دانجون-${theme.name.replace(/ /g, '-')}`, // استبدال المسافات بشرطات
                     autoArchiveDuration: 60,
                     type: ChannelType.PublicThread,
                     reason: 'Start Dungeon Battle'
