@@ -5,24 +5,19 @@ const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js'
 const activeDungeonRequests = new Map();
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
 
-/**
- * دالة بدء الدانجون (اختيار عشوائي فوري مع الصور من الكونفج)
- */
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
-    // 1. التحقق من الطلبات النشطة
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
-    // 2. التحقق من المستوى
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 5) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    // 3. التحقق من الكولداون (لغير المالك)
+    // التحقق من الكولداون
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
@@ -33,21 +28,19 @@ async function startDungeon(interaction, sql) {
         }
     }
 
-    // 4. 🔥 الاختيار العشوائي للثيم 🔥
+    // اختيار ثيم عشوائي
     const themeKeys = Object.keys(dungeonConfig.themes || {});
     if (themeKeys.length === 0) {
         return interaction.reply({ content: "❌ لا توجد بيانات للدانجون حالياً.", flags: [MessageFlags.Ephemeral] });
     }
 
-    // اختيار عشوائي
     const randomKey = themeKeys[Math.floor(Math.random() * themeKeys.length)];
-    // الآن نأخذ الصورة مباشرة من ملف الإعدادات
     const selectedTheme = { ...dungeonConfig.themes[randomKey], key: randomKey };
     
     // تسجيل الحالة
     activeDungeonRequests.set(user.id, { status: 'lobby' });
 
-    // الانتقال مباشرة للوبي
+    // الانتقال للوبي فوراً
     try {
         await lobbyPhase(interaction, null, selectedTheme, sql);
     } catch (err) {
@@ -57,9 +50,6 @@ async function startDungeon(interaction, sql) {
     }
 }
 
-/**
- * دالة اللوبي
- */
 async function lobbyPhase(interaction, oldMsg, theme, sql) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
@@ -80,7 +70,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             return `\`${i+1}.\` <@${id}> — **${arabCls}**`;
         }).join('\n');
 
-        // استخدام الصورة من الثيم، أو صورة احتياطية إذا لم توجد
+        // سحب الصورة من ملف الإعدادات
         const imageUrl = theme.image || 'https://i.postimg.cc/NMkWVyLV/line.png';
 
         return new EmbedBuilder()
@@ -97,7 +87,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
     );
 
     let msg;
-    // رسالة جديدة دائماً (لأننا ألغينا قائمة الاختيار السابقة)
+    // إرسال رسالة اللوبي
     msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
     
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
