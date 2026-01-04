@@ -10,24 +10,19 @@ function getTacticalTargets(players, count, monster) {
 
     // ترتيب اللاعبين حسب "قيمة التهديد" (Threat Level)
     let prioritized = alive.sort((a, b) => {
-        // 1. هل يمكن قتله بضربة واحدة؟ (Kill Confirm) - أولوية قصوى
         const aKillable = a.hp <= monster.atk * 1.5 ? 20 : 0;
         const bKillable = b.hp <= monster.atk * 1.5 ? 20 : 0;
         
-        // 2. هل هو المعالج؟ (Focus Priest)
         const aIsPriest = a.class === 'Priest' ? 10 : 0;
         const bIsPriest = b.class === 'Priest' ? 10 : 0;
 
-        // 3. من لديه أعلى هجوم؟ (High DPS Threat)
         const aThreat = a.atk * (a.effects.some(e => e.type === 'atk_buff') ? 1.5 : 1);
         const bThreat = b.atk * (b.effects.some(e => e.type === 'atk_buff') ? 1.5 : 1);
         const threatScore = (bThreat - aThreat) / 1000; 
 
-        // 4. تجنب الانعكاس (Avoid Reflect) - ذكاء الوحش
         const aReflect = a.effects.some(e => e.type === 'reflect') ? -100 : 0;
         const bReflect = b.effects.some(e => e.type === 'reflect') ? -100 : 0;
 
-        // 5. الاستفزاز (Taunt) - إذا لاعب مفعل تايتن يضطر الوحش يضربه
         const aTaunt = a.effects.some(e => e.type === 'titan') ? 50 : 0;
         const bTaunt = b.effects.some(e => e.type === 'titan') ? 50 : 0;
 
@@ -41,6 +36,14 @@ function getTacticalTargets(players, count, monster) {
 }
 
 async function processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel) {
+    // 🛡️🛡️ حماية من الخطأ NaN وتصحيح الكسور 🛡️🛡️
+    if (isNaN(monster.hp) || monster.hp === null) {
+        monster.hp = 0; // تصحيح فوري
+        console.log("⚠️ [Warning] Monster HP was NaN, reset to 0.");
+    }
+    monster.hp = Math.floor(monster.hp); // إزالة الفواصل العشرية
+    // -----------------------------------------------------
+
     // تهيئة ذاكرة الوحش
     if (!monster.memory) monster.memory = { comboStep: 0, lastMove: null, healsUsed: 0 };
 
@@ -57,13 +60,13 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     if (monster.effects) {
         monster.effects = monster.effects.filter(e => {
             if (e.type === 'burn') {
-                const burnDmg = e.val;
-                monster.hp -= burnDmg;
+                const burnDmg = Math.floor(e.val || 0); // تأكد أنه رقم صحيح
+                monster.hp = Math.floor(monster.hp - burnDmg);
                 log.push(`🔥 **${monster.name}** يحترق! (-${burnDmg})`);
             }
             if (e.type === 'poison') {
-                const poisonDmg = e.val;
-                monster.hp -= poisonDmg;
+                const poisonDmg = Math.floor(e.val || 0); // تأكد أنه رقم صحيح
+                monster.hp = Math.floor(monster.hp - poisonDmg);
                 log.push(`☠️ **${monster.name}** يتألم من السم! (-${poisonDmg})`);
             }
             e.turns--;
@@ -76,8 +79,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     // 3. الارتباك
     const confusion = monster.effects.find(e => e.type === 'confusion');
     if (confusion && Math.random() < confusion.val) {
-        const selfDmg = Math.floor(monster.atk * 0.7); // زيادة ضرر الارتباك
-        monster.hp -= selfDmg;
+        const selfDmg = Math.floor(monster.atk * 0.7) || 1; // حماية من NaN
+        monster.hp = Math.floor(monster.hp - selfDmg);
         log.push(`😵 **${monster.name}** في حالة فوضى وضرب نفسه بقوة! (-${selfDmg})`);
         monster.memory.comboStep = 0;
         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
@@ -90,15 +93,13 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     let skillUsed = false;
 
-    // 🔥 أولوية 1: تنفيذ المهارات الخاصة (Boss Skills) من ملف monsters.js 🔥
-    // البحث عن المهارة بالاسم (إزالة (Lv.X) من الاسم للمطابقة)
+    // 🔥 أولوية 1: تنفيذ المهارات الخاصة (Boss Skills) 🔥
     const cleanName = monster.name.split(' (')[0]; 
     const specialSkill = MONSTER_SKILLS[cleanName];
 
     if (specialSkill) {
-        // زيادة احتمالية المهارة كلما نقص دم الوحش (Enrage Phase)
         let chance = specialSkill.chance;
-        if (monster.hp < monster.maxHp * 0.5) chance += 0.2; // +20% فرصة إذا دمه تحت النص
+        if (monster.hp < monster.maxHp * 0.5) chance += 0.2; 
 
         if (Math.random() < chance) {
             specialSkill.execute(monster, players, log);
@@ -106,9 +107,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 2: تنفيذ المهارات العامة (Generic Skills) للمينيون 🔥
+    // 🔥 أولوية 2: تنفيذ المهارات العامة (Generic Skills) 🔥
     if (!skillUsed && !specialSkill) {
-        // فرصة 30% لأي وحش عادي يستخدم مهارة عامة
         if (Math.random() < 0.30) {
             const randomGeneric = GENERIC_MONSTER_SKILLS[Math.floor(Math.random() * GENERIC_MONSTER_SKILLS.length)];
             randomGeneric.execute(monster, players, log);
@@ -116,7 +116,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 3: نظام الكومبو الخاص (تكتيكات متقدمة) 🔥
+    // 🔥 أولوية 3: نظام الكومبو الخاص 🔥
     if (!skillUsed && monster.memory.comboStep === 1) {
         if (monster.memory.lastMove === 'oil') {
             alive.forEach(p => {
@@ -132,7 +132,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             if (target) {
                 const dmg = Math.floor(monster.atk * 3.5); 
                 applyDamageToPlayer(target, dmg);
-                target.effects.push({ type: 'stun', val: 1, turns: 2 }); // شلل دورين
+                target.effects.push({ type: 'stun', val: 1, turns: 2 });
                 log.push(`🔨 **${monster.name}** أطلق طاقته الكاملة وسحق **${target.name}**! (COMBO FINISH)`);
                 skillUsed = true;
             }
@@ -148,7 +148,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             alive.forEach(p => {
                 const dmg = Math.floor(monster.atk * 1.5);
                 applyDamageToPlayer(p, dmg);
-                p.effects.push({ type: 'weakness', val: 0.5, turns: 99 }); // ضعف دائم
+                p.effects.push({ type: 'weakness', val: 0.5, turns: 99 });
             });
             log.push(`☄️ **موراكس** أسقط نيزكاً! (ضرر جماعي + ضعف دائم)`);
             skillUsed = true;
@@ -162,7 +162,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 5: العلاج الذاتي (التعديل الجديد) 🔥
+    // 🔥 أولوية 5: العلاج الذاتي (التعديل الجديد: متدرج ومحمي من الكسور) 🔥
     // الشرط: الطابق 21 فما فوق، الدم أقل من 25%، ولم يستخدم العلاج أكثر من مرتين
     if (!skillUsed && floor >= 21 && monster.hp < monster.maxHp * 0.25 && monster.memory.healsUsed < 2) {
         if (Math.random() < 0.5) {
@@ -172,8 +172,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             // سقف الشفاء 10% (تعجيزي خفيف)
             healPercent = Math.min(healPercent, 0.10); 
 
-            const healAmount = Math.floor(monster.maxHp * healPercent);
-            monster.hp += healAmount;
+            // استخدام Math.floor للتأكد من عدم وجود كسور
+            const healAmount = Math.floor(monster.maxHp * healPercent) || 1;
+            monster.hp = Math.floor(monster.hp + healAmount);
             monster.memory.healsUsed++;
             
             log.push(`💚 **${monster.name}** شرب جرعة دماء واستعاد عافيته! (+${healAmount})`);
@@ -185,23 +186,19 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     // ⚔️ 6. الهجوم الأساسي (إذا لم يستخدم أي مهارة) ⚔️
     // ============================================================
     if (!skillUsed) {
-        // زيادة عدد الأهداف في الطوابق العليا
         let targetCount = 1;
         if (floor >= 30) targetCount = 2;
         if (floor >= 60) targetCount = 3;
         if (floor >= 90) targetCount = 4;
 
-        // استخدام نظام الاستهداف الذكي جداً
         const targets = getTacticalTargets(players, targetCount, monster);
 
         if (targets.length > 0) {
             let hitLog = [];
             
             targets.forEach(target => {
-                // زيادة الضرر كلما طالت المعركة (Enrage)
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
                 
-                // حسابات الضعف والدفاع
                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.6);
                 if (target.defending) dmg = Math.floor(dmg * 0.5);
                 
@@ -209,9 +206,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 const reflectEffect = target.effects.find(e => e.type === 'reflect');
                 let reflectedDmg = 0;
                 if (reflectEffect) {
-                    reflectedDmg = Math.floor(dmg * reflectEffect.val);
-                    dmg -= reflectedDmg;
-                    monster.hp -= reflectedDmg;
+                    reflectedDmg = Math.floor(dmg * (reflectEffect.val || 0)); // حماية NaN
+                    dmg = Math.floor(dmg - reflectedDmg);
+                    monster.hp = Math.floor(monster.hp - reflectedDmg); // حماية الفواصل
                 }
 
                 const takenDmg = applyDamageToPlayer(target, dmg);
@@ -225,7 +222,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
             log.push(`⚔️ **${monster.name}** هاجم بوحشية: [ ${hitLog.join(' | ')} ]`);
             
-            // تحقق من الوفيات فوراً
             checkDeaths(players, floor, log, threadChannel);
         }
     }
@@ -233,8 +229,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     // هجوم الحيوانات الأليفة/المستدعية
     players.forEach(p => {
         if (!p.isDead && p.summon && p.summon.active && p.summon.turns > 0) {
-            const petDmg = Math.floor(p.atk * 0.4);
-            monster.hp -= petDmg;
+            const petDmg = Math.floor(p.atk * 0.4) || 0; // حماية NaN
+            monster.hp = Math.floor(monster.hp - petDmg); // حماية الفواصل
             p.totalDamage += petDmg;
             p.summon.turns--;
             if (p.summon.turns <= 0) {
@@ -244,11 +240,13 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     });
 
+    // 🛡️ فحص نهائي: إذا الدم صار سالب نرجعه صفر
+    if (monster.hp < 0) monster.hp = 0;
+
     if (players.every(p => p.isDead)) return false;
 
     if (log.length > 6) log = log.slice(-6);
     
-    // تحديث الرسالة
     try {
         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
     } catch (e) {
