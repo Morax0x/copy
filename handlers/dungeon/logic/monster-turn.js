@@ -236,8 +236,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // زيادة الضرر كلما طالت المعركة (Enrage)
-                let dmg = Math.floor(monster.atk * (1 + turnCount * 0.05));
+                // 🟢 تعديل هام: تقليل زيادة الضرر التراكمية لتكون 1% فقط بدلاً من 5%
+                let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
                 // حسابات الضعف والدفاع
                 if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.6);
