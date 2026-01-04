@@ -1,93 +1,93 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ComponentType } = require('discord.js');
-const { runDungeon } = require('./dungeon-battle.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
+const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
 
 const activeDungeonRequests = new Map();
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
 
+/**
+ * دالة بدء الدانجون (اختيار عشوائي فوري مع الصور من الكونفج)
+ */
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
+    // 1. التحقق من الطلبات النشطة
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
+    // 2. التحقق من المستوى
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 5) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    activeDungeonRequests.set(user.id, { status: 'selecting_theme' });
+    // 3. التحقق من الكولداون (لغير المالك)
+    if (user.id !== OWNER_ID) {
+        const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
+        const lastDungeon = lastRun?.last_dungeon || 0;
+        const now = Date.now();
+        if (now - lastDungeon < COOLDOWN_TIME) {
+             const finishTimeUnix = Math.floor((lastDungeon + COOLDOWN_TIME) / 1000);
+             return interaction.reply({ content: `⏳ **استرح قليلاً!** يمكنك بدء غارة جديدة <t:${finishTimeUnix}:R>.`, flags: [MessageFlags.Ephemeral] });
+        }
+    }
 
-    const themes = Object.keys(dungeonConfig.themes || {});
-    if (themes.length === 0) {
-        activeDungeonRequests.delete(user.id);
+    // 4. 🔥 الاختيار العشوائي للثيم 🔥
+    const themeKeys = Object.keys(dungeonConfig.themes || {});
+    if (themeKeys.length === 0) {
         return interaction.reply({ content: "❌ لا توجد بيانات للدانجون حالياً.", flags: [MessageFlags.Ephemeral] });
     }
 
-    const buttons = themes.map(key => {
-        const theme = dungeonConfig.themes[key];
-        return new ButtonBuilder()
-            .setCustomId(`dungeon_theme_${key}`)
-            .setLabel(theme.name)
-            .setEmoji(theme.emoji)
-            .setStyle(ButtonStyle.Secondary);
-    });
+    // اختيار عشوائي
+    const randomKey = themeKeys[Math.floor(Math.random() * themeKeys.length)];
+    // الآن نأخذ الصورة مباشرة من ملف الإعدادات
+    const selectedTheme = { ...dungeonConfig.themes[randomKey], key: randomKey };
+    
+    // تسجيل الحالة
+    activeDungeonRequests.set(user.id, { status: 'lobby' });
 
-    const row1 = new ActionRowBuilder();
-    if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
-
-    const embed = new EmbedBuilder()
-        .setTitle('⚔️ بوابة الدانجون')
-        .setDescription(`أهلاً بك أيها القائد **${user.username}**!\nاختر المنطقة التي تود غزوها:`)
-        .setColor('#2B2D31')
-        .setImage('https://i.postimg.cc/NMkWVyLV/line.png');
-
-    const msg = await interaction.reply({ embeds: [embed], components: [row1], fetchReply: true });
-    if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
-
-    const filter = i => i.user.id === user.id && i.customId.startsWith('dungeon_theme_');
-    const collector = msg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
-
-    collector.on('collect', async i => {
-        try {
-            if (!i.deferred && !i.replied) await i.deferUpdate();
-            collector.stop('selected');
-            const themeKey = i.customId.replace('dungeon_theme_', '');
-            const theme = { ...dungeonConfig.themes[themeKey], key: themeKey };
-            await lobbyPhase(interaction, msg, theme, sql);
-        } catch (err) {
-            console.error(err);
-            activeDungeonRequests.delete(user.id);
-        }
-    });
-
-    collector.on('end', (c, reason) => {
-        if (reason === 'time') {
-            activeDungeonRequests.delete(user.id);
-            if (msg.editable) msg.edit({ content: "⏰ انتهى وقت الاختيار.", components: [] }).catch(()=>{});
-        }
-    });
+    // الانتقال مباشرة للوبي
+    try {
+        await lobbyPhase(interaction, null, selectedTheme, sql);
+    } catch (err) {
+        console.error(err);
+        activeDungeonRequests.delete(user.id);
+        interaction.followUp({ content: "❌ حدث خطأ أثناء بدء اللوبي.", ephemeral: true }).catch(()=>{});
+    }
 }
 
-async function lobbyPhase(interaction, msg, theme, sql) {
+/**
+ * دالة اللوبي
+ */
+async function lobbyPhase(interaction, oldMsg, theme, sql) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
+    
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
-
+      
     const updateEmbed = () => {
         const memberList = party.map((id, i) => {
             const cls = partyClasses.get(id);
-            let arabCls = cls === 'Leader' ? 'القائد 👑' : (cls === 'Tank' ? 'مُدرّع 🛡️' : (cls === 'Priest' ? 'كاهن ✨' : (cls === 'Mage' ? 'ساحر ❄️' : 'مستدعٍ 🐺')));
+            let arabCls = cls;
+            if (cls === 'Leader') arabCls = 'القائد 👑';
+            else if (cls === 'Tank') arabCls = 'مُدرّع 🛡️';
+            else if (cls === 'Priest') arabCls = 'كاهن ✨';
+            else if (cls === 'Mage') arabCls = 'ساحر ❄️';
+            else if (cls === 'Summoner') arabCls = 'مستدعٍ 🐺';
             return `\`${i+1}.\` <@${id}> — **${arabCls}**`;
         }).join('\n');
 
+        // استخدام الصورة من الثيم، أو صورة احتياطية إذا لم توجد
+        const imageUrl = theme.image || 'https://i.postimg.cc/NMkWVyLV/line.png';
+
         return new EmbedBuilder()
             .setTitle(`${theme.emoji} بوابة الدانجون: ${theme.name}`)
-            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 اخـتر التخصص الذي يناسبك!\n\n👥 **الفريق:**\n${memberList}`)
+            .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 **تم فتح البوابة إلى ${theme.name}!**\nاختر تخصصك واستعد للمعركة.\n\n👥 **الفريق:**\n${memberList}`)
             .setColor('DarkRed')
+            .setImage(imageUrl) 
             .setThumbnail(host.displayAvatarURL());
     };
 
@@ -96,11 +96,17 @@ async function lobbyPhase(interaction, msg, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    await msg.edit({ embeds: [updateEmbed()], components: [row] });
+    let msg;
+    // رسالة جديدة دائماً (لأننا ألغينا قائمة الاختيار السابقة)
+    msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
+    
+    if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
+    
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
         if (i.replied || i.deferred) return;
+
         try {
             if (i.customId === 'join') {
                 if (i.user.id === host.id) return i.reply({ content: "👑 أنت القائد.", flags: [MessageFlags.Ephemeral] });
@@ -109,15 +115,22 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 if (!party.includes(i.user.id) && i.user.id !== OWNER_ID) {
                     const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط.", flags: [MessageFlags.Ephemeral] });
+                    const now = Date.now();
+                    const reset = jData.last_join_reset || 0;
+                    if (now - reset < COOLDOWN_TIME && (jData.dungeon_join_count || 0) >= 3) return i.reply({ content: "🚫 استنفذت المحاولات.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const takenClasses = [];
                 partyClasses.forEach((c, u) => { if(u !== i.user.id) takenClasses.push(c); });
                 const opts = [];
                 const addOpt = (v, l, e) => { if(!takenClasses.includes(v)) opts.push(new StringSelectMenuOptionBuilder().setLabel(l).setValue(v).setEmoji(e)); };
-                addOpt('Tank', 'المُدرّع', '🛡️'); addOpt('Priest', 'الكاهن', '✨'); addOpt('Mage', 'الساحر', '❄️'); addOpt('Summoner', 'المستدعي', '🐺');
+                
+                addOpt('Tank', 'المُدرّع', '🛡️'); 
+                addOpt('Priest', 'الكاهن', '✨'); 
+                addOpt('Mage', 'الساحر', '❄️'); 
+                addOpt('Summoner', 'المستدعي', '🐺');
 
-                if (opts.length === 0) return i.reply({ content: "🚫 المقاعد ممتلئة.", flags: [MessageFlags.Ephemeral] });
+                if (opts.length === 0) return i.reply({ content: "🚫 جميع التخصصات مأخوذة.", flags: [MessageFlags.Ephemeral] });
 
                 const sRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('cls').setPlaceholder('اختر تخصصك...').addOptions(opts));
                 const sMsg = await i.reply({ content: "🛡️ اختر تخصصك:", components: [sRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
@@ -125,13 +138,18 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 const sel = await sMsg.awaitMessageComponent({ filter: x => x.user.id === i.user.id, time: 20000, componentType: ComponentType.StringSelect }).catch(() => null);
                 if (sel) {
                     const chosen = sel.values[0];
-                    if ([...partyClasses.values()].filter((c,k) => k !== i.user.id).includes(chosen)) return sel.update({ content: "🚫 أخذت.", components: [] });
+                    const dCheck = Array.from(partyClasses.entries()).filter(x => x[0] !== i.user.id).map(x => x[1]);
+                    if (dCheck.includes(chosen)) return sel.update({ content: "🚫 سبقك بها غيرك.", components: [] });
+
                     await sel.deferUpdate();
                     partyClasses.set(i.user.id, chosen);
                     if (!party.includes(i.user.id)) party.push(i.user.id);
+                    
                     await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] });
                     await msg.edit({ embeds: [updateEmbed()] });
-                } else await i.editReply({ content: "⏰ انتهى الوقت.", components: [] });
+                } else {
+                    await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
+                }
 
             } else if (i.customId === 'start') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
@@ -147,6 +165,11 @@ async function lobbyPhase(interaction, msg, theme, sql) {
             party.forEach(id => {
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                 if (id === host.id && id !== OWNER_ID) sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
+                else if (id !== OWNER_ID) {
+                    const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
+                    if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
+                    else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
+                }
             });
 
             try {
@@ -154,15 +177,21 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                     name: `غارة-${host.username}`,
                     autoArchiveDuration: 60,
                     type: ChannelType.PublicThread,
-                    reason: 'Dungeon'
+                    reason: 'Start Dungeon Battle'
                 });
+
                 for (const uid of party) { try { await thread.members.add(uid); } catch(e){} }
+
                 await thread.send(`🔔 **بدأت المعركة!** ${party.map(id=>`<@${id}>`).join(' ')}`);
+                if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
+
+                // تشغيل المحرك
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
+
             } catch (e) {
                 console.error(e);
                 activeDungeonRequests.delete(host.id);
-                msg.channel.send("❌ خطأ.");
+                msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
         } else {
             activeDungeonRequests.delete(host.id);
