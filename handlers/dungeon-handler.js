@@ -15,18 +15,8 @@ async function startDungeon(interaction, sql) {
 
     // 2. التحقق من المستوى
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-    if (!leaderData || leaderData.level < 10) {
+    if (!leaderData || leaderData.level < 5) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **10** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
-    }
-
-    // 3. التحقق الإضافي من الكولداون (لضمان عدم التلاعب)
-    if (user.id !== OWNER_ID) {
-        const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-        const lastDungeon = lastRun?.last_dungeon || 0;
-        const now = Date.now();
-        if (now - lastDungeon < COOLDOWN_TIME) {
-             return interaction.reply({ content: `⏳ **استرح قليلاً!** الكولداون نشط.`, flags: [MessageFlags.Ephemeral] });
-        }
     }
 
     // تسجيل الطلب
@@ -209,17 +199,16 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                     reason: 'Start Dungeon'
                 });
 
-                // إضافة الأعضاء
                 for (const uid of party) { try { await thread.members.add(uid); } catch(e){} }
 
                 await thread.send(`🔔 **بدأت المعركة!** ${party.map(id=>`<@${id}>`).join(' ')}`);
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // تشغيل المحرك الجديد
+                // 🔥 تشغيل المحرك الجديد 🔥
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
-            } catch (err) {
-                console.error(err);
+            } catch (e) {
+                console.error(e);
                 activeDungeonRequests.delete(host.id);
                 msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
