@@ -20,6 +20,10 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID) {
             // تهيئة متغير الدرع المشتراة
             playerData.startingShield = 0; 
             
+            // 🔥🔥🔥 إضافة متغيرات نظام التهديد (Threat System) 🔥🔥🔥
+            playerData.threat = 0; // يبدأ من صفر
+            playerData.totalDamage = 0; // لحساب الإحصائيات
+            
             // ============================================================
             // 🔥🔥🔥 الفحص الحقيقي للختم (Deep Scan) 🔥🔥🔥
             // ============================================================
