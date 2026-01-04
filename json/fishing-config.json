@@ -11,7 +11,7 @@
     { "id": "fish_goldfish", "name": "سمكة ذهبية", "price": 150, "rarity": 2, "emoji": "🐠" },
     { "id": "fish_tuna", "name": "تونا", "price": 170, "rarity": 2, "emoji": "🐟" },
     { "id": "fish_squid", "name": "حبار", "price": 180, "rarity": 2, "emoji": "🦑" },
-    { "id": "fish_mackerel", "name": "ماكريل", "price": 190, "rarity": 2, "emoji": "🐟" },
+    { "id": "fish_mackerel", "name": "ماكريل", "price": 70, "rarity": 2, "emoji": "🐟" },
     
     { "id": "fish_salmon", "name": "سلمون", "price": 200, "rarity": 3, "emoji": "🍣" },
     { "id": "fish_lobster", "name": "كركند", "price": 220, "rarity": 3, "emoji": "🦞" },
