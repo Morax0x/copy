@@ -8,27 +8,28 @@ const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
+    // التحقق من الطلبات
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
+    // التحقق من المستوى (5)
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 5) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    // التحقق من الكولداون
+    // كولداون (لغير الأونر)
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
         const now = Date.now();
         if (now - lastDungeon < COOLDOWN_TIME) {
-             const finishTimeUnix = Math.floor((lastDungeon + COOLDOWN_TIME) / 1000);
-             return interaction.reply({ content: `⏳ **استرح قليلاً!** يمكنك بدء غارة جديدة <t:${finishTimeUnix}:R>.`, flags: [MessageFlags.Ephemeral] });
+             return interaction.reply({ content: `⏳ **استرح قليلاً!** الكولداون نشط.`, flags: [MessageFlags.Ephemeral] });
         }
     }
 
-    // اختيار ثيم عشوائي
+    // 🔥 اختيار عشوائي للثيم 🔥
     const themeKeys = Object.keys(dungeonConfig.themes || {});
     if (themeKeys.length === 0) {
         return interaction.reply({ content: "❌ لا توجد بيانات للدانجون حالياً.", flags: [MessageFlags.Ephemeral] });
@@ -40,7 +41,7 @@ async function startDungeon(interaction, sql) {
     // تسجيل الحالة
     activeDungeonRequests.set(user.id, { status: 'lobby' });
 
-    // الانتقال للوبي فوراً
+    // الانتقال للوبي مباشرة
     try {
         await lobbyPhase(interaction, null, selectedTheme, sql);
     } catch (err) {
@@ -70,7 +71,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             return `\`${i+1}.\` <@${id}> — **${arabCls}**`;
         }).join('\n');
 
-        // سحب الصورة من ملف الإعدادات
+        // 🔥 سحب الصورة من ملف الكونفج 🔥
         const imageUrl = theme.image || 'https://i.postimg.cc/NMkWVyLV/line.png';
 
         return new EmbedBuilder()
@@ -86,9 +87,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
     );
 
-    let msg;
-    // إرسال رسالة اللوبي
-    msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
+    let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
     
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
     
