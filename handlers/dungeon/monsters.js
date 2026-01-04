@@ -15,10 +15,8 @@ function getSmartTarget(players, monster) {
     if (alive.length === 0) return null;
 
     // 1. نظام "الآغرو" (Threat System) - الأولوية القصوى
-    // نرتب اللاعبين حسب نقاط التهديد (Threat) تنازلياً
     const topThreat = alive.sort((a, b) => (b.threat || 0) - (a.threat || 0))[0];
 
-    // إذا كان هناك لاعب لديه تهديد عالٍ، الوحش سيركز عليه
     if (topThreat && topThreat.threat > 100) { 
         // فرصة 20% لتجاهل التانك وضرب المعالج أو الأضعف (لإضافة توتر)
         if (Math.random() > 0.8) {
@@ -29,11 +27,11 @@ function getSmartTarget(players, monster) {
         return topThreat;
     }
 
-    // 2. منطق التعاون (Synergy): ضرب اللاعبين المصابين بحالات خاصة (Shatter)
+    // 2. منطق التعاون (Synergy)
     const ccTarget = alive.find(p => p.effects.some(e => ['stun', 'freeze'].includes(e.type)));
     if (ccTarget && Math.random() < 0.6) return ccTarget;
 
-    // 3. الأولوية للكاهن (Priest) لتعطيل الإحياء (إذا لم يكن هناك تهديد عالٍ)
+    // 3. الأولوية للكاهن (Priest)
     const priest = alive.find(p => p.class === 'Priest');
     if (priest && Math.random() < 0.6) return priest; 
 
@@ -47,16 +45,13 @@ function getSmartTarget(players, monster) {
 
 // --- 🔥 نظام مراحل الزعماء (Boss Phases) 🔥 ---
 function checkBossPhase(monster, log) {
-    // التأكد أن الوحش زعيم أو موراكس ولم يدخل المرحلة الثانية بعد
     if ((monster.maxHp > 10000) && !monster.enraged && monster.hp <= monster.maxHp * 0.5) {
         monster.enraged = true;
         monster.atk = Math.floor(monster.atk * 1.3); // زيادة الهجوم 30%
         
-        // تأثير بصري في اللوق
         log.push(`\n🔴🔴 **تحذير: ${monster.name} دخل مرحلة الهيجان (Enrage)!** 🔴🔴`);
         log.push(`⚠️ **ازداد الهجوم بنسبة 30% وأصبحت المهارات أكثر فتكاً!**\n`);
         
-        // استعادة قليل من الصحة للدراما
         const heal = Math.floor(monster.maxHp * 0.1);
         monster.hp += heal;
         log.push(`🩸 **${monster.name}** استعاد ${heal} من صحته بسبب الغضب!`);
@@ -68,35 +63,82 @@ function checkBossPhase(monster, log) {
 
 // --- ⚔️ مهارات الوحوش العامة (للمينيون والنخبة الذين ليس لهم مهارة خاصة) ---
 const GENERIC_MONSTER_SKILLS = [
-    { name: "ضربة قاصمة", emoji: "🔨", chance: 0.3, execute: (m, p, l) => { 
+    { name: "ضربة قاصمة", emoji: "🔨", chance: 0.3, execute: (m, p, l, currentFloor) => { 
         const target = getSmartTarget(p, m); 
-        if(target){ applyDamageToPlayer(target, Math.floor(m.atk * 1.5)); l.push(`🔨 **${m.name}** رصد نقطة ضعف **${target.name}** وسدد ضربة قاصمة!`); }
+        if(target){ 
+            // 🔥 تعديل: تخفيف الضرر في الطوابق الأولى (1-18)
+            let dmg = Math.floor(m.atk * 1.5);
+            if (currentFloor <= 18) {
+                // سقف الضرر لا يتجاوز 40% من صحة اللاعب المتوسطة (350)
+                dmg = Math.min(dmg, 140); 
+            }
+            applyDamageToPlayer(target, dmg); 
+            l.push(`🔨 **${m.name}** رصد نقطة ضعف **${target.name}** وسدد ضربة قاصمة!`); 
+        }
     }},
     { name: "عضة سامة", emoji: "🤮", chance: 0.3, execute: (m, p, l) => { 
         const alive = p.filter(pl => !pl.isDead && !pl.effects.some(e => e.type === 'stealth'));
         if (alive.length === 0) return;
         const target = alive[Math.floor(Math.random()*alive.length)];
-        if(target){ target.effects.push({type:'poison', val: Math.floor(m.atk*0.2), turns:3}); l.push(`🤮 **${m.name}** نفث سماً على **${target.name}**!`); }
+        if(target){ 
+            let poisonDmg = Math.floor(m.atk*0.2);
+            // تخفيف السم في البداية
+            if (m.atk < 50) poisonDmg = Math.max(5, poisonDmg); 
+            
+            target.effects.push({type:'poison', val: poisonDmg, turns:3}); 
+            l.push(`🤮 **${m.name}** نفث سماً على **${target.name}**!`); 
+        }
     }},
     { name: "صرخة مرعبة", emoji: "🗣️", chance: 0.2, execute: (m, p, l) => { 
         p.forEach(pl=>{if(!pl.isDead && Math.random()<0.5) {
             pl.effects.push({type:'weakness',val:0.3,turns:2});
-            pl.threat = Math.floor((pl.threat || 0) * 0.5); // تقليل الآغرو عند الخوف
+            pl.threat = Math.floor((pl.threat || 0) * 0.5); 
         }}); 
         l.push(`🗣️ **${m.name}** أطلق صرخة مرعبة قللت عزيمة (وتهديد) الفريق!`);
     }},
-    { name: "هجوم متوحش", emoji: "🐾", chance: 0.3, execute: (m, p, l) => { 
-        p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*0.8))}); l.push(`🐾 **${m.name}** هاجم الجميع بوحشية!`);
+    { name: "هجوم متوحش", emoji: "🐾", chance: 0.3, execute: (m, p, l, currentFloor) => { 
+        p.forEach(pl=>{if(!pl.isDead) {
+            let dmg = Math.floor(m.atk*0.8);
+            // 🔥 تعديل: تخفيف الضرر الجماعي في الطوابق الأولى
+            if (currentFloor <= 18) {
+                dmg = Math.min(dmg, 60); // لا يتجاوز 60 لكل لاعب
+            }
+            applyDamageToPlayer(pl, dmg);
+        }}); 
+        l.push(`🐾 **${m.name}** هاجم الجميع بوحشية!`);
     }},
-    { name: "تصلب", emoji: "🛡️", chance: 0.2, execute: (m, p, l) => { 
-        m.hp += Math.floor(m.maxHp * 0.05); l.push(`🛡️ **${m.name}** زاد دفاعه واستعاد قليلاً من الصحة!`);
+    // 🔥🔥🔥 تعديل مهارة الشفاء (تصلب) 🔥🔥🔥
+    { name: "تصلب", emoji: "🛡️", chance: 0.15, execute: (m, p, l, currentFloor) => { 
+        // ⛔ منع الاستخدام قبل الطابق 21
+        if (currentFloor < 21) {
+            // استبدالها بهجوم عادي ضعيف إذا ظهرت بالخطأ
+            const target = getSmartTarget(p, m);
+            if(target) {
+                applyDamageToPlayer(target, Math.floor(m.atk * 0.8));
+                l.push(`⚔️ **${m.name}** حاول التصلب لكنه فشل وهاجم بدلاً من ذلك!`);
+            }
+            return;
+        }
+
+        // حساب نسبة الشفاء المتصاعدة
+        // تبدأ من 2% وتزيد 0.1% مع كل طابق فوق الـ 20
+        let healPercent = 0.02 + ((currentFloor - 20) * 0.001);
+        // سقف للشفاء (لا يتجاوز 10% أبداً)
+        healPercent = Math.min(healPercent, 0.10);
+
+        const healAmount = Math.floor(m.maxHp * healPercent); 
+        m.hp += healAmount; 
+        l.push(`🛡️ **${m.name}** صلب جلده واستعاد عافيته (+${healAmount} HP)!`);
     }}
 ];
 
 // --- 👹 قاعدة بيانات مهارات الزعماء والنخبة والحراس ---
 const MONSTER_SKILLS = {
+    // ... (نفس القائمة الضخمة السابقة - سأختصرها هنا للوضوح، لكن في ملفك يجب أن تبقى كاملة)
+    // سأضع النخبة والزعماء كما هم لأنك لم تطلب تعديلهم، التعديل كان على الطوابق الأولى (Generic)
+    
     // ========================
-    // 🔥 وحوش النخبة: النار (Fire Theme)
+    // 🔥 وحوش النخبة: النار
     // ========================
     "تنين الأرض": { name: "هزة أرضية", emoji: "🌍", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*0.8))}); l.push(`🌍 **تنين الأرض** ضرب الأرض بقوة مسبباً زلزالاً!`); }},
     "طاغية الجبال": { name: "رمي الصخور", emoji: "🪨", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.8); l.push(`🪨 **الطاغية** رمى صخرة عملاقة على **${t.name}**!`);} }},
@@ -106,17 +148,17 @@ const MONSTER_SKILLS = {
     "عفريت النار": { name: "كرة اللهب", emoji: "☄️", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead && Math.random()<0.6) pl.effects.push({type:'burn',val:Math.floor(m.atk*0.2),turns:3})}); l.push(`☄️ **العفريت** أطلق كرات نارية حارقة!`); }},
 
     // ========================
-    // ❄️ وحوش النخبة: الجليد (Ice Theme)
+    // ❄️ وحوش النخبة: الجليد
     // ========================
     "عملاق الصقيع": { name: "نفس متجمد", emoji: "❄️", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk); t.effects.push({type:'stun',val:1,turns:1}); l.push(`❄️ **العملاق** جمد **${t.name}** بأنفاسه!`);} }},
-    "الدب الفولاذي": { name: "تمزيق", emoji: "🐾", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.2); t.effects.push({type:'poison',val:Math.floor(m.atk*0.1),turns:3}); l.push(`🐾 **الدب** مزق **${t.name}** (نزيف)!`);} }}, 
+    "الدب الفولاذي": { name: "تمزيق", emoji: "🐾", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.2); t.effects.push({type:'poison',val:Math.floor(m.atk*0.1),turns:3}); l.push(`🐾 **الدب** مزق **${t.name}** (نزيف)!`);} }},
     "التنين اليافع": { name: "عاصفة ثلجية", emoji: "🌨️", chance: 0.25, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) applyDamageToPlayer(pl, Math.floor(m.atk*0.7))}); l.push(`🌨️ **التنين** استدعى عاصفة ثلجية!`); }},
     "فارس الغسق": { name: "سيف الظلام", emoji: "🌑", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.6); l.push(`🌑 **فارس الغسق** وجه ضربة مشبعة بالظلام لـ **${t.name}**!`);} }},
     "الحرس الملكي": { name: "تشكيل دفاعي", emoji: "🛡️", chance: 0.25, execute: (m,p,l) => { m.hp += Math.floor(m.maxHp * 0.1); l.push(`🛡️ **الحرس الملكي** استعاد ترتيب صفوفه وترمم!`); }},
     "ذئب القطب": { name: "عواء القطيع", emoji: "🐺", chance: 0.3, execute: (m,p,l) => { m.atk = Math.floor(m.atk*1.15); l.push(`🐺 **الذئب** عوى لرفع معنوياته القتالية!`); }},
 
     // ========================
-    // 🌲 وحوش النخبة: الغابة (Forest Theme)
+    // 🌲 وحوش النخبة: الغابة
     // ========================
     "مروض الوحوش": { name: "أمر بالهجوم", emoji: "🐕", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.4); l.push(`🐕 **المروض** أطلق وحوشه لنهش **${t.name}**!`);} }},
     "كاسر الأسود": { name: "كسر العظام", emoji: "🦴", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.3); t.effects.push({type:'weakness',val:0.2,turns:2}); l.push(`🦴 **الكاسر** حطم دفاعات **${t.name}**!`);} }},
@@ -127,7 +169,7 @@ const MONSTER_SKILLS = {
     "النمر الساحق": { name: "مخلب النمر", emoji: "🐅", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.5); l.push(`🐅 **النمر** سدد ضربة مخلب قوية!`);} }},
 
     // ========================
-    // 🌑 وحوش النخبة: الظلام (Dark Theme)
+    // 🌑 وحوش النخبة: الظلام
     // ========================
     "قائد الفيالق": { name: "صرخة الحرب", emoji: "📢", chance: 0.25, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) pl.effects.push({type:'weakness',val:0.2,turns:2})}); l.push(`📢 **القائد** أرهب الجميع بصرخته!`); }},
     "ساحر الظلمات": { name: "كرة الظل", emoji: "🔮", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.2); t.effects.push({type:'blind',val:0.5,turns:2}); l.push(`🔮 **الساحر** أعمى بصيرة **${t.name}**!`);} }},
@@ -144,7 +186,7 @@ const MONSTER_SKILLS = {
     "سيد السموم": { name: "سحابة سامة", emoji: "🌫️", chance: 0.3, execute: (m,p,l) => { p.forEach(pl=>{if(!pl.isDead) pl.effects.push({type:'poison',val:Math.floor(m.atk*0.25),turns:4})}); l.push(`🌫️ **سيد السموم** نشر وباءً في الهواء!`); }},
 
     // ========================
-    // 👑 الزعماء (Bosses) - (القديمة محفوظة)
+    // 👑 الزعماء (Bosses)
     // ========================
     "مالينيا، نصل ميكيلا": {
         name: "رقصة الموت (Dance of Death)", emoji: "🌸", chance: 0.25,
@@ -370,43 +412,23 @@ const MONSTER_SKILLS = {
 };
 
 function getRandomMonster(type, theme, currentFloor = 1) {
-    // 1. التعامل مع الحالة الخاصة للإمبراطور موراكس
-    if (type === 'morax') {
-        return { name: "الامبراطور موراكس", emoji: "👑" };
-    }
-
+    if (type === 'morax') return { name: "الامبراطور موراكس", emoji: "👑" };
     let list = [];
-
-    // 2. تحديد القائمة المناسبة
-    if (type === 'boss') {
-        list = dungeonConfig.monsters.bosses;
-    } else if (type === 'guardian') {
-        list = dungeonConfig.monsters.guardians;
-    } else {
-        // للوحوش العادية والنخبة، نعتمد على الثيم (theme key)
-        let themeKey = 'dark'; // افتراضي
-        
-        // البحث عن مفتاح الثيم (fire, ice...) بناءً على اسم الثيم الممرر
+    if (type === 'boss') list = dungeonConfig.monsters.bosses;
+    else if (type === 'guardian') list = dungeonConfig.monsters.guardians;
+    else {
+        let themeKey = 'dark';
         const foundKey = Object.keys(dungeonConfig.themes).find(k => dungeonConfig.themes[k].name === theme.name);
         if (foundKey) themeKey = foundKey;
-
         if (dungeonConfig.monsters[themeKey]) {
             if (type === 'minion') list = dungeonConfig.monsters[themeKey].minions;
             else if (type === 'elite') list = dungeonConfig.monsters[themeKey].elites;
         }
-        
-        // احتياط في حال كان الثيم غير معرف في الوحوش
-        if (!list || list.length === 0) {
-            list = dungeonConfig.monsters['dark'][type === 'elite' ? 'elites' : 'minions'];
-        }
+        if (!list || list.length === 0) list = dungeonConfig.monsters['dark'][type === 'elite' ? 'elites' : 'minions'];
     }
-
     if (!list || list.length === 0) return { name: "وحش مجهول", hp: 100, atk: 10 };
-
-    // 3. الاختيار العشوائي
     const randomIndex = Math.floor(Math.random() * list.length);
     const name = list[randomIndex];
-    
     return { name, emoji: theme.emoji };
 }
 
