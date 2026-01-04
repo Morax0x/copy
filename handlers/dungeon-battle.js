@@ -664,6 +664,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان!**`).catch(()=>{});
         }
 
+        // 🟢🟢🟢 استراحة المحارب (شفاء 30%) - تم الإصلاح والنقل هنا 🟢🟢🟢
+        players.forEach(p => {
+            if (!p.isDead) {
+                // حساب 30% بدون كسور
+                const healAmount = Math.floor(p.maxHp * 0.30);
+                p.hp = Math.min(p.maxHp, Math.floor(p.hp + healAmount));
+                
+                // حماية إضافية من NaN
+                if (isNaN(p.hp)) p.hp = p.maxHp;
+            }
+        });
+
         // ==========================================
         // ❖ منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
@@ -845,7 +857,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
     }
-    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
 
     // 🔥🔥🔥 الإضافة هنا: التحقق من الفوز بالدانجون كاملاً 🔥🔥🔥
      
