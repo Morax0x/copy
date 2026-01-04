@@ -24,6 +24,9 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID) {
             playerData.threat = 0; // يبدأ من صفر
             playerData.totalDamage = 0; // لحساب الإحصائيات
             
+            // 🔥🔥🔥 الإضافة الجديدة: عداد طوابق الدرع (للمرتزقة) 🔥🔥🔥
+            playerData.shieldFloorsCount = 0; 
+
             // ============================================================
             // 🔥🔥🔥 الفحص الحقيقي للختم (Deep Scan) 🔥🔥🔥
             // ============================================================
