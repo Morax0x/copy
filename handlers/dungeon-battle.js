@@ -228,35 +228,58 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } 
         }
 
-        // 🔥🔥🔥 التعديل هنا: تحديد نوع الطابق بشكل صحيح وتمرير رقم الطابق 🔥🔥🔥
-        const floorConfig = dungeonConfig.floors.find(f => f.floor === floor) || { type: 'minion' };
+        // 🔥🔥🔥 التعديل الجديد: تحديد نوع الوحش بناءً على نطاق الطوابق 🔥🔥🔥
+        let monsterType = 'minion'; // الافتراضي
+
+        if (floor === 100) {
+            monsterType = 'morax';
+        } else if (floor >= 31) {
+            monsterType = 'boss';
+        } else if (floor >= 21) {
+            monsterType = 'guardian';
+        } else if (floor >= 11) {
+            monsterType = 'elite';
+        } else {
+            // من 1 إلى 10
+            monsterType = 'minion';
+        }
         
-        // 2. نمرر 'floor' للدالة لضمان تدرج الصعوبة وظهور موراكس في 100 فقط
-        const randomMob = getRandomMonster(floorConfig.type, theme, floor);
+        // جلب بيانات الوحش بناءً على النوع والثيم الحالي
+        const randomMob = getRandomMonster(monsterType, theme, floor);
 
         let finalHp, finalAtk;
+        
+        // معادلات القوة
         if (floor <= 10) {
-            const baseFloorHP = 300 + ((floor - 1) * 100);
-            const baseAtk = 15 + (floor * 3);
-            finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
-            finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
+            // مرحلة المنيونز
+            finalHp = 300 + ((floor - 1) * 150);
+            finalAtk = 20 + (floor * 5);
+        } else if (floor <= 20) {
+            // مرحلة النخبة
+            finalHp = 2000 + ((floor - 10) * 400);
+            finalAtk = 80 + ((floor - 10) * 15);
+        } else if (floor <= 30) {
+            // مرحلة الحراس
+            finalHp = 8000 + ((floor - 20) * 1000);
+            finalAtk = 250 + ((floor - 20) * 30);
         } else {
-            const tier = floor - 10;
-            const baseFloorHP = 1200 + (Math.pow(tier, 2) * 50); 
-            const baseAtk = 45 + (tier * 5); 
-            finalHp = Math.floor(baseFloorHP * (floorConfig.hp_mult || 1));
-            finalAtk = Math.floor(baseAtk * (floorConfig.atk_mult || 1));
+            // مرحلة الزعماء (تصاعد جنوني)
+            const tier = floor - 30;
+            finalHp = 20000 + (Math.pow(tier, 1.8) * 200); 
+            finalAtk = 600 + (tier * 20); 
         }
 
-        // 🔥🔥🔥 إصلاح الانهيار: تحديد قوة موراكس يدوياً للطابق 100 🔥🔥🔥
+        // 🔥 ضبط قوة موراكس يدوياً للطابق 100 🔥
         if (floor === 100) {
             finalHp = 1000000; // مليون HP
-            finalAtk = 15000;  // هجوم فتاك
+            finalAtk = 15000;  // ضربة واحدة قد تقتل
         }
 
         let monster = {
-            name: floor === 100 ? randomMob.name : `${randomMob.name} (Lv.${floor})`, // اسم موراكس بدون لفل
-            hp: finalHp, maxHp: finalHp, atk: finalAtk, 
+            name: floor === 100 ? randomMob.name : `${randomMob.name} (Lv.${floor})`, 
+            hp: Math.floor(finalHp), 
+            maxHp: Math.floor(finalHp), 
+            atk: Math.floor(finalAtk), 
             enraged: false, effects: [], targetFocusId: null, frozen: false 
         };
 
