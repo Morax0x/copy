@@ -87,7 +87,7 @@ function deleteDungeonState(sql, channelID) {
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, resumeData = null) {
     const guild = threadChannel.guild;
-     
+      
     if (!sql || !sql.open) {
         return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً، الرجاء المحاولة لاحقاً.").catch(() => {});
     }
@@ -180,7 +180,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             merchantState.skipFloors = 0; 
             const oldFloor = floor;
             floor = targetFloor; 
-             
+              
             if (floor > maxFloors) floor = maxFloors; 
 
             try {
@@ -318,7 +318,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await new Promise(resolve => {
                 const turnTimeout = setTimeout(async () => { 
                     const afkPlayers = players.filter(p => !p.isDead && !actedPlayers.includes(p.id));
-                     
+                      
                     if (afkPlayers.length > 0) {
                         for (const afkP of afkPlayers) {
                             afkP.skipCount = (afkP.skipCount || 0) + 1;
@@ -367,11 +367,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              log.push(`👑 **الأمبراطـور اقتحـم المعركـة!**`);
                         }
                     }
-                      
+                       
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
-                      
+                       
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
-                      
+                       
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
@@ -384,7 +384,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
-                      
+                       
                     processingUsers.add(i.user.id);
 
                     try {
@@ -649,7 +649,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break;
         }
-         
+          
         if (isTrapActive) isTrapActive = false;
 
         let baseMora = Math.floor(getBaseFloorMora(floor));
@@ -727,7 +727,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const warningTimeout = setTimeout(() => {
             threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
         }, 50000); 
-         
+          
         const decision = await new Promise(res => {
             const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
             decCollector.on('collect', async i => {
@@ -844,14 +844,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
             }
         }
-        players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
     }
+    players.forEach(p => { if(!p.isDead) p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.3)); });
 
     // 🔥🔥🔥 الإضافة هنا: التحقق من الفوز بالدانجون كاملاً 🔥🔥🔥
-    
+     
     // إذا وصلوا هنا، فهذا يعني أنهم لم يموتوا جميعاً (الشرط في بداية اللوب)
     // وأن اللوب انتهت (وصلوا للطابق 100 وخلصوه)
-    
+     
     const alivePlayers = players.filter(p => !p.isDead);
     if (alivePlayers.length > 0) {
         
