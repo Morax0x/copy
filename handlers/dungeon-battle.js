@@ -104,6 +104,15 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         weaknessActive: false,
         isGateJump: false 
     };
+    
+    // 🟢 متغير جديد لتتبع ظهور بوابات الانسحاب في النطاقات المحددة
+    let retreatState = {
+        range_30_40: false,
+        range_41_50: false,
+        range_51_70: false,
+        range_71_90: false
+    };
+
     let players = [];
     let startFloor = 1;
     let totalAccumulatedCoins = 0;
@@ -118,6 +127,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (resumeData) {
         players = resumeData.players;
         merchantState = resumeData.merchantState;
+        // استرجاع حالة الانسحاب
+        retreatState = resumeData.retreatState || retreatState; 
+        
         totalAccumulatedCoins = resumeData.loot.coins;
         totalAccumulatedXP = resumeData.loot.xp;
         startFloor = resumeData.floor;
@@ -183,11 +195,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 break; 
             }
             
-            // نحفظ الحالة الجديدة بعد القفز
+            // نحفظ الحالة الجديدة بعد القفز (مع retreatState)
             saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                 floor: floor,
                 players: players,
                 merchantState: merchantState,
+                retreatState: retreatState, // 🟢 حفظ حالة الانسحاب
                 retreatedPlayers: retreatedPlayers,
                 isTrapActive: isTrapActive,
                 loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
@@ -322,12 +335,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
 
-        // 🛡️ حفظ الحالة الأولية للطابق مع بيانات الوحش 🛡️
+        // 🛡️ حفظ الحالة الأولية للطابق مع بيانات الوحش وحالة الانسحاب 🛡️
         saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
             floor: floor, players, merchantState, retreatedPlayers, isTrapActive,
+            retreatState: retreatState, // 🟢 حفظ
             loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
             themeName: theme.name,
-            monsterData: monster // 🔥 حفظنا الوحش هنا
+            monsterData: monster 
         });
 
         let log = [`⚠️ **الطابق ${floor}/${maxFloors}**: ظهر **${monster.name}**! (HP: ${monster.hp.toLocaleString()} | DMG: ${monster.atk})`];
@@ -567,6 +581,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 // 🛡️ حفظ الحالة فوراً بعد استخدام الجرعة لمنع الضياع 🛡️
                                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                                     floor, players, merchantState, retreatedPlayers, isTrapActive,
+                                    retreatState, // 🟢 حفظ
                                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                                     themeName: theme.name,
                                     monsterData: monster
@@ -676,9 +691,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                // 🛡️ حفظ الحالة قبل دور الوحش (اختياري، لكن جيد للأمان) 🛡️
+                // 🛡️ حفظ الحالة قبل دور الوحش
                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
+                    retreatState, // 🟢 حفظ
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                     themeName: theme.name,
                     monsterData: monster
@@ -721,13 +737,34 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ==========================================
         
         let canRetreat = false;
+
+        // 🟢🟢🟢 منطق الانسحاب الجديد (مرة واحدة لكل نطاق) 🟢🟢🟢
         if (floor <= 20) {
+            // من 1 إلى 20: الانسحاب متاح دائماً
             canRetreat = true;
-        } else if ([38, 50, 80].includes(floor)) {
-            canRetreat = true;
-        } else if ((floor >= 30 && floor <= 40) || (floor >= 50 && floor <= 60) || (floor >= 70 && floor <= 80)) {
-            if (Math.random() < 0.4) {
+        } 
+        else if (floor >= 30 && floor <= 40) {
+            if (!retreatState.range_30_40 && Math.random() < 0.25) { 
                 canRetreat = true;
+                retreatState.range_30_40 = true; // تم الاستهلاك
+            }
+        }
+        else if (floor >= 41 && floor <= 50) {
+            if (!retreatState.range_41_50 && Math.random() < 0.25) {
+                canRetreat = true;
+                retreatState.range_41_50 = true;
+            }
+        }
+        else if (floor >= 51 && floor <= 70) {
+            if (!retreatState.range_51_70 && Math.random() < 0.15) { // فرصة أقل لأن النطاق أوسع
+                canRetreat = true;
+                retreatState.range_51_70 = true;
+            }
+        }
+        else if (floor >= 71 && floor <= 90) {
+            if (!retreatState.range_71_90 && Math.random() < 0.15) {
+                canRetreat = true;
+                retreatState.range_71_90 = true;
             }
         }
 
@@ -741,7 +778,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              if (canRetreat) {
-                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب!`;
+                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! (لن تظهر مجدداً في هذا النطاق)`;
              } else {
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
@@ -768,7 +805,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
         } catch (err) { break; }
 
-        // 🔥🔥🔥 التعديل: زيادة الوقت 120 ثانية، والتحذير قبل 60 ثانية 🔥🔥🔥
         const warningTimeout = setTimeout(() => {
             threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
         }, 60000); 
