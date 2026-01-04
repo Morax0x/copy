@@ -126,7 +126,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (resumeData) {
         players = resumeData.players;
         merchantState = resumeData.merchantState;
+        // استرجاع حالة الانسحاب
         retreatState = resumeData.retreatState || retreatState; 
+        
         totalAccumulatedCoins = resumeData.loot.coins;
         totalAccumulatedXP = resumeData.loot.xp;
         startFloor = resumeData.floor;
@@ -191,16 +193,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 break; 
             }
             
+            // نحفظ الحالة الجديدة بعد القفز
             saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                 floor: floor,
                 players: players,
                 merchantState: merchantState,
-                retreatState: retreatState,
+                retreatState: retreatState, // 🟢 حفظ حالة الانسحاب
                 retreatedPlayers: retreatedPlayers,
                 isTrapActive: isTrapActive,
                 loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                 themeName: theme.name,
-                monsterData: null
+                monsterData: null 
             });
             
             continue; 
@@ -331,7 +334,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
             floor: floor, players, merchantState, retreatedPlayers, isTrapActive,
-            retreatState, 
+            retreatState, // 🟢 حفظ
             loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
             themeName: theme.name,
             monsterData: monster 
@@ -611,10 +614,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
                                      
-                                    // 🔥🔥🔥 تعديل التوازن: تقليل العشوائية وتقليل الكريتيكال 🔥🔥🔥
-                                    let dmg = Math.floor(currentAtk * (0.95 + Math.random() * 0.10)); // تذبذب قليل جداً (95% - 105%)
-                                    
-                                    if (isCrit) dmg = Math.floor(dmg * 1.3); // تقليل مضاعف الكريتيكال من 1.5 إلى 1.3
+                                    let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
+                                    if (isCrit) dmg = Math.floor(dmg * 1.5);
 
                                     if (floor <= 5 && dmg > 47) dmg = 47;
                                     else if (floor <= 10 && dmg > 88) dmg = 88;
@@ -685,9 +686,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
+                // 🛡️ حفظ الحالة قبل دور الوحش
                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                    retreatState,
+                    retreatState, 
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                     themeName: theme.name,
                     monsterData: monster
