@@ -259,24 +259,33 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         let finalHp, finalAtk;
         
+        // 🔥🔥🔥 توازن قوة الوحوش (Damage Scaling - Ultra Balanced) 🔥🔥🔥
         if (floor <= 10) {
-            finalHp = 300 + ((floor - 1) * 150);
-            finalAtk = 20 + (floor * 5);
-        } else if (floor <= 20) {
-            finalHp = 2000 + ((floor - 10) * 400);
-            finalAtk = 80 + ((floor - 10) * 15);
-        } else if (floor <= 30) {
-            finalHp = 8000 + ((floor - 20) * 1000);
-            finalAtk = 250 + ((floor - 20) * 30);
-        } else {
+            finalHp = 300 + ((floor - 1) * 120);
+            finalAtk = 10 + (floor * 1.5); 
+        } 
+        else if (floor <= 20) {
+            finalHp = 1500 + ((floor - 10) * 300);
+            finalAtk = 28 + ((floor - 10) * 3); 
+        } 
+        else if (floor <= 30) {
+            finalHp = 5000 + ((floor - 20) * 600);
+            finalAtk = 60 + ((floor - 20) * 4);
+        } 
+        else if (floor <= 50) {
             const tier = floor - 30;
-            finalHp = 20000 + (Math.pow(tier, 1.8) * 200); 
-            finalAtk = 600 + (tier * 20); 
+            finalHp = 12000 + (tier * 1500); 
+            finalAtk = 110 + (tier * 7); 
+        }
+        else {
+            const tier = floor - 50;
+            finalHp = 50000 + (Math.pow(tier, 1.8) * 600);
+            finalAtk = 300 + (tier * 15);
         }
 
         if (floor === 100) {
-            finalHp = 1000000; 
-            finalAtk = 15000;  
+            finalHp = 1500000; 
+            finalAtk = 10000;  
         }
 
         let monster = {
@@ -286,6 +295,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             atk: Math.floor(finalAtk), 
             enraged: false, effects: [], targetFocusId: null, frozen: false 
         };
+
+        // 🔥🔥🔥 سقف أمان إضافي (Safety Caps) 🔥🔥🔥
+        if (floor <= 15) {
+            monster.atk = Math.min(monster.atk, 45); 
+        } else if (floor <= 25) {
+            monster.atk = Math.min(monster.atk, 90); 
+        }
 
         if (merchantState.weaknessActive) {
             monster.effects.push({ type: 'weakness', val: 0.50, turns: 99 });
@@ -680,20 +696,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // ❖ منطقة الاستراحة (Floor Rest) ❖
         // ==========================================
         
-        // 🔥🔥 التعديل هنا: منطق ظهور زر الانسحاب 🔥🔥
         let canRetreat = false;
-
-        // 1. من 1 إلى 20: متاح دائماً
         if (floor <= 20) {
             canRetreat = true;
-        } 
-        // 2. الطوابق الثابتة (38, 50, 80)
-        else if ([38, 50, 80].includes(floor)) {
+        } else if ([38, 50, 80].includes(floor)) {
             canRetreat = true;
-        } 
-        // 3. النطاقات العشوائية (30-40، 50-60، 70-80)
-        else if ((floor >= 30 && floor <= 40) || (floor >= 50 && floor <= 60) || (floor >= 70 && floor <= 80)) {
-            // فرصة عشوائية (مثلاً 40% فرصة ظهور في كل طابق داخل النطاق)
+        } else if ((floor >= 30 && floor <= 40) || (floor >= 50 && floor <= 60) || (floor >= 70 && floor <= 80)) {
             if (Math.random() < 0.4) {
                 canRetreat = true;
             }
@@ -736,12 +744,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             restMsg = await threadChannel.send({ embeds: [restEmbed], components: [restRow] });
         } catch (err) { break; }
 
+        // 🔥🔥🔥 التعديل هنا: زيادة الوقت إلى 120 ثانية (120000) 🔥🔥🔥
+        // 🔥🔥🔥 وجعل التحذير يأتي قبل 60 ثانية من النهاية (عند الثانية 60) 🔥🔥🔥
         const warningTimeout = setTimeout(() => {
-            threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 10 ثواني للاستمرار").catch(()=>{});
-        }, 50000); 
+            threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
+        }, 60000); 
           
         const decision = await new Promise(res => {
-            const decCollector = restMsg.createMessageComponentCollector({ time: 60000 });
+            const decCollector = restMsg.createMessageComponentCollector({ time: 120000 }); // 120 ثانية
             decCollector.on('collect', async i => {
                 clearTimeout(warningTimeout); 
 
@@ -784,9 +794,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         await restMsg.edit({ components: [] }).catch(()=>{});
 
+        // 🟢🟢🟢 تعديل قرار الوقت: إذا انتهى الوقت يعتبر خسارة (Wipe) 🟢🟢🟢
         if (decision === 'time') { 
-            deleteDungeonState(sql, threadChannel.id); // حذف الحفظ عند الخسارة
+            deleteDungeonState(sql, threadChannel.id); // حذف الحفظ
             
+            // رسالة البلع
+            await threadChannel.send(`💀 **انتهى الوقت!** الظلام ابتلع الفريق بالكامل لأن القائد لم يتخذ قراراً...`).catch(()=>{});
+
             // 💀 حساب وتوزيع جوائز الموت (الخسارة) 💀
             await handleTeamWipe(players, floor, sql, guild.id);
 
@@ -883,13 +897,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // 🔥 صرف الغنائم المتراكمة للناجين (بنفس منطق الانسحاب الآمن) 🔥
         await handleLeaderRetreat(alivePlayers, sql, guild.id);
 
-        // توزيع الجوائز الختامية (المليون مورا)
-        alivePlayers.forEach(p => {
-            if (sql.open) {
-                // إضافة مورا ضخمة
-                sql.prepare("UPDATE levels SET mora = mora + 1000000, xp = xp + 50000 WHERE user = ? AND guild = ?").run(p.id, guild.id);
-            }
-        });
+        // ❌❌❌ تم إزالة الجائزة المليونية كما طلبت ❌❌❌
         
         // إرسال رسالة النهاية الرسمية
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
