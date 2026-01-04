@@ -144,240 +144,223 @@ module.exports = {
 
         const randomGif = FISHING_GIFS[Math.floor(Math.random() * FISHING_GIFS.length)];
         let desc = `**العدة:** 🎣 ${currentRod.name} | 🚤 ${currentBoat.name}\n🌊 **الموقع:** ${currentLocation.name}`;
-        if (usedBaitName) desc += `\n🪱 **الطعم:** ${usedBaitName}`;
+        
+        // عرض الطعم في الوصف إذا تم استخدامه
+        if (usedBaitName) {
+            desc += `\n🪱 **الطعم:** ${usedBaitName}`;
+        } else {
+            desc += `\n🪱 **الطعم:** لا يوجد`; // اختياري: توضيح عدم وجود طعم
+        }
 
-        const startEmbed = new EmbedBuilder()
+        const waitingEmbed = new EmbedBuilder()
             .setTitle(`🎣 رحلة صيد: ${currentLocation.name}`)
+            .setDescription(desc + "\n\n🌊 **السنارة في الماء...**\nانتظر... لا تسحب السنارة حتى تشعر بالاهتزاز!")
             .setColor(Colors.Blue)
-            .setDescription(desc)
-            .setImage(randomGif)
-            .setFooter({ text: "اضغط الزر أدناه لرمي السنارة..." });
+            .setImage(randomGif);
 
-        const startRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('cast_rod').setLabel('رمي السنارة').setStyle(ButtonStyle.Primary).setEmoji('🎣')
+        // زر وهمي للجمالية فقط (غير قابل للضغط)
+        const disabledRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('pull_rod_placeholder').setLabel('...').setStyle(ButtonStyle.Secondary).setDisabled(true)
         );
 
         let msg;
         try {
-            msg = await reply({ embeds: [startEmbed], components: [startRow] });
+            msg = await reply({ embeds: [waitingEmbed], components: [disabledRow] });
         } catch (err) {
             activeFishingSessions.delete(user.id);
             return;
         }
 
-        const collector = msg.createMessageComponentCollector({ 
-            filter: i => i.user.id === user.id && i.customId === 'cast_rod', 
-            time: 60000, 
-            max: 1 
-        });
+        const waitTime = Math.floor(Math.random() * 3000) + 3500; // 3.5s - 6.5s
 
-        collector.on('collect', async i => {
-            // 🔥 استجابة فورية جداً 🔥
-            await i.deferUpdate(); 
+        setTimeout(async () => {
+            // إعداد اللعبة في الذاكرة
+            let requiredSequenceLength = 1;
+            if (currentRod.level === 2) requiredSequenceLength = 2;
+            if (currentRod.level >= 3) requiredSequenceLength = 3;
 
-            const waitingEmbed = new EmbedBuilder()
-                .setTitle("🌊 السنارة في الماء...")
-                .setDescription("انتظر... لا تسحب السنارة حتى تشعر بالاهتزاز!")
-                .setColor(Colors.Grey)
-                .setImage(randomGif);
+            const sequence = [];
+            for(let k=0; k<requiredSequenceLength; k++) {
+                sequence.push(COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)]);
+            }
 
-            const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('pull_rod').setLabel('...').setStyle(ButtonStyle.Secondary).setDisabled(true)
-            );
+            let gameButtonsData = [...new Set(sequence)]; 
+            while(gameButtonsData.length < 5) {
+                const randomBtn = COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)];
+                if(!gameButtonsData.find(b => b.id === randomBtn.id)) gameButtonsData.push(randomBtn);
+            }
+            gameButtonsData = shuffleArray(gameButtonsData);
 
-            await i.editReply({ embeds: [waitingEmbed], components: [disabledRow] });
+            const gameRow = new ActionRowBuilder();
+            gameButtonsData.forEach(btn => {
+                gameRow.addComponents(
+                    new ButtonBuilder().setCustomId(`fish_click_${btn.id}`).setEmoji(btn.emoji).setStyle(ButtonStyle.Secondary)
+                );
+            });
 
-            const waitTime = Math.floor(Math.random() * 3000) + 3500; // 3.5s - 6.5s
+            const sequenceEmojis = sequence.map(s => s.emoji).join(' ➡️ ');
+            
+            const biteEmbed = new EmbedBuilder()
+                .setTitle("🎣 الـسنـارة تهـتز اسحـب الان !")
+                .setDescription(`**اضغـط الأزرار بالترتيـب:**\n# ${sequenceEmojis}`)
+                .setColor(Math.floor(Math.random() * 0xFFFFFF));
 
-            setTimeout(async () => {
-                // إعداد اللعبة في الذاكرة
-                let requiredSequenceLength = 1;
-                if (currentRod.level === 2) requiredSequenceLength = 2;
-                if (currentRod.level >= 3) requiredSequenceLength = 3;
+            // تعديل الرسالة الأصلية لتبديل الواجهة
+            try {
+                if (isSlash) await interactionOrMessage.editReply({ embeds: [biteEmbed], components: [gameRow] });
+                else await msg.edit({ embeds: [biteEmbed], components: [gameRow] });
+            } catch (error) {
+                activeFishingSessions.delete(user.id);
+                return; 
+            }
 
-                const sequence = [];
-                for(let k=0; k<requiredSequenceLength; k++) {
-                    sequence.push(COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)]);
-                }
+            const reactionTime = requiredSequenceLength > 1 ? 12000 : 8000;
 
-                let gameButtonsData = [...new Set(sequence)]; 
-                while(gameButtonsData.length < 5) {
-                    const randomBtn = COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)];
-                    if(!gameButtonsData.find(b => b.id === randomBtn.id)) gameButtonsData.push(randomBtn);
-                }
-                gameButtonsData = shuffleArray(gameButtonsData);
+            const pullCollector = msg.createMessageComponentCollector({ 
+                filter: j => j.user.id === user.id && j.customId.startsWith('fish_click_'), 
+                time: reactionTime, 
+                max: requiredSequenceLength 
+            }); 
 
-                const gameRow = new ActionRowBuilder();
-                gameButtonsData.forEach(btn => {
-                    gameRow.addComponents(
-                        new ButtonBuilder().setCustomId(`fish_click_${btn.id}`).setEmoji(btn.emoji).setStyle(ButtonStyle.Secondary)
-                    );
-                });
+            let currentStep = 0;
+            let failed = false;
 
-                const sequenceEmojis = sequence.map(s => s.emoji).join(' ➡️ ');
+            pullCollector.on('collect', async j => {
+                // 🔥 استجابة فورية للضغط 🔥
+                await j.deferUpdate();
                 
-                const biteEmbed = new EmbedBuilder()
-                    .setTitle("🎣 الـسنـارة تهـتز اسحـب الان !")
-                    .setDescription(`**اضغـط الأزرار بالترتيـب:**\n# ${sequenceEmojis}`)
-                    .setColor(Math.floor(Math.random() * 0xFFFFFF));
+                if (failed) return; 
 
-                await i.editReply({ embeds: [biteEmbed], components: [gameRow] });
+                const clickedColorId = j.customId.replace('fish_click_', '');
+                const expectedColor = sequence[currentStep];
 
-                const reactionTime = requiredSequenceLength > 1 ? 12000 : 8000;
-
-                const pullCollector = msg.createMessageComponentCollector({ 
-                    filter: j => j.user.id === user.id && j.customId.startsWith('fish_click_'), 
-                    time: reactionTime, 
-                    max: requiredSequenceLength 
-                }); 
-
-                let currentStep = 0;
-                let failed = false;
-
-                pullCollector.on('collect', async j => {
-                    // 🔥 استجابة فورية للضغط 🔥
-                    await j.deferUpdate();
+                if (clickedColorId !== expectedColor.id) {
+                    failed = true;
+                    pullCollector.stop('wrong_color');
                     
-                    if (failed) return; 
+                    const clickedButtonObj = COLOR_GAME_OPTIONS.find(c => c.id === clickedColorId);
+                    const wrongEmoji = clickedButtonObj ? clickedButtonObj.emoji : '❓';
+                    
+                    const failEmbed = new EmbedBuilder()
+                        .setTitle("❌ انقطع الخيط!")
+                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
+                        .setColor(Colors.Red);
+                    
+                    // تحديث الكولداون (خفيف)
+                    sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
+                    activeFishingSessions.delete(user.id);
+                    await j.editReply({ embeds: [failEmbed], components: [] });
+                    return;
+                }
 
-                    const clickedColorId = j.customId.replace('fish_click_', '');
-                    const expectedColor = sequence[currentStep];
+                currentStep++;
+                
+                if (currentStep === requiredSequenceLength) {
+                    pullCollector.stop('success');
+                    
+                    // --- منطق الفوز (يتم تنفيذه فقط في النهاية) ---
+                    
+                    // وحوش؟
+                    const isOwner = user.id === OWNER_ID;
+                    const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
+                    const monsterTriggered = Math.random() < monsterChance;
+                    let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
+                    if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
+                    
+                    if (possibleMonsters.length > 0 && monsterTriggered) {
+                        const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
+                        let playerWeapon = pvpCore.getWeaponData(sql, j.member);
+                        if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
-                    if (clickedColorId !== expectedColor.id) {
-                        failed = true;
-                        pullCollector.stop('wrong_color');
-                        
-                        const clickedButtonObj = COLOR_GAME_OPTIONS.find(c => c.id === clickedColorId);
-                        const wrongEmoji = clickedButtonObj ? clickedButtonObj.emoji : '❓';
-                        
-                        const failEmbed = new EmbedBuilder()
-                            .setTitle("❌ انقطع الخيط!")
-                            .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
-                            .setColor(Colors.Red);
-                        
-                        // تحديث الكولداون (خفيف)
-                        sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
-                        activeFishingSessions.delete(user.id);
-                        await j.editReply({ embeds: [failEmbed], components: [] });
-                        return;
+                        if (pvpCore.startPveBattle) {
+                            activeFishingSessions.delete(user.id);
+                            await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
+                            return; 
+                        }
                     }
 
-                    currentStep++;
-                    
-                    if (currentStep === requiredSequenceLength) {
-                        pullCollector.stop('success');
-                        
-                        // --- منطق الفوز (يتم تنفيذه فقط في النهاية) ---
-                        
-                        // وحوش؟
-                        const isOwner = user.id === OWNER_ID;
-                        const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
-                        const monsterTriggered = Math.random() < monsterChance;
-                        let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
-                        if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
-                        
-                        if (possibleMonsters.length > 0 && monsterTriggered) {
-                            const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                            let playerWeapon = pvpCore.getWeaponData(sql, j.member);
-                            if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
+                    // صيد السمك
+                    const totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
+                    const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
+                    let caughtFish = [];
+                    let totalValue = 0;
+                    const allowedRarities = currentLocation.fish_types;
+                    const maxRarity = currentRod.max_rarity || 2;
 
-                            if (pvpCore.startPveBattle) {
-                                activeFishingSessions.delete(user.id);
-                                await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
-                                return; 
-                            }
-                        }
-
-                        // صيد السمك
-                        const totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
-                        const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
-                        let caughtFish = [];
-                        let totalValue = 0;
-                        const allowedRarities = currentLocation.fish_types;
-                        const maxRarity = currentRod.max_rarity || 2;
-
-                        // Transaction لضمان سرعة قاعدة البيانات
-                        const transaction = sql.transaction(() => {
-                            const addFishStmt = sql.prepare(`INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?`);
-                            
-                            for (let k = 0; k < fishCount; k++) {
-                                const rerolls = 1 + Math.floor(totalLuck / 20);
-                                let bestFish = null;
-                                for(let r=0; r<rerolls; r++) {
-                                    let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
-                                    if (rarity > maxRarity) rarity = maxRarity;
-                                    const possibleFishList = fishItems.filter(f => f.rarity === rarity);
-                                    if (possibleFishList.length > 0) {
-                                        const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
-                                        if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
-                                            bestFish = candidate;
-                                        }
+                    // Transaction لضمان سرعة قاعدة البيانات
+                    const transaction = sql.transaction(() => {
+                        const addFishStmt = sql.prepare(`INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?`);
+                        
+                        for (let k = 0; k < fishCount; k++) {
+                            const rerolls = 1 + Math.floor(totalLuck / 20);
+                            let bestFish = null;
+                            for(let r=0; r<rerolls; r++) {
+                                let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
+                                if (rarity > maxRarity) rarity = maxRarity;
+                                const possibleFishList = fishItems.filter(f => f.rarity === rarity);
+                                if (possibleFishList.length > 0) {
+                                    const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
+                                    if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
+                                        bestFish = candidate;
                                     }
                                 }
-                                if (bestFish) {
-                                    caughtFish.push(bestFish);
-                                    totalValue += bestFish.price;
-                                    addFishStmt.run(guild.id, user.id, bestFish.id, 1, 1);
-                                }
                             }
-                            
-                            // تحديث المورا والكولداون
-                            sql.prepare("UPDATE levels SET mora = mora + ?, lastFish = ? WHERE user = ? AND guild = ?").run(totalValue, Date.now(), user.id, guild.id);
-                        });
+                            if (bestFish) {
+                                caughtFish.push(bestFish);
+                                totalValue += bestFish.price;
+                                addFishStmt.run(guild.id, user.id, bestFish.id, 1, 1);
+                            }
+                        }
                         
-                        transaction(); // تنفيذ الكل دفعة واحدة
+                        // تحديث المورا والكولداون
+                        sql.prepare("UPDATE levels SET mora = mora + ?, lastFish = ? WHERE user = ? AND guild = ?").run(totalValue, Date.now(), user.id, guild.id);
+                    });
+                    
+                    transaction(); // تنفيذ الكل دفعة واحدة
 
-                        // عرض النتائج
-                        const summary = {};
-                        caughtFish.forEach(f => {
-                            summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
-                        });
+                    // عرض النتائج
+                    const summary = {};
+                    caughtFish.forEach(f => {
+                        summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
+                    });
 
-                        let description = "✶ قمـت بصيـد:\n";
-                        for (const [name, info] of Object.entries(summary)) {
-                            let rarityStar = info.rarity >= 5 ? "🌟" : (info.rarity === 4 ? "✨" : "");
-                            description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
-                        }
-                        description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-
-                        const resultEmbed = new EmbedBuilder()
-                            .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
-                            .setDescription(description)
-                            .setColor(Colors.Green)
-                            .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png')
-                            .setFooter({ text: `السنارة: ${currentRod.name}` });
-
-                        activeFishingSessions.delete(user.id);
-                        await j.editReply({ embeds: [resultEmbed], components: [] });
+                    let description = "✶ قمـت بصيـد:\n";
+                    for (const [name, info] of Object.entries(summary)) {
+                        let rarityStar = info.rarity >= 5 ? "🌟" : (info.rarity === 4 ? "✨" : "");
+                        description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
                     }
-                });
+                    description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
 
-                pullCollector.on('end', async (collected, reason) => {
-                    try {
-                        if (reason !== 'success' && reason !== 'wrong_color') {
-                            const failEmbed = new EmbedBuilder()
-                                .setTitle("💨 هربت السمكة!")
-                                .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
-                                .setColor(Colors.Red);
-                            
-                            sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
-                            await i.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
-                        }
-                    } finally {
-                        activeFishingSessions.delete(user.id);
+                    const resultEmbed = new EmbedBuilder()
+                        .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
+                        .setDescription(description)
+                        .setColor(Colors.Green)
+                        .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png')
+                        .setFooter({ text: `السنارة: ${currentRod.name}` });
+
+                    activeFishingSessions.delete(user.id);
+                    await j.editReply({ embeds: [resultEmbed], components: [] });
+                }
+            });
+
+            pullCollector.on('end', async (collected, reason) => {
+                try {
+                    if (reason !== 'success' && reason !== 'wrong_color') {
+                        const failEmbed = new EmbedBuilder()
+                            .setTitle("💨 هربت السمكة!")
+                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
+                            .setColor(Colors.Red);
+                        
+                        sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
+                        // نستخدم msg مباشرة لأن collector انتهى أو لم يبدأ
+                        if (isSlash) await interactionOrMessage.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
+                        else await msg.edit({ embeds: [failEmbed], components: [] }).catch(() => {});
                     }
-                });
+                } finally {
+                    activeFishingSessions.delete(user.id);
+                }
+            });
 
-            }, waitTime);
-        });
-
-        collector.on('end', async (collected) => {
-            if (collected.size === 0) {
-                activeFishingSessions.delete(user.id);
-                const cancelEmbed = new EmbedBuilder().setDescription("💤 ألغيت الرحلة لعدم الاستجابة.").setColor(Colors.Grey);
-                if (isSlash) await interactionOrMessage.editReply({ embeds: [cancelEmbed], components: [] }).catch(() => {});
-                else await msg.edit({ embeds: [cancelEmbed], components: [] }).catch(() => {});
-            }
-        });
+        }, waitTime);
     }
 };
