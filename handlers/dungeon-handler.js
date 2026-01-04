@@ -1,5 +1,5 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
-const { runDungeon } = require('./dungeon-battle.js'); 
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ComponentType } = require('discord.js');
+const { runDungeon } = require('./dungeon-battle.js');
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
 
 const activeDungeonRequests = new Map();
@@ -8,21 +8,17 @@ const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
-    // 1. التحقق من الطلبات النشطة
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
-    // 2. التحقق من المستوى
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     if (!leaderData || leaderData.level < 5) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    // تسجيل الحالة
     activeDungeonRequests.set(user.id, { status: 'selecting_theme' });
 
-    // اختيار الثيم
     const themes = Object.keys(dungeonConfig.themes || {});
     if (themes.length === 0) {
         activeDungeonRequests.delete(user.id);
@@ -39,13 +35,7 @@ async function startDungeon(interaction, sql) {
     });
 
     const row1 = new ActionRowBuilder();
-    const row2 = new ActionRowBuilder();
-    
     if (buttons.length > 0) row1.addComponents(buttons.slice(0, 5));
-    if (buttons.length > 5) row2.addComponents(buttons.slice(5, 10));
-
-    const components = [row1];
-    if (row2.components.length > 0) components.push(row2);
 
     const embed = new EmbedBuilder()
         .setTitle('⚔️ بوابة الدانجون')
@@ -53,9 +43,7 @@ async function startDungeon(interaction, sql) {
         .setColor('#2B2D31')
         .setImage('https://i.postimg.cc/NMkWVyLV/line.png');
 
-    const msg = await interaction.reply({ embeds: [embed], components: components, fetchReply: true });
-    
-    // حفظ الرد إذا كان رسالة عادية
+    const msg = await interaction.reply({ embeds: [embed], components: [row1], fetchReply: true });
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
 
     const filter = i => i.user.id === user.id && i.customId.startsWith('dungeon_theme_');
@@ -65,13 +53,9 @@ async function startDungeon(interaction, sql) {
         try {
             if (!i.deferred && !i.replied) await i.deferUpdate();
             collector.stop('selected');
-
             const themeKey = i.customId.replace('dungeon_theme_', '');
             const theme = { ...dungeonConfig.themes[themeKey], key: themeKey };
-            
-            // الانتقال للوبي
             await lobbyPhase(interaction, msg, theme, sql);
-
         } catch (err) {
             console.error(err);
             activeDungeonRequests.delete(user.id);
@@ -89,20 +73,14 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, msg, theme, sql) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
-    
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
-      
+
     const updateEmbed = () => {
         const memberList = party.map((id, i) => {
             const cls = partyClasses.get(id);
-            let arabCls = cls;
-            if (cls === 'Leader') arabCls = 'القائد 👑';
-            else if (cls === 'Tank') arabCls = 'مُدرّع 🛡️';
-            else if (cls === 'Priest') arabCls = 'كاهن ✨';
-            else if (cls === 'Mage') arabCls = 'ساحر ❄️';
-            else if (cls === 'Summoner') arabCls = 'مستدعٍ 🐺';
+            let arabCls = cls === 'Leader' ? 'القائد 👑' : (cls === 'Tank' ? 'مُدرّع 🛡️' : (cls === 'Priest' ? 'كاهن ✨' : (cls === 'Mage' ? 'ساحر ❄️' : 'مستدعٍ 🐺')));
             return `\`${i+1}.\` <@${id}> — **${arabCls}**`;
         }).join('\n');
 
@@ -119,36 +97,27 @@ async function lobbyPhase(interaction, msg, theme, sql) {
     );
 
     await msg.edit({ embeds: [updateEmbed()], components: [row] });
-    
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
         if (i.replied || i.deferred) return;
-
         try {
             if (i.customId === 'join') {
                 if (i.user.id === host.id) return i.reply({ content: "👑 أنت القائد.", flags: [MessageFlags.Ephemeral] });
                 if (party.length >= 5 && !party.includes(i.user.id)) return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
 
-                if (!party.includes(i.user.id)) {
-                    if (i.user.id !== OWNER_ID) {
-                        const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
-                        if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط.", flags: [MessageFlags.Ephemeral] });
-                        
-                        const now = Date.now();
-                        const reset = jData.last_join_reset || 0;
-                        if (now - reset < COOLDOWN_TIME && (jData.dungeon_join_count || 0) >= 3) return i.reply({ content: "🚫 استنفذت محاولاتك.", flags: [MessageFlags.Ephemeral] });
-                    }
+                if (!party.includes(i.user.id) && i.user.id !== OWNER_ID) {
+                    const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
+                    if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط.", flags: [MessageFlags.Ephemeral] });
                 }
 
                 const takenClasses = [];
                 partyClasses.forEach((c, u) => { if(u !== i.user.id) takenClasses.push(c); });
-                
                 const opts = [];
                 const addOpt = (v, l, e) => { if(!takenClasses.includes(v)) opts.push(new StringSelectMenuOptionBuilder().setLabel(l).setValue(v).setEmoji(e)); };
                 addOpt('Tank', 'المُدرّع', '🛡️'); addOpt('Priest', 'الكاهن', '✨'); addOpt('Mage', 'الساحر', '❄️'); addOpt('Summoner', 'المستدعي', '🐺');
 
-                if (opts.length === 0) return i.reply({ content: "🚫 جميع التخصصات مأخوذة.", flags: [MessageFlags.Ephemeral] });
+                if (opts.length === 0) return i.reply({ content: "🚫 المقاعد ممتلئة.", flags: [MessageFlags.Ephemeral] });
 
                 const sRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('cls').setPlaceholder('اختر تخصصك...').addOptions(opts));
                 const sMsg = await i.reply({ content: "🛡️ اختر تخصصك:", components: [sRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
@@ -156,18 +125,13 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                 const sel = await sMsg.awaitMessageComponent({ filter: x => x.user.id === i.user.id, time: 20000, componentType: ComponentType.StringSelect }).catch(() => null);
                 if (sel) {
                     const chosen = sel.values[0];
-                    const dCheck = Array.from(partyClasses.entries()).filter(x => x[0] !== i.user.id).map(x => x[1]);
-                    if (dCheck.includes(chosen)) return sel.update({ content: "🚫 سبقك بها غيرك.", components: [] });
-
+                    if ([...partyClasses.values()].filter((c,k) => k !== i.user.id).includes(chosen)) return sel.update({ content: "🚫 أخذت.", components: [] });
                     await sel.deferUpdate();
                     partyClasses.set(i.user.id, chosen);
                     if (!party.includes(i.user.id)) party.push(i.user.id);
-                    
                     await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] });
                     await msg.edit({ embeds: [updateEmbed()] });
-                } else {
-                    await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
-                }
+                } else await i.editReply({ content: "⏰ انتهى الوقت.", components: [] });
 
             } else if (i.customId === 'start') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
@@ -183,11 +147,6 @@ async function lobbyPhase(interaction, msg, theme, sql) {
             party.forEach(id => {
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                 if (id === host.id && id !== OWNER_ID) sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
-                else if (id !== OWNER_ID) {
-                    const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
-                    if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
-                    else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
-                }
             });
 
             try {
@@ -195,21 +154,15 @@ async function lobbyPhase(interaction, msg, theme, sql) {
                     name: `غارة-${host.username}`,
                     autoArchiveDuration: 60,
                     type: ChannelType.PublicThread,
-                    reason: 'Start Dungeon Battle'
+                    reason: 'Dungeon'
                 });
-
                 for (const uid of party) { try { await thread.members.add(uid); } catch(e){} }
-
                 await thread.send(`🔔 **بدأت المعركة!** ${party.map(id=>`<@${id}>`).join(' ')}`);
-                if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
-
-                // تشغيل المحرك الجديد
                 await runDungeon(thread, msg.channel, party, theme, sql, host.id, partyClasses, activeDungeonRequests);
-
             } catch (e) {
                 console.error(e);
                 activeDungeonRequests.delete(host.id);
-                msg.channel.send("❌ خطأ في إنشاء الثريد.");
+                msg.channel.send("❌ خطأ.");
             }
         } else {
             activeDungeonRequests.delete(host.id);
