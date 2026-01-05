@@ -524,12 +524,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 const potionId = selection.values[0].replace('use_potion_', '');
                                 
                                 if (potionId === 'potion_titan') {
-                                    if (p.effects.some(e => e.type === 'titan')) {
-                                        await selection.followUp({ content: "🚫 **تأثير العملاق مفعل بالفعل! لا يمكنك مضاعفة القوة أكثر.**", ephemeral: true });
-                                        processingUsers.delete(i.user.id);
-                                        return;
-                                    }
-
+                                    // 🔥🔥 تم السماح بالتراكم (أزيل شرط المنع) 🔥🔥
                                     p.titanPotionUses = p.titanPotionUses || 0;
                                     if (p.titanPotionUses >= 3) {
                                         await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
@@ -834,7 +829,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              if (canRetreat) {
-                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب!`;
+                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! (لن تظهر مجدداً في هذا النطاق)`;
              } else {
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
