@@ -16,9 +16,6 @@ const { ensureInventoryTable, buildHpBar } = require('./utils');
 // =========================================================
 function buildSkillSelector(player) {
     const options = [];
-
-    // --- تعديل: إزالة القائمة الخاصة بالأونر من هنا ---
-    // لأن الأونر أصبح يستخدم زر "الدفاع" لفتح لوحة التحكم الشاملة.
       
     const cd = player.special_cooldown;
     const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
@@ -40,10 +37,7 @@ function buildSkillSelector(player) {
     }
 
     // 🔥🔥 إضافة مهارة الكاهن الهجين (Hybrid Priest) 🔥🔥
-    // تظهر فقط إذا كان اللاعب قائداً وأصله كاهن
     if (player.isHybridPriest) {
-        // نستخدم كولداون خاص أو نفس كولداون المهارة الخاصة
-        // هنا نفترض أن لها كولداون مستقل أو تعتمد على التجهيز في skills.js
         options.push(new StringSelectMenuOptionBuilder()
             .setLabel("النور المقدس (إرث)")
             .setValue('hybrid_heal') 
@@ -54,7 +48,7 @@ function buildSkillSelector(player) {
     const userSkills = player.skills || {};
     const availableSkills = Object.values(userSkills).filter(s => 
         (s.currentLevel > 0 || s.id.startsWith('race_')) && 
-        s.stat_type !== 'Owner' // إخفاء مهارات الأونر من القائمة العادية
+        s.stat_type !== 'Owner' 
     );
       
     availableSkills.forEach(skill => {
@@ -91,20 +85,35 @@ function buildPotionSelector(player, sql, guildID) {
         return null;
     }).filter(p => p !== null && p.quantity > 0);
 
-    if (potions.length === 0) return null;
+    const options = [];
 
-    const options = potions.map(p => {
-        return new StringSelectMenuOptionBuilder()
-            .setLabel(`${p.name} (x${p.quantity})`)
-            .setValue(`use_potion_${p.id}`)
-            .setDescription(p.description.substring(0, 90))
-            .setEmoji(p.emoji);
-    });
+    if (potions.length > 0) {
+        potions.forEach(p => {
+            options.push(new StringSelectMenuOptionBuilder()
+                .setLabel(`${p.name} (x${p.quantity})`)
+                .setValue(`use_potion_${p.id}`)
+                .setDescription(p.description.substring(0, 90))
+                .setEmoji(p.emoji));
+        });
+    } else {
+        options.push(new StringSelectMenuOptionBuilder()
+            .setLabel('لا تملك جرعات')
+            .setValue('no_potions')
+            .setDescription('اضغط بالأسفل لشراء الجرعات')
+            .setEmoji('🚫'));
+    }
+
+    // خيار الشراء السريع
+    options.push(new StringSelectMenuOptionBuilder()
+        .setLabel('شراء المزيد من الجرعات')
+        .setValue('buy_potions_action') 
+        .setDescription('فتح متجر الجرعات السريع (لا ينهي دورك)')
+        .setEmoji('🛒'));
 
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('potion_select_menu')
-            .setPlaceholder('اختر جرعة لشربها...')
+            .setPlaceholder('اختر جرعة أو اشترِ المزيد...')
             .addOptions(options.slice(0, 25))
     );
 }
@@ -135,37 +144,29 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
           
-        // 🔥🔥 التعديل الجديد: دعم القائد السابق والقائد الكاهن 🔥🔥
         if (p.class === 'Leader') { 
             if (p.isHybridPriest) {
-                arabClass = 'القائد الكاهن'; // اللقب المدمج
+                arabClass = 'القائد الكاهن'; 
                 icon += '👑✨ '; 
             } else {
                 arabClass = 'القائد'; 
                 icon += '👑 '; 
             }
         }
-        else if (p.class === 'Former Leader') { 
-            arabClass = 'قائد سابق'; 
-            icon += '🥀 '; 
-        }
+        else if (p.class === 'Former Leader') { arabClass = 'قائد سابق'; icon += '🥀 '; }
         else if (p.class === 'Tank') { arabClass = 'مُدرّع'; icon += '🛡️ '; }
         else if (p.class === 'Priest') { arabClass = 'كاهن'; icon += '✨ '; }
         else if (p.class === 'Mage') { arabClass = 'ساحر'; icon += '🔮 '; }
         else if (p.class === 'Summoner') { arabClass = 'مستدعٍ'; if(p.summon && p.summon.active) icon += '🐺'; }
         
-        // --- 🔥 تعديل عرض الأونر 🔥 ---
         let hpDisplay;
         if (p.id === OWNER_ID) {
             arabClass = 'الإمبراطور';
             icon += '👁️ ';
-            // إخفاء الصحة للأونر
             hpDisplay = `[▓▓▓▓▓▓▓▓▓▓] ???/???`; 
         } else {
-            // العرض الطبيعي لبقية اللاعبين
             hpDisplay = p.isDead ? (p.isPermDead ? 'تحللت الجثة' : 'مـات') : buildHpBar(p.hp, p.maxHp, p.shield);
         }
-        // --------------------------------
 
         let displayName;
         let statusCircle;
@@ -186,23 +187,19 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
 
     embed.addFields({ name: `🛡️ **فريق المغامرين**`, value: teamStatus, inline: false  });
 
-    // ============================================================
-    // 🛠️ عرض آخر 8 أسطر فقط (سجل متحرك)
-    // ============================================================
     const logText = log.slice(-8).join('\n') || "بانتظار بدء الاشتباك...";
-      
     embed.addFields({ name: "📜 احـداث المعـركـة:", value: logText, inline: false });
 
     return embed;
 }
 
 // =========================================================
-// 4. إنشاء أزرار التحكم (Buttons) - 🔥 التعديل هنا 🔥
+// 4. إنشاء أزرار التحكم (Buttons) - 🔥 الترتيب الجديد 🔥
 // =========================================================
 function generateBattleRows(disabled = false) {
-    const row = new ActionRowBuilder();
+    // السطر الأول: هجوم (يسار) - مهارة (يمين)
+    const row1 = new ActionRowBuilder();
 
-    // 1. زر الهجوم (الأول)
     const btnAtk = new ButtonBuilder()
         .setCustomId('atk')
         .setLabel('هجوم')
@@ -210,7 +207,6 @@ function generateBattleRows(disabled = false) {
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(disabled);
 
-    // 2. زر المهارة (الثاني - يسار الدفاع)
     const btnSkill = new ButtonBuilder()
         .setCustomId('skill')
         .setLabel('مهارة')
@@ -218,7 +214,11 @@ function generateBattleRows(disabled = false) {
         .setStyle(ButtonStyle.Primary)
         .setDisabled(disabled);
 
-    // 3. زر الدفاع (الثالث - يمين المهارة)
+    row1.addComponents(btnAtk, btnSkill);
+
+    // السطر الثاني: دفاع (يسار) - جرعة (يمين)
+    const row2 = new ActionRowBuilder();
+
     const btnDef = new ButtonBuilder()
         .setCustomId('def')
         .setLabel('دفاع')
@@ -226,18 +226,17 @@ function generateBattleRows(disabled = false) {
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(disabled);
 
-    // 4. زر العلاج (الرابع - الأخير)
     const btnHeal = new ButtonBuilder()
         .setCustomId('heal')
-        .setLabel('علاج')
+        .setLabel('جـرعـة')
         .setEmoji('🧪')
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Secondary)
         .setDisabled(disabled);
 
-    // إضافة الأزرار بالترتيب الجديد: هجوم -> مهارة -> دفاع -> علاج
-    row.addComponents(btnAtk, btnSkill, btnDef, btnHeal);
+    row2.addComponents(btnDef, btnHeal);
 
-    return [row];
+    // إرجاع مصفوفة تحتوي على السطرين
+    return [row1, row2];
 }
 
 module.exports = {
