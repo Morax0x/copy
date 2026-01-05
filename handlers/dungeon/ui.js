@@ -21,7 +21,6 @@ function buildSkillSelector(player) {
     const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
       
     let myClassSkill = null;
-    // تعريب أسماء الكلاسات والمهارات
     if (player.class === 'Leader') myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30%.", emoji: "👑" };
     else if (player.class === 'Tank') myClassSkill = { name: "استفزاز وتصليب", desc: "جذب الوحش وتقليل الضرر 60%.", emoji: "🛡️" };
     else if (player.class === 'Priest') myClassSkill = { name: "النور المقدس", desc: "شفاء الفريق أو إحياء ميت.", emoji: "✨" };
@@ -36,7 +35,6 @@ function buildSkillSelector(player) {
             .setEmoji(myClassSkill.emoji));
     }
 
-    // 🔥🔥 إضافة مهارة الكاهن الهجين (Hybrid Priest) 🔥🔥
     if (player.isHybridPriest) {
         options.push(new StringSelectMenuOptionBuilder()
             .setLabel("النور المقدس (إرث)")
@@ -103,11 +101,10 @@ function buildPotionSelector(player, sql, guildID) {
             .setEmoji('🚫'));
     }
 
-    // خيار الشراء السريع
     options.push(new StringSelectMenuOptionBuilder()
         .setLabel('شراء المزيد من الجرعات')
         .setValue('buy_potions_action') 
-        .setDescription('فتح متجر الجرعات السريع (لا ينهي دورك)')
+        .setDescription('فتح متجر الجرعات السريع')
         .setEmoji('🛒'));
 
     return new ActionRowBuilder().addComponents(
@@ -194,43 +191,43 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
 }
 
 // =========================================================
-// 4. إنشاء أزرار التحكم (Buttons) - 🔥 الترتيب الجديد 🔥
+// 4. إنشاء أزرار التحكم (Buttons) - 🔥 الألوان الجديدة 🔥
 // =========================================================
 function generateBattleRows(disabled = false) {
-    // السطر الأول: هجوم (يسار) - مهارة (يمين)
+    // السطر الأول: هجوم (أحمر) - مهارة (أزرق)
     const row1 = new ActionRowBuilder();
 
     const btnAtk = new ButtonBuilder()
         .setCustomId('atk')
         .setLabel('هجوم')
         .setEmoji('⚔️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Danger) // 🔥 أحمر
         .setDisabled(disabled);
 
     const btnSkill = new ButtonBuilder()
         .setCustomId('skill')
         .setLabel('مهارة')
         .setEmoji('✨')
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Primary) // 🔥 أزرق
         .setDisabled(disabled);
 
     row1.addComponents(btnAtk, btnSkill);
 
-    // السطر الثاني: دفاع (يسار) - جرعة (يمين)
+    // السطر الثاني: دفاع (رمادي) - جرعة (أخضر)
     const row2 = new ActionRowBuilder();
 
     const btnDef = new ButtonBuilder()
         .setCustomId('def')
         .setLabel('دفاع')
         .setEmoji('🛡️')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary) // 🔥 رمادي
         .setDisabled(disabled);
 
     const btnHeal = new ButtonBuilder()
         .setCustomId('heal')
         .setLabel('جـرعـة')
         .setEmoji('🧪')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Success) // 🔥 أخضر
         .setDisabled(disabled);
 
     row2.addComponents(btnDef, btnHeal);
