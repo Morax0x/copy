@@ -15,8 +15,29 @@ const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 
 const activeGames = new Set();
 
-// خريطة لتخزين آخر وقت تم فيه العفو عن السارق (لتطبيق نظام مرة يومياً)
+// خريطة لتخزين تاريخ آخر عفو (YYYY-MM-DD)
 const robberyPardons = new Map(); 
+
+// دوال مساعدة للوقت (توقيت السعودية)
+function getKSADateString() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+}
+
+function getNextMidnightTimestamp() {
+    const now = new Date();
+    // تحويل الوقت الحالي لتوقيت السعودية
+    const ksaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+    
+    // إنشاء كائن لوقت منتصف الليل القادم
+    const nextMidnight = new Date(ksaTime);
+    nextMidnight.setHours(24, 0, 0, 0);
+    
+    // حساب الفرق بالمللي ثانية
+    const timeDifference = nextMidnight.getTime() - ksaTime.getTime();
+    
+    // إرجاع توقيت يونكس للديسكورد (الوقت الحالي + الفرق)
+    return Math.floor((Date.now() + timeDifference) / 1000);
+}
 
 function formatTime(ms) {
     if (ms < 0) ms = 0;
@@ -251,18 +272,20 @@ module.exports = {
                     await i.update({ embeds: [winEmbed], components: [] });
 
                 } else {
-                    // ❌ فشل السرقة (نظام العفو)
-                    const lastPardonTime = robberyPardons.get(robber.id) || 0;
-                    const oneDay = 24 * 60 * 60 * 1000;
-                    const canBePardoned = (now - lastPardonTime) > oneDay;
+                    // ❌ فشل السرقة (نظام العفو الجديد مع التوقيت)
+                    
+                    const todayDate = getKSADateString(); // التاريخ الحالي بتوقيت السعودية
+                    const lastPardonDate = robberyPardons.get(robber.id); // تاريخ آخر عفو
+                    
+                    const canBePardoned = lastPardonDate !== todayDate; // هل العفو متاح اليوم؟
 
                     if (canBePardoned) {
-                        // 🌟 العفو الإمبراطوري (مرة يومياً)
+                        // 🌟 العفو الإمبراطوري (مرة يومياً حتى منتصف الليل)
                         robberData.mora += 100; // إعطاء هدية
-                        robberyPardons.set(robber.id, now); // تحديث وقت العفو
+                        robberyPardons.set(robber.id, todayDate); // تسجيل أن العفو استُخدم اليوم
 
-                        // حساب وقت المراقبة (24 ساعة من الآن)
-                        const nextPardonTimestamp = Math.floor((now + oneDay) / 1000);
+                        // حساب وقت العداد (منتصف الليل بتوقيت السعودية)
+                        const nextMidnightTimestamp = getNextMidnightTimestamp();
 
                         const pardonEmbed = new EmbedBuilder()
                             .setTitle('❖ مـحاولـة سـطـو فـاشـلـة')
@@ -270,7 +293,7 @@ module.exports = {
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
                             .setDescription(
                                 `✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}\n\n` +
-                                `★ حـراس القـصـر يراقبونـك لمـدة 24 سـاعـة`
+                                `★ حـراس القـصـر يراقبونـك حتى: <t:${nextMidnightTimestamp}:R>`
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
