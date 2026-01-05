@@ -36,6 +36,10 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS market_items (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, currentPrice INTEGER DEFAULT 0, lastChangePercent REAL DEFAULT 0.0, lastChange INTEGER DEFAULT 0)",
         // 🔥 تم إضافة purchasePrice هنا كما طلبت 🔥
         "CREATE TABLE IF NOT EXISTS user_portfolio (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, itemID TEXT NOT NULL, quantity INTEGER DEFAULT 0, purchasePrice INTEGER DEFAULT 0, FOREIGN KEY (itemID) REFERENCES market_items(id), UNIQUE(guildID, userID, itemID))",
+        
+        // 🔥🔥 (مهم جداً) جدول المخزون الجديد 🔥🔥
+        "CREATE TABLE IF NOT EXISTS user_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT, userID TEXT, itemID TEXT, quantity INTEGER DEFAULT 0, UNIQUE(guildID, userID, itemID))",
+        
         "CREATE TABLE IF NOT EXISTS blacklistTable (id TEXT PRIMARY KEY, guild TEXT, typeId TEXT, type TEXT)",
         "CREATE TABLE IF NOT EXISTS channel (guild TEXT PRIMARY KEY, channel TEXT)",
         "CREATE TABLE IF NOT EXISTS user_farm (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, purchaseTimestamp INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0)",
@@ -95,7 +99,7 @@ function setupDatabase(clientOrSql) {
 
     // Perform Migrations
     ['mora', 'lastWork', 'lastDaily', 'dailyStreak', 'bank', 'lastInterest', 'totalInterestEarned', 'hasGuard', 'guardExpires', 'lastCollected', 'totalVCTime', 'lastRob', 'lastGuess', 'lastRPS', 'lastRoulette', 'lastTransfer', 'lastDeposit', 'shop_purchases', 'total_meow_count', 'boost_count', 'lastPVP', 'lastFarmYield', 'lastFish', 'rodLevel', 'boatLevel', 'lastMemory', 'lastArrange', 'last_dungeon', 'lastRace'].forEach(col => ensureColumn('levels', col, 'INTEGER DEFAULT 0'));
-    
+      
     // 🔥🔥 أعمدة التذاكر والعفو الجديدة 🔥🔥
     ensureColumn('levels', 'dungeon_tickets', 'INTEGER DEFAULT 0');
     ensureColumn('levels', 'last_ticket_reset', "TEXT DEFAULT ''");
