@@ -41,7 +41,7 @@ async function startGiveaway(client, interaction, channel, duration, winnerCount
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('g_enter') // ✅ تم التعديل ليتطابق مع الهاندلر
+            .setCustomId('g_enter') 
             .setLabel('مشاركة (0)')
             .setEmoji('🎉')
             .setStyle(ButtonStyle.Primary)
@@ -284,8 +284,10 @@ async function createRandomDropGiveaway(client, guild) {
         dropMessageContent: "✨ **قيفاواي مفاجئ ظهر!** ✨"
     };
 
-    const moraReward = Math.floor(Math.random() * 4001) + 1000; 
-    const xpReward = Math.floor(Math.random() * 4001) + 1000;    
+    // 🔥 تعديل النطاق ليصبح من 300 إلى 1500 (مورا واكس بي)
+    const moraReward = Math.floor(Math.random() * 1201) + 300; 
+    const xpReward = Math.floor(Math.random() * 1201) + 300;     
+    
     const winnerCount = Math.floor(Math.random() * 3) + 1;        
     const durationMs = 5 * 60 * 1000; 
     const endsAt = Date.now() + durationMs;
@@ -307,7 +309,7 @@ async function createRandomDropGiveaway(client, guild) {
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('g_enter_drop') // ✅ هذا هو التعديل المهم جداً
+            .setCustomId('g_enter_drop') 
             .setLabel(settings.dropButtonLabel || DEFAULTS.dropButtonLabel)
             .setStyle(ButtonStyle.Success)
             .setEmoji(settings.dropButtonEmoji || DEFAULTS.dropButtonEmoji)
@@ -348,7 +350,7 @@ async function initGiveaways(client) {
 module.exports = {
     getUserWeight,
     startGiveaway,
-    handleGiveawayInteraction, // ✅ تم تصدير الدالة باسمها الصحيح
+    handleGiveawayInteraction, 
     endGiveaway,
     rerollGiveaway,
     createRandomDropGiveaway,
