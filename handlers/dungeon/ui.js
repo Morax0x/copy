@@ -1,16 +1,28 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, Colors } = require('discord.js');
+const { 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    StringSelectMenuBuilder, 
+    StringSelectMenuOptionBuilder, 
+    Colors 
+} = require('discord.js');
+
 const { OWNER_ID, skillsConfig, potionItems } = require('./constants');
 const { ensureInventoryTable, buildHpBar } = require('./utils');
 
+// =========================================================
+// 1. إنشاء قائمة المهارات (Dropdown)
+// =========================================================
 function buildSkillSelector(player) {
     const options = [];
 
     // --- تعديل: إزالة القائمة الخاصة بالأونر من هنا ---
     // لأن الأونر أصبح يستخدم زر "الدفاع" لفتح لوحة التحكم الشاملة.
-     
+      
     const cd = player.special_cooldown;
     const cdText = cd > 0 ? ` (كولداون: ${cd})` : '';
-     
+      
     let myClassSkill = null;
     // تعريب أسماء الكلاسات والمهارات
     if (player.class === 'Leader') myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30%.", emoji: "👑" };
@@ -44,11 +56,11 @@ function buildSkillSelector(player) {
         (s.currentLevel > 0 || s.id.startsWith('race_')) && 
         s.stat_type !== 'Owner' // إخفاء مهارات الأونر من القائمة العادية
     );
-     
+      
     availableSkills.forEach(skill => {
         const cooldown = (player.id === OWNER_ID) ? 0 : (player.skillCooldowns[skill.id] || 0);
         const description = (cooldown > 0) ? `🕓 كولداون: ${cooldown} جولات` : `⚡ ${skill.description}`;
-         
+          
         options.push(new StringSelectMenuOptionBuilder()
             .setLabel(skill.name)
             .setValue(skill.id)
@@ -57,7 +69,7 @@ function buildSkillSelector(player) {
     });
 
     if (options.length === 0) return null;
-     
+      
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
         .setCustomId('skill_select_menu')
@@ -66,10 +78,13 @@ function buildSkillSelector(player) {
     );
 }
 
+// =========================================================
+// 2. إنشاء قائمة الجرعات (Dropdown)
+// =========================================================
 function buildPotionSelector(player, sql, guildID) {
     ensureInventoryTable(sql); 
     const userItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(player.id, guildID);
-     
+      
     const potions = userItems.map(ui => {
         const itemDef = potionItems.find(si => si.id === ui.itemID);
         if (itemDef) return { ...itemDef, quantity: ui.quantity };
@@ -94,6 +109,9 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
+// =========================================================
+// 3. إنشاء تصميم المعركة (Embed)
+// =========================================================
 function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = '#2F3136') {
     const embed = new EmbedBuilder()
         .setTitle(`${theme.emoji} الطابق ${floor} | ضد ${monster.name}`)
@@ -116,7 +134,7 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     let teamStatus = players.map(p => {
         let icon = p.isDead ? '💀' : (p.defending ? '🛡️' : '');
         let arabClass = p.class;
-         
+          
         // 🔥🔥 التعديل الجديد: دعم القائد السابق والقائد الكاهن 🔥🔥
         if (p.class === 'Leader') { 
             if (p.isHybridPriest) {
@@ -172,24 +190,54 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     // 🛠️ عرض آخر 8 أسطر فقط (سجل متحرك)
     // ============================================================
     const logText = log.slice(-8).join('\n') || "بانتظار بدء الاشتباك...";
-     
+      
     embed.addFields({ name: "📜 احـداث المعـركـة:", value: logText, inline: false });
 
     return embed;
 }
 
-function generateBattleRows() {
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('atk').setLabel('هجوم').setEmoji('⚔️').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('skill').setLabel('المهارات').setEmoji('✨').setStyle(ButtonStyle.Primary)
-    );
+// =========================================================
+// 4. إنشاء أزرار التحكم (Buttons) - 🔥 التعديل هنا 🔥
+// =========================================================
+function generateBattleRows(disabled = false) {
+    const row = new ActionRowBuilder();
 
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('heal').setLabel('جرعة').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('def').setLabel('دفاع').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
-    );
+    // 1. زر الهجوم (الأول)
+    const btnAtk = new ButtonBuilder()
+        .setCustomId('atk')
+        .setLabel('هجوم')
+        .setEmoji('⚔️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled);
 
-    return [row1, row2];
+    // 2. زر المهارة (الثاني - يسار الدفاع)
+    const btnSkill = new ButtonBuilder()
+        .setCustomId('skill')
+        .setLabel('مهارة')
+        .setEmoji('✨')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled);
+
+    // 3. زر الدفاع (الثالث - يمين المهارة)
+    const btnDef = new ButtonBuilder()
+        .setCustomId('def')
+        .setLabel('دفاع')
+        .setEmoji('🛡️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled);
+
+    // 4. زر العلاج (الرابع - الأخير)
+    const btnHeal = new ButtonBuilder()
+        .setCustomId('heal')
+        .setLabel('علاج')
+        .setEmoji('🧪')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled);
+
+    // إضافة الأزرار بالترتيب الجديد: هجوم -> مهارة -> دفاع -> علاج
+    row.addComponents(btnAtk, btnSkill, btnDef, btnHeal);
+
+    return [row];
 }
 
 module.exports = {
