@@ -20,7 +20,8 @@ const {
     WIN_IMAGES, 
     LOSE_IMAGES, 
     skillsConfig, 
-    ownerSkills 
+    ownerSkills,
+    potionItems // ✅ تم استيراد الجرعات لاستخدامها في المتجر
 } = require('./dungeon/constants');
 
 const { 
@@ -141,26 +142,24 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = 100; 
 
     // ============================================================
-    // 🔥 إضافة خاصة: مراقب الرسائل لكلمة "كشف" (حل مشكلة الآيفون) 🔥
+    // 🔥 مراقب الرسائل لكلمة "كشف" (حل مشكلة الآيفون) 🔥
     // ============================================================
     const statusFilter = m => m.content.trim() === 'كشف' && !m.author.bot;
     const statusCollector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
 
     statusCollector.on('collect', async m => {
         const player = players.find(p => p.id === m.author.id);
-        if (!player) return; // الشخص ليس مشاركاً أو انسحب
+        if (!player) return; 
 
         if (player.isDead) {
              return m.reply({ content: `👻 **${player.name}** أنت ميت حالياً!` }).catch(()=>{});
         }
 
-        // حساب شريط الصحة
         const percent = Math.max(0, Math.min(1, player.hp / player.maxHp));
         const filled = Math.round(percent * 10);
         const empty = 10 - filled;
         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-        // إرسال الرد
         await m.reply({ 
             content: `👤 **${player.name}** [${player.class}]\n[${bar}] **${player.hp}/${player.maxHp}**` 
         }).catch(()=>{});
@@ -171,7 +170,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         if (players.length === 0 || players.every(p => p.isDead)) {
             deleteDungeonState(sql, threadChannel.id); 
-            statusCollector.stop(); // 🔥 إيقاف المراقب عند الخسارة
+            statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break; 
@@ -511,17 +510,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 checkBossPhase(monster, log); 
                                 
-                                // 🔥🔥🔥 تعديل التحقق من الموت لإرسال رسالة وشفاء الكاهن 🔥🔥🔥
-                                // سنستخدم checkDeaths لكن سنضيف منطق الكاهن هنا إذا لزم الأمر
-                                // أو نعتمد على أن checkDeaths تقوم بذلك إذا كانت محدثة
-                                // ولكن لضمان العمل، سنضيف منطق الكاهن هنا مباشرة:
                                 const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
                                 if (deadThisTurn.length > 0) {
                                     for (const deadP of deadThisTurn) {
                                         deadP.isDead = true;
                                         await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
-                                        
-                                        // إذا كان كاهن
                                         if (deadP.class === 'Priest') {
                                             players.forEach(ally => {
                                                 if (!ally.isDead && ally.id !== deadP.id) {
@@ -547,12 +540,79 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                             try {
                                 const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true });
-                                const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 15000 });
+                                const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 20000 }); // زيادة الوقت ليتيح الشراء
                                 await selection.deferUpdate().catch(()=>{});
-                                const potionId = selection.values[0].replace('use_potion_', '');
+                                
+                                const selectedValue = selection.values[0];
+
+                                // =========================================================
+                                // 🔥🔥🔥 بداية منطق متجر الجرعات السريع 🔥🔥🔥
+                                // =========================================================
+                                if (selectedValue === 'buy_potions_action') {
+                                    // 1. جلب رصيد المورا الحالي
+                                    const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
+                                    const currentMora = userLevelData ? userLevelData.mora : 0;
+
+                                    // 2. بناء قائمة المتجر
+                                    const shopOptions = potionItems.map(pot => ({
+                                        label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
+                                        value: pot.id,
+                                        description: pot.description ? pot.description.substring(0, 50) : "جرعة مفيدة",
+                                        emoji: pot.emoji
+                                    }));
+
+                                    const shopRow = new ActionRowBuilder().addComponents(
+                                        new StringSelectMenuBuilder()
+                                            .setCustomId('shop_buy_select')
+                                            .setPlaceholder('اختر الجرعة للشراء...')
+                                            .addOptions(shopOptions)
+                                    );
+
+                                    // 3. إرسال واجهة المتجر
+                                    const shopMsg = await selection.followUp({
+                                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
+                                        components: [shopRow],
+                                        ephemeral: true
+                                    });
+
+                                    // 4. انتظار اختيار الشراء
+                                    try {
+                                        const buyInteraction = await shopMsg.awaitMessageComponent({ time: 15000 });
+                                        await buyInteraction.deferUpdate();
+                                        
+                                        const itemID = buyInteraction.values[0];
+                                        const targetItem = potionItems.find(x => x.id === itemID);
+
+                                        if (currentMora < targetItem.price) {
+                                            await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
+                                        } else {
+                                            // خصم المورا وإضافة الجرعة
+                                            sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(targetItem.price, p.id, guild.id);
+                                            // إضافة للمخزون (Upsert)
+                                            const existingItem = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, targetItem.id);
+                                            if (existingItem) {
+                                                sql.prepare("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = ?").run(existingItem.id);
+                                            } else {
+                                                sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1)").run(guild.id, p.id, targetItem.id);
+                                            }
+
+                                            await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
+                                        }
+                                    } catch (e) {
+                                        await shopMsg.edit({ content: "⏰ انتهى وقت الشراء.", components: [] }).catch(()=>{});
+                                    }
+
+                                    // 🔥 مهم جداً: عدم احتساب الدور
+                                    processingUsers.delete(i.user.id);
+                                    return; 
+                                }
+                                // =========================================================
+                                // 🔥🔥🔥 نهاية منطق المتجر 🔥🔥🔥
+                                // =========================================================
+
+                                const potionId = selectedValue.replace('use_potion_', '');
                                 
                                 if (potionId === 'potion_titan') {
-                                    // 🔥🔥 تم السماح بالتراكم (أزيل شرط المنع) 🔥🔥
                                     p.titanPotionUses = p.titanPotionUses || 0;
                                     if (p.titanPotionUses >= 3) {
                                         await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
