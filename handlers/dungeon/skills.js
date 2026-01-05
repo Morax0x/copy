@@ -1,5 +1,5 @@
 const { OWNER_ID, skillsConfig } = require('./constants');
-const { applyDamageToPlayer } = require('./utils');
+const { applyDamageToPlayer } = require('../utils');
 const { checkBossPhase } = require('./monsters'); // 🔥 استدعاء دالة المراحل
 
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
@@ -258,10 +258,19 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         // --- 2. Human ---
         case 'Cleanse_Buff_Shield': { 
             player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff');
-            const shieldVal = Math.floor(player.maxHp * (value / 100));
-            player.shield += shieldVal;
+            
+            // 🔥🔥 تطبيق معادلة الدرع الجديدة 🔥🔥
+            let shieldFromHp = Math.floor(player.maxHp * (value / 100));
+            let shieldFromAtk = Math.floor(player.atk * 2); 
+            let shieldVal = (shieldFromHp + shieldFromAtk) * mult;
+
+            if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
+            
+            player.shield = shieldVal; // تعيين الدرع (لا يتراكم)
+            
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
             log.push(`🛡️ **${player.name}** استخدم ${skill.name}! (تطهير + درع ${shieldVal} + هجوم)`);
+            
             // توليد تهديد بسيط للدفاع
             player.threat = (player.threat || 0) + 200;
             break;
@@ -420,15 +429,23 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                     player.threat = (player.threat || 0) + Math.floor(healAmount / 2);
                     break;
                 }
+                
+                // 🔥🔥🔥 تطبيق معادلة الدرع الجديدة هنا أيضاً 🔥🔥🔥
                 case 'skill_shielding': {
                      if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
-                     let shieldAmount = Math.floor(player.maxHp * (value / 100)) * mult;
+                     
+                     let shieldFromHp = Math.floor(player.maxHp * (value / 100));
+                     let shieldFromAtk = Math.floor(player.atk * 2);
+                     let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
+                     
                      player.shield = shieldAmount; 
                      log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
                      // تهديد الدرع
                      player.threat = (player.threat || 0) + Math.floor(shieldAmount / 3);
                      break;
                 }
+                // ----------------------------------------------------
+
                 case 'skill_buffing': {
                      player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
                      log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
