@@ -1,5 +1,5 @@
 const { OWNER_ID, skillsConfig } = require('./constants');
-const { applyDamageToPlayer } = require('../utils');
+const { applyDamageToPlayer } = require('./utils'); // ✅ تم التصحيح هنا
 const { checkBossPhase } = require('./monsters'); // 🔥 استدعاء دالة المراحل
 
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
@@ -395,7 +395,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
 
         // --- 13. RNG (Gamble) ---
-        // 🔥🔥 تم تحسين المقامرة 🔥🔥
         case 'RNG': {
              if (skill.id === 'skill_gamble') {
                  const isSuccess = Math.random() < 0.5; 
@@ -435,44 +434,44 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 
                 // 🔥🔥🔥 تطبيق معادلة الدرع الجديدة هنا أيضاً (0.5 ATK) 🔥🔥🔥
                 case 'skill_shielding': {
-                     if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
-                     
-                     let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-                     let shieldFromAtk = Math.floor(player.atk * 0.5); 
-                     let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
-                     
-                     player.shield = shieldAmount; 
-                     log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
-                     // تهديد الدرع
-                     player.threat = (player.threat || 0) + Math.floor(shieldAmount / 3);
-                     break;
+                      if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
+                      
+                      let shieldFromHp = Math.floor(player.maxHp * (value / 100));
+                      let shieldFromAtk = Math.floor(player.atk * 0.5); 
+                      let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
+                      
+                      player.shield = shieldAmount; 
+                      log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
+                      // تهديد الدرع
+                      player.threat = (player.threat || 0) + Math.floor(shieldAmount / 3);
+                      break;
                 }
                 // ----------------------------------------------------
 
                 case 'skill_buffing': {
-                     player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
-                     log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
-                     break;
+                      player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
+                      log.push(`💪 **${player.name}** رفع قوته الهجومية!`);
+                      break;
                 }
                 case 'skill_poison': {
-                     skillDmg = Math.floor(effectiveAtk * 0.5) * mult; 
-                     monster.effects.push({ type: 'poison', val: Math.floor(effectiveAtk * (value/100)) * mult, turns: 3 });
-                     applyDmgAndThreat(skillDmg);
-                     log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
-                     break;
+                      skillDmg = Math.floor(effectiveAtk * 0.5) * mult; 
+                      monster.effects.push({ type: 'poison', val: Math.floor(effectiveAtk * (value/100)) * mult, turns: 3 });
+                      applyDmgAndThreat(skillDmg);
+                      log.push(`☠️ **${player.name}** سمم الوحش! (ضرر ${skillDmg}).`);
+                      break;
                 }
                 case 'skill_rebound': { 
-                     const reflectPercent = (value / 100) * mult;
-                     player.effects.push({ type: 'reflect', val: reflectPercent, turns: 2 });
-                     log.push(`🔄 **${player.name}** جهز الارتداد العكسي!`);
-                     break;
+                      const reflectPercent = (value / 100) * mult;
+                      player.effects.push({ type: 'reflect', val: reflectPercent, turns: 2 });
+                      log.push(`🔄 **${player.name}** جهز الارتداد العكسي!`);
+                      break;
                 }
                 case 'skill_weaken': {
-                     skillDmg = Math.floor(effectiveAtk * 0.5) * mult;
-                     monster.effects.push({ type: 'weakness', val: (value / 100), turns: 2 }); 
-                     applyDmgAndThreat(skillDmg);
-                     log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
-                     break;
+                      skillDmg = Math.floor(effectiveAtk * 0.5) * mult;
+                      monster.effects.push({ type: 'weakness', val: (value / 100), turns: 2 }); 
+                      applyDmgAndThreat(skillDmg);
+                      log.push(`📉 **${player.name}** أضعف الوحش وسبب **${skillDmg}** ضرر.`);
+                      break;
                 }
                 default: {
                     let multiplier = 1 + (value / 100);
