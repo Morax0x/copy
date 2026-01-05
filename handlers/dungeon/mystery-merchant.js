@@ -27,10 +27,8 @@ const SHOP_ITEMS = [
     { id: 'buy_elixir', name: 'إكسيـر الحيـاة', price: 2500, desc: 'يعيد إحياءك بـ 100% HP (أو يعالجك بالكامل).', emoji: '🩸' },
     { id: 'buy_blood', name: 'عقـد الـدم', price: 2500, desc: 'خصم 50% من صحتك القصوى مقابل +60% هجوم دائم.', emoji: '📜' },
     { id: 'buy_map', name: 'خريطـة مختصـرة', price: 2000, desc: 'تخطي 3 طوابق فوراً (حد أقصى 3 مرات بالغارة).', emoji: '🗺️' },
-    // 🔥 تم التعديل: الوصف يوضح حد الـ 5 طوابق
     { id: 'buy_shield', name: 'درع المرتزقـة', price: 3000, desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر أو لمدة 5 طوابق (مرة واحدة فقط).', emoji: '🛡️' },
     { id: 'buy_eye', name: 'عين البصيـرة', price: 1000, desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +50%).', emoji: '👁️' },
-    // ❌ تم حذف الجرعات المخزنة (Stock) كما طلبت
     { id: 'buy_instant_elder', name: 'شراب العمالقة العتيق', price: 2500, desc: 'تأثير فوري: يضاعف الصحة لمدة 8 طوابق!', emoji: '🍷' },
     { id: 'buy_instant_assassin', name: 'سم التخفي', price: 2000, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
 ];
@@ -158,11 +156,12 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                     effectMsg = "وقّع عقد الدم! (انخفضت الصحة للنصف، وزاد هجومه 60% لنهاية الرحلة)";
                 }
                 else if (selectedId === 'buy_shield') {
+                    // تطبيق فوري للدرع + الإعدادات
+                    player.shield = (player.shield || 0) + 2500;
                     player.startingShield = 2500; 
                     player.shieldPersistent = true; 
-                    player.shieldFloorsCount = 0; // 🔥 تصفير العداد عند الشراء لضمان حساب 5 طوابق جديدة
-                    // 🔥 تسجيل الشراء لمنع التكرار 🔥
-                    player.hasBoughtMercenaryShield = true;
+                    player.shieldFloorsCount = 0; 
+                    player.hasBoughtMercenaryShield = true; // منع التكرار
                     effectMsg = "تجهز بدرع المرتزقة الصلب! (2500 درع يستمر حتى ينكسر أو لمدة 5 طوابق)";
                 }
                 else if (selectedId === 'buy_map') {
@@ -175,12 +174,14 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                     effectMsg = "حصل على عين البصيرة! وحش الطابق القادم سيتلقى 50% ضرر إضافي.";
                 }
                 else if (selectedId === 'buy_instant_elder') {
-                    player.maxHp *= 2; player.hp = player.maxHp;
-                    player.effects.push({ type: 'titan', floors: 8 }); 
+                    player.maxHp *= 2; 
+                    player.hp = player.maxHp;
+                    // إضافة turns: 99 لضمان عدم اختفاء التأثير قبل انتهاء الطوابق
+                    player.effects.push({ type: 'titan', floors: 8, turns: 99 }); 
                     effectMsg = "تجرع شراب العمالقة العتيق! تضاعفت صحته لمدة 8 طوابق!";
                 }
                 else if (selectedId === 'buy_instant_assassin') {
-                    player.effects.push({ type: 'stealth', turns: 3 });
+                    player.effects.push({ type: 'stealth', turns: 3 }); // تأكد أن نظام المعركة يدعم 'stealth'
                     effectMsg = "شرب سم التخفي! اختفى عن الأنظار لمدة 3 جولات.";
                 }
 
