@@ -91,7 +91,7 @@ function updateMarketPrices() {
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;         
+        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;          
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
                 const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
@@ -729,9 +729,22 @@ async function _handleShopButton(i, client, sql) {
 
         const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
         if (RESTRICTED_ITEMS.includes(item.id)) {
+             // 1. شرط المستوى
              if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
+             
+             // 2. شرط القروض
              const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
              if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
+
+             // 3. 🔥🔥 شرط الستريك الجديد (30+) 🔥🔥
+             const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
+             const currentStreak = userStreakData ? userStreakData.streakCount : 0;
+             if (currentStreak < 30) {
+                 return await i.reply({ 
+                     content: `❌ **عذراً!** هذا العنصر يتطلب ستريك كتابي لا يقل عن **30** (ستريكك الحالي: ${currentStreak}).`, 
+                     flags: MessageFlags.Ephemeral 
+                 });
+             }
         }
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
@@ -1076,6 +1089,7 @@ async function handleShopInteractions(i, client, sql) {
 
 async function handleShopSelectMenu(i, client, sql) {
     try {
+        await i.deferUpdate(); 
         const selected = i.values[0];
         if (selected === 'fishing_gear_menu') {
             await i.deferReply({ flags: MessageFlags.Ephemeral });
