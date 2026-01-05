@@ -6,7 +6,6 @@ async function getUserWeight(member, sql) {
     const userRoles = member.roles.cache.map(r => r.id);
     if (userRoles.length === 0) return 1;
 
-    // تجهيز الاستعلام للبحث عن أعلى وزن بناءً على رتب المستخدم
     const placeholders = userRoles.map(() => '?').join(',');
     
     try {
@@ -17,7 +16,7 @@ async function getUserWeight(member, sql) {
         `).get(member.guild.id, ...userRoles);
         return weights?.maxWeight || 1;
     } catch (e) {
-        return 1; // قيمة افتراضية في حالة الخطأ
+        return 1;
     }
 }
 
@@ -62,13 +61,12 @@ async function startGiveaway(client, interaction, channel, duration, winnerCount
     return message;
 }
 
-// دالة معالجة التفاعل (مشاركة) - تستدعى من interaction-handler
+// دالة معالجة التفاعل (مشاركة)
 async function handleGiveawayInteraction(client, interaction) {
     const messageID = interaction.message.id;
     const userID = interaction.user.id;
     const sql = client.sql;
 
-    // جلب بيانات القيف اواي
     const giveaway = sql.prepare("SELECT * FROM active_giveaways WHERE messageID = ? AND isFinished = 0").get(messageID);
     
     if (!giveaway) {
@@ -79,14 +77,11 @@ async function handleGiveawayInteraction(client, interaction) {
         return interaction.reply({ content: "⏰ لقد انتهى وقت المشاركة!", ephemeral: true });
     }
 
-    // التحقق من المشاركة المسبقة
     const existingEntry = sql.prepare("SELECT * FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(messageID, userID);
     
     if (existingEntry) {
-        // خيار إلغاء المشاركة
         sql.prepare("DELETE FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").run(messageID, userID);
         
-        // تحديث العدد في الزر
         const count = sql.prepare("SELECT COUNT(*) as count FROM giveaway_entries WHERE giveawayID = ?").get(messageID).count;
         const embed = EmbedBuilder.from(interaction.message.embeds[0]);
         const row = ActionRowBuilder.from(interaction.message.components[0]);
@@ -96,11 +91,9 @@ async function handleGiveawayInteraction(client, interaction) {
         return interaction.reply({ content: "❌ تم إلغاء مشاركتك.", ephemeral: true });
     }
 
-    // تسجيل المشاركة
     const weight = await getUserWeight(interaction.member, sql);
     sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
 
-    // تحديث العدد في الزر
     const count = sql.prepare("SELECT COUNT(*) as count FROM giveaway_entries WHERE giveawayID = ?").get(messageID).count;
     const embed = EmbedBuilder.from(interaction.message.embeds[0]);
     const row = ActionRowBuilder.from(interaction.message.components[0]);
@@ -156,7 +149,6 @@ async function endGiveaway(client, messageID, force = false) {
         return; 
     }
 
-    // خوارزمية السحب
     const pool = [];
     for (const entry of entries) {
         for (let i = 0; i < entry.weight; i++) {
@@ -164,7 +156,6 @@ async function endGiveaway(client, messageID, force = false) {
         }
     }
 
-    // خلط
     for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -186,7 +177,6 @@ async function endGiveaway(client, messageID, force = false) {
     const moraReward = giveaway.moraReward || 0;
     const xpReward = giveaway.xpReward || 0;
 
-    // توزيع الجوائز
     if (moraReward > 0 || xpReward > 0) {
         for (const winnerID of winnerIDs) {
             try {
@@ -198,7 +188,6 @@ async function endGiveaway(client, messageID, force = false) {
                 levelData.xp = (levelData.xp || 0) + xpReward;
                 levelData.totalXP = (levelData.totalXP || 0) + xpReward;
                 
-                // Level Up Logic
                 let nextXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
                 while (levelData.xp >= nextXP) {
                     levelData.level++;
@@ -264,7 +253,9 @@ async function rerollGiveaway(client, interaction, messageID) {
     await interaction.reply(`🎉 **الري-رول الجديد!** الفائز هو: <@${winner}>! 🥳`);
 }
 
-// دالة إنشاء القيفاواي العشوائي (Drop)
+// =======================================================
+// 🔥 دالة القيفاواي العشوائي (المعدلة) 🔥
+// =======================================================
 async function createRandomDropGiveaway(client, guild) {
     const sql = client.sql;
 
@@ -274,17 +265,23 @@ async function createRandomDropGiveaway(client, guild) {
     const channel = guild.channels.cache.get(settings.dropGiveawayChannelID);
     if (!channel) return false;
 
+    // 1. الإعدادات الافتراضية مع التنسيق الجديد
     const DEFAULTS = {
-        dropTitle: "🎉 قيفاواي مفاجئ! 🎉",
-        dropDescription: "تفاعلكم رائع! إليكم قيفاواي سريع:\n\n✦ الـجـائـزة: **{prize}**\n✦ الـفـائـزون: `{winners}`\n✦ ينتهي بعـد: {time}",
+        dropTitle: "🎉 **GIVEAWAY DROP** 🎉",
+        dropDescription: `**الجائزة:** جوائز عشوائية قيمة\n` +
+                         `**عدد الفائزين:** {winners}\n` +
+                         `**ينتهي:** {time} ({time_full})\n\n` +
+                         `**الجوائز:**\n` +
+                         `💰 مورا: **{mora}** | ✨ خبرة: **{xp}**\n\n` +
+                         `اضغط على الزر بالأسفل للمشاركة! ⤵️`,
         dropColor: "Gold",
-        dropFooter: "اضغط الزر للدخول!",
-        dropButtonLabel: "ادخل السحب!",
-        dropButtonEmoji: "🎁",
+        dropFooter: "ينتهي في",
+        dropButtonLabel: "مشاركة (0)",
+        dropButtonEmoji: "🎉",
         dropMessageContent: "✨ **قيفاواي مفاجئ ظهر!** ✨"
     };
 
-    // 🔥 تعديل النطاق ليصبح من 300 إلى 1500 (مورا واكس بي)
+    // 2. تحديد الجوائز (من 300 إلى 1500)
     const moraReward = Math.floor(Math.random() * 1201) + 300; 
     const xpReward = Math.floor(Math.random() * 1201) + 300;     
     
@@ -293,25 +290,31 @@ async function createRandomDropGiveaway(client, guild) {
     const endsAt = Date.now() + durationMs;
     const endsAtTimestamp = Math.floor(endsAt / 1000);
 
-    const prize = `🎁 \`${moraReward.toLocaleString()}\` مورا و \`${xpReward.toLocaleString()}\` اكس بي`;
+    const prize = `🎁 ${moraReward.toLocaleString()} Mora & ${xpReward.toLocaleString()} XP`;
 
     const title = settings.dropTitle || DEFAULTS.dropTitle;
+    
+    // 3. استبدال المتغيرات
     const description = (settings.dropDescription || DEFAULTS.dropDescription)
         .replace(/{prize}/g, prize)
         .replace(/{winners}/g, winnerCount)
-        .replace(/{time}/g, `<t:${endsAtTimestamp}:R>`);
+        .replace(/{time}/g, `<t:${endsAtTimestamp}:R>`)
+        .replace(/{time_full}/g, `<t:${endsAtTimestamp}:f>`)
+        .replace(/{mora}/g, moraReward.toLocaleString())
+        .replace(/{xp}/g, xpReward.toLocaleString());
 
     const embed = new EmbedBuilder()
         .setTitle(title)
         .setDescription(description)
         .setColor(settings.dropColor || DEFAULTS.dropColor)
+        .setTimestamp(endsAt)
         .setFooter({ text: settings.dropFooter || DEFAULTS.dropFooter });
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('g_enter_drop') 
             .setLabel(settings.dropButtonLabel || DEFAULTS.dropButtonLabel)
-            .setStyle(ButtonStyle.Success)
+            .setStyle(ButtonStyle.Primary)
             .setEmoji(settings.dropButtonEmoji || DEFAULTS.dropButtonEmoji)
     );
 
@@ -350,7 +353,7 @@ async function initGiveaways(client) {
 module.exports = {
     getUserWeight,
     startGiveaway,
-    handleGiveawayInteraction, 
+    handleGiveawayInteraction,
     endGiveaway,
     rerollGiveaway,
     createRandomDropGiveaway,
