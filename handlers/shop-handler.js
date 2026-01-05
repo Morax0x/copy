@@ -91,7 +91,7 @@ function updateMarketPrices() {
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;          
+        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;           
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
                 const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
@@ -293,7 +293,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             } catch (err) {
                 console.error("Error in change_race cleanup:", err);
             }
-             
+              
             const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.guild.id, interaction.user.id, -5, expiresAt, 'xp', -0.05);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.guild.id, interaction.user.id, -5, expiresAt, 'mora', -0.05);
@@ -553,6 +553,7 @@ async function _handleWeaponUpgrade(i, client, sql, isUpdate = false) {
         if (!isUpdate) { // في حالة الضغط العادي
              const isBuy = i.customId.startsWith('buy_weapon_');
              if (i.isStringSelectMenu() && i.values[0] === 'upgrade_weapon') {
+                 // 🔥 تم التعديل: استخدام reply لإنشاء رسالة جديدة
                  if (!i.replied && !i.deferred) await i.deferReply({ flags: MessageFlags.Ephemeral });
                  const userRace = getUserRace(i.member, sql);
                  if (!userRace) return i.editReply({ content: "❌ ليس لديك عرق! قم باختيار عرقك أولاً." });
@@ -729,22 +730,9 @@ async function _handleShopButton(i, client, sql) {
 
         const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
         if (RESTRICTED_ITEMS.includes(item.id)) {
-             // 1. شرط المستوى
              if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
-             
-             // 2. شرط القروض
              const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
              if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
-
-             // 3. 🔥🔥 شرط الستريك الجديد (30+) 🔥🔥
-             const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
-             const currentStreak = userStreakData ? userStreakData.streakCount : 0;
-             if (currentStreak < 30) {
-                 return await i.reply({ 
-                     content: `❌ **عذراً!** هذا العنصر يتطلب ستريك كتابي لا يقل عن **30** (ستريكك الحالي: ${currentStreak}).`, 
-                     flags: MessageFlags.Ephemeral 
-                 });
-             }
         }
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
@@ -1029,7 +1017,7 @@ async function handleShopInteractions(i, client, sql) {
     // 🔥🔥 إصلاح التصفح: استخدم editReply لتعديل الرسالة بدلاً من update 🔥🔥
     if (i.customId.startsWith('shop_paginate_item_')) { 
         try { 
-            await i.deferUpdate(); 
+            await i.deferUpdate(); // هنا deferUpdate مقبول لأنه يحدث الرسالة الجديدة (Pagination)
             const id = i.customId.replace('shop_paginate_item_', ''); 
             const embed = buildPaginatedItemEmbed(id); 
             if (embed) await i.editReply(embed); 
@@ -1089,28 +1077,36 @@ async function handleShopInteractions(i, client, sql) {
 
 async function handleShopSelectMenu(i, client, sql) {
     try {
-        await i.deferUpdate(); 
+        // 🔥🔥 التعديل الجوهري: حذف deferUpdate لإنشاء رسائل جديدة 🔥🔥
         const selected = i.values[0];
+
         if (selected === 'fishing_gear_menu') {
-            await i.deferReply({ flags: MessageFlags.Ephemeral });
+            await i.deferReply({ flags: MessageFlags.Ephemeral }); // رسالة جديدة
             const embed = new EmbedBuilder().setTitle('🎣 عـدة الـصـيـد').setDescription('اختر القسم الذي تريد تصفحه:').setColor(Colors.Aqua).setImage(BANNER_URL);
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('fishing_gear_sub_menu').setPlaceholder('اختر الفئة...').addOptions(
                 { label: 'السنارات', value: 'gear_rods', emoji: '🎣' }, { label: 'القوارب', value: 'gear_boats', emoji: '🚤' }, { label: 'الطعوم', value: 'gear_baits', emoji: '🪱' }
             ));
             return await i.editReply({ embeds: [embed], components: [row] });
         }
-        if (selected === 'upgrade_weapon') { await _handleWeaponUpgrade(i, client, sql); return; }
+
+        if (selected === 'upgrade_weapon') { 
+            await _handleWeaponUpgrade(i, client, sql); 
+            return; 
+        }
+
         if (selected === 'upgrade_skill') {
-            await i.deferReply({ flags: MessageFlags.Ephemeral });
+            await i.deferReply({ flags: MessageFlags.Ephemeral }); // رسالة جديدة
             const allUserSkills = getAllUserAvailableSkills(i.member, sql);
             if (allUserSkills.length === 0) return await i.editReply({ content: '❌ لا توجد مهارات متاحة.' });
             const skillOptions = allUserSkills.map(s => new StringSelectMenuOptionBuilder().setLabel(s.name).setDescription(s.description.substring(0,100)).setValue(s.id).setEmoji(s.emoji));
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_skill_select_menu').setPlaceholder('اختر المهارة...').addOptions(skillOptions));
             return await i.editReply({ content: 'اختر مهارة:', components: [row] });
         }
+
         if (selected === 'exchange_xp') {
              const btn = new ButtonBuilder().setCustomId('open_xp_modal').setLabel('بدء التبادل').setStyle(ButtonStyle.Primary).setEmoji('🪙');
              const embed = new EmbedBuilder().setTitle('تبديل الخبرة').setDescription(`السعر: ${XP_EXCHANGE_RATE} مورا = 1 XP`).setColor(Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('exchange_xp'));
+             // رسالة جديدة
              return await i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)], flags: MessageFlags.Ephemeral });
         }
         
@@ -1126,6 +1122,7 @@ async function handleShopSelectMenu(i, client, sql) {
 
         if (item) {
              const paginationEmbed = buildPaginatedItemEmbed(selected);
+             // رسالة جديدة
              if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
         }
     } catch (e) { console.error(e); }
