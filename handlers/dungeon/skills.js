@@ -259,9 +259,9 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         case 'Cleanse_Buff_Shield': { 
             player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff');
             
-            // 🔥🔥 تطبيق معادلة الدرع الجديدة 🔥🔥
+            // 🔥🔥 تطبيق معادلة الدرع الجديدة (0.5 ATK) 🔥🔥
             let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-            let shieldFromAtk = Math.floor(player.atk * 2); 
+            let shieldFromAtk = Math.floor(player.atk * 0.5); 
             let shieldVal = (shieldFromHp + shieldFromAtk) * mult;
 
             if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
@@ -430,12 +430,12 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                     break;
                 }
                 
-                // 🔥🔥🔥 تطبيق معادلة الدرع الجديدة هنا أيضاً 🔥🔥🔥
+                // 🔥🔥🔥 تطبيق معادلة الدرع الجديدة هنا أيضاً (0.5 ATK) 🔥🔥🔥
                 case 'skill_shielding': {
                      if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
                      
                      let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-                     let shieldFromAtk = Math.floor(player.atk * 2);
+                     let shieldFromAtk = Math.floor(player.atk * 0.5); // تم التعديل
                      let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
                      
                      player.shield = shieldAmount; 
