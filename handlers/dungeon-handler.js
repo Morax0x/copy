@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
 const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
+const { manageTickets } = require('./dungeon/utils.js'); // ✅ استدعاء دالة التذاكر
 
 const activeDungeonRequests = new Map();
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
@@ -19,7 +20,7 @@ async function startDungeon(interaction, sql) {
         return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
     }
 
-    // كولداون (لغير الأونر)
+    // كولداون (لغير الأونر) - للهوست فقط
     if (user.id !== OWNER_ID) {
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
@@ -37,7 +38,7 @@ async function startDungeon(interaction, sql) {
 
     const randomKey = themeKeys[Math.floor(Math.random() * themeKeys.length)];
     const selectedTheme = { ...dungeonConfig.themes[randomKey], key: randomKey };
-    
+     
     // تسجيل الحالة
     activeDungeonRequests.set(user.id, { status: 'lobby' });
 
@@ -54,7 +55,7 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, oldMsg, theme, sql) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
-    
+     
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
@@ -78,10 +79,10 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         return new EmbedBuilder()
             // العنوان بصيغة: دانجون: اسم البوابة
             .setTitle(`دانجون: ${theme.name}`) 
-            
+             
             // اللون يتم سحبه من الكونفج (واذا مو موجود ياخذ لون احتياطي)
             .setColor(theme.color || '#2F3136') 
-            
+             
             .setDescription(`**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 **تم فتح البوابة إلى ${theme.name}!**\nاختر تخصصك واستعد للمعركة.\n\n👥 **الفريق:**\n${memberList}`)
             .setImage(imageUrl) 
             .setThumbnail(host.displayAvatarURL());
@@ -93,9 +94,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
-    
+     
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
-    
+     
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
@@ -106,19 +107,32 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 if (i.user.id === host.id) return i.reply({ content: "👑 أنت القائد.", flags: [MessageFlags.Ephemeral] });
                 if (party.length >= 5 && !party.includes(i.user.id)) return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
 
+                // التحقق من الشروط وإدارة التذاكر
                 if (!party.includes(i.user.id) && i.user.id !== OWNER_ID) {
                     const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
-                    if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط.", flags: [MessageFlags.Ephemeral] });
-                    const now = Date.now();
-                    const reset = jData.last_join_reset || 0;
-                    if (now - reset < COOLDOWN_TIME && (jData.dungeon_join_count || 0) >= 3) return i.reply({ content: "🚫 استنفذت المحاولات.", flags: [MessageFlags.Ephemeral] });
+                    
+                    // شرط اللفل والمورا
+                    if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط (لفل 5+ ومورا 100).", flags: [MessageFlags.Ephemeral] });
+                    
+                    // 🔥 نظام التذاكر الجديد 🔥
+                    const ticketResult = manageTickets(i.user.id, guildId, sql, 'consume');
+                    
+                    if (!ticketResult.success) {
+                        return i.reply({ 
+                            content: `🚫 **نفذت تذاكرك لليوم!**\nتتجدد التذاكر الساعة 12:00 ص بتوقيت السعودية.\nتذاكرك الحالية: **0/${ticketResult.max}**`, 
+                            flags: [MessageFlags.Ephemeral] 
+                        });
+                    }
+                    
+                    // تم خصم التذكرة بنجاح، نكمل الكود...
+                    // (يمكنك إضافة رسالة تأكيد هنا إذا أردت، لكننا سنكمل مباشرة لاختيار التخصص)
                 }
 
                 const takenClasses = [];
                 partyClasses.forEach((c, u) => { if(u !== i.user.id) takenClasses.push(c); });
                 const opts = [];
                 const addOpt = (v, l, e) => { if(!takenClasses.includes(v)) opts.push(new StringSelectMenuOptionBuilder().setLabel(l).setValue(v).setEmoji(e)); };
-                
+                 
                 addOpt('Tank', 'المُدرّع', '🛡️'); 
                 addOpt('Priest', 'الكاهن', '✨'); 
                 addOpt('Mage', 'الساحر', '❄️'); 
@@ -138,7 +152,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                     await sel.deferUpdate();
                     partyClasses.set(i.user.id, chosen);
                     if (!party.includes(i.user.id)) party.push(i.user.id);
-                    
+                     
                     await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] });
                     await msg.edit({ embeds: [updateEmbed()] });
                 } else {
@@ -157,13 +171,15 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
             party.forEach(id => {
+                // خصم المورا من الجميع
                 sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
-                if (id === host.id && id !== OWNER_ID) sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
-                else if (id !== OWNER_ID) {
-                    const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
-                    if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
-                    else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
+                
+                // تحديث كولداون الهوست فقط
+                if (id === host.id && id !== OWNER_ID) {
+                    sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
                 }
+                
+                // 🛑 تم حذف كود الكولداون القديم للأعضاء (لأننا اعتمدنا التذاكر) 🛑
             });
 
             try {
