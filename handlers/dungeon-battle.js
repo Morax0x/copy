@@ -140,10 +140,38 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     const maxFloors = 100; 
 
+    // ============================================================
+    // 🔥 إضافة خاصة: مراقب الرسائل لكلمة "كشف" (حل مشكلة الآيفون) 🔥
+    // ============================================================
+    const statusFilter = m => m.content.trim() === 'كشف' && !m.author.bot;
+    const statusCollector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
+
+    statusCollector.on('collect', async m => {
+        const player = players.find(p => p.id === m.author.id);
+        if (!player) return; // الشخص ليس مشاركاً أو انسحب
+
+        if (player.isDead) {
+             return m.reply({ content: `👻 **${player.name}** أنت ميت حالياً!` }).catch(()=>{});
+        }
+
+        // حساب شريط الصحة
+        const percent = Math.max(0, Math.min(1, player.hp / player.maxHp));
+        const filled = Math.round(percent * 10);
+        const empty = 10 - filled;
+        const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+        // إرسال الرد
+        await m.reply({ 
+            content: `👤 **${player.name}** [${player.class}]\n[${bar}] **${player.hp}/${player.maxHp}**` 
+        }).catch(()=>{});
+    });
+    // ============================================================
+
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
             deleteDungeonState(sql, threadChannel.id); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب عند الخسارة
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break; 
@@ -746,6 +774,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (players.every(p => p.isDead)) {
             const finalFloor = isTrapActive ? trapStartFloor : floor;
             deleteDungeonState(sql, threadChannel.id); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             break;
@@ -918,12 +947,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
             
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             return; 
         } 
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleLeaderRetreat(players, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
@@ -983,6 +1014,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (alivePlayers.length > 0) {
         
         deleteDungeonState(sql, threadChannel.id);
+        statusCollector.stop(); // 🔥 إيقاف المراقب
 
         const winEmbed = new EmbedBuilder()
             .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
