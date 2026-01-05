@@ -52,11 +52,11 @@
     { "level": 7, "name": "سفـينـة الاشبـاح", "price": 300000, "location_id": "dark_sea", "speed_bonus": 600000 }
   ],
   "baits": [
-    { "id": "bait_worm", "name": "دودة", "price": 50, "luck": 5, "description": "طعم بسيط يزيد الحظ قليلاً." },
-    { "id": "bait_cricket", "name": "صرصور", "price": 150, "luck": 10, "description": "طعم جيد للأسماك المتوسطة." },
-    { "id": "bait_shrimp", "name": "روبيان ذهبي", "price": 500, "luck": 20, "description": "يجذب الأسماك النادرة." },
-    { "id": "bait_squid", "name": "حبار طازج", "price": 1200, "luck": 35, "description": "طعم مفضل للقروش." },
-    { "id": "bait_magic", "name": "طعم سحري", "price": 3000, "luck": 60, "description": "يجذب الوحوش والكنوز!" }
+    { "id": "worm", "name": "دودة", "price": 50, "luck": 5, "description": "طعم بسيط يزيد الحظ قليلاً." },
+    { "id": "cricket", "name": "صرصور", "price": 150, "luck": 10, "description": "طعم جيد للأسماك المتوسطة." },
+    { "id": "shrimp", "name": "روبيان ذهبي", "price": 500, "luck": 20, "description": "يجذب الأسماك النادرة." },
+    { "id": "squid", "name": "حبار طازج", "price": 1200, "luck": 35, "description": "طعم مفضل للقروش." },
+    { "id": "magic", "name": "طعم سحري", "price": 3000, "luck": 60, "description": "يجذب الوحوش والكنوز!" }
   ],
   "locations": [
     { "id": "beach", "name": "الشاطئ المشمس 🏖️", "min_rod": 1, "fish_types": [1, 2] },
