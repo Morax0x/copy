@@ -1,5 +1,6 @@
-const { SlashCommandBuilder } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, Colors } = require("discord.js");
 const { startDungeon } = require("../../handlers/dungeon-handler.js");
+const { manageTickets } = require("../../handlers/dungeon/utils.js"); // ✅ استدعاء دالة التذاكر
 
 const OWNER_ID = "1145327691772481577";
 const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 ساعات
@@ -47,9 +48,11 @@ module.exports = {
 
         const { client, user, guild } = interaction;
 
-        // 2. تحديث قاعدة البيانات (أمان)
+        // 2. تحديث قاعدة البيانات (أمان) - ضمان وجود أعمدة التذاكر
         try {
             client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
+            client.sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_tickets INTEGER DEFAULT 0").run();
+            client.sql.prepare("ALTER TABLE levels ADD COLUMN last_ticket_reset TEXT DEFAULT ''").run();
         } catch (ignored) {}
 
         // 3. التحقق من وقت الانتظار (Cooldown)
@@ -71,18 +74,29 @@ module.exports = {
             const now = Date.now();
             const diff = now - lastRun;
 
+            // إذا كان عليه كولداون (لإنشاء الدانجون كـ Host)
             if (diff < COOLDOWN_MS) {
-                const remaining = COOLDOWN_MS - diff;
-                const hours = Math.floor(remaining / 3600000);
-                const minutes = Math.floor((remaining % 3600000) / 60000);
+                // جلب معلومات التذاكر (للانضمام)
+                const ticketInfo = manageTickets(user.id, guild.id, client.sql, 'check');
+                
+                // حساب وقت انتهاء الكولداون (Timestamp) للعد التنازلي
+                const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
 
-                const cooldownMsg = { 
-                    content: `⏳ **تمهّل أيها المحارب!**\nيجب أن ترتاح قبل خوض معركة جديدة.\nالوقت المتبقي: **${hours} ساعة و ${minutes} دقيقة**.\n\n*💡 يمكنك الانضمام لفريق شخص آخر في أي وقت!*`, 
-                    ephemeral: true 
-                };
+                // تصميم الإيمبد الجديد
+                const cooldownEmbed = new EmbedBuilder()
+                    .setTitle('✥ اسـتـراحـة مـحـارب !')
+                    .setDescription(
+                        `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n` +
+                        `★ يمكنك غـزو الدانجـون: <t:${readyTimestamp}:R>\n\n` + 
+                        `★ لديـك **(${ticketInfo.tickets}/${ticketInfo.max})** تـذكـرة يمكنك الانضمام لفريق آخر`
+                    )
+                    .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png')
+                    .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
-                if (isSlash && !interaction.replied) return await interaction.reply(cooldownMsg);
-                return await interaction.reply(cooldownMsg);
+                const payload = { embeds: [cooldownEmbed], ephemeral: true };
+
+                if (isSlash && !interaction.replied) return await interaction.reply(payload);
+                return await interaction.reply(payload);
             }
         }
 
