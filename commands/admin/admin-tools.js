@@ -166,6 +166,13 @@ module.exports = {
                 await this.setSkillLevel(message, sql, targetUser, args, embed);
                 break;
 
+            // 🔥🔥🔥 أمر إعطاء التذاكر الجديد 🔥🔥🔥
+            case 'give-ticket':
+            case 'اعطاء-تذكرة':
+            case 'إعطاء-تذكرة':
+                await this.giveTicket(message, client, sql, targetUser, args, embed);
+                break;
+
             default:
                 message.reply({ embeds: [this.getHelpEmbed()] });
         }
@@ -194,7 +201,8 @@ module.exports = {
                 "`-ادمن خصم-خبرة @user [القدر]`\n" +
                 "`-ادمن اعطاء-انجاز @user [اسم الانجاز]`\n" +
                 "`-ادمن ضبط-سلاح @user [المستوى]` (تلقائي)\n" +
-                "`-ادمن ضبط-مهارة @user [اسم المهارة] [المستوى]`"
+                "`-ادمن ضبط-مهارة @user [اسم المهارة] [المستوى]`\n" +
+                "`-ادمن اعطاء-تذكرة @user [العدد]` 🎟️"
             );
     },
 
@@ -209,12 +217,16 @@ module.exports = {
         const farm = sql.prepare("SELECT animalID, COUNT(*) as count FROM user_farm WHERE guildID = ? AND userID = ? GROUP BY animalID").all(guildID, userID);
         const achievements = sql.prepare("SELECT achievementID FROM user_achievements WHERE guildID = ? AND userID = ?").all(guildID, userID);
 
+        // جلب عدد التذاكر
+        const tickets = userData.dungeon_tickets || 0;
+
         embed.setTitle(`📋 تقرير فحص: ${targetUser.username}`)
             .setThumbnail(targetUser.displayAvatarURL())
             .addFields(
                 { name: '💰 الاقتصاد', value: `مورا: **${(userData.mora || 0).toLocaleString()}**\nبنك: **${(userData.bank || 0).toLocaleString()}**\nXP: **${(userData.xp || 0).toLocaleString()}** (Lv. ${userData.level || 1})`, inline: true },
                 { name: '🔥 الستريك', value: `شات: **${streakData.streakCount || 0}** (Shield: ${streakData.hasItemShield ? '✅' : '❌'})\nميديا: **${mediaStreakData.streakCount || 0}** (Shield: ${mediaStreakData.hasItemShield ? '✅' : '❌'})`, inline: true },
                 { name: '🛡️ الحماية', value: `حارس شخصي: **${userData.hasGuard || 0}** شحنة`, inline: true },
+                { name: '🎟️ التذاكر', value: `تذاكر دانجون: **${tickets}**`, inline: true },
                 { name: '📈 المحفظة', value: portfolio.length > 0 ? portfolio.map(p => `${p.itemID}: ${p.quantity}`).join(', ') : 'لا يوجد', inline: false },
                 { name: '🐄 المزرعة', value: farm.length > 0 ? farm.map(a => `${a.animalID}: ${a.count}`).join(', ') : 'لا يوجد', inline: false },
                 { name: '🏆 الإنجازات', value: `عدد المكتمل: **${achievements.length}**`, inline: true }
@@ -782,6 +794,28 @@ module.exports = {
         }
 
         embed.setDescription(`✅ تم ضبط مستوى مهارة **${skill.name}** لـ ${targetUser} إلى المستوى **${level}**.`);
+        await message.reply({ embeds: [embed] });
+    },
+
+    // 🔥 دالة إعطاء التذاكر 🔥
+    async giveTicket(message, client, sql, targetUser, args, embed) {
+        const amount = parseInt(args[2]);
+        if (isNaN(amount) || amount <= 0) return message.reply("❌ رقم غير صالح.");
+
+        const guildID = message.guild.id;
+        const userID = targetUser.id;
+
+        // التأكد من وجود سجل للمستخدم
+        let userData = client.getLevel.get(userID, guildID);
+        if (!userData) {
+            userData = { ...client.defaultData, user: userID, guild: guildID };
+            client.setLevel.run(userData);
+        }
+
+        // تحديث التذاكر في قاعدة البيانات
+        sql.prepare("UPDATE levels SET dungeon_tickets = dungeon_tickets + ? WHERE user = ? AND guild = ?").run(amount, userID, guildID);
+
+        embed.setDescription(`✅ تم إضافة **${amount}** 🎟️ تذاكر دانجون لـ ${targetUser}.`);
         await message.reply({ embeds: [embed] });
     }
 };
