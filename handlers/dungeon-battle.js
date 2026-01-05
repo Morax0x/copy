@@ -125,7 +125,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     // ============================================================
     if (resumeData) {
         players = resumeData.players;
-        merchantState = resumeData.merchantState;
+        merchantState = resumeData.merchantState || merchantState;
         // استرجاع حالة الانسحاب
         retreatState = resumeData.retreatState || retreatState; 
         
@@ -614,8 +614,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const baseCrit = p.critRate || 0.2;
                                     const isCrit = Math.random() < baseCrit;
                                      
-                                    let dmg = Math.floor(currentAtk * (0.9 + Math.random() * 0.2));
-                                    if (isCrit) dmg = Math.floor(dmg * 1.5);
+                                    // 🔥🔥🔥 تعديل التوازن: تقليل العشوائية وتقليل الكريتيكال 🔥🔥🔥
+                                    let dmg = Math.floor(currentAtk * (0.95 + Math.random() * 0.10)); // تذبذب قليل جداً (95% - 105%)
+                                    
+                                    if (isCrit) dmg = Math.floor(dmg * 1.3); // تقليل مضاعف الكريتيكال من 1.5 إلى 1.3
 
                                     if (floor <= 5 && dmg > 47) dmg = 47;
                                     else if (floor <= 10 && dmg > 88) dmg = 88;
@@ -686,10 +688,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                // 🛡️ حفظ الحالة قبل دور الوحش
                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                    retreatState, 
+                    retreatState,
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                     themeName: theme.name,
                     monsterData: monster
@@ -772,7 +773,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              if (canRetreat) {
-                 restDesc += `\n\n✨ وجـدتـم بوابـة انسـحـاب!`;
+                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! (لن تظهر مجدداً في هذا النطاق)`;
              } else {
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
