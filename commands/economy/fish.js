@@ -149,7 +149,7 @@ module.exports = {
         if (usedBaitName) {
             desc += `\n🪱 **الطعم:** ${usedBaitName}`;
         } else {
-            desc += `\n🪱 **الطعم:** لا يوجد`; // اختياري: توضيح عدم وجود طعم
+            desc += `\n🪱 **الطعم:** لا يوجد`; 
         }
 
         const waitingEmbed = new EmbedBuilder()
@@ -165,7 +165,12 @@ module.exports = {
 
         let msg;
         try {
-            msg = await reply({ embeds: [waitingEmbed], components: [disabledRow] });
+            // 🔥 إضافة content لحل مشكلة الآيفون 🔥
+            msg = await reply({ 
+                content: `**🎣 انطلق ${user.username} للصيد!**`, 
+                embeds: [waitingEmbed], 
+                components: [disabledRow] 
+            });
         } catch (err) {
             activeFishingSessions.delete(user.id);
             return;
@@ -207,8 +212,10 @@ module.exports = {
 
             // تعديل الرسالة الأصلية لتبديل الواجهة
             try {
-                if (isSlash) await interactionOrMessage.editReply({ embeds: [biteEmbed], components: [gameRow] });
-                else await msg.edit({ embeds: [biteEmbed], components: [gameRow] });
+                // 🔥 إضافة content عند التعديل 🔥
+                const updatePayload = { content: `**🎣 الـسنـارة تهـتز!**`, embeds: [biteEmbed], components: [gameRow] };
+                if (isSlash) await interactionOrMessage.editReply(updatePayload);
+                else await msg.edit(updatePayload);
             } catch (error) {
                 activeFishingSessions.delete(user.id);
                 return; 
@@ -249,7 +256,8 @@ module.exports = {
                     // تحديث الكولداون (خفيف)
                     sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
                     activeFishingSessions.delete(user.id);
-                    await j.editReply({ embeds: [failEmbed], components: [] });
+                    // 🔥 إضافة content عند التعديل 🔥
+                    await j.editReply({ content: `**❌ فشل الصيد!**`, embeds: [failEmbed], components: [] });
                     return;
                 }
 
@@ -274,6 +282,7 @@ module.exports = {
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
+                            // 🔥 تأكد أن دالة startPveBattle تدعم إضافة Content للآيفون، أو أضف رسالة هنا قبلها
                             await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
                             return; 
                         }
@@ -339,7 +348,8 @@ module.exports = {
                         .setFooter({ text: `السنارة: ${currentRod.name}` });
 
                     activeFishingSessions.delete(user.id);
-                    await j.editReply({ embeds: [resultEmbed], components: [] });
+                    // 🔥 إضافة content عند التعديل 🔥
+                    await j.editReply({ content: `✅ **صيد موفق!**`, embeds: [resultEmbed], components: [] });
                 }
             });
 
@@ -353,8 +363,9 @@ module.exports = {
                         
                         sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
                         // نستخدم msg مباشرة لأن collector انتهى أو لم يبدأ
-                        if (isSlash) await interactionOrMessage.editReply({ embeds: [failEmbed], components: [] }).catch(() => {});
-                        else await msg.edit({ embeds: [failEmbed], components: [] }).catch(() => {});
+                        const failPayload = { content: `❌ **فشلت المحاولة!**`, embeds: [failEmbed], components: [] };
+                        if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
+                        else await msg.edit(failPayload).catch(() => {});
                     }
                 } finally {
                     activeFishingSessions.delete(user.id);
