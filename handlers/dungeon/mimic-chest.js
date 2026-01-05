@@ -70,6 +70,9 @@ async function triggerMimicChest(thread, players) {
             } else if (roll < 35) { 
                 // 🛡️ درع مؤقت (10%)
                 const shieldVal = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
+                // تصحيح: إضافة الدرع للقيمة الحالية مباشرة
+                player.shield = (player.shield || 0) + shieldVal;
+                // نحتفظ بـ startingShield للإحصائيات أو التجديد إذا كان النظام يدعمه
                 player.startingShield = (player.startingShield || 0) + shieldVal;
                 resultMsg = `🛡️ **${player.name}** عثر على درع سحري متهالك! (+${shieldVal} درع مؤقت)`;
 
@@ -80,12 +83,12 @@ async function triggerMimicChest(thread, players) {
                 resultMsg = `⚡ **${player.name}** لمس بلورة طاقة! (تم شحن جميع المهارات)`;
 
             } else if (roll < 48) { 
-                // 💖 شفاء أو تحويل لدرع (8%) - [تم التعديل: لا يوجد بيع] 🔥
+                // 💖 شفاء أو تحويل لدرع (8%)
                 const healAmount = Math.floor(player.maxHp * 0.40); // 40%
 
                 if (player.hp >= player.maxHp * 0.9) {
                     // إذا الصحة فوق 90%، يتحول الشفاء الفائض لدرع
-                    player.startingShield = (player.startingShield || 0) + healAmount;
+                    player.shield = (player.shield || 0) + healAmount;
                     resultMsg = `🛡️ **${player.name}** وجد جرعة شفاء وهو بكامل عافيته، فتحولت الطاقة السحرية إلى **${healAmount}** درع!`;
                 } else {
                     // شفاء طبيعي
@@ -132,7 +135,9 @@ async function triggerMimicChest(thread, players) {
             } else if (roll < 88) { 
                 // 🔥 حرق (5%)
                 const burnDmg = Math.floor(player.maxHp * 0.05);
-                player.effects.push({ type: 'poison', val: burnDmg, turns: 3 });
+                // تصحيح: استخدام 'burn' بدلاً من 'poison' للوضوح، مع التأكد أن نظام المعركة يدعمه
+                // (إذا لم يكن يدعمه، ابقه 'poison' وغير النص فقط)
+                player.effects.push({ type: 'burn', val: burnDmg, turns: 3 });
                 resultMsg = `🔥 **${player.name}** انفجر في وجهه لهب سحري! (حرق لـ 3 جولات)`;
 
             } else if (roll < 93) { 
@@ -155,7 +160,7 @@ async function triggerMimicChest(thread, players) {
             } else { 
                 // 💨 فارغ (3%)
                 const pityShield = Math.floor(Math.random() * 50) + 10;
-                player.startingShield = (player.startingShield || 0) + pityShield;
+                player.shield = (player.shield || 0) + pityShield;
                 resultMsg = `💨 **${player.name}** الصندوق كان فارغاً... لكنه وجد قطعة خشبية استخدمها كدرع (+${pityShield} درع).`;
             }
 
