@@ -82,18 +82,22 @@ module.exports = {
                 // حساب وقت انتهاء الكولداون (Timestamp) للعد التنازلي
                 const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
 
-                // تصميم الإيمبد الجديد
+                // تصميم الإيمبد الجديد (تنسيق الأسطر)
                 const cooldownEmbed = new EmbedBuilder()
                     .setTitle('✥ اسـتـراحـة مـحـارب !')
                     .setDescription(
-                        `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n` +
-                        `★ يمكنك غـزو الدانجـون: <t:${readyTimestamp}:R>\n\n` + 
+                        `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n\n` +
+                        `★ يمكنك غـزو الدانجـون:\n ★ <t:${readyTimestamp}:R>\n\n` + 
                         `★ لديـك **(${ticketInfo.tickets}/${ticketInfo.max})** تـذكـرة يمكنك الانضمام لفريق آخر`
                     )
                     .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png')
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
-                const payload = { embeds: [cooldownEmbed], ephemeral: true };
+                const payload = { 
+                    content: `⏳ **تمهّل أيها المحارب!**`, // إضافة Content لحل مشكلة الآيفون
+                    embeds: [cooldownEmbed], 
+                    ephemeral: true 
+                };
 
                 if (isSlash && !interaction.replied) return await interaction.reply(payload);
                 return await interaction.reply(payload);
