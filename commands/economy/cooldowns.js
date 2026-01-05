@@ -92,7 +92,7 @@ module.exports = {
                 message = interactionOrMessage;
                 client = message.client;
                 guild = message.guild;
-                targetUser = message.author;
+                targetUser = message.mentions.users.first() || message.author; // تعديل بسيط لدعم المنشن في الرسائل العادية
             }
 
             const reply = async (payload) => {
@@ -128,7 +128,7 @@ module.exports = {
                 descriptionLines.push(`${EMOJI_READY} **راتب**`);
             }
 
-            // 2. حساب الأوامر الثابتة (بما فيها الدانجون والترتيب والسباق)
+            // 2. حساب الأوامر الثابتة
             for (const cmd of COMMANDS_TO_CHECK) {
                 const lastUsed = data[cmd.db_column] || 0;
                 const cooldownAmount = cmd.cooldown;
@@ -168,7 +168,11 @@ module.exports = {
                 .setImage('https://i.postimg.cc/7hhxXX8h/ec6f09156c21ff5df643e807a859d3e0.gif')
                 .setTimestamp();
 
-            await reply({ embeds: [embed] });
+            // 🔥🔥🔥 الإصلاح هنا: إضافة content بجانب الإيمبد 🔥🔥🔥
+            await reply({ 
+                content: `ℹ️ حالة الأوامر لـ **${targetUser.username}**:`, 
+                embeds: [embed] 
+            });
 
         } catch (error) {
             console.error("Error in gametime command:", error);
