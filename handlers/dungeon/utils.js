@@ -205,6 +205,55 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
+// 🔥 دالة إدارة التذاكر الجديدة 🔥
+function manageTickets(userID, guildID, sql, action = 'check') {
+    // جلب بيانات اللاعب
+    const userData = sql.prepare("SELECT level, dungeon_tickets, last_ticket_reset FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
+    
+    if (!userData) return { tickets: 0, max: 0 };
+
+    const level = userData.level || 1;
+    let maxTickets = 0;
+
+    // توزيع التذاكر حسب اللفل
+    if (level >= 51) maxTickets = 7;
+    else if (level >= 31) maxTickets = 5;
+    else if (level >= 21) maxTickets = 4;
+    else if (level >= 5) maxTickets = 3;
+    else maxTickets = 0; // أقل من لفل 5 ما عنده تذاكر
+
+    // 🇸🇦 حساب توقيت السعودية (UTC+3) 🇸🇦
+    const now = new Date();
+    // نضيف 3 ساعات للوقت العالمي للحصول على توقيت السعودية
+    const saudiTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+    // صيغة التاريخ: YYYY-MM-DD (عشان نعرف إحنا في أي يوم بالسعودية)
+    const todayStr = saudiTime.toISOString().split('T')[0];
+
+    let currentTickets = userData.dungeon_tickets;
+    
+    // 🔄 التحقق من التجديد اليومي (الساعة 12 بالليل)
+    if (userData.last_ticket_reset !== todayStr) {
+        // دخلنا يوم جديد بتوقيت السعودية -> فلل التذاكر
+        currentTickets = maxTickets;
+        // تحديث التاريخ في الداتا بيس
+        sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+           .run(maxTickets, todayStr, userID, guildID);
+    }
+
+    // إذا العملية "خصم تذكرة" (عند الانضمام)
+    if (action === 'consume') {
+        if (currentTickets > 0) {
+            sql.prepare("UPDATE levels SET dungeon_tickets = dungeon_tickets - 1 WHERE user = ? AND guild = ?").run(userID, guildID);
+            return { success: true, tickets: currentTickets - 1, max: maxTickets };
+        } else {
+            return { success: false, tickets: 0, max: maxTickets };
+        }
+    }
+
+    // مجرد فحص
+    return { tickets: currentTickets, max: maxTickets };
+}
+
 module.exports = {
     ensureInventoryTable,
     getRandomImage,
@@ -212,5 +261,6 @@ module.exports = {
     applyDamageToPlayer,
     cleanDisplayName,
     buildHpBar,
-    getRealPlayerData
+    getRealPlayerData,
+    manageTickets // 👈 تمت إضافة الدالة هنا للتصدير
 };
