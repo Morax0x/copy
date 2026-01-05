@@ -134,7 +134,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (!resumeData) {
         players.forEach(p => {
             if (p.isSealed) {
-                 threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحمل جبروتك`).catch(() => {});
+                 threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحـمل جبروتك`).catch(() => {});
             }
         });
     }
