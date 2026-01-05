@@ -451,7 +451,13 @@ async function _handleBaitSelect(i, client, sql) {
 }
 
 async function _handlePotionSelect(i, client, sql) {
-    if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
+    // 🔥 هنا نستخدم reply مباشرة لضمان رسالة جديدة 🔥
+    if(i.replied || i.deferred) {
+        // إذا كان هناك تفاعل سابق، نستخدم followUp كرسالة جديدة
+        await i.followUp({ content: "جاري التحميل...", flags: MessageFlags.Ephemeral });
+    } else {
+        await i.deferReply({ flags: MessageFlags.Ephemeral });
+    }
     
     const potions = getPotionItems();
     if (potions.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
@@ -539,7 +545,7 @@ async function _handleBaitBuy(i, client, sql) {
     }
     userData.mora -= cost; 
     client.setLevel.run(userData);
-    sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?").run(i.guild.id, i.user.id, baitId, qty, qty);
+    sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?").run(i.guild.id, i.user.id, baitId, qty, qty);
     await i.editReply({ content: `✅ تم شراء **${qty}x ${bait.name}** بنجاح!` });
     sendShopLog(client, i.guild.id, i.member, `طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
