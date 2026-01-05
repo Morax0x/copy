@@ -259,17 +259,17 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         case 'Cleanse_Buff_Shield': { 
             player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff');
             
-            // 🔥🔥 تطبيق معادلة الدرع الجديدة (0.5 ATK) 🔥🔥
-            let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-            let shieldFromAtk = Math.floor(player.atk * 0.5); 
-            let shieldVal = (shieldFromHp + shieldFromAtk) * mult;
-
+            // 🔥🔥🔥 معادلة الدرع الجديدة + منع التراكم 🔥🔥🔥
             if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
+
+            let shieldFromHp = Math.floor(player.maxHp * (value / 100));
+            let shieldFromAtk = Math.floor(player.atk * 0.5); // نصف الهجوم
+            let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
             
-            player.shield = shieldVal; // تعيين الدرع (لا يتراكم)
+            player.shield = shieldAmount; 
             
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
-            log.push(`🛡️ **${player.name}** استخدم ${skill.name}! (تطهير + درع ${shieldVal} + هجوم)`);
+            log.push(`🛡️ **${player.name}** استخدم ${skill.name}! (تطهير + درع ${shieldAmount} + هجوم)`);
             
             // توليد تهديد بسيط للدفاع
             player.threat = (player.threat || 0) + 200;
@@ -395,14 +395,17 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
 
         // --- 13. RNG (Gamble) ---
+        // 🔥🔥 تم تحسين المقامرة 🔥🔥
         case 'RNG': {
              if (skill.id === 'skill_gamble') {
                  const isSuccess = Math.random() < 0.5; 
                  if (isSuccess) {
-                     skillDmg = Math.floor(effectiveAtk * 1.5) * mult; 
-                     log.push(`🎲 **${player.name}** ربح المقامرة! ضربة مدمرة (**${skillDmg}**)!`);
+                     // 🚀 فوز: 2.5 أضعاف الهجوم (كان 1.5)
+                     skillDmg = Math.floor(effectiveAtk * 2.5) * mult; 
+                     log.push(`🎲 **${player.name}** ربح الرهان الكبيـر! ضربة ساحقة (**${skillDmg}**)!`);
                  } else {
-                     skillDmg = Math.floor(effectiveAtk * 0.25) * mult;
+                     // 🔻 خسارة: نصف الهجوم (كان ربع) + ضرر ذاتي
+                     skillDmg = Math.floor(effectiveAtk * 0.5) * mult;
                      const selfDmg = Math.floor(player.maxHp * 0.1);
                      applyDamageToPlayer(player, selfDmg);
                      log.push(`🎲 **${player.name}** خسر الرهان! ضربة ضعيفة وتلقى ضرراً.`);
@@ -435,7 +438,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                      if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
                      
                      let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-                     let shieldFromAtk = Math.floor(player.atk * 0.5); // تم التعديل
+                     let shieldFromAtk = Math.floor(player.atk * 0.5); 
                      let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
                      
                      player.shield = shieldAmount; 
