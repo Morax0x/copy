@@ -180,21 +180,14 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
-// 🕒 حساب موعد التجديد (السعودية: 12:00 منتصف الليل)
-function getNextResetTimestamp() {
-    const now = new Date();
-    // تحويل الوقت الحالي لتوقيت السعودية (UTC+3)
-    const saudiNow = new Date(now.getTime() + (3 * 60 * 60 * 1000));
-    
-    const nextReset = new Date(saudiNow);
-    nextReset.setUTCDate(saudiNow.getUTCDate() + 1); // غداً
-    nextReset.setUTCHours(0, 0, 0, 0); // منتصف الليل
-
-    // نرجع التايم ستامب (UTC الحقيقي)
-    return nextReset.getTime() - (3 * 60 * 60 * 1000); 
+// 🗓️ دالة لجلب تاريخ اليوم بتوقيت السعودية (YYYY-MM-DD)
+// هذه الطريقة أضمن 100% من التايم ستامب
+function getSaudiDateIso() {
+    // توقيت السعودية هو UTC+3
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥 دالة إدارة التذاكر (ManageTickets v3 - Final Fix) 🔥
+// 🔥 دالة إدارة التذاكر (النظام الجديد المعتمد على التاريخ) 🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -204,7 +197,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     
     if (!userData) return { tickets: 0, max: 0 };
 
-    // حساب الحد الأقصى للتذاكر
+    // حساب الحد الأقصى للتذاكر حسب المستوى
     const level = userData.level || 1;
     let maxTickets = 0;
     if (level >= 51) maxTickets = 7;
@@ -213,84 +206,43 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     else if (level >= 5) maxTickets = 3;
     else maxTickets = 0;
 
-    // قراءة البيانات من القاعدة
+    // جلب التاريخ الحالي (السعودية)
+    const todayStr = getSaudiDateIso(); // مثال: "2024-10-27"
+    
+    // جلب التاريخ المسجل في القاعدة
+    let storedDate = userData.last_ticket_reset || "";
     let currentTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
-    let storedResetTimeRaw = userData.last_ticket_reset; // القيمة الخام
-    let nextResetTime = 0;
-    let needsReset = false;
-    const now = Date.now();
 
-    // 🔬 DEBUG: لنرى ماذا يقرأ البوت من القاعدة بالضبط
-    // console.log(`[DEBUG] User: ${userID} | Raw DB Value: "${storedResetTimeRaw}"`);
-
-    // --- منطق الفحص الجديد ---
-    if (!storedResetTimeRaw || storedResetTimeRaw === '') {
-        // حالة 1: لا يوجد تاريخ مسجل -> ريست
-        // console.log(`[DEBUG] Empty date -> RESET`);
-        needsReset = true;
-    } else {
-        // نستخدم Number بدلاً من parseInt لتجنب قراءة "2026-01-01" كرقم 2026
-        nextResetTime = Number(storedResetTimeRaw);
+    // 2. فحص التجديد (إذا اختلف التاريخ، نجدد التذاكر فوراً)
+    if (storedDate !== todayStr) {
+        // يوم جديد! نجدد التذاكر
+        currentTickets = maxTickets;
         
-        if (isNaN(nextResetTime)) {
-             // حالة 2: التاريخ المسجل نص قديم (مثل 2026-01-01) -> ريست وتحديث للنظام الجديد
-             // console.log(`[DEBUG] Date is NaN/Old Format -> RESET (Migration)`);
-             needsReset = true;
-        } else if (now >= nextResetTime) {
-             // حالة 3: تجاوزنا الوقت المحدد -> ريست
-             // console.log(`[DEBUG] Time Expired -> RESET`);
-             needsReset = true;
-        } else {
-             // حالة 4: الوقت سليم ولا زلنا في نفس اليوم
-             // console.log(`[DEBUG] Time Valid -> OK`);
-        }
+        // تحديث القاعدة بالتاريخ الجديد والحد الأقصى
+        sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+           .run(maxTickets, todayStr, userID, guildID);
     }
 
-    // متغيرات للحفظ
-    let finalTickets = currentTickets;
-    let finalResetTime = isNaN(nextResetTime) ? 0 : nextResetTime;
-
-    // 2. تطبيق التجديد إذا لزم الأمر
-    if (needsReset) {
-        finalTickets = maxTickets;
-        finalResetTime = getNextResetTimestamp();
-        
-        // تحديث القاعدة فوراً
-        const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
-            .run(finalTickets, String(finalResetTime), userID, guildID);
-        
-        // console.log(`[DEBUG] RESET APPLIED. DB Changes: ${info.changes}`);
-        
-        currentTickets = finalTickets; // تحديث المتغير المحلي
-    }
-
-    // 3. تنفيذ الخصم
+    // 3. تنفيذ الخصم (فقط إذا كان الإجراء consume)
     if (action === 'consume') {
-        if (finalTickets > 0) {
-            // نخصم من القيمة "النهائية"
-            let newTicketCount = finalTickets - 1;
+        if (currentTickets > 0) {
+            const newCount = currentTickets - 1;
             
-            // حماية أخيرة: التأكد من وجود وقت تجديد صالح قبل الحفظ
-            if (!finalResetTime || finalResetTime === 0) {
-                finalResetTime = getNextResetTimestamp();
-            }
-
-            const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
-                .run(newTicketCount, String(finalResetTime), userID, guildID);
-
+            const info = sql.prepare("UPDATE levels SET dungeon_tickets = ? WHERE user = ? AND guild = ?")
+               .run(newCount, userID, guildID);
+               
             if (info.changes > 0) {
-                // console.log(`[DEBUG] TICKET CONSUMED. Remaining: ${newTicketCount}`);
-                return { success: true, tickets: newTicketCount, max: maxTickets };
+                return { success: true, tickets: newCount, max: maxTickets };
             } else {
-                console.error(`[DEBUG] SQL ERROR during consume.`);
-                return { success: false, tickets: finalTickets, max: maxTickets };
+                return { success: false, tickets: currentTickets, max: maxTickets };
             }
         } else {
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
 
-    return { tickets: finalTickets, max: maxTickets };
+    // في حالة الفحص فقط (check)
+    return { tickets: currentTickets, max: maxTickets };
 }
 
 module.exports = {
