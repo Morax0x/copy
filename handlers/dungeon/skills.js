@@ -1,7 +1,7 @@
 const { OWNER_ID } = require('./constants');
 const { applyDamageToPlayer } = require('./utils'); 
 const { checkBossPhase } = require('./monsters');
-// ✅ استيراد المحرك الجديد
+// ✅ استيراد المحرك الجديد (تأكد من صحة المسار)
 const skillCalculator = require('../combat/skill-calculator');
 
 function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
@@ -66,7 +66,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     // ====================================================
     // 2. منطق مهارات الكلاسات (Class Skills Logic)
-    // (تبقى هنا لأنها تتفاعل مع الـ Party Array وتوزيع الأدوار)
+    // (تبقى هنا لأنها تتفاعل مع الـ Party وتوزيع الأدوار)
     // ====================================================
     let classType = null;
     if (skill.id === 'class_special_skill') {
@@ -191,7 +191,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     // =================================================================
-    // 🔥🔥 استخدام المحرك المركزي للمهارات (بدلاً من التكرار) 🔥🔥
+    // 🔥🔥 استخدام المحرك المركزي للمهارات (تم التحديث) 🔥🔥
     // =================================================================
     
     // 1. استدعاء المحرك
@@ -216,13 +216,17 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     // ب. الشفاء والدرع والضرر الذاتي
     if (result.heal > 0) player.hp = Math.min(player.maxHp, player.hp + result.heal);
     if (result.selfDamage > 0) applyDamageToPlayer(player, result.selfDamage);
-    if (result.shield > 0) player.shield += result.shield; // يجمع فوق الدرع الموجود في الدانجون
+    
+    if (result.shield > 0) {
+        player.shield = (player.shield || 0) + result.shield; // يجمع فوق الدرع الموجود
+    }
 
     // ج. تطبيق التأثيرات على الوحش
-    if (result.effectsApplied.length > 0) {
+    if (result.effectsApplied && result.effectsApplied.length > 0) {
         result.effectsApplied.forEach(eff => {
             if (eff.type === 'stun') {
                 monster.frozen = true; // في الدانجون نستخدم frozen بدلاً من stun
+                log.push(`❄️ **${player.name}** جمد الوحش!`);
             } else if (eff.type === 'dispel') {
                 monster.effects = [];
             } else {
@@ -233,7 +237,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     // د. تطبيق التأثيرات على النفس (Buffs/Cleanse)
-    if (result.selfEffects.length > 0) {
+    if (result.selfEffects && result.selfEffects.length > 0) {
         result.selfEffects.forEach(eff => {
             if (eff.type === 'cleanse') {
                 player.effects = player.effects.filter(e => e.type === 'atk_buff' || e.type === 'def_buff' || e.type === 'titan');
@@ -246,8 +250,10 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         });
     }
 
-    // هـ. تسجيل اللوج
-    log.push(result.log);
+    // هـ. تسجيل اللوج (نستخدم اللوج القادم من المحرك)
+    if (result.log) {
+        log.push(result.log);
+    }
 
     return { success: true, name: skill.name };
 }
