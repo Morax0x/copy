@@ -156,12 +156,12 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
             
-            // 🔥 تعديل 2: تصفية الفريق وخصم التذاكر الآن 🔥
+            // 🔥 تعديل 2: تصفية الفريق وخصم التذاكر الآن (عند الانطلاق) 🔥
             let validParty = [];
             let kickedMembers = [];
 
             for (const id of party) {
-                // القائد والأونر لا يخصم منهم تذاكر
+                // القائد والأونر لا يخصم منهم تذاكر (حسب النظام: القائد يدفع مورا وكولداون)
                 if (id === host.id || id === OWNER_ID) {
                     validParty.push(id);
                     
@@ -179,7 +179,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         // خصم المورا
                         sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                         
-                        // تحديث إحصائيات الانضمام (اختياري)
+                        // تحديث إحصائيات الانضمام
                         const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
                         if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
                         else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
@@ -221,6 +221,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
         } else {
+            // إلغاء الدانجون - التذاكر لم تُخصم أصلاً
             activeDungeonRequests.delete(host.id);
             if (msg.editable) msg.edit({ content: "❌ تم الإلغاء (انتهى الوقت أو ألغى القائد).", components: [], embeds: [] });
         }
