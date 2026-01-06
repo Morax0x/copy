@@ -4,7 +4,7 @@
 // ================================================================
 
 const path = require('path');
-// ✅ التعديل هنا: نقطتين فقط للرجوع لمجلد handlers ثم الدخول لـ dungeon
+// ✅ التصحيح هنا: نقطتين فقط للرجوع لمجلد handlers ثم الدخول لـ dungeon
 const { OWNER_ID } = require('../dungeon/constants'); 
 
 /**
