@@ -3,7 +3,8 @@
 // المسؤول عن حساب الهجوم العادي، الكريت، الدفاع، والمراوغة
 // ================================================================
 
-// تأكد من ضبط المسار الصحيح لملف الثوابت لديك
+const path = require('path');
+// ⚠️ تأكد أن هذا المسار يشير إلى ملف الثوابت الصحيح في مشروعك
 const { OWNER_ID } = require('../../dungeon/constants'); 
 
 /**
@@ -34,7 +35,6 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     };
 
     // 1. تحديد الضرر الأساسي
-    // نأخذه من السلاح المحسوب مسبقاً، أو نحسبه إذا لم يوجد
     let baseDmg = 15;
     if (attacker.weapon && attacker.weapon.currentDamage) {
         baseDmg = attacker.weapon.currentDamage;
@@ -55,6 +55,7 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     let finalDmg = Math.floor(baseDmg * multiplier);
 
     // 3. التحقق من العمى (Blind) - نسبة خطأ 50%
+    // ✅ (مهم جداً لميزة الروح الجديدة)
     if (attacker.effects && attacker.effects.blind > 0) {
         if (Math.random() < 0.5) {
             result.isMiss = true;
@@ -109,7 +110,6 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     if (finalDmg > 0 && defender.effects && defender.effects.rebound_active > 0) {
         result.reflected = Math.floor(finalDmg * defender.effects.rebound_active);
         attacker.hp -= result.reflected;
-        // ملاحظة: الضرر المنعكس لا يقلل الضرر القادم، بل يرتد جزء منه إضافي
     }
 
     // 9. التطبيق النهائي
