@@ -2,9 +2,14 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = r
 const path = require('path');
 
 const rootDir = process.cwd();
-// تأكد أن مسارات الجيسون صحيحة لديك
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
+
+// ✅ استيراد محركات القتال الجديدة
+const skillCalculator = require('./combat/skill-calculator');
+const weaponCalculator = require('./combat/weapon-calculator');
+
+const { OWNER_ID } = require('../dungeon/constants'); // تأكد من مسار الثوابت
 
 // --- صور الفوز والخسارة ---
 const WIN_IMAGES = [
@@ -26,13 +31,9 @@ const LOSE_IMAGES = [
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// ==========================================
-// ⚖️ إعدادات الصحة (تأكد أن هذه هي القيم الموجودة)
-// ==========================================
-const BASE_HP = 800;      // الصحة الأساسية
-const HP_PER_LEVEL = 60;  // زيادة الصحة لكل ليفل
+const BASE_HP = 800;      
+const HP_PER_LEVEL = 60;  
 const SKILL_COOLDOWN_TURNS = 3; 
-// ==========================================
 
 const activePvpChallenges = new Set();
 const activePvpBattles = new Map();
@@ -60,6 +61,7 @@ function getWeaponData(sql, member) {
     if (!weaponConfig) return null;
     let userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(member.id, member.guild.id, userRace.raceName);
     if (!userWeapon || userWeapon.weaponLevel <= 0) return null;
+    // نستخدم الآلة الحاسبة للحصول على الضرر الخام إذا أردنا، أو نحسبه هنا للعرض فقط
     const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
     return { ...weaponConfig, currentDamage: damage, currentLevel: userWeapon.weaponLevel };
 }
@@ -111,18 +113,19 @@ function buildHpBar(currentHp, maxHp) {
     return `[${filled.repeat(Math.max(0, Math.floor(percentage))) + empty.repeat(Math.max(0, 10 - Math.floor(percentage)))}] ${currentHp}/${maxHp}`;
 }
 
+// ✅ تم التحديث لإظهار العمى والنزيف
 function buildEffectsString(effects) {
     let arr = [];
     if (effects.shield > 0) arr.push(`🛡️ (${effects.shield})`);
     if (effects.buff > 0) arr.push(`💪 (+${Math.round(effects.buff * 100)}%)`);
     if (effects.weaken > 0) arr.push(`📉 (-${Math.round(effects.weaken * 100)}%)`);
-    if (effects.poison > 0) arr.push(`☠️ (${effects.poison})`);
+    if (effects.poison > 0) arr.push(`🩸/☠️ (${effects.poison})`); // نزيف أو سم
     if (effects.burn > 0) arr.push(`🔥 (${effects.burn})`);
     if (effects.stun) arr.push(`⚡ (مشلول)`);
     if (effects.confusion) arr.push(`😵 (مرتبك)`);
-    if (effects.rebound_active > 0) arr.push(`🔄 (${Math.round(effects.rebound_active * 100)}%)`);
+    if (effects.rebound_active > 0) arr.push(`🔄 (عكس)`);
     if (effects.evasion > 0) arr.push(`👻 (مراوغة)`);
-    if (effects.blind > 0) arr.push(`🌫️ (أعمى)`);
+    if (effects.blind > 0) arr.push(`🌫️ (أعمى)`); // ✅ جديد
     return arr.length > 0 ? arr.join(' | ') : 'لا يوجد';
 }
 
@@ -194,10 +197,11 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: [mainButtons] };
 }
 
+// ✅ دالة تنفيذ المهارة الجديدة (تستخدم skill-calculator.js)
 function applySkillEffect(battleState, attackerId, skill) {
     const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
     
-    // 🔥 منع تفعيل كولداون مهارة الدرع عند الاستخدام (يتم تفعيله عند الانكسار)
+    // منع تفعيل كولداون مهارة الدرع عند الاستخدام (يتم تفعيله عند الانكسار)
     if (skill.id !== 'skill_shielding') {
         if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
         battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
@@ -207,284 +211,98 @@ function applySkillEffect(battleState, attackerId, skill) {
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
 
-    const effectValue = skill.effectValue;
-    const statType = skill.stat_type;
+    // التحقق من هوية الأونر (إذا أردت تفعيل مضاعف الأونر)
+    const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
-    let baseAtk = attacker.weapon ? attacker.weapon.currentDamage : 15;
-    if (attacker.effects.buff > 0) baseAtk *= (1 + attacker.effects.buff);
-    if (attacker.effects.weaken > 0) baseAtk *= (1 - attacker.effects.weaken);
+    // 🔥 استدعاء المحرك الجديد للمهارات
+    const result = skillCalculator.executeSkill(attacker, defender, skill, isOwner);
 
-    // 🔥 حفظ حالة درع المدافع قبل الضربة
-    const defenderHadShield = defender.effects.shield > 0;
+    // تطبيق التغييرات على المدافع والمهاجم بناءً على النتيجة
+    if (result.damage > 0) defender.hp -= result.damage;
+    if (result.heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + result.heal);
+    if (result.selfDamage > 0) attacker.hp -= result.selfDamage;
+    if (result.shield > 0) attacker.effects.shield += result.shield;
 
-    let logMessage = "";
-
-    switch (statType) {
-        // 🔥 مهارة التنين المحدثة (شلل نادر 5% + حذف الدرع)
-        case 'TrueDMG_Burn': {
-            const dmg = Math.floor(baseAtk * 1.4); 
-            defender.hp -= dmg;
-            
-            const burnDmg = Math.floor(baseAtk * 0.2);
-            defender.effects.burn = burnDmg;
-            defender.effects.burn_turns = 3;
-            
-            let extraMsg = "";
-            // 🔥 شلل التنين نادر جداً (5%)
-            if (Math.random() < 0.05) {
-                defender.effects.stun = true;
-                defender.effects.stun_turns = 1;
-                extraMsg += " 🥶 ارتعد الخصم وتجمد!";
-            }
-            // تم حذف كود الحراشف (الدرع) هنا
-
-            logMessage = `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أطلق جحيم التنين! (${dmg} ضرر حقيقي + حرق).${extraMsg}`;
-            break;
+    // تطبيق التأثيرات على الخصم
+    result.effectsApplied.forEach(eff => {
+        if (eff.type === 'stun') { 
+            defender.effects.stun = true; 
+            defender.effects.stun_turns = eff.turns; 
+        } else if (eff.type === 'confusion') { 
+            defender.effects.confusion = true; 
+            defender.effects.confusion_turns = eff.turns; 
+        } else if (eff.type === 'blind') { // ✅ تفعيل العمى
+            defender.effects.blind = eff.val; 
+            defender.effects.blind_turns = eff.turns; 
+        } else if (eff.type === 'dispel') {
+            // تصفية جميع البفات
+            defender.effects.shield = 0; defender.effects.buff = 0; defender.effects.buff_turns = 0;
+            defender.effects.rebound_active = 0; defender.effects.rebound_turns = 0;
+            defender.effects.evasion = 0; defender.effects.evasion_turns = 0;
+        } else {
+            // التأثيرات الرقمية (حرق، سم، إضعاف)
+            defender.effects[eff.type] = eff.val;
+            defender.effects[eff.type + '_turns'] = eff.turns;
         }
-        case 'Cleanse_Buff_Shield': {
-            // تطهير السلبيات
+    });
+
+    // تطبيق التأثيرات على النفس (Buffs/Cleanse)
+    result.selfEffects.forEach(eff => {
+        if (eff.type === 'cleanse') {
             attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
             attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
             attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
             attacker.effects.stun = false; attacker.effects.stun_turns = 0;
             attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
             attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
-            
-            attacker.effects.buff = 0.2;
-            attacker.effects.buff_turns = 2;
-            
-            // 🔥 حساب الدرع بناءً على الليفل
-            const lvl = skill.currentLevel || skill.level || 1;
-            const basePercent = 0.15;
-            const growthPercent = (lvl - 1) * 0.02;
-            const shieldFromHp = attacker.maxHp * (basePercent + growthPercent);
-            const flatBonus = lvl * 15;
-            let shieldAmount = Math.floor(shieldFromHp + flatBonus);
-
-            if (attacker.effects.shield > 0) {
-                logMessage = `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب قوة (الدرع موجود مسبقاً)!`;
-            } else {
-                attacker.effects.shield += shieldAmount;
-                logMessage = `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب درعاً وقوة!`;
-            }
-            break;
-        }
-        case 'Scale_MissingHP_Heal': {
-            const missingHpPercent = (attacker.maxHp - attacker.hp) / attacker.maxHp;
-            const extraDmg = Math.floor(baseAtk * missingHpPercent * 2);
-            const dmg = Math.floor(baseAtk * 1.2) + extraDmg;
-            defender.hp -= dmg;
-            const healVal = Math.floor(attacker.maxHp * 0.15);
-            attacker.hp = Math.min(attacker.maxHp, attacker.hp + healVal);
-            logMessage = `⚖️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
-            break;
-        }
-        case 'Sacrifice_Crit': {
-            const selfDmg = Math.floor(attacker.maxHp * 0.10);
-            attacker.hp -= selfDmg;
-            const dmg = Math.floor(baseAtk * 2.0);
-            defender.hp -= dmg;
-            logMessage = `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
-            break;
-        }
-        case 'Stun_Vulnerable': {
-            const dmg = Math.floor(baseAtk * 1.1);
-            defender.hp -= dmg;
-            defender.effects.stun = true;
-            defender.effects.stun_turns = 1;
-            defender.effects.weaken = 0.5;
-            defender.effects.weaken_turns = 2;
-            logMessage = `🍃 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** شل حركة الخصم وجعله هشاً!`;
-            break;
-        }
-        case 'Confusion': {
-            const dmg = Math.floor(baseAtk * 1.2);
-            defender.hp -= dmg;
-            defender.effects.confusion = true;
-            defender.effects.confusion_turns = 2;
-            logMessage = `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
-            break;
-        }
-        case 'Lifesteal_Overheal': {
-            const dmg = Math.floor(baseAtk * 1.3);
-            defender.hp -= dmg;
-            const healVal = Math.floor(dmg * 0.5);
-            const missingHp = attacker.maxHp - attacker.hp;
-            
-            if (healVal > missingHp) {
-                attacker.hp = attacker.maxHp;
-                if (attacker.effects.shield > 0) {
-                    logMessage = `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص حياة خصمه وشفى نفسه بالكامل! (الدرع لم يزد)`;
-                } else {
-                    attacker.effects.shield += Math.floor((healVal - missingHp) * 0.5);
-                    logMessage = `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص حياة خصمه وحول الفائض لدرع!`;
-                }
-            } else {
-                attacker.hp += healVal;
-                logMessage = `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP من خصمه!`;
-            }
-            break;
-        }
-        case 'Chaos_RNG': {
-            const dmg = Math.floor(baseAtk * 1.2);
-            defender.hp -= dmg;
-            const randomEffect = Math.random();
-            let effectMsg = "";
-            if (randomEffect < 0.25) {
-                defender.effects.burn = Math.floor(baseAtk * 0.2); defender.effects.burn_turns = 3; effectMsg = "حرق";
-            } else if (randomEffect < 0.50) {
-                defender.effects.weaken = 0.3; defender.effects.weaken_turns = 2; effectMsg = "إضعاف";
-            } else if (randomEffect < 0.75) {
-                defender.effects.confusion = true; defender.effects.confusion_turns = 2; effectMsg = "ارتباك";
-            } else {
-                defender.effects.poison = Math.floor(baseAtk * 0.15); defender.effects.poison_turns = 3; effectMsg = "سم";
-            }
-            logMessage = `🌀 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سبب فوضى (${effectMsg})!`;
-            break;
-        }
-        case 'Dmg_Evasion': {
-            const dmg = Math.floor(baseAtk * 1.3);
-            defender.hp -= dmg;
-            attacker.effects.evasion = 1;
-            attacker.effects.evasion_turns = 1;
-            logMessage = `👻 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضرب واختفى (مراوغة تامة)!`;
-            break;
-        }
-        case 'Reflect_Tank': {
-            attacker.effects.shield += Math.floor(attacker.maxHp * 0.2);
-            attacker.effects.rebound_active = 0.4;
-            attacker.effects.rebound_turns = 2;
-            logMessage = `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
-            break;
-        }
-        case 'Execute_Heal': {
-            const dmg = Math.floor(baseAtk * 1.6);
-            if (defender.hp - dmg <= 0) {
-                defender.hp = 0;
-                attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.floor(attacker.maxHp * 0.25));
-                logMessage = `🥩 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** افترس خصمه واستعاد صحته!`;
-            } else {
-                defender.hp -= dmg;
-                logMessage = `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه بضرر وحشي!`;
-            }
-            break;
-        }
-        default:
-            switch (skill.id) {
-                case 'skill_shielding': 
-                    if (attacker.effects.shield > 0) {
-                        logMessage = `⚠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** حاول تفعيل الدرع لكنه يملكه بالفعل!`;
-                    } else {
-                        // 🔥 حساب الدرع بناءً على الليفل
-                        const lvl = skill.currentLevel || skill.level || 1;
-                        const basePercent = 0.15;
-                        const growthPercent = (lvl - 1) * 0.02;
-                        const shieldFromHp = attacker.maxHp * (basePercent + growthPercent);
-                        const flatBonus = lvl * 15;
-                        let shieldAmount = Math.floor(shieldFromHp + flatBonus);
-
-                        attacker.effects.shield += shieldAmount;
-                        logMessage = `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً!`;
-                    }
-                    break;
-                case 'skill_buffing':
-                    attacker.effects.buff = effectValue / 100;
-                    attacker.effects.buff_turns = 3;
-                    logMessage = `💪 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** رفع قوته!`;
-                    break;
-                case 'skill_rebound':
-                    attacker.effects.rebound_active = effectValue / 100;
-                    attacker.effects.rebound_turns = 3;
-                    logMessage = `🔄 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** جهز الانعكاس!`;
-                    break;
-                case 'skill_healing':
-                    const heal = Math.floor(attacker.maxHp * (effectValue / 100));
-                    attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
-                    logMessage = `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
-                    break;
-                case 'skill_poison':
-                    defender.effects.poison = Math.floor(baseAtk * (effectValue / 100));
-                    defender.effects.poison_turns = 3;
-                    logMessage = `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه!`;
-                    break;
-                case 'skill_weaken':
-                    defender.effects.weaken = effectValue / 100;
-                    defender.effects.weaken_turns = 3;
-                    logMessage = `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
-                    break;
-                case 'skill_dispel':
-                    defender.effects = { 
-                        shield: 0, buff: 0, buff_turns: 0, 
-                        weaken: 0, weaken_turns: 0, 
-                        poison: 0, poison_turns: 0, 
-                        rebound_active: 0, rebound_turns: 0, 
-                        penetrate: 0, burn: 0, burn_turns: 0, 
-                        stun: false, stun_turns: 0, 
-                        confusion: false, confusion_turns: 0, 
-                        evasion: 0, evasion_turns: 0, 
-                        blind: 0, blind_turns: 0 
-                    };
-                    logMessage = `💨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** بدد كل سحر الخصم!`;
-                    break;
-                case 'skill_cleanse':
-                    attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
-                    attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
-                    attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
-                    attacker.effects.stun = false; attacker.effects.stun_turns = 0;
-                    attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
-                    attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
-                    logMessage = `✨ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه من اللعنات!`;
-                    break;
-                default:
-                    const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1);
-                    defender.hp -= d;
-                    logMessage = `💥 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استخدم ${skill.name} وسبب ${d} ضرر!`;
-                    break;
-            }
-            break;
-    }
-
-    // 🔥 فحص انكسار درع الخصم وتفعيل الكولداون (3 جولات)
-    if (defenderHadShield && defender.effects.shield <= 0) {
-        if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
-        battleState.skillCooldowns[defenderId]['skill_shielding'] = 3;
-    }
-
-    return logMessage;
-}
-
-function calculateDamage(attacker, defender, multiplier = 1) {
-    let baseDmg = attacker.weapon ? attacker.weapon.currentDamage : 15;
-    
-    if (attacker.effects.buff > 0) baseDmg *= (1 + attacker.effects.buff);
-    if (attacker.effects.weaken > 0) baseDmg *= (1 - attacker.effects.weaken);
-
-    let finalDmg = Math.floor(baseDmg * multiplier);
-
-    if (defender.effects.evasion > 0) {
-        return 0;
-    }
-
-    if (defender.effects.shield > 0) {
-        if (defender.effects.shield >= finalDmg) {
-            defender.effects.shield -= finalDmg;
-            finalDmg = 0;
+        } else if (eff.type === 'evasion') {
+            attacker.effects.evasion = eff.val;
+            attacker.effects.evasion_turns = eff.turns;
         } else {
-            finalDmg -= defender.effects.shield;
-            defender.effects.shield = 0;
+            attacker.effects[eff.type] = eff.val;
+            attacker.effects[eff.type + '_turns'] = eff.turns;
         }
-    }
+    });
 
-    if (defender.effects.rebound_active > 0) {
-        const reflectedDmg = Math.floor(finalDmg * defender.effects.rebound_active);
-        attacker.hp -= reflectedDmg;
-        finalDmg -= reflectedDmg;
-    }
+    // إدارة كولداون الدرع الخاص (إذا كان المدافع يملك درعاً وانكسر)
+    // (هذا المنطق يمكن نقله للمحرك، لكن لابأس بإبقائه هنا للمراقبة)
+    /* ملاحظة: المحرك الجديد يحسب الضرر والدرع بدقة، 
+       لكن تتبع "هل انكسر الدرع الآن؟" أسهل هنا إذا أردنا تفعيل الكولداون للمدافع
+    */
 
-    return Math.max(0, finalDmg);
+    return result.log;
 }
 
-// ⚠️ هذه هي الدالة التي تحسب الصحة عند بدء المعركة (PvP)
+// ✅ دالة الهجوم العادي الجديدة (تستخدم weapon-calculator.js)
+// يتم استدعاؤها عند ضغط زر "هجوم"
+function executeWeaponAttackAction(battleState, attackerId) {
+    const attacker = battleState.players.get(attackerId);
+    const defenderId = battleState.turn.find(id => id !== attackerId);
+    const defender = battleState.players.get(defenderId);
+    const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
+
+    // استدعاء محرك الأسلحة
+    const result = weaponCalculator.executeWeaponAttack(attacker, defender, isOwner);
+    
+    // النتيجة تم تطبيقها بالفعل داخل executeWeaponAttack على كائنات attacker/defender
+    // نحن فقط نعيد السجل
+    return result.log;
+}
+
+// دالة wrapper للحفاظ على التوافق إذا كان الكود القديم يستدعيها
+function calculateDamage(attacker, defender, multiplier = 1) {
+    // هذه الدالة لم تعد تستخدم للحساب المباشر داخل المهارات
+    // بل تستخدم فقط للهجوم العادي عبر الزر، لذا نوجهها للمحرك الجديد
+    const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
+    // بما أن المحرك يطبق الضرر، نحن نحتاج فقط للقيمة للعرض إذا لزم الأمر
+    // لكن الأفضل استخدام executeWeaponAttackAction في كود الزر
+    return 0; // لم يعد لها حاجة كحساب رقمي فقط
+}
+
+// =======================================================
+// دوال بدء المعركة (تحديث defEffects ليشمل blind)
+// =======================================================
+
 async function startPvpBattle(i, client, sql, challengerMember, opponentMember, bet) {
     const getLevel = i.client.getLevel;
     const setLevel = i.client.setLevel;
@@ -497,7 +315,19 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
     const cMaxHp = BASE_HP + (challengerData.level * HP_PER_LEVEL);
     const oMaxHp = BASE_HP + (opponentData.level * HP_PER_LEVEL);
     
-    const defEffects = () => ({ shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 });
+    // ✅ إضافة blind للقائمة
+    const defEffects = () => ({ 
+        shield: 0, 
+        buff: 0, buff_turns: 0, 
+        weaken: 0, weaken_turns: 0, 
+        poison: 0, poison_turns: 0, 
+        burn: 0, burn_turns: 0, 
+        rebound_active: 0, rebound_turns: 0, 
+        stun: false, stun_turns: 0, 
+        confusion: false, confusion_turns: 0, 
+        evasion: 0, evasion_turns: 0, 
+        blind: 0, blind_turns: 0 
+    });
 
     const battleState = {
         isPvE: false, message: null, bet: bet, totalPot: bet * 2, turn: [opponentMember.id, challengerMember.id],
@@ -509,8 +339,6 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
         ])
     };
     
-    console.log(`[PVP DEBUG] Challenger HP: ${cMaxHp}, Opponent HP: ${oMaxHp}`);
-
     activePvpBattles.set(i.channel.id, battleState);
     const { embeds, components } = buildBattleEmbed(battleState);
     battleState.message = await i.channel.send({ content: `${challengerMember} 🆚 ${opponentMember}`, embeds, components });
@@ -585,7 +413,7 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
                 .setTitle(`🏆 قهرت ${monster.name}!`)
                 .setDescription(`💰 **الغنيمة:** ${rewardMora} ${EMOJI_MORA}\n✨ **خبرة:** ${rewardXP} XP\n✦ حصلت على تعزيز +15% لمدة 15د`);
         } else {
-            sql.prepare(`INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)`).run(battleState.message.guild.id, loser.member.id, -15, expireTime, 'mora', -0.15);
+            sql.prepare(`INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)`).run(battleState.message.guild.id, loser.member.id, -15, expireTime, 'mora', -15);
             const randomLoseImage = LOSE_IMAGES[Math.floor(Math.random() * LOSE_IMAGES.length)];
             embed.setColor(Colors.DarkRed).setImage(randomLoseImage)
                 .setTitle(`💀 هزمك ${battleState.monsterData.name}...`)
@@ -601,7 +429,7 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
         setScore.run(winnerData);
 
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
+        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'xp', 0.15);
 
         const loserExpiresAt = Date.now() + (15 * 60 * 1000);
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, loserId, -15, loserExpiresAt, 'mora', -0.15);
@@ -631,6 +459,7 @@ function applyPersistentEffects(battleState, attackerId) {
     // 🔥 حفظ حالة الدرع قبل التأثيرات المستمرة
     const hadShield = attacker.effects.shield > 0;
 
+    // ✅ إضافة blind للقائمة
     const effectsList = ['buff', 'weaken', 'rebound_active', 'stun', 'confusion', 'evasion', 'blind'];
     effectsList.forEach(eff => {
         if (attacker.effects[eff + '_turns'] > 0) {
@@ -642,36 +471,43 @@ function applyPersistentEffects(battleState, attackerId) {
         }
     });
 
+    // 🩸 معالجة السم / النزيف (للغول وغيره)
     if (attacker.effects.poison > 0) {
+        let dmg = attacker.effects.poison;
+        // الدرع يمتص النزيف أولاً
         if (attacker.effects.shield > 0) {
-            if (attacker.effects.shield >= attacker.effects.poison) {
-                attacker.effects.shield -= attacker.effects.poison;
+            if (attacker.effects.shield >= dmg) {
+                attacker.effects.shield -= dmg;
+                dmg = 0;
             } else {
-                const remaining = attacker.effects.poison - attacker.effects.shield;
+                dmg -= attacker.effects.shield;
                 attacker.effects.shield = 0;
-                attacker.hp -= remaining;
             }
-        } else {
-            attacker.hp -= attacker.effects.poison;
         }
-        logEntries.push(`☠️ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يتألم من السم (-${attacker.effects.poison})!`);
+        if (dmg > 0) {
+            attacker.hp -= dmg;
+            logEntries.push(`🩸 **${cleanDisplayName(attacker.member ? attacker.member.user.displayName : attacker.name)}** ينزف/يتسمم (-${dmg})!`);
+        }
         attacker.effects.poison_turns--;
         if (attacker.effects.poison_turns <= 0) attacker.effects.poison = 0;
     }
 
+    // 🔥 معالجة الحرق (للتنين)
     if (attacker.effects.burn > 0) {
+        let dmg = attacker.effects.burn;
         if (attacker.effects.shield > 0) {
-             if (attacker.effects.shield >= attacker.effects.burn) {
-                attacker.effects.shield -= attacker.effects.burn;
+             if (attacker.effects.shield >= dmg) {
+                attacker.effects.shield -= dmg;
+                dmg = 0;
             } else {
-                const remaining = attacker.effects.burn - attacker.effects.shield;
+                dmg -= attacker.effects.shield;
                 attacker.effects.shield = 0;
-                attacker.hp -= remaining;
             }
-        } else {
-            attacker.hp -= attacker.effects.burn;
         }
-        logEntries.push(`🔥 ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يحترق (-${attacker.effects.burn})!`);
+        if (dmg > 0) {
+            attacker.hp -= dmg;
+            logEntries.push(`🔥 **${cleanDisplayName(attacker.member ? attacker.member.user.displayName : attacker.name)}** يحترق (-${dmg})!`);
+        }
         attacker.effects.burn_turns--;
         if (attacker.effects.burn_turns <= 0) attacker.effects.burn = 0;
     }
@@ -683,16 +519,16 @@ function applyPersistentEffects(battleState, attackerId) {
     }
 
     if (attacker.effects.stun) {
-        logEntries.push(`⚡ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} مشلول ولا يستطيع الحركة!`);
+        logEntries.push(`⚡ **${cleanDisplayName(attacker.member ? attacker.member.user.displayName : attacker.name)}** مشلول ولا يستطيع الحركة!`);
         skipTurn = true;
     }
 
-    // تقليل نسبة الارتباك إلى 25%
-    if (attacker.effects.confusion) {
+    // الارتباك (يضرب نفسه بنسبة 25%)
+    if (attacker.effects.confusion && !skipTurn) {
         if (Math.random() < 0.25) {
-            const selfDmg = Math.floor(attacker.maxHp * 0.1);
+            const selfDmg = Math.floor(attacker.maxHp * 0.05);
             attacker.hp -= selfDmg;
-            logEntries.push(`😵 ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} ضرب نفسه بسبب الارتباك (-${selfDmg})!`);
+            logEntries.push(`😵 **${cleanDisplayName(attacker.member ? attacker.member.user.displayName : attacker.name)}** ضرب نفسه بسبب الارتباك (-${selfDmg})!`);
             skipTurn = true;
         }
     }
@@ -705,5 +541,5 @@ module.exports = {
     BASE_HP, HP_PER_LEVEL, SKILL_COOLDOWN_TURNS,
     cleanDisplayName, getUserRace, getWeaponData, getAllSkillData, getUserActiveSkill,
     buildBattleEmbed, startPvpBattle, startPveBattle, endBattle, applyPersistentEffects,
-    applySkillEffect, calculateDamage
+    applySkillEffect, calculateDamage, executeWeaponAttackAction
 };
