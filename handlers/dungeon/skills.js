@@ -271,19 +271,26 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         }
 
         // --- 2. Human ---
+        // 🔥 تم التعديل: السماح بتفعيل المهارة حتى مع وجود درع (للبفات والتطهير)
         case 'Cleanse_Buff_Shield': { 
-            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff');
+            // 1. التطهير (Cleanse)
+            player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff' || e.type === 'def_buff');
             
-            if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
+            // 2. زيادة الهجوم (Buff)
+            player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
 
+            // 3. حساب الدرع
             let shieldFromHp = Math.floor(player.maxHp * (value / 100));
             let shieldFromAtk = Math.floor(player.atk * 0.5); 
             let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
             
-            player.shield = shieldAmount; 
-            
-            player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
-            log.push(`🛡️ **${player.name}** استخدم ${skill.name}! (تطهير + درع ${shieldAmount} + هجوم)`);
+            // 4. منطق الدرع
+            if (player.shield > 0) {
+                log.push(`🛡️ **${player.name}** استخدم تكتيك القائد! (تطهير + هجوم، لكن الدرع لم يتجدد لوجوده مسبقاً)`);
+            } else {
+                player.shield = shieldAmount; 
+                log.push(`🛡️ **${player.name}** استخدم تكتيك القائد! (تطهير + هجوم + درع **${shieldAmount}**)`);
+            }
             
             player.threat = (player.threat || 0) + 200;
             break;
