@@ -49,7 +49,7 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// ✅ استيراد حاسبة الأسلحة (المسار الصحيح)
+// ✅ استيراد حاسبة الأسلحة
 const weaponCalculator = require('./combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
@@ -134,7 +134,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
-    // 🔥 منطق الختم عند البدء 🔥
     if (!resumeData) {
         players.forEach(p => {
             if (p.isSealed) {
@@ -224,7 +223,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; 
         }
 
-        // 🔥 منطق الختم حسب الطوابق 🔥
+        // منطق مراحل الختم
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
@@ -320,7 +319,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
 
             monster = {
-                isMonster: true, // ✅ مهم جداً للمحركات الجديدة
+                isMonster: true, 
                 name: floor === 100 ? randomMob.name : `${randomMob.name} (Lv.${floor})`, 
                 hp: Math.floor(finalHp), 
                 maxHp: Math.floor(finalHp), 
@@ -438,7 +437,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
 
-                    // ✅ التحقق من الشلل (Stun)
                     if (p.effects.some(e => e.type === 'stun')) {
                         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
                         actedPlayers.push(p.id); p.skipCount = 0; 
@@ -484,7 +482,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
-                                // 🔥 منطق الختم على المهارات 🔥
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
@@ -493,6 +490,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
 
+                                // 🔥🔥🔥 سقف الضرر للمهارات (الختم الأصلي) 🔥🔥🔥
                                 if (floor <= 5 && p.atk > 47) p.atk = 47;
                                 else if (floor <= 10 && p.atk > 88) p.atk = 88;
                                 else if (floor <= 14 && p.atk > 120) p.atk = 120;
@@ -706,7 +704,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     applyDamageToPlayer(p, selfDmg);
                                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                                 } 
-                                // ✅ استخدام العمى من المحرك الجديد
                                 else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
                                     canAttack = false;
                                     log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
@@ -732,7 +729,28 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     const isOwner = p.id === OWNER_ID;
                                     const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    // 4. استعادة القيم الأصلية
+                                    // 4. 🔥🔥🔥 تطبيق سقف الضرر (Hard Cap) للطوابق الأولى 🔥🔥🔥
+                                    // يتم كبح الضرر النهائي إذا تجاوز الحد المسموح به في الطوابق السهلة
+                                    let cappedDmg = result.damage;
+                                    if (result.damage > 0) {
+                                        if (floor <= 5 && result.damage > 47) cappedDmg = 47;
+                                        else if (floor <= 10 && result.damage > 88) cappedDmg = 88;
+                                        else if (floor <= 14 && result.damage > 120) cappedDmg = 120;
+                                        
+                                        // إذا تم كبح الضرر، نعيد الفارق للوحش (لأن المحرك خصمه بالفعل)
+                                        if (cappedDmg < result.damage) {
+                                            const diff = result.damage - cappedDmg;
+                                            monster.hp += diff; // استعادة HP
+                                            
+                                            // تحديث النتيجة للعرض واللوج
+                                            result.damage = cappedDmg;
+                                            
+                                            // تعديل رسالة اللوج لتعكس الرقم الجديد
+                                            result.log = result.log.replace(/سبب \d+ ضرر/, `سبب ${cappedDmg} ضرر`);
+                                        }
+                                    }
+
+                                    // 5. استعادة القيم الأصلية للاعب
                                     if (p.isSealed) {
                                         p.atk = originalAtk;
                                         if (p.weapon) {
@@ -740,7 +758,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         }
                                     }
 
-                                    // 5. متابعة منطق اللعبة
+                                    // 6. متابعة منطق اللعبة
                                     let threatGen = result.damage;
                                     if (p.class === 'Tank') threatGen *= 3; 
                                     p.threat = (p.threat || 0) + threatGen;
