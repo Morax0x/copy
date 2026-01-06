@@ -1055,7 +1055,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             return;
         } 
         else if (decision === 'continue') {
-            if (floor > 10 && floor < 90 && Math.random() < 0.01) { 
+            if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
                 const minTarget = floor + 2;
