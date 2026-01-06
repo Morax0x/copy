@@ -479,39 +479,41 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                      if (p.skills[skillId]) skillObj = p.skills[skillId];
                                 }
 
-                                // 🔥🔥🔥🔥🔥 تطبيق الختم على المهارات 🔥🔥🔥🔥🔥
-                                let originalAtk = p.atk;
-                                let originalWeaponDmg = 0;
-                                
-                                if (p.isSealed) {
-                                    // 1. تقليل ATK
-                                    p.atk = Math.floor(p.atk * p.sealMultiplier); 
-                                    
-                                    // 2. تقليل ضرر السلاح (مهم للمهارات)
-                                    if (p.weapon) {
-                                        originalWeaponDmg = p.weapon.currentDamage;
-                                        p.weapon.currentDamage = Math.floor(p.weapon.currentDamage * p.sealMultiplier);
-                                    }
+                                // 🟢🟢🟢 الخطوة الحاسمة: حفظ HP الوحش قبل الضربة 🟢🟢🟢
+                                const monsterHpBefore = monster.hp;
 
-                                    // 3. تقليل قوة المهارة نفسها (إذا كانت رقمية)
-                                    const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
-                                    if (skillObj.effectValue && !isHealSkill) {
-                                        skillObj = { ...skillObj, effectValue: Math.floor(skillObj.effectValue * p.sealMultiplier) };
-                                    }
-                                }
-
-                                // 🔥🔥🔥 تطبيق سقف الضرر (Hard Cap) للطوابق الأولى على المهارات 🔥🔥🔥
-                                // نقيد الـ ATK لأن المهارات تعتمد عليه
-                                if (floor <= 5 && p.atk > 47) p.atk = 47;
-                                else if (floor <= 10 && p.atk > 88) p.atk = 88;
-                                else if (floor <= 14 && p.atk > 120) p.atk = 120;
-
+                                // تنفيذ المهارة (داخل الصندوق الأسود)
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
-                                // 🔥 استعادة القيم الأصلية 🔥
-                                p.atk = originalAtk;
-                                if (p.isSealed && p.weapon) {
-                                    p.weapon.currentDamage = originalWeaponDmg;
+                                // 🟢🟢🟢 حساب الضرر الفعلي وتطبيق الختم بأثر رجعي 🟢🟢🟢
+                                const dmgDealt = monsterHpBefore - monster.hp;
+
+                                if (dmgDealt > 0) {
+                                    let cappedDmg = dmgDealt;
+
+                                    // 1. تطبيق نسبة الختم (إذا لم يكن في مرحلة سقف الضرر)
+                                    if (p.isSealed) {
+                                        cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+                                    }
+
+                                    // 2. تطبيق سقف الضرر الصارم (Hard Cap) للطوابق الأولى
+                                    if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
+                                    else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
+                                    else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
+
+                                    // 3. إذا كان هناك فارق، نصلح HP الوحش ونعدل اللوج
+                                    if (cappedDmg < dmgDealt) {
+                                        const excess = dmgDealt - cappedDmg;
+                                        monster.hp += excess; // إرجاع الدم الزائد للوحش
+                                        
+                                        // محاولة تعديل الرسالة الأخيرة في اللوج لتعكس الضرر الحقيقي
+                                        if (log.length > 0) {
+                                            const lastLogIdx = log.length - 1;
+                                            // استبدال أي رقم يمثل الضرر بالرقم الجديد
+                                            // نبحث عن صيغ مثل (5000 ضرر) أو similar
+                                            log[lastLogIdx] = log[lastLogIdx] + ` (مختوم: ${cappedDmg})`; 
+                                        }
+                                    }
                                 }
 
                                 if (res && res.error) {
@@ -569,7 +571,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 const selectedValue = selection.values[0];
 
-                                // متجر الجرعات السريع
                                 if (selectedValue === 'buy_potions_action') {
                                     const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
                                     const currentMora = userLevelData ? userLevelData.mora : 0;
