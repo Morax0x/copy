@@ -459,31 +459,18 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                     break;
                 }
                 
-                // 🔥🔥🔥🔥 التغيير هنا فقط 🔥🔥🔥🔥
                 case 'skill_shielding': {
                       if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
                       
-                      // 1. حساب النسبة المئوية حسب الليفل (الأساس 15% + 2% لكل ليفل إضافي)
-                      const lvl = skill.level || 1; 
-                      const basePercent = 0.15;
-                      const growthPercent = (lvl - 1) * 0.02;
-                      const finalPercent = basePercent + growthPercent;
-                      // عند ليفل 20: 0.15 + (19 * 0.02) = 0.53 (53%)
-
-                      const shieldFromHp = player.maxHp * finalPercent;
-
-                      // 2. حساب البونص الثابت (ليفل * 15)
-                      const flatBonus = lvl * 15;
-
-                      // 3. المجموع النهائي (مع تطبيق مضاعف الأونر إن وجد)
-                      let shieldAmount = Math.floor((shieldFromHp + flatBonus) * mult);
+                      let shieldFromHp = Math.floor(player.maxHp * (value / 100));
+                      let shieldFromAtk = Math.floor(player.atk * 0.5); 
+                      let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
                       
                       player.shield = shieldAmount; 
                       log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
                       player.threat = (player.threat || 0) + Math.floor(shieldAmount / 3);
                       break;
                 }
-                // 🔥🔥🔥🔥 نهاية التغيير 🔥🔥🔥🔥
 
                 case 'skill_buffing': {
                       player.effects.push({ type: 'atk_buff', val: (value / 100) * mult, turns: 3 });
