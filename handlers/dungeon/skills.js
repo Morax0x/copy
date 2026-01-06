@@ -12,7 +12,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     if (player.effects) {
         player.effects.forEach(e => { if (e.type === 'atk_buff') atkMultiplier += e.val; });
     }
-    // حساب الهجوم الفعلي بعد تطبيق المضاعفات
     const effectiveAtk = Math.floor(player.atk * atkMultiplier);
 
     // ====================================================
@@ -195,7 +194,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     const skillCooldown = skill.cooldown || (skill.id.startsWith('race_') ? 5 : 3);
     
-    // 🔥 تعديل: استثناء مهارة الدرع من الكولداون الفوري (يتم تفعيله عند الانكسار في utils.js)
     if (player.id !== OWNER_ID) {
         if (skill.id !== 'skill_shielding') {
             player.skillCooldowns[skill.id] = skillCooldown;
@@ -238,60 +236,43 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     switch (skill.stat_type) {
         // --- 1. Dragon ---
-        // 🔥 تعديل: إضافة ميزات "رعب التنين" و "حراشف التنين"
+        // 🔥 تم تحديث مهارة التنين: لا درع، والشلل نادر جداً (5%)
         case 'TrueDMG_Burn': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
-            
             monster.effects.push({ type: 'burn', val: Math.floor(effectiveAtk * 0.2), turns: 3 });
             
             let extraMsg = "";
-
-            // 3. 🔥 ميزة "رعب التنين" (شـلل) - نسبة 20%
-            if (Math.random() < 0.20) {
+            // شلل التنين نادر جداً (5% فقط)
+            if (Math.random() < 0.05) {
                 monster.frozen = true; 
                 extraMsg += " 🥶 ارتعد الوحش رعباً وتجمد!";
             }
-
-            // 4. 🛡️ ميزة "حراشف التنين" (درع) - نسبة 30%
-            if (Math.random() < 0.30) {
-                const scalesAmount = Math.floor(player.maxHp * 0.15);
-                
-                // فحص وجود درع مسبق لمنع التراكم
-                if (player.shield > 0) {
-                    extraMsg += ` 🛡️ تصلبت حراشفه (الدرع لم يتغير لوجود درع مسبق)!`;
-                } else {
-                    player.shield = scalesAmount;
-                    extraMsg += ` 🛡️ تصلبت حراشفه (+${scalesAmount} درع)!`;
-                }
-            }
+            // تم إزالة الدرع نهائياً
 
             log.push(`🐲 **${player.name}** أطلق جحيم التنين! (${skillDmg} ضرر حقيقي + حرق).${extraMsg}`);
             break;
         }
 
         // --- 2. Human ---
-        // 🔥 تم التعديل: السماح بتفعيل المهارة حتى مع وجود درع (للبفات والتطهير)
         case 'Cleanse_Buff_Shield': { 
-            // 1. التطهير (Cleanse)
             player.effects = player.effects.filter(e => e.type === 'buff' || e.type === 'atk_buff' || e.type === 'def_buff');
-            
-            // 2. زيادة الهجوم (Buff)
             player.effects.push({ type: 'atk_buff', val: 0.2, turns: 2 });
 
-            // 3. حساب الدرع
-            let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-            let shieldFromAtk = Math.floor(player.atk * 0.5); 
-            let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
+            // 🔥 الحسبة الجديدة تعتمد على اللفل بدلاً من الهجوم 🔥
+            const lvl = skill.currentLevel || skill.level || 1;
+            const basePercent = 0.15;
+            const growthPercent = (lvl - 1) * 0.02;
+            const shieldFromHp = player.maxHp * (basePercent + growthPercent);
+            const flatBonus = lvl * 15;
+            let shieldAmount = Math.floor((shieldFromHp + flatBonus) * mult);
             
-            // 4. منطق الدرع
             if (player.shield > 0) {
                 log.push(`🛡️ **${player.name}** استخدم تكتيك القائد! (تطهير + هجوم، لكن الدرع لم يتجدد لوجوده مسبقاً)`);
             } else {
                 player.shield = shieldAmount; 
                 log.push(`🛡️ **${player.name}** استخدم تكتيك القائد! (تطهير + هجوم + درع **${shieldAmount}**)`);
             }
-            
             player.threat = (player.threat || 0) + 200;
             break;
         }
@@ -332,28 +313,23 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         case 'Confusion': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
-            // 🔥 تعديل: تقليل نسبة ضرب النفس من 50% إلى 25%
             monster.effects.push({ type: 'confusion', val: 0.25, turns: 2 }); 
             log.push(`🗡️ **${player.name}** أربك الوحش بـ ${skill.name}! (${skillDmg} ضرر)`);
             break;
         }
 
         // --- 7. Vampire ---
-        // 🔥 تعديل: منع زيادة الدرع إذا كان موجوداً مسبقاً
         case 'Lifesteal_Overheal': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
-            
             const healVal = Math.floor(skillDmg * 0.5); 
             const missingHp = player.maxHp - player.hp;
 
             if (healVal > missingHp) {
                 player.hp = player.maxHp;
                 const overHeal = healVal - missingHp;
-
-                if (player.shield > 0) {
-                    log.push(`🦇 **${player.name}** امتص الدماء واستعاد كامل صحته! (الدرع لم يتغير)`);
-                } else {
+                if (player.shield > 0) log.push(`🦇 **${player.name}** امتص الدماء واستعاد كامل صحته! (الدرع لم يتغير)`);
+                else {
                     const shieldAmount = Math.floor(overHeal * 0.5);
                     player.shield = shieldAmount;
                     log.push(`🦇 **${player.name}** امتص الدماء! (شفاء تام + درع دموي **${shieldAmount}**)`);
@@ -462,9 +438,16 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 case 'skill_shielding': {
                       if (player.shield > 0) return { error: 'لديك درع بالفعل!' };
                       
-                      let shieldFromHp = Math.floor(player.maxHp * (value / 100));
-                      let shieldFromAtk = Math.floor(player.atk * 0.5); 
-                      let shieldAmount = (shieldFromHp + shieldFromAtk) * mult;
+                      // 🔥 الحسبة الجديدة: مستوى المهارة هو العامل الحاسم 🔥
+                      const lvl = skill.currentLevel || skill.level || 1; 
+                      const basePercent = 0.15;
+                      const growthPercent = (lvl - 1) * 0.02;
+                      const finalPercent = basePercent + growthPercent;
+
+                      const shieldFromHp = player.maxHp * finalPercent;
+                      const flatBonus = lvl * 15; // بونص ثابت لكل مستوى
+
+                      let shieldAmount = Math.floor((shieldFromHp + flatBonus) * mult);
                       
                       player.shield = shieldAmount; 
                       log.push(`${skill.emoji} **${player.name}** فعل درعاً بقوة **${shieldAmount}**.`);
