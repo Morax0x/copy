@@ -195,7 +195,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     const skillCooldown = skill.cooldown || (skill.id.startsWith('race_') ? 5 : 3);
     
-    // 🔥🔥🔥 تعديل 1: منع تفعيل الكولداون فوراً لمهارة الدرع 🔥🔥🔥
+    // 🔥 تعديل: استثناء مهارة الدرع من الكولداون الفوري (يتم تفعيله عند الانكسار في utils.js)
     if (player.id !== OWNER_ID) {
         if (skill.id !== 'skill_shielding') {
             player.skillCooldowns[skill.id] = skillCooldown;
@@ -238,11 +238,35 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     switch (skill.stat_type) {
         // --- 1. Dragon ---
+        // 🔥 تعديل: إضافة ميزات "رعب التنين" و "حراشف التنين"
         case 'TrueDMG_Burn': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
+            
             monster.effects.push({ type: 'burn', val: Math.floor(effectiveAtk * 0.2), turns: 3 });
-            log.push(`🐲 **${player.name}** أطلق ${skill.name} وأحرق الوحش! (${skillDmg} ضرر حقيقي)`);
+            
+            let extraMsg = "";
+
+            // 3. 🔥 ميزة "رعب التنين" (شـلل) - نسبة 20%
+            if (Math.random() < 0.20) {
+                monster.frozen = true; 
+                extraMsg += " 🥶 ارتعد الوحش رعباً وتجمد!";
+            }
+
+            // 4. 🛡️ ميزة "حراشف التنين" (درع) - نسبة 30%
+            if (Math.random() < 0.30) {
+                const scalesAmount = Math.floor(player.maxHp * 0.15);
+                
+                // فحص وجود درع مسبق لمنع التراكم
+                if (player.shield > 0) {
+                    extraMsg += ` 🛡️ تصلبت حراشفه (الدرع لم يتغير لوجود درع مسبق)!`;
+                } else {
+                    player.shield = scalesAmount;
+                    extraMsg += ` 🛡️ تصلبت حراشفه (+${scalesAmount} درع)!`;
+                }
+            }
+
+            log.push(`🐲 **${player.name}** أطلق جحيم التنين! (${skillDmg} ضرر حقيقي + حرق).${extraMsg}`);
             break;
         }
 
@@ -301,13 +325,14 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         case 'Confusion': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
-            monster.effects.push({ type: 'confusion', val: 0.5, turns: 2 }); 
+            // 🔥 تعديل: تقليل نسبة ضرب النفس من 50% إلى 25%
+            monster.effects.push({ type: 'confusion', val: 0.25, turns: 2 }); 
             log.push(`🗡️ **${player.name}** أربك الوحش بـ ${skill.name}! (${skillDmg} ضرر)`);
             break;
         }
 
         // --- 7. Vampire ---
-        // 🔥🔥🔥 تعديل 2: إصلاح مهارة مصاص الدماء لمنع تراكم الدروع 🔥🔥🔥
+        // 🔥 تعديل: منع زيادة الدرع إذا كان موجوداً مسبقاً
         case 'Lifesteal_Overheal': { 
             skillDmg = Math.floor(effectiveAtk * (value / 100 + 1)) * mult;
             applyDmgAndThreat(skillDmg);
@@ -319,7 +344,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
                 player.hp = player.maxHp;
                 const overHeal = healVal - missingHp;
 
-                // التحقق من وجود درع مسبق
                 if (player.shield > 0) {
                     log.push(`🦇 **${player.name}** امتص الدماء واستعاد كامل صحته! (الدرع لم يتغير)`);
                 } else {
