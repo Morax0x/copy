@@ -21,7 +21,7 @@ const {
     LOSE_IMAGES, 
     skillsConfig, 
     ownerSkills,
-    potionItems // ✅ تم استيراد الجرعات لاستخدامها في المتجر
+    potionItems 
 } = require('./dungeon/constants');
 
 const { 
@@ -48,6 +48,9 @@ const {
     generateBattleEmbed, 
     generateBattleRows 
 } = require('./dungeon/ui');
+
+// ✅ استيراد حاسبة الأسلحة الجديدة
+const weaponCalculator = require('./handlers/combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
 const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
@@ -142,10 +145,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = 100; 
 
     // ============================================================
-    // 🔥 مراقب الرسائل لكشف الحالة (حل مشكلة الآيفون) 🔥
+    // 🔥 مراقب الرسائل لكشف الحالة
     // ============================================================
     
-    // قائمة الكلمات المسموح بها
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
 
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
@@ -316,6 +318,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
 
             monster = {
+                isMonster: true, // ✅ مهم جداً للمحركات الجديدة
                 name: floor === 100 ? randomMob.name : `${randomMob.name} (Lv.${floor})`, 
                 hp: Math.floor(finalHp), 
                 maxHp: Math.floor(finalHp), 
@@ -433,6 +436,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
 
+                    // ✅ إضافة التحقق من الشلل (Stun) من المحرك الجديد
                     if (p.effects.some(e => e.type === 'stun')) {
                         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
                         actedPlayers.push(p.id); p.skipCount = 0; 
@@ -490,6 +494,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 else if (floor <= 10 && p.atk > 88) p.atk = 88;
                                 else if (floor <= 14 && p.atk > 120) p.atk = 120;
 
+                                // ⚠️ ملاحظة: يجب تحديث ملف dungeon/skills.js لاحقاً لاستخدام skillCalculator
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
                                 p.atk = originalAtk;
@@ -544,7 +549,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                             try {
                                 const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true });
-                                const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 20000 }); // زيادة الوقت ليتيح الشراء
+                                const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 20000 }); 
                                 await selection.deferUpdate().catch(()=>{});
                                 
                                 const selectedValue = selection.values[0];
@@ -638,7 +643,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.threat = (p.threat || 0) + threatGen;
 
                                 } else if (potionId === 'potion_reflect') {
-                                    p.effects.push({ type: 'reflect', val: 0.5, turns: 2 });
+                                    // ✅ تحديث اسم تأثير الانعكاس ليطابق النظام الجديد
+                                    p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
                                     actionMsg = "🌵 جهز درع الأشواك!";
                                 } else if (potionId === 'potion_time') {
                                     p.special_cooldown = 0; p.skillCooldowns = {};
@@ -673,7 +679,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                                    retreatState,
+                                    retreatState, 
                                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                                     themeName: theme.name,
                                     monsterData: monster
@@ -696,12 +702,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         }
                                     }
                                 }
-
+                                
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
 
                             } catch (err) { processingUsers.delete(i.user.id); return; }
-                        }
+                        } 
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             actedPlayers.push(p.id); p.skipCount = 0; 
                             if (i.customId === 'atk') {
@@ -713,36 +719,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     applyDamageToPlayer(p, selfDmg);
                                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                                 } 
-                                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
-                                    canAttack = false;
-                                    log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
-                                }
+                                // ✅ إزالة فحص العمى اليدوي من هنا، لأنه مدمج الآن داخل executeWeaponAttack
 
                                 if (canAttack) {
-                                    let atkMultiplier = 1.0;
-                                    p.effects.forEach(e => { if(e.type === 'atk_buff') atkMultiplier += e.val; });
-                                    let currentAtk = Math.floor(p.atk * atkMultiplier);
-                                     
-                                    if (p.isSealed) currentAtk = Math.floor(currentAtk * p.sealMultiplier); 
-
-                                    const baseCrit = p.critRate || 0.2;
-                                    const isCrit = Math.random() < baseCrit;
-                                     
-                                    let dmg = Math.floor(currentAtk * (0.95 + Math.random() * 0.10)); 
+                                    // =======================================================
+                                    // 🔥🔥 استخدام weaponCalculator بدلاً من الحساب اليدوي 🔥🔥
+                                    // =======================================================
+                                    const isOwner = p.id === OWNER_ID;
+                                    const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    if (isCrit) dmg = Math.floor(dmg * 1.3); 
-
-                                    if (floor <= 5 && dmg > 47) dmg = 47;
-                                    else if (floor <= 10 && dmg > 88) dmg = 88;
-                                    else if (floor <= 14 && dmg > 120) dmg = 120;
-
-                                    monster.hp -= dmg; p.totalDamage += dmg; 
+                                    // تطبيق النتائج من الكائن المعاد
+                                    // executeWeaponAttack تقوم بتنقيص HP الخصم تلقائياً، نحن فقط نسجل اللوج
+                                    // وأيضاً تضيف الضرر لـ totalDamage
                                     
-                                    let threatGen = dmg;
+                                    // منطق التهديد (Threat)
+                                    let threatGen = result.damage;
                                     if (p.class === 'Tank') threatGen *= 3; 
                                     p.threat = (p.threat || 0) + threatGen;
 
-                                    log.push(`🗡️ **${p.name}** ${isCrit ? '**CRIT!**' : ''} سبب ${dmg} ضرر.`);
+                                    log.push(result.log);
                                     
                                     checkBossPhase(monster, log);
                                 }
