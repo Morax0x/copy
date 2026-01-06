@@ -3,10 +3,11 @@
 // المسؤول عن حساب الهجوم العادي، الكريت، الدفاع، والمراوغة
 // ================================================================
 
-const { OWNER_ID } = require('../../dungeon/constants'); // تأكد من المسار الصحيح للثوابت
+// تأكد من ضبط المسار الصحيح لملف الثوابت لديك
+const { OWNER_ID } = require('../../dungeon/constants'); 
 
 /**
- * دالة لحساب ضرر السلاح الخام بناءً على الليفل
+ * دالة لحساب ضرر السلاح الخام بناءً على الليفل (بدون بفات)
  * @param {Object} weaponConfig - إعدادات السلاح من JSON
  * @param {number} level - مستوى السلاح الحالي
  */
@@ -33,11 +34,12 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     };
 
     // 1. تحديد الضرر الأساسي
-    let baseDmg = attacker.weapon ? attacker.weapon.currentDamage : 15;
-    
-    // إذا كان وحشاً، نستخدم الـ atk الخاص به
-    if (attacker.isMonster || attacker.atk) {
-        baseDmg = attacker.atk || baseDmg;
+    // نأخذه من السلاح المحسوب مسبقاً، أو نحسبه إذا لم يوجد
+    let baseDmg = 15;
+    if (attacker.weapon && attacker.weapon.currentDamage) {
+        baseDmg = attacker.weapon.currentDamage;
+    } else if (attacker.atk) {
+        baseDmg = attacker.atk; // للوحوش
     }
 
     // 2. تطبيق البفات والدي-بفات (Buffs & Debuffs)
@@ -69,14 +71,14 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     }
 
     // 5. حساب الضربة الحرجة (Critical Hit)
-    // النسبة الأساسية 20% + أي بونص إضافي (مثل مهارة القائد)
+    // النسبة الأساسية 20% + أي بونص إضافي
     const critRate = 0.20 + (attacker.critRate || 0);
     if (Math.random() < critRate) {
         result.isCrit = true;
         finalDmg = Math.floor(finalDmg * 1.5); // الكريت يضرب 150%
     }
 
-    // مضاعف الأونر (اختياري، لجعله قوياً جداً)
+    // مضاعف الأونر (للتجربة والقوة)
     if (isOwner) finalDmg *= 10;
 
     // تباين عشوائي بسيط في الضرر (±5%) لواقعية أكثر
@@ -85,7 +87,6 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
 
     // 6. تطبيق دفاع الخصم (Reduction) - مثل مهارة القزم
     if (defender.effects && defender.effects.dmg_reduce > 0) {
-        // إذا dmg_reduce = 0.6 يعني يقلل 60%، نضرب في 0.4
         finalDmg = Math.floor(finalDmg * (1 - defender.effects.dmg_reduce));
     }
 
@@ -108,7 +109,7 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     if (finalDmg > 0 && defender.effects && defender.effects.rebound_active > 0) {
         result.reflected = Math.floor(finalDmg * defender.effects.rebound_active);
         attacker.hp -= result.reflected;
-        finalDmg -= result.reflected; // (اختياري: هل الانعكاس يقلل الضرر القادم؟ عادة نعم في هذا النظام)
+        // ملاحظة: الضرر المنعكس لا يقلل الضرر القادم، بل يرتد جزء منه إضافي
     }
 
     // 9. التطبيق النهائي
