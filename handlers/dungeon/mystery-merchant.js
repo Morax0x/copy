@@ -30,7 +30,7 @@ const SHOP_ITEMS = [
     { id: 'buy_shield', name: 'درع المرتزقـة', price: 3000, desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر أو لمدة 5 طوابق (مرة واحدة فقط).', emoji: '🛡️' },
     { id: 'buy_eye', name: 'عين البصيـرة', price: 1000, desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +50%).', emoji: '👁️' },
     { id: 'buy_instant_elder', name: 'شراب العمالقة العتيق', price: 2500, desc: 'تأثير فوري: يضاعف الصحة لمدة 8 طوابق!', emoji: '🍷' },
-    { id: 'buy_instant_assassin', name: 'سم التخفي', price: 2000, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
+    { id: 'buy_instant_assassin', name: 'سم التخفي', price: 800, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
 ];
 
 function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
