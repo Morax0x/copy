@@ -9,7 +9,8 @@ const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 const skillCalculator = require('./combat/skill-calculator');
 const weaponCalculator = require('./combat/weapon-calculator');
 
-const { OWNER_ID } = require('../dungeon/constants'); // تأكد من مسار الثوابت
+// ✅ التصحيح هنا: نقطة واحدة لأن pvp-core و dungeon كلاهما داخل handlers
+const { OWNER_ID } = require('./dungeon/constants'); 
 
 // --- صور الفوز والخسارة ---
 const WIN_IMAGES = [
@@ -265,7 +266,6 @@ function applySkillEffect(battleState, attackerId, skill) {
     });
 
     // إدارة كولداون الدرع الخاص (إذا كان المدافع يملك درعاً وانكسر)
-    // (هذا المنطق يمكن نقله للمحرك، لكن لابأس بإبقائه هنا للمراقبة)
     /* ملاحظة: المحرك الجديد يحسب الضرر والدرع بدقة، 
        لكن تتبع "هل انكسر الدرع الآن؟" أسهل هنا إذا أردنا تفعيل الكولداون للمدافع
     */
