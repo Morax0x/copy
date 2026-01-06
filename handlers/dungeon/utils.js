@@ -216,11 +216,16 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
-// 🔥 دالة إدارة التذاكر الجديدة 🔥
+// 🔥 دالة إدارة التذاكر المصححة والآمنة 🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
+    // 🛡️ تحويل المعرفات إلى نصوص لضمان البحث الصحيح في قاعدة البيانات
+    userID = String(userID);
+    guildID = String(guildID);
+
     // جلب بيانات اللاعب
     const userData = sql.prepare("SELECT level, dungeon_tickets, last_ticket_reset FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     
+    // إذا لم يكن لدى اللاعب بيانات في جدول المستويات، لا يمكنه اللعب
     if (!userData) return { tickets: 0, max: 0 };
 
     const level = userData.level || 1;
@@ -237,26 +242,36 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     const now = new Date();
     // نضيف 3 ساعات للوقت العالمي للحصول على توقيت السعودية
     const saudiTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
-    // صيغة التاريخ: YYYY-MM-DD (عشان نعرف إحنا في أي يوم بالسعودية)
+    // صيغة التاريخ: YYYY-MM-DD
     const todayStr = saudiTime.toISOString().split('T')[0];
 
-    let currentTickets = userData.dungeon_tickets;
-    
+    // التعامل مع القيمة NULL أو undefined في حال كانت قاعدة البيانات غير مهيأة
+    let currentTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
+    let lastReset = userData.last_ticket_reset || '';
+    let didReset = false;
+
     // 🔄 التحقق من التجديد اليومي (الساعة 12 بالليل)
-    if (userData.last_ticket_reset !== todayStr) {
+    if (lastReset !== todayStr) {
         // دخلنا يوم جديد بتوقيت السعودية -> فلل التذاكر
-        currentTickets = maxTickets;
-        // تحديث التاريخ في الداتا بيس
+        // 🔥 تحديث فوري لقاعدة البيانات لضمان حفظ التاريخ
         sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
             .run(maxTickets, todayStr, userID, guildID);
+        
+        // تحديث المتغير المحلي لنستخدمه في الخطوات التالية
+        currentTickets = maxTickets;
+        didReset = true;
     }
 
     // إذا العملية "خصم تذكرة" (عند الانضمام)
     if (action === 'consume') {
         if (currentTickets > 0) {
+            // 🔥 تنفيذ الخصم وتحديث القيمة في قاعدة البيانات
             sql.prepare("UPDATE levels SET dungeon_tickets = dungeon_tickets - 1 WHERE user = ? AND guild = ?").run(userID, guildID);
+            
+            // نرجع النجاح مع القيمة الجديدة المخصومة
             return { success: true, tickets: currentTickets - 1, max: maxTickets };
         } else {
+            // لا يوجد تذاكر كافية
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
@@ -273,5 +288,5 @@ module.exports = {
     cleanDisplayName,
     buildHpBar,
     getRealPlayerData,
-    manageTickets // 👈 تمت إضافة الدالة هنا للتصدير
+    manageTickets // 👈 الدالة المصححة
 };
