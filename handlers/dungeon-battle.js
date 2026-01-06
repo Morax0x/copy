@@ -142,9 +142,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = 100; 
 
     // ============================================================
-    // 🔥 مراقب الرسائل لكلمة "كشف" (حل مشكلة الآيفون) 🔥
+    // 🔥 مراقب الرسائل لكشف الحالة (حل مشكلة الآيفون) 🔥
     // ============================================================
-    const statusFilter = m => m.content.trim() === 'كشف' && !m.author.bot;
+    
+    // قائمة الكلمات المسموح بها
+    const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
+
+    const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
     const statusCollector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
 
     statusCollector.on('collect', async m => {
@@ -420,11 +424,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                              log.push(`👑 **الأمبراطـور اقتحـم المعركـة!**`);
                         }
                     }
-                       
+                        
                     if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) await i.deferUpdate().catch(()=>{});
-                       
+                        
                     if (processingUsers.has(i.user.id)) return i.followUp({ content: "🚫 اهدأ! طلبك قيد المعالجة.", ephemeral: true }).catch(()=>{});
-                       
+                        
                     let p = players.find(pl => pl.id === i.user.id);
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
@@ -442,7 +446,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
-                       
+                        
                     processingUsers.add(i.user.id);
 
                     try {
@@ -809,7 +813,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 try {
                     await battleMsg.delete();
                     battleMsg = await threadChannel.send({ 
-                        content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                        content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`, 
                         embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                         components: generateBattleRows() 
                     });
@@ -820,7 +824,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 turnCount++;
                 saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
-                    retreatState,
+                    retreatState, 
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
                     themeName: theme.name,
                     monsterData: monster
