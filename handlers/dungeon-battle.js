@@ -10,7 +10,6 @@ const {
     TextInputStyle 
 } = require('discord.js');
 
-// ✅ التأكد من صحة مسار الملفات داخل handlers/dungeon/
 const { 
     dungeonConfig, 
     EMOJI_MORA, 
@@ -50,7 +49,7 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// ✅ تم تصحيح المسار ليكون داخل مجلد combat المجاور
+// ✅ استيراد حاسبة الأسلحة (المسار الصحيح)
 const weaponCalculator = require('./combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
@@ -135,6 +134,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
+    // 🔥 منطق الختم عند البدء 🔥
     if (!resumeData) {
         players.forEach(p => {
             if (p.isSealed) {
@@ -224,6 +224,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; 
         }
 
+        // 🔥 منطق الختم حسب الطوابق 🔥
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed && !p.isDead) {
@@ -437,7 +438,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true });
                     if (p.isDead || actedPlayers.includes(p.id)) return;
 
-                    // ✅ إضافة التحقق من الشلل (Stun) من المحرك الجديد
+                    // ✅ التحقق من الشلل (Stun)
                     if (p.effects.some(e => e.type === 'stun')) {
                         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
                         actedPlayers.push(p.id); p.skipCount = 0; 
@@ -483,6 +484,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 let originalAtk = p.atk;
                                 
+                                // 🔥 منطق الختم على المهارات 🔥
                                 if (p.isSealed) {
                                     p.atk = Math.floor(p.atk * p.sealMultiplier); 
                                     const isHealSkill = (skillObj.type === 'HEAL' || skillObj.type === 'heal');
@@ -495,7 +497,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 else if (floor <= 10 && p.atk > 88) p.atk = 88;
                                 else if (floor <= 14 && p.atk > 120) p.atk = 120;
 
-                                // ⚠️ ملاحظة: يجب تحديث ملف dungeon/skills.js لاحقاً لاستخدام skillCalculator
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
                                 p.atk = originalAtk;
@@ -555,15 +556,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 
                                 const selectedValue = selection.values[0];
 
-                                // =========================================================
-                                // 🔥🔥🔥 بداية منطق متجر الجرعات السريع 🔥🔥🔥
-                                // =========================================================
                                 if (selectedValue === 'buy_potions_action') {
-                                    // 1. جلب رصيد المورا الحالي
                                     const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
                                     const currentMora = userLevelData ? userLevelData.mora : 0;
 
-                                    // 2. بناء قائمة المتجر
                                     const shopOptions = potionItems.map(pot => ({
                                         label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
                                         value: pot.id,
@@ -578,14 +574,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                             .addOptions(shopOptions)
                                     );
 
-                                    // 3. إرسال واجهة المتجر
                                     const shopMsg = await selection.followUp({
                                         content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
                                         components: [shopRow],
                                         ephemeral: true
                                     });
 
-                                    // 4. انتظار اختيار الشراء
                                     try {
                                         const buyInteraction = await shopMsg.awaitMessageComponent({ time: 15000 });
                                         await buyInteraction.deferUpdate();
@@ -596,9 +590,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         if (currentMora < targetItem.price) {
                                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                                         } else {
-                                            // خصم المورا وإضافة الجرعة
                                             sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(targetItem.price, p.id, guild.id);
-                                            // إضافة للمخزون (Upsert)
                                             const existingItem = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, targetItem.id);
                                             if (existingItem) {
                                                 sql.prepare("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = ?").run(existingItem.id);
@@ -612,13 +604,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         await shopMsg.edit({ content: "⏰ انتهى وقت الشراء.", components: [] }).catch(()=>{});
                                     }
 
-                                    // 🔥 مهم جداً: عدم احتساب الدور
                                     processingUsers.delete(i.user.id);
                                     return; 
                                 }
-                                // =========================================================
-                                // 🔥🔥🔥 نهاية منطق المتجر 🔥🔥🔥
-                                // =========================================================
 
                                 const potionId = selectedValue.replace('use_potion_', '');
                                 
@@ -644,7 +632,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     p.threat = (p.threat || 0) + threatGen;
 
                                 } else if (potionId === 'potion_reflect') {
-                                    // ✅ تحديث اسم تأثير الانعكاس ليطابق النظام الجديد
                                     p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
                                     actionMsg = "🌵 جهز درع الأشواك!";
                                 } else if (potionId === 'potion_time') {
@@ -686,7 +673,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     monsterData: monster
                                 });
 
-                                // فحص الموت
                                 const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
                                 if (deadThisTurn.length > 0) {
                                     for (const deadP of deadThisTurn) {
@@ -720,20 +706,41 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     applyDamageToPlayer(p, selfDmg);
                                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                                 } 
-                                // ✅ إزالة فحص العمى اليدوي من هنا، لأنه مدمج الآن داخل executeWeaponAttack
+                                // ✅ استخدام العمى من المحرك الجديد
+                                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
+                                    canAttack = false;
+                                    log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
+                                }
 
                                 if (canAttack) {
-                                    // =======================================================
-                                    // 🔥🔥 استخدام weaponCalculator بدلاً من الحساب اليدوي 🔥🔥
-                                    // =======================================================
+                                    // 🔥🔥🔥🔥🔥 تطبيق الختم على الهجوم العادي 🔥🔥🔥🔥🔥
+                                    
+                                    // 1. حفظ القيم الأصلية
+                                    let originalWeaponDmg = 0;
+                                    let originalAtk = p.atk;
+
+                                    // 2. تطبيق تأثير الختم إذا كان اللاعب مختوماً
+                                    if (p.isSealed) {
+                                        p.atk = Math.floor(p.atk * p.sealMultiplier);
+                                        if (p.weapon) {
+                                            originalWeaponDmg = p.weapon.currentDamage;
+                                            p.weapon.currentDamage = Math.floor(p.weapon.currentDamage * p.sealMultiplier);
+                                        }
+                                    }
+
+                                    // 3. استدعاء حاسبة الأسلحة
                                     const isOwner = p.id === OWNER_ID;
                                     const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    // تطبيق النتائج من الكائن المعاد
-                                    // executeWeaponAttack تقوم بتنقيص HP الخصم تلقائياً، نحن فقط نسجل اللوج
-                                    // وأيضاً تضيف الضرر لـ totalDamage
-                                    
-                                    // منطق التهديد (Threat)
+                                    // 4. استعادة القيم الأصلية
+                                    if (p.isSealed) {
+                                        p.atk = originalAtk;
+                                        if (p.weapon) {
+                                            p.weapon.currentDamage = originalWeaponDmg;
+                                        }
+                                    }
+
+                                    // 5. متابعة منطق اللعبة
                                     let threatGen = result.damage;
                                     if (p.class === 'Tank') threatGen *= 3; 
                                     p.threat = (p.threat || 0) + threatGen;
