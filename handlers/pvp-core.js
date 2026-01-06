@@ -220,6 +220,7 @@ function applySkillEffect(battleState, attackerId, skill) {
     let logMessage = "";
 
     switch (statType) {
+        // 🔥 مهارة التنين المحدثة (شلل نادر 5% + حذف الدرع)
         case 'TrueDMG_Burn': {
             const dmg = Math.floor(baseAtk * 1.4); 
             defender.hp -= dmg;
@@ -229,22 +230,14 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.effects.burn_turns = 3;
             
             let extraMsg = "";
-            // 🔥 رعب التنين (20%)
-            if (Math.random() < 0.20) {
+            // 🔥 شلل التنين نادر جداً (5%)
+            if (Math.random() < 0.05) {
                 defender.effects.stun = true;
                 defender.effects.stun_turns = 1;
                 extraMsg += " 🥶 ارتعد الخصم وتجمد!";
             }
-            // 🔥 حراشف التنين (30%)
-            if (Math.random() < 0.30) {
-                const scalesAmount = Math.floor(attacker.maxHp * 0.15);
-                if (attacker.effects.shield > 0) {
-                    extraMsg += ` 🛡️ تصلبت حراشفه (لم يزد الدرع لوجوده)!`;
-                } else {
-                    attacker.effects.shield += scalesAmount;
-                    extraMsg += ` 🛡️ تصلبت حراشفه (+${scalesAmount} درع)!`;
-                }
-            }
+            // تم حذف كود الحراشف (الدرع) هنا
+
             logMessage = `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أطلق جحيم التنين! (${dmg} ضرر حقيقي + حرق).${extraMsg}`;
             break;
         }
@@ -257,14 +250,21 @@ function applySkillEffect(battleState, attackerId, skill) {
             attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
             attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
             
-            const shieldVal = Math.floor(attacker.maxHp * 0.25);
             attacker.effects.buff = 0.2;
             attacker.effects.buff_turns = 2;
             
+            // 🔥 حساب الدرع بناءً على الليفل
+            const lvl = skill.currentLevel || skill.level || 1;
+            const basePercent = 0.15;
+            const growthPercent = (lvl - 1) * 0.02;
+            const shieldFromHp = attacker.maxHp * (basePercent + growthPercent);
+            const flatBonus = lvl * 15;
+            let shieldAmount = Math.floor(shieldFromHp + flatBonus);
+
             if (attacker.effects.shield > 0) {
                 logMessage = `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب قوة (الدرع موجود مسبقاً)!`;
             } else {
-                attacker.effects.shield += shieldVal;
+                attacker.effects.shield += shieldAmount;
                 logMessage = `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب درعاً وقوة!`;
             }
             break;
@@ -375,7 +375,15 @@ function applySkillEffect(battleState, attackerId, skill) {
                     if (attacker.effects.shield > 0) {
                         logMessage = `⚠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** حاول تفعيل الدرع لكنه يملكه بالفعل!`;
                     } else {
-                        attacker.effects.shield += Math.floor(attacker.maxHp * (effectValue / 100));
+                        // 🔥 حساب الدرع بناءً على الليفل
+                        const lvl = skill.currentLevel || skill.level || 1;
+                        const basePercent = 0.15;
+                        const growthPercent = (lvl - 1) * 0.02;
+                        const shieldFromHp = attacker.maxHp * (basePercent + growthPercent);
+                        const flatBonus = lvl * 15;
+                        let shieldAmount = Math.floor(shieldFromHp + flatBonus);
+
+                        attacker.effects.shield += shieldAmount;
                         logMessage = `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً!`;
                     }
                     break;
