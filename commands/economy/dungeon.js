@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors } = require("discord.js");
 const { startDungeon } = require("../../handlers/dungeon-handler.js");
-const { manageTickets } = require("../../handlers/dungeon/utils.js"); // ✅ استدعاء دالة التذاكر
+const { manageTickets } = require("../../handlers/dungeon/utils.js"); 
 
 const OWNER_ID = "1145327691772481577";
 const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 ساعات
@@ -48,6 +48,11 @@ module.exports = {
 
         const { client, user, guild } = interaction;
 
+        // 🔥🔥 إصلاح الخطأ: التحقق من وجود السيرفر قبل المتابعة 🔥🔥
+        if (!guild) {
+            return interaction.reply({ content: "🚫 **عذراً، هذا الأمر يعمل فقط داخل السيرفرات!**", ephemeral: true });
+        }
+
         // 2. تحديث قاعدة البيانات (أمان) - ضمان وجود أعمدة التذاكر
         try {
             client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
@@ -94,12 +99,15 @@ module.exports = {
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
                 const payload = { 
-                    content: `⏳ **تمهّل أيها المحارب!**`, // إضافة Content لحل مشكلة الآيفون
+                    content: `⏳ **تمهّل أيها المحارب!**`, 
                     embeds: [cooldownEmbed], 
                     ephemeral: true 
                 };
 
-                if (isSlash && !interaction.replied) return await interaction.reply(payload);
+                // تجنب الرد المزدوج
+                if (isSlash && (interaction.replied || interaction.deferred)) {
+                    return await interaction.followUp(payload);
+                }
                 return await interaction.reply(payload);
             }
         }
@@ -111,8 +119,7 @@ module.exports = {
             console.error("[Dungeon Command Error]", err);
             const errMsg = { content: "❌ حدث خطأ تقني أثناء بدء الدانجون.", ephemeral: true };
             
-            if (isSlash && !interaction.replied) await interaction.reply(errMsg);
-            else if (isSlash) await interaction.followUp(errMsg);
+            if (interaction.replied || interaction.deferred) await interaction.followUp(errMsg);
             else await interaction.reply(errMsg);
         }
     }
