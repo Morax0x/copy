@@ -70,11 +70,11 @@ async function triggerMimicChest(thread, players) {
             } else if (roll < 35) { 
                 // 🛡️ درع مؤقت (10%)
                 const shieldVal = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
-                // تصحيح: إضافة الدرع للقيمة الحالية مباشرة
                 player.shield = (player.shield || 0) + shieldVal;
-                // نحتفظ بـ startingShield للإحصائيات أو التجديد إذا كان النظام يدعمه
-                player.startingShield = (player.startingShield || 0) + shieldVal;
-                resultMsg = `🛡️ **${player.name}** عثر على درع سحري متهالك! (+${shieldVal} درع مؤقت)`;
+                // تفعيل استمرار الدرع للطوابق القادمة
+                player.shieldPersistent = true;
+                player.shieldFloorsCount = 0;
+                resultMsg = `🛡️ **${player.name}** عثر على درع سحري متهالك! (+${shieldVal} درع)`;
 
             } else if (roll < 40) { 
                 // ⚡ شحن المهارات (5%)
@@ -117,7 +117,8 @@ async function triggerMimicChest(thread, players) {
                     resultMsg = `🍷 **${player.name}** وجد **جرعة العملاق** وشربها فوراً! (تضاعفت الصحة لـ 3 طوابق)`;
                 } else {
                     // جرعة الانعكاس
-                    player.effects.push({ type: 'reflect', val: 0.3, turns: 3 });
+                    // 🔥 تصحيح: استخدام rebound_active بدلاً من reflect
+                    player.effects.push({ type: 'rebound_active', val: 0.3, turns: 3 });
                     resultMsg = `🌵 **${player.name}** وجد **جرعة الأشواك** وشربها! (يعكس 30% ضرر لـ 3 جولات)`;
                 }
 
@@ -135,8 +136,6 @@ async function triggerMimicChest(thread, players) {
             } else if (roll < 88) { 
                 // 🔥 حرق (5%)
                 const burnDmg = Math.floor(player.maxHp * 0.05);
-                // تصحيح: استخدام 'burn' بدلاً من 'poison' للوضوح، مع التأكد أن نظام المعركة يدعمه
-                // (إذا لم يكن يدعمه، ابقه 'poison' وغير النص فقط)
                 player.effects.push({ type: 'burn', val: burnDmg, turns: 3 });
                 resultMsg = `🔥 **${player.name}** انفجر في وجهه لهب سحري! (حرق لـ 3 جولات)`;
 
