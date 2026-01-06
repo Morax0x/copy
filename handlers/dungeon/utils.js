@@ -59,7 +59,7 @@ function applyDamageToPlayer(player, damageAmount) {
     // ----------------------------------------------------
 
     let remainingDamage = damageAmount;
-     
+      
     // Check for Evasion
     if (player.effects.some(e => e.type === 'evasion')) {
         return 0; // Full dodge
@@ -76,6 +76,9 @@ function applyDamageToPlayer(player, damageAmount) {
     if (dmgReduction) {
         remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
     }
+
+    // 🔥🔥 حفظ حالة الدرع قبل تلقي الضرر 🔥🔥
+    const hadShield = player.shield > 0;
 
     // Shield Logic
     if (player.shield > 0) {
@@ -101,6 +104,14 @@ function applyDamageToPlayer(player, damageAmount) {
         player.hp = 0;
         player.isDead = true;
     }
+
+    // 🔥🔥🔥 التعديل الجديد: تفعيل الكولداون عند انكسار الدرع 🔥🔥🔥
+    // إذا كان معه درع، وأصبح الدرع 0 (انكسر)، نبدأ العد (3 جولات)
+    if (hadShield && player.shield <= 0) {
+        if (!player.skillCooldowns) player.skillCooldowns = {};
+        player.skillCooldowns['skill_shielding'] = 3; // تفعيل الكولداون الآن
+    }
+    // -----------------------------------------------------------
     
     return remainingDamage; 
 }
@@ -237,7 +248,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
         currentTickets = maxTickets;
         // تحديث التاريخ في الداتا بيس
         sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
-           .run(maxTickets, todayStr, userID, guildID);
+            .run(maxTickets, todayStr, userID, guildID);
     }
 
     // إذا العملية "خصم تذكرة" (عند الانضمام)
