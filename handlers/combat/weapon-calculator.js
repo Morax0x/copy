@@ -4,8 +4,8 @@
 // ================================================================
 
 const path = require('path');
-// ⚠️ تأكد أن هذا المسار يشير إلى ملف الثوابت الصحيح في مشروعك
-const { OWNER_ID } = require('../../dungeon/constants'); 
+// ✅ التعديل هنا: نقطتين فقط للرجوع لمجلد handlers ثم الدخول لـ dungeon
+const { OWNER_ID } = require('../dungeon/constants'); 
 
 /**
  * دالة لحساب ضرر السلاح الخام بناءً على الليفل (بدون بفات)
@@ -55,7 +55,6 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     let finalDmg = Math.floor(baseDmg * multiplier);
 
     // 3. التحقق من العمى (Blind) - نسبة خطأ 50%
-    // ✅ (مهم جداً لميزة الروح الجديدة)
     if (attacker.effects && attacker.effects.blind > 0) {
         if (Math.random() < 0.5) {
             result.isMiss = true;
@@ -72,7 +71,6 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     }
 
     // 5. حساب الضربة الحرجة (Critical Hit)
-    // النسبة الأساسية 20% + أي بونص إضافي
     const critRate = 0.20 + (attacker.critRate || 0);
     if (Math.random() < critRate) {
         result.isCrit = true;
