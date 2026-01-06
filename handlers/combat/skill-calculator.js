@@ -1,9 +1,9 @@
 // ================================================================
 // 🔥 COMBAT ENGINE: Skill Calculator (Independent System)
-// نظام مهارات مستقل لا يعتمد على ضرر السلاح - موازنة الأعراق
+// نظام مهارات مستقل - تم تعديله ليدعم دمج اللاعب في مهارات محددة
 // ================================================================
 
-// القيمة 5.0 تعني أن مهارة بقوة 100 تسبب 500 ضرر
+// القيمة 5.0 تعني أن مهارة بقوة 100 تسبب 500 ضرر (للمهارات العادية التي تعتمد على اللفل)
 const GLOBAL_SKILL_MULTIPLIER = 5.0;
 
 function calculateSkillRawValue(skillConfig, currentLevel) {
@@ -20,13 +20,11 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
 
     const multiplier = isOwner ? 10 : 1;
     
-    // 1️⃣ حساب قوة المهارة الأساسية
+    // حساب قوة المهارة الأساسية (للمهارات التي تعتمد على اللفل)
     const rawValue = calculateSkillRawValue(skill, skill.currentLevel);
-    
-    // 2️⃣ تحويل القيمة إلى ضرر فعلي
     let skillPower = Math.floor(rawValue * GLOBAL_SKILL_MULTIPLIER);
 
-    // تطبيق البفات
+    // تطبيق البفات على قوة المهارة السحرية
     if (attacker.effects && attacker.effects.buff > 0) skillPower *= (1 + attacker.effects.buff);
     if (attacker.effects && attacker.effects.weaken > 0) skillPower *= (1 - attacker.effects.weaken);
     
@@ -38,6 +36,68 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
 
     switch (skill.stat_type) {
         
+        // --- 🎲 RNG: Gamble (تعديل جذري) ---
+        case 'RNG': {
+            // 🔥 يعتمد على دمج اللاعب الحالي (سلاح + قوة)
+            const playerDmg = attacker.atk; 
+
+            if (Math.random() < 0.5) {
+                // ✅ نجاح: ضعف دمج اللاعب
+                result.damage = Math.floor(playerDmg * 2);
+                result.log = `🎲 **${getName(attacker)}** نجحت مقامرته! سدد ضربة مزدوجة (${result.damage})!`;
+            } else {
+                // ❌ فشل: لا يوجد دمج للعدو + دمج للنفس (عقاب)
+                result.damage = 0;
+                result.selfDamage = Math.floor(attacker.maxHp * 0.1); // خسارة 10% من الدم
+                result.log = `🎲 **${getName(attacker)}** فشلت مقامرته وتلقى ضرراً ارتدادياً!`;
+            }
+            break;
+        }
+
+        // --- 🛡️ المهارات العامة (%) ---
+        case '%': 
+            if (skill.id === 'skill_shielding') {
+                result.shield = skillPower;
+                result.log = `🛡️ **${getName(attacker)}** رفع درعه (${result.shield})!`;
+            } 
+            else if (skill.id === 'skill_healing') {
+                result.heal = skillPower;
+                result.log = `💖 **${getName(attacker)}** استعاد ${result.heal} HP!`;
+            }
+            // 🔥 تعديل صيحة الحرب (Buffing) لتعتمد على لفل المهارة
+            else if (skill.id === 'skill_buffing') {
+                // النسبة = 10% أساسي + 5% لكل لفل للمهارة
+                let buffPercent = 0.10 + (skill.currentLevel * 0.05);
+                
+                // سقف للقوة لكي لا تصبح خيالية (مثلاً 100% كحد أقصى)
+                if (buffPercent > 1.0) buffPercent = 1.0; 
+
+                // تعزيز الهجوم القادم (جولة واحدة أو جولتين)
+                result.selfEffects.push({ type: 'atk_buff', val: buffPercent, turns: 2 });
+                
+                result.log = `💪 **${getName(attacker)}** أطلق صيحة حرب! (تعزيز الهجوم القادم بنسبة ${Math.floor(buffPercent * 100)}%)`;
+            }
+            else if (skill.id === 'skill_poison') {
+                result.damage = Math.floor(skillPower * 0.5);
+                const poisonVal = Math.floor(skillPower * 0.3);
+                result.effectsApplied.push({ type: 'poison', val: poisonVal, turns: 3 });
+                result.log = `☠️ **${getName(attacker)}** سمم خصمه!`;
+            }
+            else if (skill.id === 'skill_dispel') {
+                result.effectsApplied.push({ type: 'dispel' });
+                result.log = `💨 **${getName(attacker)}** بدد كل سحر الخصم!`;
+            }
+            else if (skill.id === 'skill_cleanse') {
+                result.selfEffects.push({ type: 'cleanse' });
+                result.heal = Math.floor(attacker.maxHp * 0.1);
+                result.log = `✨ **${getName(attacker)}** طهر نفسه!`;
+            }
+            else {
+                result.damage = skillPower;
+                result.log = `💥 **${getName(attacker)}** استخدم ${skill.name} وسبب ${result.damage} ضرر!`;
+            }
+            break;
+
         // --- 🐲 Dragon: TrueDMG_Burn ---
         case 'TrueDMG_Burn': {
             result.damage = skillPower;
@@ -45,7 +105,7 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             result.effectsApplied.push({ type: 'burn', val: burnVal, turns: 3 });
 
             let extraMsg = "";
-            if (Math.random() < 0.05) { // 5% شلل
+            if (Math.random() < 0.05) { 
                 result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
                 extraMsg = " 🥶 وتجمد من الرعب!";
             }
@@ -139,10 +199,9 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             break;
         }
 
-        // --- 👻 Spirit: Dmg_Blind (تعديل ليتوافق مع JSON) ---
+        // --- 👻 Spirit: Dmg_Blind ---
         case 'Dmg_Blind': {
             result.damage = skillPower;
-            // 50% نسبة خطأ (Blind) لمدة جولتين
             result.effectsApplied.push({ type: 'blind', val: 0.5, turns: 2 }); 
             result.log = `👻 **${getName(attacker)}** استخدم ${skill.name} وأصاب خصمه بالعمى!`;
             break;
@@ -156,15 +215,14 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             break;
         }
 
-        // --- 🧟 Ghoul: Execute_Heal (مع النزيف) ---
+        // --- 🧟 Ghoul: Execute_Heal ---
         case 'Execute_Heal': {
             result.damage = skillPower;
-            // إضافة نزيف (سم)
             const bleedDmg = Math.floor(skillPower * 0.15);
             result.effectsApplied.push({ type: 'poison', val: bleedDmg, turns: 3 });
 
             if (defender.hp - result.damage <= 0) {
-                result.damage = defender.hp; // Kill
+                result.damage = defender.hp; 
                 result.heal = Math.floor(attacker.maxHp * 0.20);
                 result.log = `🧟 **${getName(attacker)}** مزق خصمه بـ ${skill.name} وافترسه!`;
             } else {
@@ -172,55 +230,6 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             }
             break;
         }
-
-        // --- 🎲 RNG: Gamble ---
-        case 'RNG': {
-            if (Math.random() < 0.5) {
-                result.damage = skillPower * 3;
-                result.log = `🎲 **${getName(attacker)}** ربح الرهان! ضربة ساحقة (${result.damage})!`;
-            } else {
-                result.damage = Math.floor(skillPower * 0.5);
-                result.selfDamage = Math.floor(attacker.maxHp * 0.1);
-                result.log = `🎲 **${getName(attacker)}** خسر الرهان وتلقى ضرراً!`;
-            }
-            break;
-        }
-
-        // --- 🛡️ المهارات العامة (%) ---
-        case '%': 
-            if (skill.id === 'skill_shielding') {
-                result.shield = skillPower;
-                result.log = `🛡️ **${getName(attacker)}** رفع درعه (${result.shield})!`;
-            } 
-            else if (skill.id === 'skill_healing') {
-                result.heal = skillPower;
-                result.log = `💖 **${getName(attacker)}** استعاد ${result.heal} HP!`;
-            }
-            else if (skill.id === 'skill_buffing') {
-                const buffVal = Math.min(0.5, skillPower / 1000); 
-                result.selfEffects.push({ type: 'buff', val: 0.25, turns: 3 });
-                result.log = `💪 **${getName(attacker)}** رفع قوته!`;
-            }
-            else if (skill.id === 'skill_poison') {
-                result.damage = Math.floor(skillPower * 0.5);
-                const poisonVal = Math.floor(skillPower * 0.3);
-                result.effectsApplied.push({ type: 'poison', val: poisonVal, turns: 3 });
-                result.log = `☠️ **${getName(attacker)}** سمم خصمه!`;
-            }
-            else if (skill.id === 'skill_dispel') {
-                result.effectsApplied.push({ type: 'dispel' });
-                result.log = `💨 **${getName(attacker)}** بدد كل سحر الخصم!`;
-            }
-            else if (skill.id === 'skill_cleanse') {
-                result.selfEffects.push({ type: 'cleanse' });
-                result.heal = Math.floor(attacker.maxHp * 0.1);
-                result.log = `✨ **${getName(attacker)}** طهر نفسه!`;
-            }
-            else {
-                result.damage = skillPower;
-                result.log = `💥 **${getName(attacker)}** استخدم ${skill.name} وسبب ${result.damage} ضرر!`;
-            }
-            break;
 
         default:
             result.log = `⚠️ مهارة غير معروفة: ${skill.name}`;
