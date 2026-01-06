@@ -10,6 +10,7 @@ const {
     TextInputStyle 
 } = require('discord.js');
 
+// ✅ التأكد من صحة مسار الملفات داخل handlers/dungeon/
 const { 
     dungeonConfig, 
     EMOJI_MORA, 
@@ -49,8 +50,8 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// ✅ استيراد حاسبة الأسلحة الجديدة
-const weaponCalculator = require('./handlers/combat/weapon-calculator');
+// ✅ تم تصحيح المسار ليكون داخل مجلد combat المجاور
+const weaponCalculator = require('./combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
 const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
