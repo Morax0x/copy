@@ -194,7 +194,7 @@ function getNextResetTimestamp() {
     return nextReset.getTime() - (3 * 60 * 60 * 1000); 
 }
 
-// 🔥 دالة إدارة التذاكر (المحمية والمفحوصة) 🔥
+// 🔥 دالة إدارة التذاكر (ManageTickets v3 - Final Fix) 🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -220,31 +220,35 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     let needsReset = false;
     const now = Date.now();
 
-    // 🔬 فحص عميق للسبب (DEBUG LOG) 🔬
-    // console.log(`[DEBUG] User: ${userID} | RawTime: ${storedResetTimeRaw} | Tickets: ${currentTickets}`);
+    // 🔬 DEBUG: لنرى ماذا يقرأ البوت من القاعدة بالضبط
+    // console.log(`[DEBUG] User: ${userID} | Raw DB Value: "${storedResetTimeRaw}"`);
 
-    // محاولة تحويل الوقت المخزن لرقم
+    // --- منطق الفحص الجديد ---
     if (!storedResetTimeRaw || storedResetTimeRaw === '') {
-        // console.log(`[DEBUG] No stored time. Resetting.`);
+        // حالة 1: لا يوجد تاريخ مسجل -> ريست
+        // console.log(`[DEBUG] Empty date -> RESET`);
         needsReset = true;
     } else {
-        nextResetTime = parseInt(storedResetTimeRaw);
+        // نستخدم Number بدلاً من parseInt لتجنب قراءة "2026-01-01" كرقم 2026
+        nextResetTime = Number(storedResetTimeRaw);
         
-        // التحقق من صلاحية الرقم
         if (isNaN(nextResetTime)) {
-             // console.log(`[DEBUG] Time is NaN (Old format?). Resetting.`);
+             // حالة 2: التاريخ المسجل نص قديم (مثل 2026-01-01) -> ريست وتحديث للنظام الجديد
+             // console.log(`[DEBUG] Date is NaN/Old Format -> RESET (Migration)`);
              needsReset = true;
         } else if (now >= nextResetTime) {
-             // console.log(`[DEBUG] Time Expired (${now} >= ${nextResetTime}). Resetting.`);
+             // حالة 3: تجاوزنا الوقت المحدد -> ريست
+             // console.log(`[DEBUG] Time Expired -> RESET`);
              needsReset = true;
         } else {
-             // console.log(`[DEBUG] Time Valid. No Reset.`);
+             // حالة 4: الوقت سليم ولا زلنا في نفس اليوم
+             // console.log(`[DEBUG] Time Valid -> OK`);
         }
     }
 
     // متغيرات للحفظ
     let finalTickets = currentTickets;
-    let finalResetTime = nextResetTime;
+    let finalResetTime = isNaN(nextResetTime) ? 0 : nextResetTime;
 
     // 2. تطبيق التجديد إذا لزم الأمر
     if (needsReset) {
@@ -252,23 +256,22 @@ function manageTickets(userID, guildID, sql, action = 'check') {
         finalResetTime = getNextResetTimestamp();
         
         // تحديث القاعدة فوراً
-        sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+        const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
             .run(finalTickets, String(finalResetTime), userID, guildID);
         
-        // console.log(`[DEBUG] RESET DONE -> New Tickets: ${finalTickets}, New Time: ${finalResetTime}`);
+        // console.log(`[DEBUG] RESET APPLIED. DB Changes: ${info.changes}`);
+        
+        currentTickets = finalTickets; // تحديث المتغير المحلي
     }
 
     // 3. تنفيذ الخصم
     if (action === 'consume') {
         if (finalTickets > 0) {
-            // نخصم من القيمة "النهائية" (سواء تجددت الآن أو كانت قديمة)
+            // نخصم من القيمة "النهائية"
             let newTicketCount = finalTickets - 1;
             
-            // في حالة الخصم، نستخدم الوقت المحسوب (finalResetTime)
-            // هذا يضمن أننا لا نكتب "0" أو "NaN" في الخانة
-            
-            // حماية إضافية: إذا لسبب ما الوقت غير صالح، نعيد حسابه
-            if (!finalResetTime || isNaN(finalResetTime)) {
+            // حماية أخيرة: التأكد من وجود وقت تجديد صالح قبل الحفظ
+            if (!finalResetTime || finalResetTime === 0) {
                 finalResetTime = getNextResetTimestamp();
             }
 
@@ -276,14 +279,13 @@ function manageTickets(userID, guildID, sql, action = 'check') {
                 .run(newTicketCount, String(finalResetTime), userID, guildID);
 
             if (info.changes > 0) {
-                // console.log(`[DEBUG] CONSUME SUCCESS -> Tickets: ${newTicketCount}`);
+                // console.log(`[DEBUG] TICKET CONSUMED. Remaining: ${newTicketCount}`);
                 return { success: true, tickets: newTicketCount, max: maxTickets };
             } else {
-                console.error(`[DEBUG] CONSUME FAILED (SQL Error)`);
+                console.error(`[DEBUG] SQL ERROR during consume.`);
                 return { success: false, tickets: finalTickets, max: maxTickets };
             }
         } else {
-            // console.log(`[DEBUG] CONSUME FAILED (Not enough tickets)`);
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
