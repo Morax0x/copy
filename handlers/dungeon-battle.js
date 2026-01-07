@@ -98,7 +98,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         weaknessActive: false,
         isGateJump: false 
     };
-    
+     
     let retreatState = {
         range_30_40: false,
         range_41_50: false,
@@ -110,7 +110,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let startFloor = 1;
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
-    
+     
     let resumedMonsterData = null;
 
     if (resumeData) {
@@ -147,7 +147,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     // ============================================================
     // 🔥 مراقب الرسائل لكشف الحالة
     // ============================================================
-    
+     
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
 
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
@@ -198,7 +198,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             merchantState.skipFloors = 0; 
             const oldFloor = floor;
             floor = targetFloor; 
-              
+             
             if (floor > maxFloors) floor = maxFloors; 
 
             try {
@@ -360,7 +360,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let battleMsg;
         try {
             battleMsg = await threadChannel.send({ 
-                content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`, 
+                // content removed here
                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                 components: generateBattleRows() 
             });
@@ -442,7 +442,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
                         await battleMsg.edit({ 
-                            content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                            // content removed here
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
@@ -528,7 +528,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                    // content removed here
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -674,7 +674,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                    // content removed here
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -782,7 +782,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                              
                             await battleMsg.edit({ 
-                                content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                // content removed here
                                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                             }).catch(()=>{});
 
@@ -803,7 +803,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                             }
-
+                            
                             if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                             if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
                         }
@@ -820,8 +820,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             if (monster.hp <= 0) { 
                 ongoing = false; 
                 await battleMsg.edit({ 
-                    content: `**☠️ سقط الوحش!**`,
-                    components: [] 
+                    components: [] // content removed here
                 }).catch(()=>{}); 
             }
 
@@ -843,7 +842,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 try {
                     await battleMsg.delete();
                     battleMsg = await threadChannel.send({ 
-                        content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`, 
+                        // content removed here
                         embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                         components: generateBattleRows() 
                     });
@@ -977,7 +976,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let restMsg;
         try {
             restMsg = await threadChannel.send({ 
-                content: `**🏕️ استراحة المحارب**`, 
+                // content removed here
                 embeds: [restEmbed], 
                 components: [restRow] 
             });
@@ -1081,7 +1080,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم... النجاة شبه مستحيلة!`)
                     .setColor(Colors.DarkRed)
                     .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
-                await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
+                await threadChannel.send({ embeds: [trapEmbed] }).catch(()=>{}); // content removed here
             } else {
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
 
