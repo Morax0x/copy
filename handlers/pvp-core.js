@@ -224,8 +224,6 @@ function applySkillEffect(battleState, attackerId, skill) {
     // 🛑 تصحيح: لا نخصم الضرر من المدافع هنا لأن المحرك (result.damage) قام بتحديث كائن defender بالفعل
     // نحن فقط نحدث حالة المهاجم (الشفاء، الضرر الذاتي)
     
-    // if (result.damage > 0) defender.hp -= result.damage; ❌ هذا كان الخطأ المزدوج!
-
     if (result.heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + result.heal);
     if (result.selfDamage > 0) attacker.hp -= result.selfDamage;
     if (result.shield > 0) attacker.effects.shield += result.shield;
@@ -280,21 +278,45 @@ function applySkillEffect(battleState, attackerId, skill) {
     return result.log;
 }
 
-// ✅ دالة الهجوم العادي الجديدة (تستخدم weapon-calculator.js)
+// ✅ دالة الهجوم العادي الجديدة (المعدلة)
 // يتم استدعاؤها عند ضغط زر "هجوم"
 function executeWeaponAttackAction(battleState, attackerId) {
     const attacker = battleState.players.get(attackerId);
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
     
-    // 🔥 حفظ حالة درع المدافع قبل الضربة
+    // 🔥 حفظ حالة درع المدافع وصحته قبل الضربة
     const defenderHadShield = defender.effects.shield > 0;
+    const defenderHpBefore = defender.hp;
 
     const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
     // استدعاء محرك الأسلحة
     const result = weaponCalculator.executeWeaponAttack(attacker, defender, isOwner);
     
+    // 🛑 تصحيح هام: إذا كان المحرك يعيد قيمة الضرر فقط ولا يخصمها، نقوم نحن بخصمها
+    // (نقارن HP قبل وبعد للتأكد مما إذا كان المحرك قد عدل البيانات أم لا)
+    if (defender.hp === defenderHpBefore && result.damage > 0) {
+        // المحرك لم يخصم الضرر، لذا سنقوم بذلك يدوياً هنا
+        let remainingDmg = result.damage;
+
+        // 1. امتصاص الدرع
+        if (defender.effects.shield > 0) {
+            if (defender.effects.shield >= remainingDmg) {
+                defender.effects.shield -= remainingDmg;
+                remainingDmg = 0;
+            } else {
+                remainingDmg -= defender.effects.shield;
+                defender.effects.shield = 0;
+            }
+        }
+
+        // 2. خصم الصحة
+        if (remainingDmg > 0) {
+            defender.hp -= remainingDmg;
+        }
+    }
+
     // 🔥🔥 فحص انكسار الدرع بعد الهجوم العادي 🔥🔥
     if (defenderHadShield && defender.effects.shield <= 0) {
         if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
@@ -306,12 +328,7 @@ function executeWeaponAttackAction(battleState, attackerId) {
 
 // دالة wrapper للحفاظ على التوافق إذا كان الكود القديم يستدعيها
 function calculateDamage(attacker, defender, multiplier = 1) {
-    // هذه الدالة لم تعد تستخدم للحساب المباشر داخل المهارات
-    // بل تستخدم فقط للهجوم العادي عبر الزر، لذا نوجهها للمحرك الجديد
-    const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
-    // بما أن المحرك يطبق الضرر، نحن نحتاج فقط للقيمة للعرض إذا لزم الأمر
-    // لكن الأفضل استخدام executeWeaponAttackAction في كود الزر
-    return 0; // لم يعد لها حاجة كحساب رقمي فقط
+    return 0; 
 }
 
 // =======================================================
