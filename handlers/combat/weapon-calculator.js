@@ -66,7 +66,7 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
     // 4. التحقق من مراوغة الخصم (Evasion) - مراوغة تامة 100%
     if (defender.effects && defender.effects.evasion > 0) {
         result.isMiss = true;
-        result.log = `👻 **${getName(defender)}** تفادى الهجوم تماماً (مراوغة)!`;
+        result.log = `👻 **${getName(defender)}** تفادى الهجوم تمامـاً (مراوغة)!`;
         return result;
     }
 
