@@ -4,7 +4,7 @@
 // ================================================================
 
 const path = require('path');
-// ✅ تصحيح المسار: الرجوع من handlers/combat إلى الجذر ثم الدخول لـ handlers/dungeon
+// ⚠️ تأكد أن هذا المسار يشير إلى ملف الثوابت الصحيح في مشروعك
 const { OWNER_ID } = require('../../dungeon/constants'); 
 
 /**
@@ -14,6 +14,7 @@ const { OWNER_ID } = require('../../dungeon/constants');
  */
 function getWeaponRawDamage(weaponConfig, level) {
     if (!weaponConfig || level < 1) return 15; // ضرر افتراضي (بدون سلاح)
+    // المعادلة: الأساس + (الزيادة * (المستوى - 1))
     return weaponConfig.base_damage + (weaponConfig.damage_increment * (level - 1));
 }
 
@@ -43,18 +44,9 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
 
     // 2. تطبيق البفات والدي-بفات (Buffs & Debuffs)
     let multiplier = 1.0;
-    
-    // دعم كلا الصيغتين (Array للدانجون و Object للـ PvP)
     if (attacker.effects) {
-        if (Array.isArray(attacker.effects)) {
-            const buff = attacker.effects.find(e => e.type === 'atk_buff');
-            const weaken = attacker.effects.find(e => e.type === 'weakness');
-            if (buff) multiplier += buff.val;
-            if (weaken) multiplier -= weaken.val;
-        } else {
-            if (attacker.effects.buff > 0) multiplier += attacker.effects.buff;      
-            if (attacker.effects.weaken > 0) multiplier -= attacker.effects.weaken; 
-        }
+        if (attacker.effects.buff > 0) multiplier += attacker.effects.buff;     // زيادة الهجوم
+        if (attacker.effects.weaken > 0) multiplier -= attacker.effects.weaken; // إضعاف الهجوم
     }
     
     // التأكد أن المضاعف لا يقل عن 10%
@@ -62,124 +54,78 @@ function executeWeaponAttack(attacker, defender, isOwner = false) {
 
     let finalDmg = Math.floor(baseDmg * multiplier);
 
-    // 3. التحقق من العمى (Blind)
-    let isBlind = false;
-    if (attacker.effects) {
-        if (Array.isArray(attacker.effects)) isBlind = attacker.effects.some(e => e.type === 'blind');
-        else isBlind = attacker.effects.blind > 0;
+    // 3. التحقق من العمى (Blind) - نسبة خطأ 50%
+    // ✅ (مهم جداً لميزة الروح الجديدة)
+    if (attacker.effects && attacker.effects.blind > 0) {
+        if (Math.random() < 0.5) {
+            result.isMiss = true;
+            result.log = `☁️ **${getName(attacker)}** أخطأ الهدف بسبب العمى!`;
+            return result;
+        }
     }
 
-    if (isBlind && Math.random() < 0.5) {
-        result.isMiss = true;
-        result.log = `☁️ **${getName(attacker)}** أخطأ الهدف بسبب العمى!`;
-        return result;
-    }
-
-    // 4. التحقق من مراوغة الخصم (Evasion)
-    let isEvasion = false;
-    if (defender.effects) {
-        if (Array.isArray(defender.effects)) isEvasion = defender.effects.some(e => e.type === 'evasion');
-        else isEvasion = defender.effects.evasion > 0;
-    }
-
-    if (isEvasion) {
+    // 4. التحقق من مراوغة الخصم (Evasion) - مراوغة تامة 100%
+    if (defender.effects && defender.effects.evasion > 0) {
         result.isMiss = true;
         result.log = `👻 **${getName(defender)}** تفادى الهجوم تماماً (مراوغة)!`;
         return result;
     }
 
     // 5. حساب الضربة الحرجة (Critical Hit)
+    // النسبة الأساسية 20% + أي بونص إضافي
     const critRate = 0.20 + (attacker.critRate || 0);
     if (Math.random() < critRate) {
         result.isCrit = true;
         finalDmg = Math.floor(finalDmg * 1.5); // الكريت يضرب 150%
     }
 
-    // مضاعف الأونر
+    // مضاعف الأونر (للتجربة والقوة)
     if (isOwner) finalDmg *= 10;
 
-    // تباين عشوائي بسيط
+    // تباين عشوائي بسيط في الضرر (±5%) لواقعية أكثر
     const variance = 0.95 + Math.random() * 0.1;
     finalDmg = Math.floor(finalDmg * variance);
 
-    // 6. تطبيق دفاع الخصم (Reduction)
-    let dmgReduce = 0;
-    if (defender.effects) {
-        if (Array.isArray(defender.effects)) {
-            const red = defender.effects.find(e => e.type === 'dmg_reduce');
-            if (red) dmgReduce = red.val;
-        } else {
-            dmgReduce = defender.effects.dmg_reduce || 0;
-        }
+    // 6. تطبيق دفاع الخصم (Reduction) - مثل مهارة القزم
+    if (defender.effects && defender.effects.dmg_reduce > 0) {
+        finalDmg = Math.floor(finalDmg * (1 - defender.effects.dmg_reduce));
     }
 
-    if (dmgReduce > 0) {
-        finalDmg = Math.floor(finalDmg * (1 - dmgReduce));
-    }
-
-    // 7. التعامل مع الدروع (Shields) - منطق محسّن
-    let currentShield = 0;
-    
-    // استخراج قيمة الدرع بدقة
-    if (defender.effects) {
-        if (Array.isArray(defender.effects)) {
-            const sh = defender.effects.find(e => e.type === 'shield' || e.type === 'titan');
-            if (sh) currentShield = sh.val;
-        } else {
-            currentShield = defender.effects.shield || 0;
-        }
-    }
-    // فحص احتياطي للجذر (بعض الوحوش)
-    if (currentShield === 0 && defender.shield > 0) currentShield = defender.shield;
-
-    // 🔥 المنطق الحاسم: إذا كان هناك درع، احسب الامتصاص. وإلا، فالامتصاص صفر.
-    if (currentShield > 0) {
-        if (currentShield >= finalDmg) {
+    // 7. التعامل مع الدروع (Shields)
+    if (defender.effects && defender.effects.shield > 0) {
+        if (defender.effects.shield >= finalDmg) {
             // الدرع يمتص الضربة بالكامل
+            defender.effects.shield -= finalDmg;
             result.blocked = finalDmg;
-            finalDmg = 0; 
+            finalDmg = 0;
         } else {
-            // الدرع يمتص جزءاً وينكسر
-            result.blocked = currentShield;
-            finalDmg -= currentShield;
+            // الدرع ينكسر ويمر باقي الضرر
+            result.blocked = defender.effects.shield;
+            finalDmg -= defender.effects.shield;
+            defender.effects.shield = 0;
         }
-    } else {
-        result.blocked = 0;
     }
 
     // 8. عكس الضرر (Reflect)
-    let reboundVal = 0;
-    if (defender.effects) {
-        if (Array.isArray(defender.effects)) {
-            const reb = defender.effects.find(e => e.type === 'rebound_active' || e.type === 'reflect');
-            if (reb) reboundVal = reb.val;
-        } else {
-            reboundVal = defender.effects.rebound_active || 0;
-        }
+    if (finalDmg > 0 && defender.effects && defender.effects.rebound_active > 0) {
+        result.reflected = Math.floor(finalDmg * defender.effects.rebound_active);
+        attacker.hp -= result.reflected;
     }
 
-    if (finalDmg > 0 && reboundVal > 0) {
-        result.reflected = Math.floor(finalDmg * reboundVal);
-        // ملاحظة: الخصم من المهاجم يتم في الملف الرئيسي
-    }
-
-    // 9. النتيجة النهائية
+    // 9. التطبيق النهائي
     result.damage = Math.max(0, finalDmg);
-    
-    // 🛑 تمت إزالة سطر defender.hp -= result.damage;
-    // لكي يقوم pvp-core.js بالتحكم الكامل وتفادي التكرار.
+    defender.hp -= result.damage;
 
+    // زيادة عداد الضرر الكلي (للإحصائيات)
     if (attacker.totalDamage !== undefined) attacker.totalDamage += result.damage;
 
     // 10. صياغة الرسالة
     let msg = `🗡️ **${getName(attacker)}** ${result.isCrit ? '**CRIT!**' : ''} سبب ${result.damage} ضرر.`;
     
-    if (result.blocked > 0) {
-        if (result.damage === 0) {
-            msg = `🛡️ **${getName(attacker)}** ضرب الدرع! (${result.blocked} ممتص).`;
-        } else {
-            msg += ` (الدرع امتص ${result.blocked})`;
-        }
+    if (result.blocked > 0 && result.damage === 0) {
+        msg = `🛡️ **${getName(attacker)}** ضرب الدرع! (${result.blocked} ممتص).`;
+    } else if (result.blocked > 0) {
+        msg += ` (الدرع امتص ${result.blocked})`;
     }
 
     if (result.reflected > 0) {
