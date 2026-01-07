@@ -1,7 +1,8 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
 const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
-const { manageTickets } = require('./dungeon/utils.js');
+// ✅ استدعاء دالة الحد اليومي الجديدة
+const { manageTickets, getSaudiDateIso } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
@@ -78,7 +79,8 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'),
-        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️')
+        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️'),
+        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Secondary).setEmoji('✖️')
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
@@ -101,16 +103,22 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                     
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط (لفل 5+ ومورا 100).", flags: [MessageFlags.Ephemeral] });
                     
-                    // 🔥 تعديل 1: فحص التذاكر فقط (بدون خصم) 🔥
-                    const ticketResult = manageTickets(i.user.id, guildId, sql, 'check');
+                    // 🔥 فحص الحد اليومي (Check Daily Limit) 🔥
+                    const limitCheck = manageTickets(i.user.id, guildId, sql, 'check');
                     
-                    if (ticketResult.tickets <= 0) {
+                    if (limitCheck.tickets <= 0) {
+                        const now = new Date();
+                        const nextReset = new Date(now);
+                        nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
+                        if (now > nextReset) nextReset.setDate(nextReset.getDate() + 1);
+                        
+                        const timestamp = Math.floor(nextReset.getTime() / 1000);
+
                         return i.reply({ 
-                            content: `🚫 **لا تملك تذاكر كافية!**\nتتجدد التذاكر الساعة 12:00 ص بتوقيت السعودية.\nرصيدك: **0/${ticketResult.max}**`, 
+                            content: `🚫 **استنفذت محاولاتك اليومية!**\nلديك **0/${limitCheck.max}** محاولة.\nتتجدد المحاولات يومياً الساعة 12:00 ص بتوقيت السعودية.\n⏳ **الوقت المتبقي:** <t:${timestamp}:R>`, 
                             flags: [MessageFlags.Ephemeral] 
                         });
                     }
-                    // إذا عنده تذكرة، نسمح له يكمل لاختيار التخصص (الخصم لاحقاً عند البدء)
                 }
 
                 const takenClasses = [];
@@ -129,25 +137,41 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 const sMsg = await i.reply({ content: "🛡️ اختر تخصصك:", components: [sRow], flags: [MessageFlags.Ephemeral], fetchReply: true });
 
                 const sel = await sMsg.awaitMessageComponent({ filter: x => x.user.id === i.user.id, time: 20000, componentType: ComponentType.StringSelect }).catch(() => null);
+                
                 if (sel) {
                     const chosen = sel.values[0];
                     const dCheck = Array.from(partyClasses.entries()).filter(x => x[0] !== i.user.id).map(x => x[1]);
-                    if (dCheck.includes(chosen)) return sel.update({ content: "🚫 سبقك بها غيرك.", components: [] });
+                    
+                    if (sel.replied || sel.deferred) return; 
 
-                    await sel.deferUpdate();
+                    if (dCheck.includes(chosen)) {
+                        return sel.update({ content: "🚫 سبقك بها غيرك.", components: [] }).catch(()=>{});
+                    }
+
+                    await sel.deferUpdate().catch(()=>{});
+                    
                     partyClasses.set(i.user.id, chosen);
                     if (!party.includes(i.user.id)) party.push(i.user.id);
                      
-                    await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] });
-                    await msg.edit({ embeds: [updateEmbed()] });
+                    await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] }).catch(()=>{});
+                    await msg.edit({ embeds: [updateEmbed()] }).catch(()=>{});
                 } else {
                     await i.editReply({ content: "⏰ انتهى الوقت.", components: [] }).catch(()=>{});
                 }
 
             } else if (i.customId === 'start') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
-                await i.deferUpdate();
+                
+                // ✅ حماية التحديث
+                if (!i.replied && !i.deferred) await i.deferUpdate();
                 collector.stop('start');
+
+            } else if (i.customId === 'cancel') {
+                if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
+                
+                // ✅ حماية التحديث
+                if (!i.replied && !i.deferred) await i.deferUpdate();
+                collector.stop('user_cancel');
             }
         } catch (e) { console.error(e); }
     });
@@ -156,22 +180,20 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
             
-            // 🔥 تعديل 2: تصفية الفريق وخصم التذاكر الآن (عند الانطلاق) 🔥
+            // 🔥 خصم المحاولات (Entries) والمورا الآن (عند الانطلاق) 🔥
             let validParty = [];
             let kickedMembers = [];
 
             for (const id of party) {
-                // القائد والأونر لا يخصم منهم تذاكر (حسب النظام: القائد يدفع مورا وكولداون)
                 if (id === host.id || id === OWNER_ID) {
+                    // القائد والأونر لا يخصم منهم محاولات دخول
                     validParty.push(id);
-                    
-                    // خصم المورا وتحديث الكولداون (للهوست)
                     sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                     if (id === host.id && id !== OWNER_ID) {
                         sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
                     }
                 } else {
-                    // الأعضاء: محاولة خصم التذكرة الآن
+                    // الأعضاء: خصم محاولة يومية
                     const consumeResult = manageTickets(id, guildId, sql, 'consume');
                     
                     if (consumeResult.success) {
@@ -184,19 +206,16 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
                         else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
                     } else {
-                        // فشل الخصم (صرف التذكرة في مكان آخر مثلاً)
+                        // فشل الخصم (وصل للحد الأقصى أثناء الانتظار أو خطأ ما)
                         kickedMembers.push(id);
                     }
                 }
             }
 
-            // تحديث قائمة الكلاسات بناءً على من تبقى
-            for (const kickedId of kickedMembers) {
-                partyClasses.delete(kickedId);
-            }
+            for (const kickedId of kickedMembers) { partyClasses.delete(kickedId); }
 
             if (kickedMembers.length > 0) {
-                msg.channel.send(`⚠️ **تنبيه:** تم استبعاد ${kickedMembers.map(id => `<@${id}>`).join(', ')} لعدم توفر تذاكر لحظة البدء!`).catch(()=>{});
+                msg.channel.send(`⚠️ **تنبيه:** تم استبعاد ${kickedMembers.map(id => `<@${id}>`).join(', ')} لانتهاء محاولاتهم اليومية!`).catch(()=>{});
             }
 
             try {
@@ -212,7 +231,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 await thread.send(`🔔 **بدأت المعركة!** ${validParty.map(id=>`<@${id}>`).join(' ')}`);
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // تشغيل المحرك مع الفريق المعتمد (validParty)
                 await runDungeon(thread, msg.channel, validParty, theme, sql, host.id, partyClasses, activeDungeonRequests);
 
             } catch (e) {
@@ -221,9 +239,25 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
         } else {
-            // إلغاء الدانجون - التذاكر لم تُخصم أصلاً
             activeDungeonRequests.delete(host.id);
-            if (msg.editable) msg.edit({ content: "❌ تم الإلغاء (انتهى الوقت أو ألغى القائد).", components: [], embeds: [] });
+            if (msg.editable) {
+                try {
+                    const fetchedMsg = await msg.fetch().catch(() => null);
+                    if (fetchedMsg && fetchedMsg.embeds.length > 0) {
+                        const oldEmbed = fetchedMsg.embeds[0];
+                        const cancelledEmbed = EmbedBuilder.from(oldEmbed)
+                            .setTitle(`🚫 تم إلغاء الغارة: ${theme.name}`)
+                            .setColor('Red') 
+                            .setFooter({ text: reason === 'user_cancel' ? "قام القائد بإلغاء الغارة" : "انتهى وقت الانتظار" });
+                        
+                        await msg.edit({ content: '', embeds: [cancelledEmbed], components: [] });
+                    } else {
+                        await msg.edit({ content: "❌ تم الإلغاء.", components: [] });
+                    }
+                } catch (err) {
+                    console.log("Error updating cancelled embed:", err);
+                }
+            }
         }
     });
 }
