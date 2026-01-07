@@ -217,8 +217,9 @@ module.exports = {
         const farm = sql.prepare("SELECT animalID, COUNT(*) as count FROM user_farm WHERE guildID = ? AND userID = ? GROUP BY animalID").all(guildID, userID);
         const achievements = sql.prepare("SELECT achievementID FROM user_achievements WHERE guildID = ? AND userID = ?").all(guildID, userID);
 
-        // جلب عدد التذاكر
-        const tickets = userData.dungeon_tickets || 0;
+        // 🔥 جلب عدد التذاكر من الجدول الجديد
+        const dungeonStats = sql.prepare("SELECT tickets FROM dungeon_stats WHERE guildID = ? AND userID = ?").get(guildID, userID);
+        const tickets = dungeonStats ? dungeonStats.tickets : 0;
 
         embed.setTitle(`📋 تقرير فحص: ${targetUser.username}`)
             .setThumbnail(targetUser.displayAvatarURL())
@@ -797,7 +798,7 @@ module.exports = {
         await message.reply({ embeds: [embed] });
     },
 
-    // 🔥 دالة إعطاء التذاكر 🔥
+    // 🔥 دالة إعطاء التذاكر (محدثة للجدول الجديد) 🔥
     async giveTicket(message, client, sql, targetUser, args, embed) {
         const amount = parseInt(args[2]);
         if (isNaN(amount) || amount <= 0) return message.reply("❌ رقم غير صالح.");
@@ -805,15 +806,19 @@ module.exports = {
         const guildID = message.guild.id;
         const userID = targetUser.id;
 
-        // التأكد من وجود سجل للمستخدم
-        let userData = client.getLevel.get(userID, guildID);
-        if (!userData) {
-            userData = { ...client.defaultData, user: userID, guild: guildID };
-            client.setLevel.run(userData);
-        }
+        // 1. التحقق من وجود سجل في الجدول الجديد
+        const userStats = sql.prepare("SELECT * FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
 
-        // تحديث التذاكر في قاعدة البيانات
-        sql.prepare("UPDATE levels SET dungeon_tickets = dungeon_tickets + ? WHERE user = ? AND guild = ?").run(amount, userID, guildID);
+        if (userStats) {
+            // إذا كان السجل موجوداً، نقوم بتحديث العدد
+            sql.prepare("UPDATE dungeon_stats SET tickets = tickets + ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
+        } else {
+            // إذا لم يكن موجوداً، ننشئ سجلاً جديداً بعدد المحاولات المضافة
+            // نستخدم تاريخ اليوم كقيمة افتراضية لآخر ريست
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+            sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)")
+               .run(guildID, userID, amount, todayStr);
+        }
 
         embed.setDescription(`✅ تم إضافة **${amount}** 🎟️ تذاكر دانجون لـ ${targetUser}.`);
         await message.reply({ embeds: [embed] });
