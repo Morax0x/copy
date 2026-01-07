@@ -35,7 +35,7 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 const ARROW_GAME_OPTIONS = [
     { id: 'up', emoji: '⬆️', label: 'فوق' }, 
     { id: 'down', emoji: '⬇️', label: 'تحت' }, 
-    { id: 'left', emoji: '⬅️', label: 'يسار' },
+    { id: 'left', emoji: '⬅️', label: 'يسار' }, 
     { id: 'right', emoji: '➡️', label: 'يمين' }
 ];
 
@@ -168,10 +168,10 @@ module.exports = {
         setTimeout(async () => {
             // 🔥 إعداد لعبة الأسهم (Arrows) 🔥
             
-            // تحديد الصعوبة (عدد الأسهم)
-            let requiredSequenceLength = 2; // مستوى 1 (سهمين)
-            if (currentRod.level === 2) requiredSequenceLength = 3;
-            if (currentRod.level >= 3) requiredSequenceLength = 4;
+            // 🔥🔥🔥 تعديل عدد الأزرار (Sequence Length) 🔥🔥🔥
+            let requiredSequenceLength = 1; // لفل 1 = زر واحد
+            if (currentRod.level === 2) requiredSequenceLength = 2; // لفل 2 = زرين
+            if (currentRod.level >= 3) requiredSequenceLength = 3; // لفل 3 وفوق = 3 أزرار
 
             // إنشاء تسلسل عشوائي من الأسهم
             const sequence = [];
@@ -196,7 +196,12 @@ module.exports = {
                 .setColor(Colors.Orange);
 
             try {
-                const updatePayload = { embeds: [biteEmbed], components: [gameRow] };
+                // 🔥🔥🔥 تعديل: إضافة الأسهم في النص فوق الايمبد 🔥🔥🔥
+                const updatePayload = { 
+                    content: `**${sequenceEmojis}**`, 
+                    embeds: [biteEmbed], 
+                    components: [gameRow] 
+                };
                 if (isSlash) await interactionOrMessage.editReply(updatePayload);
                 else await msg.edit(updatePayload);
             } catch (error) {
@@ -204,15 +209,16 @@ module.exports = {
                 return; 
             }
 
-            // 🔥🔥🔥 تحديد وقت الاستجابة بناءً على مستوى السنارة 🔥🔥🔥
-            let reactionTime = 10000; // الافتراضي للمستويات العالية (5+)
+            // 🔥🔥🔥 تعديل وقت الاستجابة (Reaction Time) 🔥🔥🔥
+            let reactionTime = 13000; // الافتراضي للمستويات العالية (5+)
             
-            if (currentRod.level <= 2) {
-                reactionTime = 4000;      // مستوى 1-2: 4 ثواني
-            } else if (currentRod.level <= 4) {
-                reactionTime = 7000;      // مستوى 3-4: 7 ثواني
+            if (currentRod.level === 1) {
+                reactionTime = 5000;      // مستوى 1: 5 ثواني
+            } else if (currentRod.level === 2) {
+                reactionTime = 8000;      // مستوى 2: 8 ثواني
+            } else if (currentRod.level >= 3 && currentRod.level <= 4) {
+                reactionTime = 10000;     // مستوى 3-4: 10 ثواني
             }
-            // المستويات 5 فما فوق تأخذ 10000 (10 ثواني)
 
             const pullCollector = msg.createMessageComponentCollector({ 
                 filter: j => j.user.id === user.id && j.customId.startsWith('fish_click_'), 
@@ -246,7 +252,8 @@ module.exports = {
                     sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
                     activeFishingSessions.delete(user.id);
                     
-                    await j.editReply({ embeds: [failEmbed], components: [] });
+                    // إخفاء النص من فوق عند الفشل
+                    await j.editReply({ content: '', embeds: [failEmbed], components: [] });
                     return;
                 }
 
@@ -269,6 +276,8 @@ module.exports = {
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
+                            // إزالة النص عند ظهور الوحش
+                            await j.editReply({ content: '' }); 
                             await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
                             return; 
                         }
@@ -330,7 +339,8 @@ module.exports = {
                         .setFooter({ text: `السنارة: ${currentRod.name}` });
 
                     activeFishingSessions.delete(user.id);
-                    await j.editReply({ embeds: [resultEmbed], components: [] });
+                    // إزالة النص عند الفوز وعرض النتيجة
+                    await j.editReply({ content: '', embeds: [resultEmbed], components: [] });
                 }
             });
 
@@ -344,7 +354,8 @@ module.exports = {
                         
                         sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
                         
-                        const failPayload = { embeds: [failEmbed], components: [] };
+                        // إزالة النص عند انتهاء الوقت
+                        const failPayload = { content: '', embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
                         else await msg.edit(failPayload).catch(() => {});
                     }
