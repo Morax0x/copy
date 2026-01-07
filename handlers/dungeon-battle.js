@@ -509,8 +509,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         // محاولة تعديل الرسالة الأخيرة في اللوج لتعكس الضرر الحقيقي
                                         if (log.length > 0) {
                                             const lastLogIdx = log.length - 1;
-                                            // استبدال أي رقم يمثل الضرر بالرقم الجديد
-                                            // نبحث عن صيغ مثل (5000 ضرر) أو similar
                                             log[lastLogIdx] = log[lastLogIdx] + ` (مختوم: ${cappedDmg})`; 
                                         }
                                     }
@@ -1058,8 +1056,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
+                // 🔥🔥🔥 تعديل الحد الأقصى للقفز ليكون 90 بدلاً من 95 لضمان عدم الوصول للطابق 100 فجأة 🔥🔥🔥
                 const minTarget = floor + 2;
-                const maxTarget = 95;
+                const maxTarget = 90; // تعديل لضمان قتال الطوابق 91-100
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
                 floor = targetFloor - 1; 
 
@@ -1119,10 +1118,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             .setTimestamp();
 
         const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
-        await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
+
+        // 🔥🔥🔥 الحماية من خطأ Unknown Channel 🔥🔥🔥
+        try {
+            await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
+        } catch (err) {
+            console.log("⚠️ تعذر إرسال رسالة الفوز (الثريد محذوف).");
+        }
 
         await handleLeaderRetreat(alivePlayers, sql, guild.id);
         
+        // إرسال التقرير للقناة الرئيسية حتى لو الثريد محذوف
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
     }
 
