@@ -82,7 +82,7 @@ module.exports = {
         const chatEmbed = new EmbedBuilder()
             .setDescription('✥ تـم النفـي من الامبراطـوريـة')
             .setColor('Random')
-            .setImage('https://tenor.com/view/lick-gif-9232876');
+            .setImage('https://i.postimg.cc/V62NcMxz/lick-(1).gif');
 
         message.reply({ embeds: [chatEmbed], allowedMentions: { repliedUser: false } });
 
