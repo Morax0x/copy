@@ -1,8 +1,7 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags, Colors } = require('discord.js');
 const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
-// ✅ استدعاء دالة الحد اليومي الجديدة
-const { manageTickets, getSaudiDateIso } = require('./dungeon/utils.js');
+const { manageTickets } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
 const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
@@ -247,7 +246,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         const oldEmbed = fetchedMsg.embeds[0];
                         const cancelledEmbed = EmbedBuilder.from(oldEmbed)
                             .setTitle(`🚫 تم إلغاء الغارة: ${theme.name}`)
-                            .setColor('Red') 
+                            .setColor(Colors.Red) 
                             .setFooter({ text: reason === 'user_cancel' ? "قام القائد بإلغاء الغارة" : "انتهى وقت الانتظار" });
                         
                         await msg.edit({ content: '', embeds: [cancelledEmbed], components: [] });
