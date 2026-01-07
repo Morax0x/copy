@@ -9,8 +9,7 @@ const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 const skillCalculator = require('./combat/skill-calculator');
 const weaponCalculator = require('./combat/weapon-calculator');
 
-const { OWNER_ID } = require('../dungeon/constants'); // تأكد من مسار الثوابت
-
+const { OWNER_ID } = require('./dungeon/constants');
 // --- صور الفوز والخسارة ---
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
