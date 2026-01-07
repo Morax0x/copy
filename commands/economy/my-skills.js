@@ -100,11 +100,6 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            // إضافة content لحل مشكلة الآيفون
-            if (typeof payload === 'object' && !payload.content) {
-                payload.content = `📜 **مهارات وعتاد ${cleanDisplayName(targetMember.displayName)}**`;
-            }
-
             if (isSlash) {
                 if (interaction.replied || interaction.deferred) return interaction.editReply(payload);
                 return interaction.reply(payload);
@@ -238,9 +233,7 @@ module.exports = {
 
                 const { embed: newEmbed } = buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsList, potionsList, totalSpent, currentPage);
                 
-                // إضافة content عند التحديث أيضاً
                 await i.update({ 
-                    content: `📜 **مهارات وعتاد ${cleanDisplayName(targetMember.displayName)}**`,
                     embeds: [newEmbed] 
                 });
             });
