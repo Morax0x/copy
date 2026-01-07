@@ -31,13 +31,12 @@ const monstersConfig = fishingConfig.monsters || [];
 const OWNER_ID = "1145327691772481577";
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-const COLOR_GAME_OPTIONS = [
-    { id: 'red', emoji: '🔴', label: 'أحمر' }, 
-    { id: 'blue', emoji: '🔵', label: 'أزرق' }, 
-    { id: 'green', emoji: '🟢', label: 'أخضر' },
-    { id: 'yellow', emoji: '🟡', label: 'أصفر' }, 
-    { id: 'purple', emoji: '🟣', label: 'بفسجي' }, 
-    { id: 'white', emoji: '⚪', label: 'أبيض' }
+// 🔥 خيارات الأسهم (ثابتة)
+const ARROW_GAME_OPTIONS = [
+    { id: 'up', emoji: '⬆️', label: 'فوق' }, 
+    { id: 'down', emoji: '⬇️', label: 'تحت' }, 
+    { id: 'left', emoji: '⬅️', label: 'يسار' },
+    { id: 'right', emoji: '➡️', label: 'يمين' }
 ];
 
 const FISHING_GIFS = [
@@ -50,14 +49,6 @@ const FISHING_GIFS = [
 
 // 🔥 Set لتخزين اللاعبين النشطين (في الذاكرة)
 const activeFishingSessions = new Set();
-
-function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-}
 
 module.exports = {
     data: new SlashCommandBuilder().setName('صيد').setDescription('ابـدأ رحـلـة صيد'),
@@ -145,7 +136,6 @@ module.exports = {
         const randomGif = FISHING_GIFS[Math.floor(Math.random() * FISHING_GIFS.length)];
         let desc = `**العدة:** 🎣 ${currentRod.name} | 🚤 ${currentBoat.name}\n🌊 **الموقع:** ${currentLocation.name}`;
         
-        // عرض الطعم في الوصف إذا تم استخدامه
         if (usedBaitName) {
             desc += `\n🪱 **الطعم:** ${usedBaitName}`;
         } else {
@@ -158,16 +148,13 @@ module.exports = {
             .setColor(Colors.Blue)
             .setImage(randomGif);
 
-        // زر وهمي للجمالية فقط (غير قابل للضغط)
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('pull_rod_placeholder').setLabel('...').setStyle(ButtonStyle.Secondary).setDisabled(true)
         );
 
         let msg;
         try {
-            // 🔥 إضافة content لحل مشكلة الآيفون 🔥
             msg = await reply({ 
-                content: `**🎣 انطلق ${user.username} للصيد!**`, 
                 embeds: [waitingEmbed], 
                 components: [disabledRow] 
             });
@@ -176,44 +163,40 @@ module.exports = {
             return;
         }
 
-        const waitTime = Math.floor(Math.random() * 3000) + 3500; // 3.5s - 6.5s
+        const waitTime = Math.floor(Math.random() * 3000) + 3500; 
 
         setTimeout(async () => {
-            // إعداد اللعبة في الذاكرة
-            let requiredSequenceLength = 1;
-            if (currentRod.level === 2) requiredSequenceLength = 2;
-            if (currentRod.level >= 3) requiredSequenceLength = 3;
+            // 🔥 إعداد لعبة الأسهم (Arrows) 🔥
+            
+            // تحديد الصعوبة (عدد الأسهم)
+            let requiredSequenceLength = 2; // مستوى 1 (سهمين)
+            if (currentRod.level === 2) requiredSequenceLength = 3;
+            if (currentRod.level >= 3) requiredSequenceLength = 4;
 
+            // إنشاء تسلسل عشوائي من الأسهم
             const sequence = [];
             for(let k=0; k<requiredSequenceLength; k++) {
-                sequence.push(COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)]);
+                sequence.push(ARROW_GAME_OPTIONS[Math.floor(Math.random() * ARROW_GAME_OPTIONS.length)]);
             }
 
-            let gameButtonsData = [...new Set(sequence)]; 
-            while(gameButtonsData.length < 5) {
-                const randomBtn = COLOR_GAME_OPTIONS[Math.floor(Math.random() * COLOR_GAME_OPTIONS.length)];
-                if(!gameButtonsData.find(b => b.id === randomBtn.id)) gameButtonsData.push(randomBtn);
-            }
-            gameButtonsData = shuffleArray(gameButtonsData);
-
+            // إنشاء صف الأزرار (ثابت: فوق، تحت، يسار، يمين)
             const gameRow = new ActionRowBuilder();
-            gameButtonsData.forEach(btn => {
+            ARROW_GAME_OPTIONS.forEach(btn => {
                 gameRow.addComponents(
                     new ButtonBuilder().setCustomId(`fish_click_${btn.id}`).setEmoji(btn.emoji).setStyle(ButtonStyle.Secondary)
                 );
             });
 
-            const sequenceEmojis = sequence.map(s => s.emoji).join(' ➡️ ');
+            // عرض التسلسل المطلوب
+            const sequenceEmojis = sequence.map(s => s.emoji).join('  ');
             
             const biteEmbed = new EmbedBuilder()
-                .setTitle("🎣 الـسنـارة تهـتز اسحـب الان !")
-                .setDescription(`**اضغـط الأزرار بالترتيـب:**\n# ${sequenceEmojis}`)
-                .setColor(Math.floor(Math.random() * 0xFFFFFF));
+                .setTitle("🎣 السنارة تسحب بقوة!")
+                .setDescription(`**وازن السنارة واضغط الأسهم بالترتيب:**\n# ${sequenceEmojis}`)
+                .setColor(Colors.Orange);
 
-            // تعديل الرسالة الأصلية لتبديل الواجهة
             try {
-                // 🔥 إضافة content عند التعديل 🔥
-                const updatePayload = { content: `**🎣 الـسنـارة تهـتز!**`, embeds: [biteEmbed], components: [gameRow] };
+                const updatePayload = { embeds: [biteEmbed], components: [gameRow] };
                 if (isSlash) await interactionOrMessage.editReply(updatePayload);
                 else await msg.edit(updatePayload);
             } catch (error) {
@@ -221,7 +204,15 @@ module.exports = {
                 return; 
             }
 
-            const reactionTime = requiredSequenceLength > 1 ? 12000 : 8000;
+            // 🔥🔥🔥 تحديد وقت الاستجابة بناءً على مستوى السنارة 🔥🔥🔥
+            let reactionTime = 10000; // الافتراضي للمستويات العالية (5+)
+            
+            if (currentRod.level <= 2) {
+                reactionTime = 4000;      // مستوى 1-2: 4 ثواني
+            } else if (currentRod.level <= 4) {
+                reactionTime = 7000;      // مستوى 3-4: 7 ثواني
+            }
+            // المستويات 5 فما فوق تأخذ 10000 (10 ثواني)
 
             const pullCollector = msg.createMessageComponentCollector({ 
                 filter: j => j.user.id === user.id && j.customId.startsWith('fish_click_'), 
@@ -233,31 +224,29 @@ module.exports = {
             let failed = false;
 
             pullCollector.on('collect', async j => {
-                // 🔥 استجابة فورية للضغط 🔥
                 await j.deferUpdate();
                 
                 if (failed) return; 
 
-                const clickedColorId = j.customId.replace('fish_click_', '');
-                const expectedColor = sequence[currentStep];
+                const clickedBtnId = j.customId.replace('fish_click_', '');
+                const expectedBtn = sequence[currentStep];
 
-                if (clickedColorId !== expectedColor.id) {
+                if (clickedBtnId !== expectedBtn.id) {
                     failed = true;
-                    pullCollector.stop('wrong_color');
+                    pullCollector.stop('wrong_input');
                     
-                    const clickedButtonObj = COLOR_GAME_OPTIONS.find(c => c.id === clickedColorId);
+                    const clickedButtonObj = ARROW_GAME_OPTIONS.find(c => c.id === clickedBtnId);
                     const wrongEmoji = clickedButtonObj ? clickedButtonObj.emoji : '❓';
                     
                     const failEmbed = new EmbedBuilder()
                         .setTitle("❌ انقطع الخيط!")
-                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedColor.emoji}\nحاول التركيز أكثر!`)
+                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
                         .setColor(Colors.Red);
                     
-                    // تحديث الكولداون (خفيف)
                     sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
                     activeFishingSessions.delete(user.id);
-                    // 🔥 إضافة content عند التعديل 🔥
-                    await j.editReply({ content: `**❌ فشل الصيد!**`, embeds: [failEmbed], components: [] });
+                    
+                    await j.editReply({ embeds: [failEmbed], components: [] });
                     return;
                 }
 
@@ -266,9 +255,7 @@ module.exports = {
                 if (currentStep === requiredSequenceLength) {
                     pullCollector.stop('success');
                     
-                    // --- منطق الفوز (يتم تنفيذه فقط في النهاية) ---
-                    
-                    // وحوش؟
+                    // --- منطق الفوز ---
                     const isOwner = user.id === OWNER_ID;
                     const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
                     const monsterTriggered = Math.random() < monsterChance;
@@ -282,13 +269,11 @@ module.exports = {
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
-                            // 🔥 تأكد أن دالة startPveBattle تدعم إضافة Content للآيفون، أو أضف رسالة هنا قبلها
                             await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
                             return; 
                         }
                     }
 
-                    // صيد السمك
                     const totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
                     const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
                     let caughtFish = [];
@@ -296,7 +281,6 @@ module.exports = {
                     const allowedRarities = currentLocation.fish_types;
                     const maxRarity = currentRod.max_rarity || 2;
 
-                    // Transaction لضمان سرعة قاعدة البيانات
                     const transaction = sql.transaction(() => {
                         const addFishStmt = sql.prepare(`INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?`);
                         
@@ -321,13 +305,11 @@ module.exports = {
                             }
                         }
                         
-                        // تحديث المورا والكولداون
                         sql.prepare("UPDATE levels SET mora = mora + ?, lastFish = ? WHERE user = ? AND guild = ?").run(totalValue, Date.now(), user.id, guild.id);
                     });
                     
-                    transaction(); // تنفيذ الكل دفعة واحدة
+                    transaction(); 
 
-                    // عرض النتائج
                     const summary = {};
                     caughtFish.forEach(f => {
                         summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
@@ -348,22 +330,21 @@ module.exports = {
                         .setFooter({ text: `السنارة: ${currentRod.name}` });
 
                     activeFishingSessions.delete(user.id);
-                    // 🔥 إضافة content عند التعديل 🔥
-                    await j.editReply({ content: `✅ **صيد موفق!**`, embeds: [resultEmbed], components: [] });
+                    await j.editReply({ embeds: [resultEmbed], components: [] });
                 }
             });
 
             pullCollector.on('end', async (collected, reason) => {
                 try {
-                    if (reason !== 'success' && reason !== 'wrong_color') {
+                    if (reason !== 'success' && reason !== 'wrong_input') {
                         const failEmbed = new EmbedBuilder()
                             .setTitle("💨 هربت السمكة!")
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
                         sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
-                        // نستخدم msg مباشرة لأن collector انتهى أو لم يبدأ
-                        const failPayload = { content: `❌ **فشلت المحاولة!**`, embeds: [failEmbed], components: [] };
+                        
+                        const failPayload = { embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
                         else await msg.edit(failPayload).catch(() => {});
                     }
