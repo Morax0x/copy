@@ -13,7 +13,7 @@ const MIN_ROB_AMOUNT = 100;
 const MIN_REQUIRED_CASH = 100; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 
-const activeGames = new Set();
+// ❌ تم حذف activeGames للسماح بعدد لا نهائي من السرقات في نفس القناة
 
 // خريطة لتخزين تاريخ آخر عفو (YYYY-MM-DD)
 const robberyPardons = new Map(); 
@@ -25,18 +25,10 @@ function getKSADateString() {
 
 function getNextMidnightTimestamp() {
     const now = new Date();
-    // تحويل الوقت الحالي لتوقيت السعودية
     const ksaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-    
-    // إنشاء كائن لوقت منتصف الليل القادم
     const nextMidnight = new Date(ksaTime);
     nextMidnight.setHours(24, 0, 0, 0);
-    
-    // حساب الفرق بالمللي ثانية
-    const timeDifference = nextMidnight.getTime() - ksaTime.getTime();
-    
-    // إرجاع توقيت يونكس للديسكورد (الوقت الحالي + الفرق)
-    return Math.floor((Date.now() + timeDifference) / 1000);
+    return Math.floor((Date.now() + (nextMidnight.getTime() - ksaTime.getTime())) / 1000);
 }
 
 function formatTime(ms) {
@@ -50,9 +42,7 @@ function formatTime(ms) {
     const mm = String(minutes).padStart(2, '0');
     const ss = String(seconds).padStart(2, '0');
 
-    if (hours > 0) {
-        return `${hh}:${mm}:${ss}`;
-    }
+    if (hours > 0) return `${hh}:${mm}:${ss}`;
     return `${mm}:${ss}`;
 }
 
@@ -111,8 +101,6 @@ module.exports = {
             victim = message.mentions.members.first();
         }
 
-        const channel = interactionOrMessage.channel;
-
         const reply = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
             if (isSlash) return interaction.editReply(payload);
@@ -121,9 +109,7 @@ module.exports = {
 
         const sql = client.sql;
 
-        if (activeGames.has(channel.id)) {
-            return reply("هناك عملية سرقة نشطة بالفعل في هذه القناة!");
-        }
+        // ❌ تم إزالة شرط activeGames هنا
 
         if (!victim) {
             return reply("الاستخدام: /سرقة <@user> أو -rob <@user>");
@@ -199,7 +185,7 @@ module.exports = {
         }
 
         robberData.lastRob = now;
-        activeGames.add(channel.id);
+        // ❌ تم إزالة إضافة القناة لـ activeGames
 
         // =================================================================
         // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
@@ -222,19 +208,16 @@ module.exports = {
                 );
             }
 
-            // تقسيم الأزرار على 3 صفوف
             rows.push(new ActionRowBuilder().addComponents(buttons.slice(0, 3)));
             rows.push(new ActionRowBuilder().addComponents(buttons.slice(3, 6)));
             rows.push(new ActionRowBuilder().addComponents(buttons.slice(6, 9)));
 
-            // 🔥🔥 التعديل: 2 أبواب صحيحة موزعة عشوائياً 🔥🔥
             const allIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-            // خلط المصفوفة
             for (let i = allIndices.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [allIndices[i], allIndices[j]] = [allIndices[j], allIndices[i]];
             }
-            const correctIndices = allIndices.slice(0, 2); // نأخذ أول رقمين كأبواب صحيحة
+            const correctIndices = allIndices.slice(0, 2); 
 
             const msg = await reply({ embeds: [embed], components: rows });
 
@@ -272,24 +255,21 @@ module.exports = {
                     await i.update({ embeds: [winEmbed], components: [] });
 
                 } else {
-                    // ❌ فشل السرقة (نظام العفو الجديد مع التوقيت)
+                    // ❌ فشل السرقة
+                    const todayDate = getKSADateString(); 
+                    const lastPardonDate = robberyPardons.get(robber.id); 
                     
-                    const todayDate = getKSADateString(); // التاريخ الحالي بتوقيت السعودية
-                    const lastPardonDate = robberyPardons.get(robber.id); // تاريخ آخر عفو
-                    
-                    const canBePardoned = lastPardonDate !== todayDate; // هل العفو متاح اليوم؟
+                    const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
-                        // 🌟 العفو الإمبراطوري (مرة يومياً حتى منتصف الليل)
-                        robberData.mora += 100; // إعطاء هدية
-                        robberyPardons.set(robber.id, todayDate); // تسجيل أن العفو استُخدم اليوم
+                        robberData.mora += 100;
+                        robberyPardons.set(robber.id, todayDate);
 
-                        // حساب وقت العداد (منتصف الليل بتوقيت السعودية)
                         const nextMidnightTimestamp = getNextMidnightTimestamp();
 
                         const pardonEmbed = new EmbedBuilder()
                             .setTitle('❖ مـحاولـة سـطـو فـاشـلـة')
-                            .setColor('#FFD700') // ذهبي
+                            .setColor('#FFD700')
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
                             .setDescription(
                                 `✶ امسك بك الحراس وانت تحاول السطو على القعلـة ولكن عفا عنك الامبراطـور واعطـاك 100 ${EMOJI_MORA}\n\n` +
@@ -299,7 +279,6 @@ module.exports = {
                         await i.update({ embeds: [pardonEmbed], components: [] });
 
                     } else {
-                        // 💀 العقاب العادي
                         deductFromRobber(robberData, amountToSteal);
                         victimData.mora += amountToSteal;
 
@@ -329,10 +308,10 @@ module.exports = {
                         .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
                     msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
                 }
-                activeGames.delete(channel.id);
+                // ❌ تم إزالة حذف activeGames
             });
 
-            return; // إنهاء الدالة هنا لحالة الأونر
+            return; 
         }
 
         // =================================================================
@@ -374,16 +353,14 @@ module.exports = {
         collector.on('collect', async i => {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
-            // 🔥🔥 تعديل: التحقق من الحارس أولاً (يظهر سواء كان الباب صح أو خطأ) 🔥🔥
+            // 🔥🔥 التحقق من الحارس أولاً 🔥🔥
             if (victimData.hasGuard > 0) {
-                // الحارس يمسك السارق دائماً
                 deductFromRobber(robberData, amountToSteal);
                 victimData.mora += amountToSteal;
                 
                 victimData.hasGuard -= 1;
                 const guardLeft = victimData.hasGuard;
                 
-                // نص الرسالة للحارس
                 let guardStatusMsg = "";
                 if (guardLeft === 0) {
                     guardStatusMsg = "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك";
@@ -400,13 +377,11 @@ module.exports = {
                 
                 await i.update({ embeds: [guardEmbed], components: [] });
 
-                // 📩 رسالة خاص للضحية: الحارس
                 sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
 
             } else {
-                // لا يوجد حارس، نتحقق من الباب
                 if (clickedIndex === correctButtonIndex) {
-                    // ✅ الباب صحيح + لا يوجد حارس = نجاح
+                    // ✅ نجاح
                     const finalAmount = amountToSteal;
                     robberData.mora += finalAmount;
                     
@@ -434,11 +409,10 @@ module.exports = {
                     
                     await i.update({ embeds: [winEmbed], components: [] });
 
-                    // 📩 رسالة خاص للضحية: تمت السرقة
                     sendDMToVictim(victim, `✥ قـام ${robber} بالسـطو عـلى ممتلـكـاتك وسـرق **${finalAmount}**`);
 
                 } else {
-                    // ❌ الباب خطأ = فشل (فخ)
+                    // ❌ فشل
                     deductFromRobber(robberData, amountToSteal);
                     victimData.mora += amountToSteal;
 
@@ -449,7 +423,6 @@ module.exports = {
                         .setDescription(`لقد اخترت الباب الخطأ وانفجرت القنبلة!\n\nفشلت السرقة، وتم تغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} وإعطاؤها للضحية.`);
                     await i.update({ embeds: [loseEmbed], components: [] });
 
-                    // 📩 رسالة خاص للضحية: محاولة فاشلة
                     sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
                 }
             }
@@ -472,10 +445,9 @@ module.exports = {
 
                 msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
                 
-                // 📩 رسالة خاص للضحية: انتهاء الوقت يعتبر فشل
                 sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل (تأخر في الوقت) وحصـلت علـى **${amountToSteal}** كـ تعويض`);
             }
-            activeGames.delete(channel.id);
+            // ❌ تم إزالة حذف activeGames
         });
     }
 };
