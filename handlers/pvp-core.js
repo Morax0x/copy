@@ -212,14 +212,20 @@ function applySkillEffect(battleState, attackerId, skill) {
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
 
+    // 🔥 حفظ حالة درع المدافع قبل الضربة (لفحص الانكسار لاحقاً)
+    const defenderHadShield = defender.effects.shield > 0;
+
     // التحقق من هوية الأونر (إذا أردت تفعيل مضاعف الأونر)
     const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
     // 🔥 استدعاء المحرك الجديد للمهارات
     const result = skillCalculator.executeSkill(attacker, defender, skill, isOwner);
 
-    // تطبيق التغييرات على المدافع والمهاجم بناءً على النتيجة
-    if (result.damage > 0) defender.hp -= result.damage;
+    // 🛑 تصحيح: لا نخصم الضرر من المدافع هنا لأن المحرك (result.damage) قام بتحديث كائن defender بالفعل
+    // نحن فقط نحدث حالة المهاجم (الشفاء، الضرر الذاتي)
+    
+    // if (result.damage > 0) defender.hp -= result.damage; ❌ هذا كان الخطأ المزدوج!
+
     if (result.heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + result.heal);
     if (result.selfDamage > 0) attacker.hp -= result.selfDamage;
     if (result.shield > 0) attacker.effects.shield += result.shield;
@@ -265,10 +271,11 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
     });
 
-    // إدارة كولداون الدرع الخاص (إذا كان المدافع يملك درعاً وانكسر)
-    /* ملاحظة: المحرك الجديد يحسب الضرر والدرع بدقة، 
-       لكن تتبع "هل انكسر الدرع الآن؟" أسهل هنا إذا أردنا تفعيل الكولداون للمدافع
-    */
+    // 🔥🔥 إدارة كولداون الدرع الخاص بالمدافع إذا انكسر 🔥🔥
+    if (defenderHadShield && defender.effects.shield <= 0) {
+        if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
+        battleState.skillCooldowns[defenderId]['skill_shielding'] = 3;
+    }
 
     return result.log;
 }
@@ -279,13 +286,21 @@ function executeWeaponAttackAction(battleState, attackerId) {
     const attacker = battleState.players.get(attackerId);
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
+    
+    // 🔥 حفظ حالة درع المدافع قبل الضربة
+    const defenderHadShield = defender.effects.shield > 0;
+
     const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
     // استدعاء محرك الأسلحة
     const result = weaponCalculator.executeWeaponAttack(attacker, defender, isOwner);
     
-    // النتيجة تم تطبيقها بالفعل داخل executeWeaponAttack على كائنات attacker/defender
-    // نحن فقط نعيد السجل
+    // 🔥🔥 فحص انكسار الدرع بعد الهجوم العادي 🔥🔥
+    if (defenderHadShield && defender.effects.shield <= 0) {
+        if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
+        battleState.skillCooldowns[defenderId]['skill_shielding'] = 3;
+    }
+    
     return result.log;
 }
 
