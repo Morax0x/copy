@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors, MessageFlags } = require("discord.js");
-// ✅ التصحيح: استدعاء الهاندلر من المسار الصحيح (الرجوع مجلدين للخلف)
+// ✅ استدعاء الهاندلر من المسار الصحيح
 const { startDungeon } = require("../../handlers/dungeon-handler.js");
+// ✅ استدعاء دالة إدارة الحد اليومي
 const { manageTickets } = require("../../handlers/dungeon/utils.js"); 
 
 const OWNER_ID = "1145327691772481577";
@@ -82,8 +83,8 @@ module.exports = {
 
             // إذا كان عليه كولداون (لإنشاء الدانجون كـ Host)
             if (diff < COOLDOWN_MS) {
-                // جلب معلومات التذاكر (للانضمام)
-                const ticketInfo = manageTickets(user.id, guild.id, client.sql, 'check');
+                // جلب معلومات الحد اليومي (للانضمام)
+                const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check');
                 
                 // حساب وقت انتهاء الكولداون (Timestamp) للعد التنازلي
                 const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
@@ -94,7 +95,7 @@ module.exports = {
                     .setDescription(
                         `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n\n` +
                         `★ يمكنك غـزو الدانجـون:\n ★ <t:${readyTimestamp}:R>\n\n` + 
-                        `★ لديـك **(${ticketInfo.tickets}/${ticketInfo.max})** تـذكـرة يمكنك الانضمام لفريق آخر`
+                        `★ لديـك **(${limitInfo.tickets}/${limitInfo.max})** محاولة يومية يمكنك الانضمام لفريق آخر`
                     )
                     .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png')
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
