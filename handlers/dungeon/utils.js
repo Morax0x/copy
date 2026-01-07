@@ -181,13 +181,12 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
 }
 
 // 🗓️ دالة لجلب تاريخ اليوم بتوقيت السعودية (YYYY-MM-DD)
-// هذه الطريقة أضمن 100% من التايم ستامب
+// هذه الطريقة أضمن 100% من التايم ستامب الرقمي للريست اليومي
 function getSaudiDateIso() {
-    // توقيت السعودية هو UTC+3
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥 دالة إدارة التذاكر (النظام الجديد المعتمد على التاريخ) 🔥
+// 🔥 دالة إدارة التذاكر (تعمل كحد يومي Daily Limit) 🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -197,7 +196,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     
     if (!userData) return { tickets: 0, max: 0 };
 
-    // حساب الحد الأقصى للتذاكر حسب المستوى
+    // حساب الحد الأقصى للتذاكر (الحد اليومي) حسب المستوى
     const level = userData.level || 1;
     let maxTickets = 0;
     if (level >= 51) maxTickets = 7;
@@ -206,24 +205,24 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     else if (level >= 5) maxTickets = 3;
     else maxTickets = 0;
 
-    // جلب التاريخ الحالي (السعودية)
-    const todayStr = getSaudiDateIso(); // مثال: "2024-10-27"
+    // جلب التاريخ الحالي (بتوقيت السعودية)
+    const todayStr = getSaudiDateIso(); // مثال: "2026-01-07"
     
     // جلب التاريخ المسجل في القاعدة
     let storedDate = userData.last_ticket_reset || "";
     let currentTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
 
-    // 2. فحص التجديد (إذا اختلف التاريخ، نجدد التذاكر فوراً)
+    // 2. فحص الريست (هل دخلنا يوم جديد؟)
     if (storedDate !== todayStr) {
-        // يوم جديد! نجدد التذاكر
+        // نعم، التاريخ اختلف! نعيد شحن التذاكر للحد الأقصى
         currentTickets = maxTickets;
         
-        // تحديث القاعدة بالتاريخ الجديد والحد الأقصى
+        // تحديث القاعدة فوراً بالتاريخ الجديد
         sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
            .run(maxTickets, todayStr, userID, guildID);
     }
 
-    // 3. تنفيذ الخصم (فقط إذا كان الإجراء consume)
+    // 3. تنفيذ الخصم (إذا كان الإجراء consume)
     if (action === 'consume') {
         if (currentTickets > 0) {
             const newCount = currentTickets - 1;
@@ -253,5 +252,6 @@ module.exports = {
     cleanDisplayName,
     buildHpBar,
     getRealPlayerData,
-    manageTickets 
+    manageTickets, // أبقينا الاسم كما هو حسب طلبك
+    getSaudiDateIso
 };
