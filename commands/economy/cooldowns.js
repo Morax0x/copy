@@ -168,9 +168,8 @@ module.exports = {
                 .setImage('https://i.postimg.cc/7hhxXX8h/ec6f09156c21ff5df643e807a859d3e0.gif')
                 .setTimestamp();
 
-            // 🔥🔥🔥 الإصلاح هنا: إضافة content بجانب الإيمبد 🔥🔥🔥
+            // ✅ تم إرسال الإيمبد فقط بدون content
             await reply({ 
-                content: `ℹ️ حالة الأوامر لـ **${targetUser.username}**:`, 
                 embeds: [embed] 
             });
 
