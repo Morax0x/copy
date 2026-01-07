@@ -62,7 +62,6 @@ function getWeaponData(sql, member) {
     if (!weaponConfig) return null;
     let userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(member.id, member.guild.id, userRace.raceName);
     if (!userWeapon || userWeapon.weaponLevel <= 0) return null;
-    // نستخدم الآلة الحاسبة للحصول على الضرر الخام إذا أردنا، أو نحسبه هنا للعرض فقط
     const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
     return { ...weaponConfig, currentDamage: damage, currentLevel: userWeapon.weaponLevel };
 }
@@ -114,19 +113,18 @@ function buildHpBar(currentHp, maxHp) {
     return `[${filled.repeat(Math.max(0, Math.floor(percentage))) + empty.repeat(Math.max(0, 10 - Math.floor(percentage)))}] ${currentHp}/${maxHp}`;
 }
 
-// ✅ تم التحديث لإظهار العمى والنزيف
 function buildEffectsString(effects) {
     let arr = [];
     if (effects.shield > 0) arr.push(`🛡️ (${effects.shield})`);
     if (effects.buff > 0) arr.push(`💪 (+${Math.round(effects.buff * 100)}%)`);
     if (effects.weaken > 0) arr.push(`📉 (-${Math.round(effects.weaken * 100)}%)`);
-    if (effects.poison > 0) arr.push(`🩸/☠️ (${effects.poison})`); // نزيف أو سم
+    if (effects.poison > 0) arr.push(`🩸/☠️ (${effects.poison})`);
     if (effects.burn > 0) arr.push(`🔥 (${effects.burn})`);
     if (effects.stun) arr.push(`⚡ (مشلول)`);
     if (effects.confusion) arr.push(`😵 (مرتبك)`);
     if (effects.rebound_active > 0) arr.push(`🔄 (عكس)`);
     if (effects.evasion > 0) arr.push(`👻 (مراوغة)`);
-    if (effects.blind > 0) arr.push(`🌫️ (أعمى)`); // ✅ جديد
+    if (effects.blind > 0) arr.push(`🌫️ (أعمى)`); 
     return arr.length > 0 ? arr.join(' | ') : 'لا يوجد';
 }
 
@@ -198,11 +196,10 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: [mainButtons] };
 }
 
-// ✅ دالة تنفيذ المهارة الجديدة (تستخدم skill-calculator.js)
+// ✅ دالة تنفيذ المهارة الجديدة
 function applySkillEffect(battleState, attackerId, skill) {
     const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
     
-    // منع تفعيل كولداون مهارة الدرع عند الاستخدام (يتم تفعيله عند الانكسار)
     if (skill.id !== 'skill_shielding') {
         if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
         battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
@@ -212,23 +209,15 @@ function applySkillEffect(battleState, attackerId, skill) {
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
 
-    // 🔥 حفظ حالة درع المدافع قبل الضربة (لفحص الانكسار لاحقاً)
     const defenderHadShield = defender.effects.shield > 0;
-
-    // التحقق من هوية الأونر (إذا أردت تفعيل مضاعف الأونر)
     const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
-    // 🔥 استدعاء المحرك الجديد للمهارات
     const result = skillCalculator.executeSkill(attacker, defender, skill, isOwner);
 
-    // 🛑 تصحيح: لا نخصم الضرر من المدافع هنا لأن المحرك (result.damage) قام بتحديث كائن defender بالفعل
-    // نحن فقط نحدث حالة المهاجم (الشفاء، الضرر الذاتي)
-    
     if (result.heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + result.heal);
     if (result.selfDamage > 0) attacker.hp -= result.selfDamage;
     if (result.shield > 0) attacker.effects.shield += result.shield;
 
-    // تطبيق التأثيرات على الخصم
     result.effectsApplied.forEach(eff => {
         if (eff.type === 'stun') { 
             defender.effects.stun = true; 
@@ -236,22 +225,19 @@ function applySkillEffect(battleState, attackerId, skill) {
         } else if (eff.type === 'confusion') { 
             defender.effects.confusion = true; 
             defender.effects.confusion_turns = eff.turns; 
-        } else if (eff.type === 'blind') { // ✅ تفعيل العمى
+        } else if (eff.type === 'blind') { 
             defender.effects.blind = eff.val; 
             defender.effects.blind_turns = eff.turns; 
         } else if (eff.type === 'dispel') {
-            // تصفية جميع البفات
             defender.effects.shield = 0; defender.effects.buff = 0; defender.effects.buff_turns = 0;
             defender.effects.rebound_active = 0; defender.effects.rebound_turns = 0;
             defender.effects.evasion = 0; defender.effects.evasion_turns = 0;
         } else {
-            // التأثيرات الرقمية (حرق، سم، إضعاف)
             defender.effects[eff.type] = eff.val;
             defender.effects[eff.type + '_turns'] = eff.turns;
         }
     });
 
-    // تطبيق التأثيرات على النفس (Buffs/Cleanse)
     result.selfEffects.forEach(eff => {
         if (eff.type === 'cleanse') {
             attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
@@ -269,7 +255,6 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
     });
 
-    // 🔥🔥 إدارة كولداون الدرع الخاص بالمدافع إذا انكسر 🔥🔥
     if (defenderHadShield && defender.effects.shield <= 0) {
         if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
         battleState.skillCooldowns[defenderId]['skill_shielding'] = 3;
@@ -278,46 +263,38 @@ function applySkillEffect(battleState, attackerId, skill) {
     return result.log;
 }
 
-// ✅ دالة الهجوم العادي الجديدة (المعدلة)
-// يتم استدعاؤها عند ضغط زر "هجوم"
+// ✅ دالة الهجوم العادي الجديدة (تم إصلاحها لخصم الدرع والصحة يدوياً)
 function executeWeaponAttackAction(battleState, attackerId) {
     const attacker = battleState.players.get(attackerId);
     const defenderId = battleState.turn.find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
     
-    // 🔥 حفظ حالة درع المدافع وصحته قبل الضربة
+    // حفظ حالة الدرع
     const defenderHadShield = defender.effects.shield > 0;
-    const defenderHpBefore = defender.hp;
 
     const isOwner = attacker.member ? attacker.member.id === OWNER_ID : false;
 
-    // استدعاء محرك الأسلحة
+    // 1. حساب الأرقام (بدون تعديل الخصم)
     const result = weaponCalculator.executeWeaponAttack(attacker, defender, isOwner);
     
-    // 🛑 تصحيح هام: إذا كان المحرك يعيد قيمة الضرر فقط ولا يخصمها، نقوم نحن بخصمها
-    // (نقارن HP قبل وبعد للتأكد مما إذا كان المحرك قد عدل البيانات أم لا)
-    if (defender.hp === defenderHpBefore && result.damage > 0) {
-        // المحرك لم يخصم الضرر، لذا سنقوم بذلك يدوياً هنا
-        let remainingDmg = result.damage;
-
-        // 1. امتصاص الدرع
-        if (defender.effects.shield > 0) {
-            if (defender.effects.shield >= remainingDmg) {
-                defender.effects.shield -= remainingDmg;
-                remainingDmg = 0;
-            } else {
-                remainingDmg -= defender.effects.shield;
-                defender.effects.shield = 0;
-            }
-        }
-
-        // 2. خصم الصحة
-        if (remainingDmg > 0) {
-            defender.hp -= remainingDmg;
-        }
+    // 2. 🔥🔥 تطبيق خصم الدرع (الخطوة التي كانت مفقودة) 🔥🔥
+    if (result.blocked > 0) {
+        defender.effects.shield -= result.blocked;
+        if (defender.effects.shield < 0) defender.effects.shield = 0;
     }
 
-    // 🔥🔥 فحص انكسار الدرع بعد الهجوم العادي 🔥🔥
+    // 3. 🔥🔥 تطبيق خصم الصحة 🔥🔥
+    if (result.damage > 0) {
+        defender.hp -= result.damage;
+        if (defender.hp < 0) defender.hp = 0;
+    }
+
+    // 4. تطبيق الضرر المنعكس على المهاجم (إذا وجد)
+    if (result.reflected > 0) {
+        attacker.hp -= result.reflected;
+    }
+
+    // فحص انكسار الدرع
     if (defenderHadShield && defender.effects.shield <= 0) {
         if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
         battleState.skillCooldowns[defenderId]['skill_shielding'] = 3;
@@ -326,13 +303,13 @@ function executeWeaponAttackAction(battleState, attackerId) {
     return result.log;
 }
 
-// دالة wrapper للحفاظ على التوافق إذا كان الكود القديم يستدعيها
+// دالة wrapper للحفاظ على التوافق
 function calculateDamage(attacker, defender, multiplier = 1) {
     return 0; 
 }
 
 // =======================================================
-// دوال بدء المعركة (تحديث defEffects ليشمل blind)
+// دوال بدء المعركة
 // =======================================================
 
 async function startPvpBattle(i, client, sql, challengerMember, opponentMember, bet) {
@@ -347,7 +324,6 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
     const cMaxHp = BASE_HP + (challengerData.level * HP_PER_LEVEL);
     const oMaxHp = BASE_HP + (opponentData.level * HP_PER_LEVEL);
     
-    // ✅ إضافة blind للقائمة
     const defEffects = () => ({ 
         shield: 0, 
         buff: 0, buff_turns: 0, 
@@ -488,10 +464,8 @@ function applyPersistentEffects(battleState, attackerId) {
     let logEntries = [];
     let skipTurn = false;
 
-    // 🔥 حفظ حالة الدرع قبل التأثيرات المستمرة
     const hadShield = attacker.effects.shield > 0;
 
-    // ✅ إضافة blind للقائمة
     const effectsList = ['buff', 'weaken', 'rebound_active', 'stun', 'confusion', 'evasion', 'blind'];
     effectsList.forEach(eff => {
         if (attacker.effects[eff + '_turns'] > 0) {
@@ -503,10 +477,8 @@ function applyPersistentEffects(battleState, attackerId) {
         }
     });
 
-    // 🩸 معالجة السم / النزيف (للغول وغيره)
     if (attacker.effects.poison > 0) {
         let dmg = attacker.effects.poison;
-        // الدرع يمتص النزيف أولاً
         if (attacker.effects.shield > 0) {
             if (attacker.effects.shield >= dmg) {
                 attacker.effects.shield -= dmg;
@@ -524,7 +496,6 @@ function applyPersistentEffects(battleState, attackerId) {
         if (attacker.effects.poison_turns <= 0) attacker.effects.poison = 0;
     }
 
-    // 🔥 معالجة الحرق (للتنين)
     if (attacker.effects.burn > 0) {
         let dmg = attacker.effects.burn;
         if (attacker.effects.shield > 0) {
@@ -544,7 +515,6 @@ function applyPersistentEffects(battleState, attackerId) {
         if (attacker.effects.burn_turns <= 0) attacker.effects.burn = 0;
     }
 
-    // 🔥 تفعيل كولداون الدرع إذا انكسر بسبب السموم أو الحرق
     if (hadShield && attacker.effects.shield <= 0) {
         if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
         battleState.skillCooldowns[attackerId]['skill_shielding'] = 3;
@@ -555,7 +525,6 @@ function applyPersistentEffects(battleState, attackerId) {
         skipTurn = true;
     }
 
-    // الارتباك (يضرب نفسه بنسبة 25%)
     if (attacker.effects.confusion && !skipTurn) {
         if (Math.random() < 0.25) {
             const selfDmg = Math.floor(attacker.maxHp * 0.05);
