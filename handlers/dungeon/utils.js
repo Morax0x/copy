@@ -35,7 +35,6 @@ function applyDamageToPlayer(player, damageAmount) {
 
     if (player.isDead) return 0;
 
-    // 🔥🔥🔥 منطق مناعة الأونر 🔥🔥🔥
     if (player.id === OWNER_ID) {
         if (player.effects.some(e => e.type === 'evasion')) return 0;
         let actualDamage = damageAmount;
@@ -181,12 +180,11 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
 }
 
 // 🗓️ دالة لجلب تاريخ اليوم بتوقيت السعودية (YYYY-MM-DD)
-// هذه الطريقة أضمن 100% من التايم ستامب الرقمي للريست اليومي
 function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥 دالة إدارة التذاكر (تعمل كحد يومي Daily Limit) 🔥
+// 🔥🔥 دالة إدارة التذاكر (الحد اليومي) - النسخة المصححة 🔥🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -196,7 +194,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     
     if (!userData) return { tickets: 0, max: 0 };
 
-    // حساب الحد الأقصى للتذاكر (الحد اليومي) حسب المستوى
+    // حساب الحد الأقصى
     const level = userData.level || 1;
     let maxTickets = 0;
     if (level >= 51) maxTickets = 7;
@@ -205,42 +203,47 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     else if (level >= 5) maxTickets = 3;
     else maxTickets = 0;
 
-    // جلب التاريخ الحالي (بتوقيت السعودية)
-    const todayStr = getSaudiDateIso(); // مثال: "2026-01-07"
-    
-    // جلب التاريخ المسجل في القاعدة
+    const todayStr = getSaudiDateIso(); 
     let storedDate = userData.last_ticket_reset || "";
+    
+    // القيمة الافتراضية إذا كانت null تكون Max (بداية جديدة)
     let currentTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
 
-    // 2. فحص الريست (هل دخلنا يوم جديد؟)
+    // 2. التحقق من الريست (Reset)
+    // إذا التاريخ المسجل يختلف عن تاريخ اليوم => هذا يوم جديد
     if (storedDate !== todayStr) {
-        // نعم، التاريخ اختلف! نعيد شحن التذاكر للحد الأقصى
+        console.log(`[DailyLimit] Resetting tickets for ${userID}: OldDate=${storedDate}, NewDate=${todayStr}`);
+        
         currentTickets = maxTickets;
         
-        // تحديث القاعدة فوراً بالتاريخ الجديد
+        // تحديث التاريخ والرصيد في القاعدة فوراً
         sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
            .run(maxTickets, todayStr, userID, guildID);
     }
 
-    // 3. تنفيذ الخصم (إذا كان الإجراء consume)
+    // 3. تنفيذ الخصم (Consume)
     if (action === 'consume') {
         if (currentTickets > 0) {
             const newCount = currentTickets - 1;
             
+            console.log(`[DailyLimit] Consuming ticket for ${userID}. Old: ${currentTickets}, New: ${newCount}`);
+
             const info = sql.prepare("UPDATE levels SET dungeon_tickets = ? WHERE user = ? AND guild = ?")
                .run(newCount, userID, guildID);
                
             if (info.changes > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
+                console.log(`[DailyLimit] Error: Update failed for ${userID}`);
                 return { success: false, tickets: currentTickets, max: maxTickets };
             }
         } else {
+            console.log(`[DailyLimit] Blocked ${userID}: No tickets left.`);
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
 
-    // في حالة الفحص فقط (check)
+    // في حالة الفحص (Check)
     return { tickets: currentTickets, max: maxTickets };
 }
 
@@ -252,6 +255,6 @@ module.exports = {
     cleanDisplayName,
     buildHpBar,
     getRealPlayerData,
-    manageTickets, // أبقينا الاسم كما هو حسب طلبك
+    manageTickets,
     getSaudiDateIso
 };
