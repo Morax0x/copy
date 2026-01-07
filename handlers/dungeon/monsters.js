@@ -46,7 +46,7 @@ function checkBossPhase(monster, log) {
         monster.enraged = true;
         monster.atk = Math.floor(monster.atk * 1.3); // زيادة الهجوم 30%
         
-        log.push(`\n🔴🔴 **تحذير: ${monster.name} دخل مرحلة الهيجان (Enrage)!** 🔴🔴`);
+        log.push(`\n🔴🔴 **تحذير: ${monster.name} دخل مرحلة الهيـجان (Enrage)!** 🔴🔴`);
         log.push(`⚠️ **ازداد الهجوم بنسبة 30% وأصبحت المهارات أكثر فتكاً!**\n`);
         
         const heal = Math.floor(monster.maxHp * 0.1);
