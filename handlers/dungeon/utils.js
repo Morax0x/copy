@@ -2,6 +2,8 @@ const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig, OWNER_I
 
 function ensureInventoryTable(sql) {
     if (!sql.open) return;
+    
+    // جدول الحقيبة
     sql.prepare(`
         CREATE TABLE IF NOT EXISTS user_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,6 +14,17 @@ function ensureInventoryTable(sql) {
             UNIQUE(guildID, userID, itemID)
         );
     `).run();
+
+    // ضمان وجود أعمدة التذاكر
+    try {
+        const tableInfo = sql.prepare("PRAGMA table_info(levels)").all();
+        const hasTickets = tableInfo.some(c => c.name === 'dungeon_tickets');
+        if (!hasTickets) {
+            sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_tickets INTEGER DEFAULT 0").run();
+            sql.prepare("ALTER TABLE levels ADD COLUMN last_ticket_reset TEXT DEFAULT ''").run();
+            sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
+        }
+    } catch (e) { /* ignore */ }
 }
 
 function getRandomImage(list) {
@@ -177,11 +190,12 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
+// 🗓️ دالة التوقيت: تتغير القيمة فقط عندما تصبح الساعة 12:00 ص بتوقيت السعودية
 function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥 دالة إدارة التذاكر (المضمونة) 🔥🔥
+// 🔥🔥 دالة إدارة التذاكر (النسخة النهائية المضمونة) 🔥🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -200,43 +214,45 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     else if (level >= 5) maxTickets = 3;
     else maxTickets = 0;
 
-    const todayStr = getSaudiDateIso(); 
-    let storedDate = userData.last_ticket_reset || "";
-    
-    // تحديد الحالة الحالية (هل نحتاج ريست؟)
-    const isNewDay = (storedDate !== todayStr);
-    
-    // حساب التذاكر الفعلية (إذا يوم جديد = فل، غير ذلك = المسجل)
-    let effectiveTickets = isNewDay ? maxTickets : userData.dungeon_tickets;
-    if (effectiveTickets === null || effectiveTickets === undefined) effectiveTickets = maxTickets;
+    const todayStr = getSaudiDateIso(); // هذا التاريخ سيتغير تلقائياً الساعة 12 بالليل
+    let dbDate = userData.last_ticket_reset || "";
+    let dbTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
 
-    // --- إذا كان الإجراء مجرد فحص (Check) ---
-    if (action === 'check') {
-        // إذا كان يوم جديد، نحدث القاعدة الآن لتوثيق التاريخ ومنع الريست المتكرر
-        if (isNewDay) {
-            console.log(`[DailyLimit] Auto-Reset (Check) for ${userID}: ${todayStr}`);
-            sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
-               .run(maxTickets, todayStr, userID, guildID);
-        }
-        return { tickets: effectiveTickets, max: maxTickets };
+    // 2. 🛑 التحقق من الريست وتطبيقه فوراً 🛑
+    // هذا الشرط يتحقق فقط إذا تغير اليوم (صار الساعة 12 بالليل)
+    if (dbDate !== todayStr) {
+        console.log(`[DailyLimit] New Day! Force Reset for ${userID}. Old: ${dbDate}, New: ${todayStr}`);
+        
+        // تصفير وتحديث التاريخ فوراً
+        sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+           .run(maxTickets, todayStr, userID, guildID);
+        
+        // تحديث المتغيرات المحلية
+        dbTickets = maxTickets;
+        dbDate = todayStr;
     }
 
-    // --- إذا كان الإجراء خصم (Consume) ---
-    if (action === 'consume') {
-        if (effectiveTickets > 0) {
-            const newCount = effectiveTickets - 1;
-            
-            console.log(`[DailyLimit] Consuming for ${userID}. Old: ${effectiveTickets}, New: ${newCount}, Date: ${todayStr}`);
+    // --- حالة الفحص (Check) ---
+    if (action === 'check') {
+        return { tickets: dbTickets, max: maxTickets };
+    }
 
-            // 🔥 نحدث العدد + التاريخ (لضمان تثبيت التاريخ الجديد عند الخصم)
+    // --- حالة الخصم (Consume) ---
+    if (action === 'consume') {
+        if (dbTickets > 0) {
+            const newCount = dbTickets - 1;
+            
+            console.log(`[DailyLimit] Consuming for ${userID}. Remaining: ${newCount}`);
+
+            // 🔥 التعديل: نحدث التذاكر + التاريخ معاً لضمان عدم حدوث تضارب
             const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
                .run(newCount, todayStr, userID, guildID);
                
             if (info.changes > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
-                console.log(`[DailyLimit] Error: Update failed for ${userID}`);
-                return { success: false, tickets: effectiveTickets, max: maxTickets };
+                console.log(`[DailyLimit] DB Error: Ticket update failed for ${userID}`);
+                return { success: false, tickets: dbTickets, max: maxTickets };
             }
         } else {
             console.log(`[DailyLimit] Blocked ${userID}: 0 tickets.`);
@@ -244,7 +260,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
         }
     }
 
-    return { tickets: effectiveTickets, max: maxTickets };
+    return { tickets: dbTickets, max: maxTickets };
 }
 
 module.exports = {
