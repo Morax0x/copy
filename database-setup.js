@@ -17,7 +17,7 @@ function setupDatabase(clientOrSql) {
 
     // 1. All tables in one array
     const tables = [
-        // 🔥 تم تحديث جدول levels لإضافة نظام التذاكر 🔥
+        // 🔥 تم تحديث جدول levels (تم الإبقاء عليه كما هو لضمان عدم حدوث أخطاء، ولكن التذاكر ستستخدم الجدول الجديد بالأسفل) 🔥
         "CREATE TABLE IF NOT EXISTS levels (user TEXT NOT NULL, guild TEXT NOT NULL, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, totalXP INTEGER DEFAULT 0, mora INTEGER DEFAULT 0, lastWork INTEGER DEFAULT 0, lastDaily INTEGER DEFAULT 0, dailyStreak INTEGER DEFAULT 0, bank INTEGER DEFAULT 0, lastInterest INTEGER DEFAULT 0, totalInterestEarned INTEGER DEFAULT 0, hasGuard INTEGER DEFAULT 0, guardExpires INTEGER DEFAULT 0, totalVCTime INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastRob INTEGER DEFAULT 0, last_rob_pardon TEXT DEFAULT '', lastGuess INTEGER DEFAULT 0, lastRPS INTEGER DEFAULT 0, lastRoulette INTEGER DEFAULT 0, lastTransfer INTEGER DEFAULT 0, lastDeposit INTEGER DEFAULT 0, shop_purchases INTEGER DEFAULT 0, total_meow_count INTEGER DEFAULT 0, boost_count INTEGER DEFAULT 0, lastPVP INTEGER DEFAULT 0, lastFarmYield INTEGER DEFAULT 0, lastFish INTEGER DEFAULT 0, rodLevel INTEGER DEFAULT 1, boatLevel INTEGER DEFAULT 1, currentLocation TEXT DEFAULT 'beach', lastMemory INTEGER DEFAULT 0, lastArrange INTEGER DEFAULT 0, last_dungeon INTEGER DEFAULT 0, dungeon_tickets INTEGER DEFAULT 0, last_ticket_reset TEXT DEFAULT '', dungeon_gate_level INTEGER DEFAULT 1, max_dungeon_floor INTEGER DEFAULT 0, dungeon_wins INTEGER DEFAULT 0, dungeon_join_count INTEGER DEFAULT 0, last_join_reset INTEGER DEFAULT 0, lastRace INTEGER DEFAULT 0, PRIMARY KEY (user, guild))",
         
         "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, prefix TEXT DEFAULT '-', voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, casinoChannelID2 TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT, serverTag TEXT, levelChannel TEXT, modLogChannelID TEXT)",
@@ -40,6 +40,9 @@ function setupDatabase(clientOrSql) {
         // 🔥🔥 (مهم جداً) جدول المخزون الجديد 🔥🔥
         "CREATE TABLE IF NOT EXISTS user_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT, userID TEXT, itemID TEXT, quantity INTEGER DEFAULT 0, UNIQUE(guildID, userID, itemID))",
         
+        // 🔥🔥🔥 الجدول الجديد كلياً لحفظ التذاكر بدقة (الحل الجذري) 🔥🔥🔥
+        "CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))",
+
         "CREATE TABLE IF NOT EXISTS blacklistTable (id TEXT PRIMARY KEY, guild TEXT, typeId TEXT, type TEXT)",
         "CREATE TABLE IF NOT EXISTS channel (guild TEXT PRIMARY KEY, channel TEXT)",
         "CREATE TABLE IF NOT EXISTS user_farm (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, purchaseTimestamp INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0)",
@@ -100,7 +103,8 @@ function setupDatabase(clientOrSql) {
     // Perform Migrations
     ['mora', 'lastWork', 'lastDaily', 'dailyStreak', 'bank', 'lastInterest', 'totalInterestEarned', 'hasGuard', 'guardExpires', 'lastCollected', 'totalVCTime', 'lastRob', 'lastGuess', 'lastRPS', 'lastRoulette', 'lastTransfer', 'lastDeposit', 'shop_purchases', 'total_meow_count', 'boost_count', 'lastPVP', 'lastFarmYield', 'lastFish', 'rodLevel', 'boatLevel', 'lastMemory', 'lastArrange', 'last_dungeon', 'lastRace'].forEach(col => ensureColumn('levels', col, 'INTEGER DEFAULT 0'));
       
-    // 🔥🔥 أعمدة التذاكر والعفو الجديدة 🔥🔥
+    // ملاحظة: الأعمدة القديمة أدناه (dungeon_tickets, last_ticket_reset) تركتها لعدم كسر أي كود قديم، 
+    // ولكن النظام الجديد سيعتمد على جدول dungeon_stats.
     ensureColumn('levels', 'dungeon_tickets', 'INTEGER DEFAULT 0');
     ensureColumn('levels', 'last_ticket_reset', "TEXT DEFAULT ''");
     ensureColumn('levels', 'last_rob_pardon', "TEXT DEFAULT ''");
