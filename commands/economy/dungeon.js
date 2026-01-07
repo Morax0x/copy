@@ -95,13 +95,13 @@ module.exports = {
                     .setDescription(
                         `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n\n` +
                         `★ يمكنك غـزو الدانجـون:\n ★ <t:${readyTimestamp}:R>\n\n` + 
-                        `★ لديـك **(${limitInfo.tickets}/${limitInfo.max})** محاولة يومية يمكنك الانضمام لفريق آخر`
+                        `★ لديـك **(${limitInfo.tickets}/${limitInfo.max})** تذكرة يمكنك الانضمام لفريق آخر`
                     )
                     .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png')
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
                 const payload = { 
-                    content: `⏳ **تمهّل أيها المحارب!**`, 
+                    // content: `⏳ **تمهّل أيها المحارب!**`,  <-- تم حذف هذا السطر
                     embeds: [cooldownEmbed], 
                     flags: [MessageFlags.Ephemeral] 
                 };
