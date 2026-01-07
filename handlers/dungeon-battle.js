@@ -50,7 +50,7 @@ const {
 } = require('./dungeon/ui');
 
 // ✅ استيراد حاسبة الأسلحة الجديدة
-const weaponCalculator = require('./handlers/combat/weapon-calculator');
+const weaponCalculator = require('../handlers/combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
 const { triggerMysteryMerchant } = require('./dungeon/mystery-merchant');
