@@ -15,23 +15,20 @@ function getSmartTarget(players, monster) {
     if (alive.length === 0) return null;
 
     // 1. نظام "الآغرو" (Threat System) - الأولوية القصوى
+    // ترتيب اللاعبين حسب التهديد من الأعلى للأقل
     const topThreat = alive.sort((a, b) => (b.threat || 0) - (a.threat || 0))[0];
 
+    // ✅ التعديل: إذا كان التهديد عالياً (>100)، يهاجمه فوراً بدون عشوائية
+    // هذا يضمن أن المدرع (Tank) يقوم بدوره بنسبة 100%
     if (topThreat && topThreat.threat > 100) { 
-        // فرصة 20% لتجاهل التانك وضرب المعالج أو الأضعف (لإضافة توتر)
-        if (Math.random() > 0.8) {
-             const priest = alive.find(p => p.class === 'Priest');
-             if (priest) return priest;
-             return alive.sort((a, b) => a.hp - b.hp)[0];
-        }
         return topThreat;
     }
 
-    // 2. منطق التعاون (Synergy)
+    // 2. منطق التعاون (Synergy) - ضرب المشلولين
     const ccTarget = alive.find(p => p.effects.some(e => ['stun', 'freeze'].includes(e.type)));
     if (ccTarget && Math.random() < 0.6) return ccTarget;
 
-    // 3. الأولوية للكاهن (Priest)
+    // 3. الأولوية للكاهن (Priest) إذا لم يكن هناك تهديد عالي
     const priest = alive.find(p => p.class === 'Priest');
     if (priest && Math.random() < 0.6) return priest; 
 
