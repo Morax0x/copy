@@ -234,20 +234,25 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                 if (subI.user.id !== OWNER_ID) return;
 
-                // 1. رسالة تأكيد فورية
-                await subI.update({ content: "💨 **تم تنفيذ شق الزمكان! جاري الانسحاب القسري...**", components: [] });
+                // 1. استخراج الطابق الحالي من اسم الوحش
+                const currentFloorMatch = monster.name.match(/Lv\.(\d+)/);
+                const currentFloor = currentFloorMatch ? parseInt(currentFloorMatch[1]) : 1; // الافتراضي 1 إذا فشل الاستخراج
+
+                // 2. رسالة تأكيد فورية
+                await subI.update({ content: `💨 **تم تنفيذ شق الزمكان! جاري الانسحاب القسري من الطابق ${currentFloor}...**`, components: [] });
                 
-                // 2. إيقاف اللعبة فوراً (قبل محاولة الإرسال لتجنب التعليق)
+                // 3. إيقاف اللعبة فوراً (قبل محاولة الإرسال لتجنب التعليق)
                 ongoingRef.value = false; 
                 monster.hp = 0; // تصفير دم الوحش
                 mainCollector.stop('owner_force_leave');
 
-                // 3. محاولة إنهاء المعركة
+                // 4. محاولة إنهاء المعركة باستخدام الطابق الفعلي
                 try {
                     // تعريف الروم بشكل آمن (يدعم الثريد والروم العادية)
                     const mainChannel = threadChannel.parent || threadChannel; 
 
-                    await sendEndMessage(mainChannel, threadChannel, players, [], 999, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+                    // ✅ هنا التعديل: إرسال currentFloor بدلاً من 999
+                    await sendEndMessage(mainChannel, threadChannel, players, [], currentFloor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
                 } catch (err) {
                     console.error("Error inside Force Leave:", err);
                     await threadChannel.send({ content: "⚠️ **حدث خطأ أثناء إنهاء المعركة، ولكن تم إيقاف اللعبة قسرياً.**" }).catch(() => {});
