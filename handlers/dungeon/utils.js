@@ -184,7 +184,7 @@ function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥 دالة إدارة التذاكر (الحد اليومي) - النسخة المصححة 🔥🔥
+// 🔥🔥 دالة إدارة التذاكر (المصححة والمضمونة) 🔥🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
@@ -194,7 +194,6 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     
     if (!userData) return { tickets: 0, max: 0 };
 
-    // حساب الحد الأقصى
     const level = userData.level || 1;
     let maxTickets = 0;
     if (level >= 51) maxTickets = 7;
@@ -206,44 +205,50 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     const todayStr = getSaudiDateIso(); 
     let storedDate = userData.last_ticket_reset || "";
     
-    // القيمة الافتراضية إذا كانت null تكون Max (بداية جديدة)
-    let currentTickets = (userData.dungeon_tickets === null || userData.dungeon_tickets === undefined) ? maxTickets : userData.dungeon_tickets;
+    // هل نحن في يوم جديد؟ (أو أول مرة)
+    let isResetNeeded = (storedDate !== todayStr);
+    
+    // تحديد الرصيد الحالي:
+    // إذا كان يوم جديد -> نعتبر الرصيد فل (Max)
+    // إذا نفس اليوم -> نأخذ الرصيد المسجل
+    let currentTickets = isResetNeeded ? maxTickets : userData.dungeon_tickets;
+    if (currentTickets === null || currentTickets === undefined) currentTickets = maxTickets;
 
-    // 2. التحقق من الريست (Reset)
-    // إذا التاريخ المسجل يختلف عن تاريخ اليوم => هذا يوم جديد
-    if (storedDate !== todayStr) {
-        console.log(`[DailyLimit] Resetting tickets for ${userID}: OldDate=${storedDate}, NewDate=${todayStr}`);
-        
-        currentTickets = maxTickets;
-        
-        // تحديث التاريخ والرصيد في القاعدة فوراً
-        sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
-           .run(maxTickets, todayStr, userID, guildID);
+    // --- حالة الفحص (Check) ---
+    if (action === 'check') {
+        // إذا كان يوم جديد، نحدث القاعدة الآن لتوثيق التاريخ ومنع الريست المتكرر
+        if (isResetNeeded) {
+            console.log(`[DailyLimit] Auto-Reset check for ${userID}: ${todayStr}`);
+            sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+               .run(maxTickets, todayStr, userID, guildID);
+        }
+        return { tickets: currentTickets, max: maxTickets };
     }
 
-    // 3. تنفيذ الخصم (Consume)
+    // --- حالة الخصم (Consume) ---
     if (action === 'consume') {
         if (currentTickets > 0) {
             const newCount = currentTickets - 1;
             
-            console.log(`[DailyLimit] Consuming ticket for ${userID}. Old: ${currentTickets}, New: ${newCount}`);
+            console.log(`[DailyLimit] Consuming for ${userID}. Old: ${currentTickets}, New: ${newCount}, Date: ${todayStr}`);
 
-            const info = sql.prepare("UPDATE levels SET dungeon_tickets = ? WHERE user = ? AND guild = ?")
-               .run(newCount, userID, guildID);
+            // 🔥 التعديل الجوهري: نحدث الرقم + التاريخ معاً في نفس الوقت
+            // هذا يضمن أنه حتى لو كان التاريخ قديماً، سيتم تحديثه لليوم مع الخصم
+            const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
+               .run(newCount, todayStr, userID, guildID);
                
             if (info.changes > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
-                console.log(`[DailyLimit] Error: Update failed for ${userID}`);
+                console.log(`[DailyLimit] SQL Error for ${userID}`);
                 return { success: false, tickets: currentTickets, max: maxTickets };
             }
         } else {
-            console.log(`[DailyLimit] Blocked ${userID}: No tickets left.`);
+            console.log(`[DailyLimit] Blocked ${userID}: 0 tickets.`);
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
 
-    // في حالة الفحص (Check)
     return { tickets: currentTickets, max: maxTickets };
 }
 
