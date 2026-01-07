@@ -29,9 +29,7 @@ function applyDamageToPlayer(player, damageAmount) {
     if (isNaN(damageAmount)) damageAmount = 0;
 
     player.hp = Math.floor(player.hp);
-    if (isNaN(player.hp)) {
-        player.hp = player.maxHp || 100;
-    }
+    if (isNaN(player.hp)) player.hp = player.maxHp || 100;
 
     if (player.isDead) return 0;
 
@@ -179,21 +177,21 @@ function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
     };
 }
 
-// 🗓️ دالة لجلب تاريخ اليوم بتوقيت السعودية (YYYY-MM-DD)
 function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥 دالة إدارة التذاكر (المصححة والمضمونة) 🔥🔥
+// 🔥🔥 دالة إدارة التذاكر (المضمونة) 🔥🔥
 function manageTickets(userID, guildID, sql, action = 'check') {
     userID = String(userID);
     guildID = String(guildID);
 
-    // 1. جلب البيانات
+    // 1. جلب البيانات الحالية
     const userData = sql.prepare("SELECT level, dungeon_tickets, last_ticket_reset FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     
     if (!userData) return { tickets: 0, max: 0 };
 
+    // حساب الحد الأقصى
     const level = userData.level || 1;
     let maxTickets = 0;
     if (level >= 51) maxTickets = 7;
@@ -205,43 +203,40 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     const todayStr = getSaudiDateIso(); 
     let storedDate = userData.last_ticket_reset || "";
     
-    // هل نحن في يوم جديد؟ (أو أول مرة)
-    let isResetNeeded = (storedDate !== todayStr);
+    // تحديد الحالة الحالية (هل نحتاج ريست؟)
+    const isNewDay = (storedDate !== todayStr);
     
-    // تحديد الرصيد الحالي:
-    // إذا كان يوم جديد -> نعتبر الرصيد فل (Max)
-    // إذا نفس اليوم -> نأخذ الرصيد المسجل
-    let currentTickets = isResetNeeded ? maxTickets : userData.dungeon_tickets;
-    if (currentTickets === null || currentTickets === undefined) currentTickets = maxTickets;
+    // حساب التذاكر الفعلية (إذا يوم جديد = فل، غير ذلك = المسجل)
+    let effectiveTickets = isNewDay ? maxTickets : userData.dungeon_tickets;
+    if (effectiveTickets === null || effectiveTickets === undefined) effectiveTickets = maxTickets;
 
-    // --- حالة الفحص (Check) ---
+    // --- إذا كان الإجراء مجرد فحص (Check) ---
     if (action === 'check') {
         // إذا كان يوم جديد، نحدث القاعدة الآن لتوثيق التاريخ ومنع الريست المتكرر
-        if (isResetNeeded) {
-            console.log(`[DailyLimit] Auto-Reset check for ${userID}: ${todayStr}`);
+        if (isNewDay) {
+            console.log(`[DailyLimit] Auto-Reset (Check) for ${userID}: ${todayStr}`);
             sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
                .run(maxTickets, todayStr, userID, guildID);
         }
-        return { tickets: currentTickets, max: maxTickets };
+        return { tickets: effectiveTickets, max: maxTickets };
     }
 
-    // --- حالة الخصم (Consume) ---
+    // --- إذا كان الإجراء خصم (Consume) ---
     if (action === 'consume') {
-        if (currentTickets > 0) {
-            const newCount = currentTickets - 1;
+        if (effectiveTickets > 0) {
+            const newCount = effectiveTickets - 1;
             
-            console.log(`[DailyLimit] Consuming for ${userID}. Old: ${currentTickets}, New: ${newCount}, Date: ${todayStr}`);
+            console.log(`[DailyLimit] Consuming for ${userID}. Old: ${effectiveTickets}, New: ${newCount}, Date: ${todayStr}`);
 
-            // 🔥 التعديل الجوهري: نحدث الرقم + التاريخ معاً في نفس الوقت
-            // هذا يضمن أنه حتى لو كان التاريخ قديماً، سيتم تحديثه لليوم مع الخصم
+            // 🔥 نحدث العدد + التاريخ (لضمان تثبيت التاريخ الجديد عند الخصم)
             const info = sql.prepare("UPDATE levels SET dungeon_tickets = ?, last_ticket_reset = ? WHERE user = ? AND guild = ?")
                .run(newCount, todayStr, userID, guildID);
                
             if (info.changes > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
-                console.log(`[DailyLimit] SQL Error for ${userID}`);
-                return { success: false, tickets: currentTickets, max: maxTickets };
+                console.log(`[DailyLimit] Error: Update failed for ${userID}`);
+                return { success: false, tickets: effectiveTickets, max: maxTickets };
             }
         } else {
             console.log(`[DailyLimit] Blocked ${userID}: 0 tickets.`);
@@ -249,7 +244,7 @@ function manageTickets(userID, guildID, sql, action = 'check') {
         }
     }
 
-    return { tickets: currentTickets, max: maxTickets };
+    return { tickets: effectiveTickets, max: maxTickets };
 }
 
 module.exports = {
