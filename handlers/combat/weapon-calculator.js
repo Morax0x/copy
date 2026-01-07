@@ -5,8 +5,7 @@
 
 const path = require('path');
 // ⚠️ تأكد أن هذا المسار يشير إلى ملف الثوابت الصحيح في مشروعك
-const { OWNER_ID } = require('../../dungeon/constants'); 
-
+const { OWNER_ID } = require('../dungeon/constants');
 /**
  * دالة لحساب ضرر السلاح الخام بناءً على الليفل (بدون بفات)
  * @param {Object} weaponConfig - إعدادات السلاح من JSON
