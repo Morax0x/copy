@@ -414,7 +414,23 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
         }
 
         const p1Move = moves[player1.id];
-        const p2Move = isPvP ? moves[player2.id] : MOVES[Math.floor(Math.random() * MOVES.length)];
+        
+        // 🔥🔥🔥 تعديل ذكاء البوت لتقليل التعادل 🔥🔥🔥
+        let p2Move;
+        if (isPvP) {
+            p2Move = moves[player2.id];
+        } else {
+            // نختار حركة عشوائية أولاً
+            p2Move = MOVES[Math.floor(Math.random() * MOVES.length)];
+
+            // إذا تطابقت مع حركة اللاعب، نعيد الاختيار مرة واحدة بنسبة 50%
+            // هذا يقلل نسبة التعادل من 33% إلى حوالي 16% فقط
+            if (p2Move === p1Move && Math.random() < 0.5) {
+                const otherMoves = MOVES.filter(m => m !== p1Move);
+                p2Move = otherMoves[Math.floor(Math.random() * otherMoves.length)];
+            }
+        }
+        // 🔥🔥🔥 نهاية التعديل 🔥🔥🔥
 
         let result; 
 
