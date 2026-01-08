@@ -76,19 +76,15 @@ module.exports = {
         // ============================================================
         // 🔒 حساب سعة المزرعة (الحد الأقصى)
         // ============================================================
-        // ✅ استخدام الدالة الموحدة بدلاً من الكود المكرر
         const maxCapacity = getPlayerCapacity(client, userId, guildId);
 
         let userAnimals;
         try {
+            // ✅ (Stacking Update): جلب البيانات مباشرة بدون تجميع ثقيل
+            // البيانات مجمعة أصلاً في الجدول بفضل العمود quantity
             userAnimals = sql.prepare(`
-                SELECT 
-                    animalID, 
-                    COUNT(*) as quantity, 
-                    MIN(purchaseTimestamp) as oldestPurchase 
-                FROM user_farm 
+                SELECT * FROM user_farm 
                 WHERE userID = ? AND guildID = ? 
-                GROUP BY animalID 
                 ORDER BY quantity DESC
             `).all(userId, guildId);
 
@@ -114,27 +110,33 @@ module.exports = {
 
         const processedAnimals = [];
 
-        for (const animal of userAnimals) {
-            const animalData = farmAnimals.find(a => a.id === animal.animalID);
+        for (const row of userAnimals) {
+            const animalData = farmAnimals.find(a => a.id === row.animalID);
             if (!animalData) continue;
 
-            // حساب الحجم للاستخدام الداخلي في السعة
-            const animalSize = animalData.size || 1;
-            currentCapacityUsed += (animal.quantity * animalSize);
+            // ✅ (Stacking Update): استخدام الكمية من قاعدة البيانات
+            const quantity = row.quantity || 1;
 
+            // حساب الحجم الكلي لهذا النوع
+            const animalSize = animalData.size || 1;
+            currentCapacityUsed += (quantity * animalSize);
+
+            // حساب الدخل الكلي لهذا النوع
             const incomePerAnimal = animalData.income_per_day || 0;
-            const totalIncome = incomePerAnimal * animal.quantity;
+            const totalIncome = incomePerAnimal * quantity;
             totalFarmIncome += totalIncome;
 
+            // حساب العمر
             const lifespanDays = animalData.lifespan_days || 30;
-            const ageMS = now - animal.oldestPurchase;
+            const purchaseTime = row.purchaseTimestamp || now;
+            const ageMS = now - purchaseTime;
             const ageDays = Math.floor(ageMS / (1000 * 60 * 60 * 24));
             const daysRemaining = Math.max(0, lifespanDays - ageDays);
 
             processedAnimals.push({
                 name: animalData.name,
                 emoji: animalData.emoji,
-                quantity: animal.quantity,
+                quantity: quantity,
                 income: totalIncome,
                 age: ageDays,
                 remaining: daysRemaining
