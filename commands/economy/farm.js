@@ -1,16 +1,13 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
-// ✅ استدعاء دالة السعة من ملف الـ Utils (تأكد من إنشاء الملف كما اتفقنا)
+// ✅ استدعاء دالة السعة من ملف الـ Utils
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-// ⬅️ الإيموجيات الجديدة للتنقل
 const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 
 const ITEMS_PER_PAGE = 9;
-
-// --- تم حذف دالة getPlayerCapacity المحلية لاستخدام الموحدة ---
 
 // --- دوال بناء الواجهة ---
 
@@ -33,7 +30,7 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
         .setTitle('🏞️ متجر المزرعة')
         .setColor("Random")
         .setImage('https://i.postimg.cc/J0x0Fj0D/download.gif')
-        // عرض السعة في وصف المتجر الرئيسي
+        // عرض السعة الحقيقية (بالحجم)
         .setDescription(`📦 **السعة:** [ \`${currentCapacity}\` / \`${maxCapacity}\` ]\nاختر حيواناً من القائمة المنسدلة لعرض التفاصيل والشراء.`)
         .addFields(
             { name: '\u200B', value: col1.join('\n\n') || '\u200B', inline: true },
@@ -60,16 +57,20 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
 }
 
 function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, client) {
-    const userFarm = sql.prepare("SELECT COUNT(*) as quantity FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
+    // ✅ تعديل: جلب الكمية من العمود quantity مباشرة
+    const userFarm = sql.prepare("SELECT quantity FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
     const userQuantity = userFarm ? userFarm.quantity : 0;
     
-    // حساب السعة الإجمالية الحالية للاعب
-    // ⚠️ ملاحظة: الحساب الدقيق للحجم (Size) يتم في الهاندلر عند الشراء، هنا نستخدم العدد للعرض التقريبي
-    const totalUserAnimals = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ?").get(userId, guildId).count;
+    // ✅ تعديل: حساب السعة المستخدمة بناءً على الحجم والكمية
+    const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
+    let currentCapacityUsed = 0;
+    for (const row of userFarmRows) {
+        const fa = farmAnimals.find(a => a.id === row.animalID);
+        if (fa) currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
+    }
     
-    // ✅ استخدام الدالة المستوردة
     const maxCapacity = getPlayerCapacity(client, userId, guildId);
-    const isFull = totalUserAnimals >= maxCapacity;
+    const isFull = currentCapacityUsed >= maxCapacity;
 
     const price = item.price.toLocaleString();
     const income_per_day = item.income_per_day || 0;
@@ -89,7 +90,6 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
         )
         .setFooter({ text: `الحيوان ${itemIndex + 1} من ${totalItems}` });
 
-    // إضافة تحذير في الـ Embed إذا كانت السعة ممتلئة
     if (isFull) {
         detailEmbed.addFields({ name: '⚠️ تنبيه', value: '🚫 **المزرعة ممتلئة!** لا يمكنك شراء المزيد.', inline: false });
     }
@@ -169,16 +169,21 @@ module.exports = {
             return reply({ embeds: [embed] });
         }
 
-        // جلب بيانات السعة للعرض الأولي
-        const totalUserAnimals = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ?").get(user.id, guild.id).count;
-        // ✅ استخدام الدالة المستوردة
+        // ✅ حساب السعة الإجمالية المستخدمة (Stacking)
+        const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(user.id, guild.id);
+        let currentCapacityUsed = 0;
+        for (const row of userFarmRows) {
+            const fa = farmAnimals.find(a => a.id === row.animalID);
+            if (fa) currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
+        }
+
         const maxCapacity = getPlayerCapacity(client, user.id, guild.id);
 
         let currentPage = 0;
         let currentView = 'grid'; 
         let currentItemIndex = 0;
 
-        const { embed, components } = buildGridView(allItems, currentPage, totalUserAnimals, maxCapacity);
+        const { embed, components } = buildGridView(allItems, currentPage, currentCapacityUsed, maxCapacity);
 
         const msg = await reply({ embeds: [embed], components: components, fetchReply: true });
 
@@ -228,11 +233,17 @@ module.exports = {
                     else if (i.customId === 'farm_back_to_grid') {
                         await i.deferUpdate();
                         currentView = 'grid';
-                        const currentTotal = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ?").get(i.user.id, i.guild.id).count;
-                        // ✅ تحديث السعة عند العودة
+                        
+                        // ✅ إعادة حساب السعة عند العودة للشبكة
+                        const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
+                        let currentCap = 0;
+                        for (const row of userRows) {
+                            const fa = farmAnimals.find(a => a.id === row.animalID);
+                            if (fa) currentCap += (fa.size || 1) * (row.quantity || 1);
+                        }
                         const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
                         
-                        const { embed: gridEmbed, components: gridComponents } = buildGridView(allItems, currentPage, currentTotal, currentMax);
+                        const { embed: gridEmbed, components: gridComponents } = buildGridView(allItems, currentPage, currentCap, currentMax);
                         await i.editReply({ embeds: [gridEmbed], components: gridComponents });
                     }
 
@@ -243,13 +254,18 @@ module.exports = {
 
                         if (!item) return;
 
-                        // ✅ التحقق قبل فتح المودال (حماية أولية)
-                        // ملاحظة: الحماية الحقيقية ضد "الأرقام الكبيرة" تحدث في الهاندلر وليس هنا
                         if (isBuy) {
-                            const currentTotal = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ?").get(i.user.id, i.guild.id).count;
+                            // ✅ التحقق من السعة (Stacking Logic)
+                            const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
+                            let currentCap = 0;
+                            for (const row of userRows) {
+                                const fa = farmAnimals.find(a => a.id === row.animalID);
+                                if (fa) currentCap += (fa.size || 1) * (row.quantity || 1);
+                            }
                             const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
-                            if (currentTotal >= currentMax) {
-                                return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentTotal}/${currentMax})`, ephemeral: true });
+                            
+                            if (currentCap >= currentMax) {
+                                return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentCap}/${currentMax})`, ephemeral: true });
                             }
                         }
 
