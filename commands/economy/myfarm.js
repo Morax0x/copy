@@ -97,12 +97,13 @@ module.exports = {
             .setAuthor({ name: `🏞️ مزرعـــة ${targetUser.username}`, iconURL: targetUser.displayAvatarURL() });
 
         if (!userAnimals || userAnimals.length === 0) {
-            baseEmbed.setDescription(`✶ وصـلت سعـة مزرعتـك لـ اعلـى مستوى: [ \`0\` / \`${maxCapacity}\` ]\n\nمـزرعـة فـارغـة`);
+            // ✅ تم التصحيح: نص منطقي للمزرعة الفارغة
+            baseEmbed.setDescription(`📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **مـزرعـة فـارغـة**\nقم بشراء حيوانات لملء مزرعتك.`);
             baseEmbed.setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y-gif-1731-560.gif');
             return reply({ embeds: [baseEmbed] });
         }
 
-        // 1. حساب الإجماليات وتجميع الحيوانات (Stacking in Code)
+        // 1. حساب الإجماليات وتجميع الحيوانات
         let totalFarmIncome = 0;
         let currentCapacityUsed = 0; 
         const now = Date.now();
@@ -116,11 +117,11 @@ module.exports = {
 
             const quantity = row.quantity || 1;
             
-            // حساب السعة والدخل الإجمالي (دائماً صحيح)
+            // حساب السعة والدخل الإجمالي
             currentCapacityUsed += (quantity * (animalData.size || 1));
             totalFarmIncome += (animalData.income_per_day * quantity);
 
-            // حساب العمر (نأخذ العمر للأقدم إذا تكرر، أو المتوسط، هنا سنأخذ الأقدم للعرض)
+            // حساب العمر
             const purchaseTime = row.purchaseTimestamp || now;
             const ageMS = now - purchaseTime;
             const ageDays = Math.floor(ageMS / (1000 * 60 * 60 * 24));
@@ -131,7 +132,6 @@ module.exports = {
                 const existing = animalsMap.get(animalData.id);
                 existing.quantity += quantity;
                 existing.income += (animalData.income_per_day * quantity);
-                // نحتفظ بأكبر عمر (أقدم شراء) لغرض العرض التحذيري
                 if (ageDays > existing.age) {
                     existing.age = ageDays;
                     existing.remaining = daysRemaining;
@@ -144,22 +144,22 @@ module.exports = {
                     income: animalData.income_per_day * quantity,
                     age: ageDays,
                     remaining: daysRemaining,
-                    // نحتاج الـ id للترتيب لاحقاً إذا أردنا
                     id: animalData.id
                 });
             }
         }
 
-        // تحويل الـ Map إلى مصفوفة للعرض
         const processedAnimals = Array.from(animalsMap.values());
 
-        // بناء الهيدر الثابت
+        // ✅✅ بناء الهيدر الثابت (تم التصحيح هنا) ✅✅
         let headerText = "";
         
         if (currentCapacityUsed >= maxCapacity) {
-            headerText = `✶ وصـلت مزرعتـك لحدهـا الاقصـى ارفع لفلك لزيادة السعة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
+            // حالة الامتلاء
+            headerText = `🚫 **المزرعة ممتلئة!**\n✶ السعة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n💡 ارفع مستواك لزيادة السعة القصوى.\n\n`;
         } else {
-            headerText = `✶ وصـلت سعـة مزرعتـك لـ اعلـى مستوى: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
+            // حالة وجود مساحة (الوضع الطبيعي)
+            headerText = `📦 **إحصائيات السعة:**\n✶ المساحة المستخدمة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
         }
 
         // دالة توليد الإيمبد
