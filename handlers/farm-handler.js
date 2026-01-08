@@ -25,8 +25,6 @@ async function checkFarmIncome(client, sql) {
     const stmtGetUserFarm = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ?");
     const stmtUpdatePayout = sql.prepare("INSERT OR REPLACE INTO farm_last_payout (id, lastPayoutDate) VALUES (?, ?)");
     const stmtGetSettings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?");
-    
-    // ✅ استعلام حذف الحيوان الميت
     const stmtDeleteAnimal = sql.prepare("DELETE FROM user_farm WHERE id = ?");
 
     for (const owner of farmOwners) {
@@ -42,52 +40,48 @@ async function checkFarmIncome(client, sql) {
                 continue; 
             }
 
-            // ---[ الخطوة 2: حساب الدخل وفحص الموت ]---
+            // ---[ الخطوة 2: حساب الدخل وفحص حياة الحيوانات ]---
             const userFarm = stmtGetUserFarm.all(userID, guildID);
             if (!userFarm.length) continue;
 
             let totalIncome = 0;
             let totalAnimals = 0;
-            let deadAnimalsCount = 0; // 💀 عداد الموتى
-            let deadAnimalsNames = []; // أسماء الموتى للتقرير
+            let deadAnimalsCount = 0; 
+            let deadAnimalsNames = []; 
 
             for (const row of userFarm) {
                 const animal = farmAnimals.find(a => a.id === row.animalID);
                 if (animal) {
-                    // ✅ منطق فحص الموت
-                    // نستخدم purchaseDate لحساب العمر، وإذا لم يوجد نفترض أنه تم شراؤه الآن
-                    const purchaseDate = row.purchaseDate || now; 
-                    const ageInMs = now - purchaseDate;
+                    // حساب العمر
+                    const purchaseTimestamp = row.purchaseTimestamp || now; 
+                    const ageInMs = now - purchaseTimestamp;
                     const lifespanInMs = animal.lifespan_days * ONE_DAY;
 
-                    // إذا تجاوز العمر الافتراضي
+                    // إذا تجاوز العمر الافتراضي -> مات الحيوان
                     if (ageInMs >= lifespanInMs) {
-                        // 💀 الحيوان مات
-                        stmtDeleteAnimal.run(row.id); // حذف من الداتابيس نهائياً
+                        stmtDeleteAnimal.run(row.id); // حذف من الداتابيس
                         deadAnimalsCount++;
+                        
                         if (!deadAnimalsNames.includes(animal.name)) {
                             deadAnimalsNames.push(animal.name);
                         }
                     } else {
-                        // ❤️ الحيوان حي -> احسب الدخل
+                        // الحيوان حي -> احسب الدخل
                         totalIncome += animal.income_per_day; 
                         totalAnimals += 1;
                     }
                 }
             }
 
-            // إذا لم يتبق حيوانات ولا يوجد دخل، لا تكمل (إلا إذا أردت إخبارهم بموت الحيوانات فقط)
+            // إذا لم يتبق حيوانات ولا يوجد دخل، ولا يوجد موتى للتبليغ عنهم، توقف
             if (totalIncome <= 0 && deadAnimalsCount === 0) continue;
 
             // ---[ الخطوة 3: تحديث الرصيد وقاعدة البيانات ]---
             if (totalIncome > 0) {
                 let userData = client.getLevel.get(userID, guildID);
                 
-                // معالجة حالة عدم وجود بيانات للمستخدم
                 if (!userData) {
-                    if (!client.defaultData) {
-                        continue;
-                    }
+                    if (!client.defaultData) continue;
                     userData = { ...client.defaultData, user: userID, guild: guildID };
                 }
 
@@ -95,7 +89,7 @@ async function checkFarmIncome(client, sql) {
                 client.setLevel.run(userData);
             }
 
-            // تسجيل وقت الحصاد الجديد فوراً
+            // تسجيل وقت الحصاد الجديد
             stmtUpdatePayout.run(payoutID, now);
 
             // ---[ الخطوة 4: إرسال الإشعار ]---
@@ -116,7 +110,7 @@ async function checkFarmIncome(client, sql) {
             let description = `✶ حـققـت مـزرعتـك دخـل بقيمـة: **${totalIncome.toLocaleString()}** ${EMOJI_MORA}\n` +
                               `✶ عـدد الحـيوانات الحية: **${totalAnimals.toLocaleString()}**`;
 
-            // إضافة رسالة تعزية إذا ماتت حيوانات 💀
+            // إضافة رسالة إذا ماتت حيوانات
             if (deadAnimalsCount > 0) {
                 description += `\n\n💀 **سُنة الحياة في المزرعة...** فارقت الحياة **${deadAnimalsCount}** من حيواناتك\n` +
                                `❌ **${deadAnimalsNames.join('، ')}**`;
@@ -124,7 +118,7 @@ async function checkFarmIncome(client, sql) {
 
             const embed = new EmbedBuilder()
                 .setTitle(`❖ تـقرير المـزرعـة اليومي`)
-                .setColor(deadAnimalsCount > 0 ? Colors.Orange : Colors.Gold) // لون برتقالي للتحذير عند الموت
+                .setColor(deadAnimalsCount > 0 ? Colors.Orange : Colors.Gold)
                 .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
                 .setImage('https://i.postimg.cc/d0KD5JpH/download.gif')
                 .setDescription(description)
