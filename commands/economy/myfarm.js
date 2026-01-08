@@ -1,7 +1,20 @@
-const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
+const { 
+    EmbedBuilder, 
+    Colors, 
+    SlashCommandBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ComponentType 
+} = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
+// ✅ استدعاء دالة السعة الموحدة
+const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
+const LEFT_EMOJI = '<:left:1439164494759723029>';
+const RIGHT_EMOJI = '<:right:1439164491072929915>';
+const ITEMS_PER_PAGE = 3;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -57,9 +70,14 @@ module.exports = {
 
         const sql = client.sql;
         const targetUser = targetMember.user;
-
         const userId = targetUser.id;
         const guildId = guild.id;
+
+        // ============================================================
+        // 🔒 حساب سعة المزرعة (الحد الأقصى)
+        // ============================================================
+        // ✅ استخدام الدالة الموحدة بدلاً من الكود المكرر
+        const maxCapacity = getPlayerCapacity(client, userId, guildId);
 
         let userAnimals;
         try {
@@ -79,53 +97,141 @@ module.exports = {
             return replyError("❌ حدث خطأ أثناء جلب بيانات المزرعة.");
         }
 
-        const embed = new EmbedBuilder()
+        const baseEmbed = new EmbedBuilder()
             .setColor("Random")
             .setAuthor({ name: `🏞️ مزرعـــة ${targetUser.username}`, iconURL: targetUser.displayAvatarURL() });
 
         if (!userAnimals || userAnimals.length === 0) {
-            embed.setDescription("مـزرعـة فـارغـة");
-            embed.setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y-gif-1731-560.gif');
-            return reply({ embeds: [embed] });
+            baseEmbed.setDescription(`✶ وصـلت سعـة مزرعتـك لـ اعلـى مستوى: [ \`0\` / \`${maxCapacity}\` ]\n\nمـزرعـة فـارغـة`);
+            baseEmbed.setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y-gif-1731-560.gif');
+            return reply({ embeds: [baseEmbed] });
         }
 
-        let descriptionLines = [];
+        // 1. حساب الإجماليات
         let totalFarmIncome = 0;
+        let currentCapacityUsed = 0; 
         const now = Date.now();
+
+        const processedAnimals = [];
 
         for (const animal of userAnimals) {
             const animalData = farmAnimals.find(a => a.id === animal.animalID);
             if (!animalData) continue;
 
+            // حساب الحجم للاستخدام الداخلي في السعة
+            const animalSize = animalData.size || 1;
+            currentCapacityUsed += (animal.quantity * animalSize);
+
             const incomePerAnimal = animalData.income_per_day || 0;
             const totalIncome = incomePerAnimal * animal.quantity;
-            const lifespanDays = animalData.lifespan_days || 30;
+            totalFarmIncome += totalIncome;
 
+            const lifespanDays = animalData.lifespan_days || 30;
             const ageMS = now - animal.oldestPurchase;
             const ageDays = Math.floor(ageMS / (1000 * 60 * 60 * 24));
             const daysRemaining = Math.max(0, lifespanDays - ageDays);
 
-            totalFarmIncome += totalIncome;
-
-            descriptionLines.push(
-                `**✥ ${animalData.name} ${animalData.emoji}**\n` +
-                `✶ الـعـدد: \`${animal.quantity.toLocaleString()}\`\n` +
-                `✶ الـدخـل اليومي: \`${totalIncome.toLocaleString()}\` ${EMOJI_MORA}\n` +
-                `✥ اقـدم حـيـوان عمـره: \`${ageDays}\` يوم (متبقي \`${daysRemaining}\` يوم)`
-            );
+            processedAnimals.push({
+                name: animalData.name,
+                emoji: animalData.emoji,
+                quantity: animal.quantity,
+                income: totalIncome,
+                age: ageDays,
+                remaining: daysRemaining
+            });
         }
 
-        // تم إزالة حسابات البوف MoraBuff
-        embed.setDescription(descriptionLines.join('\n\n'));
+        // بناء الهيدر الثابت
+        let headerText = "";
         
-        // الفوتر يعرض الدخل الصافي فقط
-        embed.setFooter({
-            text: `إجمالي دخل المزرعة: ${totalFarmIncome.toLocaleString()} بـاليـوم`,
-            iconURL: targetUser.displayAvatarURL({ dynamic: true })
+        if (currentCapacityUsed >= maxCapacity) {
+            headerText = `✶ وصـلت مزرعتـك لحدهـا الاقصـى ارفع لفلك لزيادة السعة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
+        } else {
+            headerText = `✶ وصـلت سعـة مزرعتـك لـ اعلـى مستوى: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
+        }
+
+        // دالة توليد الإيمبد
+        const generateEmbed = (page) => {
+            const embed = new EmbedBuilder(baseEmbed.data);
+            
+            const startIndex = page * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const currentItems = processedAnimals.slice(startIndex, endIndex);
+
+            const descriptionLines = currentItems.map(item => 
+                `**✥ ${item.name} ${item.emoji}**\n` +
+                `✶ الـعـدد: \`${item.quantity.toLocaleString()}\`\n` +
+                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA}\n` +
+                `✥ اقـدم حـيـوان عمـره: \`${item.age}\` يوم (متبقي \`${item.remaining}\` يوم)`
+            );
+
+            embed.setDescription(headerText + descriptionLines.join('\n\n'));
+            
+            embed.setFooter({
+                text: `صفحة ${page + 1}/${Math.ceil(processedAnimals.length / ITEMS_PER_PAGE)} • إجمالي الدخل: ${totalFarmIncome.toLocaleString()} بـاليـوم`,
+                iconURL: targetUser.displayAvatarURL({ dynamic: true })
+            });
+            
+            embed.setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y-gif-1731-560.gif');
+            
+            return embed;
+        };
+
+        const generateButtons = (page) => {
+            const totalPages = Math.ceil(processedAnimals.length / ITEMS_PER_PAGE);
+            if (totalPages <= 1) return [];
+
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('farm_prev')
+                        .setEmoji(LEFT_EMOJI)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId('farm_next')
+                        .setEmoji(RIGHT_EMOJI)
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(page === totalPages - 1)
+                );
+            return [row];
+        };
+
+        let currentPage = 0;
+        const msg = await reply({ 
+            embeds: [generateEmbed(currentPage)], 
+            components: generateButtons(currentPage),
+            fetchReply: true 
         });
 
-        embed.setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y-gif-1731-560.gif');
+        if (processedAnimals.length <= ITEMS_PER_PAGE) return;
 
-        await reply({ embeds: [embed] });
+        const collector = msg.createMessageComponentCollector({ 
+            componentType: ComponentType.Button, 
+            time: 120000,
+            filter: i => i.user.id === user.id 
+        });
+
+        collector.on('collect', async i => {
+            if (i.customId === 'farm_prev') {
+                currentPage--;
+            } else if (i.customId === 'farm_next') {
+                currentPage++;
+            }
+            await i.update({ 
+                embeds: [generateEmbed(currentPage)], 
+                components: generateButtons(currentPage) 
+            });
+        });
+
+        collector.on('end', () => {
+            if (msg.editable) {
+                const disabledRow = generateButtons(currentPage)[0];
+                if (disabledRow) {
+                    disabledRow.components.forEach(btn => btn.setDisabled(true));
+                    msg.edit({ components: [disabledRow] }).catch(() => {});
+                }
+            }
+        });
     }
 };
