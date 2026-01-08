@@ -80,8 +80,7 @@ module.exports = {
 
         let userAnimals;
         try {
-            // ✅ (Stacking Update): جلب البيانات مباشرة بدون تجميع ثقيل
-            // البيانات مجمعة أصلاً في الجدول بفضل العمود quantity
+            // جلب البيانات من قاعدة البيانات
             userAnimals = sql.prepare(`
                 SELECT * FROM user_farm 
                 WHERE userID = ? AND guildID = ? 
@@ -103,45 +102,56 @@ module.exports = {
             return reply({ embeds: [baseEmbed] });
         }
 
-        // 1. حساب الإجماليات
+        // 1. حساب الإجماليات وتجميع الحيوانات (Stacking in Code)
         let totalFarmIncome = 0;
         let currentCapacityUsed = 0; 
         const now = Date.now();
 
-        const processedAnimals = [];
+        // استخدام Map لتجميع الحيوانات المتشابهة
+        const animalsMap = new Map();
 
         for (const row of userAnimals) {
             const animalData = farmAnimals.find(a => a.id === row.animalID);
             if (!animalData) continue;
 
-            // ✅ (Stacking Update): استخدام الكمية من قاعدة البيانات
             const quantity = row.quantity || 1;
+            
+            // حساب السعة والدخل الإجمالي (دائماً صحيح)
+            currentCapacityUsed += (quantity * (animalData.size || 1));
+            totalFarmIncome += (animalData.income_per_day * quantity);
 
-            // حساب الحجم الكلي لهذا النوع
-            const animalSize = animalData.size || 1;
-            currentCapacityUsed += (quantity * animalSize);
-
-            // حساب الدخل الكلي لهذا النوع
-            const incomePerAnimal = animalData.income_per_day || 0;
-            const totalIncome = incomePerAnimal * quantity;
-            totalFarmIncome += totalIncome;
-
-            // حساب العمر
-            const lifespanDays = animalData.lifespan_days || 30;
+            // حساب العمر (نأخذ العمر للأقدم إذا تكرر، أو المتوسط، هنا سنأخذ الأقدم للعرض)
             const purchaseTime = row.purchaseTimestamp || now;
             const ageMS = now - purchaseTime;
             const ageDays = Math.floor(ageMS / (1000 * 60 * 60 * 24));
-            const daysRemaining = Math.max(0, lifespanDays - ageDays);
+            const daysRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
-            processedAnimals.push({
-                name: animalData.name,
-                emoji: animalData.emoji,
-                quantity: quantity,
-                income: totalIncome,
-                age: ageDays,
-                remaining: daysRemaining
-            });
+            // التجميع في Map
+            if (animalsMap.has(animalData.id)) {
+                const existing = animalsMap.get(animalData.id);
+                existing.quantity += quantity;
+                existing.income += (animalData.income_per_day * quantity);
+                // نحتفظ بأكبر عمر (أقدم شراء) لغرض العرض التحذيري
+                if (ageDays > existing.age) {
+                    existing.age = ageDays;
+                    existing.remaining = daysRemaining;
+                }
+            } else {
+                animalsMap.set(animalData.id, {
+                    name: animalData.name,
+                    emoji: animalData.emoji,
+                    quantity: quantity,
+                    income: animalData.income_per_day * quantity,
+                    age: ageDays,
+                    remaining: daysRemaining,
+                    // نحتاج الـ id للترتيب لاحقاً إذا أردنا
+                    id: animalData.id
+                });
+            }
         }
+
+        // تحويل الـ Map إلى مصفوفة للعرض
+        const processedAnimals = Array.from(animalsMap.values());
 
         // بناء الهيدر الثابت
         let headerText = "";
