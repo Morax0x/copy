@@ -22,7 +22,7 @@ module.exports = {
         .setDescription('يعرض جميع الحيوانات التي تملكها في مزرعتك أو مزرعة عضو آخر.')
         .addUserOption(option => 
             option.setName('المستخدم')
-            .setDescription('المستخدم الذي تريد عرض مزرعته')
+            .setDescription('المستخدم الذي تريد عرض مزرعتـه')
             .setRequired(false)),
 
     name: 'myfarm',
