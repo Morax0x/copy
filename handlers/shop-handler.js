@@ -91,7 +91,7 @@ function updateMarketPrices() {
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
         const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;           
+        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;            
         const transaction = sql.transaction(() => {
             for (const item of allItems) {
                 const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
@@ -739,6 +739,15 @@ async function _handleShopButton(i, client, sql) {
              if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
              const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
              if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
+
+             // 🔥🔥🔥 إضافة شرط الستريك هنا 🔥🔥🔥
+             const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
+             const currentStreak = userStreakData ? userStreakData.streakCount : 0;
+             
+             if (currentStreak < 30) {
+                 return await i.reply({ content: `❌ **لا تستوفي الشروط كلها:** يجب أن يكون الستريك الخاص بك **30 يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
+             }
+             // 🔥🔥🔥 نهاية الإضافة 🔥🔥🔥
         }
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
