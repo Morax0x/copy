@@ -6,6 +6,7 @@
     "price": 500,
     "income_per_day": 25,
     "lifespan_days": 30,
+    "size": 1,
     "image": "https://i.postimg.cc/mgQJWVRm/78b1e5ce6f0910118abc6928f859c4a4-removebg-preview.png"
   },
   {
@@ -15,6 +16,7 @@
     "price": 800,
     "income_per_day": 40,
     "lifespan_days": 25,
+    "size": 1,
     "image": "https://i.postimg.cc/MKKZ3MSv/fish.png"
   },
   {
@@ -24,6 +26,7 @@
     "price": 1000,
     "income_per_day": 60,
     "lifespan_days": 20,
+    "size": 1,
     "image": "https://i.postimg.cc/wTFFXPq9/thunder-bee-girl-transparent-anime-honey-bee-girl-11563246392mcnzun2ais-removebg-preview.png"
   },
   {
@@ -33,6 +36,7 @@
     "price": 1500,
     "income_per_day": 55,
     "lifespan_days": 35,
+    "size": 2,
     "image": "https://i.postimg.cc/FHsWwvWX/km-KRmp3K-400x400-removebg-preview.png"
   },
   {
@@ -42,6 +46,7 @@
     "price": 1800,
     "income_per_day": 55,
     "lifespan_days": 45,
+    "size": 2,
     "image": "https://i.postimg.cc/bwpxBRvd/image-removebg-preview.png"
   },
   {
@@ -51,16 +56,18 @@
     "price": 2500,
     "income_per_day": 50,
     "lifespan_days": 65,
+    "size": 3,
     "image": "https://i.postimg.cc/3r0HbXyP/cwo.png"
   },
   {
-    "id": "llama",
-    "name": "لاما",
-    "emoji": "🦙",
+    "id": "camel",
+    "name": "جمل",
+    "emoji": "🐫",
     "price": 4000,
     "income_per_day": 75,
     "lifespan_days": 70,
-    "image": "https://i.postimg.cc/0y8FxDNT/pngtree-llama-face-vector-png-image-6891155.png"
+    "size": 3,
+    "image": "https://i.postimg.cc/bNywqgkW/1000166044-removebg-preview.png"
   },
   {
     "id": "horse",
@@ -69,6 +76,7 @@
     "price": 6000,
     "income_per_day": 90,
     "lifespan_days": 90,
+    "size": 4,
     "image": "https://i.postimg.cc/7hrGTxGH/Centorea-image.png"
   },
   {
@@ -78,6 +86,7 @@
     "price": 15000,
     "income_per_day": 150,
     "lifespan_days": 120,
+    "size": 5,
     "image": "https://i.postimg.cc/ydvXm3Kd/Lions.png"
   }
 ]
