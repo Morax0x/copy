@@ -181,7 +181,8 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                     effectMsg = "تجرع شراب العمالقة العتيق! تضاعفت صحته لمدة 8 طوابق!";
                 }
                 else if (selectedId === 'buy_instant_assassin') {
-                    player.effects.push({ type: 'stealth', turns: 3 }); // تأكد أن نظام المعركة يدعم 'stealth'
+                    // 🔥 تصحيح: استخدام evasion بدلاً من stealth لأن المحرك يفهم evasion
+                    player.effects.push({ type: 'evasion', turns: 3 }); 
                     effectMsg = "شرب سم التخفي! اختفى عن الأنظار لمدة 3 جولات.";
                 }
 
