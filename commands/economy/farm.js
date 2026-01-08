@@ -57,16 +57,21 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
 }
 
 function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, client) {
-    // ✅ تعديل: جلب الكمية من العمود quantity مباشرة
-    const userFarm = sql.prepare("SELECT quantity FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
-    const userQuantity = userFarm ? userFarm.quantity : 0;
+    // ✅ تصحيح: استخدام SUM لجمع الكمية في حال وجود عدة أسطر (التكرار)
+    // هذا يحل مشكلة ظهور رقم 1 في زر البيع
+    const userFarmQuery = sql.prepare("SELECT SUM(quantity) as totalQty FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
+    const userQuantity = userFarmQuery && userFarmQuery.totalQty ? userFarmQuery.totalQty : 0;
     
-    // ✅ تعديل: حساب السعة المستخدمة بناءً على الحجم والكمية
+    // ✅ حساب السعة الإجمالية المستخدمة في المزرعة
     const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
+    
     let currentCapacityUsed = 0;
     for (const row of userFarmRows) {
         const fa = farmAnimals.find(a => a.id === row.animalID);
-        if (fa) currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
+        if (fa) {
+            // السعة = (حجم الحيوان × كميته)
+            currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
+        }
     }
     
     const maxCapacity = getPlayerCapacity(client, userId, guildId);
@@ -234,7 +239,7 @@ module.exports = {
                         await i.deferUpdate();
                         currentView = 'grid';
                         
-                        // ✅ إعادة حساب السعة عند العودة للشبكة
+                        // ✅ إعادة حساب السعة عند العودة للشبكة (Stacking)
                         const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
                         let currentCap = 0;
                         for (const row of userRows) {
