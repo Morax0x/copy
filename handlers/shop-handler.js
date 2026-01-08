@@ -1,120 +1,22 @@
-const { EmbedBuilder, Colors, MessageFlags, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } = require("discord.js");
-const path = require('path');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ComponentType, Colors, MessageFlags } = require("discord.js");
 
-// ✅ استيراد الملفات (تأكد أن المسارات صحيحة لمشروعك)
-const shopItems = require('../json/shop-items.json'); 
-const potionItems = require('../json/potions.json'); 
-const farmAnimals = require('../json/farm-animals.json');
-const weaponsConfig = require('../json/weapons-config.json');
-const skillsConfig = require('../json/skills-config.json');
+// ✅✅ تصحيح المسار هنا (نقطة واحدة لأنه في نفس المجلد) ✅✅
 const { sendLevelUpMessage } = require('./handler-utils.js'); 
 
-// استيراد ملف الصيد الشامل
-const rootDir = process.cwd();
-let rodsConfig = [], boatsConfig = [], baitsConfig = [];
-try {
-    const fishingConfig = require(path.join(rootDir, 'json', 'fishing-config.json'));
-    rodsConfig = fishingConfig.rods || [];
-    boatsConfig = fishingConfig.boats || [];
-    baitsConfig = fishingConfig.baits || [];
-} catch (e) { console.error("Error loading fishing config:", e); }
+const { 
+    shopItems, potionItems, weaponsConfig, skillsConfig, rodsConfig, boatsConfig, baitsConfig, 
+    EMOJI_MORA, OWNER_ID, XP_EXCHANGE_RATE, BANNER_URL, THUMBNAILS, 
+    ensureInventoryTable, sendShopLog 
+} = require('./shop_system/utils.js'); 
+const path = require('path');
 
-const EMOJI_MORA = '<:mora:1435647151349698621>'; 
-const OWNER_ID = "1145327691772481577"; 
-const XP_EXCHANGE_RATE = 3;
-const BANNER_URL = 'https://i.postimg.cc/NMkWVyLV/line.png';
+// استيراد المعالجات المفصولة
+const { _handleFarmTransaction } = require('./shop_system/farm.js');
+const { _handleMarketTransaction, updateMarketPrices } = require('./shop_system/market.js');
 
-const THUMBNAILS = new Map([
-    ['upgrade_weapon', 'https://i.postimg.cc/CMXxsXT1/tsmym-bdwn-ʿnwan-7.png'],
-    ['upgrade_skill', 'https://i.postimg.cc/CMkxJJF4/tsmym-bdwn-ʿnwan-8.png'],
-    ['upgrade_rod', 'https://i.postimg.cc/Wz0g0Zg0/fishing.png'], 
-    ['upgrade_boat', 'https://i.postimg.cc/Wz0g0Zg0/fishing.png'], 
-    ['exchange_xp', 'https://i.postimg.cc/2yKbQSd3/tsmym-bdwn-ʿnwan-6.png'],
-    ['personal_guard_1d', 'https://i.postimg.cc/CMv2qp8n/tsmym-bdwn-ʿnwan-1.png'],
-    ['streak_shield', 'https://i.postimg.cc/3rbLwCMj/tsmym-bdwn-ʿnwan-2.png'],
-    ['streak_shield_media', 'https://i.postimg.cc/3rbLwCMj/tsmym-bdwn-ʿnwan-2.png'],
-    ['xp_buff_1d_3', 'https://i.postimg.cc/TP9zNLK4/tsmym-bdwn-ʿnwan-3.png'],
-    ['xp_buff_1d_7', 'https://i.postimg.cc/Gmn6cJYG/tsmym-bdwn-ʿnwan-4.png'],
-    ['xp_buff_2d_10', 'https://i.postimg.cc/NFrPt5jN/tsmym-bdwn-ʿnwan-5.png'],
-    ['vip_role_3d', 'https://i.postimg.cc/4drRpC7d/2.webp'],
-    ['discord_effect_5', 'https://i.postimg.cc/50QZ4PPL/1.webp'],
-    ['discord_effect_10', 'https://i.postimg.cc/tJHmX9nh/3.webp'],
-    ['nitro_basic', 'https://i.postimg.cc/Qxmn3G8K/5.webp'],
-    ['nitro_gaming', 'https://i.postimg.cc/kXJfw1Q4/6.webp'],
-    ['change_race', 'https://i.postimg.cc/rs4mmjvs/tsmym-bdwn-ʿnwan-9.png'],
-    ['item_temp_reply', 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'],
-    ['potions_menu', 'https://cdn-icons-png.flaticon.com/512/867/867927.png']
-]);
-
-// 🌟 دالة للتأكد من وجود جدول المخزون (Inventory) 🌟
-function ensureInventoryTable(sql) {
-    if(!sql.open) return;
-    sql.prepare(`
-        CREATE TABLE IF NOT EXISTS user_inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guildID TEXT,
-            userID TEXT,
-            itemID TEXT,
-            quantity INTEGER DEFAULT 0,
-            UNIQUE(guildID, userID, itemID)
-        );
-    `).run();
-}
-
-// 🌟 دالة اللوج (تسجيل العمليات) 🌟
-async function sendShopLog(client, guildId, member, item, price, type = "شراء") {
-    try {
-        const settings = client.sql.prepare("SELECT shopLogChannelID FROM settings WHERE guild = ?").get(guildId);
-        if (!settings || !settings.shopLogChannelID) return;
-        const channel = await client.channels.fetch(settings.shopLogChannelID).catch(() => null);
-        if (!channel) return;
-        const embed = new EmbedBuilder()
-            .setTitle(`🛒 سجل عمليات المتجر`)
-            .setColor(type.includes("بيع") ? Colors.Green : Colors.Gold)
-            .addFields(
-                { name: '👤 العضو', value: `${member} \n(\`${member.id}\`)`, inline: true },
-                { name: '📦 العنصر', value: `**${item}**`, inline: true },
-                { name: '💰 المبلغ', value: `**${price.toLocaleString()}** ${EMOJI_MORA}`, inline: true },
-                { name: '🏷️ نوع العملية', value: type, inline: true },
-                { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
-            )
-            .setThumbnail(member.user.displayAvatarURL())
-            .setTimestamp();
-        await channel.send({ embeds: [embed] });
-    } catch (e) { console.error("[Shop Log Error]", e.message); }
-}
-
-function updateMarketPrices() {
-    const sql = require('better-sqlite3')('./mainDB.sqlite');
-    if (!sql.open) return;
-    try {
-        const allItems = sql.prepare("SELECT * FROM market_items").all();
-        if (allItems.length === 0) return;
-        const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        const SATURATION_POINT = 2000; const MIN_PRICE = 10; const MAX_PRICE = 50000;            
-        const transaction = sql.transaction(() => {
-            for (const item of allItems) {
-                const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
-                const totalOwned = result.total || 0;
-                let randomPercent = (Math.random() * 0.20) - 0.10;
-                const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
-                let finalChangePercent = randomPercent - saturationPenalty;
-                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2; 
-                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
-                const oldPrice = item.currentPrice;
-                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
-                if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
-                if (newPrice > MAX_PRICE) newPrice = MAX_PRICE;
-                const changeAmount = newPrice - oldPrice;
-                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
-            }
-        });
-        transaction();
-        console.log(`[Market] Prices updated.`);
-    } catch (err) { console.error("[Market] Error updating prices:", err.message); }
-}
-
+// ---------------------------------------------------------------------
+// دوال مساعدة داخلية للمتجر (لجلب العناصر والمهارات)
+// ---------------------------------------------------------------------
 function getBuyableItems() { 
     return shopItems.filter(it => 
         it.category !== 'menus' && 
@@ -154,16 +56,9 @@ function getAllUserAvailableSkills(member, sql) {
     return allSkills; 
 }
 
-function calculateSlippage(basePrice, quantity, isBuy) {
-    const slippageFactor = 0.0001; 
-    const impact = quantity * slippageFactor;
-    let avgPrice;
-    if (isBuy) { avgPrice = basePrice * (1 + (impact / 2)); } 
-    else { avgPrice = basePrice * (1 - (impact / 2)); }
-    return Math.max(Math.floor(avgPrice), 1);
-}
-
-// ... (نظام الكوبونات ودالة processFinalPurchase المعدلة) ...
+// ---------------------------------------------------------------------
+// معالج الكوبونات وعمليات الشراء العامة
+// ---------------------------------------------------------------------
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, sql, callbackType) {
     const member = interaction.member; const guildID = interaction.guild.id; const userID = member.id;
     const bossCoupon = sql.prepare("SELECT * FROM user_coupons WHERE guildID = ? AND userID = ? AND isUsed = 0 LIMIT 1").get(guildID, userID);
@@ -238,7 +133,6 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     // تنفيذ عملية الشراء بناءً على النوع
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') { userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0; }
-        // 🔥🔥 إصلاح: الجرعات تذهب للمخزون (inventory) 🔥🔥
         else if (itemData.category === 'potions') { 
             ensureInventoryTable(sql); 
             sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id); 
@@ -278,21 +172,13 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         }
         else if (itemData.id === 'change_race') {
             try {
-                // 1. إزالة رتبة العرق الحالية من الديسكورد
                 const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(interaction.guild.id);
                 const raceRoleIDs = allRaceRoles.map(r => r.roleID);
                 const userRaceRole = interaction.member.roles.cache.find(r => raceRoleIDs.includes(r.id));
                 if (userRaceRole) { await interaction.member.roles.remove(userRaceRole); }
-
-                // 2. 🔥 حذف سلاح العرق القديم من الداتا بيس 🔥
                 sql.prepare("DELETE FROM user_weapons WHERE userID = ? AND guildID = ?").run(interaction.user.id, interaction.guild.id);
-
-                // 3. 🔥 حذف مهارة العرق القديمة (التي تبدأ بـ race_) 🔥
                 sql.prepare("DELETE FROM user_skills WHERE userID = ? AND guildID = ? AND skillID LIKE 'race_%'").run(interaction.user.id, interaction.guild.id);
-
-            } catch (err) {
-                console.error("Error in change_race cleanup:", err);
-            }
+            } catch (err) { console.error("Error in change_race cleanup:", err); }
               
             const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000);
             sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.guild.id, interaction.user.id, -5, expiresAt, 'xp', -0.05);
@@ -303,16 +189,12 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         const newLevel = itemData.currentLevel + 1;
         if (itemData.isBuy) sql.prepare("INSERT INTO user_weapons (userID, guildID, raceName, weaponLevel) VALUES (?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, itemData.raceName, newLevel);
         else sql.prepare("UPDATE user_weapons SET weaponLevel = ? WHERE userID = ? AND guildID = ? AND raceName = ?").run(newLevel, interaction.user.id, interaction.guild.id, itemData.raceName);
-        
-        // 🔥 تحديث واجهة السلاح 🔥
-        await _handleWeaponUpgrade(interaction, client, sql, true); // true = تحديث فقط دون إعادة الشراء
+        await _handleWeaponUpgrade(interaction, client, sql, true); 
     } 
     else if (callbackType === 'skill') {
         const newLevel = itemData.currentLevel + 1;
         if (itemData.isBuy) sql.prepare("INSERT INTO user_skills (userID, guildID, skillID, skillLevel) VALUES (?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, itemData.skillId, newLevel);
         else sql.prepare("UPDATE user_skills SET skillLevel = ? WHERE id = ?").run(newLevel, itemData.dbId);
-        
-        // 🔥 تحديث واجهة المهارة 🔥
         await _handleSkillUpgrade(interaction, client, sql, true); 
     }
     
@@ -388,8 +270,7 @@ function _buildSkillEmbedFields(embed, buttonRow, skillConfig, currentLevel) {
     else { currentEffect = skillConfig.base_value + (skillConfig.value_increment * (currentLevel - 1)); }
     embed.addFields({ name: "المستوى الحالي", value: `Lv. ${currentLevel}`, inline: true }, { name: "التأثير الحالي", value: `${currentEffect}${effectType}`, inline: true });
     
-    // 🔥🔥🔥 تعديل الحد الأقصى 🔥🔥🔥
-    if (currentLevel >= (skillConfig.max_level || 20)) { // استخدام القيمة من JSON أو 20 كافتراضي
+    if (currentLevel >= (skillConfig.max_level || 20)) { 
         embed.addFields({ name: "التطوير القادم", value: "وصلت للحد الأقصى!", inline: true });
         buttonRow.addComponents(new ButtonBuilder().setCustomId('max_level').setLabel('الحد الأقصى').setStyle(ButtonStyle.Success).setDisabled(true));
     } else {
@@ -451,9 +332,7 @@ async function _handleBaitSelect(i, client, sql) {
 }
 
 async function _handlePotionSelect(i, client, sql) {
-    // 🔥 هنا نستخدم reply مباشرة لضمان رسالة جديدة 🔥
     if(i.replied || i.deferred) {
-        // إذا كان هناك تفاعل سابق، نستخدم followUp كرسالة جديدة
         await i.followUp({ content: "جاري التحميل...", flags: MessageFlags.Ephemeral });
     } else {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -489,7 +368,6 @@ async function _handlePotionSelect(i, client, sql) {
     await i.editReply({ embeds: [embed], components: [row] });
 }
 
-// ... (دوال التطوير والشراء - Rod, Boat, Bait - كما هي) ...
 async function _handleRodUpgrade(i, client, sql) {
     await i.deferUpdate();
     const userId = i.user.id; let userData = client.getLevel.get(userId, i.guild.id);
@@ -504,8 +382,6 @@ async function _handleRodUpgrade(i, client, sql) {
     userData.mora -= nextRod.price; userData.rodLevel = nextLevel; client.setLevel.run(userData);
     await i.followUp({ content: `🎉 مبروك! تم شراء **${nextRod.name}**!`, flags: MessageFlags.Ephemeral });
     sendShopLog(client, i.guild.id, i.member, `سنارة صيد: ${nextRod.name}`, nextRod.price, "شراء/تطوير");
-    
-    // 🔥 تحديث الواجهة 🔥
     await _handleRodSelect(i, client, sql);
 }
 
@@ -524,8 +400,6 @@ async function _handleBoatUpgrade(i, client, sql) {
     sql.prepare("UPDATE levels SET boatLevel = ?, mora = ?, currentLocation = ? WHERE user = ? AND guild = ?").run(nextLevel, userData.mora, nextBoat.location_id, userId, i.guild.id);
     await i.followUp({ content: `🎉 مبروك! تم شراء **${nextBoat.name}**!`, flags: MessageFlags.Ephemeral });
     sendShopLog(client, i.guild.id, i.member, `قارب صيد: ${nextBoat.name}`, nextBoat.price, "شراء/تطوير");
-    
-    // 🔥 تحديث الواجهة 🔥
     await _handleBoatSelect(i, client, sql);
 }
 
@@ -554,12 +428,10 @@ async function _handleWeaponUpgrade(i, client, sql, isUpdate = false) {
     try {
         const userId = i.user.id; const guildId = i.guild.id; 
         
-        // استخراج اسم العرق
         let exactRaceName = null; let weaponConfig = null;
-        if (!isUpdate) { // في حالة الضغط العادي
+        if (!isUpdate) { 
              const isBuy = i.customId.startsWith('buy_weapon_');
              if (i.isStringSelectMenu() && i.values[0] === 'upgrade_weapon') {
-                 // 🔥 تم التعديل: استخدام reply لإنشاء رسالة جديدة
                  if (!i.replied && !i.deferred) await i.deferReply({ flags: MessageFlags.Ephemeral });
                  const userRace = getUserRace(i.member, sql);
                  if (!userRace) return i.editReply({ content: "❌ ليس لديك عرق! قم باختيار عرقك أولاً." });
@@ -579,7 +451,6 @@ async function _handleWeaponUpgrade(i, client, sql, isUpdate = false) {
                  exactRaceName = weaponConfig.race;
              }
         } else {
-             // في حالة التحديث التلقائي، نحتاج لجلب العرق من جديد
              const userRace = getUserRace(i.member, sql);
              if (userRace) {
                  weaponConfig = weaponsConfig.find(w => w.race.toLowerCase() === userRace.raceName.toLowerCase());
@@ -587,15 +458,13 @@ async function _handleWeaponUpgrade(i, client, sql, isUpdate = false) {
              }
         }
 
-        if(!exactRaceName) return; // حماية
+        if(!exactRaceName) return; 
 
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         let userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(userId, guildId, exactRaceName);
         let currentLevel = userWeapon ? userWeapon.weaponLevel : 0;
         
-        // تنفيذ عملية الشراء (فقط عند الضغط على الزر وليس التحديث)
         if (!isUpdate && i.isButton()) {
-            // 🔥🔥🔥 تعديل الحد الأقصى للسلاح 🔥🔥🔥
             if (currentLevel >= (weaponConfig.max_level || 20)) return await i.followUp({ content: '❌ لقد وصلت للحد الأقصى للتطوير بالفعل!', flags: MessageFlags.Ephemeral });
             let price = (currentLevel === 0) ? weaponConfig.base_price : weaponConfig.base_price + (weaponConfig.price_increment * currentLevel);
             
@@ -605,12 +474,10 @@ async function _handleWeaponUpgrade(i, client, sql, isUpdate = false) {
             return; 
         }
 
-        // بناء الواجهة (للعرض أو التحديث)
         const calculatedDamage = (currentLevel === 0) ? 0 : weaponConfig.base_damage + (weaponConfig.damage_increment * (currentLevel - 1));
         const embed = new EmbedBuilder().setTitle(`${weaponConfig.emoji} سلاح العرق: ${weaponConfig.name}`).setColor(Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('upgrade_weapon')).addFields({ name: "العرق", value: exactRaceName, inline: true }, { name: "المستوى", value: `Lv. ${currentLevel}`, inline: true }, { name: "الضرر", value: `${calculatedDamage} DMG`, inline: true });
         const row = new ActionRowBuilder();
         
-        // 🔥🔥🔥 تعديل الحد الأقصى للسلاح 🔥🔥🔥
         if (currentLevel >= (weaponConfig.max_level || 20)) { 
             embed.addFields({ name: "التطوير", value: "وصلت للحد الأقصى!", inline: true }); 
             row.addComponents(new ButtonBuilder().setCustomId('max_level').setLabel('الحد الأقصى').setStyle(ButtonStyle.Success).setDisabled(true)); 
@@ -633,7 +500,6 @@ async function _handleSkillUpgrade(i, client, sql, isUpdate = false) {
     try {
         const userId = i.user.id; const guildId = i.guild.id; 
         
-        // استخراج البيانات
         let skillId, skillConfig;
         if (!isUpdate) {
              const isBuy = i.customId.startsWith('buy_skill_');
@@ -654,7 +520,6 @@ async function _handleSkillUpgrade(i, client, sql, isUpdate = false) {
         let currentLevel = userSkill ? userSkill.skillLevel : 0; let price = 0;
         
         if (!isUpdate) {
-            // 🔥🔥🔥 تعديل الحد الأقصى للمهارة 🔥🔥🔥
             if (currentLevel >= (skillConfig.max_level || 20)) return await i.followUp({ content: '❌ لقد وصلت للحد الأقصى للتطوير بالفعل!', flags: MessageFlags.Ephemeral });
             
             price = (currentLevel === 0) ? skillConfig.base_price : skillConfig.base_price + (skillConfig.price_increment * currentLevel);
@@ -664,7 +529,6 @@ async function _handleSkillUpgrade(i, client, sql, isUpdate = false) {
             return;
         }
 
-        // بناء الواجهة للتحديث
         const allUserSkills = getAllUserAvailableSkills(i.member, sql);
         const skillIndex = allUserSkills.findIndex(s => s.id === skillId);
         const paginationEmbed = buildSkillEmbedWithPagination(allUserSkills, skillIndex, sql, i);
@@ -689,16 +553,14 @@ async function _handleShopButton(i, client, sql) {
             return i.showModal(modal);
         }
 
-        // 🔥 البحث في كلا الملفين 🔥
         let item = shopItems.find(it => it.id === boughtItemId);
         if (!item) item = potionItems.find(it => it.id === boughtItemId);
 
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
-        // 🔥🔥🔥 التحقق من حدود الجرعات (باستخدام الجدول الجديد) 🔥🔥🔥
         if (item.category === 'potions') {
-            ensureInventoryTable(sql); // إنشاء الجدول إذا لم يكن موجوداً
+            ensureInventoryTable(sql); 
             
             const userLevel = userData.level;
             let maxTypes = 3;
@@ -708,21 +570,17 @@ async function _handleShopButton(i, client, sql) {
             else if (userLevel >= 11) { maxTypes = 6; maxQtyPerType = 2; }
             else { maxTypes = 3; maxQtyPerType = 1; }
 
-            // القراءة من user_inventory
             const existingPotion = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
-            // 🔥 الإصلاح: نعتبر الكمية 0 إذا لم يكن هناك سجل أو الكمية 0
             const currentQty = (existingPotion && existingPotion.quantity > 0) ? existingPotion.quantity : 0;
 
             if (currentQty >= maxQtyPerType) {
                 return await i.reply({ content: `🚫 **وصلت للحد الأقصى من هذه الجرعة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxQtyPerType}** فقط من نوع **${item.name}**.\nارفع مستواك لزيادة السعة!`, flags: MessageFlags.Ephemeral });
             }
             if (currentQty === 0) {
-                // القراءة من user_inventory
-                // 🔥 الإصلاح: حساب فقط الأنواع التي كميتها > 0
                 const allUserItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
                 let currentPotionTypesCount = 0;
                 for (const uItem of allUserItems) {
-                    if (uItem.quantity <= 0) continue; // تجاهل الكميات الصفرية
+                    if (uItem.quantity <= 0) continue; 
                     const shopItem = potionItems.find(si => si.id === uItem.itemID); 
                     if (shopItem) { currentPotionTypesCount++; }
                 }
@@ -732,7 +590,6 @@ async function _handleShopButton(i, client, sql) {
                 }
             }
         }
-        // 🔥🔥🔥 نهاية التحقق 🔥🔥🔥
 
         const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
         if (RESTRICTED_ITEMS.includes(item.id)) {
@@ -740,14 +597,12 @@ async function _handleShopButton(i, client, sql) {
              const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
              if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
 
-             // 🔥🔥🔥 إضافة شرط الستريك هنا 🔥🔥🔥
              const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
              const currentStreak = userStreakData ? userStreakData.streakCount : 0;
              
              if (currentStreak < 30) {
-                 return await i.reply({ content: `❌ **لا تستوفي الشروط كلها:** يجب أن يكون الستريك الخاص بك **30 يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
+                 return await i.reply({ content: `❌ **شرط إضافي:** يجب أن يكون الستريك الخاص بك **30 يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
              }
-             // 🔥🔥🔥 نهاية الإضافة 🔥🔥🔥
         }
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
@@ -876,119 +731,11 @@ async function handleShopModal(i, client, sql) {
     return false;
 }
 
-// 🐮 دالة مستقلة تماماً للمزرعة (لا تلمس جداول الأسهم)
-async function _handleFarmTransaction(i, client, sql, isBuy) {
-    await i.deferReply({ ephemeral: false }); 
-    try {
-        const quantityString = i.fields.getTextInputValue('quantity_input');
-        const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
-        if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) return await i.editReply({ content: '❌ كمية غير صالحة.' });
-        
-        const animalId = i.customId.replace(isBuy ? 'buy_animal_' : 'sell_animal_', '');
-        const animal = farmAnimals.find(a => a.id === animalId);
-        if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود.' });
-
-        let userData = client.getLevel.get(i.user.id, i.guild.id); 
-        if (!userData) userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
-        let userMora = userData.mora || 0; 
-        const userBank = userData.bank || 0;
-
-        if (isBuy) {
-            const totalCost = Math.floor(animal.price * quantity);
-            if (userMora < totalCost) {
-                let msg = `❌ رصيدك غير كافي! تحتاج: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`;
-                if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، اسحب منها.`;
-                return await i.editReply({ content: msg });
-            }
-            userData.mora -= totalCost;
-            const now = Date.now();
-            // إضافة كل حيوان كسجل منفصل
-            for (let j = 0; j < quantity; j++) {
-                sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?)").run(i.guild.id, i.user.id, animal.id, now, now);
-            }
-            userData.shop_purchases = (userData.shop_purchases || 0) + 1;
-            client.setLevel.run(userData);
-            const embed = new EmbedBuilder().setTitle('✅ تم الشراء').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${animal.name}\n💵 التكلفة: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-            return await i.editReply({ embeds: [embed] });
-        } else {
-            // منطق البيع (حيوانات)
-            const farmCount = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(i.user.id, i.guild.id, animal.id).count;
-            if (farmCount < quantity) return await i.editReply({ content: `❌ لا تملك هذه الكمية.` });
-            const toDelete = sql.prepare("SELECT id FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT ?").all(i.user.id, i.guild.id, animal.id, quantity);
-            toDelete.forEach(d => sql.prepare("DELETE FROM user_farm WHERE id = ?").run(d.id));
-            const totalGain = Math.floor(animal.price * 0.70 * quantity); // بيع بـ 70%
-            userData.mora += totalGain;
-            client.setLevel.run(userData);
-            const embed = new EmbedBuilder().setTitle('✅ تم البيع').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${animal.name}\n💵 الربح: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-            return await i.editReply({ embeds: [embed] });
-        }
-    } catch (e) { console.error(e); await i.editReply("❌ حدث خطأ."); }
-}
-
 // 📈 دالة مستقلة تماماً للسوق (تتعامل فقط مع user_portfolio)
-async function _handleMarketTransaction(i, client, sql, isBuy) {
-    await i.deferReply({ ephemeral: false }); 
-    try {
-        const quantityString = i.fields.getTextInputValue('quantity_input');
-        const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
-        if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) return await i.editReply({ content: '❌ كمية غير صالحة.' });
+// تم نقلها إلى handlers/shop_system/market.js
 
-        const assetId = i.customId.replace(isBuy ? 'buy_modal_' : 'sell_modal_', '');
-        
-        // 🔥 فحص القفل للسوق 🔥
-        if (isBuy && client.marketLocks && client.marketLocks.has(assetId)) {
-            return await i.editReply({ content: `🚫 **السهم في حالة انهيار وإعادة هيكلة!**\nيرجى الانتظار قليلاً حتى يتم طرحه بالسعر الجديد.` });
-        }
-
-        const item = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
-        if (!item) return await i.editReply({ content: '❌ الأصل غير موجود.' });
-
-        let userData = client.getLevel.get(i.user.id, i.guild.id); 
-        if (!userData) userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
-        let userMora = userData.mora || 0; 
-        const userBank = userData.bank || 0;
-
-        const getPortfolio = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?");
-        
-        if (isBuy) {
-            const avgPrice = calculateSlippage(item.currentPrice, quantity, true);
-            const totalCost = Math.floor(avgPrice * quantity);
-            if (userMora < totalCost) {
-                let msg = `❌ رصيدك غير كافي!`;
-                if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، اسحب منها.`;
-                if (totalCost > (item.currentPrice * quantity)) msg += `\n⚠️ السعر ارتفع بسبب الانزلاق السعري (الكمية الكبيرة). التكلفة الحالية: **${totalCost.toLocaleString()}**`;
-                return await i.editReply({ content: msg });
-            }
-            userData.mora -= totalCost; 
-            userData.shop_purchases = (userData.shop_purchases || 0) + 1;
-            client.setLevel.run(userData);
-            
-            // تحديث المحفظة (Portfolio)
-            let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
-            if (pfItem) sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(quantity, pfItem.id);
-            else sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?)").run(i.guild.id, i.user.id, item.id, quantity);
-            
-            const embed = new EmbedBuilder().setTitle('✅ تم الشراء').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${item.name}\n💵 التكلفة: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-            await i.editReply({ embeds: [embed] });
-        } else {
-            // بيع الأسهم
-            let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
-            const userQty = pfItem ? pfItem.quantity : 0;
-            if (userQty < quantity) return await i.editReply({ content: `❌ لا تملك الكمية.` });
-            
-            const avgPrice = calculateSlippage(item.currentPrice, quantity, false);
-            const totalGain = Math.floor(avgPrice * quantity);
-            userData.mora += totalGain;
-            client.setLevel.run(userData);
-            
-            if (userQty - quantity > 0) sql.prepare("UPDATE user_portfolio SET quantity = ? WHERE id = ?").run(userQty - quantity, pfItem.id);
-            else sql.prepare("DELETE FROM user_portfolio WHERE id = ?").run(pfItem.id);
-            
-            const embed = new EmbedBuilder().setTitle('✅ تم البيع').setColor(Colors.Green).setDescription(`📦 **${quantity}** × ${item.name}\n💵 الربح: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`).setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-            await i.editReply({ embeds: [embed] });
-        }
-    } catch (e) { console.error(e); await i.editReply("❌ حدث خطأ."); }
-}
+// 🐮 دالة مستقلة تماماً للمزرعة (لا تلمس جداول الأسهم)
+// تم نقلها إلى handlers/shop_system/farm.js
 
 async function _handleXpExchangeModal(i, client, sql) {
     try {
