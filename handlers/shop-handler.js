@@ -601,7 +601,7 @@ async function _handleShopButton(i, client, sql) {
              const currentStreak = userStreakData ? userStreakData.streakCount : 0;
              
              if (currentStreak < 30) {
-                 return await i.reply({ content: `❌ **شرط إضافي:** يجب أن يكون الستريك الخاص بك **30 يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
+                 return await i.reply({ content: `❌ **لا تستوفي الشـروط:** يجب أن يكون الستريك الخاص بك **30** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
              }
         }
 
