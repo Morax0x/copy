@@ -21,20 +21,22 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
 
         if (isBuy) {
             // ============================================================
-            // 🔒 نظام منع الشراء فوق السعة (بالحجم)
+            // 🔒 نظام منع الشراء فوق السعة (Stacking Logic)
             // ============================================================
             
             // ✅ استخدام الدالة الموحدة لحساب السعة القصوى
             const maxCapacity = getPlayerCapacity(client, i.user.id, i.guild.id);
 
-            // 1. حساب الحجم المستهلك حالياً في المزرعة
-            const userFarmRows = sql.prepare("SELECT animalID, COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ? GROUP BY animalID").all(i.user.id, i.guild.id);
+            // 1. حساب الحجم المستهلك حالياً في المزرعة (Stacking)
+            // نأخذ جميع الحيوانات ونضرب (حجم الحيوان × كميته)
+            const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
             
             let currentCapacityUsed = 0;
             for (const row of userFarmRows) {
                 const fa = farmAnimals.find(a => a.id === row.animalID);
                 if (fa) {
-                    currentCapacityUsed += (fa.size || 1) * row.count;
+                    // الحجم = حجم الحيوان × الكمية
+                    currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
                 }
             }
 
@@ -60,15 +62,22 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
                 return await i.editReply({ content: msg });
             }
 
-            // تنفيذ عملية الشراء
+            // تنفيذ عملية الشراء (Stacking Upsert)
             userData.mora -= totalCost;
             const now = Date.now();
             
-            const insertStmt = sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?)");
             const transaction = sql.transaction(() => {
-                for (let j = 0; j < quantity; j++) {
-                    insertStmt.run(i.guild.id, i.user.id, animal.id, now, now);
+                // البحث عن سجل موجود لنفس الحيوان
+                const existingRow = sql.prepare("SELECT id, quantity FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(i.user.id, i.guild.id, animal.id);
+
+                if (existingRow) {
+                    // تحديث الكمية وتجديد وقت الشراء (تجديد عمر القطيع)
+                    sql.prepare("UPDATE user_farm SET quantity = quantity + ?, purchaseTimestamp = ? WHERE id = ?").run(quantity, now, existingRow.id);
+                } else {
+                    // إدخال سجل جديد
+                    sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, quantity, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?, ?)").run(i.guild.id, i.user.id, animal.id, quantity, now, now);
                 }
+
                 userData.shop_purchases = (userData.shop_purchases || 0) + 1;
                 client.setLevel.run(userData);
             });
@@ -83,15 +92,22 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
             return await i.editReply({ embeds: [embed] });
 
         } else {
-            // منطق البيع (حيوانات)
-            const farmCount = sql.prepare("SELECT COUNT(*) as count FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(i.user.id, i.guild.id, animal.id).count;
-            if (farmCount < quantity) return await i.editReply({ content: `❌ لا تملك هذه الكمية من ${animal.name}.` });
+            // منطق البيع (Stacking)
+            const row = sql.prepare("SELECT id, quantity FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(i.user.id, i.guild.id, animal.id);
             
-            const toDelete = sql.prepare("SELECT id FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT ?").all(i.user.id, i.guild.id, animal.id, quantity);
+            if (!row || row.quantity < quantity) {
+                return await i.editReply({ content: `❌ لا تملك هذه الكمية من ${animal.name}.` });
+            }
             
-            const deleteStmt = sql.prepare("DELETE FROM user_farm WHERE id = ?");
             const sellTransaction = sql.transaction(() => {
-                toDelete.forEach(d => deleteStmt.run(d.id));
+                if (row.quantity === quantity) {
+                    // بيع الكل -> حذف السطر
+                    sql.prepare("DELETE FROM user_farm WHERE id = ?").run(row.id);
+                } else {
+                    // بيع جزء -> إنقاص الكمية
+                    sql.prepare("UPDATE user_farm SET quantity = quantity - ? WHERE id = ?").run(quantity, row.id);
+                }
+
                 const totalGain = Math.floor(animal.price * 0.70 * quantity);
                 userData.mora += totalGain;
                 client.setLevel.run(userData);
