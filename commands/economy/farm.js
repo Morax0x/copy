@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
-// ✅ استدعاء دالة السعة من ملف الـ Utils
+
+// ✅ استدعاء دالة السعة من ملف الـ Utils (تأكد من صحة المسار)
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -41,7 +42,7 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
 
     const selectOptions = itemsOnPage.map(item => ({
         label: `${item.name}`,
-        description: `الدخل اليومي: ${item.income_per_day} مورا`,
+        description: `الدخل اليومي: ${item.income_per_day} مورا | الحجم: ${item.size || 1}`,
         value: item.id,
         emoji: item.emoji
     }));
@@ -57,8 +58,7 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
 }
 
 function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, client) {
-    // ✅ تصحيح: استخدام SUM لجمع الكمية في حال وجود عدة أسطر (التكرار)
-    // هذا يحل مشكلة ظهور رقم 1 في زر البيع
+    // ✅ تصحيح: استخدام SUM لجمع الكمية
     const userFarmQuery = sql.prepare("SELECT SUM(quantity) as totalQty FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
     const userQuantity = userFarmQuery && userFarmQuery.totalQty ? userFarmQuery.totalQty : 0;
     
@@ -69,13 +69,13 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
     for (const row of userFarmRows) {
         const fa = farmAnimals.find(a => a.id === row.animalID);
         if (fa) {
-            // السعة = (حجم الحيوان × كميته)
             currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
         }
     }
     
     const maxCapacity = getPlayerCapacity(client, userId, guildId);
-    const isFull = currentCapacityUsed >= maxCapacity;
+    // ✅ شرط الامتلاء: إذا السعة المستخدمة + حجم الحيوان الجديد > السعة القصوى
+    const isFull = (currentCapacityUsed + (item.size || 1)) > maxCapacity;
 
     const price = item.price.toLocaleString();
     const income_per_day = item.income_per_day || 0;
@@ -91,12 +91,13 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
             { name: 'سعر الشراء', value: `${price} ${EMOJI_MORA}`, inline: true },
             { name: 'الدخل (لليوم)', value: `${income_per_day} ${EMOJI_MORA}`, inline: true },
             { name: 'الخصائص', value: `⏳ العمر: **${lifespan}** يوم\n📦 الحجم: **${size}**`, inline: true },
-            { name: 'في مزرعتك', value: `**${userQuantity.toLocaleString()}** (إجمالي الدخل: ${income}/يوم)`, inline: false }
+            { name: 'في مزرعتك', value: `**${userQuantity.toLocaleString()}** (إجمالي الدخل: ${income}/يوم)`, inline: false },
+            { name: 'السعة الحالية', value: `[ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]`, inline: false }
         )
         .setFooter({ text: `الحيوان ${itemIndex + 1} من ${totalItems}` });
 
     if (isFull) {
-        detailEmbed.addFields({ name: '⚠️ تنبيه', value: '🚫 **المزرعة ممتلئة!** لا يمكنك شراء المزيد.', inline: false });
+        detailEmbed.addFields({ name: '⚠️ تنبيه', value: '🚫 **لا توجد مساحة كافية لهذا الحيوان!**', inline: false });
     }
 
     const actionRow1 = new ActionRowBuilder().addComponents(
@@ -116,7 +117,7 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
     const actionRow2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`buy_animal_${item.id}`)
-            .setLabel(isFull ? 'المزرعة ممتلئة' : 'شراء')
+            .setLabel(isFull ? 'لا توجد مساحة' : 'شراء')
             .setStyle(isFull ? ButtonStyle.Secondary : ButtonStyle.Success)
             .setDisabled(isFull), 
             
@@ -136,7 +137,7 @@ module.exports = {
         .setDescription('يعرض متجر المزرعة لشراء الحيوانات.'),
 
     name: 'farm',
-    aliases: ['المزرعة', 'مزرعه','مزرعة', 'حيوانات'],
+    aliases: ['المزرعة', 'مزرعه', 'حيوانات'], // ✅ إزالة التكرار
     category: "Economy",
     description: 'يعرض متجر المزرعة لشراء الحيوانات.',
 
@@ -169,7 +170,7 @@ module.exports = {
         };
 
         const allItems = farmAnimals;
-        if (allItems.length === 0) {
+        if (!allItems || allItems.length === 0) {
             const embed = new EmbedBuilder().setTitle('🏞️ متجر المزرعة').setDescription("المتجر فارغ حالياً.").setColor(Colors.Red);
             return reply({ embeds: [embed] });
         }
@@ -260,7 +261,7 @@ module.exports = {
                         if (!item) return;
 
                         if (isBuy) {
-                            // ✅ التحقق من السعة (Stacking Logic)
+                            // ✅ التحقق من السعة قبل فتح المودال (Stacking Logic)
                             const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
                             let currentCap = 0;
                             for (const row of userRows) {
@@ -269,8 +270,9 @@ module.exports = {
                             }
                             const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
                             
-                            if (currentCap >= currentMax) {
-                                return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentCap}/${currentMax})`, ephemeral: true });
+                            // هل هناك مساحة لحيوان واحد على الأقل؟
+                            if ((currentCap + (item.size || 1)) > currentMax) {
+                                return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentCap}/${currentMax})\nلا توجد مساحة كافية لهذا الحيوان (حجمه: ${item.size || 1}).`, ephemeral: true });
                             }
                         }
 
