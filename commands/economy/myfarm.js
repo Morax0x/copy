@@ -136,33 +136,30 @@ module.exports = {
                 currentCapacityUsed += (qty * (animalData.size || 1));
                 totalFarmIncome += (animalData.income_per_day * qty);
 
-                // حسابات العمر والجوع
-                const purchaseTime = row.purchaseTimestamp || now;
-                const ageMS = now - purchaseTime;
-                const ageDays = Math.floor(ageMS / DAY_MS);
-                const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
-
                 const lastFed = row.lastFedTimestamp || now;
                 const hungerDays = Math.floor((now - lastFed) / DAY_MS);
                 
                 const maxHunger = animalData.max_hunger_days || 7;
                 const daysUntilDeath = Math.max(0, maxHunger - hungerDays);
 
-                // تحديد نص حالة الجوع
                 let hungerStatusText = `🟢 شبعان - ${daysUntilDeath} أيام متبقية`;
                 if (daysUntilDeath <= 1) hungerStatusText = `🔴 على وشك الموت - يوم واحد متبقي!`;
                 else if (daysUntilDeath <= Math.ceil(maxHunger / 2)) hungerStatusText = `🟡 بدأ يجوع - ${daysUntilDeath} أيام متبقية`;
+
+                // حساب العمر
+                const purchaseTime = row.purchaseTimestamp || now;
+                const ageMS = now - purchaseTime;
+                const ageDays = Math.floor(ageMS / DAY_MS);
+                const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
                     existing.quantity += qty;
                     existing.income += (animalData.income_per_day * qty);
-                    // نحتفظ بأسوأ حالة للتحذير
                     if (daysUntilDeath < existing.minDays) {
                         existing.minDays = daysUntilDeath;
                         existing.hungerText = hungerStatusText;
                     }
-                    // نحتفظ بأكبر عمر
                     if (ageDays > existing.age) {
                         existing.age = ageDays;
                         existing.lifeRemaining = lifeRemaining;
@@ -213,20 +210,28 @@ module.exports = {
             feedItems.forEach(feed => {
                 const itemInInv = inventory.find(i => i.itemID === feed.id);
                 if (itemInInv && itemInInv.quantity > 0) {
-                    feedInventory.push({ ...feed, qty: itemInInv.quantity });
+                    const targetAnimal = farmAnimals.find(a => a.feed_id === feed.id);
+                    feedInventory.push({ 
+                        ...feed, 
+                        qty: itemInInv.quantity,
+                        animalName: targetAnimal ? targetAnimal.name : 'مجهول',
+                        animalEmoji: targetAnimal ? targetAnimal.emoji : '❓'
+                    });
                 }
             });
 
             const embed = new EmbedBuilder()
-                .setTitle('✶ مخـزن الاعـلاف')
-                .setColor(Colors.Gold)
-                .setThumbnail('https://cdn-icons-png.flaticon.com/512/2829/2829822.png');
+                .setTitle('✥ مـخـزن الاعلاف')
+                .setColor('#D48950')
+                .setImage('https://i.postimg.cc/qB6RDR0f/1000166519.gif');
 
             if (feedInventory.length === 0) {
                 embed.setDescription("🚫 **المخزن فارغ!**\nقم بشراء الأعلاف لإطعام حيواناتك وإنقاذها من الموت.");
             } else {
-                const list = feedInventory.map(f => `**${f.emoji} ${f.name}**: \`${f.qty}\` كيس`).join('\n');
-                embed.setDescription(`📦 **محتويات المخزن:**\n\n${list}`);
+                const list = feedInventory.map(f => 
+                    `✶ ${f.emoji} **${f.name}** : \`${f.qty}\` ⬅️ لـ **${f.animalName}** ${f.animalEmoji}`
+                ).join('\n\n');
+                embed.setDescription(list);
             }
 
             return { embed, rows: getFeedStoreButtons() };
@@ -252,6 +257,8 @@ module.exports = {
             return [new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_feed_animal').setLabel('اطعـام').setStyle(ButtonStyle.Success).setEmoji('🥄'),
                 new ButtonBuilder().setCustomId('btn_buy_feed').setLabel('شـراء').setStyle(ButtonStyle.Primary).setEmoji('🛒'),
+                // ✅ زر البيع الجديد
+                new ButtonBuilder().setCustomId('btn_sell_feed').setLabel('بيـع').setStyle(ButtonStyle.Danger).setEmoji('💰'),
                 new ButtonBuilder().setCustomId('btn_back_farm').setLabel('رجـوع').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
             )];
         };
@@ -306,6 +313,33 @@ module.exports = {
                 );
                 const response = await i.reply({ content: '🛒 **اختر نوع العلف:**', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
                 handleEphemeralMenu(response, 'buy');
+            }
+
+            // --- عرض قائمة البيع (الجديدة) ---
+            else if (i.customId === 'btn_sell_feed') {
+                const inventory = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
+                const options = [];
+
+                feedItems.forEach(feed => {
+                    const itemInInv = inventory.find(i => i.itemID === feed.id);
+                    if (itemInInv && itemInInv.quantity > 0) {
+                        const sellPrice = Math.floor(feed.price * 0.5); // نصف السعر
+                        options.push({
+                            label: feed.name,
+                            description: `بيع بـ: ${sellPrice} مورا | لديك: ${itemInInv.quantity}`,
+                            value: feed.id,
+                            emoji: feed.emoji
+                        });
+                    }
+                });
+
+                if (options.length === 0) return await i.reply({ content: '❌ ليس لديك أعلاف للبيع.', flags: MessageFlags.Ephemeral });
+
+                const row = new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder().setCustomId('menu_sell_feed').setPlaceholder('اختر العلف لبيعه...').addOptions(options)
+                );
+                const response = await i.reply({ content: '💰 **ماذا تريد أن تبيع؟**\n(سعر البيع هو 50% من سعر الشراء)', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
+                handleEphemeralMenu(response, 'sell');
             }
             
             // --- عرض قائمة الإطعام ---
@@ -400,6 +434,65 @@ module.exports = {
                         } catch (err) {}
                     } 
                     
+                    // --- بيع علف (جديد) ---
+                    else if (menuType === 'sell') {
+                        const feedId = subI.values[0];
+                        const feed = feedItems.find(f => f.id === feedId);
+                        
+                        const modal = new ModalBuilder()
+                            .setCustomId(`modal_sell_feed_${feedId}`)
+                            .setTitle(`بيع ${feed.name}`);
+
+                        const input = new TextInputBuilder()
+                            .setCustomId('sell_quantity')
+                            .setLabel('الكمية المراد بيعها')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('مثال: 5')
+                            .setRequired(true);
+
+                        modal.addComponents(new ActionRowBuilder().addComponents(input));
+                        await subI.showModal(modal);
+
+                        try {
+                            const modalSubmit = await subI.awaitModalSubmit({ time: 60000, filter: m => m.user.id === user.id });
+                            const qty = parseInt(modalSubmit.fields.getTextInputValue('sell_quantity'));
+                            
+                            if (isNaN(qty) || qty <= 0) {
+                                return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: MessageFlags.Ephemeral });
+                            }
+
+                            // التحقق من الملكية
+                            const itemInInv = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, feedId);
+                            if (!itemInInv || itemInInv.quantity < qty) {
+                                return modalSubmit.reply({ content: `❌ لا تملك هذه الكمية! لديك: ${itemInInv ? itemInInv.quantity : 0}`, flags: MessageFlags.Ephemeral });
+                            }
+
+                            const sellPrice = Math.floor(feed.price * 0.5); // نصف السعر
+                            const totalEarned = sellPrice * qty;
+
+                            let userData = client.getLevel.get(user.id, guild.id);
+                            if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
+
+                            userData.mora += totalEarned;
+                            client.setLevel.run(userData);
+
+                            // تحديث المخزون
+                            if (itemInInv.quantity === qty) {
+                                sql.prepare("DELETE FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").run(userId, guildId, feedId);
+                            } else {
+                                sql.prepare("UPDATE user_inventory SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(qty, userId, guildId, feedId);
+                            }
+
+                            await modalSubmit.reply({ content: `✅ تم بيع **${qty}x ${feed.name}** وحصلت على **${totalEarned}** ${EMOJI_MORA}`, flags: MessageFlags.Ephemeral });
+
+                            if (currentView === 'feed_store') {
+                                const data = renderFeedStore();
+                                await msg.edit({ embeds: [data.embed], components: data.rows });
+                            }
+
+                        } catch (err) {}
+                    }
+
                     // --- إطعام حيوان ---
                     else if (menuType === 'feed') {
                         const animalId = subI.values[0];
@@ -413,7 +506,7 @@ module.exports = {
                         if (sampleAnimal && sampleAnimal.lastFedTimestamp) {
                             const hoursSinceLastFed = (Date.now() - sampleAnimal.lastFedTimestamp) / (1000 * 60 * 60);
                             if (hoursSinceLastFed < 12) {
-                                return subI.reply({ content: `✋ **${animal.name}** شبعان حالياً!\nيمكنك إطعامه مرة كل 12 ساعة فقط.`, flags: MessageFlags.Ephemeral });
+                                return subI.reply({ content: `✋ **${animal.name}** شبع حالياً!\nيمكنك إطعامهم مرة كل 12 ساعة فقط.`, flags: MessageFlags.Ephemeral });
                             }
                         }
 
