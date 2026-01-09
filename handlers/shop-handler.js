@@ -37,7 +37,7 @@ try {
 // تفكيك المتغيرات من utils
 const { 
     shopItems = [], potionItems = [], weaponsConfig = [], skillsConfig = [], rodsConfig = [], boatsConfig = [], baitsConfig = [], 
-    EMOJI_MORA = '💰', OWNER_ID, XP_EXCHANGE_RATE, BANNER_URL, THUMBNAILS, 
+    EMOJI_MORA = '<:mora:1435647151349698621>', OWNER_ID, XP_EXCHANGE_RATE, BANNER_URL, THUMBNAILS, 
     ensureInventoryTable, sendShopLog 
 } = utils;
 
@@ -52,7 +52,8 @@ try { const m = require('./market.js'); _handleMarketTransaction = m._handleMark
 // ثوابت
 // ---------------------------------------------------------------------
 const HIDDEN_ITEMS_ID = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
-const EXCLUDED_FROM_MAIN_MENU = ['upgrade_weapon', 'upgrade_skill', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'];
+// العناصر التي سيتم استبعادها من الفلتر العادي لأننا سنضيفها يدوياً في القائمة
+const EXCLUDED_FROM_MAIN_MENU = ['upgrade_weapon', 'upgrade_skill', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu', 'exchange_xp'];
 
 const emojiMap = new Map([
     ['upgrade_weapon', '⚔️'],
@@ -68,7 +69,9 @@ const emojiMap = new Map([
     ['discord_effect_10', '<a:NekoCool:1435572459276337245>'],
     ['nitro_basic', '<a:Nitro:1437812292468084880>'],
     ['nitro_gaming', '<a:Nitro:1437812292468084880>'],
-    ['change_race', '🧬']
+    ['change_race', '🧬'],
+    ['fishing_gear_menu', '🎣'],
+    ['potions_menu', '🧪']
 ]);
 
 // ---------------------------------------------------------------------
@@ -77,7 +80,7 @@ const emojiMap = new Map([
 function getBuyableItems() { 
     return shopItems.filter(it => 
         it.category !== 'menus' && 
-        !['upgrade_weapon', 'upgrade_skill', 'exchange_xp', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'].includes(it.id)
+        !EXCLUDED_FROM_MAIN_MENU.includes(it.id)
     ); 
 }
 
@@ -190,6 +193,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     // تنفيذ عملية الشراء بناءً على النوع
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') { userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0; }
+        // 🔥🔥 دمج نظام الجرعات 🔥🔥
         else if (itemData.category === 'potions') { 
             ensureInventoryTable(sql); 
             sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + 1").run(interaction.guild.id, interaction.user.id, itemData.id); 
@@ -615,6 +619,7 @@ async function _handleShopButton(i, client, sql) {
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
           
+        // 🔥🔥 دمج نظام الجرعات (Potions) 🔥🔥
         if (item.category === 'potions') {
             ensureInventoryTable(sql); 
               
@@ -850,8 +855,17 @@ async function handleShopInteractions(i, client, sql) {
             return await i.reply({ content: `🚫 لا توجد عناصر متاحة لمستواك الحالي (${userLevel}).`, flags: MessageFlags.Ephemeral });
         }
 
-        // بناء القائمة
-        const selectOptions = filteredItems.map(item => {
+        // بناء القائمة (مع إضافة الخيارات الخاصة يدوياً في البداية)
+        // 🔥🔥 إضافة القوائم الخاصة هنا يدوياً لضمان ظهورها 🔥🔥
+        const specialOptions = [
+            new StringSelectMenuOptionBuilder().setLabel('تطوير السلاح').setValue('upgrade_weapon').setEmoji('⚔️'),
+            new StringSelectMenuOptionBuilder().setLabel('تطوير المهارات').setValue('upgrade_skill').setEmoji('<:goldgem:979098126591868928>'),
+            new StringSelectMenuOptionBuilder().setLabel('متجر الجرعات').setValue('potions_menu').setEmoji('🧪'), // ✅ الجرعات
+            new StringSelectMenuOptionBuilder().setLabel('معدات الصيد').setValue('fishing_gear_menu').setEmoji('🎣'), // ✅ الصيد
+            new StringSelectMenuOptionBuilder().setLabel('تبديل الخبرة').setValue('exchange_xp').setEmoji('<a:levelup:1437805366048985290>'),
+        ];
+
+        const normalOptions = filteredItems.map(item => {
             return new StringSelectMenuOptionBuilder()
                 .setLabel(item.name)
                 .setDescription(`${item.price.toLocaleString()} مورا`)
@@ -859,14 +873,17 @@ async function handleShopInteractions(i, client, sql) {
                 .setEmoji(emojiMap.get(item.id) || item.emoji || '🛍️');
         });
 
+        // دمج القوائم (الخاصة + العادية) مع مراعاة الحد الأقصى (25)
+        const allOptions = [...specialOptions, ...normalOptions].slice(0, 25);
+
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('shop_select_item')
                 .setPlaceholder('اختر عنصراً للشراء...')
-                .addOptions(selectOptions)
+                .addOptions(allOptions)
         );
 
-        // ✅ بناء الإيمبد المخصص
+        // ✅ بناء الإيمبد المخصص (بدون Thumbnail)
         const shopEmbed = new EmbedBuilder()
             .setTitle('✥ مـتـجـر الامبراطـوريـة')
             .setDescription(`
@@ -878,8 +895,8 @@ async function handleShopInteractions(i, client, sql) {
             ✦ تصفح القائمة لعرض الـعـنـاصر المتـاحـة لك حسـب مستـواك الحالـي
             `)
             .setColor('#BD9FC9')
-            .setImage('https://i.postimg.cc/kMwWDMM0/shop.jpg')
-            .setThumbnail(i.user.displayAvatarURL({ dynamic: true }));
+            .setImage('https://i.postimg.cc/kMwWDMM0/shop.jpg');
+            // ❌ تمت إزالة .setThumbnail
 
         return await i.reply({ 
             embeds: [shopEmbed],
@@ -916,6 +933,7 @@ async function handleShopInteractions(i, client, sql) {
         return;
     }
 
+    // 🔥🔥 تفعيل خيار الجرعات من القائمة 🔥🔥
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
         const potionId = i.values[0].replace('buy_item_', '');
         const paginationEmbed = buildPaginatedItemEmbed(potionId);
@@ -982,6 +1000,7 @@ async function handleShopSelectMenu(i, client, sql) {
              return await i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)], flags: MessageFlags.Ephemeral });
         }
           
+        // 🔥🔥 تفعيل خيار الجرعات من القائمة 🔥🔥
         if (selected === 'potions_menu') {
             await _handlePotionSelect(i, client, sql);
             return;
