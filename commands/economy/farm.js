@@ -1,7 +1,6 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder, MessageFlags } = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
-
-// ✅ استدعاء دالة السعة من ملف الـ Utils (تأكد من صحة المسار)
+// ✅ استدعاء دالة السعة من ملف الـ Utils
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -9,6 +8,7 @@ const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 
 const ITEMS_PER_PAGE = 9;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 // --- دوال بناء الواجهة ---
 
@@ -31,7 +31,6 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
         .setTitle('🏞️ متجر المزرعة')
         .setColor("Random")
         .setImage('https://i.postimg.cc/J0x0Fj0D/download.gif')
-        // عرض السعة الحقيقية (بالحجم)
         .setDescription(`📦 **السعة:** [ \`${currentCapacity}\` / \`${maxCapacity}\` ]\nاختر حيواناً من القائمة المنسدلة لعرض التفاصيل والشراء.`)
         .addFields(
             { name: '\u200B', value: col1.join('\n\n') || '\u200B', inline: true },
@@ -58,23 +57,18 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity) {
 }
 
 function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, client) {
-    // ✅ تصحيح: استخدام SUM لجمع الكمية
     const userFarmQuery = sql.prepare("SELECT SUM(quantity) as totalQty FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, item.id);
     const userQuantity = userFarmQuery && userFarmQuery.totalQty ? userFarmQuery.totalQty : 0;
     
-    // ✅ حساب السعة الإجمالية المستخدمة في المزرعة
+    // حساب السعة
     const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
-    
     let currentCapacityUsed = 0;
     for (const row of userFarmRows) {
         const fa = farmAnimals.find(a => a.id === row.animalID);
-        if (fa) {
-            currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
-        }
+        if (fa) currentCapacityUsed += (fa.size || 1) * (row.quantity || 1);
     }
     
     const maxCapacity = getPlayerCapacity(client, userId, guildId);
-    // ✅ شرط الامتلاء: إذا السعة المستخدمة + حجم الحيوان الجديد > السعة القصوى
     const isFull = (currentCapacityUsed + (item.size || 1)) > maxCapacity;
 
     const price = item.price.toLocaleString();
@@ -83,6 +77,9 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
     const size = item.size || 1; 
     const income = (income_per_day * userQuantity).toLocaleString();
 
+    // 🔒 حساب فترة حظر البيع (آخر 20% من العمر)
+    const noSellDays = Math.ceil(lifespan * 0.2); 
+
     const detailEmbed = new EmbedBuilder()
         .setTitle(`🏞️ ${item.name}`)
         .setColor("Random")
@@ -90,7 +87,7 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
         .addFields(
             { name: 'سعر الشراء', value: `${price} ${EMOJI_MORA}`, inline: true },
             { name: 'الدخل (لليوم)', value: `${income_per_day} ${EMOJI_MORA}`, inline: true },
-            { name: 'الخصائص', value: `⏳ العمر: **${lifespan}** يوم\n📦 الحجم: **${size}**`, inline: true },
+            { name: 'الخصائص', value: `⏳ العمر: **${lifespan}** يوم\n🚫 حظر البيع: آخر **${noSellDays}** أيام\n📦 الحجم: **${size}**`, inline: true },
             { name: 'في مزرعتك', value: `**${userQuantity.toLocaleString()}** (إجمالي الدخل: ${income}/يوم)`, inline: false },
             { name: 'السعة الحالية', value: `[ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]`, inline: false }
         )
@@ -101,16 +98,8 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
     }
 
     const actionRow1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`farm_prev_detail_${item.id}`)
-            .setEmoji(LEFT_EMOJI) 
-            .setStyle(ButtonStyle.Secondary),
-        
-        new ButtonBuilder()
-            .setCustomId(`farm_next_detail_${item.id}`)
-            .setEmoji(RIGHT_EMOJI) 
-            .setStyle(ButtonStyle.Secondary),
-            
+        new ButtonBuilder().setCustomId(`farm_prev_detail_${item.id}`).setEmoji(LEFT_EMOJI).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`farm_next_detail_${item.id}`).setEmoji(RIGHT_EMOJI).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('farm_back_to_grid').setLabel('العودة للمتجر').setStyle(ButtonStyle.Primary)
     );
 
@@ -123,7 +112,7 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
             
         new ButtonBuilder()
             .setCustomId(`sell_animal_${item.id}`)
-            .setLabel(`بيع (تملك: ${userQuantity})`)
+            .setLabel(`بيع`)
             .setStyle(ButtonStyle.Danger)
             .setDisabled(userQuantity === 0)
     );
@@ -133,11 +122,11 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('مزرعة')
+        .setName('متجر_مزرعة')
         .setDescription('يعرض متجر المزرعة لشراء الحيوانات.'),
 
     name: 'farm',
-    aliases: ['المزرعة', 'مزرعه', 'حيوانات'], // ✅ إزالة التكرار
+    aliases: ['مزرعة', 'مزرعه', 'حيوانات'], // ✅ تم إضافة "مزرعة" و "مزرعه"
     category: "Economy",
     description: 'يعرض متجر المزرعة لشراء الحيوانات.',
 
@@ -162,11 +151,8 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.channel.send(payload);
-            }
+            if (isSlash) return interaction.editReply(payload);
+            return message.channel.send(payload);
         };
 
         const allItems = farmAnimals;
@@ -175,7 +161,6 @@ module.exports = {
             return reply({ embeds: [embed] });
         }
 
-        // ✅ حساب السعة الإجمالية المستخدمة (Stacking)
         const userFarmRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(user.id, guild.id);
         let currentCapacityUsed = 0;
         for (const row of userFarmRows) {
@@ -194,10 +179,7 @@ module.exports = {
         const msg = await reply({ embeds: [embed], components: components, fetchReply: true });
 
         const filter = i => i.user.id === user.id;
-        const collector = msg.createMessageComponentCollector({
-            time: 180000,
-            filter,
-        });
+        const collector = msg.createMessageComponentCollector({ time: 180000, filter });
 
         collector.on('collect', async i => {
             if (i.replied || i.deferred) return;
@@ -219,17 +201,12 @@ module.exports = {
 
                     if (i.customId.startsWith('farm_prev_detail_') || i.customId.startsWith('farm_next_detail_')) {
                         await i.deferUpdate();
-
                         const currentItemID = i.customId.split('_')[3];
                         currentItemIndex = allItems.findIndex(it => it.id === currentItemID);
-
                         if (currentItemIndex === -1) currentItemIndex = 0; 
 
-                        if (i.customId.startsWith('farm_next_detail_')) {
-                            currentItemIndex = (currentItemIndex + 1) % allItems.length;
-                        } else {
-                            currentItemIndex = (currentItemIndex - 1 + allItems.length) % allItems.length;
-                        }
+                        if (i.customId.startsWith('farm_next_detail_')) currentItemIndex = (currentItemIndex + 1) % allItems.length;
+                        else currentItemIndex = (currentItemIndex - 1 + allItems.length) % allItems.length;
 
                         const item = allItems[currentItemIndex];
                         const { embed: detailEmbed, components: detailComponents } = buildDetailView(item, i.user.id, i.guild.id, sql, currentItemIndex, allItems.length, client);
@@ -239,8 +216,23 @@ module.exports = {
                     else if (i.customId === 'farm_back_to_grid') {
                         await i.deferUpdate();
                         currentView = 'grid';
-                        
-                        // ✅ إعادة حساب السعة عند العودة للشبكة (Stacking)
+                        const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
+                        let currentCap = 0;
+                        for (const row of userRows) {
+                            const fa = farmAnimals.find(a => a.id === row.animalID);
+                            if (fa) currentCap += (fa.size || 1) * (row.quantity || 1);
+                        }
+                        const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
+                        const { embed: gridEmbed, components: gridComponents } = buildGridView(allItems, currentPage, currentCap, currentMax);
+                        await i.editReply({ embeds: [gridEmbed], components: gridComponents });
+                    }
+
+                    // --- شراء ---
+                    else if (i.customId.startsWith('buy_animal_')) {
+                        const assetId = i.customId.replace('buy_animal_', '');
+                        const item = allItems.find(it => it.id === assetId);
+                        if (!item) return;
+
                         const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
                         let currentCap = 0;
                         for (const row of userRows) {
@@ -249,61 +241,139 @@ module.exports = {
                         }
                         const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
                         
-                        const { embed: gridEmbed, components: gridComponents } = buildGridView(allItems, currentPage, currentCap, currentMax);
-                        await i.editReply({ embeds: [gridEmbed], components: gridComponents });
-                    }
-
-                    else if (i.customId.startsWith('buy_animal_') || i.customId.startsWith('sell_animal_')) {
-                        const isBuy = i.customId.startsWith('buy_animal_');
-                        const assetId = i.customId.replace(isBuy ? 'buy_animal_' : 'sell_animal_', '');
-                        const item = allItems.find(it => it.id === assetId);
-
-                        if (!item) return;
-
-                        if (isBuy) {
-                            // ✅ التحقق من السعة قبل فتح المودال (Stacking Logic)
-                            const userRows = sql.prepare("SELECT animalID, quantity FROM user_farm WHERE userID = ? AND guildID = ?").all(i.user.id, i.guild.id);
-                            let currentCap = 0;
-                            for (const row of userRows) {
-                                const fa = farmAnimals.find(a => a.id === row.animalID);
-                                if (fa) currentCap += (fa.size || 1) * (row.quantity || 1);
-                            }
-                            const currentMax = getPlayerCapacity(client, i.user.id, i.guild.id);
-                            
-                            // هل هناك مساحة لحيوان واحد على الأقل؟
-                            if ((currentCap + (item.size || 1)) > currentMax) {
-                                return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentCap}/${currentMax})\nلا توجد مساحة كافية لهذا الحيوان (حجمه: ${item.size || 1}).`, ephemeral: true });
-                            }
+                        if ((currentCap + (item.size || 1)) > currentMax) {
+                            return await i.reply({ content: `🚫 **المزرعة ممتلئة!** (${currentCap}/${currentMax})`, ephemeral: true });
                         }
 
                         const modal = new ModalBuilder()
-                            .setCustomId(`${isBuy ? 'buy_animal_' : 'sell_animal_'}${assetId}`)
-                            .setTitle(isBuy ? "شراء حيوان" : "بيع حيوان");
+                            .setCustomId(`buy_animal_${assetId}`)
+                            .setTitle("شراء حيوان");
 
                         const quantityInput = new TextInputBuilder()
                             .setCustomId('quantity_input')
-                            .setLabel(isBuy ? `الكمية (سعر الواحد: ${item.price})` : `كمية البيع (لديك في المزرعة)`)
+                            .setLabel(`الكمية (سعر الواحد: ${item.price})`)
                             .setStyle(TextInputStyle.Short)
                             .setPlaceholder('أدخل رقماً (مثلاً: 1)')
-                            .setMinLength(1)
-                            .setMaxLength(5)
+                            .setRequired(true);
+
+                        modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
+                        await i.showModal(modal);
+                    }
+
+                    // --- بيع (النظام الجديد) ---
+                    else if (i.customId.startsWith('sell_animal_')) {
+                        const assetId = i.customId.replace('sell_animal_', '');
+                        const modal = new ModalBuilder()
+                            .setCustomId(`sell_animal_${assetId}`)
+                            .setTitle("بيع حيوان");
+
+                        const quantityInput = new TextInputBuilder()
+                            .setCustomId('quantity_input')
+                            .setLabel(`الكمية المراد بيعها`)
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('أدخل رقماً')
                             .setRequired(true);
 
                         modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
                         
-                        await i.showModal(modal).catch(err => {
-                            if (err.code !== 40060 && err.code !== 10062) {
-                                console.error("Modal Error:", err);
+                        // هنا سنعالج المودال في هذا الملف لأن المنطق معقد ويحتاج تفاصيل دقيقة
+                        await i.showModal(modal);
+                        
+                        try {
+                            const submitted = await i.awaitModalSubmit({ time: 60000, filter: sub => sub.user.id === i.user.id });
+                            
+                            const quantityToSell = parseInt(submitted.fields.getTextInputValue('quantity_input'));
+                            if (isNaN(quantityToSell) || quantityToSell <= 0) return submitted.reply({ content: '❌ رقم غير صالح.', flags: MessageFlags.Ephemeral });
+
+                            const userAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? ORDER BY purchaseTimestamp ASC").all(i.user.id, i.guild.id, assetId);
+                            const itemDef = farmAnimals.find(a => a.id === assetId);
+                            
+                            if (userAnimals.length === 0) return submitted.reply({ content: '❌ لا تملك هذا الحيوان.', flags: MessageFlags.Ephemeral });
+
+                            // حساب العدد الإجمالي
+                            let totalOwned = 0;
+                            userAnimals.forEach(row => totalOwned += row.quantity);
+                            if (totalOwned < quantityToSell) return submitted.reply({ content: `❌ لا تملك هذه الكمية! لديك: ${totalOwned}`, flags: MessageFlags.Ephemeral });
+
+                            const now = Date.now();
+                            let remainingToSell = quantityToSell;
+                            let totalRefund = 0;
+                            let soldCount = 0;
+                            let unsellableCount = 0;
+
+                            // فترة الحظر: آخر 20% من العمر
+                            const lifespanMs = itemDef.lifespan_days * DAY_MS;
+                            const noSellMs = Math.ceil(itemDef.lifespan_days * 0.2) * DAY_MS; 
+
+                            for (const row of userAnimals) {
+                                if (remainingToSell <= 0) break;
+
+                                const purchaseTime = row.purchaseTimestamp || now;
+                                const ageMs = now - purchaseTime;
+                                const remainingLifeMs = lifespanMs - ageMs;
+
+                                // 🛑 شرط الحظر: إذا اقترب الموت
+                                if (remainingLifeMs <= noSellMs) {
+                                    unsellableCount += row.quantity; 
+                                    // نتخطى هذا الصف (لا يمكن بيع كبار السن)
+                                    continue;
+                                }
+
+                                // 📉 حساب السعر (الإهلاك)
+                                // السعر ينخفض خطياً من 70% إلى 0% بناءً على العمر المتبقي
+                                // السعر الحالي = السعر الأصلي * 0.70 * (الوقت المتبقي / العمر الكلي)
+                                let currentValRatio = (remainingLifeMs / lifespanMs); 
+                                if (currentValRatio > 1) currentValRatio = 1;
+                                if (currentValRatio < 0) currentValRatio = 0;
+
+                                // الحد الأقصى للاسترداد 70%
+                                const refundPricePerUnit = Math.floor(itemDef.price * 0.70 * currentValRatio);
+
+                                const sellFromThisRow = Math.min(row.quantity, remainingToSell);
+                                
+                                totalRefund += (refundPricePerUnit * sellFromThisRow);
+                                remainingToSell -= sellFromThisRow;
+                                soldCount += sellFromThisRow;
+
+                                // تحديث الداتابيس
+                                if (row.quantity === sellFromThisRow) {
+                                    sql.prepare("DELETE FROM user_farm WHERE id = ?").run(row.id);
+                                } else {
+                                    sql.prepare("UPDATE user_farm SET quantity = quantity - ? WHERE id = ?").run(sellFromThisRow, row.id);
+                                }
                             }
-                        });
+
+                            if (soldCount === 0) {
+                                return submitted.reply({ 
+                                    content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(itemDef.lifespan_days * 0.2)} يوم) ولا يمكن بيعها الآن.\nاستفد من دخلها حتى تموت.`, 
+                                    flags: MessageFlags.Ephemeral 
+                                });
+                            }
+
+                            // إضافة الفلوس
+                            sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(totalRefund, i.user.id, i.guild.id);
+
+                            let msg = `✅ **تم بيع ${soldCount}x ${itemDef.name}**\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
+                            if (remainingToSell > 0) {
+                                msg += `\n⚠️ لم يتم بيع **${remainingToSell}** لأنها كبيرة جداً في السن ولا يقبلها السوق.`;
+                            } else {
+                                msg += `\n📉 (تم خصم قيمة الاستهلاك بناءً على عمر الحيوان)`;
+                            }
+
+                            await submitted.reply({ content: msg, flags: MessageFlags.Ephemeral });
+
+                            // تحديث الواجهة
+                            const { embed: detailEmbed, components: detailComponents } = buildDetailView(itemDef, i.user.id, i.guild.id, sql, currentItemIndex, allItems.length, client);
+                            await msg.edit({ embeds: [detailEmbed], components: detailComponents });
+
+                        } catch (err) {
+                            if (err.code !== 40060 && err.code !== 10062) console.error(err);
+                        }
                     }
                 }
 
             } catch (error) {
                 console.error("Farm Collector Error:", error);
-                if (!i.replied && !i.deferred) {
-                    await i.reply({ content: '❌ حدث خطأ غير متوقع.', ephemeral: true }).catch(() => {});
-                }
             }
         });
 
