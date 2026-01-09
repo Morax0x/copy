@@ -1,6 +1,14 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionsBitField, MessageFlags, SlashCommandBuilder, Colors } = require("discord.js");
+const { 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    StringSelectMenuOptionBuilder, 
+    PermissionsBitField, 
+    MessageFlags, 
+    SlashCommandBuilder, 
+    Colors 
+} = require("discord.js");
 const shopItems = require('../../json/shop-items.json');
-// ( 🌟 تم حذف config.json لأنه غير مستخدم هنا )
 
 const emojiMap = new Map([
     ['upgrade_weapon', '⚔️'],
@@ -19,6 +27,12 @@ const emojiMap = new Map([
     ['change_race', '🧬']
 ]);
 
+// قائمة العناصر التي يجب إخفاؤها لمن هم تحت لفل 50
+const HIDDEN_ITEMS_ID = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
+
+// قائمة العناصر التي لا تظهر في القائمة الرئيسية (لأن لها أزرار خاصة أو قوائم فرعية)
+const EXCLUDED_FROM_MAIN_MENU = ['upgrade_weapon', 'upgrade_skill', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu'];
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('متجر')
@@ -26,15 +40,12 @@ module.exports = {
 
     name: 'shop',
     aliases: ['متجر', 'setup-shop'],
-    category: "Admin", // ( تم نقله للادمن لأنه ينشر اللوحة )
-    description: 'يقوم بنشر رسالة المتجر التفاعلية (للإدارة) أو يوجهك للمجر.',
+    category: "Admin",
+    description: 'يقوم بنشر رسالة المتجر التفاعلية (للإدارة) أو يوجهك للمتجر.',
 
     async execute(interactionOrMessage, args) {
 
-        // --- ( 🌟 تم إصلاح هذا السطر 🌟 ) ---
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        // ---------------------------------
-
         let interaction, message, guild, client, member, channel;
 
         if (isSlash) {
@@ -66,8 +77,8 @@ module.exports = {
 
         const sql = client.sql;
 
+        // التحقق من صلاحيات الأدمن للنشر
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-
             const guildId = guild.id;
             sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(guildId);
             const settings = sql.prepare("SELECT shopChannelID FROM settings WHERE guild = ?").get(guildId);
@@ -83,7 +94,33 @@ module.exports = {
             });
         }
 
-        const selectOptions = shopItems.map(item => {
+        // ==========================================================
+        // 🔥🔥🔥 منطق الفلترة بناءً على اللفل 🔥🔥🔥
+        // ==========================================================
+        
+        // 1. جلب بيانات العضو (اللفل)
+        let userData = client.getLevel.get(member.id, guild.id);
+        // إذا لم توجد بيانات، نعتبر اللفل 0 (أو نحضرها من الداتابيس مباشرة للأمان)
+        if (!userData) {
+            userData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(member.id, guild.id);
+        }
+        const userLevel = userData ? userData.level : 0;
+
+        // 2. فلترة العناصر
+        const filteredItems = shopItems.filter(item => {
+            // استبعاد العناصر الفرعية (دائماً مخفية من القائمة الرئيسية)
+            if (EXCLUDED_FROM_MAIN_MENU.includes(item.id)) return false;
+
+            // إخفاء النيترو والايفكتات لمن هم تحت لفل 50
+            if (HIDDEN_ITEMS_ID.includes(item.id) && userLevel < 50) {
+                return false; 
+            }
+
+            return true;
+        });
+
+        // 3. بناء القائمة
+        const selectOptions = filteredItems.map(item => {
             const priceDesc = item.id === 'exchange_xp'
                 ? item.description
                 : `السعر: ${item.price.toLocaleString()} مورا`;
@@ -95,6 +132,8 @@ module.exports = {
                 emoji: emojiMap.get(item.id) || item.emoji || '🛍️'
             };
         });
+
+        // ==========================================================
 
         const selectMenuRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -120,9 +159,7 @@ module.exports = {
             .setURL('https://top.gg/discord/servers/732581242885705728/vote')
             .setDescription(descriptionText)
             .setColor(Colors.Aqua)
-            // --- ( 🌟 تم إصلاح هذا السطر 🌟 ) ---
-            .setImage('https://i.postimg.cc/8zSqmByp/7.webp'); 
-            // ---------------------------------
+            .setImage('https://i.postimg.cc/8zSqmByp/7.webp');
 
         await channel.send({ embeds: [mainEmbed], components: [selectMenuRow] });
 
