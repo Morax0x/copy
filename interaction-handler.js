@@ -1,29 +1,30 @@
 const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField, MessageFlags, Colors } = require("discord.js");
+
 const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
-const { handlePvpInteraction } = require('./handlers/pvp-handler.js'); 
-const { getUserWeight, endGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js'); 
-const { handleReroll } = require('./handlers/reroll-handler.js'); 
-const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js'); 
-const { handleReactionRole } = require('./handlers/reaction-role-handler.js'); 
+const { handlePvpInteraction } = require('./handlers/pvp-handler.js');
+const { getUserWeight, endGiveaway, handleGiveawayInteraction } = require('./handlers/giveaway-handler.js');
+const { handleReroll } = require('./handlers/reroll-handler.js');
+const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.js');
+const { handleReactionRole } = require('./handlers/reaction-role-handler.js');
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
+const { handleLandInteractions } = require('./handlers/farm-land.js');
 
-// 🔥 استيراد إعدادات السوق 🔥
-const marketConfig = require('./json/market-items.json'); 
-const EMOJI_MORA = '<:mora:1435647151349698621>'; // تعريف ايموجي المورا
+const marketConfig = require('./json/market-items.json');
+const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// محاولة استيراد المزرعة إذا كانت موجودة
 let handleFarmInteractions;
-try { ({ handleFarmInteractions } = require('./handlers/farm-handler.js')); } catch(e) {}
+try {
+    const farmModule = require('./handlers/farm-handler.js');
+    handleFarmInteractions = farmModule.handleFarmInteractions || farmModule._handleFarmTransaction;
+} catch (e) {}
 
 const ms = require('ms');
 
-// التخزين المؤقت لمنع التكرار (Anti-Spam)
 const processingInteractions = new Set();
-const giveawayBuilders = new Map(); 
+const giveawayBuilders = new Map();
 
-// دالة مساعدة لتحديث إيمبد بناء القيفاواي
 async function updateBuilderEmbed(interaction, data) {
     const embed = new EmbedBuilder()
         .setTitle("✥ لوحة إنشاء قيفاواي ✥")
@@ -50,264 +51,202 @@ async function updateBuilderEmbed(interaction, data) {
     }
 
     const row = new ActionRowBuilder().addComponents(
-        components[0].components[0], 
-        components[0].components[1], 
+        components[0].components[0],
+        components[0].components[1],
         new ButtonBuilder()
             .setCustomId('g_builder_send')
             .setLabel('إرسال القيفاواي')
             .setStyle(ButtonStyle.Success)
-            .setDisabled(!isReady) 
+            .setDisabled(!isReady)
     );
 
     try {
         await interaction.message.edit({ embeds: [embed], components: [row] });
-    } catch (error) {
-        // تجاهل أخطاء اختفاء الرسالة
-    }
+    } catch (error) {}
 }
 
 module.exports = (client, sql, antiRolesCache) => {
 
     client.on(Events.InteractionCreate, async i => {
 
-        // 1. التحقق من جاهزية قاعدة البيانات
         if (!sql.open && !i.isAutocomplete()) {
-             if (!i.replied && !i.deferred) {
-                 return i.reply({ content: "⚠️ قاعدة البيانات يتم تحديثها حالياً...", flags: [MessageFlags.Ephemeral] }).catch(() => {});
-             }
-             return;
+            if (!i.replied && !i.deferred) {
+                return i.reply({ content: "⚠️ قاعدة البيانات يتم تحديثها حالياً...", flags: [MessageFlags.Ephemeral] }).catch(() => {});
+            }
+            return;
         }
 
-        // 2. منع السبام (الضغط المتكرر)
         if (processingInteractions.has(i.user.id)) {
-            // نستثني المودال لأن إرساله يتطلب وقتاً
             if (!i.isModalSubmit()) {
-                 return i.reply({ content: '⏳ | يرجى الانتظار قليلاً بين المحاولات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                return i.reply({ content: '⏳ | يرجى الانتظار قليلاً بين المحاولات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
             }
         }
 
-        // إضافة المستخدم للقائمة المؤقتة
         if (i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) {
-             processingInteractions.add(i.user.id);
+            processingInteractions.add(i.user.id);
+            setTimeout(() => processingInteractions.delete(i.user.id), 3000);
         }
 
         try {
-            // ====================================================
-            // 1. Slash Commands (الأوامر)
-            // ====================================================
             if (i.isChatInputCommand()) {
                 const command = i.client.commands.get(i.commandName);
                 if (!command) return;
-                
-                // التحقق من البلاك ليست
+
                 try {
                     const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id);
-                    if (isBlacklisted) {
-                         return i.reply({ content: "🚫 **أنت في القائمة السوداء ولا يمكنك استخدام الأوامر.**", flags: [MessageFlags.Ephemeral] });
-                    }
-                } catch(e) {}
+                    if (isBlacklisted) return i.reply({ content: "🚫 **أنت في القائمة السوداء.**", flags: [MessageFlags.Ephemeral] });
+                } catch (e) {}
 
-                // التحقق من الصلاحيات
                 let isAllowed = false;
-                if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                    isAllowed = true;
-                }
+                if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) isAllowed = true;
                 else {
                     const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
                     if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
-                    } 
-                    else {
+                    } else {
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
                             const categoryPerm = i.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId) : null;
-                            
-                            if (channelPerm || categoryPerm) {
-                                isAllowed = true;
-                            } else {
+                            if (channelPerm || categoryPerm) isAllowed = true;
+                            else {
                                 const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
-                                if (!hasRestrictions) isAllowed = true; 
+                                if (!hasRestrictions) isAllowed = true;
                             }
-                        } catch(e) { isAllowed = true; } 
+                        } catch (e) { isAllowed = true; }
                     }
                 }
 
-                if (!isAllowed) {
-                    return i.reply({ content: "❌ **لا يمكنك استخدام هذا الأمر في هذه القناة.**", flags: [MessageFlags.Ephemeral] });
-                }
+                if (!isAllowed) return i.reply({ content: "❌ **لا يمكنك استخدام هذا الأمر في هذه القناة.**", flags: [MessageFlags.Ephemeral] });
 
-                try {
-                    await command.execute(i); 
-                } catch (error) {
+                try { await command.execute(i); } catch (error) {
                     console.error(`[Slash Error: ${i.commandName}]`, error);
                     if (!i.replied && !i.deferred) await i.reply({ content: 'حدث خطأ داخلي!', flags: [MessageFlags.Ephemeral] });
                 }
-                return; 
+                return;
             }
 
-            // ====================================================
-            // 2. Autocomplete & Context Menu
-            // ====================================================
             if (i.isAutocomplete()) {
                 const command = i.client.commands.get(i.commandName);
                 if (command?.autocomplete) await command.autocomplete(i);
-                return; 
+                return;
             }
-
             if (i.isContextMenuCommand()) {
                 const command = i.client.commands.get(i.commandName);
                 if (command) await command.execute(i);
-                return; 
+                return;
             }
 
-            // ====================================================
-            // 3. Buttons & Select Menus (الأزرار والقوائم)
-            // ====================================================
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
-                // 1. القيفاواي
                 if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) await handleGiveawayInteraction(client, i);
-                }
-                // 2. الرتب الخاصة
-                else if (id.startsWith('customrole_')) {
+                } else if (id.startsWith('customrole_')) {
                     await handleCustomRoleInteraction(i, client, sql);
-                }
-                // 3. الزعماء
-                else if (id.startsWith('boss_')) {
+                } else if (id.startsWith('boss_')) {
                     await handleBossInteraction(i, client, sql);
-                }
-                // 4. المزرعة
-                else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
+                } else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
                     await handleFarmInteractions(i, client, sql);
-                }
-                // 5. الستريك
-                else if (id.startsWith('streak_panel_')) { 
+                } else if (id.startsWith('land_')) {
+                    await handleLandInteractions(i, client, sql);
+                } else if (id.startsWith('farm_') || id.startsWith('shop_cat_')) {
+                    return;
+                } else if (id.startsWith('streak_panel_')) {
                     await handleStreakPanel(i, client, sql);
-                }
-                // 6. الرتب التفاعلية
-                else if (id.startsWith('rr_')) { 
-                    await handleReactionRole(i, client, sql, antiRolesCache); 
-                } 
-                // 7. إعادة السحب
-                else if (id === 'g_reroll_select') {
+                } else if (id.startsWith('rr_')) {
+                    await handleReactionRole(i, client, sql, antiRolesCache);
+                } else if (id === 'g_reroll_select') {
                     await handleReroll(i, client, sql);
-                } 
-                // 8. لوحة المهام
-                else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
+                } else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
                     await handleQuestPanel(i, client, sql);
-                } 
-                // 9. المبارزات
-                else if (id.startsWith('pvp_')) { 
+                } else if (id.startsWith('pvp_')) {
                     await handlePvpInteraction(i, client, sql);
-                }
-                // 10. المتجر والصيد
-                else if (
-                    id.startsWith('buy_') || id.startsWith('upgrade_') || id.startsWith('shop_') || 
+                } else if (
+                    id === 'shop_open_menu' ||
+                    (id.startsWith('buy_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_')) ||
+                    (id.startsWith('upgrade_')) ||
+                    id.startsWith('shop_') ||
                     id.startsWith('replace_') || id === 'cancel_purchase' || id === 'open_xp_modal' ||
-                    id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' || 
-                    id === 'cast_rod' || id.startsWith('pull_rod') || 
-                    id.startsWith('sell_') || id.startsWith('mem_') || 
+                    id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' ||
+                    id === 'cast_rod' || id.startsWith('pull_rod') ||
+                    (id.startsWith('sell_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_')) ||
+                    id.startsWith('mem_') ||
                     id === 'replace_guard' || id === 'confirm_dungeon_upgrade' ||
-                    id === 'shop_select_item' || id === 'shop_skill_select_menu' || 
+                    id === 'shop_select_item' || id === 'shop_skill_select_menu' ||
                     id === 'fishing_gear_sub_menu' || id === 'shop_buy_bait_menu' ||
                     id === 'shop_buy_potion_menu'
                 ) {
-                    // استثناء أزرار السوق من المتجر القديم
                     if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
-                        // لا تفعل شيئاً هنا، المودال هو من سيعالج الأمر
+
                     } else {
                         if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
                         else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
                         else await handleShopInteractions(i, client, sql);
                     }
+                } else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
+                    await handleGiveawayBuilderButtons(i, client, sql);
                 }
-                // 11. منشئ القيفاواي
-                else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
-                    await handleGiveawayBuilderButtons(i, client, sql); 
-                }
-
                 return;
             }
 
-            // ====================================================
-            // 4. Modals (النماذج)
-            // ====================================================
             if (i.isModalSubmit()) {
-                
-                // التايم أوت
                 if (i.customId.startsWith('timeout_app_modal_')) {
                     await handleTimeoutModal(i);
-                }
-                // منشئ القيفاواي
-                else if (i.customId === 'g_content_modal' || i.customId === 'g_visuals_modal') {
-                     if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
-                     const data = giveawayBuilders.get(i.user.id) || {};
-                     if (i.customId === 'g_content_modal') {
-                         data.prize = i.fields.getTextInputValue('g_prize');
-                         data.durationStr = i.fields.getTextInputValue('g_duration');
-                         data.winnerCountStr = i.fields.getTextInputValue('g_winners');
-                         data.rewardsInput = i.fields.getTextInputValue('g_rewards');
-                         data.channelID = i.fields.getTextInputValue('g_channel');
-                     } else {
-                         data.description = i.fields.getTextInputValue('g_desc');
-                         data.image = i.fields.getTextInputValue('g_image');
-                         data.color = i.fields.getTextInputValue('g_color');
-                         data.buttonEmoji = i.fields.getTextInputValue('g_emoji');
-                     }
-                     giveawayBuilders.set(i.user.id, data);
-                     await updateBuilderEmbed(i, data);
-                }
-                // 🔥🔥 معالجة سوق الأسهم الجديد (Market) 🔥🔥
-                else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
+                } else if (i.customId === 'g_content_modal' || i.customId === 'g_visuals_modal') {
+                    if (!i.replied && !i.deferred) await i.deferUpdate().catch(() => {});
+                    const data = giveawayBuilders.get(i.user.id) || {};
+                    if (i.customId === 'g_content_modal') {
+                        data.prize = i.fields.getTextInputValue('g_prize');
+                        data.durationStr = i.fields.getTextInputValue('g_duration');
+                        data.winnerCountStr = i.fields.getTextInputValue('g_winners');
+                        data.rewardsInput = i.fields.getTextInputValue('g_rewards');
+                        data.channelID = i.fields.getTextInputValue('g_channel');
+                    } else {
+                        data.description = i.fields.getTextInputValue('g_desc');
+                        data.image = i.fields.getTextInputValue('g_image');
+                        data.color = i.fields.getTextInputValue('g_color');
+                        data.buttonEmoji = i.fields.getTextInputValue('g_emoji');
+                    }
+                    giveawayBuilders.set(i.user.id, data);
+                    await updateBuilderEmbed(i, data);
+                } else if (i.customId.startsWith('farm_plant_modal_')) {
+                    await handleLandInteractions(i, client, sql);
+                } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
                     await handleMarketInteraction(i, client, sql);
-                }
-                // المتجر القديم
-                else if (await handleShopModal(i, client, sql)) {
-                    // تم التعامل معه في المتجر
-                } 
-                // الرتب الخاصة
-                else if (i.customId.startsWith('customrole_modal_')) { 
+                } else if (await handleShopModal(i, client, sql)) {
+
+                } else if (i.customId.startsWith('customrole_modal_')) {
                     await handleCustomRoleInteraction(i, client, sql);
                 }
                 return;
             }
 
         } catch (error) {
-            // تجاهل أخطاء "التفاعل غير معروف" لأنها تعني انتهاء الوقت أو تعامل ملف آخر معه
             if (error.code === 10062 || error.code === 40060) return;
             console.error("خطأ غير متوقع في المعالج الرئيسي:", error);
         } finally {
-            // إزالة المستخدم من قائمة الانتظار للسماح له بالضغط مرة أخرى
-            processingInteractions.delete(i.user.id);
+            if (processingInteractions.has(i.user.id)) {
+                processingInteractions.delete(i.user.id);
+            }
         }
     });
 };
 
-// ==========================================
-// دوال مساعدة منفصلة
-// ==========================================
-
-// 🔥 دالة معالجة السوق المدمجة 🔥
 async function handleMarketInteraction(interaction, client, sql) {
     const user = interaction.user;
     const guild = interaction.guild;
 
-    // === الشراء ===
     if (interaction.customId.startsWith('buy_modal_')) {
-        await interaction.deferReply({ ephemeral: false }); // رد علني
+        await interaction.deferReply({ ephemeral: false });
 
         const assetId = interaction.customId.replace('buy_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityInput);
 
-        if (isNaN(quantity) || quantity <= 0) {
-            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.', ephemeral: true });
-        }
+        if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.', ephemeral: true });
 
         const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
-        
+
         let currentPrice = 0;
         let itemName = assetId;
 
@@ -325,18 +264,14 @@ async function handleMarketInteraction(interaction, client, sql) {
         const userMora = userData ? userData.mora : 0;
         const totalCost = currentPrice * quantity;
 
-        if (userMora < totalCost) {
-            return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**، رصيدك: **${userMora.toLocaleString()}**.` });
-        }
+        if (userMora < totalCost) return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**` });
 
-        // حساب متوسط السعر
         const portfolioItem = sql.prepare("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
-
         let newPurchasePrice = currentPrice;
 
         if (portfolioItem) {
             const oldQty = portfolioItem.quantity;
-            const oldPrice = portfolioItem.purchasePrice || 0; 
+            const oldPrice = portfolioItem.purchasePrice || 0;
             const oldTotalCost = oldQty * oldPrice;
             const newTotalCost = quantity * currentPrice;
             const totalQty = oldQty + quantity;
@@ -348,23 +283,18 @@ async function handleMarketInteraction(interaction, client, sql) {
                 sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(totalCost, user.id, guild.id);
                 if (portfolioItem) {
                     sql.prepare("UPDATE user_portfolio SET quantity = quantity + ?, purchasePrice = ? WHERE userID = ? AND guildID = ? AND itemID = ?")
-                       .run(quantity, newPurchasePrice, user.id, guild.id, assetId);
+                        .run(quantity, newPurchasePrice, user.id, guild.id, assetId);
                 } else {
                     sql.prepare("INSERT INTO user_portfolio (userID, guildID, itemID, quantity, purchasePrice) VALUES (?, ?, ?, ?, ?)")
-                       .run(user.id, guild.id, assetId, quantity, newPurchasePrice);
+                        .run(user.id, guild.id, assetId, quantity, newPurchasePrice);
                 }
             });
             transaction();
 
-            // 🔥 الشكل الجديد للرسالة حسب الطلب 🔥
             const embed = new EmbedBuilder()
                 .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
                 .setTitle('✶ تـم شـراء الاصـل')
-                .setDescription(
-                    `★ **${quantity}** x **${itemName}**\n` +
-                    `★ **التكـلفـة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}\n` +
-                    `★ **سعر الشـراء للاصل:** ${currentPrice.toLocaleString()} ${EMOJI_MORA}`
-                )
+                .setDescription(`★ **${quantity}** x **${itemName}**\n★ **التكـلفـة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
                 .setThumbnail('https://i.postimg.cc/0QgvCMBN/5956138480503032828-120-removebg-preview.png')
                 .setColor(Colors.Green);
 
@@ -373,19 +303,14 @@ async function handleMarketInteraction(interaction, client, sql) {
             console.error(err);
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
-    }
-
-    // === البيع ===
-    else if (interaction.customId.startsWith('sell_modal_')) {
+    } else if (interaction.customId.startsWith('sell_modal_')) {
         await interaction.deferReply({ ephemeral: true });
 
         const assetId = interaction.customId.replace('sell_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityInput);
 
-        if (isNaN(quantity) || quantity <= 0) {
-            return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
-        }
+        if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
 
         const portfolioItem = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
 
@@ -396,8 +321,8 @@ async function handleMarketInteraction(interaction, client, sql) {
         const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
         let currentPrice = marketItem ? marketItem.currentPrice : 0;
         if (currentPrice === 0) {
-             const configItem = marketConfig.find(i => i.id === assetId);
-             currentPrice = configItem ? configItem.price : 0;
+            const configItem = marketConfig.find(i => i.id === assetId);
+            currentPrice = configItem ? configItem.price : 0;
         }
 
         const totalEarned = Math.floor(currentPrice * quantity);
@@ -453,29 +378,29 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
         await i.showModal(modal);
 
     } else if (id === 'g_builder_send') {
-        await i.deferReply({ flags: [MessageFlags.Ephemeral] }); 
+        await i.deferReply({ flags: [MessageFlags.Ephemeral] });
         const data = giveawayBuilders.get(i.user.id);
         if (!data || !data.prize || !data.durationStr || !data.winnerCountStr) return i.editReply("❌ البيانات الأساسية مفقودة.");
-        
+
         const durationMs = ms(data.durationStr);
         const winnerCount = parseInt(data.winnerCountStr);
         if (!durationMs || durationMs <= 0) return i.editReply("❌ المدة غير صالحة.");
         if (isNaN(winnerCount) || winnerCount < 1) return i.editReply("❌ عدد الفائزين غير صالح.");
-        
+
         const endsAt = Date.now() + durationMs;
         let embedDescription = (data.description ? `${data.description}\n\n` : "") + `✶ عـدد الـمـشاركـيـن: \`0\`\n✦ ينتهي بعـد: <t:${Math.floor(endsAt / 1000)}:R>`;
-        
+
         const embed = new EmbedBuilder()
             .setTitle(`✥ قـيـفـاواي عـلـى: ${data.prize}`)
             .setDescription(embedDescription)
             .setColor(data.color || "Random")
             .setImage(data.image || null)
             .setFooter({ text: `${winnerCount} فائز` });
-            
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('g_enter').setLabel('مـشـاركــة').setStyle(ButtonStyle.Success).setEmoji(data.buttonEmoji || '🎉')
         );
-        
+
         let targetChannel = i.channel;
         if (data.channelID) {
             try {
@@ -483,18 +408,18 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
                 if (ch && ch.isTextBased()) targetChannel = ch;
             } catch (err) {}
         }
-        
+
         const gMessage = await targetChannel.send({ embeds: [embed], components: [row] });
         sql.prepare("INSERT INTO active_giveaways (messageID, guildID, channelID, prize, endsAt, winnerCount, xpReward, moraReward, isFinished) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)")
             .run(gMessage.id, i.guild.id, targetChannel.id, data.prize, endsAt, winnerCount, data.xpReward || 0, data.moraReward || 0);
-        
+
         setTimeout(() => endGiveaway(client, gMessage.id), durationMs);
-        giveawayBuilders.delete(i.user.id); 
+        giveawayBuilders.delete(i.user.id);
         await i.message.edit({ content: "✅ تم إرسال القيفاواي بنجاح!", embeds: [], components: [] }).catch(() => {});
         await i.editReply("✅ تم الإرسال!");
 
     } else if (id === 'g_enter') {
-        if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{}); 
+        if (!i.replied && !i.deferred) await i.deferUpdate().catch(() => {});
         const giveawayID = i.message.id;
         const userID = i.user.id;
         const existingEntry = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(giveawayID, userID);
@@ -507,10 +432,9 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
             sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(giveawayID, userID, weight);
             replyMessage = `✅ تـمـت الـمـشاركـة بنـجـاح دخـلت بـ: ${weight} تذكـرة`;
         }
-        await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] }); 
-    } 
-    else if (id === 'g_enter_drop') {
-        if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
+        await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] });
+    } else if (id === 'g_enter_drop') {
+        if (!i.replied && !i.deferred) await i.deferUpdate().catch(() => {});
         const messageID = i.message.id;
         const userID = i.user.id;
         try {
@@ -518,14 +442,14 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
             if (!giveaway || (giveaway.endsAt && giveaway.endsAt < Date.now())) return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
             const existing = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(messageID, userID);
             if (existing) return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
-            
+
             let weight = 1;
             try { weight = await getUserWeight(i.member, sql); } catch (err) {}
-            
+
             sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
             return i.followUp({ content: `✅ تم التسجيل بنجاح (تذاكر: ${weight})!`, flags: [MessageFlags.Ephemeral] });
-        } catch (error) { 
-            return i.followUp({ content: "❌ حدث خطأ.", flags: [MessageFlags.Ephemeral] }); 
+        } catch (error) {
+            return i.followUp({ content: "❌ حدث خطأ.", flags: [MessageFlags.Ephemeral] });
         }
     }
 }
@@ -546,13 +470,12 @@ async function handleTimeoutModal(i) {
         await targetMember.timeout(durationMs, `بواسطة ${i.user.tag}: ${reasonInput}`);
         const finishTime = Math.floor((Date.now() + durationMs) / 1000);
         await i.editReply({ content: `❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ\n✶ <t:${finishTime}:R>` });
-        
-        // محاولة إرسال رسالة خاصة
+
         const dmEmbed = new EmbedBuilder()
             .setDescription(`**❖ خـالفـت القـوانيـن وتمـت معاقبـتك لـ**\n✶ المدة: ${durationInput}\n✶ السـبب: ${reasonInput}`)
             .setColor("Random")
             .setThumbnail(targetMember.user.displayAvatarURL());
-        
+
         await targetMember.send({ embeds: [dmEmbed] }).catch(() => {});
     } catch (err) {
         await i.editReply("❌ حدث خطأ (تأكد من الصلاحيات).");
