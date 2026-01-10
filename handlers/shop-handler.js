@@ -210,6 +210,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             const fullMediaStreakData = { id: existingMediaStreak?.id || `${interaction.guild.id}-${interaction.user.id}`, guildID: interaction.guild.id, userID: interaction.user.id, streakCount: existingMediaStreak?.streakCount || 0, lastMediaTimestamp: existingMediaStreak?.lastMediaTimestamp || 0, hasGracePeriod: existingMediaStreak?.hasGracePeriod || 0, hasItemShield: 1, hasReceivedFreeShield: existingMediaStreak?.hasReceivedFreeShield || 0, dmNotify: existingMediaStreak?.dmNotify ?? 1, highestStreak: existingMediaStreak?.highestStreak || 0 };
             setMediaStreak.run(fullMediaStreakData);
         }
+        // ✅✅✅ إصلاح معززات الخبرة (XP ONLY) ✅✅✅
         else if (itemData.id.startsWith('xp_buff_')) {
             let multiplier = 0, buffPercent = 0, duration = 0;
             switch (itemData.id) {
@@ -219,6 +220,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             }
             if (duration > 0) {
                 const expiresAt = Date.now() + duration;
+                // إدخال سطر واحد فقط للخبرة (xp)
                 sql.prepare("INSERT INTO user_buffs (userID, guildID, buffType, multiplier, expiresAt, buffPercent) VALUES (?, ?, ?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, 'xp', multiplier, expiresAt, buffPercent);
             }
         }
@@ -725,30 +727,50 @@ async function _handleReplaceGuard(i, client, sql) {
 async function _handleReplaceBuffButton(i, client, sql) {
     try {
         await i.deferUpdate();
-        const userId = i.user.id; const guildId = i.guild.id; const newItemId = i.customId.replace('replace_buff_', '');
+        const userId = i.user.id; 
+        const guildId = i.guild.id; 
+        const newItemId = i.customId.replace('replace_buff_', '');
         const item = shopItems.find(it => it.id === newItemId);
+        
         if (!item) return await i.followUp({ content: '❌ هذا العنصر غير موجود!', components: [], embeds: [], ephemeral: true });
-        let userData = client.getLevel.get(userId, guildId); if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
+        
+        let userData = client.getLevel.get(userId, guildId); 
+        if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
+        
         if (userData.mora < item.price) {
             const userBank = userData.bank || 0;
             let msg = `❌ رصيدك غير كافي! تحتاج إلى **${item.price.toLocaleString()}** ${EMOJI_MORA}`;
             if (userBank >= item.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا.`;
             return await i.followUp({ content: msg, components: [], embeds: [], ephemeral: true });
         }
+        
         userData.mora -= item.price;
+        
+        // ✅✅✅ حذف معزز الخبرة القديم فقط (xp) ✅✅✅
         sql.prepare("DELETE FROM user_buffs WHERE userID = ? AND guildID = ? AND buffType = 'xp'").run(userId, guildId);
+        
         let expiresAt, multiplier, buffPercent;
         switch (item.id) {
             case 'xp_buff_1d_3': multiplier = 0.45; buffPercent = 45; expiresAt = Date.now() + (24 * 60 * 60 * 1000); break;
             case 'xp_buff_1d_7': multiplier = 0.70; buffPercent = 70; expiresAt = Date.now() + (48 * 60 * 60 * 1000); break;
             case 'xp_buff_2d_10': multiplier = 0.90; buffPercent = 90; expiresAt = Date.now() + (72 * 60 * 60 * 1000); break;
         }
-        sql.prepare("INSERT INTO user_buffs (userID, guildID, buffType, multiplier, expiresAt, buffPercent) VALUES (?, ?, ?, ?, ?, ?)").run(userId, guildId, 'xp', multiplier, expiresAt, buffPercent);
+        
+        // ✅✅✅ إضافة معزز الخبرة الجديد فقط (xp) ✅✅✅
+        if (multiplier > 0) {
+            sql.prepare("INSERT INTO user_buffs (userID, guildID, buffType, multiplier, expiresAt, buffPercent) VALUES (?, ?, ?, ?, ?, ?)").run(userId, guildId, 'xp', multiplier, expiresAt, buffPercent);
+        }
+
         userData.shop_purchases = (userData.shop_purchases || 0) + 1;
         client.setLevel.run(userData);
+        
         await i.followUp({ content: `✅ تم استبدال المعزز وشراء **${item.name}** بنجاح!\nرصيدك المتبقي: **${userData.mora.toLocaleString()}** ${EMOJI_MORA}`, components: [], embeds: [], ephemeral: true });
         sendShopLog(client, guildId, i.member, item.name, item.price, "استبدال/شراء");
-    } catch (error) { console.error("خطأ في زر استبدال المعزز:", error); if (i.replied || i.deferred) await i.followUp({ content: '❌ حدث خطأ.', flags: MessageFlags.Ephemeral }); }
+        
+    } catch (error) { 
+        console.error("خطأ في زر استبدال المعزز:", error); 
+        if (i.replied || i.deferred) await i.followUp({ content: '❌ حدث خطأ.', flags: MessageFlags.Ephemeral }); 
+    }
 }
 
 async function handleShopModal(i, client, sql) {
