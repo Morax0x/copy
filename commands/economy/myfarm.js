@@ -14,7 +14,7 @@ const farmAnimals = require('../../json/farm-animals.json');
 const feedItems = require('../../json/feed-items.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
-// ✅ استدعاء دالة رسم الأرض
+// ✅ استدعاء دالةة رسم الأرض
 const { renderLand } = require('../../handlers/farm-land.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
