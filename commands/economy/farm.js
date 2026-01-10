@@ -12,12 +12,9 @@ const {
     MessageFlags 
 } = require("discord.js");
 
-// استيراد البيانات
 const farmAnimals = require('../../json/farm-animals.json');
 const seedsData = require('../../json/seeds.json');
 const feedItems = require('../../json/feed-items.json');
-
-// استدعاء دالة السعة
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -31,11 +28,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // 🏗️ دوال بناء الواجهة (Builders)
 // ============================================================
 
-// 1. القائمة الرئيسية
 function buildMainMenu(user) {
     const embed = new EmbedBuilder()
         .setTitle('✥ المتـجر الـزراعـي المـركـزي 🌾')
-        // ✅ الوصف الجديد كما طلبت
         .setDescription(
             `من بذرةٍ صغيرة إلى مزرعةٍ عامرة، ستجد هنا مستلزمات الزراعة الأساسية\n` +
             `✶ يمكنك شراء الحيوانات، والبذور، والأعلاف 🌱\n\n` +
@@ -45,17 +40,15 @@ function buildMainMenu(user) {
         .setThumbnail(user.displayAvatarURL())
         .setImage('https://i.postimg.cc/dVpcpxXL/fmark.gif');
 
-    // ✅ تغيير ألوان الأزرار (أحمر، أزرق، أخضر)
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('قسم الحيوانات').setStyle(ButtonStyle.Danger).setEmoji('🐔'), // أحمر
-        new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('قسم البذور').setStyle(ButtonStyle.Primary).setEmoji('🌱'),   // أزرق
-        new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('قسم الأعلاف').setStyle(ButtonStyle.Success).setEmoji('🌾')    // أخضر
+        new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('قسم الحيوانات').setStyle(ButtonStyle.Danger).setEmoji('🐔'),
+        new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('قسم البذور').setStyle(ButtonStyle.Primary).setEmoji('🌱'),
+        new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('قسم الأعلاف').setStyle(ButtonStyle.Success).setEmoji('🌾')
     );
 
     return { embeds: [embed], components: [row] };
 }
 
-// 2. العرض الشبكي (Grid View)
 function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity, category) {
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
@@ -94,7 +87,7 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity, catego
     const selectOptions = itemsOnPage.map(item => {
         let description = `${item.price} مورا`;
         if (category === 'animals') description = `دخل: ${item.income_per_day}/يوم | حجم: ${item.size || 1}`;
-        if (category === 'seeds') description = `نمو: ${item.growth_time_hours}س | بيع: ${item.sell_price}`;
+        if (category === 'seeds') description = `نمو: ${item.growth_time_hours}س | قيمة المحصول: ${item.sell_price}`;
         
         return {
             label: `${item.name}`,
@@ -125,7 +118,6 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity, catego
     return { embeds: [embed], components: [selectMenuRow, navRow] };
 }
 
-// 3. عرض التفاصيل (Detail View)
 function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, client, category) {
     let userQuantity = 0;
     let isFull = false;
@@ -166,13 +158,13 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
         field5_val = `[ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]`;
 
     } else if (category === 'seeds') {
-        field2_name = "سعر البيع (للمحصول)";
+        field2_name = "قيمة المحصول (عند الحصاد)";
         field2_val = `${item.sell_price} ${EMOJI_MORA}`;
         const profit = item.sell_price - item.price;
         
         field3_val = `⏳ النمو: **${item.growth_time_hours}** ساعة\n🍂 الذبول: **${item.wither_time_hours}** ساعة\n✨ الخبرة: **${item.xp_reward}** XP`;
         field4_val = `**${userQuantity.toLocaleString()}** بذرة`;
-        field5_val = `صافي الربح: **${profit}** ${EMOJI_MORA}`;
+        field5_val = `صافي الربح المتوقع: **${profit}** ${EMOJI_MORA}`;
 
     } else if (category === 'feed') {
         field2_name = "مخصص لـ";
@@ -216,7 +208,7 @@ function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems, clie
             
         new ButtonBuilder()
             .setCustomId(category === 'animals' ? `sell_animal_${item.id}` : (category === 'seeds' ? `sell_seed_${item.id}` : `sell_feed_${item.id}`))
-            .setLabel(`بيع 💰`)
+            .setLabel(`بيع (نصف السعر) 💰`)
             .setStyle(ButtonStyle.Danger)
             .setDisabled(userQuantity === 0)
     );
@@ -449,6 +441,7 @@ module.exports = {
 
                             } else { // Sell
                                 if (currentCategory === 'animals') {
+                                    // ... كود بيع الحيوانات كما هو ...
                                     const userAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? ORDER BY purchaseTimestamp ASC").all(user.id, guild.id, itemId);
                                     
                                     let totalOwned = 0;
@@ -493,12 +486,12 @@ module.exports = {
                                     await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
 
                                 } else {
+                                    // 🔥🔥 هنا التصحيح: بيع البذور والأعلاف بنصف سعر الشراء 🔥🔥
                                     const invItem = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, itemId);
                                     if (!invItem || invItem.quantity < qty) return submit.reply({ content: `❌ لا تملك الكمية.`, flags: MessageFlags.Ephemeral });
                                     
-                                    let sellPrice = 0;
-                                    if (currentCategory === 'seeds') sellPrice = itemData.sell_price || Math.floor(itemData.price * 0.5);
-                                    else sellPrice = Math.floor(itemData.price * 0.5);
+                                    // ⚠️ السعر = نصف سعر الشراء (خسارة) لمنع الغش
+                                    const sellPrice = Math.floor(itemData.price * 0.5); 
 
                                     const totalGain = sellPrice * qty;
                                     userData.mora += totalGain;
@@ -507,7 +500,7 @@ module.exports = {
                                     if (invItem.quantity === qty) sql.prepare("DELETE FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").run(user.id, guild.id, itemId);
                                     else sql.prepare("UPDATE user_inventory SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(qty, user.id, guild.id, itemId);
 
-                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
+                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
                                 }
                             }
 
