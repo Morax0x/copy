@@ -20,7 +20,7 @@ const {
     WIN_IMAGES, 
     LOSE_IMAGES, 
     skillsConfig, 
-    ownerSkills,
+    ownerSkills, 
     potionItems 
 } = require('./dungeon/constants');
 
@@ -238,20 +238,27 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; 
         }
 
+        // ============================================================
+        // ✅ منطق الختم المعدل (يعمل للأحياء والأموات)
+        // ============================================================
         if (floor === 15) {
             players.forEach(p => {
-                if (p.isSealed && !p.isDead) {
-                    p.sealMultiplier = 0.5; 
-                    threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
+                if (p.isSealed) {
+                    p.sealMultiplier = 0.5; // تحديث القوة للجميع
+                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                        threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
+                    }
                 }
             });
         }
         if (floor === 19) {
             players.forEach(p => {
-                if (p.isSealed && !p.isDead) {
-                    p.isSealed = false; 
-                    p.sealMultiplier = 1.0;
-                    threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                if (p.isSealed) {
+                    p.isSealed = false;      // إزالة الختم للجميع
+                    p.sealMultiplier = 1.0;  // استعادة القوة الكاملة
+                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                        threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
+                    }
                 }
             });
         }
@@ -380,7 +387,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let battleMsg;
         try {
             battleMsg = await threadChannel.send({ 
-                content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`, 
+                content: '', // ✅ تم إزالة النص
                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                 components: generateBattleRows() 
             });
@@ -462,7 +469,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
                         await battleMsg.edit({ 
-                            content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                            content: '', // ✅ تم إزالة النص
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
@@ -545,7 +552,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                    content: '', // ✅ تم إزالة النص
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -691,7 +698,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                    content: '', // ✅ تم إزالة النص
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -785,7 +792,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                              
                             await battleMsg.edit({ 
-                                content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`,
+                                content: '', // ✅ تم إزالة النص
                                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                             }).catch(()=>{});
 
@@ -845,7 +852,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 try {
                     await battleMsg.delete();
                     battleMsg = await threadChannel.send({ 
-                        content: `**⚔️ المعركة جارية... [الطابق ${floor}]**`, 
+                        content: '', // ✅ تم إزالة النص
                         embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                         components: generateBattleRows() 
                     });
@@ -954,7 +961,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
              restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
         } else if (floor > 20) {
              if (canRetreat) {
-                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! (لن تظهر مجدداً في هذا النطاق)`;
+                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! لن تظهر مجدداً في هذا النطاق`;
              } else {
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
@@ -979,7 +986,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let restMsg;
         try {
             restMsg = await threadChannel.send({ 
-                content: `**🏕️ استراحة المحارب**`, 
+                content: '', // ✅ تم إزالة النص
                 embeds: [restEmbed], 
                 components: [restRow] 
             });
@@ -1080,7 +1087,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                 const trapEmbed = new EmbedBuilder()
                     .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
-                    .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم... النجاة شبه مستحيلة!`)
+                    .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم...!`)
                     .setColor(Colors.DarkRed)
                     .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
                 await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
