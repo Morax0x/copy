@@ -14,7 +14,7 @@ const farmAnimals = require('../../json/farm-animals.json');
 const feedItems = require('../../json/feed-items.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 
-// ✅ استدعاء دالةة رسم الأرض
+// ✅ استدعاء دالة رسم الأرض
 const { renderLand } = require('../../handlers/farm-land.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -65,8 +65,10 @@ module.exports = {
 
         const sql = client.sql;
         const targetUser = targetMember.user;
-        const userId = targetUser.id;
+        const userId = targetUser.id; // صاحب المزرعة المعروضة
         const guildId = guild.id;
+        
+        // هل المشاهد هو نفسه صاحب المزرعة؟
         const isOwner = user.id === userId; 
 
         // ============================================================
@@ -95,6 +97,7 @@ module.exports = {
             }
         }
 
+        // إشعار الموت يظهر فقط إذا كان صاحب المزرعة هو من يشاهدها
         if (deadAnimals.length > 0 && isOwner) {
             const deathEmbed = new EmbedBuilder()
                 .setTitle('☠️ لقد نفقت بعض حيواناتك من الجوع!')
@@ -110,7 +113,7 @@ module.exports = {
         // 🛠️ دوال العرض المساعدة
         // ============================================================
 
-        // 1. عرض الحيوانات (صفحة ثانوية)
+        // 1. عرض الحيوانات
         const renderFarmAnimals = (page = 0) => {
             const maxCapacity = getPlayerCapacity(client, userId, guildId);
             const userAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ? ORDER BY quantity DESC").all(userId, guildId);
@@ -118,7 +121,6 @@ module.exports = {
             const baseEmbed = new EmbedBuilder()
                 .setColor("Random")
                 .setAuthor({ name: `🐄 حظيرة ${targetUser.username}`, iconURL: targetUser.displayAvatarURL() })
-                // ✅ إضافة الصورة الكبيرة هنا
                 .setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y_gif_1731_560.gif');
 
             if (!userAnimals || userAnimals.length === 0) {
@@ -156,23 +158,12 @@ module.exports = {
                     const existing = animalsMap.get(animalData.id);
                     existing.quantity += qty;
                     existing.income += (animalData.income_per_day * qty);
-                    if (daysUntilDeath < existing.minDays) { 
-                        existing.minDays = daysUntilDeath; 
-                        existing.hungerText = hungerStatusText; 
-                    }
-                    if (ageDays > existing.age) { 
-                        existing.age = ageDays; 
-                        existing.lifeRemaining = lifeRemaining; 
-                    }
+                    if (daysUntilDeath < existing.minDays) { existing.minDays = daysUntilDeath; existing.hungerText = hungerStatusText; }
+                    if (ageDays > existing.age) { existing.age = ageDays; existing.lifeRemaining = lifeRemaining; }
                 } else {
                     animalsMap.set(animalData.id, {
-                        ...animalData, 
-                        quantity: qty, 
-                        income: animalData.income_per_day * qty,
-                        minDays: daysUntilDeath, 
-                        hungerText: hungerStatusText, 
-                        age: ageDays, 
-                        lifeRemaining: lifeRemaining
+                        ...animalData, quantity: qty, income: animalData.income_per_day * qty,
+                        minDays: daysUntilDeath, hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
                     });
                 }
             }
@@ -205,7 +196,7 @@ module.exports = {
             return { embed: baseEmbed, rows: getAnimalsButtons(page, totalPages), files: [] };
         };
 
-        // 2. عرض مخزن الأعلاف (صفحة ثانوية)
+        // 2. عرض مخزن الأعلاف
         const renderFeedStore = () => {
             const inventory = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
             const feedInventory = [];
@@ -215,8 +206,7 @@ module.exports = {
                 if (itemInInv && itemInInv.quantity > 0) {
                     const targetAnimal = farmAnimals.find(a => a.feed_id === feed.id);
                     feedInventory.push({ 
-                        ...feed, 
-                        qty: itemInInv.quantity,
+                        ...feed, qty: itemInInv.quantity,
                         animalName: targetAnimal ? targetAnimal.name : 'مجهول',
                         animalEmoji: targetAnimal ? targetAnimal.emoji : '❓'
                     });
@@ -268,30 +258,40 @@ module.exports = {
         let currentPage = 0;
         let currentView = 'land'; 
 
-        const mockInteraction = isSlash ? interaction : { 
-            user: user, 
+        const mockInteraction = { 
+            user: targetUser, 
             guild: guild, 
             member: targetMember,
-            id: message.id 
+            id: message ? message.id : interaction.id 
         };
 
         const landData = await renderLand(mockInteraction, client, sql);
 
-        const navigationRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
-            new ButtonBuilder().setCustomId('open_feed_store').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾')
-        );
-
-        const initialComponents = [...landData.components, navigationRow];
+        // 🔥 بناء الأزرار (فقط إذا كان المالك) 🔥
+        let initialComponents = [];
+        if (isOwner) {
+            const navigationRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
+                new ButtonBuilder().setCustomId('open_feed_store').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾')
+            );
+            // دمج أزرار الأرض (من landData) مع أزرار التنقل
+            initialComponents = [...(landData.components || []), navigationRow];
+        }
 
         const msg = await reply({ 
             embeds: landData.embeds || [], 
-            components: initialComponents, 
+            components: initialComponents, // ✅ فارغ للزوار، مليء للمالك
             files: landData.files, 
             content: landData.content || '',
             fetchReply: true 
         });
 
+        // 🔥🔥 إذا لم يكن المالك، نتوقف هنا (وضع المشاهدة فقط) 🔥🔥
+        if (!isOwner) return;
+
+        // ============================================================
+        // 🎮 بدء الكوليكتور (للمالك فقط)
+        // ============================================================
         const collector = msg.createMessageComponentCollector({ 
             filter: i => i.user.id === user.id, 
             time: 300000 
@@ -299,45 +299,32 @@ module.exports = {
 
         collector.on('collect', async i => {
             try {
-                // ============================
-                // 🏠 العودة للصفحة الرئيسية (الأرض)
-                // ============================
+                // صفحة الأرض (العودة)
                 if (i.customId === 'btn_back_home') {
                     await i.deferUpdate();
                     currentView = 'land';
+                    const landData = await renderLand(mockInteraction, client, sql);
                     
-                    const landData = await renderLand(i, client, sql);
                     const navRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
                         new ButtonBuilder().setCustomId('open_feed_store').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾')
                     );
-                    
-                    // ✅ تنظيف الإمبدات القديمة عند العودة للأرض
+
                     await i.editReply({ 
-                        embeds: [], // مسح إمبد الحيوانات/المخزن
+                        embeds: [], 
                         content: landData.content || '',
-                        components: [...landData.components, navRow], 
+                        components: [...(landData.components || []), navRow], 
                         files: landData.files,
-                        attachments: [] // مسح أي ملفات قديمة عالقة
+                        attachments: [] 
                     });
                 }
-
-                // ============================
-                // 🐮 عرض الحيوانات
-                // ============================
+                // صفحة الحيوانات
                 else if (i.customId === 'open_animals_view') {
                     await i.deferUpdate();
                     currentView = 'animals';
                     currentPage = 0;
                     const data = renderFarmAnimals(0);
-                    // ✅ تنظيف الملفات (الصور) عند الذهاب للحيوانات
-                    await i.editReply({ 
-                        embeds: [data.embed], 
-                        components: data.rows, 
-                        files: [], // مسح صورة الأرض
-                        attachments: [], // تأكيد المسح
-                        content: '' 
-                    });
+                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' });
                 }
                 else if (i.customId === 'farm_prev') {
                     await i.deferUpdate();
@@ -351,27 +338,14 @@ module.exports = {
                     const data = renderFarmAnimals(currentPage);
                     await i.editReply({ embeds: [data.embed], components: data.rows });
                 }
-
-                // ============================
-                // 🌾 عرض المخزن
-                // ============================
+                // صفحة المخزن
                 else if (i.customId === 'open_feed_store') {
                     await i.deferUpdate();
                     currentView = 'feed_store';
                     const data = renderFeedStore();
-                    // ✅ تنظيف الملفات عند الذهاب للمخزن
-                    await i.editReply({ 
-                        embeds: [data.embed], 
-                        components: data.rows, 
-                        files: [], 
-                        attachments: [],
-                        content: '' 
-                    });
+                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' });
                 }
-
-                // ============================
-                // 🥄 الإطعام
-                // ============================
+                // زر الإطعام
                 else if (i.customId === 'btn_feed_animal') {
                     const userAnimalsRows = sql.prepare("SELECT animalID FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
                     const distinctAnimalIds = [...new Set(userAnimalsRows.map(r => r.animalID))];
