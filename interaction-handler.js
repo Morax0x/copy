@@ -1,5 +1,6 @@
 const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField, MessageFlags, Colors } = require("discord.js");
 
+// استدعاء الهاندلرات (المعالجات) الخارجية
 const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
@@ -11,9 +12,11 @@ const { handleReactionRole } = require('./handlers/reaction-role-handler.js');
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
 const { handleLandInteractions } = require('./handlers/farm-land.js');
 
+// استدعاء ملفات الجيسون
 const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
+// محاولة استدعاء نظام المزرعة (مع تجنب الأخطاء إذا لم يكن موجوداً)
 let handleFarmInteractions;
 try {
     const farmModule = require('./handlers/farm-handler.js');
@@ -22,9 +25,13 @@ try {
 
 const ms = require('ms');
 
+// متغيرات لمنع التكرار (Debounce) وحفظ حالة القيفاواي المؤقتة
 const processingInteractions = new Set();
 const giveawayBuilders = new Map();
 
+/**
+ * تحديث واجهة بناء القيفاواي (Embed)
+ */
 async function updateBuilderEmbed(interaction, data) {
     const embed = new EmbedBuilder()
         .setTitle("✥ لوحة إنشاء قيفاواي ✥")
@@ -69,6 +76,7 @@ module.exports = (client, sql, antiRolesCache) => {
 
     client.on(Events.InteractionCreate, async i => {
 
+        // 1. التحقق من اتصال قاعدة البيانات
         if (!sql.open && !i.isAutocomplete()) {
             if (!i.replied && !i.deferred) {
                 return i.reply({ content: "⚠️ قاعدة البيانات يتم تحديثها حالياً...", flags: [MessageFlags.Ephemeral] }).catch(() => {});
@@ -76,6 +84,7 @@ module.exports = (client, sql, antiRolesCache) => {
             return;
         }
 
+        // 2. نظام منع التكرار السريع (Rate Limit)
         if (processingInteractions.has(i.user.id)) {
             if (!i.isModalSubmit()) {
                 return i.reply({ content: '⏳ | يرجى الانتظار قليلاً بين المحاولات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
@@ -88,15 +97,20 @@ module.exports = (client, sql, antiRolesCache) => {
         }
 
         try {
+            // ====================================================
+            // معالجة أوامر السلاش (Slash Commands)
+            // ====================================================
             if (i.isChatInputCommand()) {
                 const command = i.client.commands.get(i.commandName);
                 if (!command) return;
 
+                // التحقق من البلاك ليست
                 try {
                     const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id);
                     if (isBlacklisted) return i.reply({ content: "🚫 **أنت في القائمة السوداء.**", flags: [MessageFlags.Ephemeral] });
                 } catch (e) {}
 
+                // التحقق من الصلاحيات والقنوات
                 let isAllowed = false;
                 if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) isAllowed = true;
                 else {
@@ -125,17 +139,22 @@ module.exports = (client, sql, antiRolesCache) => {
                 return;
             }
 
+            // معالجة الإكمال التلقائي (Autocomplete)
             if (i.isAutocomplete()) {
                 const command = i.client.commands.get(i.commandName);
                 if (command?.autocomplete) await command.autocomplete(i);
                 return;
             }
+            // معالجة أوامر القائمة (Context Menu)
             if (i.isContextMenuCommand()) {
                 const command = i.client.commands.get(i.commandName);
                 if (command) await command.execute(i);
                 return;
             }
 
+            // ====================================================
+            // معالجة الأزرار والقوائم المنسدلة (Buttons & Select Menus)
+            // ====================================================
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
@@ -177,7 +196,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     id === 'shop_buy_potion_menu'
                 ) {
                     if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
-
+                        // يتم التعامل معها في المودال، هنا فقط placeholder إذا لزم الأمر
                     } else {
                         if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
                         else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
@@ -189,6 +208,9 @@ module.exports = (client, sql, antiRolesCache) => {
                 return;
             }
 
+            // ====================================================
+            // معالجة النوافذ المنبثقة (Modals)
+            // ====================================================
             if (i.isModalSubmit()) {
                 if (i.customId.startsWith('timeout_app_modal_')) {
                     await handleTimeoutModal(i);
@@ -214,7 +236,7 @@ module.exports = (client, sql, antiRolesCache) => {
                 } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
                     await handleMarketInteraction(i, client, sql);
                 } else if (await handleShopModal(i, client, sql)) {
-
+                    // تم التعامل معه داخل الدالة
                 } else if (i.customId.startsWith('customrole_modal_')) {
                     await handleCustomRoleInteraction(i, client, sql);
                 }
@@ -222,7 +244,7 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
         } catch (error) {
-            if (error.code === 10062 || error.code === 40060) return;
+            if (error.code === 10062 || error.code === 40060) return; // تجاهل أخطاء التفاعل غير المعروف
             console.error("خطأ غير متوقع في المعالج الرئيسي:", error);
         } finally {
             if (processingInteractions.has(i.user.id)) {
@@ -232,6 +254,13 @@ module.exports = (client, sql, antiRolesCache) => {
     });
 };
 
+// =====================================================================
+// دوال المعالجة الداخلية (Helper Functions)
+// =====================================================================
+
+/**
+ * معالجة تفاعلات السوق (شراء وبيع الأصول)
+ */
 async function handleMarketInteraction(interaction, client, sql) {
     const user = interaction.user;
     const guild = interaction.guild;
@@ -351,6 +380,9 @@ async function handleMarketInteraction(interaction, client, sql) {
     }
 }
 
+/**
+ * معالجة أزرار ومراحل بناء القيفاواي
+ */
 async function handleGiveawayBuilderButtons(i, client, sql) {
     const id = i.customId;
 
@@ -454,6 +486,9 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
     }
 }
 
+/**
+ * معالجة مودال التايم آوت
+ */
 async function handleTimeoutModal(i) {
     await i.deferReply({ flags: [MessageFlags.Ephemeral] });
     const targetId = i.customId.replace('timeout_app_modal_', '');
