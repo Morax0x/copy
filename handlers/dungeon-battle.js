@@ -172,6 +172,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         await m.reply({ content: msgContent }).catch(()=>{});
     });
 
+    // ============================================================
+    // بداية حلقة الطوابق (The Main Loop)
+    // ============================================================
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -542,7 +545,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: '', // ✅ تم إزالة النص
+                                    content: '', 
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -818,7 +821,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 });
                 
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
-            }); // ✅ تم تصحيح إغلاق الـ Promise هنا
+            }); 
 
         }
 
@@ -868,7 +871,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
             if (ongoing) handleLeaderSuccession(players, log);
         }
-    }
+        
+    // ✅ هنا تم إزالة القوس المغلق الزائد الذي كان ينهي حلقة الـ for مبكراً
 
     if (players.every(p => p.isDead)) {
         const finalFloor = isTrapActive ? trapStartFloor : floor;
@@ -1006,7 +1010,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             embeds: [restEmbed], 
             components: [restRow] 
         });
-    } catch (err) { break; }
+    } catch (err) { break; } // ✅ الآن هذا الكود صحيح لأنه داخل حلقة الـ for
 
     const warningTimeout = setTimeout(() => {
         threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
@@ -1126,7 +1130,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
     }
-} // End of For Loop
+} // ✅ End of For Loop (هنا ينتهي اللوب بشكل صحيح)
 
 const alivePlayers = players.filter(p => !p.isDead);
 if (alivePlayers.length > 0) {
