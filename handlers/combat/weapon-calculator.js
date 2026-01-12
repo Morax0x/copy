@@ -1,145 +1,206 @@
 // ================================================================
-// ⚔️ COMBAT ENGINE: Weapon Calculator
-// المسؤول عن حساب الهجوم العادي، الكريت، الدفاع، والمراوغة
+// ⚔️ COMBAT ENGINE: Weapon Calculator (Fixed Buffs & Leader Skills)
 // ================================================================
 
-const path = require('path');
-// ⚠️ تأكد أن هذا المسار يشير إلى ملف الثوابت الصحيح في مشروعك
-const { OWNER_ID } = require('../dungeon/constants');
-/**
- * دالة لحساب ضرر السلاح الخام بناءً على الليفل (بدون بفات)
- * @param {Object} weaponConfig - إعدادات السلاح من JSON
- * @param {number} level - مستوى السلاح الحالي
- */
+const { cleanDisplayName } = require('../dungeon/utils');
+
+function getName(entity) {
+    if (entity.isMonster) return entity.name;
+    if (entity.member) return cleanDisplayName(entity.member.user.displayName);
+    return entity.name || "Unknown";
+}
+
 function getWeaponRawDamage(weaponConfig, level) {
-    if (!weaponConfig || level < 1) return 15; // ضرر افتراضي (بدون سلاح)
-    // المعادلة: الأساس + (الزيادة * (المستوى - 1))
+    if (!weaponConfig || level < 1) return 15;
     return weaponConfig.base_damage + (weaponConfig.damage_increment * (level - 1));
 }
 
-/**
- * تنفيذ هجوم السلاح وحساب النتائج النهائية
- * @param {Object} attacker - المهاجم
- * @param {Object} defender - المدافع
- * @param {boolean} isOwner - هل المهاجم هو الأونر (للمضاعفات)
- */
 function executeWeaponAttack(attacker, defender, isOwner = false) {
     const result = {
-        damage: 0,          // الضرر النهائي الذي تلقاه الخصم
-        blocked: 0,         // مقدار الضرر الذي امتصه الدرع
-        reflected: 0,       // الضرر المنعكس على المهاجم
-        isCrit: false,      // هل كانت ضربة حرجة؟
-        isMiss: false,      // هل أخطأت الضربة؟
-        log: ""             // سجل العملية
+        damage: 0,          
+        shieldDamage: 0,    
+        isCrit: false,
+        isMiss: false,
+        log: ""
     };
 
-    // 1. تحديد الضرر الأساسي
-    let baseDmg = 15;
+    const attackerName = getName(attacker);
+    const defenderName = getName(defender);
+
+    // 1. حساب الضرر الأساسي
+    let rawDmg = 15;
     if (attacker.weapon && attacker.weapon.currentDamage) {
-        baseDmg = attacker.weapon.currentDamage;
+        rawDmg = attacker.weapon.currentDamage;
     } else if (attacker.atk) {
-        baseDmg = attacker.atk; // للوحوش
+        rawDmg = attacker.atk; 
     }
 
-    // 2. تطبيق البفات والدي-بفات (Buffs & Debuffs)
+    // =========================================================
+    // 🔥 إصلاح حساب البفات (Buff Calculation Fix) 🔥
+    // =========================================================
     let multiplier = 1.0;
-    if (attacker.effects) {
-        if (attacker.effects.buff > 0) multiplier += attacker.effects.buff;     // زيادة الهجوم
-        if (attacker.effects.weaken > 0) multiplier -= attacker.effects.weaken; // إضعاف الهجوم
+
+    // 1. حساب البفات من المتغيرات المباشرة (PvP القديم)
+    if (attacker.effects && !Array.isArray(attacker.effects)) {
+        if (attacker.effects.buff > 0) multiplier += attacker.effects.buff;
+        if (attacker.effects.weaken > 0) multiplier -= attacker.effects.weaken;
     }
-    
-    // التأكد أن المضاعف لا يقل عن 10%
+
+    // 2. حساب البفات من المصفوفة (Dungeon System)
+    // نستخدم forEach لجمع كل البفات المتراكمة
+    if (attacker.effects && Array.isArray(attacker.effects)) {
+        attacker.effects.forEach(eff => {
+            // ✅ تفعيل زيادة الهجوم (يشمل صرخة الحرب العادية ومهارة القائد)
+            if (eff.type === 'atk_buff' || eff.type === 'buff') {
+                multiplier += eff.val;
+            }
+            if (eff.type === 'weaken') {
+                multiplier -= eff.val;
+            }
+        });
+    }
+
+    // التأكد أن الضرر لا يقل عن 10%
     if (multiplier < 0.1) multiplier = 0.1;
+    
+    // تطبيق المضاعف
+    rawDmg = Math.floor(rawDmg * multiplier);
 
-    let finalDmg = Math.floor(baseDmg * multiplier);
+    // =========================================================
 
-    // 3. التحقق من العمى (Blind) - نسبة خطأ 50%
-    // ✅ (مهم جداً لميزة الروح الجديدة)
-    if (attacker.effects && attacker.effects.blind > 0) {
-        if (Math.random() < 0.5) {
-            result.isMiss = true;
-            result.log = `☁️ **${getName(attacker)}** أخطأ الهدف بسبب العمى!`;
-            return result;
-        }
-    }
+    // 3. العمى (Blind)
+    let isBlind = false;
+    if (attacker.effects && !Array.isArray(attacker.effects) && attacker.effects.blind > 0) isBlind = true;
+    if (attacker.effects && Array.isArray(attacker.effects) && attacker.effects.some(e => e.type === 'blind')) isBlind = true;
 
-    // 4. التحقق من مراوغة الخصم (Evasion) - مراوغة تامة 100%
-    if (defender.effects && defender.effects.evasion > 0) {
+    if (isBlind && Math.random() < 0.5) {
         result.isMiss = true;
-        result.log = `👻 **${getName(defender)}** تفادى الهجوم تمامـاً (مراوغة)!`;
+        result.log = `☁️ **${attackerName}** هاجم وأخطأ الهدف بسبب العمى!`;
         return result;
     }
 
-    // 5. حساب الضربة الحرجة (Critical Hit)
-    // النسبة الأساسية 20% + أي بونص إضافي
-    const critRate = 0.20 + (attacker.critRate || 0);
-    if (Math.random() < critRate) {
-        result.isCrit = true;
-        finalDmg = Math.floor(finalDmg * 1.5); // الكريت يضرب 150%
+    // 4. المراوغة (Evasion)
+    let isEvasion = false;
+    if (defender.effects && !Array.isArray(defender.effects) && defender.effects.evasion > 0) isEvasion = true;
+    if (defender.effects && Array.isArray(defender.effects) && defender.effects.some(e => e.type === 'evasion')) isEvasion = true;
+
+    if (isEvasion) {
+        result.isMiss = true;
+        result.log = `👻 **${defenderName}** تفادى الهجوم ببراعة!`;
+        return result;
     }
 
-    // مضاعف الأونر (للتجربة والقوة)
-    if (isOwner) finalDmg *= 10;
+    // 5. الكريتيكال
+    let critBonus = 0;
+    
+    // إضافة نسبة الكريتيكال من خصائص اللاعب الأساسية
+    if (attacker.critRate) critBonus += attacker.critRate;
 
-    // تباين عشوائي بسيط في الضرر (±5%) لواقعية أكثر
-    const variance = 0.95 + Math.random() * 0.1;
-    finalDmg = Math.floor(finalDmg * variance);
-
-    // 6. تطبيق دفاع الخصم (Reduction) - مثل مهارة القزم
-    if (defender.effects && defender.effects.dmg_reduce > 0) {
-        finalDmg = Math.floor(finalDmg * (1 - defender.effects.dmg_reduce));
-    }
-
-    // 7. التعامل مع الدروع (Shields)
-    if (defender.effects && defender.effects.shield > 0) {
-        if (defender.effects.shield >= finalDmg) {
-            // الدرع يمتص الضربة بالكامل
-            defender.effects.shield -= finalDmg;
-            result.blocked = finalDmg;
-            finalDmg = 0;
-        } else {
-            // الدرع ينكسر ويمر باقي الضرر
-            result.blocked = defender.effects.shield;
-            finalDmg -= defender.effects.shield;
-            defender.effects.shield = 0;
+    // ✅ تفعيل بفات الكريت والحظ (Dungeon Logic)
+    if (attacker.effects && Array.isArray(attacker.effects)) {
+        // إذا عنده "crit_buff" (من مهارة القائد) -> النسبة تصبح 100% فوراً
+        if (attacker.effects.some(e => e.type === 'crit_buff')) {
+            critBonus += 10.0; // رقم كبير جداً لضمان الضربة
+        }
+        // إذا عنده "luck_buff" -> نزيد النسبة 20%
+        if (attacker.effects.some(e => e.type === 'luck_buff')) {
+            critBonus += 0.20;
         }
     }
-
-    // 8. عكس الضرر (Reflect)
-    if (finalDmg > 0 && defender.effects && defender.effects.rebound_active > 0) {
-        result.reflected = Math.floor(finalDmg * defender.effects.rebound_active);
-        attacker.hp -= result.reflected;
-    }
-
-    // 9. التطبيق النهائي
-    result.damage = Math.max(0, finalDmg);
-    defender.hp -= result.damage;
-
-    // زيادة عداد الضرر الكلي (للإحصائيات)
-    if (attacker.totalDamage !== undefined) attacker.totalDamage += result.damage;
-
-    // 10. صياغة الرسالة
-    let msg = `🗡️ **${getName(attacker)}** ${result.isCrit ? '**CRIT!**' : ''} سبب ${result.damage} ضرر.`;
     
-    if (result.blocked > 0 && result.damage === 0) {
-        msg = `🛡️ **${getName(attacker)}** ضرب الدرع! (${result.blocked} ممتص).`;
-    } else if (result.blocked > 0) {
-        msg += ` (الدرع امتص ${result.blocked})`;
+    const critRate = 0.15 + critBonus;
+    if (Math.random() < critRate) {
+        result.isCrit = true;
+        rawDmg = Math.floor(rawDmg * 1.5);
     }
 
-    if (result.reflected > 0) {
-        msg += `\n🔄 **${getName(defender)}** عكس ${result.reflected} ضرر!`;
+    if (isOwner) rawDmg *= 5;
+
+    // تباين عشوائي (±10%)
+    const variance = (Math.random() * 0.2) + 0.9;
+    rawDmg = Math.floor(rawDmg * variance);
+
+    // 6. دفاع الخصم
+    let damageReduction = 0;
+    if (defender.defending) damageReduction += 0.5; 
+    
+    if (defender.effects) {
+        if (Array.isArray(defender.effects)) {
+            // نظام الدانجون
+            defender.effects.forEach(eff => {
+                if (eff.type === 'def_buff' || eff.type === 'dmg_reduce') {
+                    damageReduction += eff.val;
+                }
+            });
+        } else {
+            // نظام الـ PvP القديم
+            if (defender.effects.dmg_reduce > 0) damageReduction += defender.effects.dmg_reduce;
+        }
+    }
+    
+    if (damageReduction > 0.9) damageReduction = 0.9;
+    rawDmg = Math.floor(rawDmg * (1 - damageReduction));
+
+    if (rawDmg < 1) rawDmg = 1;
+
+    // =========================================================
+    // 🔥🔥 توزيع الضرر الصارم (الدروع vs الصحة) 🔥🔥
+    // =========================================================
+    
+    let currentShield = 0;
+    if (defender.shield && defender.shield > 0) currentShield = defender.shield; // Dungeon Style
+    else if (defender.effects && defender.effects.shield > 0) currentShield = defender.effects.shield; // PvP Style
+
+    let hpDmg = 0;
+    let shieldDmg = 0;
+
+    if (currentShield > 0) {
+        if (currentShield >= rawDmg) {
+            shieldDmg = rawDmg;
+            if (defender.shield) defender.shield -= rawDmg;
+            else defender.effects.shield -= rawDmg;
+            hpDmg = 0;
+        } else {
+            shieldDmg = currentShield;
+            hpDmg = rawDmg - currentShield;
+            if (defender.shield) defender.shield = 0;
+            else defender.effects.shield = 0;
+        }
+    } else {
+        hpDmg = rawDmg;
+        shieldDmg = 0;
     }
 
-    result.log = msg;
+    if (hpDmg > 0) {
+        defender.hp -= hpDmg;
+        if (defender.hp < 0) defender.hp = 0;
+    }
+
+    result.damage = hpDmg;
+    result.shieldDamage = shieldDmg;
+
+    if (attacker.totalDamage !== undefined) attacker.totalDamage += hpDmg;
+
+    // =========================================================
+    // 📝 السجل (Log)
+    // =========================================================
+
+    let logMsg = "";
+    const critText = result.isCrit ? "🔥 **CRIT!** " : "";
+
+    if (hpDmg === 0 && shieldDmg > 0) {
+        logMsg = `🛡️ **${defenderName}** لم يتضرر! الدرع امتص الهجوم (${shieldDmg}).`;
+    } 
+    else if (hpDmg > 0 && shieldDmg > 0) {
+        logMsg = `${critText}⚔️ **${attackerName}** حطم الدرع (-${shieldDmg}) وسبب **${hpDmg}** ضرر!`;
+    } 
+    else {
+        logMsg = `${critText}🗡️ **${attackerName}** هاجم وسبب **${hpDmg}** ضرر.`;
+        if (defender.defending) logMsg += ` (دفاع)`;
+    }
+
+    result.log = logMsg;
     return result;
-}
-
-// دالة مساعدة لجلب الاسم
-function getName(entity) {
-    if (entity.isMonster) return entity.name;
-    if (entity.member) return entity.member.displayName;
-    return entity.name || "Unknown";
 }
 
 module.exports = { getWeaponRawDamage, executeWeaponAttack };
