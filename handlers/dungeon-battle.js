@@ -283,9 +283,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 p.startingShield = 0; 
                 
-                // ✅✅✅ السماح بمرور تأثيرات الميميك (سم، حرق، تجميد) ✅✅✅
+                // ✅✅✅ السماح بمرور تأثيرات الميميك والمهارات الجديدة (crit_buff, luck_buff) ✅✅✅
                 p.effects = p.effects.filter(e => 
-                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion'].includes(e.type)
+                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion', 'crit_buff', 'luck_buff'].includes(e.type)
                 );
                 
                 p.defending = false; 
@@ -889,9 +889,39 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
+        // ==========================================
+        // 🛡️ نقاط الأمان والمكافآت (Checkpoints)
+        // ==========================================
+
+        // نقطة الأمان الأولى (الطابق 20)
         if (floor === 20) {
             snapshotLootAtFloor20(players);
-            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان!**`).catch(()=>{});
+            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان (20)!** تم حفظ الغنائم حتى هذه اللحظة.`).catch(()=>{});
+        }
+
+        // 🔥 نقطة الأمان الثانية (الطابق 50) + تعزيز القوة 🔥
+        if (floor === 50) {
+            snapshotLootAtFloor20(players); 
+            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان كـبـرى (50)!**\nاستعدوا.. ما بعد هذا الطابق هو الجحيم الحقيقي!`).catch(()=>{});
+        }
+
+        // عند دخول الطابق 51: منح القوة الخارقة
+        if (floor === 51) {
+            players.forEach(p => {
+                if (!p.isDead) {
+                    // 1. زيادة الصحة القصوى 50%
+                    const hpBonus = Math.floor(p.maxHp * 0.50);
+                    p.maxHp += hpBonus;
+                    p.hp += hpBonus; // شفاء بمقدار الزيادة
+
+                    // 2. زيادة الهجوم 30% (كـ Buff دائم لا ينتهي)
+                    p.effects.push({ type: 'atk_buff', val: 0.30, turns: 999 });
+                }
+            });
+
+            await threadChannel.send({
+                content: `⚡ **ارتقاء الأبطال!** ⚡\nبسبب تجاوزكم منتصف الدانجون، زادت قوتكم بشكل هائل لمواجهة المخاطر القادمة:\n❤️ **+50% Max HP**\n⚔️ **+30% Attack Damage**`
+            }).catch(()=>{});
         }
 
         players.forEach(p => {
