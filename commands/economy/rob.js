@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
@@ -12,8 +12,6 @@ const ROBBER_FINE_PERCENT = 0.10;
 const MIN_ROB_AMOUNT = 100;
 const MIN_REQUIRED_CASH = 100; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
-
-// ❌ تم حذف activeGames للسماح بعدد لا نهائي من السرقات في نفس القناة
 
 // خريطة لتخزين تاريخ آخر عفو (YYYY-MM-DD)
 const robberyPardons = new Map(); 
@@ -66,6 +64,19 @@ async function sendDMToVictim(victim, messageContent) {
     }
 }
 
+// دالة مساعدة لحذف الرسالة بعد وقت معين
+function deleteMessageAfter(msg, interaction, time = 10000) {
+    setTimeout(async () => {
+        try {
+            if (interaction) {
+                await interaction.deleteReply().catch(() => {});
+            } else if (msg) {
+                await msg.delete().catch(() => {});
+            }
+        } catch (e) { }
+    }, time);
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سرقة')
@@ -108,8 +119,6 @@ module.exports = {
         };
 
         const sql = client.sql;
-
-        // ❌ تم إزالة شرط activeGames هنا
 
         if (!victim) {
             return reply("الاستخدام: /سرقة <@user> أو -rob <@user>");
@@ -185,7 +194,6 @@ module.exports = {
         }
 
         robberData.lastRob = now;
-        // ❌ تم إزالة إضافة القناة لـ activeGames
 
         // =================================================================
         // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
@@ -253,6 +261,7 @@ module.exports = {
                         .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
                     
                     await i.update({ embeds: [winEmbed], components: [] });
+                    deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد النجاح
 
                 } else {
                     // ❌ فشل السرقة
@@ -277,6 +286,7 @@ module.exports = {
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
+                        deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد العفو
 
                     } else {
                         deductFromRobber(robberData, amountToSteal);
@@ -289,6 +299,7 @@ module.exports = {
                             .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
                         
                         await i.update({ embeds: [loseEmbed], components: [] });
+                        deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد السجن
                     }
                 }
                 setScore.run(robberData);
@@ -306,9 +317,10 @@ module.exports = {
                         .setTitle('⏰ فات الأوان!')
                         .setColor(Colors.Red)
                         .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
+                    
                     msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
+                    deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد انتهاء الوقت
                 }
-                // ❌ تم إزالة حذف activeGames
             });
 
             return; 
@@ -447,7 +459,6 @@ module.exports = {
                 
                 sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل (تأخر في الوقت) وحصـلت علـى **${amountToSteal}** كـ تعويض`);
             }
-            // ❌ تم إزالة حذف activeGames
         });
     }
 };
