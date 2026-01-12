@@ -172,7 +172,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     });
 
     // ============================================================
-    // بداية حلقة الطوابق
+    // بداية حلقة الطوابق (Main Loop)
     // ============================================================
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
@@ -382,6 +382,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
+        // ============================================================
+        // حلقة المعركة (Battle Loop)
+        // ============================================================
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
@@ -459,7 +462,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
-                        // ✅ تحقق موحد لنهاية الدور
+                        // ✅ إنهاء الدور إذا الكل لعب (بما فيهم المشلول)
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
@@ -506,6 +509,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                     else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
                                     if (cappedDmg < 30) cappedDmg = 30;
+                                    
                                     monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
 
                                     if (log.length > 0) {
@@ -556,7 +560,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
-                                // ✅ تحقق موحد لنهاية الدور
+                                // ✅ إنهاء الدور إذا الكل لعب
                                 if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
@@ -710,7 +714,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
-                                // ✅ تحقق موحد لنهاية الدور
+                                // ✅ إنهاء الدور إذا الكل لعب
                                 if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
@@ -796,7 +800,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
 
-                            // ✅ تحقق موحد لنهاية الدور
+                            // ✅ إنهاء الدور إذا الكل لعب
                             if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         }
 
@@ -836,11 +840,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             try {
                 await battleMsg.delete();
                 battleMsg = await threadChannel.send({ 
-                    content: '', 
+                    content: '', // ✅ تم إزالة النص
                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                     components: generateBattleRows() 
                 });
-            } catch(e) { break; } // ✅ الآن هذا الكود صحيح لأنه داخل حلقة الـ for
+            } catch(e) { break; } // ✅ الآن هذا الكود صحيح
         }
 
         if (monster.hp > 0 && ongoing) {
@@ -1114,7 +1118,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
     }
-} // ✅ End of For Loop
+} // End of For Loop
 
 const alivePlayers = players.filter(p => !p.isDead);
 if (alivePlayers.length > 0) {
