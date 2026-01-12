@@ -168,10 +168,25 @@ module.exports = {
                 .setImage('https://i.postimg.cc/7hhxXX8h/ec6f09156c21ff5df643e807a859d3e0.gif')
                 .setTimestamp();
 
-            // ✅ تم إرسال الإيمبد فقط بدون content
-            await reply({ 
+            // ✅ تم إرسال الإيمبد وحفظ الرسالة في متغير
+            const sentMessage = await reply({ 
                 embeds: [embed] 
             });
+
+            // ✅ كود الحذف التلقائي بعد دقيقة (60000 ميلي ثانية)
+            setTimeout(async () => {
+                try {
+                    if (isSlash) {
+                        // حذف الرد في حالة السلاش كوماند
+                        await interaction.deleteReply().catch(() => {});
+                    } else if (sentMessage) {
+                        // حذف الرسالة في حالة البريفكس
+                        await sentMessage.delete().catch(() => {});
+                    }
+                } catch (e) {
+                    // تجاهل الخطأ إذا كانت الرسالة محذوفة بالفعل
+                }
+            }, 60000);
 
         } catch (error) {
             console.error("Error in gametime command:", error);
