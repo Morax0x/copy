@@ -9,10 +9,9 @@ const {
     getAllSkillData,
     calculateDamage,
     applyPersistentEffects,
-} = require('../dungeon/core/battle-utils'); // ⚠️ تأكد من مسار battle-utils
+} = require('../dungeon/core/battle-utils'); 
 
-// ✅ تم تحديث صور الحارس
-const GUARD_IMAGE_MAIN = 'https://i.postimg.cc/d1ndBX7B/download.gif'; // الصورة الجديدة
+const GUARD_IMAGE_MAIN = 'https://i.postimg.cc/d1ndBX7B/download.gif'; 
 
 const GUARD_IMAGES = [
     GUARD_IMAGE_MAIN,
@@ -79,7 +78,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         .setTitle('🚨 كشفك الحــارس!')
         .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** مورا!`)
         .setColor(Colors.DarkRed)
-        .setImage(GUARD_IMAGE_MAIN); // 🔥 الصورة هنا
+        .setImage(GUARD_IMAGE_MAIN); 
 
     // جلب أزرار وشريط الصحة للمعركة
     const { embeds: battleEmbeds, components } = buildBattleEmbed(battleState);
@@ -165,8 +164,8 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
         embed.setTitle(`💀 تـم القبـض!`)
              .setColor(Colors.Red)
-             .setDescription(`طرحك الحارس أرضاً! تمت مصادرة **${amount.toLocaleString()}**`)
-             .setImage(GUARD_IMAGE_MAIN); // 🔥 نستخدم نفس الصورة عند الخسارة
+             .setDescription(`طرحك الحارس أرضاً! تمت مصادرة **${amount.toLocaleString()}** مورا.`)
+             .setImage(GUARD_IMAGE_MAIN); 
     }
 
     await battleState.message.edit({ components: [] });
