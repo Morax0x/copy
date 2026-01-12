@@ -462,6 +462,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
+                        // ✅ إنهاء الدور إذا الكل لعب
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
@@ -713,7 +714,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
-                                // ✅ تحقق موحد لنهاية الدور
+                                // ✅ إنهاء الدور إذا الكل لعب
                                 if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
@@ -799,7 +800,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
 
-                            // ✅ تحقق موحد لنهاية الدور
+                            // ✅ إنهاء الدور إذا الكل لعب
                             if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         }
 
