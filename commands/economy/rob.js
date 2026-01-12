@@ -1,6 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
 // ✅ استدعاء هاندلر معركة الحارس
-const { startGuardBattle } = require('../handlers/guard-battle');
+const { startGuardBattle } = require('../../handlers/guard-battle');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
