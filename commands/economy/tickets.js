@@ -1,52 +1,63 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const path = require('path');
 
-// استدعاء دالة إدارة التذاكر
+// ✅ المسار الصحيح
 const { manageTickets } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
-    // الاختصارات (للرسائل العادية)
-    aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
-
+    // ============================================================
+    // 1. بيانات السلاش كوماند (Slash Command Data)
+    // ============================================================
     data: new SlashCommandBuilder()
-        .setName('tickets') // ⚠️ إجباري يكون إنجليزي هنا (قوانين ديسكورد)
-        .setNameLocalizations({ ar: 'تذاكر' }) // ✅ هنا يظهر بالعربي للمستخدمين
+        .setName('tickets')
         .setDescription('عرض عدد تذاكر الدانجون المتوفرة')
-        .setDescriptionLocalizations({ ar: 'عرض عدد تذاكر الدانجون وموعد التجديد' })
         .addUserOption(option => 
             option.setName('user')
-                .setNameLocalizations({ ar: 'المستخدم' }) // اسم الخيار بالعربي
                 .setDescription('الشخص الذي تريد رؤية تذاكره')
                 .setRequired(false)
         ),
 
-    // لا نعتمد على تمرير sql كمتغير ثاني لأنه يسبب مشاكل، نأخذه من client
-    async execute(interaction) { 
-        // 🔥 الحل الجذري لمشكلة SQL: جلب قاعدة البيانات من الكلاينت مباشرة
-        const client = interaction.client;
-        const sql = client.sql; 
+    // ============================================================
+    // 2. خصائص الهاندلر (مهمة جداً لتفادي خطأ Enum)
+    // ============================================================
+    name: 'tickets',
+    aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
+    category: "Economy", // ✅ هذا السطر غالباً هو سبب المشكلة السابقة (كان ناقص)
+    description: 'عرض عدد تذاكر الدانجون المتوفرة وموعد التجديد.',
+    usage: '-tickets [@user]',
+
+    // ============================================================
+    // 3. التنفيذ (يدعم السلاش والرسائل العادية بنفس منطق myfarm)
+    // ============================================================
+    async execute(interactionOrMessage, args) {
+        const isSlash = !!interactionOrMessage.isChatInputCommand;
+        let interaction, message, user, targetMember;
+
+        // تجهيز المتغيرات بناءً على المصدر (سلاش أو رسالة)
+        if (isSlash) {
+            interaction = interactionOrMessage;
+            user = interaction.user;
+            targetMember = interaction.options.getMember('user') || interaction.member;
+        } else {
+            message = interactionOrMessage;
+            user = message.author;
+            targetMember = message.mentions.members.first() || message.member;
+        }
+
+        const client = interactionOrMessage.client;
+        const sql = client.sql; // ✅ جلب قاعدة البيانات من الكلاينت مباشرة
 
         if (!sql) {
             console.error("❌ Error: SQL Database is not attached to Client.");
             return;
         }
 
-        // تحديد صاحب الأمر (سواء كان رسالة أو سلاش)
-        const commandUser = interaction.user || interaction.author;
-        let targetUser = commandUser;
+        const targetUser = targetMember.user;
 
-        // 1. تحديد الهدف (Target)
-        if (interaction.isChatInputCommand && interaction.isChatInputCommand()) {
-            targetUser = interaction.options.getUser('user') || commandUser;
-        } 
-        else if (interaction.mentions && interaction.mentions.users.size > 0) {
-            targetUser = interaction.mentions.users.first();
-        }
+        // 1. جلب بيانات التذاكر
+        const ticketData = manageTickets(targetUser.id, interactionOrMessage.guild.id, sql, 'check');
 
-        // 2. جلب بيانات التذاكر
-        const ticketData = manageTickets(targetUser.id, interaction.guild.id, sql, 'check');
-
-        // 3. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
+        // 2. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
         const now = new Date();
         const nextReset = new Date(now);
         nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
@@ -57,10 +68,10 @@ module.exports = {
 
         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
-        // 4. تجهيز النصوص
-        const titleText = targetUser.id === commandUser.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
+        // 3. تجهيز النصوص
+        const titleText = targetUser.id === user.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
 
-        // 5. تصميم الإيمبد
+        // 4. تصميم الإيمبد
         const embed = new EmbedBuilder()
             .setTitle('✥ تـذاكـر الدانـجـون')
             .setColor('#E8271C') 
@@ -72,6 +83,11 @@ module.exports = {
             )
             .setFooter({ text: targetUser.username, iconURL: targetUser.displayAvatarURL() });
 
-        await interaction.reply({ embeds: [embed] });
+        // الإرسال
+        if (isSlash) {
+            await interaction.reply({ embeds: [embed] });
+        } else {
+            await message.channel.send({ embeds: [embed] });
+        }
     },
 };
