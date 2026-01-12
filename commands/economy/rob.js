@@ -101,7 +101,7 @@ module.exports = {
             victim = message.mentions.members.first();
         }
 
-        // 🔥🔥🔥 الحذف الوحيد: حذف رسالة العضو إذا كان المنشن للأونر 🔥🔥🔥
+        // 🔥 حذف رسالة العضو إذا كان المنشن للأونر
         if (!isSlash && message && victim && victim.id === OWNER_ID) {
             await message.delete().catch(() => {});
         }
@@ -110,7 +110,6 @@ module.exports = {
             if (typeof payload === 'string') payload = { content: payload };
             if (isSlash) return interaction.editReply(payload);
             else {
-                // نستخدم channel.send كإجراء احتياطي لأن الرسالة الأصلية قد تكون حُذفت
                 return message.reply(payload).catch(() => message.channel.send(payload));
             }
         };
