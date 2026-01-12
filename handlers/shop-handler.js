@@ -389,7 +389,7 @@ async function _handleBaitSelect(i, client, sql) {
         const unitPrice = Math.round(b.price / 5); 
         return { label: b.name, description: `${b.description} | ${unitPrice.toLocaleString()} مورا`, value: `buy_bait_${b.id}`, emoji: '🪱' };
     });
-    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_bait_menu').setPlaceholder('اختر الطعم (حبة واحدة)...').addOptions(baitOptions));
+    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_bait_menu').setPlaceholder('اختر الطعم - حبة واحدة...').addOptions(baitOptions));
     await i.editReply({ content: "**🛒 متجر الطعوم:**", components: [row], embeds: [] });
 }
 
@@ -673,7 +673,7 @@ async function _handleShopButton(i, client, sql) {
              }
              
              if (currentStreak < requiredStreak) {
-                 return await i.reply({ content: `❌ **شرط إضافي:** يجب أن يكون الستريك الخاص بك **${requiredStreak} يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
+                 return await i.reply({ content: `❌ **لا تستوفي الشروط:** يجب أن يكون الستريك الخاص بك **${requiredStreak} يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
              }
         }
 
