@@ -510,22 +510,25 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
+                                // 🔥🔥🔥 حساب وتطبيق البوفات (إجبارياً هنا) 🔥🔥🔥
+                                // بما أن handleSkillUsage قد يعتمد على Calculator لا يقرأ البوفات، نعيد الحساب هنا
                                 const dmgDealt = monsterHpBefore - monster.hp;
 
                                 if (dmgDealt > 0) {
                                     let cappedDmg = dmgDealt;
 
+                                    // 🟢 تطبيق الختم
                                     if (p.isSealed) {
                                         cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
                                     }
 
-                                    // 🔥 تطبيق الحد الأدنى للضرر (30) 🔥
-                                    if (cappedDmg < 30) cappedDmg = 30;
-
-                                    // تطبيق سقف الضرر حسب الطوابق
+                                    // 🟢 تطبيق سقف الضرر حسب الطوابق
                                     if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                     else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                     else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
+
+                                    // 🔥 تطبيق الحد الأدنى للضرر (30) 🔥
+                                    if (cappedDmg < 30) cappedDmg = 30;
 
                                     // تطبيق الضرر النهائي على الوحش
                                     monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
@@ -534,11 +537,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     if (log.length > 0) {
                                         const lastLogIdx = log.length - 1;
                                         if (cappedDmg !== dmgDealt) {
-                                             // تعديل النص ليشمل الضرر المعدل
                                              log[lastLogIdx] = log[lastLogIdx].replace(dmgDealt.toString(), cappedDmg.toString());
                                              if (p.isSealed) log[lastLogIdx] += ` (مختوم)`;
-                                             else if (cappedDmg > dmgDealt) log[lastLogIdx] += ` (⬆️)`; // تم الرفع للحد الأدنى
-                                             else log[lastLogIdx] += ` (⬇️)`; // تم الخفض للحد الأقصى
+                                             else if (cappedDmg > dmgDealt) log[lastLogIdx] += ` (⬆️)`; 
+                                             else log[lastLogIdx] += ` (⬇️)`; 
                                         }
                                     }
                                 }
@@ -761,11 +763,32 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     // استدعاء محرك الأسلحة
                                     const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    // 🟢🟢🟢 تطبيق الختم + الحدود (Min/Max) 🟢🟢🟢
-                                    const dmgDealt = monsterHpBefore - monster.hp;
+                                    // 🔥🔥🔥🔥 إجبار الصرخات على العمل هنا (Forced Buff Logic) 🔥🔥🔥🔥
+                                    // هذا الجزء يضمن أن البوفات تعمل حتى لو المحرك الخارجي تجاهلها
+                                    
+                                    let finalDmg = result.damage;
 
-                                    if (dmgDealt > 0) {
-                                        let cappedDmg = dmgDealt;
+                                    // 1. تطبيق بوف الهجوم (صرخة الحرب)
+                                    const atkBuff = p.effects.find(e => e.type === 'atk_buff');
+                                    if (atkBuff) {
+                                        finalDmg = Math.floor(finalDmg * (1 + atkBuff.val));
+                                    }
+
+                                    // 2. تطبيق الكريت المضمون
+                                    const critBuff = p.effects.find(e => e.type === 'crit_buff');
+                                    if (critBuff) {
+                                        finalDmg = Math.floor(finalDmg * 1.5); // 150% ضرر مضمون
+                                    }
+
+                                    // 3. تطبيق ضعف الوحش (صيحة الحرب)
+                                    const weakness = monster.effects.find(e => e.type === 'weakness');
+                                    if (weakness) {
+                                        finalDmg = Math.floor(finalDmg * (1 + weakness.val));
+                                    }
+
+                                    // 🟢🟢🟢 تطبيق الختم + الحدود (Min/Max) 🟢🟢🟢
+                                    if (finalDmg > 0) {
+                                        let cappedDmg = finalDmg;
 
                                         if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
 
@@ -781,10 +804,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
                                         
                                         // تحديث اللوج
+                                        // نستبدل الرقم القديم (من المحرك) بالرقم الجديد (مع البوفات والحدود)
                                         result.log = result.log.replace(result.damage.toString(), cappedDmg.toString());
+                                        
                                         if (p.isSealed) result.log += ` (مختوم)`;
-                                        else if (cappedDmg > dmgDealt) result.log += ` (⬆️)`; // تم الرفع للحد الأدنى
-                                        else if (cappedDmg < dmgDealt) result.log += ` (⬇️)`; // تم الخفض للحد الأقصى
+                                        else if (cappedDmg > result.damage) result.log += ` (⬆️)`; // تم الرفع (بسبب البوفات أو الحد الأدنى)
+                                        else if (cappedDmg < result.damage) result.log += ` (⬇️)`; // تم الخفض (بسبب السقف)
 
                                         log.push(result.log);
                                         
