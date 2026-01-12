@@ -6,7 +6,7 @@ const { manageTickets } = require(path.join(process.cwd(), 'dungeon', 'utils.js'
 
 module.exports = {
     // الاختصارات (تعمل مع البادئة Prefix)
-    aliases: ['ticket', 'تذاكر', 'تذكرة'],
+    aliases: ['ticket', 'تذاكري','تذاكر', 'تذكرة'],
 
     data: new SlashCommandBuilder()
         .setName('tickets')
