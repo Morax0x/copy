@@ -1,16 +1,17 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const path = require('path');
 
-// ✅ تصحيح المسار: استخدام المسار النسبي بدلاً من المسار المطلق لتجنب أخطاء اللود
-const { manageTickets } = require('../../dungeon/utils.js');
+// ✅ تصحيح المسار: الربط بملف الأدوات داخل مجلد handlers
+const { manageTickets } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
-    // ✅ تم تحديث الاختصارات كما طلبت
+    // الاختصارات
     aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
 
     data: new SlashCommandBuilder()
         .setName('tickets')
         .setDescription('عرض عدد تذاكر الدانجون المتوفرة')
-        // ✅ إضافة خيار لتحديد مستخدم آخر (اختياري)
+        // إضافة خيار لتحديد مستخدم آخر
         .addUserOption(option => 
             option.setName('user')
                 .setDescription('الشخص الذي تريد رؤية تذاكره')
@@ -18,7 +19,7 @@ module.exports = {
         ),
 
     async execute(interaction, sql) {
-        // ✅ تحديد الهدف: هل هو الشخص المذكور أم صاحب الأمر؟
+        // تحديد الهدف: هل هو الشخص المذكور أم صاحب الأمر؟
         let targetUser = interaction.user;
 
         // التحقق مما إذا كان الأمر عبر السلاش Slash Command
