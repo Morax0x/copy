@@ -89,17 +89,25 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
          let skillName = "مهارة خاصة";
          switch(classType) {
+             
+             // 🔥🔥 [تم التعديل] مهارة القائد الجديدة 🔥🔥
              case 'Leader': 
                 players.forEach(m => { 
                     if(!m.isDead) {
-                        m.effects.push({ type: 'atk_buff', val: 0.3, turns: 2 });
-                        m.critRate = (m.critRate || 0) + 0.2; 
+                        // 1. زيادة الدمج 50% لمدة دورين
+                        m.effects.push({ type: 'atk_buff', val: 0.5, turns: 2 });
+                        
+                        // 2. كريت مضمون 100% لمدة دورين
+                        m.effects.push({ type: 'crit_buff', val: 1.0, turns: 2 });
+
+                        // 3. زيادة الحظ لمدة دورين
+                        m.effects.push({ type: 'luck_buff', val: 0.5, turns: 2 });
                     } 
                 });
-                log.push(`⚔️ **${player.name}** أطلق صرخة الحرب! (ATK & Luck UP)`);
+                log.push(`⚔️ **${player.name}** أطلق صرخة الحرب! (تم رفع الضرر، الكريت، والحظ!)`);
                 skillName = "صرخة الحرب";
                 player.special_cooldown = 6;
-                player.threat = (player.threat || 0) + 300;
+                player.threat = (player.threat || 0) + 500;
                 break;
 
              case 'Tank': 
