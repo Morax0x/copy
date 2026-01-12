@@ -1,3 +1,4 @@
+require('./debug_dungeon.js');
 const { Client, GatewayIntentBits, Collection, EmbedBuilder, PermissionsBitField, Events, Colors, MessageFlags, ChannelType, REST, Routes, Partials } = require("discord.js");
 const SQLite = require("better-sqlite3");
 const fs = require('fs');
