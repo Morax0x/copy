@@ -49,7 +49,7 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// ✅✅✅ استدعاء محرك الأسلحة الموحد (Weapon Calculator) ✅✅✅
+// ✅ استدعاء محرك الأسلحة الموحد
 const weaponCalculator = require('./combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
@@ -145,7 +145,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = 100; 
 
     // ============================================================
-    // 🔥 مراقب الرسائل لكشف الحالة (تم التحديث)
+    // 🔥 مراقب الرسائل لكشف الحالة
     // ============================================================
     
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
@@ -165,27 +165,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const empty = 10 - filled;
         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-        // ترجمة الكلاسات للعربية
-        const classMap = {
-            'Warrior': 'محارب',
-            'Tank': 'مدافع',
-            'Priest': 'كاهن',
-            'Mage': 'ساحر',
-            'Assassin': 'سفاح',
-            'Leader': 'قائد'
-        };
+        const classMap = { 'Warrior': 'محارب', 'Tank': 'مدافع', 'Priest': 'كاهن', 'Mage': 'ساحر', 'Assassin': 'سفاح', 'Leader': 'قائد' };
         const arClass = classMap[player.class] || player.class;
-
         let msgContent = `👤 **${player.name}** [${arClass}]\n[${bar}] ❤️ **${player.hp}/${player.maxHp}**`;
-        
-        // إضافة الدرع إذا وجد
-        if (player.shield > 0) {
-            msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
-        }
-
+        if (player.shield > 0) msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
         await m.reply({ content: msgContent }).catch(()=>{});
     });
-    // ============================================================
 
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
@@ -239,13 +224,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // ============================================================
-        // ✅ منطق الختم المعدل (يعمل للأحياء والأموات)
+        // ✅ منطق الختم
         // ============================================================
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.sealMultiplier = 0.5; // تحديث القوة للجميع
-                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                    p.sealMultiplier = 0.5;
+                    if (!p.isDead) {
                         threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
                     }
                 }
@@ -254,9 +239,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 19) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.isSealed = false;       // إزالة الختم للجميع
-                    p.sealMultiplier = 1.0;  // استعادة القوة الكاملة
-                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                    p.isSealed = false;
+                    p.sealMultiplier = 1.0;
+                    if (!p.isDead) {
                         threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                     }
                 }
@@ -283,7 +268,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 p.startingShield = 0; 
                 
-                // ✅✅✅ السماح بمرور تأثيرات الميميك والمهارات الجديدة (crit_buff, luck_buff) ✅✅✅
                 p.effects = p.effects.filter(e => 
                     ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion', 'crit_buff', 'luck_buff'].includes(e.type)
                 );
@@ -387,7 +371,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let battleMsg;
         try {
             battleMsg = await threadChannel.send({ 
-                content: '', // ✅ تم إزالة النص
+                content: '', 
                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                 components: generateBattleRows() 
             });
@@ -469,7 +453,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
                         await battleMsg.edit({ 
-                            content: '', // ✅ تم إزالة النص
+                            content: '', 
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
@@ -510,8 +494,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                                 
-                                // 🔥🔥🔥 حساب وتطبيق البوفات (إجبارياً هنا) 🔥🔥🔥
-                                // بما أن handleSkillUsage قد يعتمد على Calculator لا يقرأ البوفات، نعيد الحساب هنا
+                                // 🔥 حساب وتطبيق البوفات (إجبارياً هنا)
                                 const dmgDealt = monsterHpBefore - monster.hp;
 
                                 if (dmgDealt > 0) {
@@ -705,7 +688,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: '', // ✅ تم إزالة النص
+                                    content: '', 
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -756,60 +739,38 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 if (canAttack) {
                                     const isOwner = p.id === OWNER_ID;
-                                    
-                                    // 🟢 حفظ دم الوحش قبل الضربة
                                     const monsterHpBefore = monster.hp;
-                                    
-                                    // استدعاء محرك الأسلحة
                                     const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    // 🔥🔥🔥🔥 إجبار الصرخات على العمل هنا (Forced Buff Logic) 🔥🔥🔥🔥
-                                    // هذا الجزء يضمن أن البوفات تعمل حتى لو المحرك الخارجي تجاهلها
-                                    
+                                    // 🔥 حساب وتطبيق البوفات (إجبارياً هنا)
                                     let finalDmg = result.damage;
 
-                                    // 1. تطبيق بوف الهجوم (صرخة الحرب)
                                     const atkBuff = p.effects.find(e => e.type === 'atk_buff');
-                                    if (atkBuff) {
-                                        finalDmg = Math.floor(finalDmg * (1 + atkBuff.val));
-                                    }
+                                    if (atkBuff) finalDmg = Math.floor(finalDmg * (1 + atkBuff.val));
 
-                                    // 2. تطبيق الكريت المضمون
                                     const critBuff = p.effects.find(e => e.type === 'crit_buff');
-                                    if (critBuff) {
-                                        finalDmg = Math.floor(finalDmg * 1.5); // 150% ضرر مضمون
-                                    }
+                                    if (critBuff) finalDmg = Math.floor(finalDmg * 1.5);
 
-                                    // 3. تطبيق ضعف الوحش (صيحة الحرب)
                                     const weakness = monster.effects.find(e => e.type === 'weakness');
-                                    if (weakness) {
-                                        finalDmg = Math.floor(finalDmg * (1 + weakness.val));
-                                    }
+                                    if (weakness) finalDmg = Math.floor(finalDmg * (1 + weakness.val));
 
-                                    // 🟢🟢🟢 تطبيق الختم + الحدود (Min/Max) 🟢🟢🟢
                                     if (finalDmg > 0) {
                                         let cappedDmg = finalDmg;
 
                                         if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
 
-                                        // 🔥 تطبيق الحد الأدنى للضرر (30) 🔥
                                         if (cappedDmg < 30) cappedDmg = 30;
 
-                                        // تطبيق سقف الضرر حسب الطوابق
                                         if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                         else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                         else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
 
-                                        // تطبيق الضرر النهائي
                                         monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
                                         
-                                        // تحديث اللوج
-                                        // نستبدل الرقم القديم (من المحرك) بالرقم الجديد (مع البوفات والحدود)
                                         result.log = result.log.replace(result.damage.toString(), cappedDmg.toString());
-                                        
                                         if (p.isSealed) result.log += ` (مختوم)`;
-                                        else if (cappedDmg > result.damage) result.log += ` (⬆️)`; // تم الرفع (بسبب البوفات أو الحد الأدنى)
-                                        else if (cappedDmg < result.damage) result.log += ` (⬇️)`; // تم الخفض (بسبب السقف)
+                                        else if (cappedDmg > result.damage) result.log += ` (⬆️)`;
+                                        else if (cappedDmg < result.damage) result.log += ` (⬇️)`;
 
                                         log.push(result.log);
                                         
@@ -819,7 +780,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                         checkBossPhase(monster, log);
                                     } else {
-                                        // الضربة 0 (تفادي أو خطأ)
                                         log.push(result.log);
                                     }
                                 }
