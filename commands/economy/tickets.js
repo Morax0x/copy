@@ -1,12 +1,11 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const path = require('path');
 
-// استدعاء دالة إدارة التذاكر
-const { manageTickets } = require(path.join(process.cwd(), 'dungeon', 'utils.js'));
+// ✅ تصحيح المسار: استخدام المسار النسبي بدلاً من المسار المطلق لتجنب أخطاء اللود
+const { manageTickets } = require('../../dungeon/utils.js');
 
 module.exports = {
-    // الاختصارات (تعمل مع البادئة Prefix)
-    aliases: ['ticket', 'تذاكري','تذاكر', 'تذكرة'],
+    // ✅ تم تحديث الاختصارات كما طلبت
+    aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
 
     data: new SlashCommandBuilder()
         .setName('tickets')
