@@ -66,19 +66,6 @@ async function sendDMToVictim(victim, messageContent) {
     }
 }
 
-// دالة مساعدة لحذف رد البوت بعد وقت معين
-function deleteBotReplyAfter(msg, interaction, time = 10000) {
-    setTimeout(async () => {
-        try {
-            if (interaction) {
-                await interaction.deleteReply().catch(() => {});
-            } else if (msg) {
-                await msg.delete().catch(() => {});
-            }
-        } catch (e) { }
-    }, time);
-}
-
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سرقة')
@@ -114,7 +101,7 @@ module.exports = {
             victim = message.mentions.members.first();
         }
 
-        // 🔥 حذف رسالة العضو إذا كان المنشن للأونر
+        // 🔥🔥🔥 الحذف الوحيد: حذف رسالة العضو إذا كان المنشن للأونر 🔥🔥🔥
         if (!isSlash && message && victim && victim.id === OWNER_ID) {
             await message.delete().catch(() => {});
         }
@@ -123,6 +110,7 @@ module.exports = {
             if (typeof payload === 'string') payload = { content: payload };
             if (isSlash) return interaction.editReply(payload);
             else {
+                // نستخدم channel.send كإجراء احتياطي لأن الرسالة الأصلية قد تكون حُذفت
                 return message.reply(payload).catch(() => message.channel.send(payload));
             }
         };
@@ -205,7 +193,7 @@ module.exports = {
         robberData.lastRob = now;
 
         // =================================================================
-        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) - يبقى كما هو 🔥🔥
+        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
         // =================================================================
         if (victim.id === OWNER_ID) {
             
@@ -244,7 +232,7 @@ module.exports = {
                 const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
 
                 if (correctIndices.includes(clickedIndex)) {
-                    // ✅ نجاح
+                    // ✅ نجاح السرقة
                     if (targetPool === 'bank') {
                         if (victimData.bank >= amountToSteal) victimData.bank -= amountToSteal;
                         else {
@@ -269,10 +257,9 @@ module.exports = {
                         .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
                     
                     await i.update({ embeds: [winEmbed], components: [] });
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                 } else {
-                    // ❌ فشل
+                    // ❌ فشل السرقة
                     const todayDate = getKSADateString(); 
                     const lastPardonDate = robberyPardons.get(robber.id); 
                     
@@ -294,7 +281,6 @@ module.exports = {
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
-                        deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                     } else {
                         deductFromRobber(robberData, amountToSteal);
@@ -307,7 +293,6 @@ module.exports = {
                             .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
                         
                         await i.update({ embeds: [loseEmbed], components: [] });
-                        deleteBotReplyAfter(msg, isSlash ? interaction : null);
                     }
                 }
                 setScore.run(robberData);
@@ -327,7 +312,6 @@ module.exports = {
                         .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
                     
                     msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
                 }
             });
 
@@ -386,7 +370,6 @@ module.exports = {
                 await msg.delete().catch(() => {});
 
                 // 3. بدء معركة الحارس
-                // نمرر السياق المناسب (interaction إذا كان slash، أو message إذا كان prefix)
                 const context = isSlash ? interaction : message;
                 return await startGuardBattle(context, client, sql, robber, amountToSteal);
 
@@ -421,7 +404,6 @@ module.exports = {
                     await i.update({ embeds: [winEmbed], components: [] });
 
                     sendDMToVictim(victim, `✥ قـام ${robber} بالسـطو عـلى ممتلـكـاتك وسـرق **${finalAmount}**`);
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                 } else {
                     // ❌ فشل (قنبلة)
@@ -436,7 +418,6 @@ module.exports = {
                     await i.update({ embeds: [loseEmbed], components: [] });
 
                     sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
                 }
             }
             setScore.run(robberData);
@@ -459,7 +440,6 @@ module.exports = {
                 msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
                 
                 sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل (تأخر في الوقت) وحصـلت علـى **${amountToSteal}** كـ تعويض`);
-                deleteBotReplyAfter(msg, isSlash ? interaction : null);
             }
         });
     }
