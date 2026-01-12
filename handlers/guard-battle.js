@@ -1,27 +1,18 @@
 const { EmbedBuilder, Colors } = require("discord.js");
+// ✅ التصحيح: استخدام نقطة واحدة (.) للوصول للمجلد الصحيح
 const { 
     activePveBattles, 
     buildBattleEmbed, 
-    cleanDisplayName, 
     BASE_HP, 
     HP_PER_LEVEL, 
     getWeaponData, 
     getAllSkillData,
     calculateDamage,
     applyPersistentEffects,
-} = require('../dungeon/core/battle-utils'); 
+} = require('./dungeon/core/battle-utils'); 
 
 const GUARD_IMAGE_MAIN = 'https://i.postimg.cc/d1ndBX7B/download.gif'; 
 
-const GUARD_IMAGES = [
-    GUARD_IMAGE_MAIN,
-    'https://media.giphy.com/media/3o7TKs789ha4QYJq9i/giphy.gif',
-    'https://media.giphy.com/media/l0HlO3BJ8L9l7TJQI/giphy.gif'
-];
-
-/**
- * بدء معركة ضد الحارس
- */
 async function startGuardBattle(interaction, client, sql, robberMember, amountToSteal) {
     const getLevel = client.getLevel;
     let robberData = getLevel.get(robberMember.id, interaction.guild.id);
@@ -33,7 +24,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         robberWeapon = { name: "قبضة يد", currentDamage: 15 };
     }
 
-    // 2. إنشاء الحارس (نسخة من قوة اللاعب)
+    // 2. إنشاء الحارس
     const guardMaxHp = pMaxHp; 
     const guardDamage = robberWeapon.currentDamage; 
 
@@ -61,7 +52,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             }],
             ["guard", { 
                 isMonster: true, 
-                name: "👮 الحارس الملكي", 
+                name: "الحارس الملكي", 
                 hp: guardMaxHp, 
                 maxHp: guardMaxHp, 
                 weapon: { name: "سيف العدالة", currentDamage: guardDamage }, 
@@ -73,17 +64,14 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 
     activePveBattles.set(interaction.channel.id, battleState);
     
-    // ✅ إيمبد خاص لظهور الحارس مع الصورة الجديدة
     const introEmbed = new EmbedBuilder()
         .setTitle('🚨 كشفك الحــارس!')
-        .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** مورا!`)
+        .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** عملة!`)
         .setColor(Colors.DarkRed)
         .setImage(GUARD_IMAGE_MAIN); 
 
-    // جلب أزرار وشريط الصحة للمعركة
     const { embeds: battleEmbeds, components } = buildBattleEmbed(battleState);
     
-    // إرسال رسالة المعركة (الإيمبد التعريفي + إيمبد القتال)
     battleState.message = await interaction.channel.send({ 
         content: `⚔️ **بدأ القتال!** ${robberMember}`, 
         embeds: [introEmbed, ...battleEmbeds], 
@@ -91,9 +79,6 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
     });
 }
 
-/**
- * معالجة دور الحارس (AI)
- */
 async function processGuardTurn(battleState) {
     const guard = battleState.players.get("guard");
     const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
@@ -115,7 +100,7 @@ async function processGuardTurn(battleState) {
 
     const dmg = calculateDamage(guard, player);
     player.hp -= dmg;
-    battleState.log.push(`👮 **الحارس** ضربك بسيفه وسبب **${dmg}** ضرر!`);
+    battleState.log.push(`**الحارس** ضربك بسيفه وسبب **${dmg}** ضرر!`);
 
     if (player.hp <= 0) {
         return await handleGuardBattleEnd(battleState, "guard", "lose");
@@ -127,9 +112,6 @@ async function processGuardTurn(battleState) {
     await battleState.message.edit({ embeds: updateEmbeds, components: updateComponents });
 }
 
-/**
- * إنهاء معركة الحارس
- */
 async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     const client = battleState.message.client;
     const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
