@@ -1,17 +1,15 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const path = require('path');
 
-// ✅ تصحيح المسار: الربط بملف الأدوات داخل مجلد handlers
+// ✅ المسار الصحيح للأدوات
 const { manageTickets } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
-    // الاختصارات
     aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
 
     data: new SlashCommandBuilder()
         .setName('tickets')
         .setDescription('عرض عدد تذاكر الدانجون المتوفرة')
-        // إضافة خيار لتحديد مستخدم آخر
         .addUserOption(option => 
             option.setName('user')
                 .setDescription('الشخص الذي تريد رؤية تذاكره')
@@ -19,22 +17,25 @@ module.exports = {
         ),
 
     async execute(interaction, sql) {
-        // تحديد الهدف: هل هو الشخص المذكور أم صاحب الأمر؟
-        let targetUser = interaction.user;
+        // 🔥 تصحيح الخطأ: تحديد صاحب الأمر سواء كان رسالة أو سلاش
+        // interaction.user (للسلاش) || interaction.author (للرسائل)
+        const commandUser = interaction.user || interaction.author;
+        let targetUser = commandUser;
 
-        // التحقق مما إذا كان الأمر عبر السلاش Slash Command
+        // 1. تحديد الهدف (Target)
         if (interaction.isChatInputCommand && interaction.isChatInputCommand()) {
-            targetUser = interaction.options.getUser('user') || interaction.user;
+            // حالة السلاش: نأخذ الخيار أو الشخص نفسه
+            targetUser = interaction.options.getUser('user') || commandUser;
         } 
-        // التحقق مما إذا كان الأمر عبر الرسائل العادية (Prefix) وفيه منشن
         else if (interaction.mentions && interaction.mentions.users.size > 0) {
+            // حالة الرسالة: نأخذ أول منشن
             targetUser = interaction.mentions.users.first();
         }
 
-        // 1. جلب بيانات التذاكر للشخص المحدد
+        // 2. جلب بيانات التذاكر
         const ticketData = manageTickets(targetUser.id, interaction.guild.id, sql, 'check');
 
-        // 2. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
+        // 3. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
         const now = new Date();
         const nextReset = new Date(now);
         nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
@@ -45,10 +46,10 @@ module.exports = {
 
         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
-        // 3. تجهيز النصوص بناءً على الشخص
-        const titleText = targetUser.id === interaction.user.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
+        // 4. تجهيز النصوص
+        const titleText = targetUser.id === commandUser.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
 
-        // 4. تصميم الإيمبد
+        // 5. تصميم الإيمبد
         const embed = new EmbedBuilder()
             .setTitle('✥ تـذاكـر الدانـجـون')
             .setColor('#E8271C') 
