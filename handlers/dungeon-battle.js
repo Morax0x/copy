@@ -462,110 +462,109 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await i.followUp({ content: "❌ لا توجد مهارات.", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
-                            try {
-                                const skillMsg = await i.followUp({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true });
-                                const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
-                                await selection.deferUpdate().catch(()=>{}); 
+                            
+                            const skillMsg = await i.followUp({ content: "✨ **اختر المهارة:**", components: [skillRow], ephemeral: true });
+                            const selection = await skillMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 10000 });
+                            await selection.deferUpdate().catch(()=>{}); 
 
-                                const skillId = selection.values[0];
-                                
-                                const shieldSkills = ['skill_shielding', 'race_human_skill'];
-                                if (shieldSkills.includes(skillId) && p.shield > 0) {
-                                    await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
-                                    processingUsers.delete(i.user.id); return; 
+                            const skillId = selection.values[0];
+                            
+                            const shieldSkills = ['skill_shielding', 'race_human_skill'];
+                            if (shieldSkills.includes(skillId) && p.shield > 0) {
+                                await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
+                                processingUsers.delete(i.user.id); return; 
+                            }
+
+                            let skillNameUsed = "مهارة";
+                            let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
+                            
+                            if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
+                                    if (p.skills[skillId]) skillObj = p.skills[skillId];
+                            }
+
+                            const monsterHpBefore = monster.hp;
+
+                            const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
+                            
+                            const dmgDealt = monsterHpBefore - monster.hp;
+
+                            if (dmgDealt > 0) {
+                                let cappedDmg = dmgDealt;
+
+                                if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+
+                                // 🟢 1. تطبيق سقف الضرر
+                                if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
+                                else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
+                                else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
+
+                                // 🟢 2. شبكة الأمان
+                                if (!p.isSealed && dmgDealt > 10 && cappedDmg < 20) {
+                                    cappedDmg = 20; 
                                 }
 
-                                let skillNameUsed = "مهارة";
-                                let skillObj = { id: skillId, name: 'Skill', effectValue: 0 };
-                                
-                                if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
-                                     if (p.skills[skillId]) skillObj = p.skills[skillId];
-                                }
+                                // 🟢 3. تطبيق الضرر النهائي
+                                monster.hp = monsterHpBefore; 
+                                monster.hp = Math.max(0, monster.hp - cappedDmg);
 
-                                const monsterHpBefore = monster.hp;
-
-                                const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
-                                
-                                const dmgDealt = monsterHpBefore - monster.hp;
-
-                                if (dmgDealt > 0) {
-                                    let cappedDmg = dmgDealt;
-
-                                    if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
-
-                                    // 🟢 1. تطبيق سقف الضرر
-                                    if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
-                                    else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
-                                    else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
-
-                                    // 🟢 2. شبكة الأمان
-                                    if (!p.isSealed && dmgDealt > 10 && cappedDmg < 20) {
-                                        cappedDmg = 20; 
-                                    }
-
-                                    // 🟢 3. تطبيق الضرر النهائي
-                                    monster.hp = monsterHpBefore; 
-                                    monster.hp = Math.max(0, monster.hp - cappedDmg);
-
-                                    // تحديث اللوج
-                                    if (dmgDealt !== cappedDmg) {
-                                        const lastLogIdx = log.length - 1;
-                                        if (log[lastLogIdx]) {
-                                            let suffix = "";
-                                            if (p.isSealed) suffix = " (مختوم)";
-                                            else if (cappedDmg < dmgDealt) suffix = " (معدل)";
-                                            log[lastLogIdx] = log[lastLogIdx].replace(dmgDealt.toString(), cappedDmg.toString()) + suffix;
-                                        }
-                                    }
-                                    
-                                    let threatGen = cappedDmg; 
-                                    if (p.class === 'Tank') threatGen *= 3; 
-                                    p.threat = (p.threat || 0) + threatGen;
-
-                                    checkBossPhase(monster, log);
-                                }
-
-                                if (res && res.error) {
-                                    await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
-                                    processingUsers.delete(i.user.id); return;
-                                }
-                                
-                                if (res && res.name) skillNameUsed = res.name;
-                                else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
-
-                                p.threat = (p.threat || 0) + 100;
-
-                                actedPlayers.push(p.id); p.skipCount = 0; 
-                                await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
-                                
-                                await battleMsg.edit({ 
-                                    content: '',
-                                    embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
-                                }).catch(()=>{});
-
-                                checkBossPhase(monster, log); 
-                                
-                                const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
-                                if (deadThisTurn.length > 0) {
-                                    for (const deadP of deadThisTurn) {
-                                        deadP.isDead = true;
-                                        await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
-                                        if (deadP.class === 'Priest') {
-                                            players.forEach(ally => {
-                                                if (!ally.isDead && ally.id !== deadP.id) {
-                                                    const healAmt = Math.floor(ally.maxHp * 0.20);
-                                                    ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
-                                                }
-                                            });
-                                            await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
-                                        }
+                                // تحديث اللوج
+                                if (dmgDealt !== cappedDmg) {
+                                    const lastLogIdx = log.length - 1;
+                                    if (log[lastLogIdx]) {
+                                        let suffix = "";
+                                        if (p.isSealed) suffix = " (مختوم)";
+                                        else if (cappedDmg < dmgDealt) suffix = " (معدل)";
+                                        log[lastLogIdx] = log[lastLogIdx].replace(dmgDealt.toString(), cappedDmg.toString()) + suffix;
                                     }
                                 }
                                 
-                                if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
-                                if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
+                                let threatGen = cappedDmg; 
+                                if (p.class === 'Tank') threatGen *= 3; 
+                                p.threat = (p.threat || 0) + threatGen;
 
-                            } catch (err) { processingUsers.delete(i.user.id); return; }
+                                checkBossPhase(monster, log);
+                            }
+
+                            if (res && res.error) {
+                                await selection.editReply({ content: res.error, components: [] }).catch(()=>{});
+                                processingUsers.delete(i.user.id); return;
+                            }
+                            
+                            if (res && res.name) skillNameUsed = res.name;
+                            else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
+
+                            p.threat = (p.threat || 0) + 100;
+
+                            actedPlayers.push(p.id); p.skipCount = 0; 
+                            await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
+                            
+                            await battleMsg.edit({ 
+                                content: '',
+                                embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
+                            }).catch(()=>{});
+
+                            checkBossPhase(monster, log); 
+                            
+                            const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
+                            if (deadThisTurn.length > 0) {
+                                for (const deadP of deadThisTurn) {
+                                    deadP.isDead = true;
+                                    await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
+                                    if (deadP.class === 'Priest') {
+                                        players.forEach(ally => {
+                                            if (!ally.isDead && ally.id !== deadP.id) {
+                                                const healAmt = Math.floor(ally.maxHp * 0.20);
+                                                ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
+                                            }
+                                        });
+                                        await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
+                                    }
+                                }
+                            }
+                            
+                            if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
+                            if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
+
                         } 
                         else if (i.customId === 'heal') {
                             const potionRow = buildPotionSelector(p, sql, guild.id);
@@ -573,151 +572,149 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await i.followUp({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
                                 processingUsers.delete(i.user.id); return;
                             }
-                            try {
-                                const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true });
-                                const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 20000 }); 
-                                await selection.deferUpdate().catch(()=>{});
-                                
-                                const selectedValue = selection.values[0];
+                            
+                            const potionMsg = await i.followUp({ content: "🧪 **اختر الجرعة:**", components: [potionRow], ephemeral: true });
+                            const selection = await potionMsg.awaitMessageComponent({ filter: subI => subI.user.id === i.user.id, time: 20000 }); 
+                            await selection.deferUpdate().catch(()=>{});
+                            
+                            const selectedValue = selection.values[0];
 
-                                if (selectedValue === 'buy_potions_action') {
-                                    const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
-                                    const currentMora = userLevelData ? userLevelData.mora : 0;
+                            if (selectedValue === 'buy_potions_action') {
+                                const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
+                                const currentMora = userLevelData ? userLevelData.mora : 0;
 
-                                    const shopOptions = potionItems.map(pot => ({
-                                        label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
-                                        value: pot.id,
-                                        description: pot.description ? pot.description.substring(0, 50) : "جرعة مفيدة",
-                                        emoji: pot.emoji
-                                    }));
+                                const shopOptions = potionItems.map(pot => ({
+                                    label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
+                                    value: pot.id,
+                                    description: pot.description ? pot.description.substring(0, 50) : "جرعة مفيدة",
+                                    emoji: pot.emoji
+                                }));
 
-                                    const shopRow = new ActionRowBuilder().addComponents(
-                                        new StringSelectMenuBuilder()
-                                            .setCustomId('shop_buy_select')
-                                            .setPlaceholder('اختر الجرعة للشراء...')
-                                            .addOptions(shopOptions)
-                                    );
+                                const shopRow = new ActionRowBuilder().addComponents(
+                                    new StringSelectMenuBuilder()
+                                        .setCustomId('shop_buy_select')
+                                        .setPlaceholder('اختر الجرعة للشراء...')
+                                        .addOptions(shopOptions)
+                                );
 
-                                    const shopMsg = await selection.followUp({
-                                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
-                                        components: [shopRow],
-                                        ephemeral: true
-                                    });
-
-                                    try {
-                                        const buyInteraction = await shopMsg.awaitMessageComponent({ time: 15000 });
-                                        await buyInteraction.deferUpdate();
-                                        
-                                        const itemID = buyInteraction.values[0];
-                                        const targetItem = potionItems.find(x => x.id === itemID);
-
-                                        if (currentMora < targetItem.price) {
-                                            await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
-                                        } else {
-                                            sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(targetItem.price, p.id, guild.id);
-                                            const existingItem = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, targetItem.id);
-                                            if (existingItem) {
-                                                sql.prepare("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = ?").run(existingItem.id);
-                                            } else {
-                                                sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1)").run(guild.id, p.id, targetItem.id);
-                                            }
-
-                                            await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
-                                        }
-                                    } catch (e) {
-                                        await shopMsg.edit({ content: "⏰ انتهى وقت الشراء.", components: [] }).catch(()=>{});
-                                    }
-
-                                    processingUsers.delete(i.user.id);
-                                    return; 
-                                }
-
-                                const potionId = selectedValue.replace('use_potion_', '');
-                                
-                                if (potionId === 'potion_titan') {
-                                    p.titanPotionUses = p.titanPotionUses || 0;
-                                    if (p.titanPotionUses >= 3) {
-                                        await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
-                                        processingUsers.delete(i.user.id);
-                                        return;
-                                    }
-                                    p.titanPotionUses++; 
-                                }
-                                
-                                if (sql.open) {
-                                    sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
-                                }
-
-                                let actionMsg = "";
-                                if (potionId === 'potion_heal') {
-                                    p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.5));
-                                    actionMsg = "🧪 استعاد 50% HP!";
-                                    const threatGen = Math.floor((p.maxHp * 0.5) / 2);
-                                    p.threat = (p.threat || 0) + threatGen;
-
-                                } else if (potionId === 'potion_reflect') {
-                                    p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
-                                    actionMsg = "🌵 جهز درع الأشواك!";
-                                } else if (potionId === 'potion_time') {
-                                    p.special_cooldown = 0; p.skillCooldowns = {};
-                                    actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
-                                } else if (potionId === 'potion_titan') {
-                                    p.maxHp *= 2; p.hp = p.maxHp;
-                                    p.effects.push({ type: 'titan', floors: 5 }); 
-                                    monster.targetFocusId = p.id;
-                                    actionMsg = `🔥 تحول لعملاق! (يستمر لـ 5 طوابق) (${p.titanPotionUses}/3)`;
-                                    p.threat = (p.threat || 0) + 1000;
-
-                                } else if (potionId === 'potion_sacrifice') {
-                                    p.hp = 0; p.isDead = true; p.isPermDead = true; p.deathFloor = floor; 
-                                    players.forEach(ally => {
-                                        if (ally.id !== p.id) {
-                                            ally.isDead = false; ally.isPermDead = false; ally.reviveCount = 0;
-                                            ally.hp = ally.maxHp; ally.effects = [];
-                                        }
-                                    });
-                                    actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
-                                    threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
-                                    handleLeaderSuccession(players, log);
-                                }
-                                log.push(`**${p.name}**: ${actionMsg}`);
-                                actedPlayers.push(p.id); p.skipCount = 0; 
-                                await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
-                                
-                                await battleMsg.edit({ 
-                                    content: '', 
-                                    embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
-                                }).catch(()=>{});
-
-                                saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
-                                    floor, players, merchantState, retreatedPlayers, isTrapActive,
-                                    retreatState, 
-                                    loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
-                                    themeName: theme.name,
-                                    monsterData: monster
+                                const shopMsg = await selection.followUp({
+                                    content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
+                                    components: [shopRow],
+                                    ephemeral: true
                                 });
 
-                                const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
-                                if (deadThisTurn.length > 0) {
-                                    for (const deadP of deadThisTurn) {
-                                        deadP.isDead = true;
-                                        await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
-                                        if (deadP.class === 'Priest') {
-                                            players.forEach(ally => {
-                                                if (!ally.isDead && ally.id !== deadP.id) {
-                                                    const healAmt = Math.floor(ally.maxHp * 0.20);
-                                                    ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
-                                                }
-                                            });
-                                            await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
+                                try {
+                                    const buyInteraction = await shopMsg.awaitMessageComponent({ time: 15000 });
+                                    await buyInteraction.deferUpdate();
+                                    
+                                    const itemID = buyInteraction.values[0];
+                                    const targetItem = potionItems.find(x => x.id === itemID);
+
+                                    if (currentMora < targetItem.price) {
+                                        await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
+                                    } else {
+                                        sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(targetItem.price, p.id, guild.id);
+                                        const existingItem = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, targetItem.id);
+                                        if (existingItem) {
+                                            sql.prepare("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = ?").run(existingItem.id);
+                                        } else {
+                                            sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1)").run(guild.id, p.id, targetItem.id);
                                         }
+
+                                        await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
+                                    }
+                                } catch (e) {
+                                    await shopMsg.edit({ content: "⏰ انتهى وقت الشراء.", components: [] }).catch(()=>{});
+                                }
+
+                                processingUsers.delete(i.user.id);
+                                return; 
+                            }
+
+                            const potionId = selectedValue.replace('use_potion_', '');
+                            
+                            if (potionId === 'potion_titan') {
+                                p.titanPotionUses = p.titanPotionUses || 0;
+                                if (p.titanPotionUses >= 3) {
+                                    await selection.followUp({ content: "🚫 **لقد استهلكت الحد الأقصى (3) من جرعة العملاق في هذا الدانجون!**", ephemeral: true });
+                                    processingUsers.delete(i.user.id);
+                                    return;
+                                }
+                                p.titanPotionUses++; 
+                            }
+                            
+                            if (sql.open) {
+                                sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
+                            }
+
+                            let actionMsg = "";
+                            if (potionId === 'potion_heal') {
+                                p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.5));
+                                actionMsg = "🧪 استعاد 50% HP!";
+                                const threatGen = Math.floor((p.maxHp * 0.5) / 2);
+                                p.threat = (p.threat || 0) + threatGen;
+
+                            } else if (potionId === 'potion_reflect') {
+                                p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
+                                actionMsg = "🌵 جهز درع الأشواك!";
+                            } else if (potionId === 'potion_time') {
+                                p.special_cooldown = 0; p.skillCooldowns = {};
+                                actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
+                            } else if (potionId === 'potion_titan') {
+                                p.maxHp *= 2; p.hp = p.maxHp;
+                                p.effects.push({ type: 'titan', floors: 5 }); 
+                                monster.targetFocusId = p.id;
+                                actionMsg = `🔥 تحول لعملاق! (يستمر لـ 5 طوابق) (${p.titanPotionUses}/3)`;
+                                p.threat = (p.threat || 0) + 1000;
+
+                            } else if (potionId === 'potion_sacrifice') {
+                                p.hp = 0; p.isDead = true; p.isPermDead = true; p.deathFloor = floor; 
+                                players.forEach(ally => {
+                                    if (ally.id !== p.id) {
+                                        ally.isDead = false; ally.isPermDead = false; ally.reviveCount = 0;
+                                        ally.hp = ally.maxHp; ally.effects = [];
+                                    }
+                                });
+                                actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
+                                threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
+                                handleLeaderSuccession(players, log);
+                            }
+                            log.push(`**${p.name}**: ${actionMsg}`);
+                            actedPlayers.push(p.id); p.skipCount = 0; 
+                            await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
+                            
+                            await battleMsg.edit({ 
+                                content: '', 
+                                embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
+                            }).catch(()=>{});
+
+                            saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
+                                floor, players, merchantState, retreatedPlayers, isTrapActive,
+                                retreatState, 
+                                loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
+                                themeName: theme.name,
+                                monsterData: monster
+                            });
+
+                            const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
+                            if (deadThisTurn.length > 0) {
+                                for (const deadP of deadThisTurn) {
+                                    deadP.isDead = true;
+                                    await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
+                                    if (deadP.class === 'Priest') {
+                                        players.forEach(ally => {
+                                            if (!ally.isDead && ally.id !== deadP.id) {
+                                                const healAmt = Math.floor(ally.maxHp * 0.20);
+                                                ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
+                                            }
+                                        });
+                                        await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
                                     }
                                 }
-                                
-                                if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
-                                if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
-
-                            } catch (err) { processingUsers.delete(i.user.id); return; }
+                            }
+                            
+                            if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
+                            if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
                         } 
                         else if (i.customId === 'atk' || i.customId === 'def') {
                             actedPlayers.push(p.id); p.skipCount = 0; 
@@ -812,12 +809,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                         if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                         if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
+                    } catch (error) {
+                        console.error(error);
+                    } finally {
+                        processingUsers.delete(i.user.id);
                     }
 
                     if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
                         clearTimeout(turnTimeout); collector.stop('turn_end'); 
                     }
-                } catch (error) { console.error(error); } finally { processingUsers.delete(i.user.id); }
+                });
             });
             collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
         });
