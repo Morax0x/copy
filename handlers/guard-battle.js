@@ -77,7 +77,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
     // ✅ إيمبد خاص لظهور الحارس مع الصورة الجديدة
     const introEmbed = new EmbedBuilder()
         .setTitle('🚨 كشفك الحــارس!')
-        .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** عملة!`)
+        .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** مورا!`)
         .setColor(Colors.DarkRed)
         .setImage(GUARD_IMAGE_MAIN); // 🔥 الصورة هنا
 
@@ -163,9 +163,9 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         }
         setScore.run(playerData);
 
-        embed.setTitle(`💀 تم القبض عليك!`)
+        embed.setTitle(`💀 تـم القبـض!`)
              .setColor(Colors.Red)
-             .setDescription(`طرحك الحارس أرضاً! تمت مصادرة **${amount.toLocaleString()}** عملة كغرامة.`)
+             .setDescription(`طرحك الحارس أرضاً! تمت مصادرة **${amount.toLocaleString()}**`)
              .setImage(GUARD_IMAGE_MAIN); // 🔥 نستخدم نفس الصورة عند الخسارة
     }
 
