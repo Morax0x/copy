@@ -1,4 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
+// ✅ استدعاء هاندلر معركة الحارس
+const { startGuardBattle } = require('../handlers/guard-battle');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const OWNER_ID = "1145327691772481577"; // 👑 آيدي الأونر
@@ -64,7 +66,7 @@ async function sendDMToVictim(victim, messageContent) {
     }
 }
 
-// دالة مساعدة لحذف رد البوت بعد وقت معين (اختياري)
+// دالة مساعدة لحذف رد البوت بعد وقت معين
 function deleteBotReplyAfter(msg, interaction, time = 10000) {
     setTimeout(async () => {
         try {
@@ -112,17 +114,15 @@ module.exports = {
             victim = message.mentions.members.first();
         }
 
-        // 🔥🔥🔥 التعديل هنا: حذف رسالة العضو إذا كان المنشن للأونر 🔥🔥🔥
+        // 🔥 حذف رسالة العضو إذا كان المنشن للأونر
         if (!isSlash && message && victim && victim.id === OWNER_ID) {
             await message.delete().catch(() => {});
         }
 
-        // تعديل دالة الرد لتجنب الأخطاء بعد حذف الرسالة
         const reply = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
             if (isSlash) return interaction.editReply(payload);
             else {
-                // محاولة الرد العادي، إذا فشلت (بسبب حذف الرسالة) نرسل في القناة
                 return message.reply(payload).catch(() => message.channel.send(payload));
             }
         };
@@ -205,7 +205,7 @@ module.exports = {
         robberData.lastRob = now;
 
         // =================================================================
-        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
+        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) - يبقى كما هو 🔥🔥
         // =================================================================
         if (victim.id === OWNER_ID) {
             
@@ -215,7 +215,6 @@ module.exports = {
                 .setColor('#2F3136')
                 .setImage('https://i.postimg.cc/0jQvvNNh/fort.jpg');
 
-            // إنشاء 9 أبواب (3 أسطر × 3 أزرار)
             const rows = [];
             const buttons = [];
             
@@ -245,7 +244,7 @@ module.exports = {
                 const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
 
                 if (correctIndices.includes(clickedIndex)) {
-                    // ✅ نجاح السرقة
+                    // ✅ نجاح
                     if (targetPool === 'bank') {
                         if (victimData.bank >= amountToSteal) victimData.bank -= amountToSteal;
                         else {
@@ -270,10 +269,10 @@ module.exports = {
                         .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
                     
                     await i.update({ embeds: [winEmbed], components: [] });
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                 } else {
-                    // ❌ فشل السرقة
+                    // ❌ فشل
                     const todayDate = getKSADateString(); 
                     const lastPardonDate = robberyPardons.get(robber.id); 
                     
@@ -295,7 +294,7 @@ module.exports = {
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
-                        deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
+                        deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                     } else {
                         deductFromRobber(robberData, amountToSteal);
@@ -308,7 +307,7 @@ module.exports = {
                             .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
                         
                         await i.update({ embeds: [loseEmbed], components: [] });
-                        deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
+                        deleteBotReplyAfter(msg, isSlash ? interaction : null);
                     }
                 }
                 setScore.run(robberData);
@@ -328,7 +327,7 @@ module.exports = {
                         .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
                     
                     msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
-                    deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
                 }
             });
 
@@ -374,31 +373,22 @@ module.exports = {
         collector.on('collect', async i => {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
-            // 🔥🔥 التحقق من الحارس أولاً 🔥🔥
+            // =================================================
+            // 🔥🔥 [تم التعديل] نظام الحارس الجديد 🔥🔥
+            // =================================================
             if (victimData.hasGuard > 0) {
-                deductFromRobber(robberData, amountToSteal);
-                victimData.mora += amountToSteal;
-                
+                // 1. خصم شحنة الحارس
                 victimData.hasGuard -= 1;
-                const guardLeft = victimData.hasGuard;
-                
-                let guardStatusMsg = "";
-                if (guardLeft === 0) {
-                    guardStatusMsg = "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك";
-                    victimData.guardExpires = 0;
-                } else {
-                    guardStatusMsg = `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
-                }
+                if (victimData.hasGuard === 0) victimData.guardExpires = 0;
+                setScore.run(victimData);
 
-                const guardEmbed = new EmbedBuilder()
-                    .setTitle('✶ تــم الـقـبـض :shield: !')
-                    .setColor('#46455f')
-                    .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                    .setDescription(`✬ اخترت الباب ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
-                
-                await i.update({ embeds: [guardEmbed], components: [] });
+                // 2. حذف رسالة الأبواب لتنظيف الشات
+                await msg.delete().catch(() => {});
 
-                sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
+                // 3. بدء معركة الحارس
+                // نمرر السياق المناسب (interaction إذا كان slash، أو message إذا كان prefix)
+                const context = isSlash ? interaction : message;
+                return await startGuardBattle(context, client, sql, robber, amountToSteal);
 
             } else {
                 if (clickedIndex === correctButtonIndex) {
@@ -431,9 +421,10 @@ module.exports = {
                     await i.update({ embeds: [winEmbed], components: [] });
 
                     sendDMToVictim(victim, `✥ قـام ${robber} بالسـطو عـلى ممتلـكـاتك وسـرق **${finalAmount}**`);
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
 
                 } else {
-                    // ❌ فشل
+                    // ❌ فشل (قنبلة)
                     deductFromRobber(robberData, amountToSteal);
                     victimData.mora += amountToSteal;
 
@@ -445,6 +436,7 @@ module.exports = {
                     await i.update({ embeds: [loseEmbed], components: [] });
 
                     sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null);
                 }
             }
             setScore.run(robberData);
@@ -467,6 +459,7 @@ module.exports = {
                 msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
                 
                 sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل (تأخر في الوقت) وحصـلت علـى **${amountToSteal}** كـ تعويض`);
+                deleteBotReplyAfter(msg, isSlash ? interaction : null);
             }
         });
     }
