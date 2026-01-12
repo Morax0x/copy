@@ -1,34 +1,45 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const path = require('path');
 
-// ✅ المسار الصحيح للأدوات
+// استدعاء دالة إدارة التذاكر
 const { manageTickets } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
+    // الاختصارات (للرسائل العادية)
     aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
 
     data: new SlashCommandBuilder()
-        .setName('tickets')
+        .setName('tickets') // ⚠️ إجباري يكون إنجليزي هنا (قوانين ديسكورد)
+        .setNameLocalizations({ ar: 'تذاكر' }) // ✅ هنا يظهر بالعربي للمستخدمين
         .setDescription('عرض عدد تذاكر الدانجون المتوفرة')
+        .setDescriptionLocalizations({ ar: 'عرض عدد تذاكر الدانجون وموعد التجديد' })
         .addUserOption(option => 
             option.setName('user')
+                .setNameLocalizations({ ar: 'المستخدم' }) // اسم الخيار بالعربي
                 .setDescription('الشخص الذي تريد رؤية تذاكره')
                 .setRequired(false)
         ),
 
-    async execute(interaction, sql) {
-        // 🔥 تصحيح الخطأ: تحديد صاحب الأمر سواء كان رسالة أو سلاش
-        // interaction.user (للسلاش) || interaction.author (للرسائل)
+    // لا نعتمد على تمرير sql كمتغير ثاني لأنه يسبب مشاكل، نأخذه من client
+    async execute(interaction) { 
+        // 🔥 الحل الجذري لمشكلة SQL: جلب قاعدة البيانات من الكلاينت مباشرة
+        const client = interaction.client;
+        const sql = client.sql; 
+
+        if (!sql) {
+            console.error("❌ Error: SQL Database is not attached to Client.");
+            return;
+        }
+
+        // تحديد صاحب الأمر (سواء كان رسالة أو سلاش)
         const commandUser = interaction.user || interaction.author;
         let targetUser = commandUser;
 
         // 1. تحديد الهدف (Target)
         if (interaction.isChatInputCommand && interaction.isChatInputCommand()) {
-            // حالة السلاش: نأخذ الخيار أو الشخص نفسه
             targetUser = interaction.options.getUser('user') || commandUser;
         } 
         else if (interaction.mentions && interaction.mentions.users.size > 0) {
-            // حالة الرسالة: نأخذ أول منشن
             targetUser = interaction.mentions.users.first();
         }
 
