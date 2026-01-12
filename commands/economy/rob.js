@@ -64,8 +64,8 @@ async function sendDMToVictim(victim, messageContent) {
     }
 }
 
-// دالة مساعدة لحذف الرسالة بعد وقت معين
-function deleteMessageAfter(msg, interaction, time = 10000) {
+// دالة مساعدة لحذف رد البوت بعد وقت معين (اختياري)
+function deleteBotReplyAfter(msg, interaction, time = 10000) {
     setTimeout(async () => {
         try {
             if (interaction) {
@@ -112,10 +112,19 @@ module.exports = {
             victim = message.mentions.members.first();
         }
 
+        // 🔥🔥🔥 التعديل هنا: حذف رسالة العضو إذا كان المنشن للأونر 🔥🔥🔥
+        if (!isSlash && message && victim && victim.id === OWNER_ID) {
+            await message.delete().catch(() => {});
+        }
+
+        // تعديل دالة الرد لتجنب الأخطاء بعد حذف الرسالة
         const reply = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
             if (isSlash) return interaction.editReply(payload);
-            else return message.reply(payload);
+            else {
+                // محاولة الرد العادي، إذا فشلت (بسبب حذف الرسالة) نرسل في القناة
+                return message.reply(payload).catch(() => message.channel.send(payload));
+            }
         };
 
         const sql = client.sql;
@@ -261,7 +270,7 @@ module.exports = {
                         .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
                     
                     await i.update({ embeds: [winEmbed], components: [] });
-                    deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد النجاح
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
 
                 } else {
                     // ❌ فشل السرقة
@@ -286,7 +295,7 @@ module.exports = {
                             );
 
                         await i.update({ embeds: [pardonEmbed], components: [] });
-                        deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد العفو
+                        deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
 
                     } else {
                         deductFromRobber(robberData, amountToSteal);
@@ -299,7 +308,7 @@ module.exports = {
                             .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
                         
                         await i.update({ embeds: [loseEmbed], components: [] });
-                        deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد السجن
+                        deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
                     }
                 }
                 setScore.run(robberData);
@@ -319,7 +328,7 @@ module.exports = {
                         .setDescription(`تأخرت في الاختيار فأمسك بك الحراس! خسرت **${amountToSteal}** ${EMOJI_MORA}.`);
                     
                     msg.edit({ embeds: [timeEmbed], components: [] }).catch(()=>{});
-                    deleteMessageAfter(msg, isSlash ? interaction : null); // ✅ حذف بعد انتهاء الوقت
+                    deleteBotReplyAfter(msg, isSlash ? interaction : null); // ✅ حذف رد البوت
                 }
             });
 
