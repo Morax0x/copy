@@ -779,7 +779,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                              
                             await battleMsg.edit({ 
-                                content: '', // ✅ تم إزالة النص
+                                content: '', 
                                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                             }).catch(()=>{});
 
@@ -844,7 +844,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                     components: generateBattleRows() 
                 });
-            } catch(e) { return; } // ✅ تم استبدال break بـ return هنا
+            } catch(e) { return; } 
         }
 
         if (monster.hp > 0 && ongoing) {
@@ -860,291 +860,291 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
             if (ongoing) handleLeaderSuccession(players, log);
         }
-    } // ✅ End of For Loop
+        // ✅ تم حذف القوس الزائد هنا
+    
+        if (players.every(p => p.isDead)) {
+            const finalFloor = isTrapActive ? trapStartFloor : floor;
+            deleteDungeonState(sql, threadChannel.id); 
+            statusCollector.stop(); 
+            await handleTeamWipe(players, floor, sql, guild.id);
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            return; 
+        }
+          
+        let baseMora = Math.floor(getBaseFloorMora(floor));
+        let floorXp = Math.floor(baseMora * 0.03);  
+        players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
+        totalAccumulatedCoins += baseMora;
+        totalAccumulatedXP += floorXp;
 
-    if (players.every(p => p.isDead)) {
-        const finalFloor = isTrapActive ? trapStartFloor : floor;
-        deleteDungeonState(sql, threadChannel.id); 
-        statusCollector.stop(); 
-        await handleTeamWipe(players, floor, sql, guild.id);
-        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-        return; 
-    }
-      
-    let baseMora = Math.floor(getBaseFloorMora(floor));
-    let floorXp = Math.floor(baseMora * 0.03);  
-    players.forEach(p => { if (!p.isDead) { p.loot.mora += baseMora; p.loot.xp += floorXp; } });
-    totalAccumulatedCoins += baseMora;
-    totalAccumulatedXP += floorXp;
+        // ==========================================
+        // 🛡️ نقاط الأمان والمكافآت (Checkpoints)
+        // ==========================================
 
-    // ==========================================
-    // 🛡️ نقاط الأمان والمكافآت (Checkpoints)
-    // ==========================================
+        if (floor === 20) {
+            snapshotLootAtFloor20(players);
+            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان (20)!** تم حفظ الغنائم حتى هذه اللحظة.`).catch(()=>{});
+        }
 
-    if (floor === 20) {
-        snapshotLootAtFloor20(players);
-        await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان (20)!** تم حفظ الغنائم حتى هذه اللحظة.`).catch(()=>{});
-    }
+        if (floor === 50) {
+            snapshotLootAtFloor20(players); 
+            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان كـبـرى (50)!**\nاستعدوا.. ما بعد هذا الطابق هو الجحيم الحقيقي!`).catch(()=>{});
+        }
 
-    if (floor === 50) {
-        snapshotLootAtFloor20(players); 
-        await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان كـبـرى (50)!**\nاستعدوا.. ما بعد هذا الطابق هو الجحيم الحقيقي!`).catch(()=>{});
-    }
+        if (floor === 51) {
+            players.forEach(p => {
+                if (!p.isDead) {
+                    const hpBonus = Math.floor(p.maxHp * 0.50);
+                    p.maxHp += hpBonus;
+                    p.hp += hpBonus; 
+                    p.effects.push({ type: 'atk_buff', val: 0.30, turns: 999 });
+                }
+            });
 
-    if (floor === 51) {
+            await threadChannel.send({
+                content: `⚡ **ارتقاء الأبطال!** ⚡\nبسبب تجاوزكم منتصف الدانجون، زادت قوتكم بشكل هائل لمواجهة المخاطر القادمة:\n❤️ **+50% Max HP**\n⚔️ **+30% Attack Damage**`
+            }).catch(()=>{});
+        }
+
         players.forEach(p => {
             if (!p.isDead) {
-                const hpBonus = Math.floor(p.maxHp * 0.50);
-                p.maxHp += hpBonus;
-                p.hp += hpBonus; 
-                p.effects.push({ type: 'atk_buff', val: 0.30, turns: 999 });
-            }
-        });
+                const healAmount = Math.floor(p.maxHp * 0.30);
+                p.hp = Math.min(p.maxHp, Math.floor(p.hp + healAmount));
+                if (isNaN(p.hp)) p.hp = p.maxHp;
 
-        await threadChannel.send({
-            content: `⚡ **ارتقاء الأبطال!** ⚡\nبسبب تجاوزكم منتصف الدانجون، زادت قوتكم بشكل هائل لمواجهة المخاطر القادمة:\n❤️ **+50% Max HP**\n⚔️ **+30% Attack Damage**`
-        }).catch(()=>{});
-    }
-
-    players.forEach(p => {
-        if (!p.isDead) {
-            const healAmount = Math.floor(p.maxHp * 0.30);
-            p.hp = Math.min(p.maxHp, Math.floor(p.hp + healAmount));
-            if (isNaN(p.hp)) p.hp = p.maxHp;
-
-            p.effects = p.effects.filter(e => {
-                if (e.floors) {
-                    e.floors--;
-                    if (e.floors <= 0) {
-                        if (e.type === 'titan') {
-                            p.maxHp = Math.floor(p.maxHp / 2);
-                            if (p.hp > p.maxHp) p.hp = p.maxHp;
-                            threadChannel.send(`✨ **${p.name}** عاد لحجمه الطبيعي وتلاشى مفعول العملاق.`).catch(()=>{});
+                p.effects = p.effects.filter(e => {
+                    if (e.floors) {
+                        e.floors--;
+                        if (e.floors <= 0) {
+                            if (e.type === 'titan') {
+                                p.maxHp = Math.floor(p.maxHp / 2);
+                                if (p.hp > p.maxHp) p.hp = p.maxHp;
+                                threadChannel.send(`✨ **${p.name}** عاد لحجمه الطبيعي وتلاشى مفعول العملاق.`).catch(()=>{});
+                            }
+                            return false; 
                         }
-                        return false; 
                     }
-                }
-                return true;
-            });
-        }
-    });
-
-    let canRetreat = false;
-
-    if (floor <= 20) {
-        canRetreat = true;
-    } 
-    else if (floor >= 30 && floor <= 40) {
-        if (!retreatState.range_30_40 && Math.random() < 0.25) { 
-            canRetreat = true;
-            retreatState.range_30_40 = true; 
-        }
-    }
-    else if (floor >= 41 && floor <= 50) {
-        if (!retreatState.range_41_50 && Math.random() < 0.25) {
-            canRetreat = true;
-            retreatState.range_41_50 = true;
-        }
-    }
-    else if (floor >= 51 && floor <= 70) {
-        if (!retreatState.range_51_70 && Math.random() < 0.15) { 
-            canRetreat = true;
-            retreatState.range_51_70 = true;
-        }
-    }
-    else if (floor >= 71 && floor <= 90) {
-        if (!retreatState.range_71_90 && Math.random() < 0.15) {
-            canRetreat = true;
-            retreatState.range_71_90 = true;
-        }
-    }
-
-    let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
-
-    const restRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success)
-    );
-
-    if (floor === 20) {
-         restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
-    } else if (floor > 20) {
-         if (canRetreat) {
-             restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! لن تظهر مجدداً في هذا النطاق`;
-         } else {
-             restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
-         }
-    } else {
-        restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
-    }
-
-    if (canRetreat) {
-         restRow.addComponents(new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger));
-    }
-
-    if (floor === 99) {
-        restDesc += `\n\n⚠️💀 **تحذيـــر نهائـــي** 💀⚠️\nأنتم على أعتاب العرش... **الإمبراطور موراكس** بانتظاركم في الطابق القادم! لا تراجع بعد الآن!`;
-    }
-
-    const restEmbed = new EmbedBuilder()
-        .setTitle('❖ استـراحـة بيـن الطـوابـق')
-        .setDescription(restDesc)
-        .setColor(Colors.Red)
-        .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
-
-    let restMsg;
-    try {
-        restMsg = await threadChannel.send({ 
-            content: '', 
-            embeds: [restEmbed], 
-            components: [restRow] 
-        });
-    } catch (err) { break; }
-
-    const warningTimeout = setTimeout(() => {
-        threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
-    }, 60000); 
-      
-    const decision = await new Promise(res => {
-        const decCollector = restMsg.createMessageComponentCollector({ time: 120000 }); // 120 ثانية
-        decCollector.on('collect', async i => {
-            clearTimeout(warningTimeout); 
-
-            if (i.customId === 'continue') {
-                let p = players.find(pl => pl.id === i.user.id);
-                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
-                await i.deferUpdate(); 
-                return decCollector.stop('continue');
-            }
-
-            if (i.customId === 'retreat' && canRetreat) {
-                let p = players.find(pl => pl.id === i.user.id);
-                if (p && p.class === 'Leader') {
-                    await i.deferUpdate();
-                    return decCollector.stop('retreat');
-                } else {
-                    const pIndex = players.findIndex(pl => pl.id === i.user.id);
-                    if (pIndex > -1) {
-                        const leavingPlayer = players[pIndex];
-                        leavingPlayer.retreatFloor = floor;
-                        
-                        const rewards = await handleMemberRetreat(leavingPlayer, floor, sql, guild.id, threadChannel);
-                        
-                        retreatedPlayers.push(leavingPlayer);
-                        players.splice(pIndex, 1); 
-                        
-                        await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP.`, ephemeral: true });
-                        await threadChannel.send(`💨 **${leavingPlayer.name}** انسحب واكتفى بغنائمه!`).catch(()=>{});
-                        
-                        if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
-                        if (players.length === 0) decCollector.stop('retreat');
-                    }
-                }
-            }
-        });
-        decCollector.on('end', (c, reason) => { clearTimeout(warningTimeout); res(reason); });
-    });
-
-    await restMsg.edit({ components: [] }).catch(()=>{});
-
-    if (decision === 'time') { 
-        deleteDungeonState(sql, threadChannel.id); 
-        
-        players.forEach(p => { 
-            p.isDead = true; 
-            p.hp = 0; 
-            p.deathFloor = floor; 
-        });
-
-        await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
-        
-        statusCollector.stop(); 
-        await handleTeamWipe(players, floor, sql, guild.id);
-        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-        return; 
-    } 
-    else if (decision === 'retreat') {
-        deleteDungeonState(sql, threadChannel.id); 
-        statusCollector.stop(); 
-        await handleLeaderRetreat(players, sql, guild.id);
-        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
-        return;
-    } 
-    else if (decision === 'continue') {
-        if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
-            isTrapActive = true;
-            trapStartFloor = floor;
-            const minTarget = floor + 2;
-            const maxTarget = 90; 
-            const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
-            floor = targetFloor - 1; 
-
-            if (targetFloor >= 19) {
-                let sealBroken = false;
-                players.forEach(p => {
-                    if (p.isSealed) {
-                        p.isSealed = false;
-                        p.sealMultiplier = 1.0;
-                        sealBroken = true;
-                    }
+                    return true;
                 });
-                if (sealBroken) {
-                    await threadChannel.send(`🔓 **بسبب الضغط الهائل للانتقال عبر الأبعاد.. تحطمت الأختام عن الجميع واستعدتم كامل قوتكم!**`).catch(()=>{});
-                }
             }
+        });
 
-            const trapEmbed = new EmbedBuilder()
-                .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
-                .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم...!`)
-                .setColor(Colors.DarkRed)
-                .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
-            await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
+        let canRetreat = false;
+
+        if (floor <= 20) {
+            canRetreat = true;
+        } 
+        else if (floor >= 30 && floor <= 40) {
+            if (!retreatState.range_30_40 && Math.random() < 0.25) { 
+                canRetreat = true;
+                retreatState.range_30_40 = true; 
+            }
+        }
+        else if (floor >= 41 && floor <= 50) {
+            if (!retreatState.range_41_50 && Math.random() < 0.25) {
+                canRetreat = true;
+                retreatState.range_41_50 = true;
+            }
+        }
+        else if (floor >= 51 && floor <= 70) {
+            if (!retreatState.range_51_70 && Math.random() < 0.15) { 
+                canRetreat = true;
+                retreatState.range_51_70 = true;
+            }
+        }
+        else if (floor >= 71 && floor <= 90) {
+            if (!retreatState.range_71_90 && Math.random() < 0.15) {
+                canRetreat = true;
+                retreatState.range_71_90 = true;
+            }
+        }
+
+        let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
+
+        const restRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success)
+        );
+
+        if (floor === 20) {
+             restDesc += `\n\n✥ **تحذيـر:** التوغل اكثر بالدانجون محفوف بالمخاطر الاستمرار الان سيمنعكم من الانسحـاب في معظم الطوابق`;
+        } else if (floor > 20) {
+             if (canRetreat) {
+                 restDesc += `\n\n✨ **فرصة نادرة:** وجـدتـم بوابـة انسـحـاب! لن تظهر مجدداً في هذا النطاق`;
+             } else {
+                 restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
+             }
         } else {
-            await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
+            restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
+        }
 
-            const canTriggerEvent = (floor - lastEventFloor) > 4;
-            if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
-                let eventToTrigger = '';
-                if (lastEventType === 'merchant') eventToTrigger = 'chest'; 
-                else if (lastEventType === 'chest') eventToTrigger = 'merchant'; 
-                else eventToTrigger = Math.random() < 0.5 ? 'merchant' : 'chest';
+        if (canRetreat) {
+             restRow.addComponents(new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger));
+        }
 
-                if (eventToTrigger === 'merchant') {
-                    await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
-                    lastEventType = 'merchant'; lastEventFloor = floor;
-                } else {
-                    await triggerMimicChest(threadChannel, players);
-                    lastEventType = 'chest'; lastEventFloor = floor;
+        if (floor === 99) {
+            restDesc += `\n\n⚠️💀 **تحذيـــر نهائـــي** 💀⚠️\nأنتم على أعتاب العرش... **الإمبراطور موراكس** بانتظاركم في الطابق القادم! لا تراجع بعد الآن!`;
+        }
+
+        const restEmbed = new EmbedBuilder()
+            .setTitle('❖ استـراحـة بيـن الطـوابـق')
+            .setDescription(restDesc)
+            .setColor(Colors.Red)
+            .setImage('https://i.postimg.cc/KcJ6gtzV/22.jpg');
+
+        let restMsg;
+        try {
+            restMsg = await threadChannel.send({ 
+                content: '', 
+                embeds: [restEmbed], 
+                components: [restRow] 
+            });
+        } catch (err) { break; }
+
+        const warningTimeout = setTimeout(() => {
+            threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
+        }, 60000); 
+          
+        const decision = await new Promise(res => {
+            const decCollector = restMsg.createMessageComponentCollector({ time: 120000 }); // 120 ثانية
+            decCollector.on('collect', async i => {
+                clearTimeout(warningTimeout); 
+
+                if (i.customId === 'continue') {
+                    let p = players.find(pl => pl.id === i.user.id);
+                    if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
+                    await i.deferUpdate(); 
+                    return decCollector.stop('continue');
+                }
+
+                if (i.customId === 'retreat' && canRetreat) {
+                    let p = players.find(pl => pl.id === i.user.id);
+                    if (p && p.class === 'Leader') {
+                        await i.deferUpdate();
+                        return decCollector.stop('retreat');
+                    } else {
+                        const pIndex = players.findIndex(pl => pl.id === i.user.id);
+                        if (pIndex > -1) {
+                            const leavingPlayer = players[pIndex];
+                            leavingPlayer.retreatFloor = floor;
+                            
+                            const rewards = await handleMemberRetreat(leavingPlayer, floor, sql, guild.id, threadChannel);
+                            
+                            retreatedPlayers.push(leavingPlayer);
+                            players.splice(pIndex, 1); 
+                            
+                            await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP.`, ephemeral: true });
+                            await threadChannel.send(`💨 **${leavingPlayer.name}** انسحب واكتفى بغنائمه!`).catch(()=>{});
+                            
+                            if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
+                            if (players.length === 0) decCollector.stop('retreat');
+                        }
+                    }
+                }
+            });
+            decCollector.on('end', (c, reason) => { clearTimeout(warningTimeout); res(reason); });
+        });
+
+        await restMsg.edit({ components: [] }).catch(()=>{});
+
+        if (decision === 'time') { 
+            deleteDungeonState(sql, threadChannel.id); 
+            
+            players.forEach(p => { 
+                p.isDead = true; 
+                p.hp = 0; 
+                p.deathFloor = floor; 
+            });
+
+            await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
+            
+            statusCollector.stop(); 
+            await handleTeamWipe(players, floor, sql, guild.id);
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            return; 
+        } 
+        else if (decision === 'retreat') {
+            deleteDungeonState(sql, threadChannel.id); 
+            statusCollector.stop(); 
+            await handleLeaderRetreat(players, sql, guild.id);
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+            return;
+        } 
+        else if (decision === 'continue') {
+            if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
+                isTrapActive = true;
+                trapStartFloor = floor;
+                const minTarget = floor + 2;
+                const maxTarget = 90; 
+                const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
+                floor = targetFloor - 1; 
+
+                if (targetFloor >= 19) {
+                    let sealBroken = false;
+                    players.forEach(p => {
+                        if (p.isSealed) {
+                            p.isSealed = false;
+                            p.sealMultiplier = 1.0;
+                            sealBroken = true;
+                        }
+                    });
+                    if (sealBroken) {
+                        await threadChannel.send(`🔓 **بسبب الضغط الهائل للانتقال عبر الأبعاد.. تحطمت الأختام عن الجميع واستعدتم كامل قوتكم!**`).catch(()=>{});
+                    }
+                }
+
+                const trapEmbed = new EmbedBuilder()
+                    .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
+                    .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم...!`)
+                    .setColor(Colors.DarkRed)
+                    .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
+                await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
+            } else {
+                await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
+
+                const canTriggerEvent = (floor - lastEventFloor) > 4;
+                if (canTriggerEvent && floor > 5 && !isTrapActive && Math.random() < 0.30) {
+                    let eventToTrigger = '';
+                    if (lastEventType === 'merchant') eventToTrigger = 'chest'; 
+                    else if (lastEventType === 'chest') eventToTrigger = 'merchant'; 
+                    else eventToTrigger = Math.random() < 0.5 ? 'merchant' : 'chest';
+
+                    if (eventToTrigger === 'merchant') {
+                        await triggerMysteryMerchant(threadChannel, players, sql, guild.id, merchantState);
+                        lastEventType = 'merchant'; lastEventFloor = floor;
+                    } else {
+                        await triggerMimicChest(threadChannel, players);
+                        lastEventType = 'chest'; lastEventFloor = floor;
+                    }
                 }
             }
         }
+    } // ✅ End of For Loop
+
+    const alivePlayers = players.filter(p => !p.isDead);
+    if (alivePlayers.length > 0) {
+        
+        deleteDungeonState(sql, threadChannel.id);
+        statusCollector.stop(); 
+
+        const winEmbed = new EmbedBuilder()
+            .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
+            .setDescription(`**"أحسنتـم... لم أتوقع أن تصمدوا أمامي لكل هذا الوقت."**\n\nتـمت تصفيـة الدانجـون بنجـاح، فالتسجـل امبراطوريتـنـا اسمأئكـم بين العظمـاء!`)
+            .setColor(Colors.Gold)
+            .setImage('https://i.postimg.cc/Hx8d7XpD/morax.jpg') 
+            .setTimestamp();
+
+        const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
+
+        try {
+            await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
+        } catch (err) {
+            console.log("⚠️ تعذر إرسال رسالة الفوز (الثريد محذوف).");
+        }
+
+        await handleLeaderRetreat(alivePlayers, sql, guild.id);
+        
+        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
     }
-} // End of For Loop
-
-const alivePlayers = players.filter(p => !p.isDead);
-if (alivePlayers.length > 0) {
-    
-    deleteDungeonState(sql, threadChannel.id);
-    statusCollector.stop(); 
-
-    const winEmbed = new EmbedBuilder()
-        .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
-        .setDescription(`**"أحسنتـم... لم أتوقع أن تصمدوا أمامي لكل هذا الوقت."**\n\nتـمت تصفيـة الدانجـون بنجـاح، فالتسجـل امبراطوريتـنـا اسمأئكـم بين العظمـاء!`)
-        .setColor(Colors.Gold)
-        .setImage('https://i.postimg.cc/Hx8d7XpD/morax.jpg') 
-        .setTimestamp();
-
-    const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
-
-    try {
-        await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
-    } catch (err) {
-        console.log("⚠️ تعذر إرسال رسالة الفوز (الثريد محذوف).");
-    }
-
-    await handleLeaderRetreat(alivePlayers, sql, guild.id);
-    
-    await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
-}
 
 } // End of runDungeon function
 
