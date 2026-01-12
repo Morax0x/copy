@@ -34,7 +34,7 @@ try {
 try {
     const { registerFont } = require('canvas');
     const beinPath = path.join(__dirname, 'fonts', 'bein-ar-normal.ttf');
-     
+      
     if (fs.existsSync(beinPath)) {
         registerFont(beinPath, { family: 'Bein' });
         console.log(`[Fonts] ✅ تم تحميل خط النصوص: Bein`);
@@ -102,6 +102,9 @@ try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giv
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
 
+// ✅✅✅ إضافة جدول التذاكر (Dungeon Stats) لضمان عمله من البداية ✅✅✅
+try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
+
 // 🔥 إضافة جدول منع اللفل (XP Ignore) [التحديث الجديد] 🔥
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS xp_ignore (guildID TEXT, id TEXT, type TEXT, PRIMARY KEY (guildID, id))").run(); } catch(e) {}
 
@@ -166,7 +169,7 @@ client.generateQuestAlert = generateQuestAlert;
 
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
-     
+      
     // 🔥🔥🔥 تعديل استعلام INSERT ليشمل lastRace 🔥🔥🔥
     client.setLevel = sql.prepare(`
         INSERT OR REPLACE INTO levels (
@@ -185,7 +188,7 @@ if (sql.open) {
             @lastRace
         );
     `);
-     
+      
     // 🔥🔥🔥 تعديل البيانات الافتراضية لتشمل lastRace 🔥🔥🔥
     client.defaultData = { 
         user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
@@ -200,13 +203,13 @@ if (sql.open) {
 
     client.getDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?");
     client.setDailyStats = sql.prepare("INSERT OR REPLACE INTO user_daily_stats (id, userID, guildID, date, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps, boost_channel_reactions) VALUES (@id, @userID, @guildID, @date, @messages, @images, @stickers, @emojis_sent, @reactions_added, @replies_sent, @mentions_received, @vc_minutes, @water_tree, @counting_channel, @meow_count, @streaming_minutes, @disboard_bumps, @boost_channel_reactions);");
-     
+      
     client.getWeeklyStats = sql.prepare("SELECT * FROM user_weekly_stats WHERE id = ?");
     client.setWeeklyStats = sql.prepare("INSERT OR REPLACE INTO user_weekly_stats (id, userID, guildID, weekStartDate, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps) VALUES (@id, @userID, @guildID, @weekStartDate, @messages, @images, @stickers, @emojis_sent, @reactions_added, @replies_sent, @mentions_received, @vc_minutes, @water_tree, @counting_channel, @meow_count, @streaming_minutes, @disboard_bumps);");
-     
+      
     client.getTotalStats = sql.prepare("SELECT * FROM user_total_stats WHERE id = ?");
     client.setTotalStats = sql.prepare("INSERT OR REPLACE INTO user_total_stats (id, userID, guildID, total_messages, total_images, total_stickers, total_emojis_sent, total_reactions_added, total_replies_sent, total_mentions_received, total_vc_minutes, total_disboard_bumps) VALUES (@id, @userID, @guildID, @total_messages, @total_images, @total_stickers, @total_emojis_sent, @total_reactions_added, @total_replies_sent, @total_mentions_received, @total_vc_minutes, @total_disboard_bumps);");
-     
+      
     client.getQuestNotif = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?");
     client.setQuestNotif = sql.prepare("INSERT OR REPLACE INTO quest_notifications (id, userID, guildID, dailyNotif, weeklyNotif, achievementsNotif, levelNotif) VALUES (@id, @userID, @guildID, @dailyNotif, @weeklyNotif, @achievementsNotif, @levelNotif);");
 }
@@ -315,12 +318,12 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
     try {
         await client.checkAndAwardLevelRoles(member, newLevel);
         const guild = member.guild;
-         
+          
         // جلب الإعدادات أولاً للتحقق من الكازينو
         let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id);
-         
+          
         let channelToSend = null;
-         
+          
         // 1. التحقق من وجود روم مخصص للفل (أولوية قصوى)
         try {
             let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id);
@@ -349,7 +352,7 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
                 return;
             }
         }
-         
+          
         let levelUpContent = null;
         let embed;
         if (customSettings && customSettings.lvlUpTitle) {
@@ -403,7 +406,7 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
         let currentProgress = 0;
         const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.id, member.guild.id);
         const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-         
+          
         if (!totalStatsData) totalStatsData = client.getTotalStats.get(`${member.id}-${member.guild.id}`) || {};
         totalStatsData = client.safeMerge(totalStatsData, defaultTotalStats); 
 
@@ -480,7 +483,7 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
 
         if (dailyStats.hasOwnProperty(stat)) dailyStats[stat] = (dailyStats[stat] || 0) + amount;
         if (weeklyStats.hasOwnProperty(stat)) weeklyStats[stat] = (weeklyStats[stat] || 0) + amount;
-         
+          
         if (stat === 'disboard_bumps') totalStats.total_disboard_bumps = (totalStats.total_disboard_bumps || 0) + amount;
         if (stat === 'messages') totalStats.total_messages = (totalStats.total_messages || 0) + amount;
         if (stat === 'images') totalStats.total_images = (totalStats.total_images || 0) + amount;
@@ -490,7 +493,7 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         if (stat === 'replies_sent') totalStats.total_replies_sent = (totalStats.total_replies_sent || 0) + amount;
         if (stat === 'mentions_received') totalStats.total_mentions_received = (totalStats.total_mentions_received || 0) + amount;
         if (stat === 'vc_minutes') totalStats.total_vc_minutes = (totalStats.total_vc_minutes || 0) + amount;
-             
+              
         client.setDailyStats.run(dailyStats);
         client.setWeeklyStats.run(weeklyStats);
         client.setTotalStats.run({
@@ -718,7 +721,7 @@ async function updateRainbowRoles(client) {
 // ==================================================================
 client.on(Events.ClientReady, async () => { 
     console.log(`✅ Logged in as ${client.user.username}`);
-     
+      
     await autoJoin(client);
     await initGiveaways(client);
 
@@ -752,14 +755,14 @@ client.on(Events.ClientReady, async () => {
             }
         } catch (err) { console.error(`[Load Error] ${file}:`, err.message); }
     }
-     
+      
     try { 
         console.log(`🧹 تنظيف أوامر السيرفر: ${MAIN_GUILD_ID}`);
         await rest.put(Routes.applicationGuildCommands(client.user.id, MAIN_GUILD_ID), { body: [] });
 
         console.log(`🚀 جاري تسجيل ${commands.length} أمر عالمياً...`);
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-         
+          
         console.log(`✅ تم التحديث العالمي بنجاح!`); 
     } catch (error) { console.error("[Deploy Error]", error); }
 
@@ -769,7 +772,7 @@ client.on(Events.ClientReady, async () => {
 
     setInterval(updateMarketPrices, 60 * 60 * 1000); 
     updateMarketPrices(); 
-     
+      
     setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); 
 
     setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); 
@@ -817,7 +820,7 @@ client.on(Events.ClientReady, async () => {
                     }
                 }
             } catch (err) { console.error("[Bump Notify Error]", err); }
-             
+              
             // تصفير الوقت لمنع التكرار
             sql.prepare("UPDATE settings SET nextBumpTime = 0 WHERE guild = ?").run(row.guild);
         }
@@ -856,9 +859,9 @@ client.on(Events.ClientReady, async () => {
             lastReminderSentHour = ksaHour; 
         } else if (ksaHour !== 15) lastReminderSentHour = -1; 
     }, 60000); 
-     
+      
     const lastRandomGiveawayDate = new Map(); setInterval(async () => { const today = new Date().toISOString().split('T')[0]; const now = Date.now(); for (const guild of client.guilds.cache.values()) { const guildID = guild.id; if (lastRandomGiveawayDate.get(guildID) === today) continue; const guildTimestamps = client.recentMessageTimestamps.get(guildID) || []; while (guildTimestamps.length > 0 && guildTimestamps[0] < (now - RECENT_MESSAGE_WINDOW)) { guildTimestamps.shift(); } const totalMessagesLast2Hours = guildTimestamps.length; if (totalMessagesLast2Hours < 200) continue; const roll = Math.random(); if (roll < 0.10) { try { const success = await createRandomDropGiveaway(client, guild); if (success) { lastRandomGiveawayDate.set(guildID, today); console.log(`[DropGA] Success: ${guild.name}`); } } catch (err) { console.error(`[DropGA] Error:`, err.message); } } } }, 30 * 60 * 1000); 
-     
+      
     // 🔥🔥🔥 المكنسة التلقائية (الحل الجذري للتعليق) 🔥🔥🔥
     setInterval(() => {
         try {
@@ -877,7 +880,7 @@ client.on(Events.ClientReady, async () => {
             if (client.raceTimestamps && client.raceTimestamps.size > 0) {
                 client.raceTimestamps.clear();
             }
-             
+              
             // 4. تنظيف قفل السوق (احتياطاً)
             if (client.marketLocks && client.marketLocks.size > 0) {
                  client.marketLocks.clear();
