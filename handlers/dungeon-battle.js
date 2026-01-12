@@ -816,9 +816,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
                     } catch (error) { console.error(error); } finally { processingUsers.delete(i.user.id); }
                 });
-            });
-            collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
-        });
+                
+                collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
+            }); // ✅ تم تصحيح إغلاق الـ Promise هنا
+
+        }
 
         if (monster.hp <= 0) { 
             ongoing = false; 
@@ -874,7 +876,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         statusCollector.stop(); 
         await handleTeamWipe(players, floor, sql, guild.id);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-        break;
+        return; // ✅ Return here to stop execution
     }
       
     let baseMora = Math.floor(getBaseFloorMora(floor));
@@ -1124,7 +1126,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
     }
-}
+} // End of For Loop
 
 const alivePlayers = players.filter(p => !p.isDead);
 if (alivePlayers.length > 0) {
@@ -1152,6 +1154,6 @@ if (alivePlayers.length > 0) {
     await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
 }
 
-} 
+} // End of runDungeon function
 
 module.exports = { runDungeon };
