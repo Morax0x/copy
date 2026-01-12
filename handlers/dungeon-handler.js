@@ -34,7 +34,7 @@ async function startDungeon(interaction, sql) {
 
     const randomKey = themeKeys[Math.floor(Math.random() * themeKeys.length)];
     const selectedTheme = { ...dungeonConfig.themes[randomKey], key: randomKey };
-     
+      
     activeDungeonRequests.set(user.id, { status: 'lobby' });
 
     try {
@@ -49,7 +49,7 @@ async function startDungeon(interaction, sql) {
 async function lobbyPhase(interaction, oldMsg, theme, sql) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
-     
+      
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
@@ -83,9 +83,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
-     
+      
     if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
-     
+      
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async i => {
@@ -113,10 +113,20 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         
                         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
+                        // ============================================================
+                        // ✅✅✅ التعديل هنا: رسالة نفاد التذاكر الجديدة ✅✅✅
+                        // ============================================================
+                        const noTicketsEmbed = new EmbedBuilder()
+                            .setTitle('✥ نفـدت تـذاكـرك !')
+                            .setColor('#6A50D4')
+                            .setThumbnail('https://i.postimg.cc/8zsLBW6F/ti.png')
+                            .setDescription(`★ نفدت تذاكرك ايها المحـارب (${limitCheck.tickets}/${limitCheck.max})\n★ انتظر حتى تصرف لك نقابة المغامرين التذاكر الجديدة\n\n✶ موعد صرف التذاكر الجديدة: <t:${timestamp}:R>`);
+
                         return i.reply({ 
-                            content: `🚫 **استنفذت محاولاتك اليومية!**\nلديك **0/${limitCheck.max}** محاولة.\nتتجدد المحاولات يومياً الساعة 12:00 ص بتوقيت السعودية.\n⏳ **الوقت المتبقي:** <t:${timestamp}:R>`, 
+                            embeds: [noTicketsEmbed], 
                             flags: [MessageFlags.Ephemeral] 
                         });
+                        // ============================================================
                     }
                 }
 
@@ -124,7 +134,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 partyClasses.forEach((c, u) => { if(u !== i.user.id) takenClasses.push(c); });
                 const opts = [];
                 const addOpt = (v, l, e) => { if(!takenClasses.includes(v)) opts.push(new StringSelectMenuOptionBuilder().setLabel(l).setValue(v).setEmoji(e)); };
-                 
+                  
                 addOpt('Tank', 'المُدرّع', '🛡️'); 
                 addOpt('Priest', 'الكاهن', '✨'); 
                 addOpt('Mage', 'الساحر', '❄️'); 
@@ -151,7 +161,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                     
                     partyClasses.set(i.user.id, chosen);
                     if (!party.includes(i.user.id)) party.push(i.user.id);
-                     
+                      
                     await sel.editReply({ content: `✅ تم: **${chosen}**`, components: [] }).catch(()=>{});
                     await msg.edit({ embeds: [updateEmbed()] }).catch(()=>{});
                 } else {
