@@ -656,15 +656,24 @@ async function _handleShopButton(i, client, sql) {
 
         const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
         if (RESTRICTED_ITEMS.includes(item.id)) {
+             // 1. شرط اللفل
              if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
+             
+             // 2. شرط الديون
              const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
              if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
 
+             // 3. شرط الستريك (معدل)
              const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
              const currentStreak = userStreakData ? userStreakData.streakCount : 0;
              
-             if (currentStreak < 30) {
-                 return await i.reply({ content: `❌ **شرط إضافي:** يجب أن يكون الستريك الخاص بك **30 يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
+             let requiredStreak = 30; // الافتراضي للبيسك والايفكت 5$
+             if (['nitro_gaming', 'discord_effect_10'].includes(item.id)) {
+                 requiredStreak = 50; // رفع الشرط للقيمنق والايفكت 10$
+             }
+             
+             if (currentStreak < requiredStreak) {
+                 return await i.reply({ content: `❌ **شرط إضافي:** يجب أن يكون الستريك الخاص بك **${requiredStreak} يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
              }
         }
 
