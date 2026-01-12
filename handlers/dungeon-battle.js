@@ -49,7 +49,7 @@ const {
     generateBattleRows 
 } = require('./dungeon/ui');
 
-// ✅ استدعاء محرك الأسلحة الموحد
+// ✅✅✅ استدعاء محرك الأسلحة الموحد (Weapon Calculator) ✅✅✅
 const weaponCalculator = require('./combat/weapon-calculator');
 
 const { triggerMimicChest } = require('./dungeon/mimic-chest');
@@ -145,8 +145,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const maxFloors = 100; 
 
     // ============================================================
-    // 🔥 مراقب الرسائل لكشف الحالة
+    // 🔥 مراقب الرسائل لكشف الحالة (تم التحديث)
     // ============================================================
+    
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
     const statusCollector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
@@ -164,16 +165,28 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const empty = 10 - filled;
         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
-        const classMap = { 'Warrior': 'محارب', 'Tank': 'مدافع', 'Priest': 'كاهن', 'Mage': 'ساحر', 'Assassin': 'سفاح', 'Leader': 'قائد' };
+        // ترجمة الكلاسات للعربية
+        const classMap = {
+            'Warrior': 'محارب',
+            'Tank': 'مدافع',
+            'Priest': 'كاهن',
+            'Mage': 'ساحر',
+            'Assassin': 'سفاح',
+            'Leader': 'قائد'
+        };
         const arClass = classMap[player.class] || player.class;
+
         let msgContent = `👤 **${player.name}** [${arClass}]\n[${bar}] ❤️ **${player.hp}/${player.maxHp}**`;
-        if (player.shield > 0) msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
+        
+        // إضافة الدرع إذا وجد
+        if (player.shield > 0) {
+            msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
+        }
+
         await m.reply({ content: msgContent }).catch(()=>{});
     });
+    // ============================================================
 
-    // ============================================================
-    // بداية حلقة الطوابق
-    // ============================================================
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -206,7 +219,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             try {
                 await threadChannel.send(`⏩ **انتقال سريع!** تم القفز من الطابق ${oldFloor} إلى ${floor}.`);
             } catch (err) {
-                console.log("Error sending message:", err.message);
+                console.log("Error sending message (Unknown Channel likely):", err.message);
                 break; 
             }
             
@@ -226,13 +239,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // ============================================================
-        // ✅ منطق الختم
+        // ✅ منطق الختم المعدل (يعمل للأحياء والأموات)
         // ============================================================
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.sealMultiplier = 0.5;
-                    if (!p.isDead) {
+                    p.sealMultiplier = 0.5; // تحديث القوة للجميع
+                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
                         threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
                     }
                 }
@@ -241,9 +254,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 19) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.isSealed = false;
-                    p.sealMultiplier = 1.0;
-                    if (!p.isDead) {
+                    p.isSealed = false;      // إزالة الختم للجميع
+                    p.sealMultiplier = 1.0;  // استعادة القوة الكاملة
+                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
                         threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                     }
                 }
@@ -270,8 +283,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                 p.startingShield = 0; 
                 
+                // ✅✅✅ السماح بمرور تأثيرات الميميك (سم، حرق، تجميد) ✅✅✅
                 p.effects = p.effects.filter(e => 
-                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion', 'crit_buff', 'luck_buff'].includes(e.type)
+                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion'].includes(e.type)
                 );
                 
                 p.defending = false; 
@@ -373,7 +387,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let battleMsg;
         try {
             battleMsg = await threadChannel.send({ 
-                content: '', 
+                content: '', // ✅ تم إزالة النص
                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
                 components: generateBattleRows() 
             });
@@ -382,9 +396,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
-        // ============================================================
-        // حلقة المعركة (Battle Loop)
-        // ============================================================
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
@@ -458,11 +469,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
                         await battleMsg.edit({ 
-                            content: '', 
+                            content: '', // ✅ تم إزالة النص
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
-                        // ✅ إنهاء الدور إذا الكل لعب
                         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         return;
                     }
@@ -504,21 +514,26 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 if (dmgDealt > 0) {
                                     let cappedDmg = dmgDealt;
-                                    if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+
+                                    if (p.isSealed) {
+                                        cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+                                    }
+
                                     if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                     else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                     else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
-                                    if (cappedDmg < 30) cappedDmg = 30;
-                                    
-                                    monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
 
-                                    if (log.length > 0) {
-                                        const lastLogIdx = log.length - 1;
-                                        if (cappedDmg !== dmgDealt) {
-                                             log[lastLogIdx] = log[lastLogIdx].replace(dmgDealt.toString(), cappedDmg.toString());
-                                             if (p.isSealed) log[lastLogIdx] += ` (مختوم)`;
-                                             else if (cappedDmg > dmgDealt) log[lastLogIdx] += ` (⬆️)`; 
-                                             else log[lastLogIdx] += ` (⬇️)`; 
+                                    // 🔥🔥🔥 التصحيح الحاسم: فقط نعيد القيمة الزائدة للوحش 🔥🔥🔥
+                                    // إذا الدمج الفعلي (dmgDealt) أكبر من السقف (cappedDmg)
+                                    // يعني أننا خصمنا أكثر من اللازم
+                                    if (dmgDealt > cappedDmg) {
+                                        const difference = dmgDealt - cappedDmg;
+                                        monster.hp += difference; // نرجع الفرق للوحش
+                                        
+                                        // تعديل اللوج
+                                        if (log.length > 0) {
+                                            const lastLogIdx = log.length - 1;
+                                            log[lastLogIdx] = log[lastLogIdx] + ` (مختوم: ${cappedDmg})`; 
                                         }
                                     }
                                 }
@@ -537,7 +552,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: '', 
+                                    content: '', // ✅ تم إزالة النص
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -560,8 +575,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
-                                // ✅ إنهاء الدور إذا الكل لعب
-                                if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
 
@@ -685,7 +698,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: '', 
+                                    content: '', // ✅ تم إزالة النص
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -714,10 +727,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
-                                // ✅ إنهاء الدور إذا الكل لعب
-                                if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
+
                             } catch (err) { processingUsers.delete(i.user.id); return; }
                         } 
                         else if (i.customId === 'atk' || i.customId === 'def') {
@@ -738,40 +750,41 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
                                 if (canAttack) {
                                     const isOwner = p.id === OWNER_ID;
+                                    
+                                    // 🟢 حفظ دم الوحش قبل الضربة
                                     const monsterHpBefore = monster.hp;
+                                    
+                                    // استدعاء محرك الأسلحة
                                     const result = weaponCalculator.executeWeaponAttack(p, monster, isOwner);
                                     
-                                    let finalDmg = result.damage;
-                                    const atkBuff = p.effects.find(e => e.type === 'atk_buff');
-                                    if (atkBuff) finalDmg = Math.floor(finalDmg * (1 + atkBuff.val));
-                                    const critBuff = p.effects.find(e => e.type === 'crit_buff');
-                                    if (critBuff) finalDmg = Math.floor(finalDmg * 1.5);
-                                    const weakness = monster.effects.find(e => e.type === 'weakness');
-                                    if (weakness) finalDmg = Math.floor(finalDmg * (1 + weakness.val));
+                                    // 🟢🟢🟢 تطبيق الختم (تصحيح المنطق فقط) 🟢🟢🟢
+                                    const dmgDealt = monsterHpBefore - monster.hp;
 
-                                    if (finalDmg > 0) {
-                                        let cappedDmg = finalDmg;
+                                    if (dmgDealt > 0) {
+                                        let cappedDmg = dmgDealt;
+
                                         if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
-                                        if (cappedDmg < 30) cappedDmg = 30;
+
                                         if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                         else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                         else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
 
-                                        monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
-                                        
-                                        result.log = result.log.replace(result.damage.toString(), cappedDmg.toString());
-                                        if (p.isSealed) result.log += ` (مختوم)`;
-                                        else if (cappedDmg > result.damage) result.log += ` (⬆️)`;
-                                        else if (cappedDmg < result.damage) result.log += ` (⬇️)`;
-
-                                        log.push(result.log);
-                                        let threatGen = cappedDmg; 
-                                        if (p.class === 'Tank') threatGen *= 3; 
-                                        p.threat = (p.threat || 0) + threatGen;
-                                        checkBossPhase(monster, log);
-                                    } else {
-                                        log.push(result.log);
+                                        // 🔥 إذا تجاوز السقف، نضبط الدم ليكون (الدم القديم - الختم) 🔥
+                                        if (cappedDmg < dmgDealt) {
+                                            monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
+                                            
+                                            // تعديل اللوج
+                                            result.log = result.log.replace(result.damage.toString(), cappedDmg.toString());
+                                            if (p.isSealed || cappedDmg < dmgDealt) result.log += ` (مختوم)`;
+                                        }
                                     }
+
+                                    log.push(result.log);
+                                    let threatGen = dmgDealt; 
+                                    if (p.class === 'Tank') threatGen *= 3; 
+                                    p.threat = (p.threat || 0) + threatGen;
+
+                                    checkBossPhase(monster, log);
                                 }
                             } else if (i.customId === 'def') {
                                 p.defending = true; log.push(`🛡️ **${p.name}** يدافع!`);
@@ -779,10 +792,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                             }
                              
                             await battleMsg.edit({ 
-                                content: '', 
+                                content: '', // ✅ تم إزالة النص
                                 embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                             }).catch(()=>{});
 
+                            // فحص الموت
                             const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
                             if (deadThisTurn.length > 0) {
                                 for (const deadP of deadThisTurn) {
@@ -800,75 +814,73 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 }
                             }
 
-                            // ✅ إنهاء الدور إذا الكل لعب
-                            if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
+                            if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
+                            if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
                         }
 
-                        if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
-                        if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
+                        if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
+                            clearTimeout(turnTimeout); collector.stop('turn_end'); 
+                        }
                     } catch (error) { console.error(error); } finally { processingUsers.delete(i.user.id); }
                 });
-                
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
-            }); 
+            });
 
-        }
+            if (monster.hp <= 0) { 
+                ongoing = false; 
+                await battleMsg.edit({ 
+                    content: `**☠️ سقط الوحش!**`,
+                    components: [] 
+                }).catch(()=>{}); 
+            }
 
-        if (monster.hp <= 0) { 
-            ongoing = false; 
-            await battleMsg.edit({ 
-                content: `**☠️ سقط الوحش!**`,
-                components: [] 
-            }).catch(()=>{}); 
-        }
-
-        players.forEach(p => { 
-            for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
-            if (p.special_cooldown > 0) p.special_cooldown--; 
-            
-            p.effects = p.effects.filter(e => { 
-                if (e.floors) { 
+            players.forEach(p => { 
+                for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
+                if (p.special_cooldown > 0) p.special_cooldown--; 
+                
+                p.effects = p.effects.filter(e => { 
+                    if (e.floors) { 
+                        return true; 
+                    }
+                    e.turns--; 
+                    if (e.turns <= 0) return false; 
                     return true; 
-                }
-                e.turns--; 
-                if (e.turns <= 0) return false; 
-                return true; 
-            });
-        });
-
-        if (turnCount % 3 === 0 && ongoing) {
-            try {
-                await battleMsg.delete();
-                battleMsg = await threadChannel.send({ 
-                    content: '', 
-                    embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
-                    components: generateBattleRows() 
                 });
-            } catch(e) { return; } 
-        }
-
-        if (monster.hp > 0 && ongoing) {
-            turnCount++;
-            saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
-                floor, players, merchantState, retreatedPlayers, isTrapActive,
-                retreatState, 
-                loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
-                themeName: theme.name,
-                monsterData: monster
             });
 
-            ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
-            if (ongoing) handleLeaderSuccession(players, log);
+            if (turnCount % 3 === 0 && ongoing) {
+                try {
+                    await battleMsg.delete();
+                    battleMsg = await threadChannel.send({ 
+                        content: '', // ✅ تم إزالة النص
+                        embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
+                        components: generateBattleRows() 
+                    });
+                } catch(e) { break; }
+            }
+
+            if (monster.hp > 0 && ongoing) {
+                turnCount++;
+                saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
+                    floor, players, merchantState, retreatedPlayers, isTrapActive,
+                    retreatState, 
+                    loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
+                    themeName: theme.name,
+                    monsterData: monster
+                });
+
+                ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
+                if (ongoing) handleLeaderSuccession(players, log);
+            }
         }
-        // ✅ تم حذف القوس الزائد هنا
-    
+
         if (players.every(p => p.isDead)) {
             const finalFloor = isTrapActive ? trapStartFloor : floor;
             deleteDungeonState(sql, threadChannel.id); 
-            statusCollector.stop(); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            return; 
+            break;
         }
           
         let baseMora = Math.floor(getBaseFloorMora(floor));
@@ -877,33 +889,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins += baseMora;
         totalAccumulatedXP += floorXp;
 
-        // ==========================================
-        // 🛡️ نقاط الأمان والمكافآت (Checkpoints)
-        // ==========================================
-
         if (floor === 20) {
             snapshotLootAtFloor20(players);
-            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان (20)!** تم حفظ الغنائم حتى هذه اللحظة.`).catch(()=>{});
-        }
-
-        if (floor === 50) {
-            snapshotLootAtFloor20(players); 
-            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان كـبـرى (50)!**\nاستعدوا.. ما بعد هذا الطابق هو الجحيم الحقيقي!`).catch(()=>{});
-        }
-
-        if (floor === 51) {
-            players.forEach(p => {
-                if (!p.isDead) {
-                    const hpBonus = Math.floor(p.maxHp * 0.50);
-                    p.maxHp += hpBonus;
-                    p.hp += hpBonus; 
-                    p.effects.push({ type: 'atk_buff', val: 0.30, turns: 999 });
-                }
-            });
-
-            await threadChannel.send({
-                content: `⚡ **ارتقاء الأبطال!** ⚡\nبسبب تجاوزكم منتصف الدانجون، زادت قوتكم بشكل هائل لمواجهة المخاطر القادمة:\n❤️ **+50% Max HP**\n⚔️ **+30% Attack Damage**`
-            }).catch(()=>{});
+            await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان!**`).catch(()=>{});
         }
 
         players.forEach(p => {
@@ -929,6 +917,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         });
 
+        // ==========================================
+        // ❖ منطقة الاستراحة (Floor Rest) ❖
+        // ==========================================
+        
         let canRetreat = false;
 
         if (floor <= 20) {
@@ -974,7 +966,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                  restDesc += `\n\n✥ **تحذيـر:** المنطقة خطرة - الانسحاب غير متاح في هذا الطابق!`;
              }
         } else {
-            restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
+             restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب!`;
         }
 
         if (canRetreat) {
@@ -994,7 +986,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         let restMsg;
         try {
             restMsg = await threadChannel.send({ 
-                content: '', 
+                content: '', // ✅ تم إزالة النص
                 embeds: [restEmbed], 
                 components: [restRow] 
             });
@@ -1057,14 +1049,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
             await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
             
-            statusCollector.stop(); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             return; 
         } 
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
-            statusCollector.stop(); 
+            statusCollector.stop(); // 🔥 إيقاف المراقب
             await handleLeaderRetreat(players, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
             return;
@@ -1073,8 +1065,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
                 isTrapActive = true;
                 trapStartFloor = floor;
+                // 🔥🔥🔥 تعديل الحد الأقصى للقفز ليكون 90 بدلاً من 95 لضمان عدم الوصول للطابق 100 فجأة 🔥🔥🔥
                 const minTarget = floor + 2;
-                const maxTarget = 90; 
+                const maxTarget = 90; // تعديل لضمان قتال الطوابق 91-100
                 const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
                 floor = targetFloor - 1; 
 
@@ -1118,13 +1111,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
             }
         }
-    } // ✅ End of For Loop
+    }
 
     const alivePlayers = players.filter(p => !p.isDead);
     if (alivePlayers.length > 0) {
         
         deleteDungeonState(sql, threadChannel.id);
-        statusCollector.stop(); 
+        statusCollector.stop(); // 🔥 إيقاف المراقب
 
         const winEmbed = new EmbedBuilder()
             .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
@@ -1135,6 +1128,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
 
+        // 🔥🔥🔥 الحماية من خطأ Unknown Channel 🔥🔥🔥
         try {
             await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
         } catch (err) {
@@ -1143,9 +1137,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         await handleLeaderRetreat(alivePlayers, sql, guild.id);
         
+        // إرسال التقرير للقناة الرئيسية حتى لو الثريد محذوف
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
     }
 
-} // End of runDungeon function
+} 
 
 module.exports = { runDungeon };
