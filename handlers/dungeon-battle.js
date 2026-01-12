@@ -172,9 +172,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         await m.reply({ content: msgContent }).catch(()=>{});
     });
 
-    // ============================================================
-    // بداية حلقة الطوابق (The Main Loop)
-    // ============================================================
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -545,7 +542,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
                                 
                                 await battleMsg.edit({ 
-                                    content: '', 
+                                    content: '', // ✅ تم إزالة النص
                                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                                 }).catch(()=>{});
 
@@ -568,6 +565,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
+                                if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
 
@@ -720,6 +718,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                                 
+                                if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                                 if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
                                 if (monster.hp <= 0) { monster.hp = 0; ongoing = false; collector.stop('monster_dead'); return; }
                             } catch (err) { processingUsers.delete(i.user.id); return; }
@@ -813,6 +812,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     }
                                 }
                             }
+
+                            // ✅✅✅ هذا هو السطر المفقود الذي كان يسبب المشكلة! ✅✅✅
+                            if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
                         }
 
                         if (players.every(p => p.isDead)) { ongoing = false; collector.stop('all_dead'); return; }
@@ -871,8 +873,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
             if (ongoing) handleLeaderSuccession(players, log);
         }
-        
-    // ✅ هنا تم إزالة القوس المغلق الزائد الذي كان ينهي حلقة الـ for مبكراً
+    } // ✅ End of For Loop
 
     if (players.every(p => p.isDead)) {
         const finalFloor = isTrapActive ? trapStartFloor : floor;
@@ -1010,7 +1011,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             embeds: [restEmbed], 
             components: [restRow] 
         });
-    } catch (err) { break; } // ✅ الآن هذا الكود صحيح لأنه داخل حلقة الـ for
+    } catch (err) { break; }
 
     const warningTimeout = setTimeout(() => {
         threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
@@ -1130,7 +1131,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             }
         }
     }
-} // ✅ End of For Loop (هنا ينتهي اللوب بشكل صحيح)
+} // End of runDungeon function
 
 const alivePlayers = players.filter(p => !p.isDead);
 if (alivePlayers.length > 0) {
