@@ -911,7 +911,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (players.every(p => p.isDead)) {
         const finalFloor = isTrapActive ? trapStartFloor : floor;
         deleteDungeonState(sql, threadChannel.id); 
-        statusCollector.stop(); // 🔥 إيقاف المراقب
+        statusCollector.stop(); 
         await handleTeamWipe(players, floor, sql, guild.id);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
         break;
@@ -927,28 +927,22 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     // 🛡️ نقاط الأمان والمكافآت (Checkpoints)
     // ==========================================
 
-    // نقطة الأمان الأولى (الطابق 20)
     if (floor === 20) {
         snapshotLootAtFloor20(players);
         await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان (20)!** تم حفظ الغنائم حتى هذه اللحظة.`).catch(()=>{});
     }
 
-    // 🔥 نقطة الأمان الثانية (الطابق 50) + تعزيز القوة 🔥
     if (floor === 50) {
         snapshotLootAtFloor20(players); 
         await threadChannel.send(`🛡️ **نـقـــطـــة أمـــــان كـبـرى (50)!**\nاستعدوا.. ما بعد هذا الطابق هو الجحيم الحقيقي!`).catch(()=>{});
     }
 
-    // عند دخول الطابق 51: منح القوة الخارقة
     if (floor === 51) {
         players.forEach(p => {
             if (!p.isDead) {
-                // 1. زيادة الصحة القصوى 50%
                 const hpBonus = Math.floor(p.maxHp * 0.50);
                 p.maxHp += hpBonus;
-                p.hp += hpBonus; // شفاء بمقدار الزيادة
-
-                // 2. زيادة الهجوم 30% (كـ Buff دائم لا ينتهي)
+                p.hp += hpBonus; 
                 p.effects.push({ type: 'atk_buff', val: 0.30, turns: 999 });
             }
         });
@@ -981,10 +975,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
     });
 
-    // ==========================================
-    // ❖ منطقة الاستراحة (Floor Rest) ❖
-    // ==========================================
-    
     let canRetreat = false;
 
     if (floor <= 20) {
@@ -1050,7 +1040,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let restMsg;
     try {
         restMsg = await threadChannel.send({ 
-            content: '', // ✅ تم إزالة النص
+            content: '', 
             embeds: [restEmbed], 
             components: [restRow] 
         });
@@ -1113,14 +1103,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
         
-        statusCollector.stop(); // 🔥 إيقاف المراقب
+        statusCollector.stop(); 
         await handleTeamWipe(players, floor, sql, guild.id);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
         return; 
     } 
     else if (decision === 'retreat') {
         deleteDungeonState(sql, threadChannel.id); 
-        statusCollector.stop(); // 🔥 إيقاف المراقب
+        statusCollector.stop(); 
         await handleLeaderRetreat(players, sql, guild.id);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
         return;
@@ -1129,9 +1119,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor > 10 && floor < 90 && Math.random() < 0.0002) { 
             isTrapActive = true;
             trapStartFloor = floor;
-            // 🔥🔥🔥 تعديل الحد الأقصى للقفز ليكون 90 بدلاً من 95 لضمان عدم الوصول للطابق 100 فجأة 🔥🔥🔥
             const minTarget = floor + 2;
-            const maxTarget = 90; // تعديل لضمان قتال الطوابق 91-100
+            const maxTarget = 90; 
             const targetFloor = Math.floor(Math.random() * (maxTarget - minTarget + 1)) + minTarget;
             floor = targetFloor - 1; 
 
@@ -1181,7 +1170,7 @@ const alivePlayers = players.filter(p => !p.isDead);
 if (alivePlayers.length > 0) {
     
     deleteDungeonState(sql, threadChannel.id);
-    statusCollector.stop(); // 🔥 إيقاف المراقب
+    statusCollector.stop(); 
 
     const winEmbed = new EmbedBuilder()
         .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
@@ -1192,7 +1181,6 @@ if (alivePlayers.length > 0) {
 
     const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
 
-    // 🔥🔥🔥 الحماية من خطأ Unknown Channel 🔥🔥🔥
     try {
         await threadChannel.send({ content: `🎉 ${mentions}`, embeds: [winEmbed] });
     } catch (err) {
@@ -1201,7 +1189,6 @@ if (alivePlayers.length > 0) {
 
     await handleLeaderRetreat(alivePlayers, sql, guild.id);
     
-    // إرسال التقرير للقناة الرئيسية حتى لو الثريد محذوف
     await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
 }
 
