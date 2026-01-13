@@ -265,6 +265,7 @@ module.exports = {
                     const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
+                        // --- السيناريو الأول: العفو (أول مرة) ---
                         robberData.mora += 100;
                         robberyPardons.set(robber.id, todayDate);
 
@@ -282,16 +283,15 @@ module.exports = {
                         await i.update({ embeds: [pardonEmbed], components: [] });
 
                     } else {
-                        deductFromRobber(robberData, amountToSteal);
-                        victimData.mora += amountToSteal;
-
-                        const loseEmbed = new EmbedBuilder()
-                            .setTitle('❖ الـسـجـن !')
-                            .setColor(Colors.Red)
-                            .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                            .setDescription(`حـاولت السـطو علـى قلعة الامبراطـور مرتيـن باليـوم!\n قبـض عليك الحـراس وغرمـوك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} لجرأتك`);
+                        // --- السيناريو الثاني: الفشل بعد العفو (تفعيل الحارس) ---
+                        // 🔥 هنا يتم استدعاء الحارس بدلاً من الخسارة المباشرة 🔥
                         
-                        await i.update({ embeds: [loseEmbed], components: [] });
+                        // 1. حذف رسالة الأبواب لتنظيف الشات ومنع التفاعل الإضافي
+                        await msg.delete().catch(() => {});
+
+                        // 2. بدء معركة الحارس الخاصة بالأونر
+                        const context = isSlash ? interaction : message;
+                        return await startGuardBattle(context, client, sql, robber, amountToSteal);
                     }
                 }
                 setScore.run(robberData);
@@ -357,7 +357,7 @@ module.exports = {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
             // =================================================
-            // 🔥🔥 [تم التعديل] نظام الحارس الجديد 🔥🔥
+            // 🔥🔥 [تم التعديل] نظام الحارس الجديد للأعضاء 🔥🔥
             // =================================================
             if (victimData.hasGuard > 0) {
                 // 1. خصم شحنة الحارس
