@@ -137,6 +137,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     if (!resumeData) {
         players.forEach(p => {
             if (p.isSealed) {
+                 // ✅ تصحيح 1: تهيئة المتغير عند البدء لمنع Undefined
+                 if (p.sealMultiplier === undefined || p.sealMultiplier === null) {
+                     p.sealMultiplier = 0.5;
+                 }
                  threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحـمل جبروتك`).catch(() => {});
             }
         });
@@ -516,7 +520,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let cappedDmg = dmgDealt;
 
                                     if (p.isSealed) {
-                                        cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+                                        // ✅ تصحيح 2: التحقق من وجود القيمة قبل الضرب
+                                        const multiplier = (p.sealMultiplier !== undefined && p.sealMultiplier !== null) ? p.sealMultiplier : 0.5;
+                                        cappedDmg = Math.floor(cappedDmg * multiplier);
                                     }
 
                                     if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
@@ -763,7 +769,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     if (dmgDealt > 0) {
                                         let cappedDmg = dmgDealt;
 
-                                        if (p.isSealed) cappedDmg = Math.floor(cappedDmg * p.sealMultiplier);
+                                        if (p.isSealed) {
+                                            // ✅ تصحيح 3: التحقق من وجود القيمة قبل الضرب
+                                            const multiplier = (p.sealMultiplier !== undefined && p.sealMultiplier !== null) ? p.sealMultiplier : 0.5;
+                                            cappedDmg = Math.floor(cappedDmg * multiplier);
+                                        }
 
                                         if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                         else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
