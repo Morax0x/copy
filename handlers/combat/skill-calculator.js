@@ -62,11 +62,37 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         skillPower = Math.floor(rawValue * GLOBAL_SKILL_MULTIPLIER);
     }
 
-    // 3. تطبيق البفات على قوة المهارة (للمهارات الهجومية فقط)
+    // =========================================================
+    // 🔥 3. تطبيق البفات على قوة المهارة (تم التعديل لدعم المصفوفات) 🔥
+    // =========================================================
     // لا نطبق البفات على الشفاء والدروع هنا لأنها حُسبت من الـ HP مباشرة
     if (!skill.id.includes('heal') && !skill.id.includes('shield')) {
-        if (attacker.effects && attacker.effects.buff > 0) skillPower *= (1 + attacker.effects.buff);
-        if (attacker.effects && attacker.effects.weaken > 0) skillPower *= (1 - attacker.effects.weaken);
+        let buffMultiplier = 1.0;
+
+        // أ. دعم النظام القديم (Object) - للأمان والتوافق
+        if (attacker.effects && !Array.isArray(attacker.effects)) {
+             if (attacker.effects.buff > 0) buffMultiplier += attacker.effects.buff;
+             if (attacker.effects.weaken > 0) buffMultiplier -= attacker.effects.weaken;
+        }
+
+        // ب. دعم النظام الجديد (Array - Dungeon) ✅✅✅
+        // هذا هو الجزء الذي كان ناقصاً
+        if (attacker.effects && Array.isArray(attacker.effects)) {
+            attacker.effects.forEach(e => {
+                // نجمع كل البفات من نوع atk_buff أو buff
+                if (e.type === 'atk_buff' || e.type === 'buff') {
+                    buffMultiplier += e.val;
+                }
+                // نطرح الضعف
+                if (e.type === 'weaken') {
+                    buffMultiplier -= e.val;
+                }
+            });
+        }
+        
+        // تطبيق النتيجة النهائية للمضاعف
+        // مثلاً لو عنده بف 50%، الملتيبلاير يصبح 1.5
+        skillPower = Math.floor(skillPower * buffMultiplier);
     }
     
     skillPower = Math.floor(skillPower * multiplier);
