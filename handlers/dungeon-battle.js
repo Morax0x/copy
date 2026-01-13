@@ -134,14 +134,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
 
+    // ✅ تصحيح 1: تهيئة المتغيرات عند البدء (الحل الأولي)
     if (!resumeData) {
         players.forEach(p => {
             if (p.isSealed) {
-                 // ✅ تصحيح 1: تهيئة المتغير عند البدء لمنع Undefined
-                 if (p.sealMultiplier === undefined || p.sealMultiplier === null) {
-                     p.sealMultiplier = 0.5;
-                 }
+                 p.sealMultiplier = 0.5; // تعيين قيمة صريحة
                  threadChannel.send(`✶ <@${p.id}> تـم ختـم قوتك الى الطابـق 18 لن تتمكن من استعمال قوتك جيدا, الطوابق الدنيا لا تتحـمل جبروتك`).catch(() => {});
+            } else {
+                 p.sealMultiplier = 1.0; // تعيين قيمة افتراضية للبقية
             }
         });
     }
@@ -243,13 +243,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // ============================================================
-        // ✅ منطق الختم المعدل (يعمل للأحياء والأموات)
+        // ✅ منطق الختم المعدل
         // ============================================================
         if (floor === 15) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.sealMultiplier = 0.5; // تحديث القوة للجميع
-                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                    p.sealMultiplier = 0.5; // تأكيد القيمة
+                    if (!p.isDead) { 
                         threadChannel.send(`✶ <@${p.id}> كسرت الختم بشكل جزئي عن قوتـك .. استـمر !`).catch(() => {});
                     }
                 }
@@ -258,9 +258,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 19) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.isSealed = false;      // إزالة الختم للجميع
-                    p.sealMultiplier = 1.0;  // استعادة القوة الكاملة
-                    if (!p.isDead) { // إرسال الرسالة للأحياء فقط
+                    p.isSealed = false;      
+                    p.sealMultiplier = 1.0;  
+                    if (!p.isDead) { 
                         threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                     }
                 }
@@ -520,21 +520,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                     let cappedDmg = dmgDealt;
 
                                     if (p.isSealed) {
-                                        // ✅ تصحيح 2: التحقق من وجود القيمة قبل الضرب
-                                        const multiplier = (p.sealMultiplier !== undefined && p.sealMultiplier !== null) ? p.sealMultiplier : 0.5;
-                                        cappedDmg = Math.floor(cappedDmg * multiplier);
+                                        // ✅ تصحيح 2: تأكيد القيمة داخل العملية الحسابية (Double Safety)
+                                        // إذا كانت sealMultiplier غير موجودة أو null، نستخدم 0.5 كقيمة افتراضية
+                                        const sMult = (typeof p.sealMultiplier === 'number') ? p.sealMultiplier : 0.5;
+                                        cappedDmg = Math.floor(cappedDmg * sMult);
                                     }
 
                                     if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                     else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                     else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
 
-                                    // 🔥🔥🔥 التصحيح الحاسم: فقط نعيد القيمة الزائدة للوحش 🔥🔥🔥
-                                    // إذا الدمج الفعلي (dmgDealt) أكبر من السقف (cappedDmg)
-                                    // يعني أننا خصمنا أكثر من اللازم
-                                    if (dmgDealt > cappedDmg) {
-                                        const difference = dmgDealt - cappedDmg;
-                                        monster.hp += difference; // نرجع الفرق للوحش
+                                    // 🔥 تطبيق الفرق الآمن
+                                    // بدلاً من إضافة الفرق للوحش (مما قد يسبب مشاكل في الحساب)، نعدل صحة الوحش مباشرة
+                                    if (cappedDmg < dmgDealt) {
+                                        monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
                                         
                                         // تعديل اللوج
                                         if (log.length > 0) {
@@ -770,16 +769,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                                         let cappedDmg = dmgDealt;
 
                                         if (p.isSealed) {
-                                            // ✅ تصحيح 3: التحقق من وجود القيمة قبل الضرب
-                                            const multiplier = (p.sealMultiplier !== undefined && p.sealMultiplier !== null) ? p.sealMultiplier : 0.5;
-                                            cappedDmg = Math.floor(cappedDmg * multiplier);
+                                            // ✅ تصحيح 3: Double Safety - التحقق داخل العملية نفسها
+                                            // نمنع القسمة على صفر أو الضرب في null
+                                            const sMult = (typeof p.sealMultiplier === 'number') ? p.sealMultiplier : 0.5;
+                                            cappedDmg = Math.floor(cappedDmg * sMult);
                                         }
 
                                         if (floor <= 5 && cappedDmg > 47) cappedDmg = 47;
                                         else if (floor <= 10 && cappedDmg > 88) cappedDmg = 88;
                                         else if (floor <= 14 && cappedDmg > 120) cappedDmg = 120;
 
-                                        // 🔥 إذا تجاوز السقف، نضبط الدم ليكون (الدم القديم - الختم) 🔥
+                                        // 🔥 تعديل دم الوحش مباشرة ليتوافق مع الختم
                                         if (cappedDmg < dmgDealt) {
                                             monster.hp = Math.max(0, monsterHpBefore - cappedDmg);
                                             
