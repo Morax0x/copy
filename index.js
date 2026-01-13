@@ -237,79 +237,70 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-// 🔥🔥 الدالة المعدلة: توزيع الرتب مع طباعة الأخطاء (Debug Mode) 🔥🔥
+// 🔥🔥 الدالة المعدلة جذرياً: منطق صارم لإزالة الرتب القديمة 🔥🔥
 client.checkAndAwardLevelRoles = async function(member, newLevel) {
     if (!client.sql.open) return;
     try {
         const guild = member.guild;
-        const botMember = guild.members.me;
+        
+        // 1. تحديث بيانات العضو لضمان دقة الرتب الحالية
+        member = await guild.members.fetch(member.id).catch(() => null);
+        if (!member) return;
 
-        // التحقق من صلاحية البوت العامة
+        const botMember = guild.members.me;
         if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
             console.log(`[Level Roles] ❌ البوت لا يملك صلاحية إدارة الرتب في سيرفر: ${guild.name}`);
             return;
         }
 
-        // 1. جلب رتب اللفلات المسجلة
+        // 2. جلب جميع رتب اللفلات من الداتابيس (الأعلى أولاً)
         const allLevelRolesConfig = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
         
         if (allLevelRolesConfig.length === 0) return;
 
-        // 2. تحديث بيانات العضو
-        member = await member.fetch().catch(() => null);
-        if (!member) return;
+        // 3. تحديد "الرتبة المستهدفة" (أعلى رتبة يستحقها العضو حالياً)
+        const targetRecord = allLevelRolesConfig.find(r => newLevel >= r.level);
+        const targetRoleID = targetRecord ? targetRecord.roleID : null;
 
-        // 3. تحديد الرتبة المستهدفة (أعلى رتبة يستحقها)
-        let targetRoleID = null;
-        for (const row of allLevelRolesConfig) {
-            if (newLevel >= row.level) {
-                targetRoleID = row.roleID;
-                break; 
-            }
-        }
-
-        let roleToAdd = null;
+        const rolesToAdd = [];
         const rolesToRemove = [];
 
-        // 4. الفرز
+        // 4. الفرز: أي رتبة لفل يملكها العضو وليست هي المستهدفة -> إزالة فورية
         for (const row of allLevelRolesConfig) {
-            const role = guild.roles.cache.get(row.roleID);
-            
-            // إذا الرتبة محذوفة من السيرفر
-            if (!role) continue;
+            const roleID = row.roleID;
+            const role = guild.roles.cache.get(roleID);
 
-            // 🔥 فحص مهم جداً: هل رتبة البوت أعلى من رتبة اللفل؟ 🔥
-            if (role.position >= botMember.roles.highest.position) {
-                console.warn(`[Level Roles] ⚠️ تحذير: لا يمكنني إزالة/إضافة الرتبة (${role.name}) لأنها أعلى من رتبة البوت!`);
-                continue; // تخطي هذه الرتبة لأننا لا نملك صلاحية عليها
-            }
+            // تخطي الرتب المحذوفة أو التي أعلى من البوت
+            if (!role || role.position >= botMember.roles.highest.position) continue;
 
-            if (targetRoleID && row.roleID === targetRoleID) {
-                // هذه هي الرتبة الجديدة
-                if (!member.roles.cache.has(role.id)) {
-                    roleToAdd = role;
+            if (targetRoleID && roleID === targetRoleID) {
+                // ✅ هذه هي الرتبة المستحقة
+                if (!member.roles.cache.has(roleID)) {
+                    rolesToAdd.push(role);
                 }
             } else {
-                // هذه رتبة لفل "سابقة" أو غير مستحقة، يجب إزالتها
-                if (member.roles.cache.has(role.id)) {
+                // ❌ هذه رتبة لفل أخرى (قديمة أو غير مستحقة)
+                if (member.roles.cache.has(roleID)) {
                     rolesToRemove.push(role);
                 }
             }
         }
 
-        // 5. التنفيذ (حذف القديم أولاً ثم إضافة الجديد)
+        // 5. التنفيذ (الإزالة أولاً ثم الإضافة)
         if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove).catch(err => console.error(`[Level Roles] فشل حذف الرتب القديمة: ${err.message}`));
-            console.log(`[Level Roles] 🗑️ تم حذف ${rolesToRemove.length} رتب قديمة من العضو ${member.user.tag}`);
+            await member.roles.remove(rolesToRemove).catch(e => console.error(`[Level Roles] Remove Error: ${e.message}`));
+            console.log(`[Level Roles] ➖ إزالة ${rolesToRemove.length} رتبة قديمة من ${member.user.tag}`);
         }
 
-        if (roleToAdd) {
-            await member.roles.add(roleToAdd).catch(err => console.error(`[Level Roles] فشل إضافة الرتبة الجديدة: ${err.message}`));
-            console.log(`[Level Roles] ✅ تم إضافة رتبة ${roleToAdd.name} للعضو ${member.user.tag}`);
+        if (rolesToAdd.length > 0) {
+            // انتظار بسيط لضمان عدم تداخل الطلبات
+            await new Promise(r => setTimeout(r, 500)); 
+            await member.roles.add(rolesToAdd).catch(e => console.error(`[Level Roles] Add Error: ${e.message}`));
+            console.log(`[Level Roles] ➕ إضافة رتبة جديدة لـ ${member.user.tag}`);
         }
 
     } catch (err) {
-        console.error("[Level Roles] Error:", err.message);
+        console.error("[Level Roles] Critical Error:", err.message);
     }
 }
 
