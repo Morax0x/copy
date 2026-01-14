@@ -1,6 +1,5 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 
-// ✅✅✅ التصحيح: الاستيراد من pvp-core.js حيث توجد الدوال المطلوبة (getWeaponData, etc) ✅✅✅
 const { 
     activePveBattles, 
     buildBattleEmbed, 
@@ -14,15 +13,27 @@ const {
 
 const GUARD_IMAGE_MAIN = 'https://i.postimg.cc/d1ndBX7B/download.gif'; 
 
+// دالة مساعدة لتعديل شكل الايمبد ليناسب الفارس في كل دور
+function fixGuardEmbed(embed) {
+    if (!embed) return;
+    // تغيير العنوان
+    embed.setTitle('⚔️ معركة ضد فارس الامبراطور');
+    // وضع صورة الفارس الكبيرة داخل الايمبد نفسه
+    embed.setImage(GUARD_IMAGE_MAIN);
+    // إزالة الصورة المصغرة (Thumbnail) لتجنب التكرار او الشكل السيء
+    embed.setThumbnail(null);
+    // تعديل اللون
+    embed.setColor(Colors.DarkRed);
+    return embed;
+}
+
 async function startGuardBattle(interaction, client, sql, robberMember, amountToSteal) {
     const getLevel = client.getLevel;
-    // حماية إضافية: إذا لم توجد بيانات، استخدم القيم الافتراضية
     let robberData = getLevel.get(robberMember.id, interaction.guild.id) || { ...client.defaultData, user: robberMember.id, guild: interaction.guild.id };
     
-    // 1. حساب قوة اللاعب (السارق)
+    // 1. حساب قوة اللاعب
     const pMaxHp = BASE_HP + (robberData.level * HP_PER_LEVEL);
     
-    // استدعاء دالة السلاح
     let robberWeapon = getWeaponData(sql, robberMember);
     if (!robberWeapon || robberWeapon.currentLevel === 0) {
         robberWeapon = { name: "قبضة يد", currentDamage: 15 };
@@ -68,19 +79,16 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 
     activePveBattles.set(interaction.channel.id, battleState);
     
-    const introEmbed = new EmbedBuilder()
-        .setTitle('🚨 كشفك الفــارس!')
-        .setDescription(`**<@${robberMember.id}>** توقف مكانــك! \nعليك هزيمتي أولاً إذا أردت الهروب من قصر الامبراطور بـ **${amountToSteal.toLocaleString()}** مـورا!`)
-        .setColor(Colors.DarkRed)
-        .setImage(GUARD_IMAGE_MAIN); 
-
+    // بناء الايمبد الأساسي
     const { embeds: battleEmbeds, components } = buildBattleEmbed(battleState);
     
-    // 🔥 إرسال رسالة جديدة مباشرة للقناة (بدون رد)
+    // 🔥🔥 تعديل الايمبد ليحمل صورة واسم الفارس 🔥🔥
+    const finalEmbed = fixGuardEmbed(battleEmbeds[0]);
+
     try {
         const sentMsg = await interaction.channel.send({ 
-            content: `⚔️ **بدأ القتال!** <@${robberMember.id}>`, // ✅ منشن لصاحب الشأن فقط
-            embeds: [introEmbed, ...battleEmbeds], 
+            content: `⚔️ **بدأ القتال!** <@${robberMember.id}>`, 
+            embeds: [finalEmbed], // نرسل الايمبد المعدل فقط
             components: components
         });
         
@@ -97,32 +105,44 @@ async function processGuardTurn(battleState) {
     const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
     const player = battleState.players.get(playerMemberId);
 
+    // تطبيق التأثيرات المستمرة
     const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
     battleState.log.push(...logEntries);
 
+    // التحقق من موت الفارس قبل دوره
     if (guard.hp <= 0) {
         return await handleGuardBattleEnd(battleState, playerMemberId, "win");
     }
 
+    // إذا تم تخطي الدور (بسبب شلل مثلاً)
     if (skipTurn) {
-        battleState.turn = [playerMemberId, "guard"];
+        battleState.turn = [playerMemberId, "guard"]; // إعادة الدور للاعب
         const { embeds, components } = buildBattleEmbed(battleState);
-        await battleState.message.edit({ embeds, components });
+        // 🔥 تحديث الايمبد مع التعديل 🔥
+        await battleState.message.edit({ embeds: [fixGuardEmbed(embeds[0])], components });
         return;
     }
 
+    // هجوم الفارس
     const dmg = calculateDamage(guard, player);
     player.hp -= dmg;
     battleState.log.push(`**الفارس** ضربك بسيفه وسبب **${dmg}** ضرر!`);
 
+    // التحقق من موت اللاعب
     if (player.hp <= 0) {
         return await handleGuardBattleEnd(battleState, "guard", "lose");
     }
 
+    // إعادة الدور للاعب
     battleState.turn = [playerMemberId, "guard"];
     
     const { embeds: updateEmbeds, components: updateComponents } = buildBattleEmbed(battleState);
-    await battleState.message.edit({ embeds: updateEmbeds, components: updateComponents });
+    
+    // 🔥 تحديث الايمبد مع التعديل لضمان بقاء الصورة والاسم 🔥
+    await battleState.message.edit({ 
+        embeds: [fixGuardEmbed(updateEmbeds[0])], 
+        components: updateComponents 
+    });
 }
 
 async function handleGuardBattleEnd(battleState, winnerId, resultType) {
@@ -164,7 +184,7 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     }
 
     await battleState.message.edit({ components: [] });
-    // ✅ إرسال رسالة النهاية كمنشن جديد نظيف
+    // إرسال النتيجة
     await battleState.message.channel.send({ content: `<@${player.member.id}>`, embeds: [embed] });
 }
 
