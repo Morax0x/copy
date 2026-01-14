@@ -22,7 +22,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
     // 1. حساب قوة اللاعب (السارق)
     const pMaxHp = BASE_HP + (robberData.level * HP_PER_LEVEL);
     
-    // استدعاء دالة السلاح (التي كانت تسبب المشكلة)
+    // استدعاء دالة السلاح
     let robberWeapon = getWeaponData(sql, robberMember);
     if (!robberWeapon || robberWeapon.currentLevel === 0) {
         robberWeapon = { name: "قبضة يد", currentDamage: 15 };
@@ -70,29 +70,25 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
     
     const introEmbed = new EmbedBuilder()
         .setTitle('🚨 كشفك الفــارس!')
-        .setDescription(`**${robberMember}** توقف مكانــك! \nعليك هزيمتي أولاً إذا أردت الهروب من قصر الامبراطور بـ **${amountToSteal.toLocaleString()}** مـورا!`)
+        .setDescription(`**<@${robberMember.id}>** توقف مكانــك! \nعليك هزيمتي أولاً إذا أردت الهروب من قصر الامبراطور بـ **${amountToSteal.toLocaleString()}** مـورا!`)
         .setColor(Colors.DarkRed)
         .setImage(GUARD_IMAGE_MAIN); 
 
     const { embeds: battleEmbeds, components } = buildBattleEmbed(battleState);
     
-    // التعامل مع الرد سواء كان Interaction (Slash) أو Message (Prefix)
-    let msgPayload = { 
-        content: `⚔️ **بدأ القتال!** ${robberMember}`, 
-        embeds: [introEmbed, ...battleEmbeds], 
-        components 
-    };
-
-    if (interaction.reply && typeof interaction.reply === 'function') {
-        // إذا كان Slash Command
-        if (!interaction.replied && !interaction.deferred) {
-            battleState.message = await interaction.reply({ ...msgPayload, fetchReply: true });
-        } else {
-            battleState.message = await interaction.followUp(msgPayload);
-        }
-    } else {
-        // إذا كان Message عادي
-        battleState.message = await interaction.channel.send(msgPayload);
+    // 🔥 إرسال رسالة جديدة مباشرة للقناة (بدون رد)
+    try {
+        const sentMsg = await interaction.channel.send({ 
+            content: `⚔️ **بدأ القتال!** <@${robberMember.id}>`, // ✅ منشن لصاحب الشأن فقط
+            embeds: [introEmbed, ...battleEmbeds], 
+            components: components
+        });
+        
+        battleState.message = sentMsg;
+        
+    } catch (error) {
+        console.error("Error sending guard battle message:", error);
+        activePveBattles.delete(interaction.channel.id);
     }
 }
 
@@ -168,7 +164,8 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     }
 
     await battleState.message.edit({ components: [] });
-    await battleState.message.channel.send({ content: `${player.member}`, embeds: [embed] });
+    // ✅ إرسال رسالة النهاية كمنشن جديد نظيف
+    await battleState.message.channel.send({ content: `<@${player.member.id}>`, embeds: [embed] });
 }
 
 module.exports = { startGuardBattle, processGuardTurn };
