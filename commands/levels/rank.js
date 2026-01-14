@@ -25,8 +25,10 @@ module.exports = {
                 return message.reply("This user is not ranked yet.");
             }
 
-            const allScores = sql.prepare("SELECT * FROM levels WHERE guild = ? ORDER BY totalXP DESC").all(message.guild.id);
-            const rank = allScores.findIndex(s => s.user === user.id) + 1;
+            // 🔥 التعديل الاحترافي هنا: 🔥
+            // بدلاً من سحب كل البيانات، نحسب عدد الأشخاص الذين لديهم XP أكثر من هذا المستخدم فقط
+            const rankQuery = sql.prepare("SELECT COUNT(*) as count FROM levels WHERE guild = ? AND totalXP > ?").get(message.guild.id, score.totalXP);
+            const rank = rankQuery.count + 1;
 
             const requiredXP = 5 * (score.level ** 2) + (50 * score.level) + 100;
 
