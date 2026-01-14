@@ -1,6 +1,6 @@
 const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const COOLDOWN_MS = 5 * 60 * 1000; // 5 دقائق
+const COOLDOWN_MS = 1 * 60 * 1000; // ✅ تم التعديل إلى 1 دقيقة
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -60,7 +60,8 @@ module.exports = {
             if (timeLeft > 0) {
                 const minutes = Math.floor(timeLeft / 60000);
                 const seconds = Math.floor((timeLeft % 60000) / 1000);
-                const replyContent = `🕐 يمكنك الإيداع مرة واحدة كل 5 دقائق. يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية**.`;
+                // ✅ تم تعديل النص ليقول "دقيقة واحدة"
+                const replyContent = `🕐 يمكنك الإيداع مرة واحدة كل دقيقة. يرجى الانتظار **${seconds} ثانية**.`;
 
                 if (isSlash) {
                     return interaction.editReply({ content: replyContent, ephemeral: true });
@@ -100,7 +101,6 @@ module.exports = {
 
             setScore.run(data);
 
-            // 🔥 تم التعديل هنا لتكون 0.05% كما طلبت (0.0005) 🔥
             const interestAmount = Math.floor(data.bank * 0.0005);
 
             const embed = new EmbedBuilder()
