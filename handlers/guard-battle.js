@@ -1,5 +1,6 @@
 const { EmbedBuilder, Colors } = require("discord.js");
-// ✅ التصحيح: استخدام نقطة واحدة (.) للوصول للمجلد الصحيح
+
+// ✅✅✅ التصحيح: الاستيراد من pvp-core.js حيث توجد الدوال المطلوبة (getWeaponData, etc) ✅✅✅
 const { 
     activePveBattles, 
     buildBattleEmbed, 
@@ -9,16 +10,19 @@ const {
     getAllSkillData,
     calculateDamage,
     applyPersistentEffects,
-} = require('./dungeon/core/battle-utils'); 
+} = require('./pvp-core'); 
 
 const GUARD_IMAGE_MAIN = 'https://i.postimg.cc/d1ndBX7B/download.gif'; 
 
 async function startGuardBattle(interaction, client, sql, robberMember, amountToSteal) {
     const getLevel = client.getLevel;
-    let robberData = getLevel.get(robberMember.id, interaction.guild.id);
+    // حماية إضافية: إذا لم توجد بيانات، استخدم القيم الافتراضية
+    let robberData = getLevel.get(robberMember.id, interaction.guild.id) || { ...client.defaultData, user: robberMember.id, guild: interaction.guild.id };
     
     // 1. حساب قوة اللاعب (السارق)
     const pMaxHp = BASE_HP + (robberData.level * HP_PER_LEVEL);
+    
+    // استدعاء دالة السلاح (التي كانت تسبب المشكلة)
     let robberWeapon = getWeaponData(sql, robberMember);
     if (!robberWeapon || robberWeapon.currentLevel === 0) {
         robberWeapon = { name: "قبضة يد", currentDamage: 15 };
@@ -36,7 +40,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         amountToSteal: amountToSteal,
         message: null, 
         turn: [robberMember.id, "guard"], 
-        log: [`🛡️ **الحارس الملكي** اعترض طريقك! قاتل للهروب بالغنيمة!`], 
+        log: [`🛡️ **فارس الامبراطور** اعترض طريقك! قاتل للهروب بالغنيمة!`], 
         skillPage: 0, 
         processingTurn: false,
         skillCooldowns: { [robberMember.id]: {}, "guard": {} },
@@ -52,10 +56,10 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             }],
             ["guard", { 
                 isMonster: true, 
-                name: "الحارس الملكي", 
+                name: "فارس الامبراطور", 
                 hp: guardMaxHp, 
                 maxHp: guardMaxHp, 
-                weapon: { name: "سيف العدالة", currentDamage: guardDamage }, 
+                weapon: { name: "السيف المقدس", currentDamage: guardDamage }, 
                 skills: {}, 
                 effects: defEffects() 
             }]
@@ -65,18 +69,31 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
     activePveBattles.set(interaction.channel.id, battleState);
     
     const introEmbed = new EmbedBuilder()
-        .setTitle('🚨 كشفك الحــارس!')
-        .setDescription(`**${robberMember}** توقف مكانك! \nعليك هزيمتي أولاً إذا أردت الهروب بـ **${amountToSteal.toLocaleString()}** عملة!`)
+        .setTitle('🚨 كشفك الفــارس!')
+        .setDescription(`**${robberMember}** توقف مكانــك! \nعليك هزيمتي أولاً إذا أردت الهروب من قصر الامبراطور بـ **${amountToSteal.toLocaleString()}** مـورا!`)
         .setColor(Colors.DarkRed)
         .setImage(GUARD_IMAGE_MAIN); 
 
     const { embeds: battleEmbeds, components } = buildBattleEmbed(battleState);
     
-    battleState.message = await interaction.channel.send({ 
+    // التعامل مع الرد سواء كان Interaction (Slash) أو Message (Prefix)
+    let msgPayload = { 
         content: `⚔️ **بدأ القتال!** ${robberMember}`, 
         embeds: [introEmbed, ...battleEmbeds], 
         components 
-    });
+    };
+
+    if (interaction.reply && typeof interaction.reply === 'function') {
+        // إذا كان Slash Command
+        if (!interaction.replied && !interaction.deferred) {
+            battleState.message = await interaction.reply({ ...msgPayload, fetchReply: true });
+        } else {
+            battleState.message = await interaction.followUp(msgPayload);
+        }
+    } else {
+        // إذا كان Message عادي
+        battleState.message = await interaction.channel.send(msgPayload);
+    }
 }
 
 async function processGuardTurn(battleState) {
@@ -100,7 +117,7 @@ async function processGuardTurn(battleState) {
 
     const dmg = calculateDamage(guard, player);
     player.hp -= dmg;
-    battleState.log.push(`**الحارس** ضربك بسيفه وسبب **${dmg}** ضرر!`);
+    battleState.log.push(`**الفارس** ضربك بسيفه وسبب **${dmg}** ضرر!`);
 
     if (player.hp <= 0) {
         return await handleGuardBattleEnd(battleState, "guard", "lose");
@@ -130,9 +147,9 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         playerData.mora += amount;
         setScore.run(playerData);
 
-        embed.setTitle(`🏆 هزمت الحارس وهربت بالغنيمة!`)
+        embed.setTitle(`🏆 هزمت الفارس وهربت بالغنيمة!`)
              .setColor(Colors.Green)
-             .setDescription(`تمكنت من الفرار ومعك **${amount.toLocaleString()}** عملة! 💰`)
+             .setDescription(`تمكنت من الفرار ومعك **${amount.toLocaleString()}**! 💰`)
              .setImage('https://i.postimg.cc/xd8msjxk/escapar-a-toda-velocidad.gif'); 
     } else {
         if (playerData.mora >= amount) {
@@ -146,7 +163,7 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
         embed.setTitle(`💀 تـم القبـض!`)
              .setColor(Colors.Red)
-             .setDescription(`طرحك الحارس أرضاً! تمت مصادرة **${amount.toLocaleString()}** مورا.`)
+             .setDescription(`قـتلك فـارس الامبراطـور وخسـرت **${amount.toLocaleString()}** مورا.`)
              .setImage(GUARD_IMAGE_MAIN); 
     }
 
