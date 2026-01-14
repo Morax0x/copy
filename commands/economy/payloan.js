@@ -107,7 +107,7 @@ module.exports = {
             const description = [
                 `لديك قرض متبقي بقيمة: **${loan.remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`,
                 `\n**للسداد الجزئي:** \`/تسديد <مبلغ>\``,
-                `**للسداد الكامل (مع خصم):** \`/تسديد all\``,
+                `**للسداد الكامل (مع خصم):** \`/تسديد كامل\``,
                 `*إذا سددت الآن كاملاً، ستدفع: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA} (بدلاً من ${loan.remainingAmount.toLocaleString()})*`
             ].join('\n');
 
