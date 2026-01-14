@@ -93,12 +93,12 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 // ✅ تعديل: الضرر 2.0 (1500 عند لفل 1)
                 const dmgAmount = Math.floor(skillPower * 2.0);
                 result.damage = dmgAmount;
-                result.log = `🎲 **${getName(attacker)}** نجح في المقامرة! سدد ضربة قوية بضرر **${dmgAmount}**!`;
+                result.log = `🎲 **${getName(attacker)}** نجح في المقامرة! سدد ضربة قوية بضـرر **${dmgAmount}**!`;
             } else {
                 // خسارة مخففة (15% من الصحة)
                 const selfDmgAmount = Math.floor(attacker.hp * 0.15);
                 result.selfDamage = selfDmgAmount;
-                result.log = `🎲 **${getName(attacker)}** خسر المقامرة... ودفع ضريبة بسيطة من دمه (-${selfDmgAmount})!`;
+                result.log = `🎲 **${getName(attacker)}** خسر المقامرة... وانفجر النرد بوجـهه (-${selfDmgAmount})!`;
             }
             break;
         }
@@ -106,7 +106,7 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         case 'Buff_All': {
             const buffVal = rawValue / 100;
             result.selfEffects.push({ type: 'atk_buff', val: buffVal, turns: 3 });
-            result.log = `📢 **${getName(attacker)}** أطلق صيحة الحرب! زاد هجوم الفريق بنسبة ${rawValue}%!`;
+            result.log = `📢 **${getName(attacker)}** أطلق صيحة الحرب! زاد هـجومـه ${rawValue}%!`;
             break;
         }
 
@@ -177,7 +177,7 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 result.effectsApplied.push({ type: 'burn', val: Math.floor(skillPower * 0.2), turns: 3 });
                 if (Math.random() < 0.10) { 
                     result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
-                    result.log = `🐲 **${getName(attacker)}** أطلق ${skill.name} وجمد الخصم!`;
+                    result.log = `🐲 **${getName(attacker)}** أطلق ${skill.name} وشـل الخصم!`;
                 } else {
                     result.log = `🐲 **${getName(attacker)}** أطلق ${skill.name}!`;
                 }
