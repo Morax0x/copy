@@ -154,7 +154,8 @@ module.exports = {
                             });
                         }
 
-                        const existingLoanCheck = getLoan.get(user.id, guild.id);
+                        // تحقق مزدوج قبل التنفيذ
+                        const existingLoanCheck = sql.prepare("SELECT * FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(user.id, guild.id);
                         if (existingLoanCheck) {
                              return i.update({
                                 content: `❌ لديك قرض سابق لم تقم بسداده.`,
@@ -162,40 +163,57 @@ module.exports = {
                             });
                         }
 
-                        data.mora = (data.mora || 0) + selectedLoan.amount;
-                        setScore.run(data);
+                        // 🔥 التعديل الجوهري: استخدام Transaction لضمان الأمان 🔥
+                        try {
+                            const transaction = sql.transaction(() => {
+                                // 1. تحديث الرصيد (إضافة المبلغ)
+                                data.mora = (data.mora || 0) + selectedLoan.amount;
+                                setScore.run(data);
 
-                        const setLoan = sql.prepare("INSERT INTO user_loans (userID, guildID, loanAmount, remainingAmount, dailyPayment, lastPaymentDate, missedPayments) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                                // 2. إنشاء سجل القرض
+                                const setLoan = sql.prepare("INSERT INTO user_loans (userID, guildID, loanAmount, remainingAmount, dailyPayment, lastPaymentDate, missedPayments) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                                setLoan.run(
+                                    user.id,
+                                    guild.id,
+                                    selectedLoan.amount,
+                                    selectedLoan.totalToRepay,
+                                    selectedLoan.dailyPayment,
+                                    Date.now(),
+                                    0
+                                );
+                            });
 
-                        setLoan.run(
-                            user.id,
-                            guild.id,
-                            selectedLoan.amount,
-                            selectedLoan.totalToRepay,
-                            selectedLoan.dailyPayment,
-                            Date.now(),
-                            0
-                        );
+                            // تنفيذ العملية الذرية
+                            transaction();
 
-                        const disabledRows = [];
-                        if (i.message.components && Array.isArray(i.message.components)) {
-                            i.message.components.forEach(row => {
-                                const newRow = new ActionRowBuilder();
-                                row.components.forEach(component => {
-                                    newRow.addComponents(
-                                        ButtonBuilder.from(component).setDisabled(true)
-                                    );
+                            // تعطيل الأزرار بعد النجاح
+                            const disabledRows = [];
+                            if (i.message.components && Array.isArray(i.message.components)) {
+                                i.message.components.forEach(row => {
+                                    const newRow = new ActionRowBuilder();
+                                    row.components.forEach(component => {
+                                        newRow.addComponents(
+                                            ButtonBuilder.from(component).setDisabled(true)
+                                        );
+                                    });
+                                    disabledRows.push(newRow);
                                 });
-                                disabledRows.push(newRow);
+                            }
+                            await i.update({ components: disabledRows });
+
+                            await i.followUp({
+                                content: `✅ تم استلام قرض بقيمة **${selectedLoan.amount.toLocaleString()}** ${EMOJI_MORA}.\nسيتم خصم **${selectedLoan.dailyPayment}** يومياً لمدة 30 يوما.`
+                            });
+
+                            collector.stop();
+
+                        } catch (txError) {
+                            console.error("Loan Transaction Error:", txError);
+                            return i.followUp({ 
+                                content: `❌ حدث خطأ في قاعدة البيانات ولم يتم منح القرض. لم يتم خصم أو إضافة أي شيء.`, 
+                                ephemeral: true 
                             });
                         }
-                        await i.update({ components: disabledRows });
-
-                        await i.followUp({
-                            content: `✅ تم استلام قرض بقيمة **${selectedLoan.amount.toLocaleString()}** ${EMOJI_MORA}.\nسيتم خصم **${selectedLoan.dailyPayment}** يومياً لمدة 30 يوما.`
-                        });
-
-                        collector.stop();
                     }
                 } catch (collectorError) {
                     console.error("خطأ في الكوليكتور الخاص بالقرض:", collectorError);
