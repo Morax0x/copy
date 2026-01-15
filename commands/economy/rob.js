@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
-// ✅ استدعاء هاندلر معركة الفارس (من الملف الجديد knight-battle)
+// ✅ استدعاء هاندلر معركة الفارس (فقط للأونر)
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
@@ -121,9 +121,7 @@ module.exports = {
         // =================================================================
         if (victim.id === robber.id) {
             if (robber.id === OWNER_ID) {
-                // إذا كان الأونر يحاول سرقة نفسه، ابدأ المعركة فوراً للتجربة
                 const context = isSlash ? interaction : message;
-                // نضع مبلغاً وهمياً للتجربة (مثلاً 5000)
                 return await startGuardBattle(context, client, sql, robber, 5000);
             }
             return reply("تـسـرق نـفـسـك؟ غـبـي انـت؟؟ <:mirkk:1435648219488190525>");
@@ -190,7 +188,7 @@ module.exports = {
         robberData.lastRob = now;
 
         // =================================================================
-        // 🔥🔥 منطق سرقة الإمبراطور (الأونر) 🔥🔥
+        // 👑👑 منطق سرقة الإمبراطور (الأونر - معركة الفارس) 👑👑
         // =================================================================
         if (victim.id === OWNER_ID) {
             
@@ -257,7 +255,7 @@ module.exports = {
                     const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
-                        // --- السيناريو الأول: العفو ---
+                        // --- العفو الإمبراطوري ---
                         robberData.mora += 100;
                         robberyPardons.set(robber.id, todayDate);
 
@@ -274,7 +272,7 @@ module.exports = {
                         await i.update({ embeds: [pardonEmbed], components: [] });
 
                     } else {
-                        // --- السيناريو الثاني: معركة فارس الإمبراطور ---
+                        // 🔥🔥 معركة الفارس (خاصة بالأونر فقط) 🔥🔥
                         await msg.delete().catch(() => {});
                         const context = isSlash ? interaction : message;
                         return await startGuardBattle(context, client, sql, robber, amountToSteal);
@@ -304,7 +302,7 @@ module.exports = {
         }
 
         // =================================================================
-        // 🔹 المنطق العادي للأعضاء 🔹
+        // 🔹 المنطق العادي للأعضاء (الحارس القديم - الفخ) 🔹
         // =================================================================
 
         let descArray = [
@@ -343,18 +341,37 @@ module.exports = {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
             // =================================================
-            // 🔥🔥 نظام الحارس الشخصي للأعضاء 🔥🔥
+            // 🔥🔥 نظام الحارس للأعضاء (فخ فوري - المنطق القديم) 🔥🔥
             // =================================================
             if (victimData.hasGuard > 0) {
+                // 1. خصم المال فوراً
+                deductFromRobber(robberData, amountToSteal);
+                victimData.mora += amountToSteal;
+                
+                // 2. خصم الحارس
                 victimData.hasGuard -= 1; 
-                if (victimData.hasGuard === 0) victimData.guardExpires = 0;
+                const guardLeft = victimData.hasGuard;
+                if (guardLeft === 0) victimData.guardExpires = 0;
                 setScore.run(victimData);
+                setScore.run(robberData);
 
-                await msg.delete().catch(() => {});
-                const context = isSlash ? interaction : message;
-                return await startGuardBattle(context, client, sql, robber, amountToSteal);
+                // 3. رسالة الفخ (القديمة)
+                let guardStatusMsg = guardLeft === 0 
+                    ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
+                    : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
+
+                const guardEmbed = new EmbedBuilder()
+                    .setTitle('✶ تــم الـقـبـض :shield: !')
+                    .setColor('#46455f')
+                    .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg') // الصورة القديمة
+                    .setDescription(`✬ اخترت الباب ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
+                
+                await i.update({ embeds: [guardEmbed], components: [] });
+
+                sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
 
             } else {
+                // إذا لم يكن هناك حارس (اللعبة العادية)
                 if (clickedIndex === correctButtonIndex) {
                     // ✅ نجاح
                     const finalAmount = amountToSteal;
