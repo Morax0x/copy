@@ -167,12 +167,12 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         const empty = 10 - filled;
         const bar = '█'.repeat(filled) + '░'.repeat(empty);
 
+        // 🔥🔥 تم إزالة كلاس السفاح من هنا 🔥🔥
         const classMap = {
             'Warrior': 'محارب',
             'Tank': 'مدافع',
             'Priest': 'كاهن',
             'Mage': 'ساحر',
-            'Assassin': 'سفاح',
             'Leader': 'قائد'
         };
         const arClass = classMap[player.class] || player.class;
@@ -250,8 +250,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === 19) {
             players.forEach(p => {
                 if (p.isSealed) {
-                    p.isSealed = false;      
-                    p.sealMultiplier = 1.0;  
+                    p.isSealed = false;       
+                    p.sealMultiplier = 1.0;   
                     if (!p.isDead) { 
                         threadChannel.send(`✶ <@${p.id}> تـم كـسـر الخـتم عنك واطلق العنان لقوتك، لك الآن الحُرّيـة الكامـلة في استعمالها`).catch(() => {});
                     }
@@ -301,7 +301,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 p.startingShield = 0; 
                 
                 p.effects = p.effects.filter(e => 
-                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'confusion'].includes(e.type)
+                    ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'rebound', 'confusion'].includes(e.type)
                 );
                 
                 p.defending = false; 
@@ -501,7 +501,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
                         
                         await battleMsg.edit({ 
-                            content: '', // ✅ تم إزالة النص
+                            content: '', 
                             embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                         }).catch(()=>{});
                         
