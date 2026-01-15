@@ -152,15 +152,15 @@ const MONSTER_SKILLS = {
     "ذئب القطب": { name: "عواء القطيع", emoji: "🐺", chance: 0.3, execute: (m,p,l) => { m.atk = Math.floor(m.atk*1.15); l.push(`🐺 **الذئب** عوى لرفع معنوياته القتالية!`); }},
 
     // ========================
-    // 🌲 وحوش النخبة: الغابة
+    // 🌲 وحوش النخبة: الغابة (تم تحديث الأسماء لتطابق الإعدادات الجديدة)
     // ========================
-    "مروض الوحوش": { name: "أمر بالهجوم", emoji: "🐕", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.4); l.push(`🐕 **المروض** أطلق وحوشه لنهش **${t.name}**!`);} }},
-    "كاسر الأسود": { name: "كسر العظام", emoji: "🦴", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.3); t.effects.push({type:'weakness',val:0.2,turns:2}); l.push(`🦴 **الكاسر** حطم دفاعات **${t.name}**!`);} }},
-    "الذئب الفتاك": { name: "سرعة خاطفة", emoji: "⚡", chance: 0.3, execute: (m,p,l) => { m.effects.push({type:'evasion',val:0.3,turns:2}); const t=getSmartTarget(p, m); if(t) applyDamageToPlayer(t, m.atk); l.push(`⚡ **الذئب** هاجم بسرعة خيالية تزيد مراوغته!`); }},
-    "الأفعى العملاقة": { name: "عصر مميت", emoji: "🐍", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk); t.effects.push({type:'stun',val:1,turns:1}); l.push(`🐍 **الأفعى** عصرت **${t.name}** وشلت حركته!`);} }},
-    "العقاب الذهبي": { name: "انقضاض", emoji: "🦅", chance: 0.3, execute: (m,p,l) => { const t=p.sort((a,b)=>a.hp-b.hp)[0]; if(t){applyDamageToPlayer(t, m.atk*2.0); l.push(`🦅 **العقاب** انقض على الفريسة الأضعف **${t.name}**!`);} }},
-    "الوحش الضاري": { name: "تمزيق الأحشاء", emoji: "🩸", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk); t.effects.push({type:'poison',val:Math.floor(m.atk*0.15),turns:3}); l.push(`🩸 **الوحش** تسبب بجرح عميق لـ **${t.name}**!`);} }},
-    "النمر الساحق": { name: "مخلب النمر", emoji: "🐅", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.5); l.push(`🐅 **النمر** سدد ضربة مخلب قوية!`);} }},
+    "حارس اللعنة القديمة": { name: "أمر بالهجوم", emoji: "🧿", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.4); l.push(`🧿 **الحارس** أطلق لعنته لنهش **${t.name}**!`);} }},
+    "العملاق المتجذر": { name: "سحق العظام", emoji: "🪵", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.3); t.effects.push({type:'weakness',val:0.2,turns:2}); l.push(`🪵 **العملاق** حطم دفاعات **${t.name}** بجذوره!`);} }},
+    "سيد الأدغال المتوحش": { name: "سرعة خاطفة", emoji: "⚡", chance: 0.3, execute: (m,p,l) => { m.effects.push({type:'evasion',val:0.3,turns:2}); const t=getSmartTarget(p, m); if(t) applyDamageToPlayer(t, m.atk); l.push(`⚡ **سيد الأدغال** هاجم بسرعة خيالية تزيد مراوغته!`); }},
+    "تنين الغابة الزمردي": { name: "عصر مميت", emoji: "🐉", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk); t.effects.push({type:'stun',val:1,turns:1}); l.push(`🐉 **التنين** اعتصر **${t.name}** وشل حركته!`);} }},
+    "كاهن الطبيعة المظلم": { name: "لعنة الطبيعة", emoji: "🧙‍♂️", chance: 0.3, execute: (m,p,l) => { const t=p.sort((a,b)=>a.hp-b.hp)[0]; if(t){applyDamageToPlayer(t, m.atk*2.0); l.push(`🧙‍♂️ **الكاهن** صب غضب الطبيعة على الأضعف **${t.name}**!`);} }},
+    "وحش المستنقع الآسن": { name: "تعفن", emoji: "🦠", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk); t.effects.push({type:'poison',val:Math.floor(m.atk*0.15),turns:3}); l.push(`🦠 **وحش المستنقع** لوث جروح **${t.name}**!`);} }},
+    "كاسر العظام": { name: "ضربة ساحقة", emoji: "🔨", chance: 0.3, execute: (m,p,l) => { const t=getSmartTarget(p, m); if(t){applyDamageToPlayer(t, m.atk*1.5); l.push(`🔨 **كاسر العظام** سدد ضربة مهشمة لـ **${t.name}**!`);} }},
 
     // ========================
     // 🌑 وحوش النخبة: الظلام
