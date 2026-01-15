@@ -299,13 +299,32 @@ module.exports = {
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
 
-            // أدوار اللفل
+            // ============================================================
+            // 🛡️ نظام توزيع رتب اللفل (مع حذف الرتب القديمة)
+            // ============================================================
             try {
-                let Roles = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
-                if (Roles && message.member && !message.member.roles.cache.has(Roles.roleID)) {
-                    message.member.roles.add(Roles.roleID).catch(e => {});
+                // 1. جلب رتبة المستوى الحالي (إن وجدت)
+                let currentLevelRole = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
+
+                if (currentLevelRole && message.member) {
+                    // 2. إضافة الرتبة الجديدة
+                    if (!message.member.roles.cache.has(currentLevelRole.roleID)) {
+                        await message.member.roles.add(currentLevelRole.roleID).catch(e => console.error(`[Level Role Add Error]: ${e.message}`));
+                        
+                        // 3. جلب وحذف جميع رتب المستويات السابقة (الأقل من المستوى الحالي)
+                        // نتأكد أننا نحذف فقط الرتب المرتبطة بنظام الليفل
+                        const oldRoles = sql.prepare("SELECT roleID FROM level_roles WHERE guildID = ? AND level < ?").all(message.guild.id, level.level);
+                        
+                        for (const roleData of oldRoles) {
+                            if (message.member.roles.cache.has(roleData.roleID)) {
+                                await message.member.roles.remove(roleData.roleID).catch(e => {});
+                            }
+                        }
+                    }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("[Level Role Logic Error]: ", e);
+            }
 
         } catch (err) { console.error("[Stats Error]", err); }
 
