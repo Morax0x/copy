@@ -5,7 +5,6 @@ const path = require('path');
 // ⚙️ إعدادات وتوابع
 // ==========================================
 const rootDir = process.cwd();
-// تأكد من مسارات ملفات JSON
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
@@ -162,7 +161,6 @@ function applySkillEffect(battleState, attackerId, skill) {
     battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
 
     const attacker = battleState.players.get(attackerId);
-    // الخصم دائماً هو الآخر في قائمة الأدوار
     const defenderId = Array.from(battleState.players.keys()).find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
 
@@ -219,7 +217,7 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-3).join('\n'), inline: false });
     }
 
-    // إذا كان دور الوحش (الفارس) أو المعركة قيد المعالجة، لا نظهر أزرار
+    // إذا كان دور الوحش أو جاري المعالجة، نخفي الأزرار
     if (attacker.isMonster || battleState.processingTurn) {
         return { embeds: [embed], components: [] };
     }
@@ -232,23 +230,35 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         page = Math.max(0, Math.min(skillPage, totalPages - 1));
         battleState.skillPage = page;
 
-        const skillsToShow = availableSkills.slice(page * skillsPerPage, (page * skillsPerPage) + skillsPerPage);
-        const skillButtons = new ActionRowBuilder();
-        const cooldowns = battleState.skillCooldowns[attackerId] || {};
+        const componentsToSend = [];
+        
+        // 🛠️ إصلاح: التأكد من وجود مهارات قبل إنشاء الصف
+        if (availableSkills.length > 0) {
+            const skillsToShow = availableSkills.slice(page * skillsPerPage, (page * skillsPerPage) + skillsPerPage);
+            const skillButtons = new ActionRowBuilder();
+            const cooldowns = battleState.skillCooldowns[attackerId] || {};
 
-        skillsToShow.forEach(skill => {
-            let emoji = skill.emoji || '✨';
-            const isOnCooldown = (cooldowns[skill.id] || 0) > 0;
-            const label = isOnCooldown ? `${skill.name} (${cooldowns[skill.id]})` : skill.name;
-            
-            skillButtons.addComponents(new ButtonBuilder()
-                .setCustomId(`pvp_skill_use_${skill.id}`)
-                .setLabel(label)
-                .setEmoji(emoji)
-                .setStyle(isOnCooldown ? ButtonStyle.Secondary : ButtonStyle.Primary)
-                .setDisabled(isOnCooldown)
+            skillsToShow.forEach(skill => {
+                let emoji = skill.emoji || '✨';
+                const isOnCooldown = (cooldowns[skill.id] || 0) > 0;
+                const label = isOnCooldown ? `${skill.name} (${cooldowns[skill.id]})` : skill.name;
+                
+                skillButtons.addComponents(new ButtonBuilder()
+                    .setCustomId(`pvp_skill_use_${skill.id}`)
+                    .setLabel(label)
+                    .setEmoji(emoji)
+                    .setStyle(isOnCooldown ? ButtonStyle.Secondary : ButtonStyle.Primary)
+                    .setDisabled(isOnCooldown)
+                );
+            });
+            componentsToSend.push(skillButtons);
+        } else {
+            // إذا لم تكن هناك مهارات، نعرض زر معطل يوضح ذلك
+            const emptyRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('no_skills').setLabel('لا توجد مهارات متاحة').setStyle(ButtonStyle.Secondary).setDisabled(true)
             );
-        });
+            componentsToSend.push(emptyRow);
+        }
 
         const navRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('pvp_skill_back').setLabel('العودة').setStyle(ButtonStyle.Danger));
         if (totalPages > 1) {
@@ -257,7 +267,9 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
                 new ButtonBuilder().setCustomId(`pvp_skill_page_${page + 1}`).setLabel('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages - 1)
             );
         }
-        return { embeds: [embed], components: [skillButtons, navRow] };
+        componentsToSend.push(navRow);
+
+        return { embeds: [embed], components: componentsToSend };
     }
 
     const mainButtons = new ActionRowBuilder().addComponents(
@@ -268,12 +280,10 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 }
 
 // =================================================================
-// 🔥🔥🔥 إعداد المستمع (Collector) للأزرار 🔥🔥🔥
+// 🔥🔥🔥 إعداد المستمع (Collector) 🔥🔥🔥
 // =================================================================
 function setupBattleCollector(battleState, interaction) {
     const robberId = battleState.turn[0]; 
-    
-    // فلتر للتأكد أن السارق فقط من يضغط الأزرار
     const filter = i => i.user.id === robberId && i.customId.startsWith('pvp_');
     
     const collector = battleState.message.createMessageComponentCollector({ 
@@ -283,10 +293,7 @@ function setupBattleCollector(battleState, interaction) {
     });
 
     collector.on('collect', async i => {
-        // إذا كان البوت يعالج دوراً حالياً، تجاهل الضغطات
-        if (battleState.processingTurn) {
-             return i.reply({ content: "⏳ انتظر دورك!", ephemeral: true });
-        }
+        if (battleState.processingTurn) return i.reply({ content: "⏳ انتظر دورك!", ephemeral: true });
 
         const customId = i.customId;
         const player = battleState.players.get(i.user.id);
@@ -294,19 +301,14 @@ function setupBattleCollector(battleState, interaction) {
 
         // 1. هجوم عادي
         if (customId === 'pvp_action_attack') {
-            battleState.processingTurn = true; // قفل التفاعل
+            battleState.processingTurn = true; 
 
             const dmg = calculateDamage(player, guard);
             guard.hp -= dmg;
             battleState.log.push(`⚔️ **${cleanDisplayName(player.member.user.displayName)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
             
-            // 🛑 تحديث الدور يدوياً إلى الفارس لإخفاء الأزرار فوراً
             battleState.turn = ["guard", player.member.id];
-            
-            // تحديث الرسالة (سيتم إخفاء الأزرار لأن الدور للفارس)
             await i.update(buildBattleEmbed(battleState));
-
-            // تشغيل دور الفارس
             await processGuardTurn(battleState);
         } 
         // 2. فتح قائمة المهارات
@@ -324,7 +326,7 @@ function setupBattleCollector(battleState, interaction) {
         } 
         // 5. استخدام مهارة
         else if (customId.startsWith('pvp_skill_use_')) {
-            battleState.processingTurn = true; // قفل التفاعل
+            battleState.processingTurn = true; 
 
             const skillId = customId.replace('pvp_skill_use_', '');
             const skillData = player.skills[skillId];
@@ -333,9 +335,7 @@ function setupBattleCollector(battleState, interaction) {
                 const logMsg = applySkillEffect(battleState, i.user.id, skillData);
                 battleState.log.push(logMsg);
                 
-                // 🛑 تحديث الدور يدوياً إلى الفارس لإخفاء الأزرار
                 battleState.turn = ["guard", player.member.id];
-
                 await i.update(buildBattleEmbed(battleState));
                 await processGuardTurn(battleState);
             }
@@ -383,7 +383,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         amountToSteal: amountToSteal,
         message: null, 
         turn: [robberMember.id, "guard"], 
-        processingTurn: false, // للتحكم في الأزرار
+        processingTurn: false,
         log: [`🛡️ **فارس الإمبراطور** يغلق الأبواب! "لن تخرج من هنا حياً!"`], 
         skillPage: 0, 
         skillCooldowns: { [robberMember.id]: {}, "guard": {} },
@@ -441,11 +441,9 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 // =================================================================
 async function processGuardTurn(battleState) {
     const guard = battleState.players.get("guard");
-    // العثور على اللاعب بشكل آمن
     const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
     const player = battleState.players.get(playerMemberId);
 
-    // 1. تقليل الكولداون
     const playerCooldowns = battleState.skillCooldowns[playerMemberId];
     if (playerCooldowns) {
         for (const skillId in playerCooldowns) {
@@ -453,36 +451,29 @@ async function processGuardTurn(battleState) {
         }
     }
 
-    // 2. تطبيق تأثيرات السم/الحرق على الفارس
     const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
     if (logEntries.length > 0) battleState.log.push(...logEntries);
 
-    // 3. التحقق من موت الفارس
     if (guard.hp <= 0) {
         battleState.processingTurn = false;
         return await handleGuardBattleEnd(battleState, playerMemberId, "win");
     }
 
-    // تحديث الرسالة بتأثيرات البداية
-    // (لاحظ أننا لم نغير الدور، لذا ستبقى الأزرار مخفية)
     const { embeds: tempEmbeds } = buildBattleEmbed(battleState);
     await battleState.message.edit({ embeds: tempEmbeds, components: [] });
 
-    // 4. إذا كان الفارس مشلولاً
     if (skipTurn) {
         battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
-        battleState.turn = [playerMemberId, "guard"]; // إعادة الدور للاعب
-        battleState.processingTurn = false; // فتح الأزرار
+        battleState.turn = [playerMemberId, "guard"];
+        battleState.processingTurn = false;
         
         const { embeds, components } = buildBattleEmbed(battleState);
         await battleState.message.edit({ embeds: embeds, components });
         return;
     }
 
-    // تأخير "التفكير"
     await new Promise(r => setTimeout(r, 1500)); 
 
-    // 5. منطق الذكاء (AI)
     let actionLog = "";
     const baseDmg = guard.weapon.currentDamage;
     
@@ -521,15 +512,13 @@ async function processGuardTurn(battleState) {
 
     battleState.log.push(actionLog);
 
-    // 6. التحقق من موت اللاعب
     if (player.hp <= 0) {
         battleState.processingTurn = false;
         return await handleGuardBattleEnd(battleState, "guard", "lose");
     }
 
-    // 7. إعادة الدور للاعب وإظهار الأزرار
     battleState.turn = [playerMemberId, "guard"];
-    battleState.processingTurn = false; // فتح الأزرار
+    battleState.processingTurn = false;
     const { embeds: updateEmbeds, components: updateComponents } = buildBattleEmbed(battleState);
     await battleState.message.edit({ embeds: updateEmbeds, components: updateComponents });
 }
@@ -539,7 +528,6 @@ async function processGuardTurn(battleState) {
 // =================================================================
 async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     const client = battleState.message.client;
-    // استخراج بيانات اللاعب بشكل آمن
     const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
     const player = battleState.players.get(playerMemberId);
     
