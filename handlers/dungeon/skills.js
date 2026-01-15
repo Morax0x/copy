@@ -9,7 +9,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     
     // ====================================================
     // 1. مهارات الإمبـراطـور (GOD MODE) 👑
-    // (تبقى هنا لأنها خاصة بالقصة ولها منطق فريد)
     // ====================================================
     
     if (skill.id === 'skill_erasure') {
@@ -66,7 +65,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
 
     // ====================================================
     // 2. منطق مهارات الكلاسات (Class Skills Logic)
-    // (تبقى هنا لأنها تتفاعل مع الـ Party وتوزيع الأدوار)
     // ====================================================
     let classType = null;
     if (skill.id === 'class_special_skill') {
@@ -79,7 +77,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     }
 
     if (classType) {
-         // التحقق من الكولداون الخاص بالكلاس
          if (player.special_cooldown > 0 && player.id !== OWNER_ID && skill.id !== 'hybrid_heal') {
              return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
          }
@@ -90,17 +87,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
          let skillName = "مهارة خاصة";
          switch(classType) {
              
-             // 🔥🔥 [تم التعديل] مهارة القائد الجديدة 🔥🔥
              case 'Leader': 
                 players.forEach(m => { 
                     if(!m.isDead) {
-                        // 1. زيادة الدمج 50% لمدة دورين
                         m.effects.push({ type: 'atk_buff', val: 0.5, turns: 2 });
-                        
-                        // 2. كريت مضمون 100% لمدة دورين
                         m.effects.push({ type: 'crit_buff', val: 1.0, turns: 2 });
-
-                        // 3. زيادة الحظ لمدة دورين
                         m.effects.push({ type: 'luck_buff', val: 0.5, turns: 2 });
                     } 
                 });
@@ -213,7 +204,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
         monster.hp -= result.damage;
         player.totalDamage += result.damage;
         
-        // حساب التهديد (Threat)
         let threatGen = result.damage;
         if (player.class === 'Tank') threatGen *= 3;
         player.threat = (player.threat || 0) + threatGen;
@@ -226,19 +216,22 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
     if (result.selfDamage > 0) applyDamageToPlayer(player, result.selfDamage);
     
     if (result.shield > 0) {
-        player.shield = (player.shield || 0) + result.shield; // يجمع فوق الدرع الموجود
+        player.shield = (player.shield || 0) + result.shield; 
     }
 
     // ج. تطبيق التأثيرات على الوحش
     if (result.effectsApplied && result.effectsApplied.length > 0) {
         result.effectsApplied.forEach(eff => {
             if (eff.type === 'stun') {
-                monster.frozen = true; // في الدانجون نستخدم frozen بدلاً من stun
-                log.push(`❄️ **${player.name}** جمد الوحش!`);
+                monster.frozen = true; // ترجمة الـ stun إلى frozen في الدانجون
+                log.push(`❄️ **${player.name}** شل حركة الوحش!`);
             } else if (eff.type === 'dispel') {
                 monster.effects = [];
+            } else if (eff.type === 'weaken') {
+                // ترجمة الـ weaken إلى weakness في الدانجون (إذا كان يستخدم هذا الاسم)
+                monster.effects.push({ type: 'weakness', val: eff.val, turns: eff.turns });
             } else {
-                // التأثيرات العادية (burn, poison, weakness, blind, confusion)
+                // التأثيرات العادية (burn, poison)
                 monster.effects.push(eff);
             }
         });
@@ -250,15 +243,17 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players) {
             if (eff.type === 'cleanse') {
                 player.effects = player.effects.filter(e => e.type === 'atk_buff' || e.type === 'def_buff' || e.type === 'titan');
             } else if (eff.type === 'buff') {
-                // تحويل 'buff' العام إلى 'atk_buff' الخاص بالدانجون
                 player.effects.push({ type: 'atk_buff', val: eff.val, turns: eff.turns });
+            } else if (eff.type === 'rebound_active') {
+                // إضافة دعم الارتداد
+                player.effects.push({ type: 'rebound', val: eff.val, turns: eff.turns });
             } else {
                 player.effects.push(eff);
             }
         });
     }
 
-    // هـ. تسجيل اللوج (نستخدم اللوج القادم من المحرك)
+    // هـ. تسجيل اللوج
     if (result.log) {
         log.push(result.log);
     }
