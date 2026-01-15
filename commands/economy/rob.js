@@ -255,7 +255,7 @@ module.exports = {
                     const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
-                        // --- العفو الإمبراطوري ---
+                        // --- العفو الإمبراطوري (أول مرة) ---
                         robberData.mora += 100;
                         robberyPardons.set(robber.id, todayDate);
 
@@ -265,9 +265,8 @@ module.exports = {
                             .setColor('#FFD700')
                             .setImage('https://i.postimg.cc/cLky0W3d/mor.gif')
                             .setDescription(
-                                `✶ أمسك بك الحراس وأنت تحاول السطو على القلعة ولكن **عفا عنك الإمبراطور** وأعطاك 100 ${EMOJI_MORA}\n\n` +
-                                `⚠️ **تحذير:** إذا عدت للسرقة اليوم سيظهر لك **فارس الإمبراطور**!\n` +
-                                `★ يتجدد العفو في: <t:${nextMidnightTimestamp}:R>`
+                                `✶ أمسك بك الفرسان وأنت تحاول السطو على القلعة ولكن **عفا عنك الإمبراطور** وأعطاك 100 ${EMOJI_MORA}\n\n` +
+                                `★ فـرسـان الامبراطـور يراقبـونـك حـتـى : <t:${nextMidnightTimestamp}:R>`
                             );
                         await i.update({ embeds: [pardonEmbed], components: [] });
 
@@ -364,7 +363,7 @@ module.exports = {
                     .setTitle('✶ تــم الـقـبـض :shield: !')
                     .setColor('#46455f')
                     .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg') // الصورة القديمة
-                    .setDescription(`✬ اخترت الباب ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
+                    .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
                 
                 await i.update({ embeds: [guardEmbed], components: [] });
 
