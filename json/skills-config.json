@@ -223,14 +223,14 @@
   {
     "id": "race_spirit_skill",
     "name": "طيف",
-    "description": "هجوم يسبب العمى للخصم (نسبة 50% ليخطئ هجومه القادم).",
+    "description": "ضـرر وتأثير اما سرقة القوة او تلبس او شلل !",
     "emoji": "👻",
     "base_price": 1000,
     "price_increment": 600,
-    "base_value": 40,
-    "value_increment": 4.1,
+    "base_value": 45,
+    "value_increment": 4.5,
     "max_level": 20,
-    "stat_type": "Dmg_Blind",
+    "stat_type": "Spirit_RNG",
     "cooldown": 4
   },
   {
