@@ -2,25 +2,31 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, Comp
 const path = require('path');
 
 // ==========================================
-// ⚙️ إعدادات المسارات والملفات
+// ⚙️ إعدادات المسارات والملفات (نفس كود الوحش)
 // ==========================================
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
+// إعدادات الصحة والعملة
 const BASE_HP = 800;       
 const HP_PER_LEVEL = 60;   
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
+// صور الفارس
 const KNIGHT_IMAGES = {
     MAIN: 'https://i.postimg.cc/d1ndBX7B/download.gif', 
-    WIN: 'https://i.postimg.cc/8Cj8xfHC/e6128ac95afc6c9b5d374946f87c573c.jpg', 
-    LOSE: 'https://i.postimg.cc/fb3F8nWQ/crusader-darkest-dungeon.gif'
+    WIN: 'https://i.postimg.cc/xd8msjxk/escapar-a-toda-velocidad.gif', 
+    LOSE: 'https://i.postimg.cc/d1ndBX7B/download.gif'
 };
 
+// خريطة لتخزين المعارك النشطة
 const activePveBattles = new Map();
 
-// --- دوال مساعدة ---
+// ==========================================
+// 🛠️ دوال مساعدة (منسوخة بدقة من الكود المرسل)
+// ==========================================
+
 function cleanDisplayName(name) {
     if (!name) return "لاعب";
     return name.replace(/<a?:.+?:\d+>/g, '').trim();
@@ -92,6 +98,7 @@ function getAllSkillData(sql, member) {
     return skillsOutput;
 }
 
+// ⚠️ منطق حساب الضرر (نسخ لصق من الكود الأصلي)
 function calculateDamage(attacker, defender, multiplier = 1) {
     let baseDmg = attacker.weapon ? attacker.weapon.currentDamage : 15;
     
@@ -121,6 +128,7 @@ function calculateDamage(attacker, defender, multiplier = 1) {
     return Math.max(0, finalDmg);
 }
 
+// ⚠️ منطق التأثيرات المستمرة (نسخ لصق)
 function applyPersistentEffects(battleState, attackerId) {
     const attacker = battleState.players.get(attackerId);
     let logEntries = [];
@@ -159,6 +167,7 @@ function applyPersistentEffects(battleState, attackerId) {
     return { logEntries, skipTurn };
 }
 
+// ⚠️ منطق تنفيذ المهارات (نسخ لصق كامل لكل الحالات)
 function applySkillEffect(battleState, attackerId, skill) {
     const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
@@ -176,6 +185,46 @@ function applySkillEffect(battleState, attackerId, skill) {
     if (attacker.effects.weaken > 0) baseAtk *= (1 - attacker.effects.weaken);
 
     switch (statType) {
+        // 🔥🔥 مهارة الروح الجديدة 🔥🔥
+        case 'Spirit_RNG': {
+            // 1. حساب الضرر الأساسي للمهارة (مثلاً 1.3x)
+            const spiritDmg = Math.floor(baseAtk * 1.3);
+            defender.hp -= spiritDmg;
+
+            // 2. حساب الاحتمالات
+            const roll = Math.random() * 100; // 0 - 100
+            let effectMsg = "";
+
+            if (roll < 2) { 
+                // 2% - لعنة الرعب (شلل)
+                defender.effects.stun = true;
+                defender.effects.stun_turns = 1;
+                effectMsg = "😱 **لعنة الرعب!** (شلل)";
+            } 
+            else if (roll < 7) { 
+                // 5% - تلبس (عكس الضرر 100%)
+                // ملاحظة: من 2 لـ 7 تساوي 5% تقريباً
+                attacker.effects.rebound_active = 1.0; // 100% عكس
+                attacker.effects.rebound_turns = 2;
+                effectMsg = "👻 **تلبس!** (عكس الضرر القادم)";
+            } 
+            else if (roll < 57) { 
+                // 50% - سرقة الروح (بف لك ودبف للخصم)
+                // من 7 لـ 57 تساوي 50%
+                attacker.effects.buff = (attacker.effects.buff || 0) + 0.15;
+                attacker.effects.buff_turns = 3;
+                defender.effects.weaken = (defender.effects.weaken || 0) + 0.15;
+                defender.effects.weaken_turns = 3;
+                effectMsg = "💀 **سرقة الروح!** (امتصاص القوة)";
+            } 
+            else {
+                // الباقي: مجرد ضرر طيفي
+                effectMsg = "(هجوم طيفي)";
+            }
+
+            return `👻 **${cleanDisplayName(attacker.member.user.displayName)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
+        }
+
         case 'TrueDMG_Burn': {
             const burnDmg = Math.floor(baseAtk * 0.2);
             defender.effects.burn = burnDmg;
@@ -334,12 +383,13 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     const attacker = battleState.players.get(attackerId);
     const defender = battleState.players.get(defenderId);
     
-    // 🔥🔥 تغيير اللون هنا 🔥🔥
+    // تصميم خاص بفارس الإمبراطور
     const embed = new EmbedBuilder()
         .setTitle('⚔️ مبارزة الموت: ضد فارس الإمبراطور')
         .setColor('#D6D4D4') // رمادي فضي
         .setImage(KNIGHT_IMAGES.MAIN);
 
+    // إضافة معلومات الصحة والتأثيرات
     embed.addFields(
         { 
             name: `${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)}`, 
@@ -353,10 +403,10 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         }
     );
 
-    embed.setDescription(`🚨 **كشـفـك فـارس الامبراطـور!**\nفارس الإمبراطور يغلق كل منافذ الهـروب!\nالدور الآن لـ: **${attacker.isMonster ? attacker.name : attacker.member}**`);
+    embed.setDescription(`🚨 **حالة الطوارئ!**\nفارس الإمبراطور يغلق المنافذ!\nالدور الآن لـ: **${attacker.isMonster ? attacker.name : attacker.member}**`);
 
     if (battleState.log.length > 0) {
-        embed.addFields({ name: "سـجـل المـعركــة:", value: battleState.log.slice(-3).join('\n'), inline: false });
+        embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-3).join('\n'), inline: false });
     }
 
     const componentsToSend = [];
@@ -597,7 +647,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const robberSkills = getAllSkillData(sql, robberMember);
 
         const guardMaxHp = pMaxHp; 
-        const guardWeapon = { name: "السيـف المقـدس", currentDamage: Math.floor(robberWeapon.currentDamage * 1.1) };
+        const guardWeapon = { name: "نصل الإمبراطور", currentDamage: Math.floor(robberWeapon.currentDamage * 1.1) };
 
         const defEffects = () => ({ shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 });
 
