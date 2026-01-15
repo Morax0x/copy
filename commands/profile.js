@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
-const { getUserRace, getWeaponData, BASE_HP, HP_PER_LEVEL } = require('../handlers/pvp-core.js'); 
+// 🔥 تم إزالة استيراد BASE_HP و HP_PER_LEVEL لأننا سنستخدم قيم خاصة هنا
+const { getUserRace, getWeaponData } = require('../handlers/pvp-core.js'); 
 const weaponsConfig = require('../json/weapons-config.json');
 const { createCanvas, loadImage } = require('canvas'); 
 const path = require('path');
@@ -9,6 +10,10 @@ const path = require('path');
 const { OWNER_ID } = require('../handlers/dungeon/constants.js');
 
 const FONT_MAIN = 'Cairo'; 
+
+// إعدادات الصحة الخاصة بالبروفايل (حسب طلبك)
+const PROFILE_BASE_HP = 100;
+const PROFILE_HP_PER_LEVEL = 4;
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'],
@@ -67,7 +72,9 @@ function calculateStrongestRank(sql, guildID, targetUserID) {
         const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
         const lvlData = getLvl.get(guildID, w.userID);
         const playerLevel = lvlData?.level || 1;
-        const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
+        
+        // 🔥 استخدام المعادلة الجديدة لحساب القوة أيضاً
+        const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
         
         const skillData = getSkills.get(guildID, w.userID);
         const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
@@ -289,7 +296,9 @@ async function buildPvpProfile(client, member, targetUser) {
     const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
     const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0"; // الأونر سيحصل على 0 من الدالة
 
-    const maxHp = BASE_HP + (level * HP_PER_LEVEL);
+    // 🔥🔥🔥 تطبيق المعادلة الجديدة: 100 أساسي + 4 لكل لفل 🔥🔥🔥
+    const maxHp = PROFILE_BASE_HP + (level * PROFILE_HP_PER_LEVEL);
+    
     const arabicRaceName = RACE_TRANSLATIONS.get(userRace.raceName) || userRace.raceName;
 
     ctx.textAlign = 'right';
