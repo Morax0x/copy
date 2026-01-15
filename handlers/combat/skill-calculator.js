@@ -3,7 +3,7 @@
 // المحرك المسؤول عن حساب أرقام وتأثيرات المهارات (يعتمد على لفل المهارة فقط)
 // ================================================================
 
-const { cleanDisplayName } = require('../dungeon/utils');
+const { cleanDisplayName } = require('../../handlers/dungeon/utils');
 
 // القيمة 5.0 تعني أن مهارة بقوة 100 تسبب 500 ضرر
 const GLOBAL_SKILL_MULTIPLIER = 5.0;
@@ -117,8 +117,8 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         case 'Sacrifice_Crit':    // Demon
         case 'Scale_MissingHP_Heal': // Seraphim
         case 'Execute_Heal':      // Ghoul
-        case 'Dmg_Blind':         // Spirit
         case 'Chaos_RNG':         // Hybrid
+        case 'Spirit_RNG':        // 🔥 Spirit (New)
             
             // التوزيع الافتراضي للمهارات العامة والخاصة
             if (skill.id === 'skill_shielding') {
@@ -215,10 +215,36 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 result.heal = Math.floor(skillPower * 0.4); 
                 result.log = `⚖️ **${getName(attacker)}** عاقب بـ ${skill.name} (${result.damage})!`;
             }
-            else if (skill.stat_type === 'Dmg_Blind') { // Spirit
-                result.damage = skillPower;
-                result.effectsApplied.push({ type: 'blind', val: 0.5, turns: 2 }); 
-                result.log = `👻 **${getName(attacker)}** أصاب خصمه بالعمى!`;
+            // 🔥🔥🔥 تحديث مهارة الروح 🔥🔥🔥
+            else if (skill.stat_type === 'Spirit_RNG') { // Spirit
+                // الضرر الأساسي (أعلى من العادي قليلاً: 1.3x)
+                const spiritDmg = Math.floor(skillPower * 1.3);
+                result.damage = spiritDmg;
+
+                const roll = Math.random() * 100;
+                let effectMsg = "";
+
+                if (roll < 2) { 
+                    // 2% شلل
+                    result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
+                    effectMsg = "😱 **لعنة الرعب!** (شلل)";
+                } 
+                else if (roll < 7) { 
+                    // 5% عكس الضرر 100%
+                    result.selfEffects.push({ type: 'rebound_active', val: 1.0, turns: 2 });
+                    effectMsg = "👻 **تلبس!** (عكس الضرر 100%)";
+                } 
+                else if (roll < 57) { 
+                    // 50% سرقة الروح
+                    result.selfEffects.push({ type: 'atk_buff', val: 0.15, turns: 3 });
+                    result.effectsApplied.push({ type: 'weaken', val: 0.15, turns: 3 });
+                    effectMsg = "💀 **سرقة الروح!** (امتصاص القوة)";
+                } 
+                else {
+                    effectMsg = "(هجوم طيفي)";
+                }
+
+                result.log = `👻 **${getName(attacker)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
             }
             else if (skill.stat_type === 'Chaos_RNG') { // Hybrid
                 const variance = (Math.random() * 0.4) + 0.8;
