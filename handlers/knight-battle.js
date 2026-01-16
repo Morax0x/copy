@@ -170,7 +170,7 @@ function applySkillEffect(battleState, attackerId, skill) {
     let cooldownDuration = 3; // الافتراضي لباقي المهارات
 
     if (skill.id === 'skill_healing') {
-        cooldownDuration = 8; // ⚠️ كولداون عالي جداً للشفاء
+        cooldownDuration = 6; // ⚠️ تم التعديل إلى 6 أدوار
     } else if (skill.id.startsWith('race_')) {
         cooldownDuration = 5;
     }
