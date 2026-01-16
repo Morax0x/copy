@@ -565,11 +565,11 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const robberSkills = getAllSkillData(sql, robberMember);
 
         // 🔥🔥🔥 الموازنة الجديدة (Balanced but Tough) 🔥🔥🔥
-        // 1. صحة الفارس = 1.5 ضعف صحة اللاعب (تحدي معقول)
-        const guardMaxHp = Math.floor(pMaxHp * 1.5); 
+        // 1. صحة الفارس = 1.8 ضعف صحة اللاعب (تحدي معقول)
+        const guardMaxHp = Math.floor(pMaxHp * 1.8); 
         
-        // 2. هجوم الفارس = 1.2 ضعف سلاح اللاعب (قوي بس مو One Shot)
-        const guardWeapon = { name: "نصل الإمبراطور", currentDamage: Math.floor(robberWeapon.currentDamage * 1.2) };
+        // 2. هجوم الفارس = 1.4 ضعف سلاح اللاعب (قوي بس مو One Shot)
+        const guardWeapon = { name: "نصل الإمبراطور", currentDamage: Math.floor(robberWeapon.currentDamage * 1.4) };
 
         // 3. درع مبدئي بسيط (10%)
         const initialShield = Math.floor(guardMaxHp * 0.1);
