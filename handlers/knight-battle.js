@@ -16,8 +16,8 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 // صور الفارس
 const KNIGHT_IMAGES = {
     MAIN: 'https://i.postimg.cc/d1ndBX7B/download.gif', 
-    WIN: 'https://i.postimg.cc/xd8msjxk/escapar-a-toda-velocidad.gif', 
-    LOSE: 'https://i.postimg.cc/d1ndBX7B/download.gif'
+    WIN: 'https://i.postimg.cc/8Cj8xfHC/e6128ac95afc6c9b5d374946f87c573c.jpg', 
+    LOSE: 'https://i.postimg.cc/fb3F8nWQ/crusader-darkest-dungeon.gif'
 };
 
 // خريطة لتخزين المعارك النشطة
@@ -646,10 +646,16 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         }
         const robberSkills = getAllSkillData(sql, robberMember);
 
-        const guardMaxHp = pMaxHp; 
-        const guardWeapon = { name: "نصل الإمبراطور", currentDamage: Math.floor(robberWeapon.currentDamage * 1.1) };
+        // 🔥🔥🔥 تعديل قوة الفارس 🔥🔥🔥
+        // 1. صحة مضاعفة 3 مرات لصحة اللاعب لجعله "Tank"
+        const guardMaxHp = pMaxHp * 3; 
+        
+        // 2. سلاح أقوى بـ 1.6 ضعف سلاح اللاعب
+        const guardWeapon = { name: "نصل الإمبراطور", currentDamage: Math.floor(robberWeapon.currentDamage * 1.6) };
 
-        const defEffects = () => ({ shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 });
+        // 3. درع مبدئي بنسبة 20% من صحته
+        const defEffects = () => ({ shield: Math.floor(guardMaxHp * 0.2), buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 });
+        const playerDefEffects = () => ({ shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 });
 
         const battleState = {
             isPvE: true, isGuardBattle: true, amountToSteal,
@@ -659,7 +665,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             log: [`🛡️ **فارس الإمبراطور** يغلق الأبواب! "لن تخرج من هنا حياً بعد ان عفى عنك الامبراطـور!"`], 
             skillPage: 0, skillCooldowns: { [robberMember.id]: {}, "guard": {} },
             players: new Map([
-                [robberMember.id, { isMonster: false, member: robberMember, hp: pMaxHp, maxHp: pMaxHp, weapon: robberWeapon, skills: robberSkills, effects: defEffects() }],
+                [robberMember.id, { isMonster: false, member: robberMember, hp: pMaxHp, maxHp: pMaxHp, weapon: robberWeapon, skills: robberSkills, effects: playerDefEffects() }],
                 ["guard", { isMonster: true, name: "فـارس الإمبراطور", hp: guardMaxHp, maxHp: guardMaxHp, weapon: guardWeapon, skills: {}, effects: defEffects() }]
             ])
         };
@@ -720,7 +726,7 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                 playerData.bank = Math.max(0, playerData.bank - remaining);
             }
             setScore.run(playerData);
-            embed.setTitle(`💀 تـم الـقـبـض!`).setColor(Colors.DarkRed)
+            embed.setTitle(`💀 هـُزمـت!`).setColor(Colors.DarkRed)
                  .setDescription(` قـتـلـك فارس الإمبراطور... \n\n**الغرامة المدفوعة ✶ :** ${amount.toLocaleString()} ${EMOJI_MORA}`)
                  .setImage(KNIGHT_IMAGES.LOSE);
         }
