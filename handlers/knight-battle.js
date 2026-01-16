@@ -499,30 +499,32 @@ async function processGuardTurn(battleState) {
         else if (guard.hp < guard.maxHp * 0.30 && !guard.effects.healed_recently) {
             const healAmount = Math.floor(guard.maxHp * 0.20);
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
-            guard.effects.healed_recently = true; // عشان ما يكرر العلاج كل دور
-            // نعطيه درع صغير مع العلاج
+            guard.effects.healed_recently = true; 
             const shieldAmt = Math.floor(guard.maxHp * 0.10);
             guard.effects.shield += shieldAmt;
             actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً!`;
         }
         // 3. كسر درع اللاعب (Shield Breaker)
         else if (player.effects.shield > 0) {
-            const dmg = calculateDamage(guard, player, 1.3); // ضربة قوية
+            const dmg = calculateDamage(guard, player, 1.3); 
             player.hp -= dmg;
             actionLog = `🔨 **فارس الإمبراطور** سدد ضربة ثقيلة لتحطيم درعك! سبب **${dmg}** ضرر!`;
         }
-        // 4. مواجهة البفات القوية (Counter Buffs)
-        else if (player.effects.buff > 0) {
-            // يتخذ وضعية دفاعية (انعكاس ضرر)
-            guard.effects.rebound_active = 0.5; // عكس 50% من الضرر
+        // 4. مواجهة البفات القوية (Counter Buffs) - معدل ليصبح نادراً (20%)
+        else if (player.effects.buff > 0 && Math.random() < 0.20) {
+            guard.effects.rebound_active = 0.5; 
             guard.effects.rebound_turns = 1;
             actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
         }
         // 5. هجوم عادي (Standard Attack)
         else {
-            const dmg = calculateDamage(guard, player, 1.0);
+            let multiplier = 1.0;
+            // إذا كان اللاعب يملك بف ولم ينعكس الضرر، يهاجم بقوة أكبر
+            if (player.effects.buff > 0) multiplier = 1.1;
+
+            const dmg = calculateDamage(guard, player, multiplier);
             player.hp -= dmg;
-            // احتمالية بسيطة يسبب نزيف (Burn)
+            
             if (Math.random() < 0.2) {
                 player.effects.burn = Math.floor(guard.weapon.currentDamage * 0.1);
                 player.effects.burn_turns = 2;
