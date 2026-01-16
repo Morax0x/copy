@@ -14,7 +14,12 @@ try {
 } catch (e) { console.error("Error loading weapons config for top:", e); }
 
 const { OWNER_ID } = require(constantsPath); // استدعاء آيدي الأونر
-const { getUserRace, getWeaponData, BASE_HP, HP_PER_LEVEL } = require(pvpCorePath); 
+// 🔥 لم نعد بحاجة لاستيراد BASE_HP و HP_PER_LEVEL من هنا لأننا سنعرفهم يدوياً
+const { getUserRace, getWeaponData } = require(pvpCorePath); 
+
+// 🔥🔥🔥 توحيد إعدادات الصحة مع البروفايل 🔥🔥🔥
+const PROFILE_BASE_HP = 100;
+const PROFILE_HP_PER_LEVEL = 4;
 // -------------------------------------------------------------------
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -156,7 +161,9 @@ async function generateLeaderboard(sql, guild, type, page, targetUserId = null) 
                 const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
                 const lvlData = getLvl.get(guild.id, w.userID);
                 const playerLevel = lvlData?.level || 1;
-                const hp = BASE_HP + (playerLevel * HP_PER_LEVEL);
+                
+                // 🔥 استخدام المعادلة الجديدة هنا ليتطابق مع البروفايل 🔥
+                const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
                 
                 const skillData = getSkills.get(guild.id, w.userID);
                 const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
@@ -351,7 +358,7 @@ module.exports = {
             else if (i.customId === 'leaderboard_find_me') {
                 const findData = await generateLeaderboard(sql, guild, argType, 1, user.id);
                 if (findData.totalPages === 0) { 
-                     return i.reply({ content: "لست موجوداً في هذا التصنيف!", ephemeral: true });
+                      return i.reply({ content: "لست موجوداً في هذا التصنيف!", ephemeral: true });
                 }
                 currentPage = findData.currentPage; 
             } 
