@@ -166,7 +166,15 @@ function applyPersistentEffects(battleState, attackerId) {
 }
 
 function applySkillEffect(battleState, attackerId, skill) {
-    const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
+    // 🔥🔥 منطق الكولداون الجديد 🔥🔥
+    let cooldownDuration = 3; // الافتراضي لباقي المهارات
+
+    if (skill.id === 'skill_healing') {
+        cooldownDuration = 8; // ⚠️ كولداون عالي جداً للشفاء
+    } else if (skill.id.startsWith('race_')) {
+        cooldownDuration = 5;
+    }
+
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
     battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
 
