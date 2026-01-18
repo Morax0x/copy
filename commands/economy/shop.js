@@ -12,7 +12,7 @@ const {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('متجر')
-        .setDescription('يعرض المتجر، أو يقوم بإعداده إذا كنت إدارياً.'),
+        .setDescription('يعرض المتجر'),
 
     name: 'shop',
     aliases: ['متجر', 'setup-shop'],
