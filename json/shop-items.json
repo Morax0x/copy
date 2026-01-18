@@ -82,34 +82,6 @@
     "emoji": "💎"
   },
   {
-    "id": "discord_effect_5",
-    "name": "ايفكت بروفايل ($5)",
-    "description": "ايفكت من متجر ديسكورد بقيمة 5$.",
-    "price": 100000,
-    "emoji": "💎"
-  },
-  {
-    "id": "discord_effect_10",
-    "name": "ايفكت بروفايل ($10)",
-    "description": "ايفكت من متجر ديسكورد بقيمة 10$.",
-    "price": 200000,
-    "emoji": "💎"
-  },
-  {
-    "id": "nitro_basic",
-    "name": "نيترو بيسك",
-    "description": "اشتراك نيترو بيسك.",
-    "price": 80000,
-    "emoji": "💎"
-  },
-  {
-    "id": "nitro_gaming",
-    "name": "نيترو قيمنق",
-    "description": "اشتراك نيترو قيمنق.",
-    "price": 200000,
-    "emoji": "💎"
-  },
-  {
     "id": "exchange_xp",
     "name": "شراء خبرة (XP)",
     "description": "السعر: 3 مورا = 1 إكس بي",
