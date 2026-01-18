@@ -51,7 +51,9 @@ try { const m = require('./market.js'); _handleMarketTransaction = m._handleMark
 // ---------------------------------------------------------------------
 // ثوابت
 // ---------------------------------------------------------------------
-const HIDDEN_ITEMS_ID = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
+// تم حذف العناصر المحظورة من القائمة المخفية
+const HIDDEN_ITEMS_ID = []; 
+
 // العناصر التي سيتم استبعادها من الفلتر العادي لأننا سنضيفها يدوياً في القائمة
 const EXCLUDED_FROM_MAIN_MENU = ['upgrade_weapon', 'upgrade_skill', 'upgrade_rod', 'fishing_gear_menu', 'potions_menu', 'exchange_xp'];
 
@@ -65,10 +67,6 @@ const emojiMap = new Map([
     ['xp_buff_1d_7', '<:sboosting:1439665969864773663>'],
     ['xp_buff_2d_10', '<:gboost:1439665966354268201>'],
     ['vip_role_3d', '<a:JaFaster:1435572430042042409>'],
-    ['discord_effect_5', '<a:HypedDance:1435572391190204447>'],
-    ['discord_effect_10', '<a:NekoCool:1435572459276337245>'],
-    ['nitro_basic', '<a:Nitro:1437812292468084880>'],
-    ['nitro_gaming', '<a:Nitro:1437812292468084880>'],
     ['change_race', '🧬'],
     ['fishing_gear_menu', '🎣'],
     ['potions_menu', '🧪']
@@ -654,28 +652,8 @@ async function _handleShopButton(i, client, sql) {
             }
         }
 
-        const RESTRICTED_ITEMS = ['nitro_basic', 'nitro_gaming', 'discord_effect_5', 'discord_effect_10'];
-        if (RESTRICTED_ITEMS.includes(item.id)) {
-             // 1. شرط اللفل
-             if (userData.level < 30) return await i.reply({ content: `❌ يجب أن يكون مستواك 30+ لشراء هذا العنصر!`, flags: MessageFlags.Ephemeral });
-             
-             // 2. شرط الديون
-             const userLoan = sql.prepare("SELECT 1 FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0").get(userId, guildId);
-             if (userLoan) return await i.reply({ content: `عـليـك قـرض قـم بـسداده اولا`, flags: MessageFlags.Ephemeral });
-
-             // 3. شرط الستريك (معدل)
-             const userStreakData = sql.prepare("SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?").get(userId, guildId);
-             const currentStreak = userStreakData ? userStreakData.streakCount : 0;
-             
-             let requiredStreak = 30; // الافتراضي للبيسك والايفكت 5$
-             if (['nitro_gaming', 'discord_effect_10'].includes(item.id)) {
-                 requiredStreak = 50; // رفع الشرط للقيمنق والايفكت 10$
-             }
-             
-             if (currentStreak < requiredStreak) {
-                 return await i.reply({ content: `❌ **لا تستوفي الشروط:** يجب أن يكون الستريك الخاص بك **${requiredStreak} يوم** أو أكثر لشراء هذا العنصر!\nالستريك الحالي: **${currentStreak}**`, flags: MessageFlags.Ephemeral });
-             }
-        }
+        // تم حذف منطق العناصر المحظورة لأنها لم تعد موجودة
+        const RESTRICTED_ITEMS = []; 
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
         if (NON_DISCOUNTABLE.includes(item.id) || item.id.startsWith('xp_buff_')) {
@@ -691,22 +669,17 @@ async function _handleShopButton(i, client, sql) {
                 const activeBuff = getActiveBuff.get(userId, guildId, Date.now());
                 if (activeBuff) {
                     const replaceButton = new ButtonBuilder().setCustomId(`replace_buff_${item.id}`).setLabel("إلغاء القديم وشراء الجديد").setStyle(ButtonStyle.Danger);
-                    const cancelButton = new ButtonBuilder().setCustomId('cancel_purchase').setLabel("إلغة").setStyle(ButtonStyle.Secondary);
+                    const cancelButton = new ButtonBuilder().setCustomId('cancel_purchase').setLabel("إلغاء").setStyle(ButtonStyle.Secondary);
                     const row = new ActionRowBuilder().addComponents(replaceButton, cancelButton);
                     return await i.editReply({ content: `⚠️ لديك معزز خبرة فعال بالفعل!`, components: [row], embeds: [] });
                 }
              }
+             
+             // لن يتم تنفيذ هذا الجزء لأن القائمة فارغة، لكن نبقيه للهيكلة
              if (RESTRICTED_ITEMS.includes(item.id)) {
-                 if (userData.mora < item.price) return await i.editReply({ content: `❌ رصيدك غير كافي!` });
-                 userData.mora -= item.price;
-                 const owner = await client.users.fetch(OWNER_ID);
-                 if (owner) { owner.send(`🔔 تنبيه شراء!\n\nالعضو: ${i.user.tag} (${i.user.id})\nاشترى: **${item.name}**\nالمبلغ: ${item.price.toLocaleString()} ${EMOJI_MORA}`).catch(console.error); }
-                 userData.shop_purchases = (userData.shop_purchases || 0) + 1;
-                 client.setLevel.run(userData);
-                 await i.editReply({ content: `✅ تمت عملية الشراء! فضلاً، قم بفتح "مجلس خاص" (تكت) لاستلام طلبك.` });
-                 sendShopLog(client, guildId, i.member, item.name, item.price, "شراء");
                  return;
              }
+             
              await processFinalPurchase(i, item, 1, item.price, 0, 'none', client, sql, 'item');
              return;
         }
