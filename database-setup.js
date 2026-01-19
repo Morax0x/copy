@@ -68,13 +68,22 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS mod_cases (id TEXT PRIMARY KEY, guildID TEXT, caseID INTEGER, type TEXT, targetID TEXT, moderatorID TEXT, reason TEXT, timestamp INTEGER)",
         "CREATE TABLE IF NOT EXISTS active_dungeons (channelID TEXT PRIMARY KEY, guildID TEXT, hostID TEXT, data TEXT)",
         
-        // 🔥🔥 جداول الذكاء الاصطناعي الجديدة 🔥🔥
+        // --- 🔥 جداول الذكاء الاصطناعي (تمت إضافتها) 🔥 ---
+        // 1. القنوات الأساسية المفعلة (عام / خاص)
         "CREATE TABLE IF NOT EXISTS ai_channels (channelID TEXT PRIMARY KEY, guildID TEXT, isNsfw INTEGER DEFAULT 0)",
+        
+        // 2. البلاك ليست (للممنوعين من استخدام البوت)
         "CREATE TABLE IF NOT EXISTS ai_blacklist (userID TEXT PRIMARY KEY)",
         
-        // 🔥🔥 جداول حدود الاستخدام الجديدة (تمت إضافتها) 🔥🔥
+        // 3. حدود الاستخدام اليومي (للحد من السبام)
         "CREATE TABLE IF NOT EXISTS ai_role_limits (guildID TEXT, roleID TEXT, limitCount INTEGER, PRIMARY KEY(guildID, roleID))",
-        "CREATE TABLE IF NOT EXISTS ai_user_usage (userID TEXT PRIMARY KEY, guildID TEXT, dailyUsage INTEGER DEFAULT 0, purchasedBalance INTEGER DEFAULT 0, lastResetDate TEXT)"
+        "CREATE TABLE IF NOT EXISTS ai_user_usage (userID TEXT PRIMARY KEY, guildID TEXT, dailyUsage INTEGER DEFAULT 0, purchasedBalance INTEGER DEFAULT 0, lastResetDate TEXT)",
+        
+        // 4. 🔥 الكتاغوريات المقفلة (Pay to Chat) 🔥
+        "CREATE TABLE IF NOT EXISTS ai_restricted_categories (guildID TEXT, categoryID TEXT, PRIMARY KEY (categoryID))",
+        
+        // 5. 🔥 القنوات المدفوعة والمفعلة مؤقتاً 🔥
+        "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))"
     ];
 
     sql.transaction((tbls) => {
