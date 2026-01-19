@@ -1,18 +1,20 @@
-const { Events, ChannelType, PermissionsBitField, EmbedBuilder, Colors, Collection } = require('discord.js');
+const { Events, ChannelType, PermissionsBitField, EmbedBuilder, Colors, Collection, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
 const { checkPermissions, checkCooldown } = require("../permission-handler.js");
 const { processReportLogic, sendReportError } = require("../handlers/report-handler.js");
-// 🔥 إضافة استدعاء مولد بطاقة التلفيل 🔥
 const { generateLevelUpCard } = require('../generators/levelup-card-generator');
+const { askMorax } = require('../handlers/ai-handler');
+const aiConfig = require('../utils/aiConfig'); 
+const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const DISBOARD_BOT_ID = '302050872383242240'; 
-
-// كوليكشن لحفظ الكولداون
 const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
 
-// دوال مساعدة للتواريخ
+// 🔥 ذاكرة مؤقتة لمنع تكرار رسالة الدفع 🔥
+const paymentCooldowns = new Set();
+
 function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
 function getWeekStartDateString() {
     const now = new Date(); const diff = now.getUTCDate() - (now.getUTCDay() + 2) % 7; 
@@ -21,9 +23,7 @@ function getWeekStartDateString() {
 
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
-    // 🔥 حماية: عدم التسجيل إذا كانت القاعدة مغلقة
     if (!sql || !sql.open) return;
-
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
     const dailyID = `${userID}-${guildID}-${dateStr}`;
@@ -52,33 +52,19 @@ module.exports = {
         const client = message.client;
         const sql = client.sql;
 
-        // 🔥🔥 [الحل النهائي] منع الكراش عند إغلاق قاعدة البيانات 🔥🔥
-        if (!sql || !sql.open) {
-            // يتم تجاهل الرسالة بصمت لأن البوت في وضع صيانة/نسخ احتياطي
-            return;
-        }
+        if (!sql || !sql.open) return;
 
-        // ============================================================
-        // 1. كشف البومب (نظام التنبيه الجديد) 🔥
-        // ============================================================
+        // --- BUMP SYSTEM ---
         if (message.author.id === DISBOARD_BOT_ID) {
-            // جلب إعدادات القناة والرتبة
             let settingsData;
-            try {
-                settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id);
-            } catch (e) {
-                settingsData = sql.prepare("SELECT bumpChannelID FROM settings WHERE guild = ?").get(message.guild.id);
-            }
+            try { settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id); } 
+            catch (e) { settingsData = sql.prepare("SELECT bumpChannelID FROM settings WHERE guild = ?").get(message.guild.id); }
             
-            // التحقق مما إذا كان البومب في القناة المخصصة (إذا تم تحديدها)
-            if (settingsData && settingsData.bumpChannelID && message.channel.id !== settingsData.bumpChannelID) {
-                return;
-            }
+            if (settingsData && settingsData.bumpChannelID && message.channel.id !== settingsData.bumpChannelID) return;
 
             let bumperID = null;
-            if (message.interaction && message.interaction.commandName === 'bump') {
-                bumperID = message.interaction.user.id;
-            } else if (message.embeds.length > 0) {
+            if (message.interaction && message.interaction.commandName === 'bump') bumperID = message.interaction.user.id;
+            else if (message.embeds.length > 0) {
                 const desc = message.embeds[0].description || "";
                 if (desc.includes('Bump done') || desc.includes('Bump successful') || desc.includes('بومب')) {
                     const match = desc.match(/<@!?(\d+)>/); 
@@ -89,96 +75,167 @@ module.exports = {
             if (bumperID) {
                 await recordBump(client, message.guild.id, bumperID);
                 await message.react('👊').catch(() => {});
-
-                // حساب وقت التنبيه القادم (بعد ساعتين)
                 const nextBumpTime = Date.now() + 7200000;
                 const nextBumpTimeSec = Math.floor(nextBumpTime / 1000);
-
-                // --- 1. الرد الفوري ---
                 message.channel.send({
                     content: `بُورك النشــر، وسُمــع الــنداء \nعــدّاد المــجد بدأ مــن جــديــد <:2cenema:1428340793676009502>\n\n- النشر التالي بعد: <t:${nextBumpTimeSec}:R>`,
                     files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
-
-                // 🔥 تغيير اسم الروم (تم النشر - انتظار) 🔥
                 message.channel.setName('˖✶⁺〢🍀・الـنـشـر').catch(err => console.error("[Bump Rename Error]", err.message));
-
-                // --- 2. حفظ وقت التنبيه في الداتابيس (الحل الجذري) ---
-                // بدلاً من setTimeout، نحفظ الوقت في الداتابيس ليقوم index.js بفحصه
-                try {
-                    sql.prepare("UPDATE settings SET nextBumpTime = ?, lastBumperID = ? WHERE guild = ?").run(nextBumpTime, bumperID, message.guild.id);
-                } catch (e) {
-                    console.error("[Bump DB Save Error]", e);
-                }
+                try { sql.prepare("UPDATE settings SET nextBumpTime = ?, lastBumperID = ? WHERE guild = ?").run(nextBumpTime, bumperID, message.guild.id); } catch (e) {}
             }
             return;
         }
 
-        // جلب الإعدادات مرة واحدة لباقي الميزات
         let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
-        // 2. سقاية الشجرة (للبوتات)
-        if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
-            const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
-            const lowerContent = fullContent.toLowerCase();
-            const validPhrases = ["watered the tree", "سقى الشجرة", "has watered", "قام بسقاية"];
-            if (validPhrases.some(p => lowerContent.includes(p))) {
-                const match = fullContent.match(/<@!?(\d+)>/);
-                if (match && match[1]) {
-                    const userID = match[1];
-                    if (userID !== client.user.id && !treeCooldowns.has(userID)) {
-                        treeCooldowns.add(userID);
-                        setTimeout(() => treeCooldowns.delete(userID), 60000);
-                        if (client.incrementQuestStats) {
-                            await client.incrementQuestStats(userID, message.guild.id, 'water_tree', 1);
-                            message.react('💧').catch(() => {});
-                        }
+        // ============================================================
+        // 🤖 AI System (Morax)
+        // ============================================================
+        let Prefix = settings?.prefix || "-";
+
+        if (message.mentions.has(client.user) && !message.author.bot) {
+            if (message.content.includes("@everyone") || message.content.includes("@here")) return;
+
+            const aiChannelData = aiConfig.getChannelSettings(message.channel.id);
+            if (!aiChannelData) return;
+
+            // 1. فحص الحد اليومي
+            const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
+
+            if (!usageStatus.canChat) {
+                if (paymentCooldowns.has(message.author.id)) {
+                    return; 
+                }
+
+                paymentCooldowns.add(message.author.id);
+                setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
+
+                const payButton = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('ai_topup_2500') 
+                        .setLabel('ادفـع 2500 مورا')
+                        .setEmoji(client.EMOJI_MORA || '💰')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+                return message.reply({
+                    content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`,
+                    components: [payButton]
+                });
+            }
+
+            if (paymentCooldowns.has(message.author.id)) {
+                paymentCooldowns.delete(message.author.id);
+            }
+
+            const isNsfw = Boolean(aiChannelData.nsfw); 
+
+            try {
+                await message.channel.sendTyping();
+                const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
+                if (!cleanContent) return message.reply("تحدث!");
+
+                let imageAttachment = null;
+                if (message.attachments.size > 0) {
+                    const attachment = message.attachments.first();
+                    if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+                        imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
                     }
                 }
-            }
+
+                const reply = await askMorax(
+                    message.author.id, 
+                    message.guild.id, 
+                    message.channel.id, 
+                    cleanContent, 
+                    message.member.displayName,
+                    imageAttachment, 
+                    isNsfw,
+                    message // تمرير الرسالة للمعالج
+                );
+                
+                if (!reply) return;
+
+                aiLimitHandler.incrementUsage(message.author.id);
+
+                // 🔥 تنظيف النص من المنشن الجماعي + إعدادات الرد الآمنة 🔥
+                const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
+
+                // إعدادات الرد (تسمح بمنشن المستخدم، وتمنع الجميع والرتب)
+                const replyOptions = {
+                    repliedUser: true, // ✅ منشن الشخص الذي نرد عليه
+                    parse: ['users']   // 🛡️ فقط اسمح بمنشن الأعضاء (يمنع everyone/here/roles تلقائياً)
+                };
+
+                if (safeReply.length > 2000) {
+                    const chunks = safeReply.match(/[\s\S]{1,1950}/g) || [];
+                    for (const chunk of chunks) {
+                        await message.reply({ 
+                            content: chunk, 
+                            allowedMentions: replyOptions 
+                        });
+                    }
+                } else {
+                    return message.reply({ 
+                        content: safeReply, 
+                        allowedMentions: replyOptions 
+                    });
+                }
+
+            } catch (err) { console.error("AI Response Failed:", err); }
+            return;
+        }
+
+        // ... (باقي الكود كما هو)
+        // ... (تكملة الملف)
+        
+        // --- Tree Watering ---
+        if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
+             const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
+             const lowerContent = fullContent.toLowerCase();
+             const validPhrases = ["watered the tree", "سقى الشجرة", "has watered", "قام بسقاية"];
+             if (validPhrases.some(p => lowerContent.includes(p))) {
+                 const match = fullContent.match(/<@!?(\d+)>/);
+                 if (match && match[1]) {
+                     const userID = match[1];
+                     if (userID !== client.user.id && !treeCooldowns.has(userID)) {
+                         treeCooldowns.add(userID);
+                         setTimeout(() => treeCooldowns.delete(userID), 60000);
+                         if (client.incrementQuestStats) {
+                             await client.incrementQuestStats(userID, message.guild.id, 'water_tree', 1);
+                             message.react('💧').catch(() => {});
+                         }
+                     }
+                 }
+             }
         }
 
         if (message.author.bot) return;
 
-        // =========================================================
-        // 🚫 نظام منع اللفل (XP Ignore) - [الكود الجديد]
-        // =========================================================
+        // XP Ignore
         if (sql && sql.open) {
-            // 1. فحص هل القناة نفسها محظورة؟
             const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
-            
-            // 2. فحص هل الكاتيغوري (الأب) محظور؟
             let isCategoryIgnored = false;
             if (message.channel.parentId) {
                 isCategoryIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.parentId);
             }
-
-            // إذا كانت القناة أو الكاتيغوري في القائمة، نوقف الدالة فوراً ولا نحسب أي شيء
-            if (isChannelIgnored || isCategoryIgnored) {
-                return; // 🛑 توقف هنا، لن يتم احتساب أي لفل أو رسائل
-            }
+            if (isChannelIgnored || isCategoryIgnored) return; 
         }
-        // =========================================================
 
-        // ============================================================
-        // نظام الإحصائيات والـ XP
-        // ============================================================
+        // Stats & XP
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
-
-            // أ) الإحصائيات (Quests)
             if (client.incrementQuestStats) {
                 await client.incrementQuestStats(userID, guildID, 'messages', 1);
                 if (message.attachments.size > 0) await client.incrementQuestStats(userID, guildID, 'images', 1);
                 if (message.stickers.size > 0) await client.incrementQuestStats(userID, guildID, 'stickers', message.stickers.size);
-                
                 const emojiRegex = /<a?:\w+:\d+>|[\u{1F300}-\u{1F9FF}]/gu;
                 const emojis = message.content.match(emojiRegex);
                 if (emojis) await client.incrementQuestStats(userID, guildID, 'emojis_sent', emojis.length);
             }
-
             if (message.mentions.users.size > 0) {
                 message.mentions.users.forEach(async (user) => {
                     if (user.id !== message.author.id && !user.bot) {
@@ -186,8 +243,6 @@ module.exports = {
                     }
                 });
             }
-
-            // ب) الردود (Replies)
             if (message.reference && message.reference.messageId) {
                 try {
                     const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
@@ -196,15 +251,11 @@ module.exports = {
                     }
                 } catch(e) {}
             }
-
-            // ج) قنوات العد
             if (settings && settings.countingChannelID && message.channel.id === settings.countingChannelID) {
                 if (!isNaN(message.content.trim())) {
                     if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'counting_channel', 1);
                 }
             }
-
-            // د) مياو
             if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
                 if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'meow_count', 1);
                 let level = client.getLevel.get(userID, guildID);
@@ -214,78 +265,46 @@ module.exports = {
                     if (client.checkAchievements) await client.checkAchievements(client, message.member, level, null);
                 }
             }
-
-            // هـ) ميديا ستريك
             const isMediaChannel = sql.prepare("SELECT * FROM media_streak_channels WHERE guildID = ? AND channelID = ?").get(guildID, message.channel.id);
             if (isMediaChannel) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
                     await handleMediaStreakMessage(message);
                 }
             }
-
-            // و) نظام الـ XP والستريك اليومي
             await handleStreakMessage(message);
-            
             let level = client.getLevel.get(message.author.id, message.guild.id);
             const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
             if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
-
             let getXpfromDB = settings?.customXP || 25;
             let getCooldownfromDB = settings?.customCooldown || 60000;
-
             if (!client.talkedRecently.get(message.author.id)) {
                 const buff = calculateBuffMultiplier(message.member, sql);
                 const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
                 level.xp += xp; level.totalXP += xp;
                 const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
-                
-                // 🔥🔥 التحقق من التلفيل (Level Up) مع البطاقة الجديدة 🔥🔥
                 if (level.xp >= nextXP) {
                     const oldLvl = level.level;
                     level.xp -= nextXP; level.level++;
-                    
-                    // حفظ البيانات الجديدة (المستوى والخبرة فقط)
                     client.setLevel.run(level);
-
-                    // رسم وإرسال البطاقة
                     try {
                         const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: 0, hp: 0 });
-                        
-                        // تحديد القناة
                         const channelId = settings?.levelChannel || message.channel.id;
                         const channel = message.guild.channels.cache.get(channelId);
-
                         if (channel) {
-                            // 🔥🔥 التحقق من إعدادات الإشعارات (المنشن) من لوحة الإنجازات 🔥🔥
-                            // جدول quest_notifications يحتوي على عمود levelNotif
                             const notifData = sql.prepare("SELECT levelNotif FROM quest_notifications WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
-                            
-                            // إذا لم يكن هناك سجل، الافتراضي هو 1 (تشغيل المنشن)
-                            // إذا كان levelNotif = 0 (طفى الإشعارات)، نستخدم الاسم فقط بدون منشن
                             const isMentionOn = notifData ? notifData.levelNotif : 1; 
-                            
-                            // المتغير الذي سنستخدمه في الرسالة
                             const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
-
-                            // 🔥🔥 النص الفخم (الإمبراطوري) مع استخدام userReference بدلاً من message.author 🔥🔥
                             let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                                              `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                                              `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
-
-                            // 🔥🔥 التحقق من المستويات المميزة (Milestones) 🔥🔥
                             const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
                             if (milestones.includes(level.level)) {
                                 contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
                             }
-
-                            await channel.send({ 
-                                content: contentMsg,
-                                files: [card] 
-                            });
+                            await channel.send({ content: contentMsg, files: [card] });
                         }
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
-                        // رسالة نصية احتياطية
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
                                         `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                                         `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
@@ -294,27 +313,15 @@ module.exports = {
                 } else {
                     client.setLevel.run(level);
                 }
-
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
-
-            // ============================================================
-            // 🛡️ نظام توزيع رتب اللفل (مع حذف الرتب القديمة)
-            // ============================================================
             try {
-                // 1. جلب رتبة المستوى الحالي (إن وجدت)
                 let currentLevelRole = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
-
                 if (currentLevelRole && message.member) {
-                    // 2. إضافة الرتبة الجديدة
                     if (!message.member.roles.cache.has(currentLevelRole.roleID)) {
                         await message.member.roles.add(currentLevelRole.roleID).catch(e => console.error(`[Level Role Add Error]: ${e.message}`));
-                        
-                        // 3. جلب وحذف جميع رتب المستويات السابقة (الأقل من المستوى الحالي)
-                        // نتأكد أننا نحذف فقط الرتب المرتبطة بنظام الليفل
                         const oldRoles = sql.prepare("SELECT roleID FROM level_roles WHERE guildID = ? AND level < ?").all(message.guild.id, level.level);
-                        
                         for (const roleData of oldRoles) {
                             if (message.member.roles.cache.has(roleData.roleID)) {
                                 await message.member.roles.remove(roleData.roleID).catch(e => {});
@@ -322,44 +329,25 @@ module.exports = {
                         }
                     }
                 }
-            } catch (e) {
-                console.error("[Level Role Logic Error]: ", e);
-            }
-
+            } catch (e) { console.error("[Level Role Logic Error]: ", e); }
         } catch (err) { console.error("[Stats Error]", err); }
 
-
-        // ============================================================
-        // 3. معالج الاختصارات (Shortcuts)
-        // ============================================================
         try {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
-
-            // 🔥 التصحيح هنا: إضافة SELECT 🔥
             let shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
                 .get(message.guild.id, message.channel.id, shortcutWord);
-
             if (!shortcut) {
                  shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND shortcutWord = ? AND (channelID IS NULL OR channelID = 'null' OR channelID = '')")
                 .get(message.guild.id, shortcutWord);
             }
-
             if (shortcut) {
                 const targetName = shortcut.commandName.toLowerCase();
-                const cmd = client.commands.find(c => 
-                    (c.name && c.name.toLowerCase() === targetName) || 
-                    (c.aliases && c.aliases.includes(targetName))
-                );
-
+                const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
                 if (cmd) {
-                    // الاختصارات تعتبر "استثناء" ومسموحة تلقائياً إذا وجدت في القناة الصحيحة
                     if (checkPermissions(message, cmd)) {
                         const cooldownMsg = checkCooldown(message, cmd);
-                        if (cooldownMsg) {
-                             if (typeof cooldownMsg === 'string') message.reply(cooldownMsg);
-                             return;
-                        }
+                        if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); return; }
                         try {
                             const finalArgs = argsRaw.slice(1);
                             finalArgs.prefix = ""; 
@@ -371,11 +359,6 @@ module.exports = {
             }
         } catch (err) { console.error("[Shortcut Handler Error]", err); }
 
-        // ============================================================
-        // 4. معالج البريفكس (Prefix Handler)
-        // ============================================================
-        let Prefix = settings?.prefix || "-";
-        
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
         if (mentionRegex.test(message.content)) {
             return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
@@ -384,49 +367,25 @@ module.exports = {
         if (message.content.startsWith(Prefix)) {
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
-            
             if (commandName.length > 0) {
-                const command = client.commands.find(cmd => 
-                    (cmd.name && cmd.name.toLowerCase() === commandName) || 
-                    (cmd.aliases && cmd.aliases.includes(commandName))
-                );
-                
+                const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
                 if (command) {
                     args.prefix = Prefix;
                     let isAllowed = false;
-                    
-                    // ========================================================
-                    // ⛔ نظام الحظر الشامل ⛔
-                    // ========================================================
-                    
-                    // 1. السماح للأدمن (Administrator)
-                    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                        isAllowed = true;
-                    } 
-                    // 2. السماح في الكازينو (اقتصاد فقط)
-                    else if (settings && (settings.casinoChannelID === message.channel.id || settings.casinoChannelID2 === message.channel.id) && command.category === 'Economy') {
-                        isAllowed = true;
-                    }
-                    // 3. السماح بالقنوات المحددة يدوياً (عن طريق allow-command)
+                    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) { isAllowed = true; } 
+                    else if (settings && (settings.casinoChannelID === message.channel.id || settings.casinoChannelID2 === message.channel.id) && command.category === 'Economy') { isAllowed = true; }
                     else {
                         try {
                             const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.id);
-                            // التحقق من الكاتجوري إذا لزم الأمر
                             const categoryPerm = message.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId) : null;
-                            
-                            if (channelPerm || categoryPerm) {
-                                isAllowed = true;
-                            }
+                            if (channelPerm || categoryPerm) { isAllowed = true; }
                         } catch (err) { isAllowed = false; }
                     }
-                    // ========================================================
-
                     if (isAllowed) {
                         try {
                             const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(message.author.id);
                             if (isBlacklisted) return; 
                         } catch(e) {}
-
                         if (checkPermissions(message, command)) {
                             const cooldownMsg = checkCooldown(message, command);
                             if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
@@ -438,7 +397,6 @@ module.exports = {
             }
         }
 
-        // 5. القنوات الخاصة (نظام البلاغات)
         if (reportSettings && reportSettings.reportChannelID && message.channel.id === reportSettings.reportChannelID) {
             if (message.content.trim().startsWith("بلاغ")) {
                 const args = message.content.trim().split(/ +/); args.shift(); await message.delete().catch(() => {});
@@ -453,17 +411,10 @@ module.exports = {
             return; 
         }
 
-        // ============================================================
-        // الكازينو بدون بريفكس (الأول + الثاني)
-        // ============================================================
-        // 🔥 تعديل: السماح بالكتابة بدون بريفكس في كلا الرومين 🔥
         if (settings && ((settings.casinoChannelID && message.channel.id === settings.casinoChannelID) || (settings.casinoChannelID2 && message.channel.id === settings.casinoChannelID2))) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
-            const command = client.commands.find(cmd => 
-                (cmd.name && cmd.name.toLowerCase() === commandName) || 
-                (cmd.aliases && cmd.aliases.includes(commandName))
-            );
+            const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
             if (command && command.category === "Economy") {
                 if (!checkPermissions(message, command)) return;
                 try { await command.execute(message, args); } catch (error) {}
@@ -471,13 +422,9 @@ module.exports = {
             return;
         }
 
-        // ============================================================
-        // 6. نظام الردود التلقائية
-        // ============================================================
         try {
             const content = message.content.trim();
             const autoReply = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ? AND trigger = ?").get(message.guild.id, content);
-
             if (autoReply) {
                 if (autoReply.expiresAt && Date.now() > autoReply.expiresAt) {
                     sql.prepare("DELETE FROM auto_responses WHERE id = ?").run(autoReply.id);
@@ -494,16 +441,13 @@ module.exports = {
                             if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
                         }
                     } catch (e) {} 
-
                     if (isAllowedChannel) {
                         const cooldownKey = `ar_${autoReply.id}_${message.channel.id}`;
                         const cooldownTime = (autoReply.cooldown || 600) * 1000;
                         const now = Date.now();
-
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
                             const files = autoReply.images ? JSON.parse(autoReply.images) : [];
                             await message.reply({ content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
-                            
                             autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
                             setTimeout(() => autoResponderCooldowns.delete(cooldownKey), cooldownTime);
                         }
