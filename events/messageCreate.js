@@ -91,17 +91,57 @@ module.exports = {
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
         // ============================================================
-        // 🤖 AI System (Morax)
+        // 🤖 AI System (Morax) - Modified for Categories
         // ============================================================
         let Prefix = settings?.prefix || "-";
 
         if (message.mentions.has(client.user) && !message.author.bot) {
             if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
-            const aiChannelData = aiConfig.getChannelSettings(message.channel.id);
+            // 1. تحديد إعدادات القناة (هل هي مفعلة دائماً؟)
+            let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
+            let isPaidSession = false; // علامة لمعرفة هل هي قناة مدفوعة
+
+            // 🔥 فحص نظام الكتاغوري (Pay to Chat) 🔥
+            // إذا لم تكن القناة مفعلة بـ setup، نفحص الكتاغوري
+            if (!aiChannelData && message.channel.parentId) {
+                
+                // هل الكتاغوري مقفل؟
+                if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
+                    // هل القناة مدفوعة حالياً؟
+                    const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
+                    
+                    if (paidStatus) {
+                        // ✅ نعم مدفوعة -> نعتمد وضعها
+                        aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                        isPaidSession = true;
+                    } else {
+                        // ❌ غير مدفوعة -> نطلب الدفع
+                        if (paymentCooldowns.has(message.channel.id)) return; // منع التكرار
+
+                        paymentCooldowns.add(message.channel.id);
+                        setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
+
+                        const payBtn = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('ai_pay_category_1000')
+                                .setLabel('فتح الشات (1000 مورا)')
+                                .setEmoji('🔓')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+
+                        return message.reply({
+                            content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`,
+                            components: [payBtn]
+                        });
+                    }
+                }
+            }
+
+            // إذا لم نجد إعدادات (لا دائمة ولا مدفوعة) -> نتجاهل الرسالة
             if (!aiChannelData) return;
 
-            // 1. فحص الحد اليومي
+            // 2. فحص الحد اليومي للمستخدم
             const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
 
             if (!usageStatus.canChat) {
@@ -160,13 +200,12 @@ module.exports = {
 
                 aiLimitHandler.incrementUsage(message.author.id);
 
-                // 🔥 تنظيف النص من المنشن الجماعي + إعدادات الرد الآمنة 🔥
+                // 🔥 تنظيف النص وإعدادات الرد الآمنة
                 const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
 
-                // إعدادات الرد (تسمح بمنشن المستخدم، وتمنع الجميع والرتب)
                 const replyOptions = {
-                    repliedUser: true, // ✅ منشن الشخص الذي نرد عليه
-                    parse: ['users']   // 🛡️ فقط اسمح بمنشن الأعضاء (يمنع everyone/here/roles تلقائياً)
+                    repliedUser: true, 
+                    parse: ['users']   
                 };
 
                 if (safeReply.length > 2000) {
@@ -188,7 +227,7 @@ module.exports = {
             return;
         }
 
-        // ... (باقي الكود كما هو)
+        // ... (باقي الكود الأصلي كما هو)
         // ... (تكملة الملف)
         
         // --- Tree Watering ---
