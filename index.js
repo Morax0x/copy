@@ -1,70 +1,67 @@
-require('./debug.js');
 const { Client, GatewayIntentBits, Collection, EmbedBuilder, PermissionsBitField, Events, Colors, MessageFlags, ChannelType, REST, Routes, Partials } = require("discord.js");
 const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
-// ⬇️⬇️⬇️ آيدي سيرفرك الرئيسي ⬇️⬇️⬇️
+// Import AI Config Manager
+const aiConfig = require('./utils/aiConfig');
+
 const MAIN_GUILD_ID = "952732360074494003"; 
 
-// ==================================================================
-// 1. إعداد قاعدة البيانات
-// ==================================================================
 const sql = new SQLite('./mainDB.sqlite');
 sql.pragma('journal_mode = WAL');
 
 try {
-    // 🔥 استدعاء ذكي للدالة لضمان عملها 🔥
     const dbSetupModule = require("./database-setup.js");
     const setupDatabase = dbSetupModule.setupDatabase || dbSetupModule;
 
     if (typeof setupDatabase !== 'function') {
-        throw new Error("ملف database-setup.js لا يحتوي على دالة التجهيز الصحيحة!");
+        throw new Error("Missing setupDatabase function in database-setup.js");
     }
 
     setupDatabase(sql);
+
+    // Initialize AI Cache after tables are created
+    if (aiConfig && typeof aiConfig.init === 'function') {
+        console.log("[System] Initializing AI Configuration...");
+        aiConfig.init();
+    }
+
 } catch (err) {
     console.error("!!! Database Setup Fatal Error !!!");
     console.error(err);
     process.exit(1);
 }
 
-// ==================================================================
-// 2. تحميل الخطوط
-// ==================================================================
 try {
     const { registerFont } = require('canvas');
     const beinPath = path.join(__dirname, 'fonts', 'bein-ar-normal.ttf');
       
     if (fs.existsSync(beinPath)) {
         registerFont(beinPath, { family: 'Bein' });
-        console.log(`[Fonts] ✅ تم تحميل خط النصوص: Bein`);
+        console.log(`[Fonts] ✅ Loaded Font: Bein`);
     } else {
         const beinPathAlt = path.join(__dirname, 'fonts', 'Bein-Normal.ttf');
         if (fs.existsSync(beinPathAlt)) {
             registerFont(beinPathAlt, { family: 'Bein' });
-            console.log(`[Fonts] ✅ تم تحميل خط النصوص (اسم بديل): Bein`);
+            console.log(`[Fonts] ✅ Loaded Font (Alt): Bein`);
         } else {
-            console.error(`[Fonts] ❌ خطأ فادح: ملف bein-ar-normal.ttf غير موجود في مجلد fonts!`);
+            console.error(`[Fonts] ❌ Error: bein-ar-normal.ttf not found!`);
         }
     }
 
     const emojiPath = path.join(__dirname, 'efonts', 'NotoEmoji.ttf');
     if (fs.existsSync(emojiPath)) {
         registerFont(emojiPath, { family: 'NotoEmoji' });
-        console.log(`[Fonts] ✅ تم تحميل خط الإيموجي: NotoEmoji`);
+        console.log(`[Fonts] ✅ Loaded Emoji Font: NotoEmoji`);
     }
 } catch (e) {
-    console.warn("[Fonts] ⚠️ مشكلة في مكتبة Canvas: " + e.message);
+    console.warn("[Fonts] ⚠️ Canvas Font Issue: " + e.message);
 }
 
-// ==================================================================
-// 3. تحديثات الجداول
-// ==================================================================
-// 🔥 إضافة أعمدة نظام البومب الجديد 🔥
+// Database Schema Updates & Migrations
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN nextBumpTime INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN lastBumperID TEXT").run(); } catch (e) {}
-
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastFish INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN rodLevel INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER DEFAULT 1").run(); } catch (e) {}
@@ -75,43 +72,28 @@ try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEG
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level INTEGER DEFAULT 1").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN max_dungeon_floor INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_wins INTEGER DEFAULT 0").run(); } catch (e) {}
-
-// 🔥🔥 إضافة عمود الكولداون للسباق (مهم جداً) 🔥🔥
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) {}
-
-// تحديثات الإحصائيات والإعدادات
 try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_disboard_bumps INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN boost_channel_reactions INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN casinoChannelID TEXT").run(); } catch (e) {}
-// 🔥 إضافة الكازينو الإضافي 🔥
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN casinoChannelID2 TEXT").run(); } catch (e) {}
-
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN shopLogChannelID TEXT").run(); } catch (e) {} 
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN boostChannelID TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
 
-// 🔥 إنشاء الجداول الضرورية 🔥
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_giveaways (messageID TEXT PRIMARY KEY, guildID TEXT, channelID TEXT, prize TEXT, endsAt INTEGER, winnerCount INTEGER, xpReward INTEGER, moraReward INTEGER, isFinished INTEGER DEFAULT 0)").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giveawayID TEXT, userID TEXT, weight INTEGER, PRIMARY KEY (giveawayID, userID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
-
-// ✅✅✅ إضافة جدول التذاكر (Dungeon Stats) لضمان عمله من البداية ✅✅✅
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
-
-// 🔥 إضافة جدول منع اللفل (XP Ignore) [التحديث الجديد] 🔥
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS xp_ignore (guildID TEXT, id TEXT, type TEXT, PRIMARY KEY (guildID, id))").run(); } catch(e) {}
 
-// ==================================================================
-// 4. استيراد الهاندلرز
-// ==================================================================
 const { handleStreakMessage, calculateBuffMultiplier, checkDailyStreaks, updateNickname, calculateMoraBuff, checkDailyMediaStreaks, sendMediaStreakReminders, sendDailyMediaUpdate, sendStreakWarnings } = require("./streak-handler.js");
 const { checkPermissions, checkCooldown } = require("./permission-handler.js");
 const { checkLoanPayments } = require('./handlers/loan-handler.js'); 
@@ -126,13 +108,8 @@ const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
 const { handleShopInteractions } = require('./handlers/shop-handler.js'); 
 const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
-
-// 🔥🔥🔥 استدعاء هاندلر الانهيار الجديد 🔥🔥🔥
 const handleMarketCrash = require('./handlers/market-crash-handler.js');
 
-// ==================================================================
-// 5. إعداد العميل (Client)
-// ==================================================================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -141,7 +118,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.DirectMessages // ✅ [مهم] تم إضافة نية الخاص
+        GatewayIntentBits.DirectMessages 
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction] 
 });
@@ -154,7 +131,6 @@ client.recentMessageTimestamps = new Collection();
 const RECENT_MESSAGE_WINDOW = 2 * 60 * 60 * 1000; 
 const botToken = process.env.DISCORD_BOT_TOKEN;
 
-// ... (بقية الإيموجي والإعدادات كما هي) ...
 client.EMOJI_MORA = '<:mora:1435647151349698621>';
 client.EMOJI_STAR = '⭐';
 client.EMOJI_WI = '<a:wi:1435572304988868769>';
@@ -171,7 +147,6 @@ client.generateQuestAlert = generateQuestAlert;
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
       
-    // 🔥🔥🔥 تعديل استعلام INSERT ليشمل lastRace 🔥🔥🔥
     client.setLevel = sql.prepare(`
         INSERT OR REPLACE INTO levels (
             user, guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank, 
@@ -190,7 +165,6 @@ if (sql.open) {
         );
     `);
       
-    // 🔥🔥🔥 تعديل البيانات الافتراضية لتشمل lastRace 🔥🔥🔥
     client.defaultData = { 
         user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
         lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, 
@@ -237,86 +211,81 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-// 🔥🔥 الدالة المعدلة جذرياً: منطق صارم لإزالة الرتب القديمة 🔥🔥
 client.checkAndAwardLevelRoles = async function(member, newLevel) {
     if (!client.sql.open) return;
     try {
         const guild = member.guild;
-        
-        // 1. تحديث بيانات العضو لضمان دقة الرتب الحالية
-        member = await guild.members.fetch(member.id).catch(() => null);
-        if (!member) return;
-
         const botMember = guild.members.me;
+
         if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-            console.log(`[Level Roles] ❌ البوت لا يملك صلاحية إدارة الرتب في سيرفر: ${guild.name}`);
+            console.log(`[Level Roles] ❌ Missing Manage Roles permission: ${guild.name}`);
             return;
         }
 
-        // 2. جلب جميع رتب اللفلات من الداتابيس (الأعلى أولاً)
         const allLevelRolesConfig = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
         
         if (allLevelRolesConfig.length === 0) return;
 
-        // 3. تحديد "الرتبة المستهدفة" (أعلى رتبة يستحقها العضو حالياً)
-        const targetRecord = allLevelRolesConfig.find(r => newLevel >= r.level);
-        const targetRoleID = targetRecord ? targetRecord.roleID : null;
+        member = await member.fetch().catch(() => null);
+        if (!member) return;
 
-        const rolesToAdd = [];
+        let targetRoleID = null;
+        for (const row of allLevelRolesConfig) {
+            if (newLevel >= row.level) {
+                targetRoleID = row.roleID;
+                break; 
+            }
+        }
+
+        let roleToAdd = null;
         const rolesToRemove = [];
 
-        // 4. الفرز: أي رتبة لفل يملكها العضو وليست هي المستهدفة -> إزالة فورية
         for (const row of allLevelRolesConfig) {
-            const roleID = row.roleID;
-            const role = guild.roles.cache.get(roleID);
+            const role = guild.roles.cache.get(row.roleID);
+            
+            if (!role) continue;
 
-            // تخطي الرتب المحذوفة أو التي أعلى من البوت
-            if (!role || role.position >= botMember.roles.highest.position) continue;
+            if (role.position >= botMember.roles.highest.position) {
+                console.warn(`[Level Roles] ⚠️ Cannot manage role (${role.name}) due to hierarchy!`);
+                continue; 
+            }
 
-            if (targetRoleID && roleID === targetRoleID) {
-                // ✅ هذه هي الرتبة المستحقة
-                if (!member.roles.cache.has(roleID)) {
-                    rolesToAdd.push(role);
+            if (targetRoleID && row.roleID === targetRoleID) {
+                if (!member.roles.cache.has(role.id)) {
+                    roleToAdd = role;
                 }
             } else {
-                // ❌ هذه رتبة لفل أخرى (قديمة أو غير مستحقة)
-                if (member.roles.cache.has(roleID)) {
+                if (member.roles.cache.has(role.id)) {
                     rolesToRemove.push(role);
                 }
             }
         }
 
-        // 5. التنفيذ (الإزالة أولاً ثم الإضافة)
         if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove).catch(e => console.error(`[Level Roles] Remove Error: ${e.message}`));
-            console.log(`[Level Roles] ➖ إزالة ${rolesToRemove.length} رتبة قديمة من ${member.user.tag}`);
+            await member.roles.remove(rolesToRemove).catch(err => console.error(`[Level Roles] Failed to remove old roles: ${err.message}`));
+            console.log(`[Level Roles] 🗑️ Removed ${rolesToRemove.length} old roles from ${member.user.tag}`);
         }
 
-        if (rolesToAdd.length > 0) {
-            // انتظار بسيط لضمان عدم تداخل الطلبات
-            await new Promise(r => setTimeout(r, 500)); 
-            await member.roles.add(rolesToAdd).catch(e => console.error(`[Level Roles] Add Error: ${e.message}`));
-            console.log(`[Level Roles] ➕ إضافة رتبة جديدة لـ ${member.user.tag}`);
+        if (roleToAdd) {
+            await member.roles.add(roleToAdd).catch(err => console.error(`[Level Roles] Failed to add new role: ${err.message}`));
+            console.log(`[Level Roles] ✅ Added role ${roleToAdd.name} to ${member.user.tag}`);
         }
 
     } catch (err) {
-        console.error("[Level Roles] Critical Error:", err.message);
+        console.error("[Level Roles] Error:", err.message);
     }
 }
 
-// 🔥 تعديل دالة إرسال رسالة اللفل لتوجيه الكازينو الإضافي إلى الأساسي 🔥
 client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) {
     if (!client.sql.open) return;
     try {
         await client.checkAndAwardLevelRoles(member, newLevel);
         const guild = member.guild;
           
-        // جلب الإعدادات أولاً للتحقق من الكازينو
         let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id);
           
         let channelToSend = null;
           
-        // 1. التحقق من وجود روم مخصص للفل (أولوية قصوى)
         try {
             let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id);
             if (channelData && channelData.channel && channelData.channel !== 'Default') {
@@ -325,16 +294,13 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
             }
         } catch(e) {}
 
-        // 2. إذا لم يكن هناك روم مخصص، نحدد الروم بناءً على مكان اللعب
         if (!channelToSend) {
             if (messageOrInteraction && messageOrInteraction.channel) {
-                // 🔥 منطق التحويل: إذا كان في الكازينو الإضافي، أرسل للأساسي 🔥
                 if (customSettings && customSettings.casinoChannelID2 && customSettings.casinoChannelID && messageOrInteraction.channel.id === customSettings.casinoChannelID2) {
                       const mainCasino = guild.channels.cache.get(customSettings.casinoChannelID);
                       if (mainCasino) {
                           channelToSend = mainCasino;
                       } else {
-                          // إذا الكازينو الأساسي محذوف أو غير موجود، ارسل في نفس المكان
                           channelToSend = messageOrInteraction.channel;
                       }
                 } else {
@@ -447,7 +413,6 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
     }
 }
 
-// Increment Stats
 client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
     if (!client.sql.open) return;
 
@@ -532,9 +497,8 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
             hasRole = member.roles.cache.some(role => raceRoleIDs.includes(role.id));
         } else { hasRole = member.roles.cache.has(roleId); }
         
-        // 🔥🔥 التعديل: إذا حقق الإنجاز، سجله. إذا خسره، لا تحذف السجل أبداً (One-time) 🔥🔥
         if (hasRole) {
-            if (existingAch) return; // مسجل مسبقاً، اخرج
+            if (existingAch) return; 
             sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES (?, ?, ?, ?)").run(userID, guildID, ach.id, Date.now());
             let ld = client.getLevel.get(userID, guildID);
             if (!ld) ld = { ...client.defaultData, user: userID, guild: guildID };
@@ -544,19 +508,12 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
             client.setLevel.run(ld);
             await client.sendQuestAnnouncement(member.guild, member, ach, 'achievement');
         } 
-        // 🛑 تم حذف الجزء الذي يحذف الإنجاز عند إزالة الرول (else { delete... })
     } catch (err) { console.error(`[checkRoleAchievement] Error:`, err.message); }
 }
 
-// ==================================================================
-// 5. Economy, Farm, and Loans
-// ==================================================================
-
-// 🔥 دالة تحديث أسعار السوق (محدثة للربط مع ملف الانهيار) 🔥
 function updateMarketPrices() {
     if (!sql.open) return;
     try {
-        // تهيئة المتغير إذا لم يكن موجوداً
         if (!client.marketLocks) client.marketLocks = new Set();
 
         const allItems = sql.prepare("SELECT * FROM market_items").all();
@@ -566,9 +523,7 @@ function updateMarketPrices() {
         
         const CRASH_PRICE = 10; 
 
-        // لا نستخدم transaction هنا لأننا سنعالج كل سهم على حدة، والانهيار له transaction خاص به
         for (const item of allItems) {
-            // تخطي الأسهم المقفلة (التي تنهار حالياً)
             if (client.marketLocks.has(item.id)) continue;
 
             const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
@@ -584,14 +539,11 @@ function updateMarketPrices() {
             const oldPrice = item.currentPrice;
             let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
-            // 🛑🛑🛑 فحص الانهيار واستدعاء الملف الخارجي 🛑🛑🛑
             if (newPrice <= CRASH_PRICE) {
-                // استدعاء الهاندلر الجديد
                 handleMarketCrash(client, sql, item); 
-                continue; // ننتقل للسهم التالي ولا نحدث السعر هنا (الهاندلر سيتكفل بالباقي)
+                continue; 
             }
             
-            // حدود السعر العادية
             if (newPrice > 50000) newPrice = 50000;
 
             const changeAmount = newPrice - oldPrice;
@@ -708,9 +660,6 @@ async function updateRainbowRoles(client) {
     } catch (e) { console.error("[Rainbow Roles Error]", e); }
 }
 
-// ==================================================================
-// 6. Start Bot
-// ==================================================================
 client.on(Events.ClientReady, async () => { 
     console.log(`✅ Logged in as ${client.user.username}`);
       
@@ -749,16 +698,15 @@ client.on(Events.ClientReady, async () => {
     }
       
     try { 
-        console.log(`🧹 تنظيف أوامر السيرفر: ${MAIN_GUILD_ID}`);
+        console.log(`🧹 Cleaning server commands: ${MAIN_GUILD_ID}`);
         await rest.put(Routes.applicationGuildCommands(client.user.id, MAIN_GUILD_ID), { body: [] });
 
-        console.log(`🚀 جاري تسجيل ${commands.length} أمر عالمياً...`);
+        console.log(`🚀 Registering ${commands.length} commands globally...`);
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
           
-        console.log(`✅ تم التحديث العالمي بنجاح!`); 
+        console.log(`✅ Global registration complete!`); 
     } catch (error) { console.error("[Deploy Error]", error); }
 
-    // --- Timers & Intervals ---
     setInterval(calculateInterest, 60 * 60 * 1000); 
     calculateInterest(); 
 
@@ -787,7 +735,6 @@ client.on(Events.ClientReady, async () => {
 
     setInterval(() => updateRainbowRoles(client), 180000); 
 
-    // 🔥🔥🔥 نظام فحص البومب الجديد (Interval بدلاً من Timeout) 🔥🔥🔥
     setInterval(() => {
         if (!sql.open) return;
         const now = Date.now();
@@ -807,16 +754,14 @@ client.on(Events.ClientReady, async () => {
                             files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
                         }).catch(() => {});
 
-                        // 🔥 تعديل اسم الروم (حان وقت النشر) 🔥
                         channel.setName('˖✶⁺〢🔥・انشر・الان').catch(err => console.error("[Bump Ready Rename Error]", err.message));
                     }
                 }
             } catch (err) { console.error("[Bump Notify Error]", err); }
               
-            // تصفير الوقت لمنع التكرار
             sql.prepare("UPDATE settings SET nextBumpTime = 0 WHERE guild = ?").run(row.guild);
         }
-    }, 60 * 1000); // يفحص كل دقيقة
+    }, 60 * 1000); 
 
     setInterval(() => {
         if (!sql.open) return;
@@ -854,26 +799,21 @@ client.on(Events.ClientReady, async () => {
       
     const lastRandomGiveawayDate = new Map(); setInterval(async () => { const today = new Date().toISOString().split('T')[0]; const now = Date.now(); for (const guild of client.guilds.cache.values()) { const guildID = guild.id; if (lastRandomGiveawayDate.get(guildID) === today) continue; const guildTimestamps = client.recentMessageTimestamps.get(guildID) || []; while (guildTimestamps.length > 0 && guildTimestamps[0] < (now - RECENT_MESSAGE_WINDOW)) { guildTimestamps.shift(); } const totalMessagesLast2Hours = guildTimestamps.length; if (totalMessagesLast2Hours < 200) continue; const roll = Math.random(); if (roll < 0.10) { try { const success = await createRandomDropGiveaway(client, guild); if (success) { lastRandomGiveawayDate.set(guildID, today); console.log(`[DropGA] Success: ${guild.name}`); } } catch (err) { console.error(`[DropGA] Error:`, err.message); } } } }, 30 * 60 * 1000); 
       
-    // 🔥🔥🔥 المكنسة التلقائية (الحل الجذري للتعليق) 🔥🔥🔥
     setInterval(() => {
         try {
-            // 1. تنظيف قائمة اللاعبين إذا كانت ممتلئة بشكل مريب لفترة طويلة
             if (client.activePlayers && client.activePlayers.size > 0) {
                 console.log(`[Auto-Cleanup] 🧹 Cleaning up ${client.activePlayers.size} active players states.`);
                 client.activePlayers.clear();
             }
 
-            // 2. تنظيف قنوات الألعاب العالقة
             if (client.activeGames && client.activeGames.size > 0) {
                 client.activeGames.clear();
             }
 
-            // 3. تنظيف مؤقتات السباق
             if (client.raceTimestamps && client.raceTimestamps.size > 0) {
                 client.raceTimestamps.clear();
             }
               
-            // 4. تنظيف قفل السوق (احتياطاً)
             if (client.marketLocks && client.marketLocks.size > 0) {
                  client.marketLocks.clear();
             }
@@ -881,7 +821,7 @@ client.on(Events.ClientReady, async () => {
         } catch (e) {
             console.error("[Auto-Cleanup Error]", e);
         }
-    }, 30 * 60 * 1000); // تكرار كل 30 دقيقة
+    }, 30 * 60 * 1000); 
 
     sendDailyMediaUpdate(client, sql);
 }); 
