@@ -7,7 +7,7 @@ module.exports = {
     async execute(interaction) {
         if (!interaction.isButton()) return;
 
-        // 🔥🔥 التعديل الحاسم: نتأكد أن الزر يخص الذكاء الاصطناعي فقط 🔥🔥
+        // 🔥🔥 التعديل الحاسم: نتأكد أن الز.ر يخص الذكاء الاصطناعي فقط 🔥🔥
         // إذا الزر مو تبعنا (مثل زر الباك اب)، نترك الملف فوراً ولا نتدخل
         if (!interaction.customId.startsWith('ai_')) return;
 
