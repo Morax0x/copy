@@ -5,7 +5,12 @@ const aiConfig = require('../utils/aiConfig');
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
+        // 1. التحقق الأساسي: هل هو زر؟ وهل هو داخل سيرفر؟
         if (!interaction.isButton()) return;
+        if (!interaction.guild) {
+            return interaction.reply({ content: "❌ هذا الأمر يعمل داخل السيرفرات فقط.", ephemeral: true });
+        }
+        if (!interaction.user) return; // حماية إضافية
 
         const userID = interaction.user.id;
         const guildID = interaction.guild.id;
@@ -17,23 +22,28 @@ module.exports = {
             const COST = 2500;
             const REWARD_MESSAGES = 100;
 
-            // جلب البيانات
-            let userData = interaction.client.getLevel.get(userID, guildID);
-            if (!userData) {
+            // جلب البيانات (مع حماية من الأخطاء)
+            let userData = interaction.client.getLevel ? interaction.client.getLevel.get(userID, guildID) : null;
+            
+            // إذا لم يكن لديه سجل، ننشئ له سجل افتراضي
+            if (!userData && interaction.client.defaultData) {
                 userData = { ...interaction.client.defaultData, user: userID, guild: guildID };
+            } else if (!userData) {
+                // حالة نادرة جداً لو الـ defaultData مو موجود
+                return interaction.reply({ content: "❌ حدث خطأ في جلب بياناتك.", ephemeral: true });
             }
 
             // فحص الرصيد
-            if (userData.mora < COST) {
+            if ((userData.mora || 0) < COST) {
                 return interaction.reply({
-                    content: `🚫 **عذراً، رصيدك غير كافٍ!**\nتحتاج إلى **${COST}** مورا، وأنت تملك **${userData.mora}** فقط.`,
+                    content: `🚫 **عذراً، رصيدك غير كافٍ!**\nتحتاج إلى **${COST}** مورا، وأنت تملك **${userData.mora || 0}** فقط.`,
                     ephemeral: true
                 });
             }
 
             // خصم المبلغ وحفظ البيانات
             userData.mora -= COST;
-            interaction.client.setLevel.run(userData);
+            if (interaction.client.setLevel) interaction.client.setLevel.run(userData);
 
             // إضافة رصيد المحادثة
             aiLimitHandler.addPurchasedBalance(userID, REWARD_MESSAGES);
@@ -54,13 +64,13 @@ module.exports = {
         if (interaction.customId === 'ai_pay_category_1000') {
             const COST = 1000;
 
-            let userData = interaction.client.getLevel.get(userID, guildID);
-            if (!userData) {
+            let userData = interaction.client.getLevel ? interaction.client.getLevel.get(userID, guildID) : null;
+            if (!userData && interaction.client.defaultData) {
                 userData = { ...interaction.client.defaultData, user: userID, guild: guildID };
             }
 
             // فحص الرصيد
-            if (userData.mora < COST) {
+            if ((userData.mora || 0) < COST) {
                 return interaction.reply({
                     content: `❌ **طفرت؟** ما معك **${COST}** مورا عشان تفتح الشات.`,
                     ephemeral: true
@@ -69,7 +79,7 @@ module.exports = {
 
             // خصم المبلغ
             userData.mora -= COST;
-            interaction.client.setLevel.run(userData);
+            if (interaction.client.setLevel) interaction.client.setLevel.run(userData);
 
             // عرض أزرار اختيار الوضع
             const modeButtons = new ActionRowBuilder().addComponents(
@@ -88,9 +98,6 @@ module.exports = {
         // 3. 🎭 زر اختيار الوضع (تفعيل القناة)
         // ---------------------------------------------------------
         if (interaction.customId === 'ai_mode_select_sfw' || interaction.customId === 'ai_mode_select_nsfw') {
-            // نتحقق من أن الشخص الذي ضغط الزر هو نفسه الذي دفع (اختياري، حالياً مسموح للكل للإسراع)
-            // if (interaction.message.content.includes(interaction.user.id)) ...
-
             const mode = interaction.customId.includes('nsfw') ? 'NSFW' : 'SFW';
             
             // تفعيل القناة في قاعدة البيانات لمدة 24 ساعة
