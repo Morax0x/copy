@@ -66,7 +66,15 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS role_coupons_config (guildID TEXT, roleID TEXT, discountPercent INTEGER, PRIMARY KEY (guildID, roleID))",
         "CREATE TABLE IF NOT EXISTS user_role_coupon_usage (guildID TEXT, userID TEXT, lastUsedTimestamp INTEGER, PRIMARY KEY (guildID, userID))",
         "CREATE TABLE IF NOT EXISTS mod_cases (id TEXT PRIMARY KEY, guildID TEXT, caseID INTEGER, type TEXT, targetID TEXT, moderatorID TEXT, reason TEXT, timestamp INTEGER)",
-        "CREATE TABLE IF NOT EXISTS active_dungeons (channelID TEXT PRIMARY KEY, guildID TEXT, hostID TEXT, data TEXT)"
+        "CREATE TABLE IF NOT EXISTS active_dungeons (channelID TEXT PRIMARY KEY, guildID TEXT, hostID TEXT, data TEXT)",
+        
+        // 🔥🔥 جداول الذكاء الاصطناعي الجديدة 🔥🔥
+        "CREATE TABLE IF NOT EXISTS ai_channels (channelID TEXT PRIMARY KEY, guildID TEXT, isNsfw INTEGER DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS ai_blacklist (userID TEXT PRIMARY KEY)",
+        
+        // 🔥🔥 جداول حدود الاستخدام الجديدة (تمت إضافتها) 🔥🔥
+        "CREATE TABLE IF NOT EXISTS ai_role_limits (guildID TEXT, roleID TEXT, limitCount INTEGER, PRIMARY KEY(guildID, roleID))",
+        "CREATE TABLE IF NOT EXISTS ai_user_usage (userID TEXT PRIMARY KEY, guildID TEXT, dailyUsage INTEGER DEFAULT 0, purchasedBalance INTEGER DEFAULT 0, lastResetDate TEXT)"
     ];
 
     sql.transaction((tbls) => {
