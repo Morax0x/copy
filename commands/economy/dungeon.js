@@ -101,6 +101,7 @@ module.exports = {
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
                 const payload = { 
+                    // content: `⏳ **تمهّل أيها المحارب!**`,  <-- تم حذف هذا السطر
                     embeds: [cooldownEmbed], 
                     flags: [MessageFlags.Ephemeral] 
                 };
