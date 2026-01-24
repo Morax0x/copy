@@ -126,6 +126,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // --- SEAL MESSAGES & FLOOR BUFFS ---
+        // ✅ يتم استدعاء الختم هنا، مما يغطي الطابق الأول وجميع الطوابق التالية
         await checkSealMessages(floor, players, threadChannel); 
         await applyFloorBuffs(floor, players, threadChannel);
 
@@ -368,7 +369,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // 🔥 التحقق الفوري من "الموت النهائي"
                     if (p.reviveCount && p.reviveCount >= 1) {
                         p.isPermDead = true; 
-                        await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته وتلاشى للأبد! (خروج نهائي)`).catch(()=>{});
+                        await threadChannel.send(`☠️ **${p.name}** تـحـللـت جثتـه ..`).catch(()=>{});
                     } else {
                         // الموتة الأولى
                         await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
@@ -404,7 +405,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         if (floor === maxFloors) {
             // 1. حساب غنائم موراكس يدوياً (لأننا نتخطى دالة applyPostBattleUpdates)
             const moraxMora = getBaseFloorMora(100);
-            const moraxXp = Math.floor(moraxMora * 0.10); // 10% XP
+            const moraxXp = Math.floor(moraxMora * 0.03); // 3% XP
 
             // 2. تحديث المجموع الكلي للغنائم
             totalAccumulatedCoins += moraxMora;
