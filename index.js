@@ -85,6 +85,8 @@ try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN boostChannelID T
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
+try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastTransferDate TEXT DEFAULT ''").run(); } catch (e) {}
+try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dailyTransferCount INTEGER DEFAULT 0").run(); } catch (e) {}
 
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
@@ -147,6 +149,7 @@ client.generateQuestAlert = generateQuestAlert;
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
       
+    // 🔥 تم تحديث هذا الاستعلام لإضافة dailyTransferCount و lastTransferDate 🔥
     client.setLevel = sql.prepare(`
         INSERT OR REPLACE INTO levels (
             user, guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank, 
@@ -154,17 +157,18 @@ if (sql.open) {
             lastRob, lastGuess, lastRPS, lastRoulette, lastTransfer, lastDeposit, shop_purchases, 
             total_meow_count, boost_count, lastPVP, lastFarmYield, lastFish, rodLevel, boatLevel, 
             currentLocation, lastMemory, lastArrange, last_dungeon, dungeon_gate_level, max_dungeon_floor, dungeon_wins,
-            lastRace 
+            lastRace, lastTransferDate, dailyTransferCount 
         ) VALUES (
             @user, @guild, @xp, @level, @totalXP, @mora, @lastWork, @lastDaily, @dailyStreak, @bank, 
             @lastInterest, @totalInterestEarned, @hasGuard, @guardExpires, @totalVCTime, @lastCollected, 
             @lastRob, @lastGuess, @lastRPS, @lastRoulette, @lastTransfer, @lastDeposit, @shop_purchases, 
             @total_meow_count, @boost_count, @lastPVP, @lastFarmYield, @lastFish, @rodLevel, @boatLevel, 
             @currentLocation, @lastMemory, @lastArrange, @last_dungeon, @dungeon_gate_level, @max_dungeon_floor, @dungeon_wins,
-            @lastRace
+            @lastRace, @lastTransferDate, @dailyTransferCount
         );
     `);
       
+    // 🔥 تم تحديث القيم الافتراضية هنا أيضاً 🔥
     client.defaultData = { 
         user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
         lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, 
@@ -173,7 +177,9 @@ if (sql.open) {
         lastFish: 0, rodLevel: 1, boatLevel: 1, currentLocation: 'beach',
         lastMemory: 0, lastArrange: 0,
         last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0,
-        lastRace: 0 
+        lastRace: 0,
+        lastTransferDate: '',
+        dailyTransferCount: 0 
     };
 
     client.getDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?");
@@ -450,7 +456,7 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         if (stat === 'replies_sent') totalStats.total_replies_sent = (totalStats.total_replies_sent || 0) + amount;
         if (stat === 'mentions_received') totalStats.total_mentions_received = (totalStats.total_mentions_received || 0) + amount;
         if (stat === 'vc_minutes') totalStats.total_vc_minutes = (totalStats.total_vc_minutes || 0) + amount;
-              
+               
         client.setDailyStats.run(dailyStats);
         client.setWeeklyStats.run(weeklyStats);
         client.setTotalStats.run({
