@@ -126,7 +126,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // --- SEAL MESSAGES & FLOOR BUFFS ---
-        // ✅ يتم استدعاء الختم هنا، مما يغطي الطابق الأول وجميع الطوابق التالية
         await checkSealMessages(floor, players, threadChannel); 
         await applyFloorBuffs(floor, players, threadChannel);
 
@@ -294,7 +293,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     };
                 
                     const result = await handlePlayerBattleInteraction(i, context);
-                    if (!result.ongoing) {
+                    
+                    // 🔥🔥🔥 FIX: التحقق من أن النتيجة موجودة قبل قراءة الخاصية 🔥🔥🔥
+                    // هذا يمنع الخطأ TypeError: Cannot read properties of undefined (reading 'ongoing')
+                    if (result && !result.ongoing) {
                         ongoing = false;
                     }
                 });
@@ -366,7 +368,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     // 🔥 التحقق الفوري من "الموت النهائي"
                     if (p.reviveCount && p.reviveCount >= 1) {
                         p.isPermDead = true; 
-                        await threadChannel.send(`☠️ **${p.name}** تـحـللـت جثتـه ..`).catch(()=>{});
+                        await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته وتلاشى للأبد! (خروج نهائي)`).catch(()=>{});
                     } else {
                         // الموتة الأولى
                         await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
