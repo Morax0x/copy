@@ -6,7 +6,7 @@ const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js'
 const { manageTickets } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
-const COOLDOWN_TIME = 3 * 60 * 60 * 1000;
+const COOLDOWN_TIME = 3 * 60 * 60 * 1000; // 3 ساعات
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
@@ -78,10 +78,11 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             .setThumbnail(host.displayAvatarURL());
     };
 
+    // 🔥 تعديل ألوان الأزرار هنا 🔥
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'), 
-        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Primary).setEmoji('⚔️'), 
-        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger).setEmoji('✖️') 
+        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'), // أخضر
+        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Primary).setEmoji('⚔️'), // أزرق
+        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger).setEmoji('✖️') // أحمر
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
