@@ -4,10 +4,14 @@ const defaultMarketItems = require("./json/market-items.json");
 function setupDatabase(clientOrSql) {
     const sql = clientOrSql.sql ? clientOrSql.sql : clientOrSql;
 
+    // 🔥🔥🔥 تفعيل وضع السرعة القصوى (WAL Mode) 🔥🔥🔥
     try {
-        sql.pragma('journal_mode = WAL');
-        sql.pragma('synchronous = 1');
-    } catch (e) { console.log("[Database] WAL mode check skipped."); }
+        sql.pragma('journal_mode = WAL'); // هذا السطر يمنع تعليق الداتابيس أثناء الكتابة
+        sql.pragma('synchronous = 1');    // توازن جيد بين السرعة والأمان
+        console.log("[Database] WAL mode enabled for better performance 🚀");
+    } catch (e) { 
+        console.log("[Database] WAL mode check skipped/failed:", e.message); 
+    }
 
     console.log("[Database] Checking integrity & schema...");
 
