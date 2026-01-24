@@ -74,6 +74,11 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     // 🔥 1. جلب سقف الضرر لهذا الطابق 🔥
     const { damageCap } = getFloorCaps(floor);
 
+    // 🔥 2. حفظ حالة إضعاف البرق قبل الحذف (Fix Lightning Bug) 🔥
+    // نأخذ القيمة هنا لأن الفلتر في الأسفل قد يحذف التأثير إذا انتهت جولاته
+    const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
+    const lightningVal = activeLightning ? activeLightning.val : 0;
+
     // 1. معالجة التجميد والشلل
     if (monster.frozen) { 
         log.push(`❄️ **${monster.name}** متجمد، خسر دوره!`); 
@@ -140,12 +145,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 log.push(msg);
             }
 
-            // إزالة تأثير إضعاف البرق بعد انتهاء دوره (لأنه يستمر دور واحد عادة)
-            if (e.type === 'lightning_weaken') {
-                e.turns--;
-            } else {
-                e.turns--;
-            }
+            // إنقاص العداد
+            e.turns--;
             return e.turns > 0;
         });
     }
@@ -261,10 +262,10 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
                 // ⚡⚡⚡ تطبيق تأثير البرق للساحر ⚡⚡⚡
-                const lightningDebuff = monster.effects.find(e => e.type === 'lightning_weaken');
-                if (lightningDebuff) {
+                // نستخدم المتغير المحفوظ lightningVal بدلاً من البحث مجدداً
+                if (lightningVal > 0) {
                     // إذا كان الوحش مصاباً بالبرق، يقل ضرره بنسبة القيمة (0.9) أي يضرب بـ 10% فقط
-                    dmg = Math.floor(dmg * (1 - lightningDebuff.val)); 
+                    dmg = Math.floor(dmg * (1 - lightningVal)); 
                 } 
                 // تأثير الضعف العادي
                 else if (monster.effects.some(e => e.type === 'weakness')) {
@@ -293,7 +294,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 let status = `-${takenDmg}`;
                 if (takenDmg === 0 && dmg > 0) status = "🛡️ صد كامل";
                 
-                if (lightningDebuff) status += " (⚡ضعف)";
+                if (lightningVal > 0) status += " (⚡ضعف)";
                 if (reflectedDmg > 0) status += ` (عكس ${reflectedDmg})`;
 
                 hitLog.push(`${target.name}: ${status}`);
