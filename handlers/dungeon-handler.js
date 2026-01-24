@@ -1,3 +1,5 @@
+// handlers/dungeon-handler.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags, Colors } = require('discord.js');
 const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
@@ -77,9 +79,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
     };
 
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'),
-        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Danger).setEmoji('⚔️'),
-        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Secondary).setEmoji('✖️')
+        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'), 
+        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Primary).setEmoji('⚔️'), 
+        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger).setEmoji('✖️') 
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
@@ -113,20 +115,10 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         
                         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
-                        // ============================================================
-                        // ✅✅✅ التعديل هنا: رسالة نفاد التذاكر الجديدة ✅✅✅
-                        // ============================================================
-                        const noTicketsEmbed = new EmbedBuilder()
-                            .setTitle('✥ نفـدت تـذاكـرك !')
-                            .setColor('#6A50D4')
-                            .setThumbnail('https://i.postimg.cc/8zsLBW6F/ti.png')
-                            .setDescription(`★ نفدت تذاكرك ايها المحـارب (${limitCheck.tickets}/${limitCheck.max})\n★ انتظر حتى تصرف لك نقابة المغامرين التذاكر الجديدة\n\n✶ موعد صرف التذاكر الجديدة: <t:${timestamp}:R>`);
-
                         return i.reply({ 
-                            embeds: [noTicketsEmbed], 
+                            content: `🚫 **استنفذت محاولاتك اليومية!**\nلديك **0/${limitCheck.max}** محاولة.\nتتجدد المحاولات يومياً الساعة 12:00 ص بتوقيت السعودية.\n⏳ **الوقت المتبقي:** <t:${timestamp}:R>`, 
                             flags: [MessageFlags.Ephemeral] 
                         });
-                        // ============================================================
                     }
                 }
 
@@ -237,7 +229,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
 
                 for (const uid of validParty) { try { await thread.members.add(uid); } catch(e){} }
 
-                await thread.send(`🔔 **بدأت المعركة!** ${validParty.map(id=>`<@${id}>`).join(' ')}`);
+                // 🔥🔥🔥 إزالة المنشن من هنا 🔥🔥🔥
+                await thread.send(`🔔 **بدأت المعركة!**`);
+                
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
                 await runDungeon(thread, msg.channel, validParty, theme, sql, host.id, partyClasses, activeDungeonRequests);
@@ -248,6 +242,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
         } else {
+            // =========================================================
+            // 🔥🔥 معالجة الإلغاء وتطبيق عقوبة الـ 3 دقائق 🔥🔥
+            // =========================================================
             activeDungeonRequests.delete(host.id);
             if (msg.editable) {
                 try {
@@ -256,8 +253,28 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         const oldEmbed = fetchedMsg.embeds[0];
                         const cancelledEmbed = EmbedBuilder.from(oldEmbed)
                             .setTitle(`🚫 تم إلغاء الغارة: ${theme.name}`)
-                            .setColor(Colors.Red) 
-                            .setFooter({ text: reason === 'user_cancel' ? "قام القائد بإلغاء الغارة" : "انتهى وقت الانتظار" });
+                            .setColor(Colors.Red);
+                        
+                        if (reason === 'user_cancel') {
+                             // 1. حساب عقوبة الـ 3 دقائق
+                             const penaltyMs = 3 * 60 * 1000; // 3 دقائق
+                             const fullCooldown = 3 * 60 * 60 * 1000; // 3 ساعات
+
+                             // 2. تحديث الداتابيس: نضبط الوقت بحيث يتبقى 3 دقائق فقط على انتهاء الكولداون
+                             // المعادلة: الوقت الحالي - (الكولداون الكامل - العقوبة)
+                             const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
+                             
+                             sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?")
+                                .run(newLastDungeon, host.id, guildId);
+
+                             // 3. تجهيز التوقيت للرسالة (بعد 3 دقائق من الآن)
+                             const readyTimestamp = Math.floor((Date.now() + penaltyMs) / 1000);
+                             
+                             cancelledEmbed.setDescription(`**قمـت بـ الغـاء الغـارة الاخيـرة .. انتـظر <t:${readyTimestamp}:R> لتفتح غـارة جديدة**`);
+                             cancelledEmbed.setFooter({ text: "قام القائد بإلغاء الغارة" });
+                        } else {
+                             cancelledEmbed.setFooter({ text: "انتهى وقت الانتظار" });
+                        }
                         
                         await msg.edit({ content: '', embeds: [cancelledEmbed], components: [] });
                     } else {
