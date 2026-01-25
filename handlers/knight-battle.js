@@ -1,3 +1,5 @@
+// handlers/knight-battle.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ComponentType } = require("discord.js");
 const path = require('path');
 
@@ -579,16 +581,35 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 2. العلاج عند الحاجة (Survival)
-        else if (guard.hp < guard.maxHp * 0.30 && !guard.effects.healed_recently) {
-            const healAmount = Math.floor(guard.maxHp * 0.20);
+        // 🔥 2. مهارة جديدة: قداس الدم (عندما يقترب من الموت - أقل من 20% صحة)
+        // يستخدمها 5 مرات كحد أقصى
+        else if (guard.hp < guard.maxHp * 0.20 && guard.effects.blood_liturgy_used < 5) {
+            const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); // ضربة قوية (1.5x)
+            player.hp -= drainDmg;
+            
+            const healAmt = Math.floor(drainDmg * 0.8); // يعالج نفسه بـ 80% من الضرر
+            guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
+
+            guard.effects.blood_liturgy_used++; // زيادة العداد
+
+            actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه! (${guard.effects.blood_liturgy_used}/5)`;
+            
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `\n${breakMsg}`;
+        }
+        // 🔥 3. تعديل العلاج: استخدام حتى 5 مرات عندما تكون الصحة أقل من 40%
+        else if (guard.hp < guard.maxHp * 0.40 && guard.effects.potions_used < 5) {
+            const healAmount = Math.floor(guard.maxHp * 0.25); // 25% شفاء
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
-            guard.effects.healed_recently = true; 
+            
             const shieldAmt = Math.floor(guard.maxHp * 0.10);
             guard.effects.shield += shieldAmt;
-            actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً!`;
+
+            guard.effects.potions_used++; // زيادة عداد الجرعات
+
+            actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
         }
-        // 3. كسر درع اللاعب (Shield Breaker)
+        // 4. كسر درع اللاعب (Shield Breaker)
         else if (player.effects.shield > 0) {
             const dmg = calculateDamage(guard, player, 1.3); 
             player.hp -= dmg;
@@ -596,13 +617,13 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 4. مواجهة البفات القوية (Counter Buffs) - معدل ليصبح نادراً (20%)
+        // 5. مواجهة البفات القوية (Counter Buffs) - معدل ليصبح نادراً (20%)
         else if (player.effects.buff > 0 && Math.random() < 0.20) {
             guard.effects.rebound_active = 0.5; 
             guard.effects.rebound_turns = 1;
             actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
         }
-        // 5. هجوم عادي (Standard Attack)
+        // 6. هجوم عادي (Standard Attack)
         else {
             let multiplier = 1.0;
             if (player.effects.buff > 0) multiplier = 1.1;
@@ -662,7 +683,16 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         // 3. درع مبدئي بسيط (10%)
         const initialShield = Math.floor(guardMaxHp * 0.1);
 
-        const defEffects = () => ({ shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0, shield_source: null, shield_cd_duration: 0 });
+        // 🔥 تحديث الكائن ليتضمن عدادات المهارات الجديدة 🔥
+        const defEffects = () => ({ 
+            shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, 
+            poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, 
+            rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, 
+            confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, 
+            blind: 0, blind_turns: 0, shield_source: null, shield_cd_duration: 0,
+            potions_used: 0,       // عداد الجرعات
+            blood_liturgy_used: 0  // عداد قداس الدم
+        });
         
         const guardEffects = defEffects();
         guardEffects.shield = initialShield;
