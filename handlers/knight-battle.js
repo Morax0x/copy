@@ -765,8 +765,13 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const msgPayload = { content: `**قـاتـل لتنجـو بحيـاتـك!** <@${robberMember.id}>`, embeds, components };
 
         let sentMsg;
-        if (interaction.isRepliable && !interaction.replied) sentMsg = await interaction.reply({ ...msgPayload, fetchReply: true });
-        else sentMsg = await interaction.channel.send(msgPayload);
+        // 👇👇 الإصلاح هنا (استخدام withResponse بدلاً من fetchReply) 👇👇
+        if (interaction.isRepliable && !interaction.replied) {
+            const response = await interaction.reply({ ...msgPayload, withResponse: true });
+            sentMsg = response.resource ? response.resource.message : response; 
+        } else {
+            sentMsg = await interaction.channel.send(msgPayload);
+        }
         
         battleState.message = sentMsg;
         setupBattleCollector(battleState);
