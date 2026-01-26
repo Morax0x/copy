@@ -11,7 +11,8 @@ const {
     TextInputBuilder,
     TextInputStyle,
     AttachmentBuilder,
-    Colors
+    Colors,
+    EmbedBuilder // ✅ تمت إضافته هنا
 } = require("discord.js");
 
 const Canvas = require('canvas');
@@ -477,7 +478,7 @@ async function handleLandInteractions(i, client, sql) {
         });
         transaction();
 
-        await i.editReply(`✅ **تم زراعـة ${countToPlant}x ${seed.name}**`);
+        await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
 
         // ✅✅✅ تحديث الرسالة الأصلية بالصورة الجديدة ✅✅✅
         try {
