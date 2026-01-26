@@ -28,12 +28,12 @@ function getDayDifference(dateStr1, dateStr2) {
     return Math.round(diffTime / DAY_MS);
 }
 
-// 🌟 دالة حساب معزز الخبرة (XP) فقط - للفل 🌟
+// 🌟 دالة حساب معزز الخبرة (XP) - (تم التعديل لتكون تراكمية) 🌟
 function calculateBuffMultiplier(member, sql) {
     if (!sql || typeof sql.prepare !== 'function') return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
     
-    // البحث عن buffType = 'xp' حصراً
+    // البحث عن buffType = 'xp' حصراً (من المتجر)
     const getUserBuffs = sql.prepare("SELECT * FROM user_buffs WHERE userID = ? AND guildID = ? AND expiresAt > ? AND buffType = 'xp'");
     let totalPercent = 0.0;
     
@@ -41,19 +41,25 @@ function calculateBuffMultiplier(member, sql) {
     const day = new Date().getUTCDay();
     if (day === 5 || day === 6 || day === 0) totalPercent += 0.10;
     
-    // بفات الرتب للخبرة
-    let highestRoleBuff = 0;
+    // 🔥🔥 بفات الرتب للخبرة (تراكمي الآن) 🔥🔥
     const userRoles = member.roles.cache.map(r => r.id);
     if (userRoles.length > 0) {
         const placeholders = userRoles.map(() => '?').join(',');
         try {
             const roleBuffs = sql.prepare(`SELECT * FROM role_buffs WHERE roleID IN (${placeholders})`).all(...userRoles);
+            
+            // جمع كل النسب بدلاً من أخذ الأعلى
+            let rolesTotalBuff = 0;
             for (const buff of roleBuffs) {
-                if (buff.buffPercent > highestRoleBuff) highestRoleBuff = buff.buffPercent;
+                rolesTotalBuff += buff.buffPercent;
             }
-        } catch (e) {}
+            
+            totalPercent += (rolesTotalBuff / 100);
+
+        } catch (e) {
+            console.error("Error calculating XP Role Buff:", e);
+        }
     }
-    totalPercent += (highestRoleBuff / 100);
     
     // جمع بفات المتجر (XP)
     let itemBuffTotal = 0;
@@ -67,34 +73,39 @@ function calculateBuffMultiplier(member, sql) {
     return 1.0 + totalPercent;
 }
 
-// 🌟 دالة حساب معزز المورا (الأموال) فقط 🌟
+// 🌟 دالة حساب معزز المورا (الأموال) - (تراكمي) 🌟
 function calculateMoraBuff(member, sql) {
     if (!sql || typeof sql.prepare !== 'function') return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
 
     let totalBuffPercent = 0;
 
-    // بونص الويكند للمورا (10%) - موجود
+    // بونص الويكند للمورا (10%)
     const day = new Date().getUTCDay(); 
     if (day === 5 || day === 6 || day === 0) {
         totalBuffPercent += 10; 
     }
 
-    // بفات الرتب للمورا
+    // بفات الرتب للمورا (تراكمي)
     const userRoles = member.roles.cache.map(r => r.id);
     const guildID = member.guild.id;
     try {
         const allBuffRoles = sql.prepare("SELECT * FROM role_mora_buffs WHERE guildID = ?").all(guildID);
+        
         let roleBuffSum = 0;
         for (const roleId of userRoles) {
+            // البحث هل الرتبة الحالية للعضو موجودة في قائمة البفات
             const buffRole = allBuffRoles.find(r => r.roleID === roleId);
+            // إذا وجدت، نجمع نسبتها
             if (buffRole) roleBuffSum += buffRole.buffPercent;
         }
         totalBuffPercent += roleBuffSum;
-    } catch (e) {}
 
-    // بفات المتجر للمورا (buffType = 'mora' حصراً)
-    // لن يدخل هنا أي بف تم شراؤه كـ 'xp'
+    } catch (e) {
+        console.error("Error calculating Mora Role Buff:", e);
+    }
+
+    // بفات المتجر للمورا (تراكمي)
     const tempBuffs = sql.prepare("SELECT * FROM user_buffs WHERE guildID = ? AND userID = ? AND buffType = 'mora' AND expiresAt > ?")
         .all(guildID, member.id, Date.now());
 
