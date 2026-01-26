@@ -19,6 +19,9 @@ const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
 // خريطة لتخزين تاريخ آخر عفو
 const robberyPardons = new Map(); 
 
+// 🔥 مجموعة لمنع التكرار أثناء اللعب (Active Robberies)
+const activeRobberies = new Set();
+
 // --- دوال مساعدة للوقت (توقيت السعودية) ---
 function getKSADateString() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
@@ -127,6 +130,11 @@ module.exports = {
             return reply("تـسـرق نـفـسـك؟ غـبـي انـت؟؟ <:mirkk:1435648219488190525>");
         }
 
+        // 🔥 منع التكرار الفوري أثناء وجود عملية نشطة لنفس الشخص
+        if (activeRobberies.has(robber.id)) {
+            return reply("🚫 **لديك عملية سطو جارية بالفعل!** أنهِها أولاً.");
+        }
+
         const getScore = client.getLevel;
         const setScore = client.setLevel;
 
@@ -139,7 +147,7 @@ module.exports = {
              return reply(`❌ **لا يمكنك السرقة!**\nتحتاج إلى رصيد إجمالي لا يقل عن **${MIN_REQUIRED_CASH.toLocaleString()}** ${EMOJI_MORA} لتتمكن من دفع الغرامة.`);
         }
 
-        // 2. فحص وقت الانتظار
+        // 2. فحص وقت الانتظار (Cooldown Check)
         const now = Date.now();
         const timeLeft = (robberData.lastRob || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
@@ -151,6 +159,13 @@ module.exports = {
         if (victimTotalWealth < MIN_REQUIRED_CASH) {
             return reply(`❌ الضحية **${victim.displayName}** فقير جداً!`);
         }
+
+        // ✅ إضافة السارق للقائمة النشطة
+        activeRobberies.add(robber.id);
+
+        // ✅ تسجيل الكولداون فوراً
+        robberData.lastRob = now;
+        setScore.run(robberData); 
 
         // --- حسابات السرقة ---
         const victimMora = victimData.mora || 0;
@@ -182,12 +197,11 @@ module.exports = {
         let amountToSteal = Math.min(robberCap, victimCap);
         if (amountToSteal < MIN_ROB_AMOUNT) {
              if (victimPoolAmount >= MIN_ROB_AMOUNT) amountToSteal = MIN_ROB_AMOUNT;
-             else return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
+             else {
+                 activeRobberies.delete(robber.id); // تنظيف
+                 return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
+             }
         }
-
-        // ✅ التعديل هنا: حفظ الكولداون فوراً قبل بدء اللعبة لمنع التكرار
-        robberData.lastRob = now;
-        setScore.run(robberData); 
 
         // =================================================================
         // 👑👑 منطق سرقة الإمبراطور (الأونر - معركة الفارس) 👑👑
@@ -275,15 +289,18 @@ module.exports = {
                     } else {
                         // 🔥🔥 معركة الفارس (خاصة بالأونر فقط) 🔥🔥
                         await msg.delete().catch(() => {});
+                        activeRobberies.delete(robber.id); // تنظيف قبل الدخول في معركة منفصلة
                         const context = isSlash ? interaction : message;
                         return await startGuardBattle(context, client, sql, robber, amountToSteal);
                     }
                 }
                 setScore.run(robberData);
                 setScore.run(victimData);
+                activeRobberies.delete(robber.id);
             });
 
             collector.on('end', (collected, reason) => {
+                activeRobberies.delete(robber.id);
                 if (reason === 'time') {
                     deductFromRobber(robberData, amountToSteal);
                     victimData.mora += amountToSteal;
@@ -422,6 +439,7 @@ module.exports = {
         });
 
         collector.on('end', (collected, reason) => {
+            activeRobberies.delete(robber.id);
             if (reason === 'time') {
                 deductFromRobber(robberData, amountToSteal);
                 victimData.mora += amountToSteal;
