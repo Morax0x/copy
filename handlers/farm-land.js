@@ -117,6 +117,9 @@ async function renderLand(interaction, client, sql) {
     let readyCount = 0;         // هل يوجد حصاد؟
     let witheredCount = 0;      // هل يوجد نبات ميت؟
     
+    // 🔥 متغير لحساب أقرب وقت نمو
+    let minRemainingTime = Infinity;
+
     let totalPlowCost = 0;
 
     // فحص الحالة قبل الرسم
@@ -132,6 +135,21 @@ async function renderLand(interaction, client, sql) {
         // فحص إمكانية الزراعة (أرض محروثة)
         if (p && p.status === 'tilled') {
             hasTilled = true;
+        }
+
+        // 🔥 حساب أقرب وقت نمو 🔥
+        if (p && p.status === 'planted' && p.seedID) {
+            const seed = seedsData.find(s => s.id === p.seedID);
+            if (seed) {
+                const growthMs = seed.growth_time_hours * 3600000;
+                const age = now - p.plantTime;
+                const remaining = growthMs - age;
+
+                // إذا بقي وقت موجب، قارنه بالحد الأدنى
+                if (remaining > 0 && remaining < minRemainingTime) {
+                    minRemainingTime = remaining;
+                }
+            }
         }
     }
 
@@ -240,6 +258,25 @@ async function renderLand(interaction, client, sql) {
     if (witheredCount > 0) {
         rowActions.addComponents(
             new ButtonBuilder().setCustomId(`land_clean_all_${userId}`).setLabel('تنظيـف').setStyle(ButtonStyle.Danger).setEmoji('🚿')
+        );
+    }
+
+    // 🔥🔥🔥 زر وقت النمو (يظهر فقط إذا كان هناك نبات ينمو) 🔥🔥🔥
+    if (minRemainingTime !== Infinity) {
+        // تحويل الميلي ثانية إلى ساعات ودقائق
+        const hours = Math.floor(minRemainingTime / (1000 * 60 * 60));
+        const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((minRemainingTime % (1000 * 60)) / 1000); // اختياري إذا تبي ثواني
+
+        // تنسيق الوقت: HH:MM
+        const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+        rowActions.addComponents(
+            new ButtonBuilder()
+                .setCustomId('info_growth_time') // ID وهمي
+                .setLabel(`⏳ النـمو: ${timeString}`)
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true) // ✅ الزر مجرد شكل
         );
     }
 
@@ -364,18 +401,14 @@ async function handleLandInteractions(i, client, sql) {
     }
 
     // التعامل مع القائمة المنسدلة للزراعة
-    // التنسيق هنا: land_plant_select_seed_MSGID_USERID
-    // إذا استخدمنا startsWith مع 'land_plant_select_seed'
     if (i.isStringSelectMenu() && i.customId.startsWith('land_plant_select_seed')) {
         const rawAction = i.customId; 
-        // استخراج MSGID (يقع قبل الـ USERID)
         const rawParts = rawAction.split('_');
-        const msgId = rawParts[rawParts.length - 2]; // الجزء قبل الأخير
+        const msgId = rawParts[rawParts.length - 2]; 
 
         const seedId = i.values[0];
         const seed = seedsData.find(s => s.id === seedId);
         
-        // تمرير MSGID للمودال أيضاً
         const modal = new ModalBuilder().setCustomId(`farm_plant_modal_${msgId}_${seedId}_${userId}`).setTitle(`زراعة ${seed.name}`);
         const input = new TextInputBuilder().setCustomId('plant_qty').setLabel('العدد').setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -387,20 +420,12 @@ async function handleLandInteractions(i, client, sql) {
     if (i.isModalSubmit() && i.customId.startsWith('farm_plant_modal_')) {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         
-        // التنسيق: farm_plant_modal_MSGID_SEEDID_USERID
-        // نحتاج استخراج MSGID و SEEDID
         const rawModalId = i.customId.replace('farm_plant_modal_', ''); 
-        // الآن: MSGID_SEEDID_USERID
-        // نقسم من أول _ للحصول على MSGID، والباقي نعالجه
         const firstUnderscore = rawModalId.indexOf('_');
         const msgId = rawModalId.substring(0, firstUnderscore);
         const rest = rawModalId.substring(firstUnderscore + 1);
-        
-        // الآن rest: SEEDID_USERID
-        // بما أن SEEDID قد يحتوي على underscores (لا ندري)، لكن USERID هو الأخير
         const lastUnderscore = rest.lastIndexOf('_');
         const seedId = rest.substring(0, lastUnderscore);
-        // userId موجود في المتغيرات من الأعلى بالفعل
         
         const qtyInput = parseInt(i.fields.getTextInputValue('plant_qty'));
         const seed = seedsData.find(s => s.id === seedId);
@@ -435,7 +460,7 @@ async function handleLandInteractions(i, client, sql) {
                 const newData = await renderLand(i, client, sql);
                 await mainMsg.edit({
                     content: newData.content,
-                    embeds: [], // renderLand لا يعيد embeds في الكائن النهائي
+                    embeds: [], 
                     components: newData.components,
                     files: newData.files
                 });
