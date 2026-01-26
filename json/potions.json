@@ -2,7 +2,7 @@
   {
     "id": "potion_heal",
     "name": "جرعة الشفاء",
-    "price": 200,
+    "price": 100,
     "description": "🧪 تستعيد 50% من صحتك أثناء المعركة.",
     "category": "potions",
     "emoji": "🧪",
@@ -11,7 +11,7 @@
   {
     "id": "potion_stealth",
     "name": "جرعة التخفي",
-    "price": 450,
+    "price": 100,
     "description": "👻 تجعل الوحش يتجاهلك تماماً للجولة القادمة.",
     "category": "potions",
     "emoji": "👻",
@@ -20,7 +20,7 @@
   {
     "id": "potion_reflect",
     "name": "جرعة الانعكاس",
-    "price": 600,
+    "price": 150,
     "description": "🌵 تعكس 50% من الضرر المتلقى ليعود على الوحش.",
     "category": "potions",
     "emoji": "🌵",
@@ -29,7 +29,7 @@
   {
     "id": "potion_time",
     "name": "جرعة الزمن",
-    "price": 1000,
+    "price": 200,
     "description": "⏳ تعيد شحن مهاراتك فوراً.",
     "category": "potions",
     "emoji": "⏳",
@@ -38,7 +38,7 @@
   {
     "id": "potion_titan",
     "name": "جرعة العملاق",
-    "price": 1500,
+    "price": 700,
     "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك (تستمر لـ 5 طوابق).",
     "category": "potions",
     "emoji": "🔥",
@@ -47,7 +47,7 @@
   {
     "id": "potion_sacrifice",
     "name": "جرعة التضحية",
-    "price": 3000,
+    "price": 2000,
     "description": "💀 تضحي بنفسك لإنعاش وشفاء كامل الفريق.",
     "category": "potions",
     "emoji": "💀",
