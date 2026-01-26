@@ -193,18 +193,19 @@ module.exports = {
                                 moraMultiplier = streakHandler.calculateMoraBuff(memberObj, db);
                             }
                             
-                            // 🔥🔥 التعديل الجديد: حساب الربح بناءً على طلبك 🔥🔥
-                            // الربح الأساسي = مبلغ الرهان نفسه (يعني يرجع له رهانه + مثله)
-                            // إذا عنده بف 20%، يربح: الرهان + (الرهان * 0.20)
-                            // مثال: رهان 100 وبف 20% (المضاعف 1.2) -> يربح 120 (إجمالي الجائزة 220)
-                            
-                            const profit = Math.floor(finalBetAmount * moraMultiplier); 
+                            // 🔥🔥🔥 التعديل هنا: الربح = الرهان × 3 🔥🔥🔥
+                            // إذا راهن 100: الربح الأساسي 300 (المجموع 400)
+                            // إذا كان هناك بفات، ستنضرب في الـ 300
+                            const profit = Math.floor(finalBetAmount * 3.0 * moraMultiplier); 
                             const totalPrize = finalBetAmount + profit; 
                             
                             // حساب نسبة الزيادة للعرض فقط
-                            const buffPercent = Math.round((moraMultiplier - 1) * 100);
+                            // لحساب كم زاد عن الرهان الأساسي كنسبة مئوية
+                            // المعادلة: ((الربح / الرهان) - 3) * 100 (للتحقق من البف فقط)
+                            // أو ببساطة عرض نسبة البف القادمة من الستريك
+                            const buffOnlyPercent = Math.round((moraMultiplier - 1) * 100);
                             let buffText = "";
-                            if (buffPercent > 0) buffText = ` (+${buffPercent}%)`;
+                            if (buffOnlyPercent > 0) buffText = ` (معزز +${buffOnlyPercent}%)`;
 
                             db.prepare('UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?').run(totalPrize, userId, guildId);
 
