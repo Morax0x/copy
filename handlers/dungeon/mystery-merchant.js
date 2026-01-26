@@ -26,13 +26,13 @@ const QUOTES = [
 ];
 
 const SHOP_ITEMS = [
-    { id: 'buy_elixir', name: 'إكسيـر الحيـاة', price: 2500, desc: 'يعيد إحياءك بـ 100% HP (أو يعالجك بالكامل).', emoji: '🩸' },
-    { id: 'buy_blood', name: 'عقـد الـدم', price: 2500, desc: 'خصم 50% من صحتك القصوى مقابل +60% هجوم دائم.', emoji: '📜' },
-    { id: 'buy_map', name: 'خريطـة مختصـرة', price: 2000, desc: 'تخطي 3 طوابق فوراً (حد أقصى 3 مرات بالغارة).', emoji: '🗺️' },
-    { id: 'buy_shield', name: 'درع المرتزقـة', price: 3000, desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر أو لمدة 5 طوابق (مرة واحدة فقط).', emoji: '🛡️' },
-    { id: 'buy_eye', name: 'عين البصيـرة', price: 1000, desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +50%).', emoji: '👁️' },
-    { id: 'buy_instant_elder', name: 'شراب العمالقة العتيق', price: 2500, desc: 'تأثير فوري: يضاعف الصحة لمدة 8 طوابق!', emoji: '🍷' },
-    { id: 'buy_instant_assassin', name: 'سم التخفي', price: 800, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
+    { id: 'buy_elixir', name: 'إكسيـر الحيـاة', price: 1800, desc: 'يعيد إحياءك بـ 100% HP (أو يعالجك بالكامل).', emoji: '🩸' },
+    { id: 'buy_blood', name: 'عقـد الـدم', price: 1500, desc: 'خصم 50% من صحتك القصوى مقابل +60% هجوم دائم.', emoji: '📜' },
+    { id: 'buy_map', name: 'خريطـة مختصـرة', price: 800, desc: 'تخطي 3 طوابق فوراً (حد أقصى 3 مرات بالغارة).', emoji: '🗺️' },
+    { id: 'buy_shield', name: 'درع المرتزقـة', price: 2000, desc: 'يمنحك درعاً بـ 2500 نقطة يستمر حتى ينكسر أو لمدة 5 طوابق (مرة واحدة فقط).', emoji: '🛡️' },
+    { id: 'buy_eye', name: 'عين البصيـرة', price: 800, desc: 'كشف نقطة ضعف وحش الطابق القادم (ضرر +50%).', emoji: '👁️' },
+    { id: 'buy_instant_elder', name: 'شراب العمالقة العتيق', price: 1333, desc: 'تأثير فوري: يضاعف الصحة لمدة 8 طوابق!', emoji: '🍷' },
+    { id: 'buy_instant_assassin', name: 'سم التخفي', price: 500, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
 ];
 
 function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
