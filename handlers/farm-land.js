@@ -11,8 +11,8 @@ const {
     TextInputBuilder,
     TextInputStyle,
     AttachmentBuilder,
-    Colors,
-    EmbedBuilder // ✅ تمت إضافته هنا
+    Colors
+    // ❌ تم إزالة EmbedBuilder لأننا لن نستخدمه
 } = require("discord.js");
 
 const Canvas = require('canvas');
@@ -301,13 +301,13 @@ async function renderLand(interaction, client, sql) {
         }
     } catch (e) { console.error("Error fetching worker status:", e); }
 
-    const embed = new EmbedBuilder()
-        .setTitle(`🌱 مزرعة ${interaction.member.displayName}`)
-        .setImage('attachment://farm-view.png')
-        .setColor('#76C810')
-        .setFooter({ text: 'استخدم الأزرار لإدارة أرضك' });
-
-    return { content: null, components: rowActions.components.length > 0 ? [rowActions] : [], files: [attachment], embeds: [embed] };
+    // 🔥 تم حذف الـ Embed بالكامل وإرجاع محتوى نصي فارغ وصورة فقط 🔥
+    return { 
+        content: `**🌱 مزرعة ${interaction.member.displayName}**`, // عنوان نصي بسيط
+        components: rowActions.components.length > 0 ? [rowActions] : [], 
+        files: [attachment]
+        // ❌ لا يوجد embeds هنا
+    };
 }
 
 // --- معالجة التفاعلات (مع الحماية والتحديث) ---
@@ -338,7 +338,7 @@ async function handleLandInteractions(i, client, sql) {
             content: data.content, 
             components: data.components, 
             files: data.files,
-            embeds: data.embeds 
+            embeds: [] // ✅ تفريغ الإيمبد لضمان عدم ظهوره عند التحديث
         });
     };
 
@@ -487,7 +487,7 @@ async function handleLandInteractions(i, client, sql) {
                 const newData = await renderLand(i, client, sql);
                 await mainMsg.edit({
                     content: newData.content,
-                    embeds: newData.embeds, 
+                    embeds: [], // ✅ إفراغ الإيمبد عند التحديث
                     components: newData.components,
                     files: newData.files
                 });
