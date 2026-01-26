@@ -21,8 +21,8 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
     // 1. حساب الغنائم (باستخدام نظام الشرائح الجديد)
     let baseMora = Math.floor(getBaseFloorMora(floor));
      
-    // 🔥 هنا تم تعديل نسبة الـ XP إلى 10% لتعويض قلة المورا
-    let floorXp = Math.floor(baseMora * 0.10); 
+    // 🔥 تم تعديل نسبة الـ XP إلى 3% بناءً على طلبك
+    let floorXp = Math.floor(baseMora * 0.03); 
      
     players.forEach(p => { 
         if (!p.isDead) { 
