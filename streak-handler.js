@@ -6,7 +6,7 @@ const KSA_TIMEZONE = 'Asia/Riyadh';
 const EMOJI_MEDIA_STREAK = '<a:Streak:1438932297519730808>';
 const EMOJI_SHIELD = '<:Shield:1437804676224516146>';
 
-// ( 🌟 القائمة الحصرية للفواصل المسموحة فقط 🌟 )
+// ( 🌟 القائمة الحصر.ية للفواصل المسموحة فقط 🌟 )
 const SEPARATORS_CLEAN_LIST = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|'];
 const DEFAULT_SEPARATOR = '»';
 
