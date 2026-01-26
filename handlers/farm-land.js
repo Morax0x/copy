@@ -30,7 +30,7 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PLOW_COST_BULK = 10; 
 
 // ========================================================
-// ⚙️ إعدادات الشبكة (6x6 0= 36 أرض)
+// ⚙️ إعدادات الشبكة (6x6 = 36 أرض)
 // ========================================================
 const TILE_SIZE = 64;   
 const GRID_COLS = 6;    
@@ -263,12 +263,8 @@ async function renderLand(interaction, client, sql) {
 
     // 🔥🔥🔥 زر وقت النمو (يظهر فقط إذا كان هناك نبات ينمو) 🔥🔥🔥
     if (minRemainingTime !== Infinity) {
-        // تحويل الميلي ثانية إلى ساعات ودقائق
         const hours = Math.floor(minRemainingTime / (1000 * 60 * 60));
         const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((minRemainingTime % (1000 * 60)) / 1000); // اختياري إذا تبي ثواني
-
-        // تنسيق الوقت: HH:MM
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
         rowActions.addComponents(
@@ -280,7 +276,37 @@ async function renderLand(interaction, client, sql) {
         );
     }
 
-    return { content: null, components: rowActions.components.length > 0 ? [rowActions] : [], files: [attachment] };
+    // ========================================================
+    // 👨‍🌾 زر حالة عامل المزرعة (New Feature: Button Only)
+    // ========================================================
+    try {
+        const workerBuff = sql.prepare("SELECT expiresAt FROM user_buffs WHERE userID = ? AND guildID = ? AND buffType = 'farm_worker' AND expiresAt > ?").get(userId, guildId, now);
+        
+        if (workerBuff) {
+            const timeLeft = workerBuff.expiresAt - now;
+            const daysLeft = Math.floor(timeLeft / (24 * 60 * 60 * 1000));
+            const hoursLeft = Math.floor((timeLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+            
+            // تنسيق الوقت: 2 يـ 12 سـ
+            const timeString = `${daysLeft} يـ ${hoursLeft} سـ`;
+
+            rowActions.addComponents(
+                new ButtonBuilder()
+                    .setCustomId('info_worker_status')
+                    .setLabel(`👨‍🌾 العامل: ${timeString}`)
+                    .setStyle(ButtonStyle.Secondary) // لون رمادي
+                    .setDisabled(true) // معطل (شكل فقط)
+            );
+        }
+    } catch (e) { console.error("Error fetching worker status:", e); }
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🌱 مزرعة ${interaction.member.displayName}`)
+        .setImage('attachment://farm-view.png')
+        .setColor('#76C810')
+        .setFooter({ text: 'استخدم الأزرار لإدارة أرضك' });
+
+    return { content: null, components: rowActions.components.length > 0 ? [rowActions] : [], files: [attachment], embeds: [embed] };
 }
 
 // --- معالجة التفاعلات (مع الحماية والتحديث) ---
@@ -311,7 +337,7 @@ async function handleLandInteractions(i, client, sql) {
             content: data.content, 
             components: data.components, 
             files: data.files,
-            embeds: [] 
+            embeds: data.embeds 
         });
     };
 
@@ -451,7 +477,7 @@ async function handleLandInteractions(i, client, sql) {
         });
         transaction();
 
-        await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
+        await i.editReply(`✅ **تم زراعـة ${countToPlant}x ${seed.name}**`);
 
         // ✅✅✅ تحديث الرسالة الأصلية بالصورة الجديدة ✅✅✅
         try {
@@ -460,7 +486,7 @@ async function handleLandInteractions(i, client, sql) {
                 const newData = await renderLand(i, client, sql);
                 await mainMsg.edit({
                     content: newData.content,
-                    embeds: [], 
+                    embeds: newData.embeds, 
                     components: newData.components,
                     files: newData.files
                 });
