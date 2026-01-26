@@ -166,7 +166,12 @@ module.exports = (client, sql, antiRolesCache) => {
                     await handleBossInteraction(i, client, sql);
                 } else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
                     await handleFarmInteractions(i, client, sql);
-                } else if (id.startsWith('land_')) {
+                } else if (id.startsWith('land_') || id.startsWith('info_')) {
+                     // معالجة تفاعلات أراضي المزرعة (حراثة، زراعة، حصاد) + الأزرار الشكلية
+                     if (id.startsWith('info_')) {
+                        // للأزرار الشكلية (مثل وقت النمو والعامل) لا نفعل شيئاً سوى تحديث هادئ
+                         return await i.deferUpdate().catch(() => {});
+                     }
                     await handleLandInteractions(i, client, sql);
                 } else if (id.startsWith('farm_') || id.startsWith('shop_cat_')) {
                     return;
