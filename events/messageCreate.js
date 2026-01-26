@@ -23,7 +23,9 @@ function getWeekStartDateString() {
 
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
+    // 🛡️ فحص الأمان لقاعدة البيانات
     if (!sql || !sql.open) return;
+    
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
     const dailyID = `${userID}-${guildID}-${dateStr}`;
@@ -46,13 +48,14 @@ async function recordBump(client, guildID, userID) {
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
-        if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
-        if (!message.guild) return;
-
+        // 👇👇 فحص الأمان لمنع الانهيار أثناء النسخ الاحتياطي 👇👇
         const client = message.client;
         const sql = client.sql;
+        if (!sql || !sql.open) return; 
+        // 👆👆 انتهى الفحص 👆👆
 
-        if (!sql || !sql.open) return;
+        if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
+        if (!message.guild) return;
 
         // --- BUMP SYSTEM ---
         if (message.author.id === DISBOARD_BOT_ID) {
@@ -205,7 +208,7 @@ module.exports = {
 
                 const replyOptions = {
                     repliedUser: true, 
-                    parse: ['users']   
+                    parse: ['users']    
                 };
 
                 if (safeReply.length > 2000) {
@@ -227,9 +230,6 @@ module.exports = {
             return;
         }
 
-        // ... (باقي الكود الأصلي كما هو)
-        // ... (تكملة الملف)
-        
         // --- Tree Watering ---
         if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
              const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
