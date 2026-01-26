@@ -1,8 +1,13 @@
+// commands/economy/balance.js
+
 const { AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
 const Canvas = require('canvas');
-const path = require('path'); 
+const path = require('path');
 
-// ❌ تم حذف كود تسجيل الخط من هنا لأننا وضعناه في index.js
+// 👑 معرف الإمبراطور (أنت)
+const EMPEROR_ID = '1145327691772481577';
+// 🖼️ رابط بطاقة الإمبراطور الخاصة
+const EMPEROR_CARD_URL = 'https://i.postimg.cc/Kvcds5LW/card.jpg';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,15 +24,17 @@ module.exports = {
     description: "يعرض رصيدك من المورا في بطاقة بنكية احترافية.",
 
     async execute(interactionOrMessage, args) {
-        const isSlash = interactionOrMessage.isChatInputCommand;
+        const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, member, client, guild;
         let user; 
+        let commandAuthor; // الشخص الذي كتب الأمر
 
         try {
             if (isSlash) {
                 interaction = interactionOrMessage;
                 client = interaction.client;
                 guild = interaction.guild;
+                commandAuthor = interaction.user;
                 const targetUser = interaction.options.getUser('المستخدم') || interaction.user;
                 user = targetUser;
                 member = await guild.members.fetch(targetUser.id).catch(() => null);
@@ -40,6 +47,7 @@ module.exports = {
                 message = interactionOrMessage;
                 client = message.client;
                 guild = message.guild;
+                commandAuthor = message.author;
                 member = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
                 user = member.user;
             }
@@ -53,6 +61,14 @@ module.exports = {
                     return message.channel.send(payload);
                 }
             };
+
+            // 🔥🔥🔥 المميزة الخاصة للإمبراطور 🔥🔥🔥
+            // إذا كان الشخص المستهدف هو الإمبراطور (أنت) والشخص الذي طلب الأمر ليس أنت
+            if (user.id === EMPEROR_ID && commandAuthor.id !== EMPEROR_ID) {
+                // إرسال الصورة الخاصة مباشرة دون كشف الرصيد
+                return await reply({ files: [EMPEROR_CARD_URL] });
+            }
+            // 🔥🔥🔥 انتهى التعديل 🔥🔥🔥
 
             const getScore = client.getLevel;
             let data = getScore.get(user.id, guild.id);
@@ -85,7 +101,7 @@ module.exports = {
             context.textAlign = 'left';
             context.fillStyle = '#E0B04A'; 
 
-            // 👇 (التعديل هنا: استخدام اسم Cairo الذي عرفناه في الانديكس)
+            // استخدام خط Cairo (الذي تم تحميله في index.js)
             context.font = 'bold 48px "Cairo"'; 
 
             context.fillText(safeMora.toLocaleString(), 335, 235); 
