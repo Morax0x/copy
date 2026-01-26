@@ -1,3 +1,5 @@
+// handlers/farm-land.js
+
 const { 
     ActionRowBuilder, 
     ButtonBuilder, 
@@ -109,14 +111,27 @@ async function renderLand(interaction, client, sql) {
     const userPlots = sql.prepare("SELECT * FROM user_lands WHERE userID = ? AND guildID = ?").all(userId, guildId);
     const now = Date.now();
 
-    let readyCount = 0;
-    let witheredCount = 0;
+    // 🚜 متغيرات لتحديد الأزرار المطلوبة
+    let canPlow = false;        // هل توجد أرض بور؟
+    let hasTilled = false;      // هل توجد أرض محروثة (للزراعة)؟
+    let readyCount = 0;         // هل يوجد حصاد؟
+    let witheredCount = 0;      // هل يوجد نبات ميت؟
     
     let totalPlowCost = 0;
+
+    // فحص الحالة قبل الرسم
     for (let i = 1; i <= unlockedPlots; i++) {
         const p = userPlots.find(x => x.plotID === i);
+        
+        // فحص إمكانية الحراثة (أرض غير موجودة أو فارغة)
         if (!p || p.status === 'empty') {
             totalPlowCost += PLOW_COST_BULK;
+            canPlow = true;
+        }
+        
+        // فحص إمكانية الزراعة (أرض محروثة)
+        if (p && p.status === 'tilled') {
+            hasTilled = true;
         }
     }
 
@@ -199,13 +214,22 @@ async function renderLand(interaction, client, sql) {
 
     const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'farm-view.png' });
 
-    // ✅ التعديل هنا: إضافة userId لكل زر لغرض الحماية
     const rowActions = new ActionRowBuilder();
-    rowActions.addComponents(
-        new ButtonBuilder().setCustomId(`land_plow_one_${userId}`).setLabel(`حـراثـة`).setStyle(ButtonStyle.Secondary).setEmoji('⛏️'),
-        new ButtonBuilder().setCustomId(`land_plow_all_${userId}`).setLabel(`حـراثـة الكـل (${totalPlowCost})`).setStyle(ButtonStyle.Primary).setEmoji('🚜'),
-        new ButtonBuilder().setCustomId(`land_start_plant_${userId}`).setLabel(`زراعـة`).setStyle(ButtonStyle.Success).setEmoji('🌱')
-    );
+    
+    // ✅ إخفاء أزرار الحراثة إذا لم تكن متاحة
+    if (canPlow) {
+        rowActions.addComponents(
+            new ButtonBuilder().setCustomId(`land_plow_one_${userId}`).setLabel(`حـراثـة`).setStyle(ButtonStyle.Secondary).setEmoji('⛏️'),
+            new ButtonBuilder().setCustomId(`land_plow_all_${userId}`).setLabel(`حـراثـة الكـل (${totalPlowCost})`).setStyle(ButtonStyle.Primary).setEmoji('🚜')
+        );
+    }
+
+    // ✅ إخفاء زر الزراعة إذا لم تكن هناك أرض محروثة
+    if (hasTilled) {
+        rowActions.addComponents(
+            new ButtonBuilder().setCustomId(`land_start_plant_${userId}`).setLabel(`زراعـة`).setStyle(ButtonStyle.Success).setEmoji('🌱')
+        );
+    }
 
     if (readyCount > 0) {
         rowActions.addComponents(
@@ -219,20 +243,19 @@ async function renderLand(interaction, client, sql) {
         );
     }
 
-    return { content: null, components: [rowActions], files: [attachment] };
+    return { content: null, components: rowActions.components.length > 0 ? [rowActions] : [], files: [attachment] };
 }
 
-// --- معالجة التفاعلات (مع الحماية) ---
+// --- معالجة التفاعلات (مع الحماية والتحديث) ---
 async function handleLandInteractions(i, client, sql) {
     ensureLandTable(sql); 
     
-    // فحص هل التفاعل يخص المزرعة
     if (!i.customId.startsWith('land_') && !i.customId.startsWith('farm_plant_modal_')) return;
 
-    // 🔒 نظام الحماية: استخراج ID المالك من الزر
+    // استخراج ID المالك
     const parts = i.customId.split('_');
-    const ownerId = parts.pop(); // آخر جزء هو الـ ID
-    const baseAction = parts.join('_'); // الباقي هو اسم الزر
+    const ownerId = parts[parts.length - 1]; // آخر جزء دائماً هو ID المالك
+    const baseAction = parts.slice(0, parts.length - 1).join('_'); // الباقي هو اسم الزر
 
     // ⛔ منع الغرباء
     if (i.user.id !== ownerId) {
@@ -245,7 +268,6 @@ async function handleLandInteractions(i, client, sql) {
     const userId = i.user.id;
     const guildId = i.guild.id;
 
-    // دالة التحديث
     const updateView = async () => {
         const data = await renderLand(i, client, sql);
         await i.editReply({ 
@@ -256,7 +278,6 @@ async function handleLandInteractions(i, client, sql) {
         });
     };
 
-    // 🚜 التعامل مع الأزرار بناءً على الاسم الأساسي (بدون الـ ID)
     if (baseAction === 'land_plow_one') {
         await i.deferUpdate();
 
@@ -329,10 +350,11 @@ async function handleLandInteractions(i, client, sql) {
             .setEmoji(s.emoji)
         );
 
-        // ✅ إضافة ID المالك للقائمة أيضاً للحماية
+        // ✅ تمرير معرف الرسالة الأصلية في الـ ID حتى نتمكن من تحديثها لاحقاً
+        const msgId = i.message.id;
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
-                .setCustomId(`land_plant_select_seed_${userId}`)
+                .setCustomId(`land_plant_select_seed_${msgId}_${userId}`)
                 .setPlaceholder('اختر نوع البذور...')
                 .addOptions(seedOptions)
         );
@@ -341,23 +363,44 @@ async function handleLandInteractions(i, client, sql) {
         return;
     }
 
-    if (i.isStringSelectMenu() && baseAction === 'land_plant_select_seed') {
+    // التعامل مع القائمة المنسدلة للزراعة
+    // التنسيق هنا: land_plant_select_seed_MSGID_USERID
+    // إذا استخدمنا startsWith مع 'land_plant_select_seed'
+    if (i.isStringSelectMenu() && i.customId.startsWith('land_plant_select_seed')) {
+        const rawAction = i.customId; 
+        // استخراج MSGID (يقع قبل الـ USERID)
+        const rawParts = rawAction.split('_');
+        const msgId = rawParts[rawParts.length - 2]; // الجزء قبل الأخير
+
         const seedId = i.values[0];
         const seed = seedsData.find(s => s.id === seedId);
-        // ✅ إضافة ID المالك للمودال للحماية
-        const modal = new ModalBuilder().setCustomId(`farm_plant_modal_${seedId}_${userId}`).setTitle(`زراعة ${seed.name}`);
+        
+        // تمرير MSGID للمودال أيضاً
+        const modal = new ModalBuilder().setCustomId(`farm_plant_modal_${msgId}_${seedId}_${userId}`).setTitle(`زراعة ${seed.name}`);
         const input = new TextInputBuilder().setCustomId('plant_qty').setLabel('العدد').setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await i.showModal(modal);
         return; 
     }
 
-    if (i.isModalSubmit() && baseAction.startsWith('farm_plant_modal_')) {
+    // التعامل مع المودال (الزراعة الفعلية)
+    if (i.isModalSubmit() && i.customId.startsWith('farm_plant_modal_')) {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         
-        // baseAction هنا يكون: farm_plant_modal_SEEDID
-        // نحتاج استخراج SEEDID
-        const seedId = baseAction.replace('farm_plant_modal_', '');
+        // التنسيق: farm_plant_modal_MSGID_SEEDID_USERID
+        // نحتاج استخراج MSGID و SEEDID
+        const rawModalId = i.customId.replace('farm_plant_modal_', ''); 
+        // الآن: MSGID_SEEDID_USERID
+        // نقسم من أول _ للحصول على MSGID، والباقي نعالجه
+        const firstUnderscore = rawModalId.indexOf('_');
+        const msgId = rawModalId.substring(0, firstUnderscore);
+        const rest = rawModalId.substring(firstUnderscore + 1);
+        
+        // الآن rest: SEEDID_USERID
+        // بما أن SEEDID قد يحتوي على underscores (لا ندري)، لكن USERID هو الأخير
+        const lastUnderscore = rest.lastIndexOf('_');
+        const seedId = rest.substring(0, lastUnderscore);
+        // userId موجود في المتغيرات من الأعلى بالفعل
         
         const qtyInput = parseInt(i.fields.getTextInputValue('plant_qty'));
         const seed = seedsData.find(s => s.id === seedId);
@@ -384,9 +427,23 @@ async function handleLandInteractions(i, client, sql) {
         transaction();
 
         await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
-        // تحديث الواجهة الرئيسية للمالك
-        // ملاحظة: المودال رد منفصل، لذا لا يمكننا تحديث الرسالة الأصلية بسهولة هنا 
-        // إلا إذا مررنا معرف الرسالة، لكن بما أن المستخدم هو المالك، سيضغط زر تحديث أو يرى التغيير.
+
+        // ✅✅✅ تحديث الرسالة الأصلية بالصورة الجديدة ✅✅✅
+        try {
+            const mainMsg = await i.channel.messages.fetch(msgId).catch(() => null);
+            if (mainMsg) {
+                const newData = await renderLand(i, client, sql);
+                await mainMsg.edit({
+                    content: newData.content,
+                    embeds: [], // renderLand لا يعيد embeds في الكائن النهائي
+                    components: newData.components,
+                    files: newData.files
+                });
+            }
+        } catch (err) {
+            console.error("Failed to update farm image after planting:", err);
+        }
+        
         return;
     }
 
