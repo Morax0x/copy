@@ -69,7 +69,8 @@ const emojiMap = new Map([
     ['vip_role_3d', '<a:JaFaster:1435572430042042409>'],
     ['change_race', '🧬'],
     ['fishing_gear_menu', '🎣'],
-    ['potions_menu', '🧪']
+    ['potions_menu', '🧪'],
+    ['farm_worker_3d', '👨‍🌾'] // إضافة إيموجي العامل
 ]);
 
 // ---------------------------------------------------------------------
@@ -231,6 +232,23 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
                 sql.prepare("INSERT OR REPLACE INTO temporary_roles (userID, guildID, roleID, expiresAt) VALUES (?, ?, ?, ?)").run(interaction.user.id, interaction.guild.id, settings.vipRoleID, expiresAt);
             }
         }
+        // 🔥🔥🔥 [إضافة جديدة] منطق عامل المزرعة 🔥🔥🔥
+        else if (itemData.id === 'farm_worker_3d') {
+            // المدة 3 أيام
+            const duration = 3 * 24 * 60 * 60 * 1000;
+            const expiresAt = Date.now() + duration;
+            
+            // إضافة العامل إلى جدول البفات بنوع 'farm_worker'
+            sql.prepare("INSERT INTO user_buffs (userID, guildID, buffType, multiplier, expiresAt, buffPercent) VALUES (?, ?, ?, ?, ?, ?)").run(
+                interaction.user.id, 
+                interaction.guild.id, 
+                'farm_worker', 
+                0, // لا يوجد مضاعف مالي
+                expiresAt, 
+                0  // نسبة 0%
+            );
+        }
+        
         else if (itemData.id === 'change_race') {
             try {
                 const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(interaction.guild.id);
@@ -263,6 +281,11 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
       
     let successMsg = `✅ **تمت العملية بنجاح!**\n📦 **العنصر:** ${itemData.name || itemData.raceName || 'Unknown'}\n💰 **المبلغ المدفوع:** ${finalPrice.toLocaleString()} ${EMOJI_MORA}`;
     if (discountUsed > 0) successMsg += `\n📉 **تم تطبيق خصم:** ${discountUsed}%`;
+    
+    // رسالة خاصة لعامل المزرعة
+    if (itemData.id === 'farm_worker_3d') {
+        successMsg += `\n👨‍🌾 **عامل المزرعة بدأ العمل!** سيقوم بحصاد المحاصيل وإطعام الحيوانات لمدة 3 أيام.`;
+    }
       
     await safeReply({ content: successMsg });
     sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || itemData.raceName || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
