@@ -7,7 +7,7 @@ const path = require('path');
 // 👑 معرف الإمبراطور (أنت)
 const EMPEROR_ID = '1145327691772481577';
 // 🖼️ رابط بطاقة الإمبراطور الخاصة
-const EMPEROR_CARD_URL = 'https://i.postimg.cc/KYGHzPrD/card-(1).jpg';
+const EMPEROR_CARD_URL = 'https://i.postimg.cc/8CK5jbWN/card-(2).jpg';
 
 module.exports = {
     data: new SlashCommandBuilder()
