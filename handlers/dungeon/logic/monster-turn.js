@@ -316,8 +316,11 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         if (!p.isDead && p.summon && p.summon.active) {
             // 1. هجوم المرافق التلقائي (70% من الهجوم)
             const atkRatio = p.summon.atkRatio || 0.7; // الافتراضي 70%
-            const petDmg = Math.floor(p.atk * atkRatio) || 1;
+            let petDmg = Math.floor(p.atk * atkRatio) || 1;
             
+            // 🔥 تطبيق الختم (Damage Cap) 🔥
+            if (damageCap !== Infinity && petDmg > damageCap) petDmg = damageCap;
+
             monster.hp = Math.max(0, Math.floor(monster.hp - petDmg));
             p.totalDamage += petDmg;
             
@@ -329,8 +332,11 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 p.summon.active = false;
                 
                 const explodeRatio = p.summon.explodeRatio || 1.2; // الافتراضي 120%
-                const explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
+                let explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
                 
+                // 🔥 تطبيق الختم (Damage Cap) على الانفجار 🔥
+                if (damageCap !== Infinity && explosionDmg > damageCap) explosionDmg = damageCap;
+
                 monster.hp = Math.max(0, Math.floor(monster.hp - explosionDmg));
                 p.totalDamage += explosionDmg;
 
