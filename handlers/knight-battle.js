@@ -573,17 +573,10 @@ async function processGuardTurn(battleState) {
         // ==============================================
         let actionLog = "";
          
-        // 1. القضاء على اللاعب الضعيف (Priority Kill)
-        if (player.hp < player.maxHp * 0.20) {
-            const dmg = calculateDamage(guard, player, 1.5);
-            player.hp -= dmg;
-            actionLog = `💀 **فارس الإمبراطور** رأى ضعفك واستخدم "إعدام"! سبب **${dmg}** ضرر!`;
-            const breakMsg = checkShieldBreak(battleState, playerMemberId);
-            if (breakMsg) actionLog += `\n${breakMsg}`;
-        }
-        // 🔥 2. مهارة جديدة: قداس الدم (عندما يقترب من الموت - أقل من 20% صحة)
-        // يستخدمها 5 مرات كحد أقصى
-        else if (guard.hp < guard.maxHp * 0.20 && guard.effects.blood_liturgy_used < 5) {
+        // 🔥 ترتيب جديد للأولويات (البقاء أولاً!) 🔥
+
+        // 1. استخدام "قداس الدم" إذا قلت الصحة عن 20% (أولوية قصوى للعلاج والهجوم معاً)
+        if (guard.hp < guard.maxHp * 0.20 && guard.effects.blood_liturgy_used < 5) {
             const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); // ضربة قوية (1.5x)
             player.hp -= drainDmg;
              
@@ -597,7 +590,7 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 🔥 3. تعديل العلاج: استخدام حتى 5 مرات عندما تكون الصحة أقل من 40%
+        // 2. استخدام "جرعات الطوارئ" إذا قلت الصحة عن 40% (للبقاء على قيد الحياة)
         else if (guard.hp < guard.maxHp * 0.40 && guard.effects.potions_used < 5) {
             const healAmount = Math.floor(guard.maxHp * 0.25); // 25% شفاء
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
@@ -608,6 +601,14 @@ async function processGuardTurn(battleState) {
             guard.effects.potions_used++; // زيادة عداد الجرعات
 
             actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
+        }
+        // 3. القضاء على اللاعب الضعيف (Priority Kill) - يأتي بعد محاولة النجاة
+        else if (player.hp < player.maxHp * 0.20) {
+            const dmg = calculateDamage(guard, player, 1.5);
+            player.hp -= dmg;
+            actionLog = `💀 **فارس الإمبراطور** رأى ضعفك واستخدم "إعدام"! سبب **${dmg}** ضرر!`;
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `\n${breakMsg}`;
         }
         // 4. كسر درع اللاعب (Shield Breaker)
         else if (player.effects.shield > 0) {
@@ -706,22 +707,26 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         }
 
         // 🔥 3. تطبيق المضاعف (Multiplier) بناءً على عدد مرات المواجهة 🔥
-        // المرة 1: x1
-        // المرة 2: x2
-        // المرة 3: x3 ...
         const multiplier = encounterCount; 
 
-        // 🔥🔥🔥 الموازنة الجديدة (Balanced but Tough + Rage Scaling) 🔥🔥🔥
-        // 1. صحة الفارس = 1.8 ضعف صحة اللاعب * مضاعف الغضب
+        // 📊 طباعة للتأكد من التكرار
+        console.log(`[Knight Battle] Encounter #${multiplier} for ${robberMember.displayName}`);
+
+        // 🔥🔥🔥 الموازنة الجديدة 🔥🔥🔥
+        // 1. صحة الفارس
         const guardMaxHp = Math.floor(pMaxHp * 1.8 * multiplier); 
         
-        // 2. هجوم الفارس = 1.4 ضعف سلاح اللاعب * مضاعف الغضب
-        // (نكتفي بزيادة الصحة بشكل كبير، ونزيد الهجوم قليلاً فقط لكي لا يصبح مستحيلاً فوراً)
-        // زيادة الهجوم تكون بنسبة 20% إضافية لكل مرة تكرار بدلاً من الضعف الكامل لتجنب الـ One Shot
+        // 2. هجوم الفارس = (سلاح اللاعب * النسبة) + (زيادة ثابتة لكل تكرار لضمان القوة)
+        // إضافة 20 ضرر ثابت لكل مستوى غضب
         const atkMultiplier = 1.4 + ((multiplier - 1) * 0.5); 
+        const baseDmg = Math.floor(robberWeapon.currentDamage * atkMultiplier);
+        const flatBonus = (multiplier - 1) * 20; // +0, +20, +40...
+        
+        const finalGuardDmg = baseDmg + flatBonus;
+
         const guardWeapon = { 
             name: `نصل الإمبراطور ${multiplier > 1 ? `(غضب x${multiplier})` : ''}`, 
-            currentDamage: Math.floor(robberWeapon.currentDamage * atkMultiplier) 
+            currentDamage: finalGuardDmg
         };
 
         // 3. درع مبدئي بسيط (10%)
@@ -765,7 +770,6 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const msgPayload = { content: `**قـاتـل لتنجـو بحيـاتـك!** <@${robberMember.id}>`, embeds, components };
 
         let sentMsg;
-        // 👇👇 الإصلاح هنا (استخدام withResponse بدلاً من fetchReply) 👇👇
         if (interaction.isRepliable && !interaction.replied) {
             const response = await interaction.reply({ ...msgPayload, withResponse: true });
             sentMsg = response.resource ? response.resource.message : response; 
