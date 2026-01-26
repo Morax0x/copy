@@ -13,7 +13,7 @@ async function checkAchievements(client, member, levelData, totalStats) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
 
-    // إنشاء جدول تتبع التكرار (للإنجازات المتكررة مثل البوستات)
+    // ✅ إنشاء جدول تتبع التكرار (للإنجازات المتكررة مثل البوستات)
     sql.prepare("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)").run();
 
     const guildID = member.guild.id;
@@ -27,20 +27,17 @@ async function checkAchievements(client, member, levelData, totalStats) {
     const currentStats = {
         level: levelData ? levelData.level : 1,
         mora: levelData ? levelData.mora : 0,
-        messages: levelData ? levelData.messages : 0, // Fallback if handled elsewhere
-        // إضافة القيم من totalStats إذا وجدت
+        messages: levelData ? levelData.messages : 0, 
         ...(totalStats || {}),
-        // قيم الستريك
         streak: streakData ? streakData.streakCount : 0,
         highestStreak: streakData ? streakData.highestStreak : 0,
         highestMediaStreak: mediaStreakData ? mediaStreakData.highestStreak : 0,
-        // قيم الرتب الخاصة
         has_caesar_role: member.roles.cache.has(questsConfig.special_roles?.caesar_role) ? 1 : 0,
-        has_race_role: 0, // يتم التعامل معه كشرط خاص غالباً
+        has_race_role: 0, 
         has_tree_role: member.roles.cache.has(questsConfig.special_roles?.tree_role) ? 1 : 0,
     };
 
-    // حلقة تكرارية على جميع الإنجازات في الكونفق
+    // حلقة تكرارية على جميع الإنجازات
     for (const achievement of questsConfig.achievements) {
         
         let targetValue = achievement.goal;
@@ -54,32 +51,24 @@ async function checkAchievements(client, member, levelData, totalStats) {
             let tracker = sql.prepare("SELECT count FROM achievement_tracking WHERE id = ?").get(trackingId);
             let lastRewardedCount = tracker ? tracker.count : 0;
 
-            // إذا كان عدد البوستات الحالي أكبر من آخر عدد تم المكافأة عليه
-            // هذا يعني أن اللاعب قام ببوست جديد
             if (currentValue > lastRewardedCount) {
                 // ✅ منح الجائزة
                 await grantAchievementReward(client, member, achievement, sql, true);
                 
-                // تحديث العداد لكي لا يكرر الجائزة لنفس البوست
+                // تحديث العداد
                 sql.prepare("INSERT OR REPLACE INTO achievement_tracking (id, count) VALUES (?, ?)").run(trackingId, currentValue);
                 
-                // التأكد من تسجيل الإنجاز في الجدول الرئيسي للعرض فقط (عشان يظهر صح في البروفايل)
+                // تسجيل الإنجاز للعرض فقط
                 sql.prepare("INSERT OR IGNORE INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES (?, ?, ?, ?)").run(userID, guildID, achievement.id, Date.now());
             }
-            
-            // ننتقل للإنجاز التالي (لأننا عالجنا هذا الإنجاز بشكل خاص)
             continue;
         }
 
-        // --- المعالجة العادية لباقي الإنجازات (مرة واحدة فقط) ---
-
-        // 1. التحقق: هل يملك اللاعب الإنجاز بالفعل؟
+        // --- المعالجة العادية لباقي الإنجازات ---
         const hasAch = sql.prepare("SELECT 1 FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").get(userID, guildID, achievement.id);
-        if (hasAch) continue; // إذا كان لديه، تخطى
+        if (hasAch) continue; 
 
-        // 2. التحقق: هل حقق الشرط؟
         if (currentValue >= targetValue) {
-            // ✅ منح الجائزة وتسجيل الإنجاز
             await grantAchievementReward(client, member, achievement, sql, false);
             sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES (?, ?, ?, ?)").run(userID, guildID, achievement.id, Date.now());
         }
@@ -90,7 +79,6 @@ async function checkAchievements(client, member, levelData, totalStats) {
 // 2. دالة منح الجائزة وإرسال الرسالة
 // =====================================================================
 async function grantAchievementReward(client, member, achievement, sql, isRepeatable = false) {
-    // إضافة الجوائز
     let xpReward = achievement.reward_xp || 0;
     let moraReward = achievement.reward_mora || 0;
     let roleReward = achievement.reward_role || null;
@@ -103,16 +91,10 @@ async function grantAchievementReward(client, member, achievement, sql, isRepeat
         client.setLevel.run(userData);
     }
 
-    // إضافة الرتبة (إذا وجدت)
     if (roleReward) {
-        try {
-            await member.roles.add(roleReward);
-        } catch (e) {
-            console.error(`[Achievement Error] Could not give role for ${achievement.id}:`, e.message);
-        }
+        try { await member.roles.add(roleReward); } catch (e) {}
     }
 
-    // إرسال رسالة التهنئة
     const settings = sql.prepare("SELECT achievementChannelID FROM settings WHERE guild = ?").get(member.guild.id);
     if (settings && settings.achievementChannelID) {
         const channel = member.guild.channels.cache.get(settings.achievementChannelID);
@@ -150,13 +132,15 @@ async function grantAchievementReward(client, member, achievement, sql, isRepeat
 // 3. تجهيز بيانات صفحة الإنجازات (للعرض في الأمر)
 // =====================================================================
 function getAchievementPageData(sql, member, levelData, totalStats, completedAchievements, page = 1) {
+    // ✅✅✅ الإصلاح: التأكد من وجود الجدول هنا أيضاً لمنع الخطأ ✅✅✅
+    sql.prepare("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)").run();
+
     const achievements = questsConfig.achievements;
     
     const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
     const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
     
-    // جلب بيانات التتبع للإنجازات المتكررة (مثل البوست)
-    // عشان نعرض التقدم الصحيح (مثلاً: 2/1 بدل ما يوقف عند 1/1)
+    // الآن هذا السطر لن يسبب خطأ
     const trackingData = sql.prepare("SELECT id, count FROM achievement_tracking WHERE id LIKE ?").all(`${member.id}-${member.guild.id}-%`);
 
     const perPage = ROWS_PER_PAGE_ACH;
@@ -171,7 +155,6 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
         const isDone = completedAchievements.some(c => c.achievementID === ach.id);
         let currentProgress = 0;
 
-        // إذا كان إنجاز بوستات، نأخذ الرقم الحقيقي دائماً
         if (ach.stat === 'total_boosts') {
             if (totalStats && totalStats.total_boosts) {
                 currentProgress = totalStats.total_boosts;
@@ -193,12 +176,9 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
                 currentProgress = streakData[ach.stat];
             } else if (ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
                 currentProgress = 0; 
-                // يمكن تحسين العرض هنا ليكون 1/1 إذا الرتبة موجودة، لكن نلتزم بالكود الأصلي
             }
         }
 
-        // للإنجازات المتكررة (مثل البوست)، لا نضع سقفاً (min) لكي يظهر الرقم الحقيقي (مثلاً: 5/1)
-        // للإنجازات العادية، نضع سقفاً لكي لا يظهر (100/10) بل (10/10)
         const displayProgress = ach.stat === 'total_boosts' ? currentProgress : Math.min(currentProgress || 0, ach.goal);
 
         return {
