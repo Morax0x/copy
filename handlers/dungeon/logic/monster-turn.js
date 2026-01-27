@@ -1,7 +1,11 @@
 // handlers/dungeon/logic/monster-turn.js
 
-const { getFloorCaps } = require('./seal-system');
-const { applyDamageToPlayer } = require('../core/battle-utils'); 
+// ✅ المسار الصحيح لنظام الختم (نفس المجلد)
+const { getFloorCaps } = require('./seal-system'); 
+
+// ✅ المسار الصحيح لأدوات المعركة (المجلد الأب)
+const { applyDamageToPlayer } = require('../utils'); 
+
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
 const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
@@ -260,10 +264,10 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // 🔥🔥🔥 [التصحيح] التحقق من الاختفاء/المراوغة 🔥🔥🔥
+                // 🔥🔥🔥 التحقق من الاختفاء 🔥🔥🔥
                 if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                     hitLog.push(`${target.name}: 👻 اختفاء`);
-                    return; // تخطي هذا اللاعب تماماً
+                    return; // تخطي هذا اللاعب
                 }
 
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
