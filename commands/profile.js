@@ -1,6 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
-// 🔥 تم إزالة استيراد BASE_HP و HP_PER_LEVEL لأننا سنستخدم قيم خاصة هنا
 const { getUserRace, getWeaponData } = require('../handlers/pvp-core.js'); 
 const weaponsConfig = require('../json/weapons-config.json');
 const { createCanvas, loadImage } = require('canvas'); 
@@ -11,7 +10,7 @@ const { OWNER_ID } = require('../handlers/dungeon/constants.js');
 
 const FONT_MAIN = 'Cairo'; 
 
-// إعدادات الصحة الخاصة بالبروفايل (حسب طلبك)
+// إعدادات الصحة الخاصة بالبروفايل
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
 
@@ -55,10 +54,8 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function calculateStrongestRank(sql, guildID, targetUserID) {
-    // إذا كان الهدف هو الأونر، نرجع 0 مباشرة
     if (targetUserID === OWNER_ID) return 0;
 
-    // استثناء الأونر من قائمة الأسلحة
     const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, OWNER_ID);
     
     const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
@@ -73,7 +70,6 @@ function calculateStrongestRank(sql, guildID, targetUserID) {
         const lvlData = getLvl.get(guildID, w.userID);
         const playerLevel = lvlData?.level || 1;
         
-        // 🔥 استخدام المعادلة الجديدة لحساب القوة أيضاً
         const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
         
         const skillData = getSkills.get(guildID, w.userID);
@@ -86,12 +82,12 @@ function calculateStrongestRank(sql, guildID, targetUserID) {
 
     stats.sort((a, b) => b.powerScore - a.powerScore);
     
-    // البحث عن الترتيب في القائمة المفلترة
     const rank = stats.findIndex(s => s.userID === targetUserID) + 1;
     return rank; 
 }
 
-async function buildGeneralProfile(client, member, targetUser) {
+// ✅ تم تعديل الدالة لاستقبال viewerId (المتجسس)
+async function buildGeneralProfile(client, member, targetUser, viewerId) {
     const sql = client.sql;
     const getLevel = client.getLevel;
     const score = getLevel.get(targetUser.id, member.guild.id);
@@ -111,22 +107,18 @@ async function buildGeneralProfile(client, member, targetUser) {
         streakRankStr = "0";
         strongestRankStr = "0";
     } else {
-        // 1. ترتيب اللفل (XP) - استثناء الأونر
         const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(member.guild.id, OWNER_ID);
         const rank = allScores.findIndex(s => s.user === targetUser.id) + 1;
         rankStr = rank > 0 ? `${rank}` : "0";
 
-        // 2. ترتيب المورا - استثناء الأونر
         const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(member.guild.id, OWNER_ID);
         const moraRank = allMora.findIndex(s => s.user === targetUser.id) + 1;
         moraRankStr = moraRank > 0 ? `${moraRank}` : "0";
 
-        // 3. ترتيب الستريك - استثناء الأونر
         const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(member.guild.id, OWNER_ID);
         const streakRank = allStreaks.findIndex(s => s.userID === targetUser.id) + 1;
         streakRankStr = streakRank > 0 ? `${streakRank}` : "0";
 
-        // 4. ترتيب القوة - الدالة المعدلة تقوم بالاستثناء داخلياً
         const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
         strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0";
     }
@@ -215,7 +207,15 @@ async function buildGeneralProfile(client, member, targetUser) {
     let rightY = 215;
     const rightLineHeight = 28;
 
-    ctx.fillText(totalMora.toLocaleString(), moraX, rightY);
+    // 🔥🔥🔥 التجسس على الإمبراطور (Masking Logic) 🔥🔥🔥
+    let moraDisplay = totalMora.toLocaleString();
+    if (targetUser.id === OWNER_ID && viewerId !== OWNER_ID) {
+        moraDisplay = "👁️"; // إظهار العين للمتطفلين
+    }
+
+    ctx.fillText(moraDisplay, moraX, rightY);
+    // ----------------------------------------------------
+
     rightY += rightLineHeight;
     await drawTextWithIcon(ctx, streakCount.toLocaleString(), streakX, rightY, 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f525.png');
     rightY += rightLineHeight;
@@ -292,11 +292,9 @@ async function buildPvpProfile(client, member, targetUser) {
         return attachment;
     }
 
-    // 🔥 ترتيب القوة (Strongest) باستخدام الدالة المصححة 🔥
     const strongestRank = calculateStrongestRank(sql, member.guild.id, targetUser.id);
-    const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0"; // الأونر سيحصل على 0 من الدالة
+    const strongestRankStr = strongestRank > 0 ? `${strongestRank}` : "0"; 
 
-    // 🔥🔥🔥 تطبيق المعادلة الجديدة: 100 أساسي + 4 لكل لفل 🔥🔥🔥
     const maxHp = PROFILE_BASE_HP + (level * PROFILE_HP_PER_LEVEL);
     
     const arabicRaceName = RACE_TRANSLATIONS.get(userRace.raceName) || userRace.raceName;
@@ -408,7 +406,8 @@ module.exports = {
                 const pvpCard = await buildPvpProfile(client, targetMember, targetUser);
                 messagePayload = { files: [pvpCard] };
             } else {
-                const generalCard = await buildGeneralProfile(client, targetMember, targetUser);
+                // ✅ نمرر آيدي "المشاهد" (authorUser.id) للدالة ليتم التحقق من التجسس
+                const generalCard = await buildGeneralProfile(client, targetMember, targetUser, authorUser.id);
                 messagePayload = { files: [generalCard] };
             }
 
@@ -424,7 +423,8 @@ module.exports = {
                 let newPayload = {};
                 if (i.customId === 'profile_general') {
                     currentProfile = 'general';
-                    const generalCard = await buildGeneralProfile(client, targetMember, targetUser);
+                    // ✅ نمرر آيدي "المشاهد" هنا أيضاً عند تحديث الزر
+                    const generalCard = await buildGeneralProfile(client, targetMember, targetUser, authorUser.id);
                     newPayload = { files: [generalCard], embeds: [] };
                 } else {
                     currentProfile = 'pvp';
