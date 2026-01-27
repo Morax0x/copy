@@ -3,6 +3,8 @@ const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
+const OWNER_ID = "1145327691772481577"; // 👑 آيدي الإمبراطور
+
 // 🔥 تم تعديل النسبة هنا للعرض فقط لتطابق النظام (0.0005 = 0.05%) 🔥
 const INTEREST_RATE = 0.0005; 
 const INTEREST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +54,13 @@ module.exports = {
                 sql = client.sql;
 
                 const target = interaction.options.getUser('المستخدم') || interaction.user;
+                
+                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Slash) 🔥🔥🔥
+                // إذا كان الهدف هو الأونر، والشخص الذي يستخدم الأمر ليس الأونر -> تجاهل تام
+                if (target.id === OWNER_ID && interaction.user.id !== OWNER_ID) {
+                    return; // البوت لن يرد ولن يفعل شيئاً
+                }
+
                 targetUser = target;
                 targetMember = await guild.members.fetch(target.id).catch(() => null);
 
@@ -68,6 +77,12 @@ module.exports = {
 
                 targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
                 targetUser = targetMember.user;
+
+                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Prefix) 🔥🔥🔥
+                // إذا كان الهدف هو الأونر، والشخص الذي يستخدم الأمر ليس الأونر -> تجاهل تام
+                if (targetUser.id === OWNER_ID && message.author.id !== OWNER_ID) {
+                    return; // البوت لن يرد ولن يفعل شيئاً
+                }
             }
 
             const reply = async (payload) => {
