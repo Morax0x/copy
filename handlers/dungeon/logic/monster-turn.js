@@ -1,48 +1,37 @@
 // handlers/dungeon/logic/monster-turn.js
 
-// ✅ استدعاء نظام سقف الضرر (Seal System)
-const { getFloorCaps } = require('./seal-system');
-// ✅ استدعاء دالة التهديد الموحدة (calculateThreat)
-const { applyDamageToPlayer } = require('../utils');
+const { getFloorCaps } = require('../seal-system');
+const { applyDamageToPlayer } = require('../core/battle-utils'); // تأكد من المسار الصحيح
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
-const { checkDeaths } = require('../core/battle-utils');
-const { generateBattleEmbed } = require('../ui');
+const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
 // --- 🧠 دالة تحديد الأهداف التكتيكية (AI Targeting System) ---
 function getTacticalTargets(players, count, monster) {
     let alive = players.filter(p => !p.isDead);
     if (alive.length === 0) return [];
 
-    // 🔥 تعديل الاستفزاز الإجباري (Taunt Fix)
+    // 🔥 تعديل الاستفزاز الإجباري
     if (monster.targetFocusId) {
         const tauntedTarget = alive.find(p => p.id === monster.targetFocusId);
         if (tauntedTarget) {
-            return [tauntedTarget]; // إرجاع الهدف المستفز فقط (100% نسبة)
+            return [tauntedTarget]; 
         }
     }
 
-    // ترتيب اللاعبين حسب "قيمة التهديد" (Threat Level)
     let prioritized = alive.sort((a, b) => {
-        // 1. هل يمكن قتله بضربة واحدة؟ (Kill Confirm) - أولوية قصوى
         const aKillable = a.hp <= monster.atk * 1.5 ? 20 : 0;
         const bKillable = b.hp <= monster.atk * 1.5 ? 20 : 0;
         
-        // 2. هل هو المعالج؟ (Focus Priest)
         const aIsPriest = a.class === 'Priest' ? 10 : 0;
         const bIsPriest = b.class === 'Priest' ? 10 : 0;
 
-        // 3. من لديه أعلى هجوم؟ (High DPS Threat)
         const aThreat = a.atk * (a.effects.some(e => e.type === 'atk_buff') ? 1.5 : 1);
         const bThreat = b.atk * (b.effects.some(e => e.type === 'atk_buff') ? 1.5 : 1);
         const threatScore = (bThreat - aThreat) / 1000; 
 
-        // 4. تجنب الانعكاس (Avoid Reflect) - ذكاء الوحش
-        // 🔥 تم التحديث ليشمل انعكاس المدرع tank_reflect 🔥
         const aReflect = a.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
         const bReflect = b.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
 
-        // 5. الاستفزاز (Taunt) - إذا لاعب مفعل تايتن أو استفزاز يضطر الوحش يضربه
-        // (الاستفزاز يجبر الوحش تقنياً عبر targetFocusId، لكن هذا الوزن للدعم)
         const aTaunt = a.effects.some(e => e.type === 'titan') ? 50 : 0;
         const bTaunt = b.effects.some(e => e.type === 'titan') ? 50 : 0;
 
@@ -55,101 +44,109 @@ function getTacticalTargets(players, count, monster) {
     return prioritized.slice(0, count);
 }
 
+// دالة مساعدة لسقف الضرر (Local Helper)
+function applyLocalCap(value, cap) {
+    if (cap !== Infinity && value > cap) return cap;
+    return value;
+}
+
 async function processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel) {
-    // 🛡️🛡️ حماية قصوى من NaN وتصحيح القيم في بداية الدور 🛡️🛡️
-    if (isNaN(monster.hp) || monster.hp === null) { 
-        monster.hp = monster.maxHp || 1000; 
-        console.log("⚠️ Fixed Monster NaN HP in turn start"); 
-    }
-    if (isNaN(monster.shield) || monster.shield === null) { monster.shield = 0; } 
-    if (isNaN(monster.atk)) { monster.atk = 50; } 
+    // 🛡️ حماية من القيم غير الصالحة
+    if (isNaN(monster.hp) || monster.hp === null) monster.hp = monster.maxHp || 1000;
+    if (isNaN(monster.shield) || monster.shield === null) monster.shield = 0;
+    if (isNaN(monster.atk)) monster.atk = 50;
 
     monster.hp = Math.floor(monster.hp);
     monster.shield = Math.floor(monster.shield);
     monster.atk = Math.floor(monster.atk);
-    // -----------------------------------------------------
 
     if (!monster.memory) monster.memory = { comboStep: 0, lastMove: null, healsUsed: 0 };
 
-    // 🔥 1. جلب سقف الضرر لهذا الطابق 🔥
+    // 🔥 1. جلب سقف الضرر 🔥
     const { damageCap } = getFloorCaps(floor);
 
-    // 🔥 2. حفظ حالة إضعاف البرق قبل الحذف (Fix Lightning Bug) 🔥
-    // نأخذ القيمة هنا لأن الفلتر في الأسفل قد يحذف التأثير إذا انتهت جولاته
+    // 🔥 2. حفظ حالة البرق 🔥
     const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
     const lightningVal = activeLightning ? activeLightning.val : 0;
 
-    // 1. معالجة التجميد والشلل
+    // 1. التجميد
     if (monster.frozen) { 
         log.push(`❄️ **${monster.name}** متجمد، خسر دوره!`); 
         monster.frozen = false; 
         monster.memory.comboStep = 0; 
-        // ✅ تم حذف اللون الأحمر من هنا لتسريع البوت
-        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
+        try {
+            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], components: generateBattleRows() });
+        } catch(e){}
         return true; 
     }
 
-    // =========================================================
-    // 2. معالجة الأضرار المستمرة (DoT) - تم التعديل لتطبيق السقف (Cap) ✅
-    // =========================================================
+    // 2. معالجة الأضرار المستمرة (DoT)
     if (monster.effects) {
         monster.effects = monster.effects.filter(e => {
-            
-            // --- معالجة الحرق 🔥 ---
             if (e.type === 'burn') {
                 let val = e.val || 0;
-                let burnDmg = 0;
-                
-                // إذا القيمة كسرية (مثلاً 0.05) احسبها كنسبة مئوية
-                if (val < 1 && val > 0) {
-                    burnDmg = Math.floor(monster.maxHp * val);
-                } else {
-                    burnDmg = Math.floor(val);
-                }
-                
-                // 🔥 تطبيق سقف الضرر (Cap) على الحرق 🔥
-                if (damageCap !== Infinity && burnDmg > damageCap) {
-                    burnDmg = damageCap;
-                }
-
+                let burnDmg = (val < 1 && val > 0) ? Math.floor(monster.maxHp * val) : Math.floor(val);
+                burnDmg = applyLocalCap(burnDmg, damageCap);
                 monster.hp = Math.max(0, monster.hp - burnDmg);
                 
-                // رسالة توضيحية إذا تم تقييد الضرر
                 let msg = `🔥 **${monster.name}** يحترق! (-${burnDmg})`;
-                if (damageCap !== Infinity && burnDmg === damageCap) msg += " (مختوم)";
+                if (burnDmg === damageCap) msg += " (مختوم)";
                 log.push(msg);
             }
 
-            // --- معالجة السم ☠️ ---
             if (e.type === 'poison') {
                 let val = e.val || 0;
-                let poisonDmg = 0;
-
-                // إذا القيمة كسرية (مثلاً 0.05) احسبها كنسبة مئوية
-                if (val < 1 && val > 0) {
-                    poisonDmg = Math.floor(monster.maxHp * val);
-                } else {
-                    poisonDmg = Math.floor(val);
-                }
-
-                // 🔥 تطبيق سقف الضرر (Cap) على السم 🔥
-                if (damageCap !== Infinity && poisonDmg > damageCap) {
-                    poisonDmg = damageCap;
-                }
-
+                let poisonDmg = (val < 1 && val > 0) ? Math.floor(monster.maxHp * val) : Math.floor(val);
+                poisonDmg = applyLocalCap(poisonDmg, damageCap);
                 monster.hp = Math.max(0, monster.hp - poisonDmg);
                 
-                // رسالة توضيحية إذا تم تقييد الضرر
                 let msg = `☠️ **${monster.name}** يتألم من السم! (-${poisonDmg})`;
-                if (damageCap !== Infinity && poisonDmg === damageCap) msg += " (مختوم)";
+                if (poisonDmg === damageCap) msg += " (مختوم)";
                 log.push(msg);
             }
 
-            // إنقاص العداد
             e.turns--;
             return e.turns > 0;
         });
     }
+
+    if (monster.hp <= 0) { monster.hp = 0; return false; }
+
+    // ============================================================
+    // 🐺 هجوم المستدعي (Summoner Pets) - تم الإصلاح ✅
+    // ============================================================
+    players.forEach(p => {
+        if (!p.isDead && p.summon && p.summon.active) {
+            
+            // 1. الهجوم العادي للاستدعاء
+            const atkRatio = p.summon.atkRatio || 0.7;
+            let petDmg = Math.floor(p.atk * atkRatio) || 1;
+            petDmg = applyLocalCap(petDmg, damageCap);
+
+            monster.hp = Math.max(0, Math.floor(monster.hp - petDmg));
+            p.totalDamage += petDmg;
+            
+            log.push(`🐺 **${p.summon.name}** هاجم ${monster.name} وسبب **${petDmg}** ضرر!`);
+
+            // إنقاص العداد
+            p.summon.turns--;
+
+            // 2. الانفجار عند النهاية
+            if (p.summon.turns <= 0) {
+                p.summon.active = false; // تعطيل الاستدعاء
+                
+                const explodeRatio = p.summon.explodeRatio || 1.2;
+                let explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
+                explosionDmg = applyLocalCap(explosionDmg, damageCap);
+
+                monster.hp = Math.max(0, Math.floor(monster.hp - explosionDmg));
+                p.totalDamage += explosionDmg;
+
+                log.push(`💥 **${p.summon.name}** انفجر عند الموت مسبباً **${explosionDmg}** ضرر!`);
+                p.summon = null; // إزالة الاستدعاء
+            }
+        }
+    });
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
@@ -160,8 +157,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         monster.hp = Math.max(0, monster.hp - selfDmg);
         log.push(`😵 **${monster.name}** في حالة فوضى وضرب نفسه! (-${selfDmg})`);
         monster.memory.comboStep = 0;
-        // ✅ تم حذف اللون الأحمر من هنا لتسريع البوت
-        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] }).catch(()=>{});
+        try {
+            await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], components: generateBattleRows() });
+        } catch(e){}
         return true;
     }
 
@@ -171,7 +169,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     let skillUsed = false;
 
-    // 🔥 أولوية 1: تنفيذ المهارات الخاصة (Boss Skills) 🔥
+    // 🔥 أولوية 1: مهارات الزعيم 🔥
     const cleanName = monster.name.split(' (')[0]; 
     const specialSkill = MONSTER_SKILLS[cleanName];
 
@@ -185,7 +183,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 2: تنفيذ المهارات العامة 🔥
+    // 🔥 أولوية 2: المهارات العامة 🔥
     if (!skillUsed && !specialSkill) {
         let allowSkills = false;
         if (floor < 20) allowSkills = false;
@@ -203,7 +201,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 3: نظام الكومبو 🔥
+    // 🔥 أولوية 3: الكومبو 🔥
     if (!skillUsed && monster.memory.comboStep === 1) {
         if (monster.memory.lastMove === 'oil') {
             alive.forEach(p => {
@@ -211,7 +209,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 applyDamageToPlayer(p, dmg);
                 p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.4), turns: 3 });
             });
-            log.push(`🔥 **${monster.name}** فجر الزيت! الجميع يحترق! (COMBO FINISH)`);
+            log.push(`🔥 **${monster.name}** فجر الزيت! (COMBO FINISH)`);
             skillUsed = true;
         } 
         else if (monster.memory.lastMove === 'charge') {
@@ -220,7 +218,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 const dmg = Math.floor(monster.atk * 3.5); 
                 applyDamageToPlayer(target, dmg);
                 target.effects.push({ type: 'stun', val: 1, turns: 2 }); 
-                log.push(`🔨 **${monster.name}** أطلق طاقته الكاملة وسحق **${target.name}**! (COMBO FINISH)`);
+                log.push(`🔨 **${monster.name}** سحق **${target.name}**! (COMBO FINISH)`);
                 skillUsed = true;
             }
         }
@@ -236,7 +234,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             const healAmount = Math.floor(monster.maxHp * healPercent) || 1;
             monster.hp = Math.floor(monster.hp + healAmount);
             monster.memory.healsUsed++;
-            log.push(`💚 **${monster.name}** شرب جرعة دماء واستعاد عافيته! (+${healAmount})`);
+            log.push(`💚 **${monster.name}** استعاد عافيته! (+${healAmount})`);
             skillUsed = true;
         }
     }
@@ -250,7 +248,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         if (floor >= 60) targetCount = 3;
         if (floor >= 90) targetCount = 4;
 
-        // 🔥 إذا كان هناك استفزاز (TargetFocus)، نتجاهل عدد الأهداف ونهجم عليه هو فقط 🔥
         if (monster.targetFocusId) targetCount = 1;
 
         const targets = getTacticalTargets(players, targetCount, monster);
@@ -261,31 +258,18 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             targets.forEach(target => {
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
-                // ⚡⚡⚡ تطبيق تأثير البرق للساحر ⚡⚡⚡
-                // نستخدم المتغير المحفوظ lightningVal بدلاً من البحث مجدداً
-                if (lightningVal > 0) {
-                    // إذا كان الوحش مصاباً بالبرق، يقل ضرره بنسبة القيمة (0.9) أي يضرب بـ 10% فقط
-                    dmg = Math.floor(dmg * (1 - lightningVal)); 
-                } 
-                // تأثير الضعف العادي
-                else if (monster.effects.some(e => e.type === 'weakness')) {
-                    dmg = Math.floor(dmg * 0.6);
-                }
+                if (lightningVal > 0) dmg = Math.floor(dmg * (1 - lightningVal)); 
+                else if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.6);
 
                 if (target.defending) dmg = Math.floor(dmg * 0.5);
                 
-                // 🛡️🛡️ تطبيق الانعكاس (للمدرع وللجرعات) 🛡️🛡️
+                // 🛡️ الانعكاس
                 const reflectEffect = target.effects.find(e => e.type === 'reflect' || e.type === 'tank_reflect');
                 let reflectedDmg = 0;
                 
                 if (reflectEffect) {
-                    // حساب الضرر المنعكس بناءً على النسبة (40% للمدرع، 50% للجرعة)
                     reflectedDmg = Math.floor(dmg * (reflectEffect.val || 0)); 
-                    
-                    // تقليل الضرر القادم للاعب
                     dmg = Math.floor(dmg - reflectedDmg);
-                    
-                    // الوحش يتضرر من الانعكاس
                     monster.hp = Math.max(0, Math.floor(monster.hp - reflectedDmg));
                 }
 
@@ -304,73 +288,29 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥🔥🔥 مسح الاستفزاز بعد انتهاء الدور (لأنه يسري لدور واحد/هجوم واحد) 🔥🔥🔥
-    if (monster.targetFocusId) {
-        monster.targetFocusId = null;
-    }
-
-    // ============================================================
-    // 🐺 هجوم المستدعي (Summoner Pets) 🐺
-    // ============================================================
-    players.forEach(p => {
-        if (!p.isDead && p.summon && p.summon.active) {
-            // 1. هجوم المرافق التلقائي (70% من الهجوم)
-            const atkRatio = p.summon.atkRatio || 0.7; // الافتراضي 70%
-            let petDmg = Math.floor(p.atk * atkRatio) || 1;
-            
-            // 🔥 تطبيق الختم (Damage Cap) 🔥
-            if (damageCap !== Infinity && petDmg > damageCap) petDmg = damageCap;
-
-            monster.hp = Math.max(0, Math.floor(monster.hp - petDmg));
-            p.totalDamage += petDmg;
-            
-            // إنقاص عداد الجولات
-            p.summon.turns--;
-
-            // 2. انفجار المرافق عند النهاية (120% من الهجوم)
-            if (p.summon.turns <= 0) {
-                p.summon.active = false;
-                
-                const explodeRatio = p.summon.explodeRatio || 1.2; // الافتراضي 120%
-                let explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
-                
-                // 🔥 تطبيق الختم (Damage Cap) على الانفجار 🔥
-                if (damageCap !== Infinity && explosionDmg > damageCap) explosionDmg = damageCap;
-
-                monster.hp = Math.max(0, Math.floor(monster.hp - explosionDmg));
-                p.totalDamage += explosionDmg;
-
-                log.push(`💥 **وحش ${p.name}** انفجر عند الموت مسبباً **${explosionDmg}** ضرر!`);
-            }
-        }
-    });
+    if (monster.targetFocusId) monster.targetFocusId = null;
 
     // 🛡️ فحص نهائي
     if (monster.hp < 0) monster.hp = 0;
     if (isNaN(monster.hp)) monster.hp = 0;
 
     // ---------------------------------------------------------
-    // 💀 معالجة الوفيات (Death Handling) - المنطق الجديد 🔥
+    // 💀 معالجة الوفيات
     // ---------------------------------------------------------
     const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead);
     for (const p of deadJustNow) {
         p.isDead = true; 
 
-        // 🛑 التحقق: هل هذه الموتة الثانية؟ (reviveCount > 0)
-        // 🛑 إذا نعم، نعتبره ميتاً نهائياً فوراً ونرسل رسالة التحلل
         if (p.reviveCount && p.reviveCount >= 1) {
-            p.isPermDead = true; // تثبيت الموت النهائي
-            await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته وتلاشى للأبد! (خروج نهائي)`).catch(()=>{});
+            p.isPermDead = true;
+            await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته! (خروج نهائي)`).catch(()=>{});
         } 
-        // 🛑 إذا لا، هذه الموتة الأولى، نرسل رسالة السقوط العادية
         else {
             await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
         }
 
-        // محاولة إنعاش الكاهن (لن تعمل إذا isPermDead = true في مهارة الإحياء)
         if (p.class === 'Priest') {
              players.forEach(ally => {
-                // الكاهن يعالج الأحياء فقط
                 if (!ally.isDead && ally.id !== p.id) {
                     const healAmt = Math.floor(ally.maxHp * 0.20);
                     ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
@@ -386,10 +326,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     
     // تحديث الرسالة
     try {
-        // ✅✅✅ تم حذف اللون الأحمر ('#FF0000') من هنا لتسريع البوت ✅✅✅
-        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])] });
+        await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], components: generateBattleRows() });
     } catch (e) {
-        console.log("Error updating battle message (Monster Turn):", e.message);
+        console.log("Error updating battle message:", e.message);
     }
     
     return true;
