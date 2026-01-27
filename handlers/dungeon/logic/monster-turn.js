@@ -1,6 +1,6 @@
 // handlers/dungeon/logic/monster-turn.js
 
-const { getFloorCaps } = require('../seal-system');
+const { getFloorCaps } = require('./seal-system');
 const { applyDamageToPlayer } = require('../core/battle-utils'); 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
 const { generateBattleEmbed, generateBattleRows } = require('../ui');
@@ -260,7 +260,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // 🔥🔥🔥 [الإصلاح هنا] التحقق من الاختفاء/المراوغة 🔥🔥🔥
+                // 🔥🔥🔥 [التصحيح] التحقق من الاختفاء/المراوغة 🔥🔥🔥
                 if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                     hitLog.push(`${target.name}: 👻 اختفاء`);
                     return; // تخطي هذا اللاعب تماماً
