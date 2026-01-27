@@ -35,7 +35,9 @@ const weaponCalculator = require('../../combat/weapon-calculator');
 const { cleanName } = require('../core/battle-utils'); 
 const { handleOwnerMenu } = require('../actions/owner-menu');
 const { saveDungeonState } = require('../core/state-manager');
-const { getFloorCaps } = require('./seal-system');
+
+// ✅✅✅ التصحيح هنا: استخدام المسار الصحيح للملف المجاور ✅✅✅
+const { getFloorCaps } = require('./seal-system'); 
 
 /**
  * معالجة تفاعل اللاعب مع أزرار المعركة
