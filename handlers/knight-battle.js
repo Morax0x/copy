@@ -575,23 +575,24 @@ async function processGuardTurn(battleState) {
          
         // 🔥 ترتيب جديد للأولويات (البقاء أولاً!) 🔥
 
-        // 1. استخدام "قداس الدم" إذا قلت الصحة عن 20% (أولوية قصوى للعلاج والهجوم معاً)
-        if (guard.hp < guard.maxHp * 0.20 && guard.effects.blood_liturgy_used < 5) {
+        // 1. استخدام "قداس الدم" إذا قلت الصحة عن 30% (أولوية قصوى للعلاج والهجوم معاً)
+        if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
             const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); // ضربة قوية (1.5x)
             player.hp -= drainDmg;
              
-            const healAmt = Math.floor(drainDmg * 0.8); // يعالج نفسه بـ 80% من الضرر
+            // زيادة الشفاء قليلاً لضمان التأثير
+            const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
 
             guard.effects.blood_liturgy_used++; // زيادة العداد
 
-            actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه! (${guard.effects.blood_liturgy_used}/5)`;
+            actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه (+${healAmt})! (${guard.effects.blood_liturgy_used}/5)`;
              
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 2. استخدام "جرعات الطوارئ" إذا قلت الصحة عن 40% (للبقاء على قيد الحياة)
-        else if (guard.hp < guard.maxHp * 0.40 && guard.effects.potions_used < 5) {
+        // 2. استخدام "جرعات الطوارئ" إذا قلت الصحة عن 50% (للبقاء على قيد الحياة)
+        else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
             const healAmount = Math.floor(guard.maxHp * 0.25); // 25% شفاء
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
              
