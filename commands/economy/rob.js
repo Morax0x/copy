@@ -208,6 +208,17 @@ module.exports = {
         // =================================================================
         if (victim.id === OWNER_ID) {
             
+            // 🔥 تعديل: مبلغ عشوائي بين 100 و 9999 مع التأكد من قدرة السارق على الدفع
+            const minEmperor = 100;
+            const maxEmperor = 9999;
+            let emperorSteal = Math.floor(Math.random() * (maxEmperor - minEmperor + 1)) + minEmperor;
+            
+            // شرط: السارق يجب أن يملك المبلغ ليدفعه كغرامة في حال الفشل
+            if (emperorSteal > robberTotalWealth) {
+                emperorSteal = robberTotalWealth;
+            }
+            amountToSteal = emperorSteal;
+
             const embed = new EmbedBuilder()
                 .setTitle('❖ مـحاولـة سـطـو عـلـى قلـعة الامبراطـور')
                 .setDescription(`✶ خـطـوة واحدة تفـصل بينـك وبين الغنيمة أو السجن.. ادخـل من أي بـاب من أبواب القلعـة... **${amountToSteal.toLocaleString()}** ${EMOJI_MORA}`)
@@ -228,7 +239,8 @@ module.exports = {
                 const j = Math.floor(Math.random() * (i + 1));
                 [allIndices[i], allIndices[j]] = [allIndices[j], allIndices[i]];
             }
-            const correctIndices = allIndices.slice(0, 2); 
+            // ✅ تعديل: باب واحد صحيح فقط
+            const correctIndices = allIndices.slice(0, 1); 
 
             const msg = await reply({ embeds: [embed], components: rows });
             const filter = i => i.user.id === robber.id;
