@@ -1,3 +1,5 @@
+// handlers/dungeon/core/setup.js
+
 const { getRealPlayerData } = require('../utils');
 const { cleanName } = require('./battle-utils');
 
@@ -21,11 +23,15 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID) {
             playerData.startingShield = 0; 
             
             // 🔥🔥🔥 إضافة متغيرات نظام التهديد (Threat System) 🔥🔥🔥
-            playerData.threat = 0; // يبدأ من صفر
-            playerData.totalDamage = 0; // لحساب الإحصائيات
+            playerData.threat = 0; 
+            playerData.totalDamage = 0; 
             
             // 🔥🔥🔥 الإضافة الجديدة: عداد طوابق الدرع (للمرتزقة) 🔥🔥🔥
             playerData.shieldFloorsCount = 0; 
+
+            // ✅✅✅ إصلاح المستدعي: إضافة خانة فارغة للاستدعاء ✅✅✅
+            // (هذا هو السطر الناقص عندك)
+            playerData.summon = null; 
 
             // ============================================================
             // 🔥🔥🔥 الفحص الحقيقي للختم (Deep Scan) 🔥🔥🔥
