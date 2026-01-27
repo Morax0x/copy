@@ -48,8 +48,7 @@ async function handlePlayerBattleInteraction(i, context) {
         ongoingRef, actedPlayers, processingUsers
     } = context;
 
-    // 🔥 1. تحقق خاص للأونر في البداية (لمنع التعليق واختفاء القائمة)
-    // إذا كان الأونر يضغط زر "def"، لا نعمل deferUpdate هنا لأن handleOwnerMenu تتولى الرد
+    // 🔥 1. تحقق خاص للأونر في البداية
     const isOwnerDefend = (i.customId === 'def' && i.user.id === OWNER_ID);
 
     if (!isOwnerDefend) {
@@ -57,20 +56,20 @@ async function handlePlayerBattleInteraction(i, context) {
             try {
                 await i.deferUpdate();
             } catch (e) {
-                // تجاهل الخطأ إذا كان قد تم الرد بالفعل
+                // تجاهل الخطأ
             }
         }
     }
 
-    // 🔥 2. منع التكرار (Debounce) - إذا اللاعب ضغط والزر لسه يحمل
+    // 🔥 2. منع التكرار
     if (processingUsers.has(i.user.id)) {
         return; 
     }
 
-    // 🔥 3. حساب حدود الطابق الحالي (الدمج والمستوى) 🔥
+    // 🔥 3. حساب حدود الطابق الحالي 🔥
     const { damageCap, levelCap } = getFloorCaps(floor);
 
-    // 4. قائمة المالك (Owner Menu)
+    // 4. قائمة المالك
     if (isOwnerDefend) {
         try {
             await handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef);
@@ -88,7 +87,7 @@ async function handlePlayerBattleInteraction(i, context) {
         return { ongoing: true };
     }
 
-    // 5. دخول المالك للمعركة (إذا ضغط أي زر آخر ولم يكن مسجلاً كلاعب)
+    // 5. دخول المالك للمعركة
     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
         const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
         if (member) {
@@ -101,7 +100,6 @@ async function handlePlayerBattleInteraction(i, context) {
         
     let p = players.find(pl => pl.id === i.user.id);
     if (!p) {
-        // نستخدم followUp هنا لأننا عملنا deferUpdate في البداية (لغير الأونر)
         return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true }).catch(()=>{});
     }
     
@@ -156,7 +154,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
                      if (p.skills[skillId]) {
                          skillObj = { ...p.skills[skillId] }; 
-                         if (skillObj.level > levelCap) skillObj.level = levelCap; // تطبيق حد المستوى
+                         if (skillObj.level > levelCap) skillObj.level = levelCap; 
                      }
                 }
 
@@ -301,9 +299,13 @@ async function handlePlayerBattleInteraction(i, context) {
                 } else if (potionId === 'potion_reflect') {
                     p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
                     actionMsg = "🌵 جهز درع الأشواك!";
+                
                 } else if (potionId === 'potion_time') {
-                    p.special_cooldown = 0; p.skillCooldowns = {};
+                    // ✅✅✅ الإصلاح: تصفير الكولداون بشكل صحيح ✅✅✅
+                    p.special_cooldown = 0; 
+                    p.skillCooldowns = {};
                     actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
+                
                 } else if (potionId === 'potion_titan') {
                     p.maxHp *= 2; p.hp = p.maxHp;
                     p.effects.push({ type: 'titan', floors: 5 }); 
@@ -324,6 +326,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     actionMsg = "💀 شرب جرعة التضحية، تحللت جثته وأنقذ الجميع!";
                     threadChannel.send(`💀 **${p.name}** شرب جرعة التضحية، تحللت جثته وأنقذ الفريق!`).catch(()=>{});
                 }
+                
                 log.push(`**${p.name}**: ${actionMsg}`);
                 actedPlayers.push(p.id); p.skipCount = 0; 
                 await selection.editReply({ content: `✅ ${actionMsg}`, components: [] }).catch(()=>{});
