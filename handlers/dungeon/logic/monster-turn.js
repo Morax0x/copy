@@ -1,7 +1,7 @@
 // handlers/dungeon/logic/monster-turn.js
 
 const { getFloorCaps } = require('../seal-system');
-const { applyDamageToPlayer } = require('../core/battle-utils'); // تأكد من المسار الصحيح
+const { applyDamageToPlayer } = require('../core/battle-utils'); 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
 const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
@@ -32,11 +32,15 @@ function getTacticalTargets(players, count, monster) {
         const aReflect = a.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
         const bReflect = b.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
 
+        // تقليل أولوية المختفي لكن لا يمنع اختياره (المنع الحقيقي في الأسفل)
+        const aInvisible = a.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -999 : 0;
+        const bInvisible = b.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -999 : 0;
+
         const aTaunt = a.effects.some(e => e.type === 'titan') ? 50 : 0;
         const bTaunt = b.effects.some(e => e.type === 'titan') ? 50 : 0;
 
-        const scoreA = aKillable + aIsPriest + aReflect + aTaunt;
-        const scoreB = bKillable + bIsPriest + bReflect + bTaunt;
+        const scoreA = aKillable + aIsPriest + aReflect + aTaunt + aInvisible;
+        const scoreB = bKillable + bIsPriest + bReflect + bTaunt + bInvisible;
 
         return (scoreB + threatScore) - (scoreA);
     });
@@ -113,7 +117,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
     // ============================================================
-    // 🐺 هجوم المستدعي (Summoner Pets) - تم الإصلاح ✅
+    // 🐺 هجوم المستدعي (Summoner Pets)
     // ============================================================
     players.forEach(p => {
         if (!p.isDead && p.summon && p.summon.active) {
@@ -256,6 +260,12 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
+                // 🔥🔥🔥 [الإصلاح هنا] التحقق من الاختفاء/المراوغة 🔥🔥🔥
+                if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
+                    hitLog.push(`${target.name}: 👻 اختفاء`);
+                    return; // تخطي هذا اللاعب تماماً
+                }
+
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
                 if (lightningVal > 0) dmg = Math.floor(dmg * (1 - lightningVal)); 
@@ -284,7 +294,11 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 hitLog.push(`${target.name}: ${status}`);
             });
 
-            log.push(`⚔️ **${monster.name}** هاجم: [ ${hitLog.join(' | ')} ]`);
+            if (hitLog.length > 0) {
+                log.push(`⚔️ **${monster.name}** هاجم: [ ${hitLog.join(' | ')} ]`);
+            } else {
+                log.push(`⚔️ **${monster.name}** هاجم لكن لم يصب أحداً!`);
+            }
         }
     }
 
