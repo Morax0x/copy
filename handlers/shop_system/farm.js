@@ -1,7 +1,27 @@
+// handlers/shop_system/farm.js
+
 const { EmbedBuilder, Colors, MessageFlags } = require("discord.js");
-const { EMOJI_MORA } = require('./utils'); // تأكد من وجود هذا الملف أو عرف المتغير مباشرة
+const path = require('path');
+
+// ✅ استيراد ملفات JSON بشكل آمن باستخدام path
 const farmAnimals = require('../../json/farm-animals.json');
-// استدعاء دوال الحساب الدقيقة
+
+// ✅ استيراد الأدوات المساعدة (تأكد من وجود EMOJI_MORA في ملف utils أو constants)
+// إذا لم يكن موجوداً في utils، نستخدم قيمة افتراضية لتجنب الخطأ
+let EMOJI_MORA = '🪙'; 
+try {
+    const utils = require('./utils');
+    if (utils.EMOJI_MORA) EMOJI_MORA = utils.EMOJI_MORA;
+    else {
+        // محاولة بديلة من ملف constants العام إذا لم يوجد في utils المحلي
+        const constants = require('../dungeon/constants');
+        if (constants.EMOJI_MORA) EMOJI_MORA = constants.EMOJI_MORA;
+    }
+} catch (e) {
+    // تجاهل الخطأ واستخدام الايموجي الافتراضي
+}
+
+// ✅ استدعاء دوال الحساب الدقيقة للسعة
 const { getPlayerCapacity, getUsedCapacity } = require('../../utils/farmUtils.js');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -15,17 +35,21 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         
         if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) {
-            return await i.editReply({ content: '❌ الكمية غير صالحة.' });
+            return await i.editReply({ content: '❌ الكمية غير صالحة. يجب أن تكون رقماً صحيحاً موجباً.' });
         }
         
         const animalId = i.customId.replace(isBuy ? 'buy_animal_' : 'sell_animal_', '');
         // تحويل للسترينج للمطابقة الآمنة
         const animal = farmAnimals.find(a => String(a.id) === String(animalId));
         
-        if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود.' });
+        if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
+        // جلب بيانات اللاعب
         let userData = client.getLevel.get(i.user.id, i.guild.id); 
-        if (!userData) userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
+        if (!userData) {
+            userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
+            client.setLevel.run(userData); // حفظ مبدئي
+        }
         let userMora = userData.mora || 0; 
         const userBank = userData.bank || 0;
 
@@ -66,25 +90,19 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
                 return await i.editReply({ content: msg });
             }
 
+            // خصم المبلغ
             userData.mora -= totalCost;
             const now = Date.now();
             
-            // تنفيذ الشراء
+            // تنفيذ الشراء وتسجيل الحيوانات
             const transaction = sql.transaction(() => {
-                // نفضل الإضافة كصفوف جديدة لتتبع العمر بدقة، ولكن إذا كنت تستخدم التجميع (Stacking) في العرض:
-                // هنا سنقوم بإدراج صفوف جديدة لضمان دقة "عمر الحيوان" عند البيع لاحقاً
-                // إذا كنت تفضل دمجهم، يمكنك استخدام UPDATE لكن ستفقد دقة العمر للأفراد
-                // الكود الحالي يستخدم INSERT لضمان دقة العمر (وهذا الأفضل للنظام الجديد)
-                
-                // ملاحظة: إذا كنت تريد دمجهم لتقليل الداتابيس، استخدم المنطق القديم. 
-                // لكن لنظام الإهلاك، يفضل فصل المشتريات بتواريخ مختلفة.
-                // هنا سأستخدم INSERT لصف واحد يجمع الكمية بنفس وقت الشراء (حل وسط ممتاز)
-                
+                // نستخدم INSERT لإضافة صف جديد لكل عملية شراء، مما يحفظ تاريخ الشراء الدقيق لهذا الفوج
                 sql.prepare(`
                     INSERT INTO user_farm (guildID, userID, animalID, quantity, purchaseTimestamp, lastCollected, lastFedTimestamp) 
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 `).run(i.guild.id, i.user.id, animal.id, quantity, now, now, now);
 
+                // تحديث إحصائيات الشراء وتحديث الرصيد
                 userData.shop_purchases = (userData.shop_purchases || 0) + 1;
                 client.setLevel.run(userData);
             });
@@ -132,10 +150,10 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
                     const ageMs = now - purchaseTime;
                     const remainingLifeMs = lifespanMs - ageMs;
 
-                    // 🛑 شرط الحظر: إذا اقترب الموت
+                    // 🛑 شرط الحظر: إذا اقترب الموت (أقل من 20% من العمر متبقي)
                     if (remainingLifeMs <= noSellMs) {
                         unsellableCount += row.quantity;
-                        continue; // نتخطى هذا الصف
+                        continue; // نتخطى هذا الصف لأنه "عجوز"
                     }
 
                     // 📉 حساب السعر (الإهلاك)
@@ -171,7 +189,7 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
                     success: true, 
                     soldCount, 
                     totalRefund, 
-                    remainingToSell 
+                    remainingToSell // الكمية التي طلب بيعها ولم يتمكن بسبب العمر
                 };
             });
 
@@ -199,7 +217,7 @@ async function _handleFarmTransaction(i, client, sql, isBuy) {
 
     } catch (e) { 
         console.error("[Farm Transaction Error]", e); 
-        await i.editReply("❌ حدث خطأ داخلي."); 
+        await i.editReply("❌ حدث خطأ داخلي أثناء معالجة الطلب."); 
     }
 }
 
