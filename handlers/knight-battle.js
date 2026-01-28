@@ -466,7 +466,13 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 function setupBattleCollector(battleState) {
     const robberId = battleState.turn[0]; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
-    const collector = battleState.message.createMessageComponentCollector({ filter, componentType: ComponentType.Button, time: 300000 });
+    
+    // ✅✅✅ تم التعديل: استخدام idle بدلاً من time لتجديد الوقت مع التفاعل ✅✅✅
+    const collector = battleState.message.createMessageComponentCollector({ 
+        filter, 
+        componentType: ComponentType.Button, 
+        idle: 300000 // 5 دقائق خمول
+    });
 
     collector.on('collect', async i => {
         if (battleState.processingTurn) return i.deferUpdate().catch(()=>{});
@@ -521,7 +527,8 @@ function setupBattleCollector(battleState) {
     });
 
     collector.on('end', (collected, reason) => {
-        if (reason === 'time' && !battleState.isEnded) {
+        // ✅✅✅ تم التعديل: قبول الخمول (idle) كسبب للخسارة ✅✅✅
+        if ((reason === 'time' || reason === 'idle') && !battleState.isEnded) {
             handleGuardBattleEnd(battleState, "guard", "lose");
         }
     });
