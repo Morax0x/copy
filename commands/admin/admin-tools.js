@@ -537,8 +537,9 @@ module.exports = {
         } 
         else if (item.type === 'farm') {
             const now = Date.now();
-            const stmt = sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected) VALUES (?, ?, ?, ?, ?)");
-            for (let i = 0; i < quantity; i++) stmt.run(guildID, userID, item.id, now, now);
+            // 🔥✅ تم إضافة lastFedTimestamp: now لضمان عدم موت الحيوان فوراً
+            const stmt = sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected, lastFedTimestamp) VALUES (?, ?, ?, ?, ?, ?)");
+            for (let i = 0; i < quantity; i++) stmt.run(guildID, userID, item.id, now, now, now);
             embed.setDescription(`✅ تم إضافة **${quantity}** × **${item.name}** لمزرعة ${targetUser}.`);
         }
         else if (item.type === 'shop_special') {
