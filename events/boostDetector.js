@@ -88,7 +88,7 @@ module.exports = {
                 `✥ **${boosterName}**\n` +
                 `✬ مـعـزز جديـد ارتقـى لمصـاف العظمـاء <:sboosting:1439665969864773663>!\n\n` +
                 `✶ شكـرا عـلى دعـم الامبراطـوريـة استمتـع بمميزاتـك الخاصـة <a:NekoCool:1435572459276337245>\n\n` +
-                `✬ <a:levelup:1437805366048985290> Mora: **${REWARD_MORA}** ${EMOJI_MORA} | XP: **${REWARD_XP}**`;
+                `✬ Mora: **${REWARD_MORA}** ${EMOJI_MORA} | XP: **${REWARD_XP}** <a:levelup:1437805366048985290>`;
 
             // ✅ الإرسال: النص في content والصورة في files (لتبدو كصورة مرفقة كبيرة بدون رابط)
             await message.channel.send({ 
