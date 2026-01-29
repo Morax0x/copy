@@ -1,5 +1,9 @@
 // events/boostDetector.js
-const { EmbedBuilder } = require('discord.js');
+
+// 💰 إعدادات المكافآت
+const REWARD_MORA = 25000; 
+const REWARD_XP = 5000;    
+const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 
 // 🎨 قائمة الصور العشوائية
 const BOOST_IMAGES = [
@@ -18,17 +22,16 @@ const REACTIONS = [
 
 module.exports = {
     name: 'messageCreate',
-    async execute(message) { // ✅ التعديل: نستقبل message فقط، ونأخذ client منها
+    async execute(message) {
         
-        const client = message.client; // ✅ الوصول الآمن للعميل
+        const client = message.client; 
 
         // 1. تجاهل رسائل البوتات (ماعدا رسائل النظام الخاصة بالبوست)
         if (message.author.bot && message.type !== 8 && message.type !== 9 && message.type !== 10 && message.type !== 11) return;
 
         // 2. التحقق من القناة المسجلة في الداتابيس
-        // ✅ استخدام client.sql بشكل آمن
         const sql = client.sql; 
-        if (!sql) return; // حماية إضافية إذا لم تكن قاعدة البيانات جاهزة
+        if (!sql) return; 
 
         let settings;
         try {
@@ -46,33 +49,52 @@ module.exports = {
 
         if (isSystemBoost || hasBoostText) {
             
-            // ✅ تنفيذ الرياكشنات بالترتيب
+            // ✅ تنفيذ الرياكشنات
             try {
                 for (const reactionId of REACTIONS) {
                     await message.react(reactionId).catch(() => {});
                     await new Promise(r => setTimeout(r, 300)); 
                 }
+            } catch (err) {}
+
+            // ✅ إضافة المكافآت
+            try {
+                const userID = message.author.id;
+                const guildID = message.guild.id;
+
+                let userData = client.getLevel.get(userID, guildID);
+                if (!userData) {
+                    userData = { ...client.defaultData, user: userID, guild: guildID };
+                }
+
+                userData.mora += REWARD_MORA;
+                userData.xp += REWARD_XP;
+                userData.totalXP = (userData.totalXP || 0) + REWARD_XP;
+
+                client.setLevel.run(userData);
+
             } catch (err) {
-                // تجاهل أخطاء الرياكشن
+                console.error("[Boost Reward Error]:", err);
             }
 
             // ✅ اختيار صورة عشوائية
             const randomImage = BOOST_IMAGES[Math.floor(Math.random() * BOOST_IMAGES.length)];
 
-            // ✅ تجهيز رسالة الشكر
-            const boosterName = message.author.username; 
+            // ✅ تجهيز الرسالة العادية (بدون منشن للمستخدم كما طلبت، فقط الاسم)
+            // نستخدم displayName ليظهر الاسم كما هو بالسيرفر
+            const boosterName = message.member ? message.member.displayName : message.author.username; 
 
-            const embed = new EmbedBuilder()
-                .setColor('#F47FFF')
-                .setDescription(
-                    `✥ **${boosterName}**\n` +
-                    `✬ مـعـزز جديـد ارتقـى لمصـاف العظمـاء <:sboosting:1439665969864773663>!\n\n` +
-                    `✶ شكـرا عـلى دعـم الامبراطـوريـة استمتـع بمميزاتـك الخاصـة <a:NekoCool:1435572459276337245>`
-                )
-                .setImage(randomImage);
+            const msgContent = 
+                `✥ **${boosterName}**\n` +
+                `✬ مـعـزز جديـد ارتقـى لمصـاف العظمـاء <:sboosting:1439665969864773663>!\n\n` +
+                `✶ شكـرا عـلى دعـم الامبراطـوريـة استمتـع بمميزاتـك الخاصـة <a:NekoCool:1435572459276337245>\n\n` +
+                `✬ <a:levelup:1437805366048985290> Mora: **${REWARD_MORA}** ${EMOJI_MORA} | XP: **${REWARD_XP}**`;
 
-            // إرسال الرسالة
-            await message.channel.send({ embeds: [embed] }).catch(() => {});
+            // ✅ الإرسال: النص في content والصورة في files (لتبدو كصورة مرفقة كبيرة بدون رابط)
+            await message.channel.send({ 
+                content: msgContent,
+                files: [randomImage] 
+            }).catch(() => {});
         }
     }
 };
