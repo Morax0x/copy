@@ -15,7 +15,7 @@ function applyCap(value, cap) {
 // ✅ تم إضافة damageCap كمعامل أخير
 function handleSkillUsage(player, skill, monster, log, threadChannel, players, damageCap = Infinity) {
     let skillDmg = 0;
-     
+      
     // 🔥🔥🔥 فحص الختم (Seal Check) 🔥🔥🔥
     const isSealed = player.effects.some(e => e.type === 'seal' || e.type === 'weakness');
     // إذا كان مختوماً، القوة تصبح 20% فقط (يخسر 80%) لتأثيرات الحالة
@@ -25,7 +25,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     // 1. مهارات الإمبـراطـور (GOD MODE) 👑
     // (تبقى هنا لأنها خاصة بالقصة ولها منطق فريد وتتجاهل الختم)
     // ====================================================
-     
+      
     if (skill.id === 'skill_erasure') {
         monster.hp = 0;
         log.push(`💀 **${player.name}** أشار بيده.. ومُحي الوحش من الوجود تماماً!`);
@@ -248,7 +248,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     }
 
     const skillCooldown = skill.cooldown || (skill.id.startsWith('race_') ? 5 : 3);
-     
+      
     if (player.id !== OWNER_ID) {
         if (skill.id !== 'skill_shielding') {
             player.skillCooldowns[skill.id] = skillCooldown;
@@ -258,7 +258,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     // =================================================================
     // 🔥🔥 استخدام المحرك المركزي للمهارات (مع تطبيق الختم) 🔥🔥
     // =================================================================
-     
+      
     // 1. استدعاء المحرك
     const isOwner = player.id === OWNER_ID;
     const result = skillCalculator.executeSkill(player, monster, skill, isOwner);
@@ -293,11 +293,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
         monster.hp -= result.damage;
         player.totalDamage += result.damage;
-         
+          
         let threatGen = result.damage;
         if (player.class === 'Tank') threatGen *= 3;
         player.threat = (player.threat || 0) + threatGen;
-         
+          
         checkBossPhase(monster, log);
 
         // إضافة علامة (مختوم) للسجل إذا تم تقليل الضرر
@@ -309,7 +309,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     // ب. الشفاء والدرع والضرر الذاتي
     if (result.heal > 0) player.hp = Math.min(player.maxHp, player.hp + result.heal);
     if (result.selfDamage > 0) applyDamageToPlayer(player, result.selfDamage);
-     
+      
     if (result.shield > 0) {
         player.shield = (player.shield || 0) + result.shield; 
     }
