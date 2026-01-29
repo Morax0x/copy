@@ -520,4 +520,4 @@ async function handleTimeoutModal(i) {
     } catch (err) {
         await i.editReply("❌ حدث خطأ (تأكد من الصلاحيات).");
     }
-}
+                                                                        }
