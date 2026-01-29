@@ -456,7 +456,7 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         if (stat === 'replies_sent') totalStats.total_replies_sent = (totalStats.total_replies_sent || 0) + amount;
         if (stat === 'mentions_received') totalStats.total_mentions_received = (totalStats.total_mentions_received || 0) + amount;
         if (stat === 'vc_minutes') totalStats.total_vc_minutes = (totalStats.total_vc_minutes || 0) + amount;
-               
+                
         client.setDailyStats.run(dailyStats);
         client.setWeeklyStats.run(weeklyStats);
         client.setTotalStats.run({
@@ -671,6 +671,10 @@ client.on(Events.ClientReady, async () => {
       
     await autoJoin(client);
     await initGiveaways(client);
+
+    // 🔥 تشغيل نظام الصوت الجديد (كل دقيقة)
+    require('./handlers/voice-timer.js')(client);
+    console.log('✅ Voice XP Timer Started (Every 1 min)');
 
     client.antiRolesCache = new Map();
     await loadRoleSettings(sql, client.antiRolesCache);
