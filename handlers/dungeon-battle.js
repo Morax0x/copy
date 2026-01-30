@@ -6,13 +6,13 @@ const { EMOJI_MORA, EMOJI_XP, OWNER_ID } = require('./dungeon/constants');
 const { ensureInventoryTable, getBaseFloorMora } = require('./dungeon/utils');
 const { getRandomMonster, checkBossPhase } = require('./dungeon/monsters');
 const { generateBattleEmbed, generateBattleRows } = require('./dungeon/ui');
-const { checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils'); 
+const { checkDeaths, handleLeaderSuccession } = require('./dungeon/core/battle-utils');
 const { setupPlayers } = require('./dungeon/core/setup');
 const { sendEndMessage } = require('./dungeon/core/end-game');
 const { processMonsterTurn } = require('./dungeon/logic/monster-turn');
 const { handleTeamWipe, handleLeaderRetreat, snapshotLootAtFloor20 } = require('./dungeon/core/rewards');
 
-// 🔥🔥🔥 استدعاء ملف الزعيم الأخير الجديد 🔥🔥🔥
+// استدعاء ملف الزعيم الأخير
 const { getMoraxData, processMoraxTurn } = require('./dungeon/logic/final-boss');
 
 // --- Imported Logic Modules ---
@@ -20,10 +20,10 @@ const { saveDungeonState, deleteDungeonState } = require('./dungeon/core/state-m
 const { handlePlayerBattleInteraction } = require('./dungeon/logic/battle-actions');
 const { startStatusMonitor } = require('./dungeon/logic/status-monitor');
 const { applyPostBattleUpdates, handleRestMenu } = require('./dungeon/logic/rest-phase');
-const { checkSealMessages } = require('./dungeon/logic/seal-system'); 
+const { checkSealMessages } = require('./dungeon/logic/seal-system');
 const { applyFloorBuffs, handleTrapEvent, handleRandomEvents } = require('./dungeon/logic/floor-events');
 
-// ✅ استدعاء ملف الكونفق لضمان وجود الصور
+// استدعاء ملف الكونفق
 const dungeonConfig = require('../json/dungeon-config.json');
 
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, resumeData = null) {
@@ -62,15 +62,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         await threadChannel.send(`🔄 **تم استعادة البيانات!** جاري استكمال المعركة من الطابق **${startFloor}**...`).catch(()=>{});
     } else {
-        players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID);
+        // ✅ استخراج كود الدانجون (themeKey) لتفعيل ميزات الأعراق
+        const themeKey = Object.keys(dungeonConfig.themes).find(key => dungeonConfig.themes[key].name === theme.name) || null;
+        
+        // تمرير themeKey للدالة setupPlayers
+        players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeKey);
     }
 
     if (players.length === 0) {
         if (!resumeData) activeDungeonRequests.delete(hostId);
         return threadChannel.send("❌ خطأ: لم يتم العثور على اللاعبين.").catch(() => {});
     }
-
-    // ❌❌❌ تم حذف الكود المكرر هنا (CHECK INITIAL SEAL MESSAGE) ❌❌❌
 
     const maxFloors = 100; 
 
@@ -126,7 +128,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         // --- SEAL MESSAGES & FLOOR BUFFS ---
-        // ✅ يتم استدعاء الختم هنا، مما يغطي الطابق الأول وجميع الطوابق التالية
         await checkSealMessages(floor, players, threadChannel); 
         await applyFloorBuffs(floor, players, threadChannel);
 
@@ -165,7 +166,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             monster = resumedMonsterData;
             resumedMonsterData = null; 
         } 
-        // 🔥🔥🔥 استخدام دالة موراكس الخاصة للطابق 100 🔥🔥🔥
+        // الطابق 100: موراكس
         else if (floor === 100) {
             monster = getMoraxData();
         }
@@ -295,8 +296,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                     const result = await handlePlayerBattleInteraction(i, context);
                     
-                    // 🔥🔥🔥 FIX: التحقق من أن النتيجة موجودة قبل قراءة الخاصية 🔥🔥🔥
-                    // هذا يمنع الخطأ TypeError: Cannot read properties of undefined (reading 'ongoing')
+                    // التحقق من النتيجة لتجنب الأخطاء
                     if (result && !result.ongoing) {
                         ongoing = false;
                     }
@@ -305,21 +305,18 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
             });
 
-            // 🔥🔥🔥 FIX: تحديث الإيمبد عند موت الوحش والانتظار قليلاً 🔥🔥🔥
             if (monster.hp <= 0) { 
                 ongoing = false; 
-                monster.hp = 0; // تأكيد الصفر
+                monster.hp = 0; 
 
-                // 1. تحديث الرسالة لتظهر الوحش ميتاً وإزالة الأزرار
                 try {
                     await battleMsg.edit({ 
                         content: `**💀 سقط ${monster.name} مضرّجاً بدمائه!**`, 
-                        embeds: [generateBattleEmbed(players, monster, floor, theme, log, [], '#000000')], // لون أسود للموت
-                        components: [] // 🗑️ إزالة الأزرار فوراً لمنع الضغط
+                        embeds: [generateBattleEmbed(players, monster, floor, theme, log, [], '#000000')], 
+                        components: [] 
                     }).catch(()=>{}); 
                 } catch (e) { }
 
-                // 2. انتظار 2.5 ثانية ليستوعب اللاعبون ما حدث قبل الانتقال للاستراحة
                 await new Promise(r => setTimeout(r, 2500));
             }
 
@@ -354,24 +351,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     themeName: theme.name, monsterData: monster 
                 });
 
-                // 🔥🔥🔥 التبديل بين منطق موراكس ومنطق الوحوش العادية 🔥🔥🔥
                 if (floor === 100) {
                     ongoing = await processMoraxTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 } else {
                     ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 }
                 
-                // 💀💀 تحديث منطق الوفيات هنا أيضاً لضمان التناسق 💀💀
                 const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead);
                 for (const p of deadJustNow) {
                     p.isDead = true;
 
-                    // 🔥 التحقق الفوري من "الموت النهائي"
                     if (p.reviveCount && p.reviveCount >= 1) {
                         p.isPermDead = true; 
                         await threadChannel.send(`☠️ **${p.name}** تـحـللـت جثتـه ..`).catch(()=>{});
                     } else {
-                        // الموتة الأولى
                         await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
                     }
 
@@ -387,8 +380,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 }
 
                 if (ongoing) handleLeaderSuccession(players, log);
-
-                // ✅✅✅ تم حذف بلوك "إعادة اللون" من هنا لزيادة السرعة وتقليل التعليق ✅✅✅
             }
         }
 
@@ -401,17 +392,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             return; 
         }
 
-        // 🔥🔥🔥 FIX 3: إذا هزمنا موراكس (الطابق 100)، الخروج فوراً للفوز مع إضافة الغنائم يدوياً 🔥🔥🔥
+        // --- الفوز في الطابق 100 ---
         if (floor === maxFloors) {
-            // 1. حساب غنائم موراكس يدوياً (لأننا نتخطى دالة applyPostBattleUpdates)
             const moraxMora = getBaseFloorMora(100);
-            const moraxXp = Math.floor(moraxMora * 0.03); // 3% XP
+            const moraxXp = Math.floor(moraxMora * 0.10); // 10% خبرة إضافية
 
-            // 2. تحديث المجموع الكلي للغنائم
             totalAccumulatedCoins += moraxMora;
             totalAccumulatedXP += moraxXp;
 
-            // 3. إضافة الغنائم للاعبين الأحياء
             players.forEach(p => { 
                 if (!p.isDead) { 
                     p.loot.mora += moraxMora; 
@@ -419,7 +407,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 } 
             });
 
-            break; // الخروج من الحلقة للاحتفال بالنصر
+            break; // الخروج للاحتفال
         }
           
         // --- REST PHASE ---
@@ -428,15 +416,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         totalAccumulatedCoins = lootTotals.coins;
         totalAccumulatedXP = lootTotals.xp;
 
-        // ✅ تحديد صورة الاستراحة بناءً على الثيم من الكونفق
         const restImage = theme.rest_image || dungeonConfig.themes[theme.name]?.rest_image || 'https://i.postimg.cc/KcJ6gtzV/22.jpg';
 
         const restContext = {
             floor, players, retreatState, retreatedPlayers, 
             totalAccumulatedCoins, totalAccumulatedXP, 
             threadChannel, sql, guild, log,
-            theme, // تمرير الثيم
-            restImage // تمرير صورة الاستراحة المخصصة
+            theme, 
+            restImage 
         };
 
         const decision = await handleRestMenu(restContext);
@@ -458,7 +445,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             return; 
         } 
         else if (decision === 'continue') {
-            // --- TRAP CHECK ---
             const trapResult = await handleTrapEvent(floor, players, threadChannel, isTrapActive);
             if (trapResult.triggered) {
                 isTrapActive = true;
@@ -467,7 +453,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } else {
                 await threadChannel.send(`⚔️ **يتوغل الفريق بالدانجون نحو طوابق أعمق...**`).catch(()=>{});
                 
-                // --- RANDOM EVENT CHECK ---
                 const eventResult = await handleRandomEvents(floor, lastEventFloor, lastEventType, threadChannel, players, sql, guild.id, merchantState, isTrapActive);
                 if (eventResult.type !== lastEventType) {
                     lastEventType = eventResult.type;
@@ -486,7 +471,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
             .setDescription(`**"أحسنتـم... لم أتوقع أن تصمدوا أمامي لكل هذا الوقت."**\n\nتـمت تصفيـة الدانجـون بنجـاح، فالتسجـل امبراطوريتـنـا اسمأئكـم بين العظمـاء!`)
             .setColor(Colors.Gold)
-            .setImage(dungeonConfig.final_boss.image || 'https://i.postimg.cc/WzRGhgJ9/mwraks.png') // ✅ استخدام صورة الزعيم الأخير من الكونفق
+            .setImage(dungeonConfig.final_boss.image || 'https://i.postimg.cc/WzRGhgJ9/mwraks.png')
             .setTimestamp();
 
         const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
