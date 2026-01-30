@@ -221,7 +221,7 @@ async function checkFarmIncome(client, sql) {
 
             // قسم العامل
             if (hasWorker && (fedMap.size > 0 || harvestedMap.size > 0 || outOfStock)) {
-                description += `**✶ تـقـرير عـامل المزرعـة (أعمال اليوم)**\n\n`;
+                description += `**✶تـقـرير عـامل المزرعـة**\n\n`;
                 
                 if (fedMap.size > 0) {
                     description += `**★ تـم اطعـام:**\n`;
