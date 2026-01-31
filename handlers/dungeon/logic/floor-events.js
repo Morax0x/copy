@@ -15,9 +15,9 @@ async function applyFloorBuffs(floor, players, threadChannel) {
         let buffApplied = false;
         players.forEach(p => {
             if (!p.isDead) {
-                p.maxHp = Math.floor(p.maxHp * 1.5);
+                p.maxHp = Math.floor(p.maxHp * 2.0); // زيادة 100% (ضرب في 2)
                 p.hp = p.maxHp; 
-                p.effects.push({ type: 'atk_buff', val: 0.30, floors: 100 });
+                p.effects.push({ type: 'atk_buff', val: 0.70, floors: 100 }); // زيادة 70%
                 buffApplied = true;
             }
         });
@@ -25,7 +25,7 @@ async function applyFloorBuffs(floor, players, threadChannel) {
         if (buffApplied) {
             const buffEmbed = new EmbedBuilder()
                 .setTitle('⚡ فـرسـان الدانـجون!')
-                .setDescription(`**حـصـلتـم علـى اعتـراف الامبراطـور بسبب وصولكم لمنتصف الدانجـون:**\n\n🩸 **HP +50%** \n⚔️ **ATK +30%** `)
+                .setDescription(`**حـصـلتـم علـى اعتـراف الامبراطـور بسبب وصولكم لمنتصف الدانجـون:**\n\n🩸 **نقاط الصحة +100%** \n⚔️ **ضرر +70%** `)
                 .setColor(Colors.Gold);
             await threadChannel.send({ embeds: [buffEmbed] }).catch(()=>{});
         }
