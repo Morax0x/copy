@@ -1,13 +1,22 @@
+// handlers/ai-handler.js
+
 const config = require('../config.json');
-// 👇 استدعاء دالة البيانات الحية الجديدة
+// 👇 استدعاء دالة البيانات الحية (القديمة والجديدة)
 const { getUserData, getDynamicServerData } = require('./ai/knowledge');
+const { getLeaderboardKnowledge } = require('./ai/serverLore'); // دالة التوب الجديدة
 const { buildSystemPrompt } = require('./ai/persona');
 const { generateResponse } = require('./ai/engine');
 const aiConfig = require('../utils/aiConfig'); 
 require('dotenv').config();
 
+// 👇 إعداد قاعدة البيانات لاستخدامها مع دالة التوب الجديدة
+const SQLite = require("better-sqlite3");
+const path = require('path');
+const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
+const sql = new SQLite(dbPath);
+
 /**
- * 🛠️ دالة مساعدة لتحويل الآيديات إلى أسماء (للأعضاء المتصدرين)
+ * 🛠️ دالة مساعدة لتحويل الآيديات إلى أسماء (للأعضاء المتصدرين - الكود القديم)
  */
 async function resolveNames(guild, dataList) {
     if (!dataList || dataList.length === 0) return "لا يوجد بيانات";
@@ -44,7 +53,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         const userData = getUserData(userId, guildId);
 
         // 🔥🔥 3.5 تجهيز معلومات السيرفر الحية (التوب والزعيم) 🔥🔥
-        // نستخدم messageObject.guild للوصول لأسماء الأعضاء
+        // نستخدم messageObject.guild للوصول لأسماء الأعضاء (النظام القديم للزعيم)
         if (messageObject && messageObject.guild) {
             const dynamicData = getDynamicServerData(guildId);
             
@@ -70,8 +79,11 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             }
         }
 
-        // 4. 🎭 بناء الشخصية
-        const systemInstruction = buildSystemPrompt(finalNsfwStatus);
+        // 🔥🔥🔥 الجديد: جلب التوب كنص من الدالة الجديدة (لتمريره للسيستم برومبت) 🔥🔥🔥
+        const leaderboardInfo = getLeaderboardKnowledge(sql);
+
+        // 4. 🎭 بناء الشخصية (مع تمرير معلومات التوب الجديدة)
+        const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo);
 
         // 5. 🧠 إرسال الطلب للمحرك
         const response = await generateResponse(
@@ -83,7 +95,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             username,
             imageAttachment,
             finalNsfwStatus,
-            messageObject // 👈 تمرير كائن الرسالة للمحرك (ضروري للأكشنات)
+            messageObject // 👈 تمرير كائن الرسالة للمحرك (ضروري للأكشنات والألوان)
         );
 
         return response;
