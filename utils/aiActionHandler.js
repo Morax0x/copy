@@ -1,5 +1,10 @@
+// utils/aiActionHandler.js
+
 const SQLite = require("better-sqlite3");
 const path = require('path');
+
+// 🎨 استدعاء ملف الألوان لتنفيذه مباشرة
+const colorsCommand = require('../commands/colors.js'); 
 
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
@@ -7,28 +12,70 @@ const sql = new SQLite(dbPath);
 module.exports = {
     /**
      * تنفيذ الأوامر المرفقة في رد الذكاء الاصطناعي
+     * الصيغ المدعومة:
+     * - [ACTION:GIVE_MORA]
+     * - [ACTION:TIMEOUT]
+     * - [ACTION:SHOW_COLORS]
+     * - [ACTION:SET_COLOR:5]
      */
-    executeActions: async (message, actionCode) => {
+    executeActions: async (message, actionString) => {
         const userID = message.author.id;
         const guildID = message.guild.id;
 
-        console.log(`[AI Action] Received request: ${actionCode} for user: ${message.author.tag}`);
+        // تنظيف النص واستخراج البيانات
+        // مثال: [ACTION:SET_COLOR:5] -> Type: SET_COLOR, Value: 5
+        const cleanAction = actionString.replace('[', '').replace(']', '').replace('ACTION:', '');
+        const parts = cleanAction.split(':');
+        const actionCode = parts[0]; 
+        const actionValue = parts[1]; // قد يكون غير موجود في بعض الأوامر
+
+        console.log(`[AI Action] Received request: ${actionCode} (Value: ${actionValue}) for user: ${message.author.tag}`);
 
         // =========================================================
-        // 1. 💰 أمر إعطاء المورا (معدل)
+        // 1. 🎨 نظام الألوان (Colors System)
+        // =========================================================
+        
+        // أ) عرض اللوحة
+        if (actionCode === 'SHOW_COLORS') {
+            try {
+                // نمرر مصفوفة فارغة في args ليفهم الكود أنه طلب عرض القائمة
+                await colorsCommand.execute(message, []);
+                return true;
+            } catch (e) {
+                console.error("[AI Action Error] Show Colors:", e);
+            }
+        }
+
+        // ب) تعيين لون محدد
+        if (actionCode === 'SET_COLOR') {
+            try {
+                if (actionValue) {
+                    // نمرر الرقم كـ args ليفهم الكود أنه طلب تغيير لون
+                    await colorsCommand.execute(message, [actionValue]);
+                    return true;
+                } else {
+                    console.log("[AI Action] Set Color Rejected: No color number provided.");
+                }
+            } catch (e) {
+                console.error("[AI Action Error] Set Color:", e);
+            }
+        }
+
+        // =========================================================
+        // 2. 💰 أمر إعطاء المورا (معدل)
         // =========================================================
         if (actionCode === 'GIVE_MORA') {
             try {
                 const userData = sql.prepare("SELECT mora, bank FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
                 const totalWealth = (userData?.mora || 0) + (userData?.bank || 0);
                 
-                // 🔥 التعديل 1: الحد الأقصى للثروة صار 10,000
+                // الحد الأقصى للثروة صار 10,000
                 if (totalWealth >= 10000) {
                     console.log("[AI Action] Give Mora Rejected: User is too rich (>10k).");
                     return false; 
                 }
 
-                // 🔥 التعديل 2: المبلغ الممنوح صار 1000
+                // المبلغ الممنوح صار 1000
                 sql.prepare("INSERT INTO levels (user, guild, mora) VALUES (?, ?, 1000) ON CONFLICT(user, guild) DO UPDATE SET mora = mora + 1000").run(userID, guildID);
                 
                 await message.react('💸').catch(e => console.error("Failed to react:", e));
@@ -40,9 +87,8 @@ module.exports = {
         }
 
         // =========================================================
-        // 2. 🚫 أمر التايم أوت (معدل لدقيقة واحدة)
+        // 3. 🚫 أمر التايم أوت (معدل لدقيقة واحدة)
         // =========================================================
-        // نتحقق من الكلمتين عشان نضمن يشتغل مع أي برومبت
         if (actionCode === 'TIMEOUT' || actionCode === 'TIMEOUT_5M') {
             try {
                 // 🛑 فحص الأمان 1: هل العضو موجود؟
@@ -58,7 +104,7 @@ module.exports = {
                     return false;
                 }
 
-                // 🔥 التعديل 3: المدة دقيقة واحدة (60 ثانية)
+                // المدة دقيقة واحدة (60 ثانية)
                 await message.member.timeout(60 * 1000, "بأمر من الإمبراطورة (إزعاج/تطاول)");
                 
                 await message.react('🤐').catch(() => {});
