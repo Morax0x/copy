@@ -9,17 +9,17 @@ function getLeaderboardKnowledge(sql) {
 
     try {
         // 1️⃣ توب لفل (XP)
-        // نفترض أن جدول اللفلات اسمه 'levels' والاعمدة userID, level
-        const topLevels = sql.prepare("SELECT userID, level FROM levels ORDER BY level DESC, xp DESC LIMIT 5").all();
+        // 🔥 تصحيح: اسم العمود هو 'user' ليعمل الكود بدون أخطاء
+        const topLevels = sql.prepare("SELECT user, level FROM levels ORDER BY level DESC, xp DESC LIMIT 5").all();
         const levelText = topLevels.length > 0 
-            ? topLevels.map((u, i) => `${i+1}. <@${u.userID}> (Lv.${u.level})`).join('\n')
+            ? topLevels.map((u, i) => `${i+1}. <@${u.user}> (Lv.${u.level})`).join('\n')
             : "لا يوجد بيانات بعد.";
 
         // 2️⃣ توب فلوس (Economy)
-        // نفترض أن جدول الاقتصاد اسمه 'economy' والاعمدة userID, balance
-        const topMora = sql.prepare("SELECT userID, balance FROM economy ORDER BY balance DESC LIMIT 5").all();
+        // 🔥 تصحيح: اسم العمود هو 'user' ليعمل الكود بدون أخطاء
+        const topMora = sql.prepare("SELECT user, balance FROM economy ORDER BY balance DESC LIMIT 5").all();
         const moraText = topMora.length > 0 
-            ? topMora.map((u, i) => `${i+1}. <@${u.userID}> (💰 ${u.balance.toLocaleString()})`).join('\n')
+            ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${u.balance.toLocaleString()})`).join('\n')
             : "لا يوجد بيانات بعد.";
 
         return `
@@ -33,16 +33,16 @@ ${levelText}
 ${moraText}
 `;
     } catch (error) {
-        console.error("Error fetching leaderboard for AI:", error);
+        console.error("Error fetching leaderboard for AI:", error.message);
         return "";
     }
 }
 
 module.exports = {
-    // تصدير دالة التوب الجديدة
+    // تصدير دالة التوب
     getLeaderboardKnowledge,
 
-    // معلومات السيرفر الثابتة (بعد التعديل والحذف)
+    // معلومات السيرفر الثابتة (مع الإضافات الجديدة)
     getServerKnowledge: () => {
         return `
 📚 **قاعدة بيانات الإمبراطورية (معلومات السيرفر):**
@@ -52,7 +52,7 @@ module.exports = {
    - **المالك:** موراكس (Morax).
    - **الإدارة:** لا توجد إدارة ولا مشرفين! "الحكم للشعب".
    - **نظام العقاب:** أي شخص يخالف القوانين، الأعضاء يعاقبونه.
-   - **محتوى السيرفر: انمي العاب مانجا مانهوا والسوالف وكل شيء يخطر على البال
+   - **محتوى السيرفر:** انمي، العاب، مانجا، مانهوا، وسوالف وكل شيء يخطر على البال.
    - **طريقة العقاب:** ضغطة مطولة على رسالة المخالف -> تطبيقات (Apps) -> تقديم بلاغ. (بلاغين 2 = سجن تلقائي).
 
 2. **💰 الاقتصاد (المورا):**
@@ -72,7 +72,7 @@ module.exports = {
 
 5. **🆘 الدعم والمساعدة:**
    - إذا واجهتك مشكلة تقنية، روح روم "طلب مساعدة" وافتح تذكرة (مجلس خاص).
-   - او اي احد يحتاج مساعدة منشني موراكس هو الاونر والي مسوي السيرفر وبيساعد المحتاج
+   - أو أي أحد يحتاج مساعدة، منشني موراكس هو الأونر والي مسوي السيرفر وبيساعد المحتاج.
 
 ⚠️ **توجيه للإمبراطورة:**
 - إذا سألك أحد عن هذي الأشياء، جاوبي من المعلومات اللي فوق بأسلوبك.
