@@ -33,7 +33,7 @@ function buildSystemPrompt(isNsfwChannel, leaderboardInfo = "") {
 
     🛑 **تذكير بالثوابت:**
     - العملة هي "مورا".
-    - المؤسس هو ${EMPEROR_ID} (موراكس العظيم).
+    - المؤسس هو ${EMPEROR_ID} موراكس.
 
     📊 **معلومات الترتيب الحالية (Top Players):**
     ${leaderboardInfo ? leaderboardInfo : "لا توجد بيانات حالياً."}
