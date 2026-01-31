@@ -1,6 +1,48 @@
 // handlers/ai/serverLore.js
 
+/**
+ * دالة لجلب قائمة المتصدرين (التوب) من قاعدة البيانات مباشرة
+ * @param {Object} sql - كائن قاعدة البيانات
+ */
+function getLeaderboardKnowledge(sql) {
+    if (!sql || !sql.open) return "";
+
+    try {
+        // 1️⃣ توب لفل (XP)
+        // نفترض أن جدول اللفلات اسمه 'levels' والاعمدة userID, level
+        const topLevels = sql.prepare("SELECT userID, level FROM levels ORDER BY level DESC, xp DESC LIMIT 5").all();
+        const levelText = topLevels.length > 0 
+            ? topLevels.map((u, i) => `${i+1}. <@${u.userID}> (Lv.${u.level})`).join('\n')
+            : "لا يوجد بيانات بعد.";
+
+        // 2️⃣ توب فلوس (Economy)
+        // نفترض أن جدول الاقتصاد اسمه 'economy' والاعمدة userID, balance
+        const topMora = sql.prepare("SELECT userID, balance FROM economy ORDER BY balance DESC LIMIT 5").all();
+        const moraText = topMora.length > 0 
+            ? topMora.map((u, i) => `${i+1}. <@${u.userID}> (💰 ${u.balance.toLocaleString()})`).join('\n')
+            : "لا يوجد بيانات بعد.";
+
+        return `
+🏆 **لوحة الشرف (أسياد السيرفر):**
+هذولي هم صفوة المجتمع في الإمبراطورية، تعاملي معهم باحترام (أو غيرة 😉):
+
+💪 **الأقوياء (أعلى لفلات):**
+${levelText}
+
+💸 **الهوامير (أغنى ناس):**
+${moraText}
+`;
+    } catch (error) {
+        console.error("Error fetching leaderboard for AI:", error);
+        return "";
+    }
+}
+
 module.exports = {
+    // تصدير دالة التوب الجديدة
+    getLeaderboardKnowledge,
+
+    // معلومات السيرفر الثابتة (بعد التعديل والحذف)
     getServerKnowledge: () => {
         return `
 📚 **قاعدة بيانات الإمبراطورية (معلومات السيرفر):**
@@ -23,18 +65,11 @@ module.exports = {
    - **الطريقة 3 (المميز):** يكون "توب 1" بالتفاعل الأسبوعي (ياخذ رتبة "ولي العهد").
    - **الطريقة 4 (الداعم):** يسوي "بوست" للسيرفر أو يشترك بعضوية "القيصر".
 
-4. **🔞 تفعيل الساحة (الهنتاي/الأقسام الخاصة):**
-   - **الاسم:** الساحة (أو أقسام الهنتاي).
-   - **كيف تفتح؟:** فقط "تفاعل" وسولف بالشات العام بشكل طبيعي، وتفتح تلقائياً.
-   - **تحذير:** السوالف الفاضية والسبام ما تفتحها.
-   - **النظام:** تظل مفتوحة لمدة 3 أيام. إذا سحب العضو 3 أيام تتقفل عليه.
-   - **الاختصار:** الي يسوي "بوست" للسيرفر تفتح له دايم بدون شروط.
-
-5. **🎉 الفعاليات والويكند:**
+4. **🎉 الفعاليات والويكند:**
    - **نظام الويكند:** كل جمعة وسبت وأحد (Weekend) يكون فيه "تدبيل" (Double XP & Mora).
    - أي تفاعل في هذه الأيام يعطيك جوائز مضاعفة.
 
-6. **🆘 الدعم والمساعدة:**
+5. **🆘 الدعم والمساعدة:**
    - إذا واجهتك مشكلة تقنية، روح روم "طلب مساعدة" وافتح تذكرة (مجلس خاص).
 
 ⚠️ **توجيه للإمبراطورة:**
