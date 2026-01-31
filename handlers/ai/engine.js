@@ -1,10 +1,11 @@
+// handlers/ai/engine.js
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { getEmojiContext } = require('./emojis'); 
-// 👇 استدعاء معالج الأوامر الجديد (تأكد من إنشاء الملف في الخطوة التالية)
+// 👇 استدعاء معالج الأوامر المتطور
 const aiActionHandler = require('../../utils/aiActionHandler'); 
 require('dotenv').config();
 
-// 🔥 قائمة الموديلات
+// 🔥 قائمة الموديلات (الأقوى فالأضعف)
 const MODELS = [
     "gemini-2.0-flash",       
     "gemini-1.5-flash",       
@@ -74,16 +75,36 @@ async function urlToGenerativePart(url, mimeType) {
 }
 
 /**
+ * 🛠️ دالة مساعدة لاستخراج وتنفيذ الأوامر من الرد
+ */
+async function processAiActions(responseText, messageObject) {
+    // نبحث عن أي نمط [ACTION:...]
+    const actionRegex = /\[ACTION:([A-Z_]+)(?::(\w+))?\]/g;
+    let match;
+    let cleanText = responseText;
+
+    while ((match = actionRegex.exec(responseText)) !== null) {
+        const fullTag = match[0]; // [ACTION:SET_COLOR:5]
+        // نمرر التاق كامل للمعالج، وهو سيتكفل بالتحليل
+        await aiActionHandler.executeActions(messageObject, fullTag);
+        
+        // حذف التاق من النص الظاهر للمستخدم
+        cleanText = cleanText.replace(fullTag, '');
+    }
+
+    return cleanText.trim();
+}
+
+/**
  * المحرك الرئيسي (Engine)
  */
-// 👇 تمت إضافة messageObject هنا لتمرير الرسالة للمعالج
 async function generateResponse(apiKey, systemInstruction, userMessage, userData, userId, username, imageAttachment, isNsfw, messageObject) {
     if (!apiKey) return "⚠️ مفتاح الخزينة (API Key) مفقود!";
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const sessionKey = `${userId}-${isNsfw ? 'NSFW' : 'SFW'}`;
 
-    // 💰 حساب مجموع الثروة (كاش + بنك)
+    // 💰 حساب مجموع الثروة
     const totalWealth = (userData.balance || 0) + (userData.bank || 0);
 
     // تحديث المعلومات المرسلة للذكاء
@@ -116,18 +137,10 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
                     imagePart
                 ]);
 
-                // معالجة الرد (وتنفيذ الأوامر إن وجدت)
                 let responseText = result.response.text();
                 
-                // 🔥 تنفيذ الأوامر
-                if (responseText.includes('[ACTION:GIVE_MORA]')) {
-                    await aiActionHandler.executeActions(messageObject, 'GIVE_MORA');
-                    responseText = responseText.replace('[ACTION:GIVE_MORA]', '');
-                }
-                if (responseText.includes('[ACTION:TIMEOUT]')) {
-                    await aiActionHandler.executeActions(messageObject, 'TIMEOUT_5M');
-                    responseText = responseText.replace('[ACTION:TIMEOUT]', '');
-                }
+                // 🔥 معالجة وتنفيذ الأوامر (ألوان، مورا، تايم أوت...)
+                responseText = await processAiActions(responseText, messageObject);
 
                 return enforceSingleEmoji(responseText);
 
@@ -169,19 +182,9 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
             
             let responseText = result.response.text();
 
-            // 🔥🔥🔥 فحص وتنفيذ الأوامر (Action Checks) 🔥🔥🔥
-            // 1. أمر إعطاء المورا
-            if (responseText.includes('[ACTION:GIVE_MORA]')) {
-                await aiActionHandler.executeActions(messageObject, 'GIVE_MORA');
-                // حذف الكود من الرسالة الظاهرة
-                responseText = responseText.replace('[ACTION:GIVE_MORA]', '');
-            }
-
-            // 2. أمر التايم أوت
-            if (responseText.includes('[ACTION:TIMEOUT]')) {
-                await aiActionHandler.executeActions(messageObject, 'TIMEOUT_5M');
-                responseText = responseText.replace('[ACTION:TIMEOUT]', '');
-            }
+            // 🔥🔥🔥 معالجة وتنفيذ الأوامر (الجديد) 🔥🔥🔥
+            // هذه الدالة ستبحث عن أي [ACTION:...] وتنفذه وتحذفه من الرد
+            responseText = await processAiActions(responseText, messageObject);
 
             return enforceSingleEmoji(responseText);
 
