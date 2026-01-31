@@ -1,9 +1,9 @@
 // handlers/dungeon/logic/monster-turn.js
 
-// ✅ المسار الصحيح لنظام الختم (نفس المجلد)
+// ✅ المسار الصحيح لنظام الختم
 const { getFloorCaps } = require('./seal-system'); 
 
-// ✅ المسار الصحيح لأدوات المعركة (المجلد الأب)
+// ✅ المسار الصحيح لأدوات المعركة
 const { applyDamageToPlayer } = require('../utils'); 
 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
@@ -14,7 +14,8 @@ function getTacticalTargets(players, count, monster) {
     let alive = players.filter(p => !p.isDead);
     if (alive.length === 0) return [];
 
-    // 🔥 تعديل الاستفزاز الإجباري
+    // 🔥 تعديل الاستفزاز الإجباري (Tank Taunt)
+    // الدبابة يجبر الوحش يضربه حتى لو كان مختفي (منطقياً هو كشف نفسه للاستفزاز)
     if (monster.targetFocusId) {
         const tauntedTarget = alive.find(p => p.id === monster.targetFocusId);
         if (tauntedTarget) {
@@ -23,6 +24,7 @@ function getTacticalTargets(players, count, monster) {
     }
 
     let prioritized = alive.sort((a, b) => {
+        // حساب النقاط لتحديد الأولوية
         const aKillable = a.hp <= monster.atk * 1.5 ? 20 : 0;
         const bKillable = b.hp <= monster.atk * 1.5 ? 20 : 0;
         
@@ -36,9 +38,9 @@ function getTacticalTargets(players, count, monster) {
         const aReflect = a.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
         const bReflect = b.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
 
-        // تقليل أولوية المختفي لكن لا يمنع اختياره (المنع الحقيقي في الأسفل)
-        const aInvisible = a.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -999 : 0;
-        const bInvisible = b.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -999 : 0;
+        // 🔥 تحسين الاختفاء: نعطيه أولوية منخفضة جداً جداً
+        const aInvisible = a.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -5000 : 0;
+        const bInvisible = b.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -5000 : 0;
 
         const aTaunt = a.effects.some(e => e.type === 'titan') ? 50 : 0;
         const bTaunt = b.effects.some(e => e.type === 'titan') ? 50 : 0;
@@ -52,7 +54,7 @@ function getTacticalTargets(players, count, monster) {
     return prioritized.slice(0, count);
 }
 
-// دالة مساعدة لسقف الضرر (Local Helper)
+// دالة مساعدة لسقف الضرر
 function applyLocalCap(value, cap) {
     if (cap !== Infinity && value > cap) return cap;
     return value;
@@ -70,14 +72,14 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (!monster.memory) monster.memory = { comboStep: 0, lastMove: null, healsUsed: 0 };
 
-    // 🔥 1. جلب سقف الضرر 🔥
+    // 🔥 1. جلب سقف الضرر للطابق الحالي 🔥
     const { damageCap } = getFloorCaps(floor);
 
-    // 🔥 2. حفظ حالة البرق 🔥
+    // 🔥 2. حفظ حالة البرق (تقليل ضرر الوحش) 🔥
     const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
     const lightningVal = activeLightning ? activeLightning.val : 0;
 
-    // 1. التجميد
+    // 1. التجميد (Stun/Freeze)
     if (monster.frozen) { 
         log.push(`❄️ **${monster.name}** متجمد، خسر دوره!`); 
         monster.frozen = false; 
@@ -88,32 +90,43 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         return true; 
     }
 
-    // 2. معالجة الأضرار المستمرة (DoT)
+    // ============================================================
+    // 2. معالجة الأضرار المستمرة (DoT: Poison & Burn) - المعدلة ✅
+    // ============================================================
     if (monster.effects) {
         monster.effects = monster.effects.filter(e => {
-            if (e.type === 'burn') {
-                let val = e.val || 0;
-                let burnDmg = (val < 1 && val > 0) ? Math.floor(monster.maxHp * val) : Math.floor(val);
-                burnDmg = applyLocalCap(burnDmg, damageCap);
-                monster.hp = Math.max(0, monster.hp - burnDmg);
+            let dmgVal = 0;
+            let effectName = "";
+            let icon = "";
+
+            if (e.type === 'burn' || e.type === 'poison') {
+                let rawVal = e.val || 0;
+
+                // 🔥 التصحيح: الاعتماد على القيمة المسطحة القادمة من المهارات
+                if (rawVal >= 1) {
+                    // إذا كانت القيمة 1 أو أكثر، نعتبرها ضرراً ثابتاً (محسوب من المهارة)
+                    dmgVal = Math.floor(rawVal);
+                } else if (rawVal > 0 && rawVal < 1) {
+                    // إذا كانت كسراً عشرياً، نعتبرها نسبة مئوية (للتوافق القديم)
+                    dmgVal = Math.floor(monster.maxHp * rawVal);
+                }
+
+                // تطبيق سقف الضرر
+                dmgVal = applyLocalCap(dmgVal, damageCap);
                 
-                let msg = `🔥 **${monster.name}** يحترق! (-${burnDmg})`;
-                if (burnDmg === damageCap) msg += " (مختوم)";
+                // تطبيق الضرر
+                monster.hp = Math.max(0, monster.hp - dmgVal);
+
+                if (e.type === 'burn') { effectName = "يحترق"; icon = "🔥"; }
+                if (e.type === 'poison') { effectName = "يتألم من السم"; icon = "☠️"; }
+
+                let msg = `${icon} **${monster.name}** ${effectName}! (-${dmgVal})`;
+                if (dmgVal === damageCap) msg += " (مختوم)";
                 log.push(msg);
             }
 
-            if (e.type === 'poison') {
-                let val = e.val || 0;
-                let poisonDmg = (val < 1 && val > 0) ? Math.floor(monster.maxHp * val) : Math.floor(val);
-                poisonDmg = applyLocalCap(poisonDmg, damageCap);
-                monster.hp = Math.max(0, monster.hp - poisonDmg);
-                
-                let msg = `☠️ **${monster.name}** يتألم من السم! (-${poisonDmg})`;
-                if (poisonDmg === damageCap) msg += " (مختوم)";
-                log.push(msg);
-            }
-
-            e.turns--;
+            // إنقاص العداد
+            if (e.turns) e.turns--;
             return e.turns > 0;
         });
     }
@@ -141,7 +154,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
             // 2. الانفجار عند النهاية
             if (p.summon.turns <= 0) {
-                p.summon.active = false; // تعطيل الاستدعاء
+                p.summon.active = false; 
                 
                 const explodeRatio = p.summon.explodeRatio || 1.2;
                 let explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
@@ -151,14 +164,14 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 p.totalDamage += explosionDmg;
 
                 log.push(`💥 **${p.summon.name}** انفجر عند الموت مسبباً **${explosionDmg}** ضرر!`);
-                p.summon = null; // إزالة الاستدعاء
+                p.summon = null; 
             }
         }
     });
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
-    // 3. الارتباك
+    // 3. الارتباك (Confusion)
     const confusion = monster.effects.find(e => e.type === 'confusion');
     if (confusion && Math.random() < confusion.val) {
         const selfDmg = Math.floor(monster.atk * 0.5) || 1;
@@ -209,10 +222,14 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 3: الكومبو 🔥
+    // 🔥 أولوية 3: الكومبو (Combos) 🔥
     if (!skillUsed && monster.memory.comboStep === 1) {
+        // كومبو الزيت (AoE)
         if (monster.memory.lastMove === 'oil') {
             alive.forEach(p => {
+                // ✅ التحقق من الاختفاء هنا أيضاً لتفادي حرق المختفين
+                if (p.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) return;
+
                 const dmg = Math.floor(monster.atk * 2.0); 
                 applyDamageToPlayer(p, dmg);
                 p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.4), turns: 3 });
@@ -220,14 +237,20 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             log.push(`🔥 **${monster.name}** فجر الزيت! (COMBO FINISH)`);
             skillUsed = true;
         } 
+        // كومبو الشحن (Targeted)
         else if (monster.memory.lastMove === 'charge') {
             const target = getTacticalTargets(players, 1, monster)[0];
-            if (target) {
+            
+            // ✅ التحقق من الاختفاء قبل الضربة القاضية
+            if (target && !target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                 const dmg = Math.floor(monster.atk * 3.5); 
                 applyDamageToPlayer(target, dmg);
                 target.effects.push({ type: 'stun', val: 1, turns: 2 }); 
                 log.push(`🔨 **${monster.name}** سحق **${target.name}**! (COMBO FINISH)`);
                 skillUsed = true;
+            } else {
+                log.push(`💨 **${monster.name}** هاجم بكل قوته لكن الهدف اختفى!`);
+                skillUsed = true; // نعتبر المهارة استهلكت
             }
         }
         monster.memory.comboStep = 0;
@@ -264,10 +287,10 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // 🔥🔥🔥 التحقق من الاختفاء 🔥🔥🔥
+                // 🔥🔥🔥 التحقق من الاختفاء (Basic Attack) 🔥🔥🔥
                 if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
-                    hitLog.push(`${target.name}: 👻 اختفاء`);
-                    return; // تخطي هذا اللاعب
+                    hitLog.push(`${target.name}: 👻 اختفاء (Miss)`);
+                    return; // تخطي هذا اللاعب تماماً
                 }
 
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
