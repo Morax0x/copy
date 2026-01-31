@@ -36,7 +36,8 @@ const DESCRIPTION_TRANSLATIONS = new Map([
     ['boss', 'التحكم في وحش العالم (للمالك)'],
     ['dungeon', 'دخول الدانجون (PvE) لمحاربة الوحوش'],
     ['arrange', 'لعبة ترتيب الأرقام (سرعة وذاكرة)'],
-    ['race', 'سباق الخيول (فردي وجماعي)'], // 🔥 تمت الإضافة هنا
+    ['race', 'سباق الخيول (فردي وجماعي)'],
+    ['colors', 'يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر'], // 🔥 تمت الإضافة هنا
     ['top', 'عرض قائمة المتصدرين (مورا/لفل/ستريك)']
 ]);
 
@@ -72,7 +73,8 @@ const MANUAL_ARABIC_NAMES = new Map([
     ['boss', 'وحش'],
     ['dungeon', 'دانجون'],
     ['arrange', 'ترتيب'],
-    ['race', 'سباق'] // 🔥 تمت الإضافة هنا
+    ['race', 'سباق'],
+    ['colors', 'الوان'] // 🔥 تمت الإضافة هنا
 ]);
 
 function getArabicDescription(cmd) {
@@ -106,6 +108,7 @@ function buildMainMenuEmbed(client) {
 ✶** ${getCmdName(commands, 'level')}: ** \`يعرض مستواك في السيرفر\`
 ✶** ${getCmdName(commands, 'top')}: ** \`لوحـة الصدار لـ اعلى لمصنفين في السيرفر\`
 ✶** ${getCmdName(commands, 'profile')}: ** \`اظهار البروفايل الشخصي وأهم معلوماتك\`
+✶** ${getCmdName(commands, 'colors')}: ** \`يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر\`
     `;
 
     return new EmbedBuilder()
