@@ -83,15 +83,26 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         
         case 'Gamble_Dmg': {
             if (Math.random() < 0.5) {
-                // ✅ تعديل: الضرر 2.5 (مقامرة قوية جداً)
-                const dmgAmount = Math.floor(skillPower * 2.5);
+                // ✅ حالة النجاح: دمج عشوائي بين 777 و 2222 (تجاهل قوة السلاح واللاعب)
+                const minDmg = 777;
+                const maxDmg = 2222;
+                const dmgAmount = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg;
+                
                 result.damage = dmgAmount;
-                result.log = `🎲 **${getName(attacker)}** غامر وفاز! سدد ضربة حرجة بضـرر **${dmgAmount}**!`;
+                result.log = `🎲 **${getName(attacker)}** نجحت مقامرته! الأرقام تطابقت بضرر **${dmgAmount}**!`;
             } else {
-                // خسارة (15% من الصحة)
-                const selfDmgAmount = Math.floor(attacker.hp * 0.15);
+                // ❌ حالة الفشل: دمج خفيف للخصم + ضرر ذاتي 3%
+                const minFail = 100;
+                const maxFail = 200;
+                const failDmg = Math.floor(Math.random() * (maxFail - minFail + 1)) + minFail;
+                
+                result.damage = failDmg;
+                
+                // ضرر ذاتي 3% من الصحة الحالية
+                const selfDmgAmount = Math.floor(attacker.hp * 0.03);
                 result.selfDamage = selfDmgAmount;
-                result.log = `🎲 **${getName(attacker)}** خسر المقامرة وانفجر النرد بوجـهه (-${selfDmgAmount})!`;
+                
+                result.log = `🎲 **${getName(attacker)}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmgAmount}**!`;
             }
             break;
         }
