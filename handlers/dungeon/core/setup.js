@@ -4,7 +4,7 @@ const { getRealPlayerData } = require('../utils');
 const { cleanName } = require('./battle-utils');
 
 /**
- * دالة لقراءة وتطبيق البفات الخاصة بالأعراق من الداتابيس
+ * دالة لقراءة وتطبيق البفات الخاصة بالأعراق من الداتابيس (تراكمي)
  */
 function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
     if (!currentThemeKey || !member) return "";
@@ -15,7 +15,7 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
         if (!tableCheck['count(*)']) return "";
     } catch (e) { return ""; }
 
-    let buffMsg = "";
+    let buffMsgArray = [];
 
     // 2. جلب جميع رتب اللاعب
     const memberRoles = member.roles.cache.map(r => r.id);
@@ -24,93 +24,87 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
         return "";
     }
 
-    // 3. البحث عن ميزة تطابق
+    // 3. البحث عن جميع البفات المتطابقة (Stackable)
     const placeholders = memberRoles.map(() => '?').join(',');
     
     try {
-        // طباعة معلومات التشخيص (ستظهر في الكونسول فقط)
-        // console.log(`[RaceBuff] Checking for Guild: ${guildId}, Dungeon: ${currentThemeKey}, Roles: ${memberRoles.length}`);
-
-        const activeBuff = sql.prepare(`
+        // 🔥 التعديل: إزالة LIMIT 1 لجلب كل البفات
+        const activeBuffs = sql.prepare(`
             SELECT * FROM race_dungeon_buffs 
             WHERE guildID = ? AND dungeonKey = ? AND roleID IN (${placeholders})
-            LIMIT 1
-        `).get(guildId, currentThemeKey, ...memberRoles);
+        `).all(guildId, currentThemeKey, ...memberRoles);
 
-        if (activeBuff) {
-            console.log(`[RaceBuff] FOUND! Stat: ${activeBuff.statType}, Value: ${activeBuff.buffValue}`);
+        if (activeBuffs && activeBuffs.length > 0) {
+            console.log(`[RaceBuff] Found ${activeBuffs.length} buffs for ${member.user.tag}`);
 
-            // تحويل القيمة
-            let val = parseFloat(activeBuff.buffValue); 
-            if (isNaN(val)) val = 0;
-
-            // تحويل النسبة المئوية (50 -> 0.5)
-            const multiplier = val / 100; 
-            
-            // تصحيح القيم لضمان أنها أرقام
+            // تجهيز القيم الافتراضية
             player.atk = Number(player.atk) || 0;
             player.maxHp = Number(player.maxHp) || 100;
             player.hp = Number(player.hp) || player.maxHp;
             player.def = Number(player.def) || 0;
             player.shield = Number(player.shield) || 0;
             player.critRate = Number(player.critRate) || 0;
+            player.lifesteal = Number(player.lifesteal) || 0;
 
-            // 🔥 توحيد حالة الأحرف (Lower Case) لحل مشكلة ATK vs atk
-            const statTypeClean = activeBuff.statType.toLowerCase().trim();
+            // حلقة لتطبيق كل بف على حدة
+            for (const buff of activeBuffs) {
+                let val = parseFloat(buff.buffValue); 
+                if (isNaN(val)) continue;
 
-            switch (statTypeClean) {
-                case 'atk':
-                case 'attack':
-                    const atkBonus = Math.floor(player.atk * multiplier);
-                    player.atk += atkBonus;
-                    buffMsg = `⚔️ قوة العرق: +${atkBonus} هجوم`;
-                    break;
+                const multiplier = val / 100; 
+                const statTypeClean = buff.statType.toLowerCase().trim();
 
-                case 'hp':
-                case 'health':
-                    const hpBonus = Math.floor(player.maxHp * multiplier);
-                    player.maxHp += hpBonus;
-                    player.hp += hpBonus; 
-                    buffMsg = `❤️ حيوية العرق: +${hpBonus} HP`;
-                    break;
+                switch (statTypeClean) {
+                    case 'atk':
+                    case 'attack':
+                        const atkBonus = Math.floor(player.atk * multiplier);
+                        player.atk += atkBonus;
+                        buffMsgArray.push(`⚔️ +${Math.floor(val)}% هجوم`);
+                        break;
 
-                case 'def':
-                case 'defense':
-                    // الدفاع يضاف كنسبة مئوية (تخفيض ضرر)
-                    player.def = (player.def || 0) + multiplier; 
-                    player.defense = player.def; 
-                    buffMsg = `🛡️ صلابة العرق: +${val}% دفاع`;
-                    break;
+                    case 'hp':
+                    case 'health':
+                        const hpBonus = Math.floor(player.maxHp * multiplier);
+                        player.maxHp += hpBonus;
+                        player.hp += hpBonus; 
+                        buffMsgArray.push(`❤️ +${Math.floor(val)}% HP`);
+                        break;
 
-                case 'shield':
-                    const shieldBonus = Math.floor(player.maxHp * multiplier);
-                    player.shield += shieldBonus;
-                    player.startingShield = (player.startingShield || 0) + shieldBonus;
-                    buffMsg = `💠 حماية العرق: +${shieldBonus} درع`;
-                    break;
+                    case 'def':
+                    case 'defense':
+                        player.def += multiplier; 
+                        player.defense = player.def; 
+                        buffMsgArray.push(`🛡️ +${Math.floor(val)}% دفاع`);
+                        break;
 
-                case 'lifesteal':
-                    player.lifesteal = (player.lifesteal || 0) + multiplier;
-                    buffMsg = `🩸 شفاء العرق: +${val}% امتصاص`;
-                    break;
+                    case 'shield':
+                        const shieldBonus = Math.floor(player.maxHp * multiplier);
+                        player.shield += shieldBonus;
+                        player.startingShield = (player.startingShield || 0) + shieldBonus;
+                        buffMsgArray.push(`💠 +${shieldBonus} درع`);
+                        break;
 
-                case 'crit':
-                case 'critrate':
-                    player.critRate += multiplier;
-                    buffMsg = `✨ تركيز العرق: +${val}% كريت`;
-                    break;
-                
-                default:
-                    console.log(`[RaceBuff] Error: Unknown stat type '${statTypeClean}'`);
+                    case 'lifesteal':
+                        player.lifesteal += multiplier; // تراكمي (مثلا 0.1 + 0.05 = 0.15)
+                        buffMsgArray.push(`🩸 +${Math.floor(val)}% شفاء`);
+                        break;
+
+                    case 'crit':
+                    case 'critrate':
+                        player.critRate += multiplier;
+                        buffMsgArray.push(`✨ +${Math.floor(val)}% كريت`);
+                        break;
+                    
+                    default:
+                        console.log(`[RaceBuff] Unknown stat: ${statTypeClean}`);
+                }
             }
-        } else {
-            // console.log(`[RaceBuff] No active buff found for these roles in ${currentThemeKey}`);
         }
     } catch(e) {
         console.error("[Race Buff Error]", e);
     }
 
-    return buffMsg;
+    return buffMsgArray.length > 0 ? `🌟 **ميزات العرق:** ${buffMsgArray.join(' | ')}` : "";
 }
 
 // ✅ الدالة الأساسية لتجهيز اللاعبين
@@ -123,11 +117,9 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
     members.forEach((m, index) => {
         if (m) {
             const cls = partyClasses.get(m.id) || 'Adventurer';
-            
-            // جلب البيانات
             let playerData = getRealPlayerData(m, sql, cls);
             
-            // تنظيف الأرقام
+            // تنظيف البيانات
             playerData.atk = Number(playerData.atk);
             playerData.maxHp = Number(playerData.maxHp);
             playerData.hp = playerData.maxHp; 
@@ -141,7 +133,7 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
             playerData.summon = null; 
 
             // ============================================================
-            // 🔥 تطبيق ميزات العرق (مع التشخيص)
+            // 🔥 تطبيق ميزات العرق (تراكمي)
             // ============================================================
             const raceBuffMsg = applyDynamicBuffs(m, playerData, themeKey, guild.id, sql);
             if (raceBuffMsg) {
