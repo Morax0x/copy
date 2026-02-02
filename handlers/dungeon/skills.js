@@ -104,17 +104,12 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
          let skillName = "مهارة خاصة";
          switch(classType) {
              
-             // 🔥🔥 [تم التعديل] مهارة القائد الجديدة 🔥🔥
+             // 🔥🔥 مهارة القائد 🔥🔥
              case 'Leader': 
                 players.forEach(m => { 
                     if(!m.isDead) {
-                        // 1. زيادة الدمج 50% لمدة دورين
                         m.effects.push({ type: 'atk_buff', val: 0.5, turns: 2 });
-                        
-                        // 2. كريت مضمون 100% لمدة دورين
                         m.effects.push({ type: 'crit_buff', val: 1.0, turns: 2 });
-
-                        // 3. زيادة الحظ لمدة دورين
                         m.effects.push({ type: 'luck_buff', val: 0.5, turns: 2 });
                     } 
                 });
@@ -180,8 +175,8 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                 const elements = ['fire', 'ice', 'lightning'];
                 const selectedElement = elements[Math.floor(Math.random() * elements.length)];
                 
-                // 🔥 تطبيق الختم على هجوم الساحر 🔥
-                let magicDmg = Math.floor(player.atk * 1.5);
+                // 🔥 إصلاح: تطبيق الختم على هجوم الساحر المباشر
+                let magicDmg = Math.floor(player.atk * 1.5 * sealMultiplier); // ✅ تم إضافة sealMultiplier
                 magicDmg = applyCap(magicDmg, damageCap);
 
                 if (selectedElement === 'fire') {
@@ -219,12 +214,12 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                 break;
 
              case 'Summoner': 
-                // 🔥🔥🔥 تعديل الاستدعاء ليعمل مع نظام Monster Turn الجديد 🔥🔥🔥
+                // 🔥 استدعاء يتأثر بالختم أيضاً
                 player.summon = { 
                     name: "حارس الظل",
-                    active: true, // ✅ مهم جداً
+                    active: true, 
                     turns: 6, 
-                    atk: Math.floor(player.atk * 0.7), // 70% من هجوم اللاعب
+                    atk: Math.floor(player.atk * 0.7 * sealMultiplier), // ✅ تم إضافة الختم
                     atkRatio: 0.7, 
                     explodeRatio: 1.2 
                 };
@@ -256,7 +251,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     }
 
     // =================================================================
-    // 🔥🔥 استخدام المحرك المركزي للمهارات (مع تطبيق الختم) 🔥🔥
+    // 🔥🔥 استخدام المحرك المركزي للمهارات 🔥🔥
     // =================================================================
       
     // 1. استدعاء المحرك
@@ -276,20 +271,24 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
             if (eff.type === 'poison' || eff.type === 'burn') {
                 // إذا لم تكن القيمة محددة مسبقاً
                 if (!eff.val || eff.val < 100) { 
-                    let baseVal = 50 + (skillLevel * 15);
+                    let baseVal = 50 + (skillLevel * 15); 
                     eff.val = applyCap(Math.floor(baseVal * sealMultiplier), damageCap);
                 } else {
-                    // إذا كانت محددة، نطبق الختم عليها فقط
-                    eff.val = applyCap(eff.val, damageCap);
+                    // 🔥 إصلاح: إذا كانت محددة، نطبق الختم عليها أيضاً!
+                    eff.val = applyCap(Math.floor(eff.val * sealMultiplier), damageCap); // ✅ تم التعديل
                 }
             }
         });
     }
 
-    // 🔥🔥🔥 2. تطبيق الختم على الضرر المباشر 🔥🔥🔥
+    // 🔥🔥🔥 2. تطبيق الختم على الضرر المباشر (المهم جداً) 🔥🔥🔥
     if (result.damage > 0) {
         const originalDmg = result.damage;
-        result.damage = applyCap(result.damage, damageCap);
+        
+        // ✅ ضرب الضرر بالختم قبل تطبيق السقف
+        let sealedDamage = Math.floor(result.damage * sealMultiplier);
+        
+        result.damage = applyCap(sealedDamage, damageCap);
 
         monster.hp -= result.damage;
         player.totalDamage += result.damage;
@@ -346,15 +345,15 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         log.push(result.log);
     }
     
-    // 🔥🔥 [إضافة مهمة] إذا كانت المهارة هي "استدعاء" من ملف skills-config، نقوم بإنشاء الروح هنا أيضاً
+    // 🔥🔥 معالجة الاستدعاءات الخاصة بالمهارات (مثل مهارات الـ Config)
     if (skill.effect === 'summon') {
-         const summonAtk = Math.floor(player.atk * (skill.effect_value || 0.4)); 
+         const summonAtk = Math.floor(player.atk * (skill.effect_value || 0.4) * sealMultiplier); // ✅ تطبيق الختم
             
          player.summon = {
              name: "الروح المستدعاة",
              atk: Math.max(10, summonAtk), 
              turns: 3, 
-             active: true // ✅ علامة لتأكيد التفعيل
+             active: true 
          };
          // اللوج تم إضافته بالفعل من المحرك، لا داعي لتكراره
     }
