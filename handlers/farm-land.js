@@ -363,7 +363,7 @@ async function handleLandInteractions(i, client, sql) {
         if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: MessageFlags.Ephemeral });
 
         sql.prepare("INSERT OR REPLACE INTO user_lands (userID, guildID, plotID, status) VALUES (?, ?, ?, 'tilled')")
-           .run(userId, guildId, targetPlot);
+            .run(userId, guildId, targetPlot);
 
         await updateView();
         return;
@@ -391,6 +391,11 @@ async function handleLandInteractions(i, client, sql) {
         const totalCost = plotsToPlow.length * PLOW_COST_BULK;
         let userData = client.getLevel.get(userId, guildId);
         
+        // 🔥🔥🔥 الحماية من البيانات المفقودة (Fix) 🔥🔥🔥
+        if (!userData) {
+            return await i.followUp({ content: "❌ **لم يتم العثور على بياناتك!** حاول كتابة رسالة في الشات أولاً لتسجيل دخولك.", flags: MessageFlags.Ephemeral });
+        }
+
         if (userData.mora < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: MessageFlags.Ephemeral });
         
         userData.mora -= totalCost;
@@ -530,6 +535,13 @@ async function handleLandInteractions(i, client, sql) {
         transaction();
 
         let userData = client.getLevel.get(userId, guildId);
+        
+        // 🔥🔥🔥 الحماية من البيانات المفقودة (Fix) 🔥🔥🔥
+        if (!userData) {
+            // إنشاء بيانات افتراضية في حال عدم وجودها (نادر الحدوث عند الحصاد)
+            userData = { user: userId, guild: guildId, xp: 0, level: 1, mora: 0, totalXP: 0 };
+        }
+
         userData.mora += totalRevenue;
         userData.xp += totalXP;
         userData.totalXP += totalXP;
