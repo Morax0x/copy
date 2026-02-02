@@ -1,8 +1,7 @@
 // handlers/combat/skill-calculator.js
 
 // ================================================================
-// 🔥 COMBAT ENGINE: Skill Calculator (Balanced Version)
-// المحرك المسؤول عن حساب أرقام وتأثيرات المهارات (يعتمد على لفل المهارة)
+// 🔥 COMBAT ENGINE: Skill Calculator (Fixed Version)
 // ================================================================
 
 const { cleanDisplayName } = require('../dungeon/utils');
@@ -16,7 +15,6 @@ const GLOBAL_SKILL_MULTIPLIER = 5.0;
 function calculateSkillRawValue(skillConfig, currentLevel) {
     if (!skillConfig) return 0;
     const level = Math.max(1, currentLevel || 1);
-    // القيمة الأساسية + (الزيادة * اللفل)
     return skillConfig.base_value + (skillConfig.value_increment * (level - 1));
 }
 
@@ -45,20 +43,17 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
 
     const multiplier = isOwner ? 10 : 1;
     
-    // 1. حساب قوة المهارة الأساسية من اللفل
+    // 1. حساب قوة المهارة الأساسية
     const rawValue = calculateSkillRawValue(skill, skill.currentLevel);
     
     // 2. تحديد القوة النهائية (Skill Power)
     let skillPower = 0;
 
-    // استثناءات خاصة: مهارات تعتمد على الصحة القصوى (للدروع والشفاء الكبير)
-    // أو المهارات التي تتطلب حسابات خاصة بناء على الـ HP
     const hpBasedSkills = ['Reflect_Tank', 'Cleanse_Buff_Shield'];
     
     if (skill.id.includes('heal') || skill.id.includes('shield') || hpBasedSkills.includes(skill.stat_type)) {
         skillPower = Math.floor(attacker.maxHp * (rawValue / 100));
     } else {
-        // الهجوم والضرر: يعتمد حصراً على رقم المهارة والمضاعف العام
         skillPower = Math.floor(rawValue * GLOBAL_SKILL_MULTIPLIER);
     }
 
@@ -68,13 +63,6 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
     if (!skill.id.includes('heal') && !skill.id.includes('shield')) {
         let buffMultiplier = 1.0;
 
-        // أ. دعم النظام القديم (Object)
-        if (attacker.effects && !Array.isArray(attacker.effects)) {
-             if (attacker.effects.buff > 0) buffMultiplier += attacker.effects.buff;
-             if (attacker.effects.weaken > 0) buffMultiplier -= attacker.effects.weaken;
-        }
-
-        // ب. دعم النظام الجديد (Array - Dungeon)
         if (attacker.effects && Array.isArray(attacker.effects)) {
             attacker.effects.forEach(e => {
                 if (e.type === 'atk_buff' || e.type === 'buff') buffMultiplier += e.val;
@@ -85,7 +73,6 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         skillPower = Math.floor(skillPower * buffMultiplier);
     }
     
-    // تطبيق مضاعف المالك (إن وجد)
     skillPower = Math.floor(skillPower * multiplier);
 
     // ====================================================
@@ -96,15 +83,15 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         
         case 'Gamble_Dmg': {
             if (Math.random() < 0.5) {
-                // ✅ تعديل: الضرر 2.0 (1500 عند لفل 1)
-                const dmgAmount = Math.floor(skillPower * 2.0);
+                // ✅ تعديل: الضرر 2.5 (مقامرة قوية جداً)
+                const dmgAmount = Math.floor(skillPower * 2.5);
                 result.damage = dmgAmount;
-                result.log = `🎲 **${getName(attacker)}** نجح في المقامرة! سدد ضربة قوية بضـرر **${dmgAmount}**!`;
+                result.log = `🎲 **${getName(attacker)}** غامر وفاز! سدد ضربة حرجة بضـرر **${dmgAmount}**!`;
             } else {
-                // خسارة مخففة (15% من الصحة)
+                // خسارة (15% من الصحة)
                 const selfDmgAmount = Math.floor(attacker.hp * 0.15);
                 result.selfDamage = selfDmgAmount;
-                result.log = `🎲 **${getName(attacker)}** خسر المقامرة... وانفجر النرد بوجـهه (-${selfDmgAmount})!`;
+                result.log = `🎲 **${getName(attacker)}** خسر المقامرة وانفجر النرد بوجـهه (-${selfDmgAmount})!`;
             }
             break;
         }
@@ -117,15 +104,15 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         }
 
         case '%': 
-        case 'TrueDMG_Burn':      // Dragon
-        case 'Stun_Vulnerable':   // Elf
-        case 'Confusion':         // Dark Elf
-        case 'Sacrifice_Crit':    // Demon
-        case 'Scale_MissingHP_Heal': // Seraphim
-        case 'Execute_Heal':      // Ghoul
-        case 'Chaos_RNG':         // Hybrid
-        case 'Spirit_RNG':        // Spirit
-        case 'Dmg_Evasion':       // New
+        case 'TrueDMG_Burn':      
+        case 'Stun_Vulnerable':   
+        case 'Confusion':         
+        case 'Sacrifice_Crit':    
+        case 'Scale_MissingHP_Heal': 
+        case 'Execute_Heal':      
+        case 'Chaos_RNG':         
+        case 'Spirit_RNG':        
+        case 'Dmg_Evasion':       
             
             // --- المهارات العامة (Utility) ---
             if (skill.id === 'skill_shielding') {
@@ -150,13 +137,15 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             }
             else if (skill.id === 'skill_rebound') {
                 const reboundVal = rawValue / 100;
-                result.selfEffects.push({ type: 'rebound_active', val: reboundVal, turns: 3 });
-                result.log = `🔄 **${getName(attacker)}** جهز وضعية الانعكاس (${rawValue}%)!`;
+                // 🔥 تصحيح الاسم: reflect بدلاً من rebound_active
+                result.selfEffects.push({ type: 'reflect', val: reboundVal, turns: 3 });
+                result.log = `🔄 **${getName(attacker)}** جهز درع الانعكاس (${rawValue}%)!`;
             }
             else if (skill.id === 'skill_weaken') {
                 const weakenVal = rawValue / 100;
+                // 🔥 تصحيح الاسم: weaken (متطابق الآن مع monster-turn)
                 result.effectsApplied.push({ type: 'weaken', val: weakenVal, turns: 3 });
-                result.log = `📉 **${getName(attacker)}** أضعف هجوم خصمه!`;
+                result.log = `📉 **${getName(attacker)}** أضعف هجوم خصمه بنسبة ${rawValue}%!`;
             }
             else if (skill.id === 'skill_dispel') {
                 result.effectsApplied.push({ type: 'dispel' });
@@ -180,19 +169,15 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                     result.log = `🐲 **${getName(attacker)}** أطلق ${skill.name}!`;
                 }
             }
-            else if (skill.stat_type === 'Stun_Vulnerable') { // Elf (Balanced)
+            else if (skill.stat_type === 'Stun_Vulnerable') { // Elf
                 result.damage = Math.floor(skillPower * 0.7); 
-                
-                // الإضعاف مضمون
                 result.effectsApplied.push({ type: 'weaken', val: 0.3, turns: 2 });
                 
-                // ✅ تعديل: فرصة 50% فقط للشلل
                 let stunMsg = " (قاوم الشلل)";
                 if (Math.random() < 0.50) {
                     result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
                     stunMsg = " 😵 وتم شل حركته!";
                 }
-
                 result.log = `🏹 **${getName(attacker)}** أطلق وابل السهام بضرر (${result.damage})${stunMsg}!`;
             }
             else if (skill.stat_type === 'Confusion') { // Dark Elf
@@ -200,9 +185,8 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 result.effectsApplied.push({ type: 'confusion', val: true, turns: 2 });
                 result.log = `🗡️ **${getName(attacker)}** سبب ضرراً وأربك الخصم!`;
             }
-            else if (skill.stat_type === 'Sacrifice_Crit') { // Demon (Balanced)
+            else if (skill.stat_type === 'Sacrifice_Crit') { // Demon
                 result.selfDamage = Math.floor(attacker.maxHp * 0.10);
-                // ✅ الضرر 120% (بدل 180%)
                 result.damage = Math.floor(skillPower * 1.2); 
                 result.log = `👹 **${getName(attacker)}** ضحى بدمه لضربة مدمرة (${result.damage})!`;
             }
@@ -213,27 +197,22 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 result.heal = Math.floor(skillPower * 0.4); 
                 result.log = `⚖️ **${getName(attacker)}** عاقب بـ ${skill.name} (${result.damage})!`;
             }
-            // 🔥🔥🔥 تحديث مهارة الروح 🔥🔥🔥
             else if (skill.stat_type === 'Spirit_RNG') { // Spirit
-                // الضرر الأساسي (أعلى من العادي قليلاً: 1.3x)
                 const spiritDmg = Math.floor(skillPower * 1.3);
                 result.damage = spiritDmg;
-
                 const roll = Math.random() * 100;
                 let effectMsg = "";
 
                 if (roll < 2) { 
-                    // 2% شلل
                     result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
                     effectMsg = "😱 **لعنة الرعب!** (شلل)";
                 } 
                 else if (roll < 7) { 
-                    // 5% عكس الضرر 100%
-                    result.selfEffects.push({ type: 'rebound_active', val: 1.0, turns: 2 });
+                    // 🔥 تصحيح: reflect بدلاً من rebound_active
+                    result.selfEffects.push({ type: 'reflect', val: 1.0, turns: 2 });
                     effectMsg = "👻 **تلبس!** (عكس الضرر 100%)";
                 } 
                 else if (roll < 57) { 
-                    // 50% سرقة الروح
                     result.selfEffects.push({ type: 'atk_buff', val: 0.15, turns: 3 });
                     result.effectsApplied.push({ type: 'weaken', val: 0.15, turns: 3 });
                     effectMsg = "💀 **سرقة الروح!** (امتصاص القوة)";
@@ -241,7 +220,6 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 else {
                     effectMsg = "(هجوم طيفي)";
                 }
-
                 result.log = `👻 **${getName(attacker)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
             }
             else if (skill.stat_type === 'Chaos_RNG') { // Hybrid
@@ -268,14 +246,13 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                     result.log = `🧟 **${getName(attacker)}** مزق خصمه وسبب نزيفاً!`;
                 }
             }
-            else if (skill.stat_type === 'Dmg_Evasion') { // New Mechanic
+            else if (skill.stat_type === 'Dmg_Evasion') { // New
                 const dmg = Math.floor(skillPower * 1.3);
                 result.damage = dmg;
                 result.selfEffects.push({ type: 'evasion', val: true, turns: 1 });
                 result.log = `👻 **${getName(attacker)}** ضرب واختفى (مراوغة تامة)!`;
             }
             else {
-                // Default Attack Skill
                 result.damage = skillPower;
                 result.log = `💥 **${getName(attacker)}** استخدم ${skill.name} وسبب ${result.damage} ضرر!`;
             }
@@ -313,7 +290,8 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
         case 'Reflect_Tank': {
             const tankPower = Math.floor(attacker.maxHp * 0.2); 
             result.shield = tankPower;
-            result.selfEffects.push({ type: 'rebound_active', val: 0.4, turns: 2 });
+            // 🔥 تصحيح: tank_reflect بدلاً من rebound_active
+            result.selfEffects.push({ type: 'tank_reflect', val: 0.4, turns: 2 });
             result.log = `🛡️ **${getName(attacker)}** تحصن بالجبل!`;
             break;
         }
