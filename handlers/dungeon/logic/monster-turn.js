@@ -1,21 +1,15 @@
 // handlers/dungeon/logic/monster-turn.js
 
-// ✅ المسار الصحيح لنظام الختم
 const { getFloorCaps } = require('./seal-system'); 
-
-// ✅ المسار الصحيح لأدوات المعركة
 const { applyDamageToPlayer } = require('../utils'); 
-
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
 const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
-// --- 🧠 دالة تحديد الأهداف التكتيكية (AI Targeting System) ---
+// --- 🧠 دالة تحديد الأهداف ---
 function getTacticalTargets(players, count, monster) {
     let alive = players.filter(p => !p.isDead);
     if (alive.length === 0) return [];
 
-    // 🔥 تعديل الاستفزاز الإجباري (Tank Taunt)
-    // الدبابة يجبر الوحش يضربه حتى لو كان مختفي (منطقياً هو كشف نفسه للاستفزاز)
     if (monster.targetFocusId) {
         const tauntedTarget = alive.find(p => p.id === monster.targetFocusId);
         if (tauntedTarget) {
@@ -24,7 +18,6 @@ function getTacticalTargets(players, count, monster) {
     }
 
     let prioritized = alive.sort((a, b) => {
-        // حساب النقاط لتحديد الأولوية
         const aKillable = a.hp <= monster.atk * 1.5 ? 20 : 0;
         const bKillable = b.hp <= monster.atk * 1.5 ? 20 : 0;
         
@@ -38,7 +31,6 @@ function getTacticalTargets(players, count, monster) {
         const aReflect = a.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
         const bReflect = b.effects.some(e => e.type === 'reflect' || e.type === 'tank_reflect') ? -100 : 0;
 
-        // 🔥 تحسين الاختفاء: نعطيه أولوية منخفضة جداً جداً
         const aInvisible = a.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -5000 : 0;
         const bInvisible = b.effects.some(e => e.type === 'evasion' || e.type === 'invisibility') ? -5000 : 0;
 
@@ -61,7 +53,6 @@ function applyLocalCap(value, cap) {
 }
 
 async function processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel) {
-    // 🛡️ حماية من القيم غير الصالحة
     if (isNaN(monster.hp) || monster.hp === null) monster.hp = monster.maxHp || 1000;
     if (isNaN(monster.shield) || monster.shield === null) monster.shield = 0;
     if (isNaN(monster.atk)) monster.atk = 50;
@@ -72,14 +63,13 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (!monster.memory) monster.memory = { comboStep: 0, lastMove: null, healsUsed: 0 };
 
-    // 🔥 1. جلب سقف الضرر للطابق الحالي 🔥
     const { damageCap } = getFloorCaps(floor);
 
-    // 🔥 2. حفظ حالة البرق (تقليل ضرر الوحش) 🔥
+    // 🔥 2. حفظ حالة البرق
     const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
     const lightningVal = activeLightning ? activeLightning.val : 0;
 
-    // 1. التجميد (Stun/Freeze)
+    // 1. التجميد
     if (monster.frozen) { 
         log.push(`❄️ **${monster.name}** متجمد، خسر دوره!`); 
         monster.frozen = false; 
@@ -90,9 +80,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         return true; 
     }
 
-    // ============================================================
-    // 2. معالجة الأضرار المستمرة (DoT: Poison & Burn) - المعدلة ✅
-    // ============================================================
+    // 2. معالجة الأضرار المستمرة (DoT)
     if (monster.effects) {
         monster.effects = monster.effects.filter(e => {
             let dmgVal = 0;
@@ -101,20 +89,12 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
             if (e.type === 'burn' || e.type === 'poison') {
                 let rawVal = e.val || 0;
-
-                // 🔥 التصحيح: الاعتماد على القيمة المسطحة القادمة من المهارات
                 if (rawVal >= 1) {
-                    // إذا كانت القيمة 1 أو أكثر، نعتبرها ضرراً ثابتاً (محسوب من المهارة)
                     dmgVal = Math.floor(rawVal);
                 } else if (rawVal > 0 && rawVal < 1) {
-                    // إذا كانت كسراً عشرياً، نعتبرها نسبة مئوية (للتوافق القديم)
                     dmgVal = Math.floor(monster.maxHp * rawVal);
                 }
-
-                // تطبيق سقف الضرر
                 dmgVal = applyLocalCap(dmgVal, damageCap);
-                
-                // تطبيق الضرر
                 monster.hp = Math.max(0, monster.hp - dmgVal);
 
                 if (e.type === 'burn') { effectName = "يحترق"; icon = "🔥"; }
@@ -124,8 +104,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 if (dmgVal === damageCap) msg += " (مختوم)";
                 log.push(msg);
             }
-
-            // إنقاص العداد
             if (e.turns) e.turns--;
             return e.turns > 0;
         });
@@ -133,13 +111,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
-    // ============================================================
-    // 🐺 هجوم المستدعي (Summoner Pets)
-    // ============================================================
+    // هجوم المستدعي
     players.forEach(p => {
         if (!p.isDead && p.summon && p.summon.active) {
-            
-            // 1. الهجوم العادي للاستدعاء
             const atkRatio = p.summon.atkRatio || 0.7;
             let petDmg = Math.floor(p.atk * atkRatio) || 1;
             petDmg = applyLocalCap(petDmg, damageCap);
@@ -148,21 +122,15 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             p.totalDamage += petDmg;
             
             log.push(`🐺 **${p.summon.name}** هاجم ${monster.name} وسبب **${petDmg}** ضرر!`);
-
-            // إنقاص العداد
             p.summon.turns--;
 
-            // 2. الانفجار عند النهاية
             if (p.summon.turns <= 0) {
                 p.summon.active = false; 
-                
                 const explodeRatio = p.summon.explodeRatio || 1.2;
                 let explosionDmg = Math.floor(p.atk * explodeRatio) || 1;
                 explosionDmg = applyLocalCap(explosionDmg, damageCap);
-
                 monster.hp = Math.max(0, Math.floor(monster.hp - explosionDmg));
                 p.totalDamage += explosionDmg;
-
                 log.push(`💥 **${p.summon.name}** انفجر عند الموت مسبباً **${explosionDmg}** ضرر!`);
                 p.summon = null; 
             }
@@ -171,7 +139,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
-    // 3. الارتباك (Confusion)
+    // الارتباك
     const confusion = monster.effects.find(e => e.type === 'confusion');
     if (confusion && Math.random() < confusion.val) {
         const selfDmg = Math.floor(monster.atk * 0.5) || 1;
@@ -184,27 +152,25 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         return true;
     }
 
-    // --- 🎮 منطق الهجوم (AI Logic) ---
+    // --- 🎮 منطق الهجوم (AI) ---
     const alive = players.filter(p => !p.isDead);
     if (alive.length === 0) return false;
 
     let skillUsed = false;
 
-    // 🔥 أولوية 1: مهارات الزعيم 🔥
+    // مهارات الزعيم
     const cleanName = monster.name.split(' (')[0]; 
     const specialSkill = MONSTER_SKILLS[cleanName];
-
     if (specialSkill) {
         let chance = specialSkill.chance;
         if (monster.hp < monster.maxHp * 0.5) chance += 0.2; 
-
         if (Math.random() < chance) {
             specialSkill.execute(monster, players, log);
             skillUsed = true;
         }
     }
 
-    // 🔥 أولوية 2: المهارات العامة 🔥
+    // المهارات العامة
     if (!skillUsed && !specialSkill) {
         let allowSkills = false;
         if (floor < 20) allowSkills = false;
@@ -222,26 +188,19 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // 🔥 أولوية 3: الكومبو (Combos) 🔥
+    // الكومبو
     if (!skillUsed && monster.memory.comboStep === 1) {
-        // كومبو الزيت (AoE)
         if (monster.memory.lastMove === 'oil') {
             alive.forEach(p => {
-                // ✅ التحقق من الاختفاء هنا أيضاً لتفادي حرق المختفين
                 if (p.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) return;
-
                 const dmg = Math.floor(monster.atk * 2.0); 
                 applyDamageToPlayer(p, dmg);
                 p.effects.push({ type: 'burn', val: Math.floor(monster.atk * 0.4), turns: 3 });
             });
             log.push(`🔥 **${monster.name}** فجر الزيت! (COMBO FINISH)`);
             skillUsed = true;
-        } 
-        // كومبو الشحن (Targeted)
-        else if (monster.memory.lastMove === 'charge') {
+        } else if (monster.memory.lastMove === 'charge') {
             const target = getTacticalTargets(players, 1, monster)[0];
-            
-            // ✅ التحقق من الاختفاء قبل الضربة القاضية
             if (target && !target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                 const dmg = Math.floor(monster.atk * 3.5); 
                 applyDamageToPlayer(target, dmg);
@@ -250,14 +209,14 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 skillUsed = true;
             } else {
                 log.push(`💨 **${monster.name}** هاجم بكل قوته لكن الهدف اختفى!`);
-                skillUsed = true; // نعتبر المهارة استهلكت
+                skillUsed = true; 
             }
         }
         monster.memory.comboStep = 0;
         monster.memory.lastMove = null;
     }
 
-    // 🔥 أولوية 4: العلاج الذاتي 🔥
+    // العلاج الذاتي
     if (!skillUsed && floor >= 25 && monster.hp < monster.maxHp * 0.25 && monster.memory.healsUsed < 2) {
         if (Math.random() < 0.5) {
             let healPercent = 0.02 + ((floor - 20) * 0.001);
@@ -278,7 +237,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         if (floor >= 30) targetCount = 2;
         if (floor >= 60) targetCount = 3;
         if (floor >= 90) targetCount = 4;
-
         if (monster.targetFocusId) targetCount = 1;
 
         const targets = getTacticalTargets(players, targetCount, monster);
@@ -287,27 +245,35 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // 🔥🔥🔥 التحقق من الاختفاء (Basic Attack) 🔥🔥🔥
+                // الاختفاء
                 if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                     hitLog.push(`${target.name}: 👻 اختفاء (Miss)`);
-                    return; // تخطي هذا اللاعب تماماً
+                    return; 
                 }
 
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
+                // 🔥🔥🔥 إصلاح مهارة الإضعاف (Weaken) 🔥🔥🔥
                 if (lightningVal > 0) dmg = Math.floor(dmg * (1 - lightningVal)); 
-                else if (monster.effects.some(e => e.type === 'weakness')) dmg = Math.floor(dmg * 0.6);
+                
+                // البحث عن تأثير "weaken" وتطبيق القيمة الفعلية
+                const weakenEffect = monster.effects.find(e => e.type === 'weaken'); // كان weakness
+                if (weakenEffect) {
+                    const weakenVal = weakenEffect.val || 0.3; // الافتراضي 30%
+                    dmg = Math.floor(dmg * (1 - weakenVal));
+                }
 
                 if (target.defending) dmg = Math.floor(dmg * 0.5);
                 
-                // 🛡️ الانعكاس
+                // 🔥🔥🔥 إصلاح مهارة الانعكاس (Reflect) 🔥🔥🔥
                 const reflectEffect = target.effects.find(e => e.type === 'reflect' || e.type === 'tank_reflect');
                 let reflectedDmg = 0;
                 
                 if (reflectEffect) {
-                    reflectedDmg = Math.floor(dmg * (reflectEffect.val || 0)); 
-                    dmg = Math.floor(dmg - reflectedDmg);
-                    monster.hp = Math.max(0, Math.floor(monster.hp - reflectedDmg));
+                    // الانعكاس الآن يعمل بالنسبة المحددة في المهارة (val)
+                    reflectedDmg = Math.floor(dmg * (reflectEffect.val || 0.5)); 
+                    dmg = Math.floor(dmg - reflectedDmg); // تقليل الضرر على اللاعب
+                    monster.hp = Math.max(0, Math.floor(monster.hp - reflectedDmg)); // عكس الضرر على الوحش
                 }
 
                 const takenDmg = applyDamageToPlayer(target, dmg);
@@ -316,6 +282,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
                 if (takenDmg === 0 && dmg > 0) status = "🛡️ صد كامل";
                 
                 if (lightningVal > 0) status += " (⚡ضعف)";
+                if (weakenEffect) status += " (📉مُضعف)";
                 if (reflectedDmg > 0) status += ` (عكس ${reflectedDmg})`;
 
                 hitLog.push(`${target.name}: ${status}`);
@@ -331,25 +298,19 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (monster.targetFocusId) monster.targetFocusId = null;
 
-    // 🛡️ فحص نهائي
     if (monster.hp < 0) monster.hp = 0;
     if (isNaN(monster.hp)) monster.hp = 0;
 
-    // ---------------------------------------------------------
-    // 💀 معالجة الوفيات
-    // ---------------------------------------------------------
+    // الوفيات
     const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead);
     for (const p of deadJustNow) {
         p.isDead = true; 
-
         if (p.reviveCount && p.reviveCount >= 1) {
             p.isPermDead = true;
             await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته! (خروج نهائي)`).catch(()=>{});
-        } 
-        else {
+        } else {
             await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
         }
-
         if (p.class === 'Priest') {
              players.forEach(ally => {
                 if (!ally.isDead && ally.id !== p.id) {
@@ -362,10 +323,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     }
 
     if (players.every(p => p.isDead)) return false;
-
     if (log.length > 6) log = log.slice(-6);
     
-    // تحديث الرسالة
     try {
         await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], components: generateBattleRows() });
     } catch (e) {
