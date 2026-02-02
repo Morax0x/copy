@@ -215,7 +215,7 @@ module.exports = {
             try {
                 await message.channel.sendTyping();
                 const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
-                if (!cleanContent) return message.reply("تحدث!");
+                if (!cleanContent) return message.reply("نـعـم .. ؟");
 
                 let imageAttachment = null;
                 if (message.attachments.size > 0) {
