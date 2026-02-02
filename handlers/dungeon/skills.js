@@ -23,7 +23,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
     // ====================================================
     // 1. مهارات الإمبـراطـور (GOD MODE) 👑
-    // (تبقى هنا لأنها خاصة بالقصة ولها منطق فريد وتتجاهل الختم)
     // ====================================================
       
     if (skill.id === 'skill_erasure') {
@@ -80,7 +79,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
     // ====================================================
     // 2. منطق مهارات الكلاسات (Class Skills Logic)
-    // (تبقى هنا لأنها تتفاعل مع الـ Party وتوزيع الأدوار)
     // ====================================================
     let classType = null;
     if (skill.id === 'class_special_skill') {
@@ -93,7 +91,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     }
 
     if (classType) {
-         // التحقق من الكولداون الخاص بالكلاس
          if (player.special_cooldown > 0 && player.id !== OWNER_ID && skill.id !== 'hybrid_heal') {
              return { error: `⏳ المهارة في وقت انتظار (${player.special_cooldown} جولات)!` }; 
          }
@@ -103,8 +100,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
          let skillName = "مهارة خاصة";
          switch(classType) {
-             
-             // 🔥🔥 مهارة القائد 🔥🔥
              case 'Leader': 
                 players.forEach(m => { 
                     if(!m.isDead) {
@@ -140,7 +135,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                         t.isDead = false; 
                         t.hp = Math.floor(t.maxHp * 0.2);
                         t.reviveCount = (t.reviveCount || 0) + 1;
-                        
                         if (t.class === 'Former Leader') {
                              const currentLeader = players.find(p => p.class === 'Leader' && !p.isDead);
                              if (currentLeader) {
@@ -148,23 +142,18 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                                  log.push(`♻️ **${t.name}** عاد للحياة واستعاد دوره كـ ${t.class}!`);
                              }
                         }
-
                         applyDamageToPlayer(player, Math.floor(player.maxHp * 0.1)); 
                         log.push(`✨ **${player.name}** أحيا **${t.name}**!`);
                         if(threadChannel) threadChannel.send(`✨ **${player.name}** قام بإحياء **${t.name}** <@${t.id}>!`).catch(()=>{});
-                        
                         player.threat = (player.threat || 0) + 800;
-
                         if (skill.id === 'hybrid_heal') player.skillCooldowns['hybrid_heal'] = 7;
                         else player.special_cooldown = 7;
                     }
                 } else {
                     players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
                     log.push(`✨ **${player.name}** عالج الفريق!`);
-                    
                     const totalHealThreat = Math.floor((player.maxHp * 0.4) * players.filter(p=>!p.isDead).length / 2);
                     player.threat = (player.threat || 0) + totalHealThreat;
-
                     if (skill.id === 'hybrid_heal') player.skillCooldowns['hybrid_heal'] = 6;
                     else player.special_cooldown = 6;
                 }
@@ -174,39 +163,29 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
              case 'Mage': 
                 const elements = ['fire', 'ice', 'lightning'];
                 const selectedElement = elements[Math.floor(Math.random() * elements.length)];
-                
-                // 🔥 إصلاح: تطبيق الختم على هجوم الساحر المباشر
-                let magicDmg = Math.floor(player.atk * 1.5 * sealMultiplier); // ✅ تم إضافة sealMultiplier
+                let magicDmg = Math.floor(player.atk * 1.5 * sealMultiplier); 
                 magicDmg = applyCap(magicDmg, damageCap);
 
                 if (selectedElement === 'fire') {
                     monster.hp -= magicDmg;
                     player.totalDamage += magicDmg;
-                    
-                    // حساب الحرق وتطبيق الختم
                     let mageBurnVal = Math.floor((player.atk * 0.5) * sealMultiplier);
                     mageBurnVal = applyCap(mageBurnVal, damageCap); 
-
                     monster.effects.push({ type: 'burn', val: mageBurnVal, turns: 3 }); 
-                    
                     let msg = `🔥 **${player.name}** (شعوذة: نار) تسبب بحرق و **${magicDmg}** ضرر!`;
                     if (magicDmg === damageCap) msg += " (مختوم)";
                     log.push(msg);
-
                 } else if (selectedElement === 'ice') {
                     monster.frozen = true;
                     log.push(`❄️ **${player.name}** جمد الوحش!`);
-
                 } else if (selectedElement === 'lightning') {
                     monster.hp -= magicDmg;
                     player.totalDamage += magicDmg;
                     monster.effects.push({ type: 'lightning_weaken', val: 0.9, turns: 1 });
-                    
                     let msg = `⚡ **${player.name}** (شعوذة: برق) صاعقة بـ **${magicDmg}** ضرر وأضعفت الوحش!`;
                     if (magicDmg === damageCap) msg += " (مختوم)";
                     log.push(msg);
                 }
-
                 checkBossPhase(monster, log); 
                 skillName = "شعوذة";
                 player.special_cooldown = 6;
@@ -214,16 +193,14 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                 break;
 
              case 'Summoner': 
-                // 🔥 استدعاء يتأثر بالختم أيضاً
                 player.summon = { 
                     name: "حارس الظل",
                     active: true, 
                     turns: 6, 
-                    atk: Math.floor(player.atk * 0.7 * sealMultiplier), // ✅ تم إضافة الختم
+                    atk: Math.floor(player.atk * 0.7 * sealMultiplier), 
                     atkRatio: 0.7, 
                     explodeRatio: 1.2 
                 };
-                
                 log.push(`🐺 **${player.name}** استدعى الحارس! (سيقاتل لـ 6 جولات)`);
                 skillName = "استدعاء حارس الظل";
                 player.special_cooldown = 7;
@@ -243,7 +220,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     }
 
     const skillCooldown = skill.cooldown || (skill.id.startsWith('race_') ? 5 : 3);
-      
     if (player.id !== OWNER_ID) {
         if (skill.id !== 'skill_shielding') {
             player.skillCooldowns[skill.id] = skillCooldown;
@@ -253,8 +229,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     // =================================================================
     // 🔥🔥 استخدام المحرك المركزي للمهارات 🔥🔥
     // =================================================================
-      
-    // 1. استدعاء المحرك
     const isOwner = player.id === OWNER_ID;
     const result = skillCalculator.executeSkill(player, monster, skill, isOwner);
 
@@ -262,32 +236,25 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     // 🛡️ تطبيق الختم (CAP) على نتائج الآلة الحاسبة
     // =================================================================
 
-    // 1. السم والحرق (مع الختم)
     if (result.effectsApplied && result.effectsApplied.length > 0) {
         const userSkillEntry = player.skills ? player.skills[skill.id] : null;
         const skillLevel = userSkillEntry ? userSkillEntry.currentLevel : 1;
 
         result.effectsApplied.forEach(eff => {
             if (eff.type === 'poison' || eff.type === 'burn') {
-                // إذا لم تكن القيمة محددة مسبقاً
                 if (!eff.val || eff.val < 100) { 
                     let baseVal = 50 + (skillLevel * 15); 
                     eff.val = applyCap(Math.floor(baseVal * sealMultiplier), damageCap);
                 } else {
-                    // 🔥 إصلاح: إذا كانت محددة، نطبق الختم عليها أيضاً!
-                    eff.val = applyCap(Math.floor(eff.val * sealMultiplier), damageCap); // ✅ تم التعديل
+                    eff.val = applyCap(Math.floor(eff.val * sealMultiplier), damageCap); 
                 }
             }
         });
     }
 
-    // 🔥🔥🔥 2. تطبيق الختم على الضرر المباشر (المهم جداً) 🔥🔥🔥
     if (result.damage > 0) {
         const originalDmg = result.damage;
-        
-        // ✅ ضرب الضرر بالختم قبل تطبيق السقف
         let sealedDamage = Math.floor(result.damage * sealMultiplier);
-        
         result.damage = applyCap(sealedDamage, damageCap);
 
         monster.hp -= result.damage;
@@ -299,13 +266,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
           
         checkBossPhase(monster, log);
 
-        // إضافة علامة (مختوم) للسجل إذا تم تقليل الضرر
         if (originalDmg > result.damage) {
             if (!result.log.includes("(مختوم)")) result.log += " (مختوم)";
         }
     }
 
-    // ب. الشفاء والدرع والضرر الذاتي
     if (result.heal > 0) player.hp = Math.min(player.maxHp, player.hp + result.heal);
     if (result.selfDamage > 0) applyDamageToPlayer(player, result.selfDamage);
       
@@ -313,7 +278,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         player.shield = (player.shield || 0) + result.shield; 
     }
 
-    // ج. تطبيق التأثيرات على الوحش
     if (result.effectsApplied && result.effectsApplied.length > 0) {
         result.effectsApplied.forEach(eff => {
             if (eff.type === 'stun') {
@@ -327,7 +291,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         });
     }
 
-    // د. تطبيق التأثيرات على النفس (Buffs/Cleanse)
     if (result.selfEffects && result.selfEffects.length > 0) {
         result.selfEffects.forEach(eff => {
             if (eff.type === 'cleanse') {
@@ -340,22 +303,23 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         });
     }
 
-    // هـ. تسجيل اللوج
     if (result.log) {
         log.push(result.log);
     }
     
-    // 🔥🔥 معالجة الاستدعاءات الخاصة بالمهارات (مثل مهارات الـ Config)
+    // 🔥 استدعاء الروح (من Config)
     if (skill.effect === 'summon') {
-         const summonAtk = Math.floor(player.atk * (skill.effect_value || 0.4) * sealMultiplier); // ✅ تطبيق الختم
-            
+         const summonAtk = Math.floor(player.atk * (skill.effect_value || 0.4) * sealMultiplier); 
          player.summon = {
              name: "الروح المستدعاة",
              atk: Math.max(10, summonAtk), 
              turns: 3, 
              active: true 
          };
-         // اللوج تم إضافته بالفعل من المحرك، لا داعي لتكراره
+         // إضافة لوج للاحتياط إذا لم يكن موجوداً
+         if (!result.log) {
+             log.push(`👻 **${player.name}** استدعى روحاً لمساعدته!`);
+         }
     }
 
     return { success: true, name: skill.name };
