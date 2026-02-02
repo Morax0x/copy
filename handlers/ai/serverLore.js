@@ -9,17 +9,16 @@ function getLeaderboardKnowledge(sql) {
 
     try {
         // 1️⃣ توب لفل (XP)
-        // 🔥 تصحيح: اسم العمود هو 'user' ليعمل الكود بدون أخطاء
         const topLevels = sql.prepare("SELECT user, level FROM levels ORDER BY level DESC, xp DESC LIMIT 5").all();
         const levelText = topLevels.length > 0 
             ? topLevels.map((u, i) => `${i+1}. <@${u.user}> (Lv.${u.level})`).join('\n')
             : "لا يوجد بيانات بعد.";
 
         // 2️⃣ توب فلوس (Economy)
-        // 🔥 تصحيح: اسم العمود هو 'user' ليعمل الكود بدون أخطاء
-        const topMora = sql.prepare("SELECT user, balance FROM economy ORDER BY balance DESC LIMIT 5").all();
+        // 🔥 تصحيح: القراءة من جدول levels وحساب (الكاش + البنك)
+        const topMora = sql.prepare("SELECT user, (mora + bank) as totalWealth FROM levels ORDER BY totalWealth DESC LIMIT 5").all();
         const moraText = topMora.length > 0 
-            ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${u.balance.toLocaleString()})`).join('\n')
+            ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${u.totalWealth.toLocaleString()})`).join('\n')
             : "لا يوجد بيانات بعد.";
 
         return `
@@ -42,7 +41,7 @@ module.exports = {
     // تصدير دالة التوب
     getLeaderboardKnowledge,
 
-    // معلومات السيرفر الثابتة (مع الإضافات الجديدة)
+    // معلومات السيرفر الثابتة
     getServerKnowledge: () => {
         return `
 📚 **قاعدة بيانات الإمبراطورية (معلومات السيرفر):**
