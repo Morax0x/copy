@@ -6,8 +6,8 @@ function setupDatabase(clientOrSql) {
 
     // 🔥🔥🔥 تفعيل وضع السرعة القصوى (WAL Mode) 🔥🔥🔥
     try {
-        sql.pragma('journal_mode = WAL'); // هذا السطر يمنع تعليق الداتابيس أثناء الكتابة
-        sql.pragma('synchronous = 1');    // توازن جيد بين السرعة والأمان
+        sql.pragma('journal_mode = WAL'); 
+        sql.pragma('synchronous = 1');    
         console.log("[Database] WAL mode enabled for better performance 🚀");
     } catch (e) { 
         console.log("[Database] WAL mode check skipped/failed:", e.message); 
@@ -72,22 +72,16 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS mod_cases (id TEXT PRIMARY KEY, guildID TEXT, caseID INTEGER, type TEXT, targetID TEXT, moderatorID TEXT, reason TEXT, timestamp INTEGER)",
         "CREATE TABLE IF NOT EXISTS active_dungeons (channelID TEXT PRIMARY KEY, guildID TEXT, hostID TEXT, data TEXT)",
         
-        // --- 🔥 جداول الذكاء الاصطناعي (تمت إضافتها) 🔥 ---
-        // 1. القنوات الأساسية المفعلة (عام / خاص)
+        // --- 🔥 جداول الذكاء الاصطناعي 🔥 ---
         "CREATE TABLE IF NOT EXISTS ai_channels (channelID TEXT PRIMARY KEY, guildID TEXT, isNsfw INTEGER DEFAULT 0)",
-        
-        // 2. البلاك ليست (للممنوعين من استخدام البوت)
         "CREATE TABLE IF NOT EXISTS ai_blacklist (userID TEXT PRIMARY KEY)",
-        
-        // 3. حدود الاستخدام اليومي (للحد من السبام)
         "CREATE TABLE IF NOT EXISTS ai_role_limits (guildID TEXT, roleID TEXT, limitCount INTEGER, PRIMARY KEY(guildID, roleID))",
         "CREATE TABLE IF NOT EXISTS ai_user_usage (userID TEXT PRIMARY KEY, guildID TEXT, dailyUsage INTEGER DEFAULT 0, purchasedBalance INTEGER DEFAULT 0, lastResetDate TEXT)",
-        
-        // 4. 🔥 الكتاغوريات المقفلة (Pay to Chat) 🔥
         "CREATE TABLE IF NOT EXISTS ai_restricted_categories (guildID TEXT, categoryID TEXT, PRIMARY KEY (categoryID))",
-        
-        // 5. 🔥 القنوات المدفوعة والمفعلة مؤقتاً 🔥
-        "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))"
+        "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))",
+
+        // 🔥🔥🔥 [مهم] هذا هو الجدول الذي كان ناقصاً 🔥🔥🔥
+        "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))"
     ];
 
     sql.transaction((tbls) => {
@@ -152,7 +146,7 @@ function setupDatabase(clientOrSql) {
     try { sql.prepare("ALTER TABLE settings ADD COLUMN bumpNotifyRoleID TEXT").run(); } catch (e) {} 
 
     ensureColumn('user_portfolio', 'purchasePrice', 'INTEGER DEFAULT 0');
-    
+     
     ensureColumn('user_farm', 'quantity', 'INTEGER DEFAULT 1');
     ensureColumn('user_farm', 'lastFedTimestamp', `INTEGER DEFAULT ${Date.now()}`); 
 
