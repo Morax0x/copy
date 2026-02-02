@@ -9,7 +9,7 @@ const { generateResponse } = require('./ai/engine');
 const aiConfig = require('../utils/aiConfig'); 
 require('dotenv').config();
 
-// 👇 إعداد قاعدة البيانات لاستخدامها مع دالة التوب الجديدة
+// 👇 إعداد قاعدة البيانات لاستخدامها مع دالة التوب جديدة
 const SQLite = require("better-sqlite3");
 const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
