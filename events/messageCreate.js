@@ -1,3 +1,5 @@
+// events/messageCreate.js
+
 const { Events, ChannelType, PermissionsBitField, EmbedBuilder, Colors, Collection, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
@@ -54,8 +56,43 @@ module.exports = {
         if (!sql || !sql.open) return; 
         // 👆👆 انتهى الفحص 👆👆
 
+        // 1. تجاهل البوتات (إلا ديسبورد) والرسائل خارج السيرفر
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
         if (!message.guild) return;
+
+        // ================================================================
+        // 🛡️ نظام تنظيف الرتب المتضاربة (Auto Anti-Role Cleaner) - New Feature
+        // ================================================================
+        try {
+            if (message.member) {
+                // جلب كل قوانين الرتب المتضاربة من قاعدة البيانات
+                const conflictRules = sql.prepare("SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''").all();
+
+                if (conflictRules.length > 0) {
+                    const memberRoleIds = message.member.roles.cache.map(r => r.id);
+
+                    for (const rule of conflictRules) {
+                        // 1. هل العضو يملك الرتبة الأساسية (التي تمنع غيرها)؟
+                        if (memberRoleIds.includes(rule.role_id)) {
+                            // تحويل قائمة الممنوعات إلى مصفوفة
+                            const prohibitedRoles = rule.anti_roles.split(',');
+
+                            // 2. فحص هل يملك أي رتبة ممنوعة؟
+                            const hasForbidden = prohibitedRoles.filter(id => memberRoleIds.includes(id));
+                            
+                            if (hasForbidden.length > 0) {
+                                // 3. حذف الرتب الممنوعة فوراً
+                                await message.member.roles.remove(hasForbidden).catch(() => {});
+                                // (اختياري) يمكنك إضافة لوج هنا
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("[Anti-Role Auto Cleaner Error]", error);
+        }
+        // ================================================================
 
         // --- BUMP SYSTEM ---
         if (message.author.id === DISBOARD_BOT_ID) {
@@ -94,7 +131,7 @@ module.exports = {
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
         // ============================================================
-        // 🤖 AI System (Morax) - Modified for Categories
+        // 🤖 AI System (Morax)
         // ============================================================
         let Prefix = settings?.prefix || "-";
 
