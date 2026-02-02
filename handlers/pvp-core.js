@@ -1,12 +1,12 @@
+// handlers/pvp-core.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require("discord.js");
 const path = require('path');
 
 const rootDir = process.cwd();
-// تأكد أن مسارات الجيسون صحيحة لديك
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// --- صور الفوز والخسارة ---
 const WIN_IMAGES = [
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
@@ -26,13 +26,9 @@ const LOSE_IMAGES = [
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// ==========================================
-// ⚖️ إعدادات الصحة
-// ==========================================
-const BASE_HP = 800;      // الصحة الأساسية
-const HP_PER_LEVEL = 60;  // زيادة الصحة لكل ليفل
+const BASE_HP = 800;      
+const HP_PER_LEVEL = 60;  
 const SKILL_COOLDOWN_TURNS = 3; 
-// ==========================================
 
 const activePvpChallenges = new Set();
 const activePvpBattles = new Map();
@@ -211,7 +207,31 @@ function applySkillEffect(battleState, attackerId, skill) {
     if (attacker.effects.weaken > 0) baseAtk *= (1 - attacker.effects.weaken);
 
     switch (statType) {
-        // 🔥🔥 مهارة الروح الجديدة (Spirit_RNG) 🔥🔥
+        // 🔥🔥 مقامرة مستقلة (Gamble) 🔥🔥
+        case 'Gamble_Dmg': {
+            if (Math.random() < 0.5) {
+                // ✅ نجاح: دمج عشوائي قوي جداً (777 - 2222)
+                const minDmg = 777;
+                const maxDmg = 2222;
+                const dmgAmount = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg;
+                
+                defender.hp -= dmgAmount;
+                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
+            } else {
+                // ❌ فشل: دمج خفيف للخصم + ضرر ذاتي
+                const minFail = 100;
+                const maxFail = 200;
+                const failDmg = Math.floor(Math.random() * (maxFail - minFail + 1)) + minFail;
+                
+                const selfDmg = Math.floor(attacker.hp * 0.03); // 3% ضرر ذاتي
+
+                defender.hp -= failDmg;
+                attacker.hp -= selfDmg;
+
+                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
+            }
+        }
+
         case 'Spirit_RNG': {
             const spiritDmg = Math.floor(baseAtk * 1.3);
             defender.hp -= spiritDmg;
@@ -220,19 +240,16 @@ function applySkillEffect(battleState, attackerId, skill) {
             let effectMsg = "";
 
             if (roll < 2) { 
-                // 2% - شلل
                 defender.effects.stun = true;
                 defender.effects.stun_turns = 1;
                 effectMsg = "😱 **لعنة الرعب!** (شلل)";
             } 
             else if (roll < 7) { 
-                // 5% - عكس الضرر 100%
                 attacker.effects.rebound_active = 1.0; 
                 attacker.effects.rebound_turns = 2;
                 effectMsg = "👻 **تلبس!** (عكس الضرر 100%)";
             } 
             else if (roll < 57) { 
-                // 50% - سرقة الروح (Buff Attacker, Weaken Defender)
                 attacker.effects.buff = (attacker.effects.buff || 0) + 0.15;
                 attacker.effects.buff_turns = 3;
                 defender.effects.weaken = (defender.effects.weaken || 0) + 0.15;
@@ -255,7 +272,6 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أحرق خصمه! (${dmg} ضرر + حرق)`;
         }
         case 'Cleanse_Buff_Shield': {
-            // تطهير السلبيات فقط
             attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
             attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
             attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
@@ -379,7 +395,6 @@ function applySkillEffect(battleState, attackerId, skill) {
                     defender.effects.weaken_turns = 3;
                     return `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
                 case 'skill_dispel':
-                    // تبديد: تصفير كل التأثيرات الإيجابية والسلبية للخصم
                     defender.effects = { 
                         shield: 0, buff: 0, buff_turns: 0, 
                         weaken: 0, weaken_turns: 0, 
@@ -393,7 +408,6 @@ function applySkillEffect(battleState, attackerId, skill) {
                     };
                     return `💨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** بدد كل سحر الخصم!`;
                 case 'skill_cleanse':
-                    // تطهير: إزالة السلبيات فقط
                     attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
                     attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
                     attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0;
@@ -417,7 +431,6 @@ function calculateDamage(attacker, defender, multiplier = 1) {
 
     let finalDmg = Math.floor(baseDmg * multiplier);
 
-    // التحقق من المراوغة (Flight/Evasion) - يمنع الضرر تماماً
     if (defender.effects.evasion > 0) {
         return 0;
     }
@@ -441,7 +454,6 @@ function calculateDamage(attacker, defender, multiplier = 1) {
     return Math.max(0, finalDmg);
 }
 
-// ⚠️ هذه هي الدالة التي تحسب الصحة عند بدء المعركة (PvP)
 async function startPvpBattle(i, client, sql, challengerMember, opponentMember, bet) {
     const getLevel = i.client.getLevel;
     const setLevel = i.client.setLevel;
@@ -451,7 +463,6 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
     challengerData.mora -= bet; opponentData.mora -= bet;
     setLevel.run(challengerData); setLevel.run(opponentData);
     
-    // 🔥🔥 هنا يتم استخدام القيم الجديدة (BASE_HP = 800) 🔥🔥
     const cMaxHp = BASE_HP + (challengerData.level * HP_PER_LEVEL);
     const oMaxHp = BASE_HP + (opponentData.level * HP_PER_LEVEL);
     
@@ -467,7 +478,6 @@ async function startPvpBattle(i, client, sql, challengerMember, opponentMember, 
         ])
     };
     
-    // طباعة للكونسول للتأكد
     console.log(`[PVP DEBUG] Challenger HP: ${cMaxHp}, Opponent HP: ${oMaxHp}`);
 
     activePvpBattles.set(i.channel.id, battleState);
@@ -568,7 +578,6 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
 
         const randomWinImage = WIN_IMAGES[Math.floor(Math.random() * WIN_IMAGES.length)];
         
-        // 🔥🔥 رسالة الفوز المعدلة 🔥🔥
         embed.setColor('Random')
             .setThumbnail(winner.member.displayAvatarURL())
             .setImage(randomWinImage)
