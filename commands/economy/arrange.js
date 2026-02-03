@@ -14,6 +14,10 @@ const cooldowns = new Map();
 // 2. آيدي المالك (للتجاوز)
 const OWNER_ID = "1145327691772481577";
 
+// ثوابت الرهان
+const MIN_BET = 10;
+const MAX_BET = 100;
+
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -25,9 +29,10 @@ module.exports = {
         .setDescription('لعبة ترتيب الأرقام')
         .addIntegerOption(option => 
             option.setName('amount')
-                .setDescription('مبلغ الرهان')
+                .setDescription('مبلغ الرهان (بين 10 و 100)')
                 .setRequired(false)
-                .setMinValue(20)
+                .setMinValue(MIN_BET)
+                .setMaxValue(MAX_BET)
         ),
 
     name: 'arrange',
@@ -96,12 +101,24 @@ module.exports = {
         // --- دالة تشغيل اللعبة ---
         const startGame = async (finalBetAmount) => {
             try {
+                // جلب بيانات المستخدم مرة أخرى قبل البدء للتأكد من الرصيد
                 const userCheck = db.prepare('SELECT mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
+                
+                // في حالة الرهان التلقائي، إذا كان الرصيد أقل من 100، نعدل الرهان ليكون الرصيد المتاح (بشرط أن يكون فوق الحد الأدنى)
+                if (userCheck && userCheck.mora < finalBetAmount && !betArg) {
+                     finalBetAmount = userCheck.mora;
+                }
+
                 if (!userCheck || userCheck.mora < finalBetAmount) {
                       clearActive(); 
                       return replyError(`💸 **رصيدك غير كافــي!** <:mirkk:1435648219488190525>`);
                 }
                 
+                if (finalBetAmount < MIN_BET) {
+                    clearActive();
+                    return replyError(`❌ **الحد الأدنى للرهان هو ${MIN_BET} ${MORA_EMOJI}**`);
+                }
+
                 db.prepare('UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?').run(finalBetAmount, userId, guildId);
 
                 // تسجيل الكولداون ووقت آخر استخدام في قاعدة البيانات
@@ -193,16 +210,10 @@ module.exports = {
                                 moraMultiplier = streakHandler.calculateMoraBuff(memberObj, db);
                             }
                             
-                            // 🔥🔥🔥 التعديل هنا: الربح = الرهان × 3 🔥🔥🔥
-                            // إذا راهن 100: الربح الأساسي 300 (المجموع 400)
-                            // إذا كان هناك بفات، ستنضرب في الـ 300
+                            // الربح = الرهان × 3
                             const profit = Math.floor(finalBetAmount * 3.0 * moraMultiplier); 
                             const totalPrize = finalBetAmount + profit; 
                             
-                            // حساب نسبة الزيادة للعرض فقط
-                            // لحساب كم زاد عن الرهان الأساسي كنسبة مئوية
-                            // المعادلة: ((الربح / الرهان) - 3) * 100 (للتحقق من البف فقط)
-                            // أو ببساطة عرض نسبة البف القادمة من الستريك
                             const buffOnlyPercent = Math.round((moraMultiplier - 1) * 100);
                             let buffText = "";
                             if (buffOnlyPercent > 0) buffText = ` (معزز +${buffOnlyPercent}%)`;
@@ -259,7 +270,6 @@ module.exports = {
                 collector.on('collect', async i => {
                     if (i.user.id !== userId) return i.reply({ content: 'هذه اللعبة ليست لك!', ephemeral: true });
 
-                    // 🔥🔥🔥 الحل الجذري: الرد فوراً 🔥🔥🔥
                     if (!i.deferred && !i.replied) await i.deferUpdate();
 
                     const clickedNum = parseInt(i.customId.split('_')[1]);
@@ -307,72 +317,38 @@ module.exports = {
         //  معالجة الأمر (Input Logic)
         // ============================================================
         
-        // 🔥 1. التحقق من المدخلات غير الصالحة (مثل الإيموجي أو النصوص)
-        if (args && args.length > 0 && isNaN(parseInt(args[0]))) {
+        // التحقق من المدخلات غير الصالحة
+        if (betArg && isNaN(betArg)) {
              clearActive();
              return replyError("❌ **الرجاء إدخال مبلغ رهان صحيح (أرقام فقط).**");
         }
 
         let finalBetAmount = betArg;
 
-        // 2. إذا حدد رقم مباشرة (رهان يدوي)
-        if (finalBetAmount && !isNaN(finalBetAmount)) {
-            if (finalBetAmount <= 0) {
-                clearActive(); return replyError("❌ **حدد مبلغ رهان صحيح.**");
+        // 1. إذا حدد رقم مباشرة (رهان يدوي)
+        if (finalBetAmount) {
+            if (finalBetAmount < MIN_BET) {
+                clearActive(); return replyError(`❌ **الحد الأدنى للرهان هو ${MIN_BET} ${MORA_EMOJI}**`);
             }
-            if (finalBetAmount > 100) {
-                clearActive(); return replyError(`❌ **الحد الأقصى للرهان هو 100 ${MORA_EMOJI}**`);
+            if (finalBetAmount > MAX_BET) {
+                clearActive(); return replyError(`❌ **الحد الأقصى للرهان هو ${MAX_BET} ${MORA_EMOJI}**`);
             }
             return startGame(finalBetAmount);
         }
 
-        // 3. نظام الرهان التلقائي (فقط إذا لم يتم إدخال أي شيء)
+        // 2. نظام الرهان التلقائي (اذا لم يحدد رقم)
+        // نراهن تلقائياً بـ 100، أو الرصيد الموجود إذا كان أقل من 100
         let userData = db.prepare('SELECT mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
         
-        if (!userData || userData.mora < 1) {
+        if (!userData || userData.mora < MIN_BET) {
             clearActive();
-            return replyError("💸 **ليس لديك مورا كافية للعب!** <:catla:1437335118153781360>");
+            return replyError(`💸 **ليس لديك مورا كافية للعب! (الحد الأدنى ${MIN_BET})** <:catla:1437335118153781360>`);
         }
 
         let proposedBet = 100;
         if (userData.mora < 100) proposedBet = userData.mora;
 
-        const autoBetEmbed = new EmbedBuilder()
-            .setColor('#2F3136')
-            .setDescription(`**هل تريد المراهنة تلقائياً بـ ${proposedBet} ${MORA_EMOJI} ؟**\n<:2BCrikka:1437806481071411391>`);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('arrange_auto_confirm').setLabel('مراهنة').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('arrange_auto_cancel').setLabel('إلغـاء').setStyle(ButtonStyle.Danger)
-        );
-
-        const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
-        
-        const filter = i => i.user.id === userId && (i.customId === 'arrange_auto_confirm' || i.customId === 'arrange_auto_cancel');
-        
-        try {
-            const confirmation = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
-
-            if (confirmation.customId === 'arrange_auto_cancel') {
-                clearActive(); 
-                // نستخدم update هنا لأنها المرة الوحيدة التي نضغط فيها
-                await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
-                return;
-            }
-
-            if (confirmation.customId === 'arrange_auto_confirm') {
-                await confirmation.deferUpdate();
-                // مسح رسالة السؤال في حالة البريفكس لترتيب الشات
-                if (!isSlash) await confirmMsg.delete().catch(() => {});
-                
-                startGame(proposedBet);
-            }
-
-        } catch (e) {
-            clearActive(); 
-            const timeoutPayload = { content: '⏰ انتهى وقت الانتظار.', embeds: [], components: [] };
-            if (isSlash) await interaction.editReply(timeoutPayload).catch(() => {});
-            else await confirmMsg.edit(timeoutPayload).catch(() => {});
-        }
+        // ابدأ اللعبة مباشرة بالرهان المقترح
+        return startGame(proposedBet);
     }
 };
