@@ -45,12 +45,12 @@ const staticKnowledge = {
     - المستوى 80 (سلطان Sultan): نيترو جيمنج (أو قيمته).
     - المستوى 90 (قيصر Kaiser): إفكت بروفايل (أو قيمته).
     - المستوى 99 (إمبراطور Emperor): أي عنصر من المتجر أو نيترو جيمنج.
-     
+      
     [رتب النخبة VIP]:
     - المُعزّز (Booster): له كل المميزات.
     - القيصر (EM Ceasar): مشترك العضوية (2.99$)، له كل المميزات.
     `,
-    
+     
     // القوانين الصارمة
     laws: `
     [المرسوم الإمبراطوري]:
@@ -88,18 +88,25 @@ function getDynamicServerData(guildId) {
 
 // دالة جلب بيانات المستخدم الفردي
 function getUserData(userId, guildId) {
-    if (!db) return { level: 0, balance: 0, streak: 0 };
+    if (!db) return { level: 0, balance: 0, bank: 0, mora: 0, streak: 0 };
     try {
-        const levelRow = db.prepare('SELECT level, xp, mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
+        // 🔥 تم التعديل: جلب mora و bank معاً
+        const levelRow = db.prepare('SELECT level, xp, mora, bank FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
         const streakRow = db.prepare('SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?').get(userId, guildId);
+        
+        const cash = levelRow ? (levelRow.mora || 0) : 0;
+        const bank = levelRow ? (levelRow.bank || 0) : 0;
+
         return {
             level: levelRow ? levelRow.level : 1,
             xp: levelRow ? levelRow.xp : 0,
-            balance: levelRow ? levelRow.mora : 0,
+            mora: cash,           // الكاش فقط
+            bank: bank,           // البنك فقط
+            balance: cash + bank, // 🔥 الرصيد الكلي (المجموع) ليراه البوت كثروة كاملة
             streak: streakRow ? streakRow.streakCount : 0
         };
     } catch (error) {
-        return { level: 0, balance: 0, streak: 0 };
+        return { level: 0, balance: 0, bank: 0, mora: 0, streak: 0 };
     }
 }
 
