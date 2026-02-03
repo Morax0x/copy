@@ -80,7 +80,7 @@ function formatTime(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// دالة تنظيف آمنة (تم تحديثها لتتعامل مع المفاتيح الخاصة بالسباق)
+// دالة تنظيف آمنة
 function safeCleanup(client, gameKey, playerIds) {
     try {
         if (client.activeGames) client.activeGames.delete(gameKey);
@@ -231,46 +231,8 @@ module.exports = {
                 const gameKey = `${channel.id}-${author.id}`; 
                 client.activeGames.add(gameKey);
 
-                const autoBetEmbed = new EmbedBuilder()
-                    .setColor(Colors.Blue)
-                    .setDescription(
-                        `✥ المـراهـنـة التلقائية بـ **${proposedBet}** ${EMOJI_MORA} ؟\n` +
-                        `✥ طريقة الاستخدام لتحديد المبلغ:\n` +
-                        `\`سباق <مبلغ الرهان> [@لاعب اختياري]\``
-                    );
-
-                const rowBtns = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('race_auto_confirm').setLabel('مـراهـنـة').setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId('race_auto_cancel').setLabel('رفـض').setStyle(ButtonStyle.Danger)
-                );
-
-                const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [rowBtns], fetchReply: true });
-                const filter = i => i.user.id === author.id && (i.customId === 'race_auto_confirm' || i.customId === 'race_auto_cancel');
-                
-                try {
-                    const confirmation = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
-                    
-                    if (confirmation.customId === 'race_auto_cancel') {
-                        await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
-                        safeCleanup(client, gameKey, author.id);
-                        return;
-                    }
-
-                    if (confirmation.customId === 'race_auto_confirm') {
-                        await confirmation.deferUpdate();
-                        if (!isSlash) await confirmMsg.delete().catch(() => {});
-                        else await confirmation.editReply({ content: '✅', embeds: [], components: [] });
-
-                        client.activeGames.delete(gameKey); 
-                        
-                        return startRaceGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
-                    }
-                } catch (e) {
-                    safeCleanup(client, gameKey, author.id);
-                    if (!isSlash) await confirmMsg.delete().catch(() => {});
-                    else await interaction.editReply({ content: '⏰ انتهى الوقت.', embeds: [], components: [] });
-                    return;
-                }
+                // بدء اللعبة مباشرة بالرهان المقترح
+                return startRaceGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
             } else {
                 client.activePlayers.add(raceKey);
                 client.raceTimestamps.set(raceKey, Date.now());
