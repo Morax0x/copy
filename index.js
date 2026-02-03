@@ -113,6 +113,9 @@ const { checkFarmIncome } = require('./handlers/farm-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
 const handleMarketCrash = require('./handlers/market-crash-handler.js');
 
+// 🔥 استدعاء دالة بدء المزاد فقط (الهاندلر للأزرار موجود في interaction-handler.js) 🔥
+const { startAuctionSystem } = require('./handlers/auction-handler.js');
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -676,6 +679,10 @@ client.on(Events.ClientReady, async () => {
     // 🔥 تشغيل نظام الصوت الجديد (كل دقيقة)
     require('./handlers/voice-timer.js')(client);
     console.log('✅ Voice XP Timer Started (Every 1 min)');
+
+    // 🔥 تشغيل نظام المزاد
+    startAuctionSystem(client); 
+    console.log('✅ Auction System Started.');
 
     client.antiRolesCache = new Map();
     await loadRoleSettings(sql, client.antiRolesCache);
