@@ -185,13 +185,22 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     // خصم المبلغ وتحديث المشتريات
     userData.mora -= finalPrice; 
     userData.shop_purchases = (userData.shop_purchases || 0) + 1;
+
+    // 🔥🔥 ✅ [تصحيح الثغرة] الحفظ الفوري هنا لمنع التلاعب أثناء العمليات التالية ✅ 🔥🔥
+    client.setLevel.run(userData);
       
     if (couponType === 'boss' && couponIdToDelete) sql.prepare("DELETE FROM user_coupons WHERE id = ?").run(couponIdToDelete);
     else if (couponType === 'role') sql.prepare("INSERT OR REPLACE INTO user_role_coupon_usage (guildID, userID, lastUsedTimestamp) VALUES (?, ?, ?)").run(interaction.guild.id, interaction.user.id, Date.now());
 
     // تنفيذ عملية الشراء بناءً على النوع
     if (callbackType === 'item') {
-        if (itemData.id === 'personal_guard_1d') { userData.hasGuard = (userData.hasGuard || 0) + 3; userData.guardExpires = 0; }
+        if (itemData.id === 'personal_guard_1d') { 
+            // تحديث الحماية - نحتاج لحفظ إضافي هنا فقط للبيانات غير المالية
+            // لكن بما أننا حفظنا المورا بالأعلى، فهذا آمن
+            userData.hasGuard = (userData.hasGuard || 0) + 3; 
+            userData.guardExpires = 0; 
+            client.setLevel.run(userData); // تحديث الحماية
+        }
         // 🔥🔥 دمج نظام الجرعات 🔥🔥
         else if (itemData.category === 'potions') { 
             ensureInventoryTable(sql); 
@@ -237,7 +246,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             // المدة 3 أيام
             const duration = 3 * 24 * 60 * 60 * 1000;
             const expiresAt = Date.now() + duration;
-            
+             
             // إضافة العامل إلى جدول البفات بنوع 'farm_worker'
             sql.prepare("INSERT INTO user_buffs (userID, guildID, buffType, multiplier, expiresAt, buffPercent) VALUES (?, ?, ?, ?, ?, ?)").run(
                 interaction.user.id, 
@@ -248,7 +257,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
                 0  // نسبة 0%
             );
         }
-        
+         
         else if (itemData.id === 'change_race') {
             try {
                 const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(interaction.guild.id);
@@ -277,11 +286,11 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         await _handleSkillUpgrade(interaction, client, sql, true); 
     }
       
-    client.setLevel.run(userData);
+    // تم الحفظ في الأعلى، لا داعي للحفظ هنا مرة أخرى
       
     let successMsg = `✅ **تمت العملية بنجاح!**\n📦 **العنصر:** ${itemData.name || itemData.raceName || 'Unknown'}\n💰 **المبلغ المدفوع:** ${finalPrice.toLocaleString()} ${EMOJI_MORA}`;
     if (discountUsed > 0) successMsg += `\n📉 **تم تطبيق خصم:** ${discountUsed}%`;
-    
+     
     // رسالة خاصة لعامل المزرعة
     if (itemData.id === 'farm_worker_3d') {
         successMsg += `\n👨‍🌾 **عامل المزرعة بدأ العمل!** سيقوم بحصاد المحاصيل وإطعام الحيوانات لمدة 3 أيام.`;
@@ -668,7 +677,7 @@ async function _handleShopButton(i, client, sql) {
                     const shopItem = potionItems.find(si => si.id === uItem.itemID); 
                     if (shopItem) { currentPotionTypesCount++; }
                 }
-                  
+                 
                 if (currentPotionTypesCount >= maxTypes) {
                     return await i.reply({ content: `🚫 **حقيبتك ممتلئة بأنواع مختلفة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxTypes}** أنواع مختلفة من الجرعات.\nاستهلك بعض الجرعات أولاً.`, flags: MessageFlags.Ephemeral });
                 }
@@ -681,6 +690,10 @@ async function _handleShopButton(i, client, sql) {
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
         if (NON_DISCOUNTABLE.includes(item.id) || item.id.startsWith('xp_buff_')) {
              await i.deferReply({ flags: MessageFlags.Ephemeral });
+             
+             // 🔥🔥 ✅ [تصحيح الثغرة] إعادة جلب البيانات فوراً بعد الانتظار ✅ 🔥🔥
+             userData = client.getLevel.get(userId, guildId);
+
              if (userData.mora < item.price) {
                  const userBank = userData.bank || 0;
                  let msg = `❌ رصيدك غير كافي!`;
@@ -698,7 +711,6 @@ async function _handleShopButton(i, client, sql) {
                 }
              }
              
-             // لن يتم تنفيذ هذا الجزء لأن القائمة فارغة، لكن نبقيه للهيكلة
              if (RESTRICTED_ITEMS.includes(item.id)) {
                  return;
              }
