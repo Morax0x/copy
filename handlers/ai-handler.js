@@ -82,8 +82,24 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         // 🔥🔥🔥 الجديد: جلب التوب كنص من الدالة الجديدة (لتمريره للسيستم برومبت) 🔥🔥🔥
         const leaderboardInfo = getLeaderboardKnowledge(sql);
 
-        // 4. 🎭 بناء الشخصية (مع تمرير معلومات التوب الجديدة)
-        const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo);
+        // ============================================================
+        // 🕒 فحص كولداون المورا (Mora Cooldown Check)
+        // ============================================================
+        // نتأكد من وجود جدول التايمر أولاً (للاحتياط)
+        sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
+        
+        const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userId);
+        const oneHour = 60 * 60 * 1000;
+        const now = Date.now();
+        let canGiveMora = true;
+
+        if (cooldownData && (now - cooldownData.lastMoraTime < oneHour)) {
+            canGiveMora = false; // لم تمر ساعة بعد
+        }
+
+        // 4. 🎭 بناء الشخصية (مع تمرير معلومات التوب وحالة الكولداون)
+        // ⚠️ ملاحظة: يجب تعديل دالة buildSystemPrompt في ملف persona.js لتستقبل المعامل الثالث (canGiveMora)
+        const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo, canGiveMora);
 
         // 5. 🧠 إرسال الطلب للمحرك
         const response = await generateResponse(
