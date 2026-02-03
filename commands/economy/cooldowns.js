@@ -165,7 +165,7 @@ module.exports = {
                 .setColor("Random")
                 .setAuthor({ name: targetUser.username, iconURL: targetUser.displayAvatarURL() })
                 .setDescription(descriptionLines.join('\n'))
-                .setImage('https://i.postimg.cc/7hhxXX8h/ec6f09156c21ff5df643e807a859d3e0.gif')
+                .setImage('https://i.postimg.cc/m2ZrjxB9/time.png')
                 .setTimestamp();
 
             // ✅ تم إرسال الإيمبد وحفظ الرسالة في متغير
