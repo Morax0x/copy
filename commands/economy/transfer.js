@@ -26,7 +26,7 @@ module.exports = {
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, guild, client, sender, senderMember, sql;
+        let interaction, message, guild, client, sender, sql;
         let receiver, amount;
 
         if (isSlash) {
@@ -35,7 +35,6 @@ module.exports = {
             client = interaction.client;
             sql = client.sql; 
             sender = interaction.user;
-            senderMember = interaction.member;
             receiver = interaction.options.getMember('المستلم');
             amount = interaction.options.getInteger('المبلغ');
             await interaction.deferReply();
@@ -45,15 +44,12 @@ module.exports = {
             client = message.client;
             sql = client.sql; 
             sender = message.author;
-            senderMember = message.member;
             receiver = message.mentions.members.first();
             amount = parseInt(args[1]);
         }
 
-        // دوال مساعدة للرد
         const reply = async (payload) => {
             if (isSlash) {
-                // إذا تم الرد مسبقاً نستخدم editReply
                 if (interaction.replied || interaction.deferred) return interaction.editReply(payload);
                 return interaction.reply(payload);
             } else {
@@ -71,96 +67,65 @@ module.exports = {
             }
         };
 
-        // 1. التحقق من المدخلات
         if (!receiver || isNaN(amount) || amount <= 0) {
             return replyError(`طريقة التحويل الصحيحة:\n- \`تحويل <@user> <المبلغ>\``);
         }
 
-        if (receiver.id === sender.id) {
-            return replyError("لا يمكنك التحويل لنفسك!");
-        }
+        if (receiver.id === sender.id) return replyError("لا يمكنك التحويل لنفسك!");
+        if (receiver.user.bot) return replyError("لا يمكنك التحويل للبوتات!");
 
-        if (receiver.user.bot) {
-            return replyError("لا يمكنك التحويل للبوتات!");
-        }
-
-        // 2. تحديث قاعدة البيانات (لضمان وجود أعمدة التتبع اليومي)
+        // Ensure DB columns exist
         try {
             sql.prepare("ALTER TABLE levels ADD COLUMN lastTransferDate TEXT DEFAULT ''").run();
             sql.prepare("ALTER TABLE levels ADD COLUMN dailyTransferCount INTEGER DEFAULT 0").run();
         } catch (e) {}
 
         const getScore = client.getLevel;
-        
         let senderData = getScore.get(sender.id, guild.id);
         if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id };
 
-        // 3. فحص القرض
+        // Check Loan
         const loanData = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(sender.id, guild.id);
         if (loanData && loanData.remainingAmount > 0) {
-            return replyError(`❌ **عذراً!** عليك قرض بقيمة **${loanData.remainingAmount.toLocaleString()}** مورا.\nيجب سداد القرض بالكامل قبل أن تتمكن من تحويل الأموال.`);
+            return replyError(`❌ **عذراً!** عليك قرض بقيمة **${loanData.remainingAmount.toLocaleString()}** مورا.`);
         }
 
-        // 4. فحص الكولداون (الوقت بين التحويلات)
+        // Check Cooldown
         const now = Date.now();
         const timeLeft = (senderData.lastTransfer || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
             const minutes = Math.floor(timeLeft / 60000);
             const seconds = Math.floor((timeLeft % 60000) / 1000);
-            return replyError(`🕐 يمكنك التحويل مرة كل 5 دقائق. يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية**.`);
+            return replyError(`🕐 يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية**.`);
         }
 
-        // 5. التحقق من الرصيد
-        if (senderData.mora < amount) {
-            return replyError(`ليس لديك مورا كافية لإتمام هذا التحويل! (رصيدك: ${senderData.mora.toLocaleString()})`);
-        }
+        if (senderData.mora < amount) return replyError(`ليس لديك مورا كافية! (رصيدك: ${senderData.mora.toLocaleString()})`);
 
-        // 6. حساب الضريبة بناءً على توقيت السعودية
-        // الحصول على تاريخ اليوم بتوقيت السعودية (YYYY-MM-DD)
+        // Display Logic (Initial Calculation for User View only)
         const saudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+        let tempDailyCount = senderData.dailyTransferCount || 0;
+        if (senderData.lastTransferDate !== saudiDate) tempDailyCount = 0;
+        
+        let displayTaxRate = (tempDailyCount === 0) ? 0 : BASE_TAX_RATE;
+        const displayTaxAmount = Math.floor(amount * displayTaxRate);
+        const displayAmountReceived = amount - displayTaxAmount;
 
-        // تصفير العداد إذا كان اليوم مختلف
-        if (senderData.lastTransferDate !== saudiDate) {
-            senderData.dailyTransferCount = 0;
-            senderData.lastTransferDate = saudiDate;
-        }
-
-        // تحديد نسبة الضريبة
-        let currentTaxRate = BASE_TAX_RATE; // الافتراضي 3%
-        let isFree = false;
-
-        if (senderData.dailyTransferCount === 0) {
-            currentTaxRate = 0; // أول تحويل مجاني
-            isFree = true;
-        }
-
-        const taxAmount = Math.floor(amount * currentTaxRate);
-        const amountReceived = amount - taxAmount;
-
-        // 7. إنشاء رسالة التأكيد والأزرار
         const confirmEmbed = new EmbedBuilder()
-            .setColor("#F1C40F") // أصفر للتحذير/الانتظار
+            .setColor("#F1C40F")
             .setTitle('⚠️ تأكيد التحويل')
-            .setDescription(`سيـتـم تحويـل **${amount.toLocaleString()}** <:mora:1435647151349698621> إلى ${receiver}\n\n**تفاصيل العملية:**\n• المبلغ: ${amount.toLocaleString()}\n• الضريبة (${isFree ? 'مجاني' : '3%'}): ${taxAmount.toLocaleString()}\n• سيصل للمستلم: **${amountReceived.toLocaleString()}**`)
-            .setFooter({ text: isFree ? "💡 هذا هو تحويلك اليومي المجاني!" : "💡 لقد استهلكت تحويلك المجاني اليوم." });
+            .setDescription(`سيـتـم تحويـل **${amount.toLocaleString()}** <:mora:1435647151349698621> إلى ${receiver}\n\n**تفاصيل العملية:**\n• المبلغ: ${amount.toLocaleString()}\n• الضريبة (${displayTaxRate === 0 ? 'مجاني' : '3%'}): ${displayTaxAmount.toLocaleString()}\n• سيصل للمستلم: **${displayAmountReceived.toLocaleString()}**`)
+            .setFooter({ text: (displayTaxRate === 0) ? "💡 هذا هو تحويلك اليومي المجاني!" : "💡 لقد استهلكت تحويلك المجاني اليوم." });
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('confirm_transfer')
-                .setLabel('تـأكيد')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('cancel_transfer')
-                .setLabel('الغـاء')
-                .setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تـأكيد').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('الغـاء').setStyle(ButtonStyle.Danger)
         );
 
         const msgResponse = await reply({ embeds: [confirmEmbed], components: [row], fetchReply: true });
 
-        // 8. التعامل مع الأزرار
         const collector = msgResponse.createMessageComponentCollector({
             componentType: ComponentType.Button,
-            time: 30000, // 30 ثانية للتأكيد
+            time: 30000,
             filter: (i) => i.user.id === sender.id
         });
 
@@ -171,41 +136,59 @@ module.exports = {
             }
 
             if (i.customId === 'confirm_transfer') {
-                // إعادة التحقق من الرصيد (لتجنب الثغرات أثناء الانتظار)
-                const freshData = client.getLevel.get(sender.id, guild.id);
-                if (!freshData || freshData.mora < amount) {
+                // 🔥🔥🔥 تصحيح أمني هام: إعادة جلب البيانات وحساب الضريبة لحظة الضغط 🔥🔥🔥
+                
+                // 1. إعادة جلب بيانات المرسل
+                const freshSenderData = client.getLevel.get(sender.id, guild.id);
+                
+                // 2. التحقق من الرصيد مجدداً
+                if (!freshSenderData || freshSenderData.mora < amount) {
                     await i.update({ content: "❌ **فشلت العملية:** لم يعد لديك رصيد كافي.", embeds: [], components: [] });
                     return collector.stop('no_money');
                 }
 
-                let receiverData = client.getLevel.get(receiver.id, guild.id);
-                if (!receiverData) {
-                    receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
+                // 3. إعادة التحقق من التاريخ والعداد اليومي (لتطبيق الضريبة الصحيحة الآن)
+                const currentSaudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+                if (freshSenderData.lastTransferDate !== currentSaudiDate) {
+                    freshSenderData.dailyTransferCount = 0;
+                    freshSenderData.lastTransferDate = currentSaudiDate;
                 }
 
-                // تنفيذ الخصم والإضافة
-                freshData.mora -= amount;
-                freshData.lastTransfer = Date.now();
+                // 4. إعادة حساب الضريبة بناءً على البيانات الحالية (وليس القديمة)
+                let realTaxRate = BASE_TAX_RATE;
+                let isFree = false;
+                if ((freshSenderData.dailyTransferCount || 0) === 0) {
+                    realTaxRate = 0;
+                    isFree = true;
+                }
+
+                const realTaxAmount = Math.floor(amount * realTaxRate);
+                const realAmountReceived = amount - realTaxAmount;
+
+                // 5. تنفيذ الخصم والحفظ الفوري
+                freshSenderData.mora -= amount;
+                freshSenderData.dailyTransferCount = (freshSenderData.dailyTransferCount || 0) + 1;
+                freshSenderData.lastTransfer = Date.now();
                 
-                // تحديث عداد التحويلات اليومي والتاريخ
-                freshData.dailyTransferCount = (freshData.dailyTransferCount || 0) + 1;
-                freshData.lastTransferDate = saudiDate;
+                // حفظ بيانات المرسل فوراً لمنع التكرار
+                client.setLevel.run(freshSenderData); 
 
-                receiverData.mora = (receiverData.mora || 0) + amountReceived;
-
-                client.setLevel.run(freshData);
+                // 6. إضافة المبلغ للمستلم
+                let receiverData = client.getLevel.get(receiver.id, guild.id);
+                if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
+                receiverData.mora = (receiverData.mora || 0) + realAmountReceived;
                 client.setLevel.run(receiverData);
 
-                // رسالة النجاح
+                // 7. رسالة النجاح
                 const successEmbed = new EmbedBuilder()
-                    .setColor("Green") // أخضر للنجاح
+                    .setColor("Green")
                     .setTitle('✅ تـم التـحويـل بنجـاح')
                     .setDescription([
                         `**المرسل:** ${sender.username}`,
                         `**المستلم:** ${receiver.user.username}`,
                         `\n**المبلغ المُرسل:** ${amount.toLocaleString()} <:mora:1435647151349698621>`,
-                        `**الضريبة (${isFree ? '0%' : '3%'}):** ${taxAmount.toLocaleString()} <:mora:1435647151349698621>`,
-                        `**المبلغ المستلم:** ${amountReceived.toLocaleString()} <:mora:1435647151349698621>`
+                        `**الضريبة (${isFree ? '0%' : '3%'}):** ${realTaxAmount.toLocaleString()} <:mora:1435647151349698621>`,
+                        `**المبلغ المستلم:** ${realAmountReceived.toLocaleString()} <:mora:1435647151349698621>`
                     ].join('\n'))
                     .setImage('https://i.postimg.cc/vHhJTgyx/download-3.jpg')
                     .setTimestamp();
@@ -217,11 +200,9 @@ module.exports = {
 
         collector.on('end', async (collected, reason) => {
             if (reason === 'time') {
-                if (isSlash) {
-                    await interaction.editReply({ content: "⏰ **انتهى وقت التأكيد، تم إلغاء التحويل.**", embeds: [], components: [] }).catch(() => {});
-                } else {
-                    await msgResponse.edit({ content: "⏰ **انتهى وقت التأكيد، تم إلغاء التحويل.**", embeds: [], components: [] }).catch(() => {});
-                }
+                const timeoutMsg = { content: "⏰ **انتهى وقت التأكيد، تم إلغاء التحويل.**", embeds: [], components: [] };
+                if (isSlash) await interaction.editReply(timeoutMsg).catch(() => {});
+                else await msgResponse.edit(timeoutMsg).catch(() => {});
             }
         });
     }
