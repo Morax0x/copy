@@ -3,8 +3,13 @@ const { EmbedBuilder } = require('discord.js');
 // 🔥 دالة لتنظيف الاسم 🔥
 function cleanName(name) {
     if (!name) return "Unknown";
+    // قائمة الفواصل التي تفصل الاسم عن الزخارف/الستريك
     const separators = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|', '~', '⚡'];
+    
+    // التعبير النمطي: يبحث عن (مسافة اختيارية) + (أحد الفواصل) + (كل شيء بعده للنهاية)
     const regex = new RegExp(`\\s*([${separators.join('')}]).*`, 'g');
+    
+    // استبدال المطابقة بـ "لاشيء" مما يؤدي لحذف الفاصل وما بعده
     return name.replace(regex, '').trim();
 }
 
@@ -31,7 +36,7 @@ function handleLeaderSuccession(players, log) {
     // ============================================================
     // 2. مرحلة الوراثة (Succession Phase)
     // ============================================================
-    
+     
     // البحث عن القائد الذي مات للتو (أو ميت سابقاً ولم يتم تعيين بديل له)
     const deadLeader = players.find(p => p.class === 'Leader' && p.isDead);
 
@@ -47,7 +52,7 @@ function handleLeaderSuccession(players, log) {
     // البحث عن خليفة:
     // الشروط: حي + ليس القائد الحالي + ليس قائداً سابقاً + (يفضل ألا يكون كاهناً)
     let successor = players.find(p => !p.isDead && p.class !== 'Leader' && p.class !== 'Former Leader' && p.class !== 'Priest');
-    
+     
     // إذا لم نجد أحداً غير الكاهن أو القادة السابقين، نوسع البحث
     if (!successor) {
         successor = players.find(p => !p.isDead && p.class !== 'Leader');
