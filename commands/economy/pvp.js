@@ -85,10 +85,8 @@ module.exports = {
         const channel = interactionOrMessage.channel;
         const sql = client.sql; // تعريف sql مبكراً
 
-        if (activePvpChallenges.has(channel.id)) {
-            return replyError("هناك تحدٍ نشط بالفعل في هذه القناة. يرجى الانتظار حتى ينتهي.");
-        }
-
+        // 🔥🔥🔥 تم إزالة التحقق من وجود تحدي نشط في القناة 🔥🔥🔥
+        
         if (bet <= 0) {
             return replyError("مبلغ الرهان يجب أن يكون رقماً موجباً.");
         }
