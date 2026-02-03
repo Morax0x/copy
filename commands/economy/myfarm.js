@@ -267,33 +267,32 @@ module.exports = {
 
         const landData = await renderLand(mockInteraction, client, sql);
 
-        // 🔥 بناء الأزرار (فقط إذا كان المالك) 🔥
-        let initialComponents = [];
-        if (isOwner) {
-            const navigationRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
-                new ButtonBuilder().setCustomId('open_feed_store').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾')
-            );
-            // دمج أزرار الأرض (من landData) مع أزرار التنقل
-            initialComponents = [...(landData.components || []), navigationRow];
-        }
+        // 🔥 بناء الأزرار (تظهر للجميع الآن) 🔥
+        const navigationRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
+            new ButtonBuilder().setCustomId('open_feed_store').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾')
+        );
+        // دمج أزرار الأرض (من landData) مع أزرار التنقل
+        const initialComponents = [...(landData.components || []), navigationRow];
 
         const msg = await reply({ 
             embeds: landData.embeds || [], 
-            components: initialComponents, // ✅ فارغ للزوار، مليء للمالك
+            components: initialComponents,
             files: landData.files, 
             content: landData.content || '',
             fetchReply: true 
         });
 
-        // 🔥🔥 إذا لم يكن المالك، نتوقف هنا (وضع المشاهدة فقط) 🔥🔥
-        if (!isOwner) return;
-
         // ============================================================
-        // 🎮 بدء الكوليكتور (للمالك فقط)
+        // 🎮 بدء الكوليكتور
         // ============================================================
         const collector = msg.createMessageComponentCollector({ 
-            filter: i => i.user.id === user.id, 
+            // 🔥 الفلتر: يسمح فقط لمن طلب الأمر بالتفاعل
+            filter: i => {
+                if (i.user.id === user.id) return true;
+                i.reply({ content: `🚫 هذا الأمر خاص بـ ${user}`, flags: MessageFlags.Ephemeral });
+                return false;
+            }, 
             time: 300000 
         });
 
@@ -347,6 +346,9 @@ module.exports = {
                 }
                 // زر الإطعام
                 else if (i.customId === 'btn_feed_animal') {
+                    // 🔥 منع الإطعام إذا لم يكن المالك 🔥
+                    if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: MessageFlags.Ephemeral });
+
                     const userAnimalsRows = sql.prepare("SELECT animalID FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
                     const distinctAnimalIds = [...new Set(userAnimalsRows.map(r => r.animalID))];
                     
