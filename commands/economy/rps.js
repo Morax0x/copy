@@ -8,7 +8,7 @@ const PAPER = '📄';
 const SCISSORS = '✂️';
 const MOVES = [ROCK, PAPER, SCISSORS];
 
-const MIN_BET = 20;
+const MIN_BET = 10;
 const MAX_BET_SOLO = 100; 
 const MAX_LOAN_BET = 500; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; 
@@ -85,8 +85,9 @@ module.exports = {
 
         // 🛑🛑 1. الحماية من التكرار 🛑🛑
         if (client.activePlayers.has(user.id)) {
-            if (isSlash) return interaction.editReply({ content: "🚫 لديك لعبة أو طلب معلق حالياً! أكمله أولاً." });
-            return; 
+            const msg = "🚫 لديك لعبة أو طلب معلق حالياً! أكمله أولاً.";
+            if (isSlash) return interaction.editReply({ content: msg });
+            return message.reply(msg); 
         }
 
         const sql = client.sql;
@@ -116,55 +117,8 @@ module.exports = {
             }
             if (userBalance < 100) proposedBet = userBalance;
 
-            const autoBetEmbed = new EmbedBuilder()
-                .setColor(Colors.Blue)
-                .setDescription(
-                    `✥ المـراهـنـة التلقائية بـ **${proposedBet}** ${EMOJI_MORA} ؟\n` +
-                    `✥ طريقة الاستخدام لتحديد المبلغ:\n` +
-                    `\`حجرة <مبلغ الرهان> [@لاعب اختياري]\``
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('rps_auto_confirm').setLabel('مـراهـنـة').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('rps_auto_cancel').setLabel('رفـض').setStyle(ButtonStyle.Danger)
-            );
-
-            const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
-            
-            // حجز القناة
-            client.activeGames.add(channel.id);
-
-            const filter = i => i.user.id === user.id && (i.customId === 'rps_auto_confirm' || i.customId === 'rps_auto_cancel');
-            
-            try {
-                const confirmation = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
-                
-                if (confirmation.customId === 'rps_auto_cancel') {
-                    await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
-                    // 🔓 تحرير اللاعب والقناة
-                    client.activeGames.delete(channel.id);
-                    client.activePlayers.delete(user.id);
-                    return;
-                }
-
-                if (confirmation.customId === 'rps_auto_confirm') {
-                    await confirmation.deferUpdate();
-                    if (!isSlash) await confirmMsg.delete().catch(() => {});
-                    else await confirmation.editReply({ content: '✅', embeds: [], components: [] });
-
-                    // إزالة حجز القناة فقط، ونبقي حجز اللاعب لأنه بدأ اللعب
-                    client.activeGames.delete(channel.id);
-                    
-                    return startGame(channel, user, member, opponentInput, proposedBet, client, guild, sql, isSlash ? interaction : null);
-                }
-            } catch (e) {
-                // 🔓 تحرير اللاعب والقناة عند انتهاء الوقت
-                client.activeGames.delete(channel.id);
-                client.activePlayers.delete(user.id);
-                if (!isSlash) await confirmMsg.delete().catch(() => {});
-                else await interaction.editReply({ content: '⏰ انتهى الوقت.', embeds: [], components: [] });
-                return;
-            }
+            // بدء اللعبة مباشرة بالرهان المقترح
+            return startGame(channel, user, member, opponentInput, proposedBet, client, guild, sql, isSlash ? interaction : null);
         } else {
             // اللاعب محجوز بالفعل في الأعلى، نبدأ اللعبة مباشرة
             return startGame(channel, user, member, opponentInput, betInput, client, guild, sql, isSlash ? interaction : null);
