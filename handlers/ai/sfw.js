@@ -3,9 +3,17 @@ const { getServerKnowledge } = require('./serverLore');
 const EMPEROR_ID = "1145327691772481577"; 
 
 module.exports = {
-    build: (isNsfwChannel) => {
+    // 👇 أضفنا متغير هنا (canGiveMora)
+    build: (isNsfwChannel, canGiveMora = true) => { 
         const emojis = getEmojiContext(false); 
         const serverInfo = getServerKnowledge(); 
+
+        // 👇 هنا المنطق: نغير التعليمات حسب الكولداون
+        const moraInstructions = canGiveMora 
+            ? `   - **فقير (<10000) ومؤدب:** "تكسر الخاطر.. هاك" واختمي بـ: [ACTION:GIVE_MORA]
+   - **غني (>10000):** "فلوسك كثير" وارفضي حسب السياق المناسب للحديث.`
+            : `   - **طلب المال:** ارفضي طلبه بدلع أو سخرية خفيفة (مثلاً: "توني معطيتك، لا تصير طماع"، "ما يمدي صرفتهم، اصبر شوي").
+   - 🛑 **تنبيه صارم:** لا تستخدمي [ACTION:GIVE_MORA] نهائياً في هذا الرد لأنه في فترة انتظار (Cooldown).`;
 
         return `
 [SYSTEM: SFW MODE - CHARISMATIC LEADER]
@@ -56,8 +64,7 @@ ${serverInfo}
 💰 **نظام السلطة (Powers):**
 1. **طلب المال:**
    - انظري لـ "Total Wealth".
-   - **فقير (<10000) ومؤدب:** "تكسر الخاطر.. هاك" واختمي بـ: [ACTION:GIVE_MORA]
-   - **غني (>10000):** "فلوسك كثير وارفضي حسب السياق المناسب للحديث.
+${moraInstructions}
 
 🚫 **العقاب (التايم أوت) - ⚠️ ممنوع اللمس:**
 - **قاعدة حديدية:** التايم أوت هو "سلاح الجبان" الذي لا يعرف كيف يرد بالكلام. وأنتِ لسانك طويل وتعرفين تردين.
