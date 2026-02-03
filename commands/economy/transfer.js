@@ -67,6 +67,14 @@ module.exports = {
             }
         };
 
+        // 🛡️ تهيئة قائمة اللاعبين النشطين
+        if (!client.activePlayers) client.activePlayers = new Set();
+
+        // 🛡️ 1. الحماية: التحقق مما إذا كان اللاعب مشغولاً
+        if (client.activePlayers.has(sender.id)) {
+            return replyError("🚫 **لا يمكنك التحويل الآن!** أنت مشغول في لعبة أخرى أو لديك عملية معلقة.");
+        }
+
         if (!receiver || isNaN(amount) || amount <= 0) {
             return replyError(`طريقة التحويل الصحيحة:\n- \`تحويل <@user> <المبلغ>\``);
         }
@@ -121,6 +129,9 @@ module.exports = {
             new ButtonBuilder().setCustomId('cancel_transfer').setLabel('الغـاء').setStyle(ButtonStyle.Danger)
         );
 
+        // 🛡️ 2. الحماية: قفل اللاعب عند بدء التأكيد
+        client.activePlayers.add(sender.id);
+
         const msgResponse = await reply({ embeds: [confirmEmbed], components: [row], fetchReply: true });
 
         const collector = msgResponse.createMessageComponentCollector({
@@ -129,32 +140,36 @@ module.exports = {
             filter: (i) => i.user.id === sender.id
         });
 
+        // دالة لتحرير اللاعب
+        const unlockPlayer = () => {
+            if (client.activePlayers.has(sender.id)) {
+                client.activePlayers.delete(sender.id);
+            }
+        };
+
         collector.on('collect', async (i) => {
             if (i.customId === 'cancel_transfer') {
+                unlockPlayer(); // 🔓 تحرير
                 await i.update({ content: "❌ **تم إلغاء عملية التحويل.**", embeds: [], components: [] });
                 return collector.stop('cancelled');
             }
 
             if (i.customId === 'confirm_transfer') {
-                // 🔥🔥🔥 تصحيح أمني هام: إعادة جلب البيانات وحساب الضريبة لحظة الضغط 🔥🔥🔥
-                
-                // 1. إعادة جلب بيانات المرسل
+                // 🔥 إعادة جلب البيانات والتحقق النهائي
                 const freshSenderData = client.getLevel.get(sender.id, guild.id);
                 
-                // 2. التحقق من الرصيد مجدداً
                 if (!freshSenderData || freshSenderData.mora < amount) {
+                    unlockPlayer(); // 🔓 تحرير
                     await i.update({ content: "❌ **فشلت العملية:** لم يعد لديك رصيد كافي.", embeds: [], components: [] });
                     return collector.stop('no_money');
                 }
 
-                // 3. إعادة التحقق من التاريخ والعداد اليومي (لتطبيق الضريبة الصحيحة الآن)
                 const currentSaudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
                 if (freshSenderData.lastTransferDate !== currentSaudiDate) {
                     freshSenderData.dailyTransferCount = 0;
                     freshSenderData.lastTransferDate = currentSaudiDate;
                 }
 
-                // 4. إعادة حساب الضريبة بناءً على البيانات الحالية (وليس القديمة)
                 let realTaxRate = BASE_TAX_RATE;
                 let isFree = false;
                 if ((freshSenderData.dailyTransferCount || 0) === 0) {
@@ -165,21 +180,21 @@ module.exports = {
                 const realTaxAmount = Math.floor(amount * realTaxRate);
                 const realAmountReceived = amount - realTaxAmount;
 
-                // 5. تنفيذ الخصم والحفظ الفوري
+                // 🛡️ 3. الحماية: الخصم والحفظ للمرسل أولاً (Atomic-like)
                 freshSenderData.mora -= amount;
                 freshSenderData.dailyTransferCount = (freshSenderData.dailyTransferCount || 0) + 1;
                 freshSenderData.lastTransfer = Date.now();
-                
-                // حفظ بيانات المرسل فوراً لمنع التكرار
                 client.setLevel.run(freshSenderData); 
 
-                // 6. إضافة المبلغ للمستلم
+                // 🛡️ 4. الحماية: إضافة المبلغ للمستلم وحفظه بعد نجاح الخصم
                 let receiverData = client.getLevel.get(receiver.id, guild.id);
                 if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
                 receiverData.mora = (receiverData.mora || 0) + realAmountReceived;
                 client.setLevel.run(receiverData);
 
-                // 7. رسالة النجاح
+                // 5. فتح القفل وإرسال النجاح
+                unlockPlayer(); // 🔓 تحرير
+
                 const successEmbed = new EmbedBuilder()
                     .setColor("Green")
                     .setTitle('✅ تـم التـحويـل بنجـاح')
@@ -200,6 +215,7 @@ module.exports = {
 
         collector.on('end', async (collected, reason) => {
             if (reason === 'time') {
+                unlockPlayer(); // 🔓 تحرير عند انتهاء الوقت
                 const timeoutMsg = { content: "⏰ **انتهى وقت التأكيد، تم إلغاء التحويل.**", embeds: [], components: [] };
                 if (isSlash) await interaction.editReply(timeoutMsg).catch(() => {});
                 else await msgResponse.edit(timeoutMsg).catch(() => {});
