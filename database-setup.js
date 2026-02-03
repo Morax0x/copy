@@ -80,8 +80,16 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS ai_restricted_categories (guildID TEXT, categoryID TEXT, PRIMARY KEY (categoryID))",
         "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))",
 
+        // --- 🔥 جداول نظام العائلة (إصلاح شامل) 🔥 ---
+        "CREATE TABLE IF NOT EXISTS family_config (guildID TEXT PRIMARY KEY, maleRole TEXT, femaleRole TEXT, divorceFee INTEGER DEFAULT 5000, adoptFee INTEGER DEFAULT 2000)",
+        "CREATE TABLE IF NOT EXISTS marriages (userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT, PRIMARY KEY (userID, guildID))",
+        "CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate INTEGER, guildID TEXT)",
+
         // 🔥🔥🔥 [مهم] هذا هو الجدول الذي كان ناقصاً 🔥🔥🔥
-        "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))"
+        "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
+
+        // 🔥🔥 جدول المزاد الجديد 🔥🔥
+        "CREATE TABLE IF NOT EXISTS active_auctions (messageID TEXT PRIMARY KEY, channelID TEXT, hostID TEXT, item_name TEXT, current_bid INTEGER, highest_bidder TEXT, min_increment INTEGER, end_time INTEGER, image_url TEXT, buy_now_price INTEGER DEFAULT 0)"
     ];
 
     sql.transaction((tbls) => {
@@ -90,6 +98,7 @@ function setupDatabase(clientOrSql) {
 
     sql.prepare("DROP TABLE IF EXISTS command_channels").run();
 
+    // 🛠️ دالة مساعدة لإضافة الأعمدة الناقصة بأمان
     function ensureColumn(table, column, typeDef) {
         try {
             const cols = sql.prepare(`PRAGMA table_info(${table})`).all();
@@ -100,6 +109,7 @@ function setupDatabase(clientOrSql) {
         } catch (e) { }
     }
 
+    // --- صيانة الجداول الرئيسية ---
     ['mora', 'lastWork', 'lastDaily', 'dailyStreak', 'bank', 'lastInterest', 'totalInterestEarned', 'hasGuard', 'guardExpires', 'lastCollected', 'totalVCTime', 'lastRob', 'lastGuess', 'lastRPS', 'lastRoulette', 'lastTransfer', 'lastDeposit', 'shop_purchases', 'total_meow_count', 'boost_count', 'lastPVP', 'lastFarmYield', 'lastFish', 'rodLevel', 'boatLevel', 'lastMemory', 'lastArrange', 'last_dungeon', 'lastRace'].forEach(col => ensureColumn('levels', col, 'INTEGER DEFAULT 0'));
       
     ensureColumn('levels', 'dungeon_tickets', 'INTEGER DEFAULT 0');
@@ -124,35 +134,32 @@ function setupDatabase(clientOrSql) {
     ensureColumn('streaks', 'highestStreak', 'INTEGER DEFAULT 0');
     ensureColumn('streaks', 'has12hWarning', 'INTEGER DEFAULT 0');
       
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN prefix TEXT DEFAULT '-'").run(); } catch (e) {} 
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN voiceChannelID TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusType TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN boostChannelID TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN shopLogChannelID TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN serverTag TEXT").run(); } catch (e) {} 
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN casinoChannelID2 TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE auto_responses ADD COLUMN createdBy TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE auto_responses ADD COLUMN expiresAt INTEGER").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level INTEGER DEFAULT 1").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN max_dungeon_floor INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_wins INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_join_count INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN last_join_reset INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN levelChannel TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN modLogChannelID TEXT").run(); } catch (e) {}
-    try { sql.prepare("ALTER TABLE settings ADD COLUMN bumpNotifyRoleID TEXT").run(); } catch (e) {} 
-
-    ensureColumn('user_portfolio', 'purchasePrice', 'INTEGER DEFAULT 0');
-     
-    ensureColumn('user_farm', 'quantity', 'INTEGER DEFAULT 1');
-    ensureColumn('user_farm', 'lastFedTimestamp', `INTEGER DEFAULT ${Date.now()}`); 
-
+    // --- صيانة إعدادات السيرفر ---
     const settingsCols = ["questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", "dropColor", "dropFooter", "dropButtonLabel", "dropButtonEmoji", "dropMessageContent", "lastMediaUpdateSent", "lastMediaUpdateMessageID", "lastMediaUpdateChannelID", "shopChannelID", "bumpChannelID", "customRoleAnchorID", "customRolePanelTitle", "customRolePanelDescription", "customRolePanelImage", "customRolePanelColor", "lastQuestPanelChannelID", "streakTimerChannelID", "dailyTimerChannelID", "weeklyTimerChannelID", "img_level", "img_mora", "img_streak", "img_media_streak", "img_strongest", "img_weekly_xp", "img_daily_xp", "img_achievements", "voiceChannelID", "savedStatusType", "savedStatusText", "marketStatus", "boostChannelID", "shopLogChannelID", "serverTag", "levelChannel", "modLogChannelID", "bumpNotifyRoleID"];
     settingsCols.forEach(col => ensureColumn('settings', col, 'TEXT'));
-      
+    ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'"); // إصلاح البريفكس المفقود
+
+    // --- 🔥 صيانة جداول العائلة (المهم جداً) 🔥 ---
+    // هذا الجزء سيضيف الأعمدة الناقصة إذا كان الجدول موجوداً بأسماء قديمة
+    ensureColumn('marriages', 'partnerID', 'TEXT');
+    ensureColumn('marriages', 'userID', 'TEXT');
+    ensureColumn('marriages', 'guildID', 'TEXT');
+    ensureColumn('marriages', 'marriageDate', 'INTEGER');
+
+    ensureColumn('children', 'parentID', 'TEXT');
+    ensureColumn('children', 'childID', 'TEXT');
+    ensureColumn('children', 'guildID', 'TEXT');
+    ensureColumn('children', 'adoptDate', 'INTEGER');
+
+    ensureColumn('family_config', 'maleRole', 'TEXT');
+    ensureColumn('family_config', 'femaleRole', 'TEXT');
+    ensureColumn('family_config', 'divorceFee', 'INTEGER DEFAULT 5000');
+    ensureColumn('family_config', 'adoptFee', 'INTEGER DEFAULT 2000');
+
+    // --- إكمال الباقي ---
+    ensureColumn('user_portfolio', 'purchasePrice', 'INTEGER DEFAULT 0');
+    ensureColumn('user_farm', 'quantity', 'INTEGER DEFAULT 1');
+    ensureColumn('user_farm', 'lastFedTimestamp', `INTEGER DEFAULT ${Date.now()}`); 
     ensureColumn('quest_notifications', 'levelNotif', 'INTEGER DEFAULT 1');
     ensureColumn('active_giveaways', 'xpReward', 'INTEGER DEFAULT 0');
     ensureColumn('active_giveaways', 'moraReward', 'INTEGER DEFAULT 0');
