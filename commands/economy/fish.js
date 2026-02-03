@@ -179,13 +179,17 @@ module.exports = {
                 sequence.push(ARROW_GAME_OPTIONS[Math.floor(Math.random() * ARROW_GAME_OPTIONS.length)]);
             }
 
-            // إنشاء صف الأزرار (ثابت: فوق، تحت، يسار، يمين)
-            const gameRow = new ActionRowBuilder();
-            ARROW_GAME_OPTIONS.forEach(btn => {
-                gameRow.addComponents(
-                    new ButtonBuilder().setCustomId(`fish_click_${btn.id}`).setEmoji(btn.emoji).setStyle(ButtonStyle.Secondary)
-                );
-            });
+            // إنشاء صفوف الأزرار بتنسيق: فوق (صف 1)، تحت (صف 2)، يمين يسار (صف 3)
+            const rowUp = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`fish_click_up`).setEmoji('⬆️').setStyle(ButtonStyle.Secondary)
+            );
+            const rowDown = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`fish_click_down`).setEmoji('⬇️').setStyle(ButtonStyle.Secondary)
+            );
+            const rowSide = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`fish_click_right`).setEmoji('➡️').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`fish_click_left`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+            );
 
             // عرض التسلسل المطلوب
             const sequenceEmojis = sequence.map(s => s.emoji).join('  ');
@@ -200,7 +204,7 @@ module.exports = {
                 const updatePayload = { 
                     content: `**${sequenceEmojis}**`, 
                     embeds: [biteEmbed], 
-                    components: [gameRow] 
+                    components: [rowUp, rowDown, rowSide] 
                 };
                 if (isSlash) await interactionOrMessage.editReply(updatePayload);
                 else await msg.edit(updatePayload);
