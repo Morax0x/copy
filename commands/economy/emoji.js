@@ -2,8 +2,8 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const MIN_BET = 50;
-const MAX_BET_SOLO = 100; 
+const MIN_BET = 10;
+const MAX_BET = 100; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000; 
 const MEMORY_TIME = 3000; 
 
@@ -32,6 +32,7 @@ module.exports = {
                 .setDescription('مبلغ الرهان (اختياري)')
                 .setRequired(false)
                 .setMinValue(MIN_BET)
+                .setMaxValue(MAX_BET)
         ),
 
     name: 'emoji',
@@ -77,7 +78,6 @@ module.exports = {
         if (!client.activePlayers) client.activePlayers = new Set();
         
         // التحقق من اللاعب فقط (هل هو يلعب حالياً؟)
-        // تم إزالة التحقق من القناة للسماح بتعدد الألعاب
         if (client.activePlayers.has(user.id)) {
             return replyError("🚫 لديك لعبة نشطة بالفعل! أكملها أولاً.");
         }
@@ -96,74 +96,37 @@ module.exports = {
             }
         }
 
-        // --- المراهنة التلقائية ---
-        if (!betInput) {
-            let proposedBet = 100;
+        // --- منطق الرهان ---
+        let finalBetAmount = betInput;
+
+        // 1. إذا حدد رقم مباشرة (رهان يدوي)
+        if (finalBetAmount) {
+            if (finalBetAmount < MIN_BET) return replyError(`❌ الحد الأدنى للرهان هو **${MIN_BET}** ${EMOJI_MORA}.`);
+            if (finalBetAmount > MAX_BET) return replyError(`🚫 الحد الأقصى للرهان هو **${MAX_BET}** ${EMOJI_MORA}.`);
+        } 
+        // 2. رهان تلقائي (لم يحدد رقم)
+        else {
             if (userData.mora < MIN_BET) return replyError(`❌ لا تملك مورا كافية (الحد الأدنى ${MIN_BET})!`);
-            if (userData.mora < 100) proposedBet = userData.mora;
-
-            const autoBetEmbed = new EmbedBuilder()
-                .setColor(Colors.Blue)
-                .setDescription(
-                    `✥ المـراهـنـة التلقائية بـ **${proposedBet}** ${EMOJI_MORA} ؟\n` +
-                    `✥ ستظهر 9 إيموجيات لمدة 3 ثواني.. احفظ مكانها جيداً!`
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('mem_auto_confirm').setLabel('ابدأ اللعب').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('mem_auto_cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger)
-            );
-
-            const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
             
-            // قفل اللاعب
-            client.activePlayers.add(user.id);
-
-            const filter = i => i.user.id === user.id && (i.customId === 'mem_auto_confirm' || i.customId === 'mem_auto_cancel');
-            
-            try {
-                const confirmation = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
-                
-                if (confirmation.customId === 'mem_auto_cancel') {
-                    await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
-                    client.activePlayers.delete(user.id);
-                    return;
-                }
-
-                if (confirmation.customId === 'mem_auto_confirm') {
-                    await confirmation.deferUpdate(); 
-                    // تحرير مؤقت للدخول في startMemoryGame (لأن الدالة ستغلق عليه مرة أخرى)
-                    client.activePlayers.delete(user.id);
-                    return startMemoryGame(channel, user, member, proposedBet, client, guild, sql, confirmation);
-                }
-            } catch (e) {
-                // تحرير عند انتهاء الوقت أو الخطأ
-                client.activePlayers.delete(user.id);
-                if (!isSlash) await confirmMsg.delete().catch(() => {});
-                else await interaction.editReply({ content: '⏰ انتهى الوقت.', embeds: [], components: [] });
-                return;
-            }
-        } else {
-            return startMemoryGame(channel, user, member, betInput, client, guild, sql, isSlash ? interaction : null);
+            finalBetAmount = 100;
+            // إذا كان الرصيد أقل من 100، نراهن بكامل الرصيد (بشرط أن يكون فوق الحد الأدنى)
+            if (userData.mora < 100) finalBetAmount = userData.mora;
         }
+
+        return startMemoryGame(channel, user, member, finalBetAmount, client, guild, sql, isSlash ? interaction : null);
     }
 };
 
 async function startMemoryGame(channel, user, member, bet, client, guild, sql, interaction) {
-    // قفل اللاعب مجدداً
+    // قفل اللاعب مجدداً (للحماية)
     if (client.activePlayers.has(user.id)) return;
     
+    // جلب البيانات مرة أخرى للتأكد من الرصيد لحظة البدء
     let userData = client.getLevel.get(user.id, guild.id);
-    if (!userData || userData.mora < bet) {
-        const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData ? userData.mora : 0})`;
-        if (interaction && !interaction.replied && !interaction.deferred) await interaction.reply({ content: msg, ephemeral: true });
-        else if (interaction) await interaction.editReply({ content: msg, ephemeral: true });
-        else channel.send(msg);
-        return;
-    }
+    if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
-    if (bet > MAX_BET_SOLO) {
-        const msg = `🚫 الحد الأقصى للرهان هو **${MAX_BET_SOLO}** ${EMOJI_MORA}.`;
+    if (userData.mora < bet) {
+        const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData.mora})`;
         if (interaction && !interaction.replied && !interaction.deferred) await interaction.reply({ content: msg, ephemeral: true });
         else if (interaction) await interaction.editReply({ content: msg, ephemeral: true });
         else channel.send(msg);
@@ -294,19 +257,30 @@ async function startMemoryGame(channel, user, member, bet, client, guild, sql, i
                             moraMultiplier = calculateMoraBuff(member, sql);
                         }
 
-                        const profit = Math.floor(bet * moraMultiplier);
-                        const totalPrize = bet + profit;
+                        // الربح = الرهان × 1.5 تقريباً (أو حسب رغبتك، هنا الكود الأصلي كان يضيف ربح)
+                        // في الكود السابق كان الربح متغير، سأجعله الرهان × 2 كمكافأة جيدة
+                        const profit = Math.floor(bet * 2.0 * moraMultiplier);
+                        const totalPrize = profit; // الربح يشمل الرهان المسترجع + الزيادة
+                        // أو إذا كنت تريد إرجاع الرهان + ربح، استخدم: const totalPrize = bet + profit;
+                        // سأستخدم bet + profit كما في الكود السابق ليكون مغرياً
+                        
+                        // تعديل: ليكون مثل arrange، الربح = الرهان × 3
+                        // لكن هذه لعبة أسهل، سأجعل الربح = الرهان × 2
+                        const winAmount = Math.floor(bet * 2.0 * moraMultiplier);
+                        const payout = bet + winAmount; // يرجع له رهانه + دبل
                         
                         let buffString = "";
                         const buffPercent = Math.round((moraMultiplier - 1) * 100);
                         if (buffPercent > 0) buffString = ` (+${buffPercent}%)`;
 
-                        userData.mora += totalPrize;
-                        client.setLevel.run(userData);
+                        // تحديث الرصيد (إضافة المبلغ المكتسب)
+                        // ملاحظة: الرصيد كان قد خُصم في البداية، لذا نضيف المبلغ الكامل (رهان + ربح)
+                        // استخدام UPDATE مباشر أفضل للأمان
+                        client.sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(payout, user.id, guild.id);
 
                         const winEmbed = new EmbedBuilder()
                             .setTitle('🎉 ذاكــرة قويــة!')
-                            .setDescription(`✶ أحسنت! إجابة صحيحة.\n\nربـحت **${profit.toLocaleString()}** ${EMOJI_MORA} ${buffString}`)
+                            .setDescription(`✶ أحسنت! إجابة صحيحة.\n\nربـحت **${winAmount.toLocaleString()}** ${EMOJI_MORA} ${buffString}`)
                             .setColor(Colors.Green)
                             .setThumbnail(user.displayAvatarURL());
 
