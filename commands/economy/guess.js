@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { calculateMoraBuff } = require('../../streak-handler.js');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const MIN_BET = 25;
+const MIN_BET = 10;
 const MAX_BET_SOLO = 100; 
 const COOLDOWN_MS = 1 * 60 * 60 * 1000;
 const MAX_LOAN_BET = 500; 
