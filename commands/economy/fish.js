@@ -179,14 +179,15 @@ module.exports = {
                 sequence.push(ARROW_GAME_OPTIONS[Math.floor(Math.random() * ARROW_GAME_OPTIONS.length)]);
             }
 
-            // إنشاء صفوف الأزرار بتنسيق: فوق (صف 1)، تحت (صف 2)، يمين يسار (صف 3)
-            const rowUp = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fish_click_up`).setEmoji('⬆️').setStyle(ButtonStyle.Secondary)
-            );
-            const rowDown = new ActionRowBuilder().addComponents(
+            // 🔥 إنشاء صفوف الأزرار (التعديل المطلوب)
+            // الصف الأول: فوق وتحت
+            const rowVertical = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`fish_click_up`).setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId(`fish_click_down`).setEmoji('⬇️').setStyle(ButtonStyle.Secondary)
             );
-            const rowSide = new ActionRowBuilder().addComponents(
+            
+            // الصف الثاني: يمين ويسار
+            const rowHorizontal = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`fish_click_right`).setEmoji('➡️').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId(`fish_click_left`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
             );
@@ -200,11 +201,11 @@ module.exports = {
                 .setColor(Colors.Orange);
 
             try {
-                // 🔥🔥🔥 تعديل: إضافة الأسهم في النص فوق الايمبد 🔥🔥🔥
+                // 🔥🔥🔥 تعديل: إضافة الأسهم في النص فوق الايمبد واستخدام الصفين الجديدين 🔥🔥🔥
                 const updatePayload = { 
                     content: `**${sequenceEmojis}**`, 
                     embeds: [biteEmbed], 
-                    components: [rowUp, rowDown, rowSide] 
+                    components: [rowVertical, rowHorizontal] 
                 };
                 if (isSlash) await interactionOrMessage.editReply(updatePayload);
                 else await msg.edit(updatePayload);
