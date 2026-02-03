@@ -125,60 +125,10 @@ module.exports = {
             if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
             if (userBalance < 100) proposedBet = userBalance;
 
-            client.activePlayers.add(author.id);
-            client.activeGames.add(channel.id);
-
-            const autoBetEmbed = new EmbedBuilder()
-                .setColor(Colors.Blue)
-                .setDescription(
-                    `✥ المـراهـنـة التلقائية بـ **${proposedBet}** ${EMOJI_MORA} ؟\n` +
-                    `✥ طريقة الاستخدام لتحديد المبلغ:\n` +
-                    `\`خمن <مبلغ الرهان> [@لاعب اختياري]\``
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('guess_auto_confirm').setLabel('مـراهـنـة').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('guess_auto_cancel').setLabel('رفـض').setStyle(ButtonStyle.Danger)
-            );
-
-            const confirmMsg = await reply({ embeds: [autoBetEmbed], components: [row], fetchReply: true });
-            
-            const filter = i => i.user.id === author.id && (i.customId === 'guess_auto_confirm' || i.customId === 'guess_auto_cancel');
-            
-            try {
-                const confirmation = await confirmMsg.awaitMessageComponent({ filter, time: 15000 });
-                
-                if (confirmation.customId === 'guess_auto_cancel') {
-                    await confirmation.update({ content: '❌ تم الإلغاء.', embeds: [], components: [] });
-                    // 🔓 تحرير
-                    client.activeGames.delete(channel.id);
-                    client.activePlayers.delete(author.id);
-                    return;
-                }
-
-                if (confirmation.customId === 'guess_auto_confirm') {
-                    await confirmation.deferUpdate();
-                    if (!isSlash) await confirmMsg.delete().catch(() => {});
-                    else await confirmation.editReply({ content: '✅', embeds: [], components: [] });
-
-                    client.activeGames.delete(channel.id); 
-                    // لا نحذف اللاعب هنا، لأنه سينتقل للدالة التالية وهو "نشط"
-                    
-                    // ولكن نحرره مؤقتاً لتخطي الفحص في بداية startGuessGame ثم نعيد إضافته هناك
-                    client.activePlayers.delete(author.id);
-
-                    return startGuessGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
-                }
-            } catch (e) {
-                client.activeGames.delete(channel.id);
-                client.activePlayers.delete(author.id);
-                if (!isSlash) await confirmMsg.delete().catch(() => {});
-                else await interaction.editReply({ content: '⏰ انتهى الوقت.', embeds: [], components: [] });
-                return;
-            }
+            // بدء اللعبة مباشرة بالرهان المقترح
+            return startGuessGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
         } else {
             // إضافة مباشرة إذا حدد الرهان
-            // client.activePlayers.add(author.id); // لا نضيفه هنا، نضيفه داخل startGuessGame بعد التحققات
             return startGuessGame(channel, author, opponents, betInput, client, guild, sql, replyError, reply);
         }
     }
