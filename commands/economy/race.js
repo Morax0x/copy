@@ -4,14 +4,14 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const MIN_BET = 10;
 const MAX_BET_SOLO = 100; 
-const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة
+const COOLDOWN_MS = 1 * 60 * 60 * 1000; // ساعة واحدة (لم يتم التغيير)
 const MAX_LOAN_BET = 500; 
 const OWNER_ID = "1145327691772481577"; 
 const RACE_ICONS = ['🐎', '🦄', '🦓', '🐪', '🐂', '🐆', '🐢', '🐉', '🦖', '🐇'];
 const TRACK_LENGTH = 20;
 
-// 🔥 مدة فك التعليق التلقائي (5 دقائق)
-const STUCK_TIMEOUT = 5 * 60 * 1000; 
+// 🔥 تم تقليل مدة فك التعليق التلقائي إلى 2 دقيقة
+const STUCK_TIMEOUT = 2 * 60 * 1000; 
 
 const COMMENTS = [
     "🌯 أحد الخيول وقف يطلب شاورما!",
@@ -80,7 +80,7 @@ function formatTime(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// دالة تنظيف آمنة
+// دالة تنظيف آمنة (تم تحديثها لتتعامل مع المفاتيح الخاصة بالسباق)
 function safeCleanup(client, gameKey, playerIds) {
     try {
         if (client.activeGames) client.activeGames.delete(gameKey);
@@ -88,12 +88,12 @@ function safeCleanup(client, gameKey, playerIds) {
         if (client.activePlayers) {
             if (Array.isArray(playerIds)) {
                 playerIds.forEach(id => {
-                    client.activePlayers.delete(id);
-                    if (client.raceTimestamps) client.raceTimestamps.delete(id);
+                    client.activePlayers.delete(`race_${id}`); // ✅ إزالة المفتاح الخاص بالسباق
+                    if (client.raceTimestamps) client.raceTimestamps.delete(`race_${id}`);
                 });
             } else if (playerIds) {
-                client.activePlayers.delete(playerIds);
-                if (client.raceTimestamps) client.raceTimestamps.delete(playerIds);
+                client.activePlayers.delete(`race_${playerIds}`); // ✅ إزالة المفتاح الخاص بالسباق
+                if (client.raceTimestamps) client.raceTimestamps.delete(`race_${playerIds}`);
             }
         }
     } catch (e) {
@@ -185,15 +185,17 @@ module.exports = {
             if (!client.activePlayers) client.activePlayers = new Set();
             if (!client.raceTimestamps) client.raceTimestamps = new Map(); 
 
-            // 🔥🔥 المنطق الجديد لإصلاح التعليق 🔥🔥
-            if (client.activePlayers.has(author.id)) {
-                const startTime = client.raceTimestamps.get(author.id) || 0;
+            // 🔥🔥 استخدام مفتاح خاص للسباق للسماح بالألعاب الأخرى 🔥🔥
+            const raceKey = `race_${author.id}`;
+
+            if (client.activePlayers.has(raceKey)) {
+                const startTime = client.raceTimestamps.get(raceKey) || 0;
                 const timeDiff = Date.now() - startTime;
 
                 if (timeDiff > STUCK_TIMEOUT || startTime === 0) {
                     safeCleanup(client, `${channel.id}-${author.id}`, author.id);
                 } else {
-                    return reply({ content: `🚫 **لديك سباق جارٍ حالياً!**\nإذا كان السباق معلقاً، سيتم فتحه تلقائياً بعد مرور 5 دقائق.`, ephemeral: true });
+                    return reply({ content: `🚫 **لديك سباق جارٍ حالياً!**\nإذا كان السباق معلقاً، سيتم فتحه تلقائياً بعد مرور دقيقتين.`, ephemeral: true });
                 }
             }
 
@@ -206,7 +208,7 @@ module.exports = {
 
             const now = Date.now();
             
-            // فحص الكولداون
+            // فحص الكولداون (بقي كما هو ساعة)
             if (author.id !== OWNER_ID) {
                 const lastRaceTime = row.lastRace || 0; 
                 const timeLeft = lastRaceTime + COOLDOWN_MS - now;
@@ -223,9 +225,9 @@ module.exports = {
                 if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
                 if (userBalance < 100) proposedBet = userBalance;
 
-                // تسجيل اللاعب ووقت البدء
-                client.activePlayers.add(author.id);
-                client.raceTimestamps.set(author.id, Date.now());
+                // تسجيل اللاعب ووقت البدء باستخدام المفتاح الخاص
+                client.activePlayers.add(raceKey);
+                client.raceTimestamps.set(raceKey, Date.now());
                 const gameKey = `${channel.id}-${author.id}`; 
                 client.activeGames.add(gameKey);
 
@@ -270,8 +272,8 @@ module.exports = {
                     return;
                 }
             } else {
-                client.activePlayers.add(author.id);
-                client.raceTimestamps.set(author.id, Date.now());
+                client.activePlayers.add(raceKey);
+                client.raceTimestamps.set(raceKey, Date.now());
                 return startRaceGame(channel, author, opponents, betInput, client, guild, sql, replyError, reply);
             }
         } catch (err) {
@@ -341,8 +343,9 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
 
             client.activeGames.add(gameKey);
             opponents.forEach(o => {
-                client.activePlayers.add(o.id);
-                client.raceTimestamps.set(o.id, Date.now());
+                const opKey = `race_${o.id}`;
+                client.activePlayers.add(opKey);
+                client.raceTimestamps.set(opKey, Date.now());
             });
 
             await playChallengeRace(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey);
@@ -358,10 +361,10 @@ async function startRaceGame(channel, author, opponents, bet, client, guild, sql
 async function playSoloRaceSelection(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client, gameKey) {
     try {
         const shuffledIcons = shuffleArray([...RACE_ICONS]);
-        const raceOptions = shuffledIcons.slice(0, 4); 
+        const raceOptions = shuffledIcons.slice(0, 2); // 🔥 تم التعديل: 2 متسابقين فقط بدلاً من 4
         
         // ألوان مختلفة لكل زر
-        const buttonStyles = [ButtonStyle.Primary, ButtonStyle.Secondary, ButtonStyle.Success, ButtonStyle.Danger];
+        const buttonStyles = [ButtonStyle.Primary, ButtonStyle.Danger]; // ألوان للمتسابقين الاثنين
 
         // 🔥 استبدال القائمة بالأزرار الملونة بدون نص 🔥
         const row = new ActionRowBuilder();
@@ -505,7 +508,7 @@ async function playSoloRace(channel, author, bet, authorData, getScore, setScore
                 clearInterval(raceInterval);
                 safeCleanup(client, gameKey, author.id);
             }
-        }, 2500);
+        }, 2000); // 🔥 تقليل وقت التحديث لجعل السباق أسرع قليلاً
     } catch (err) {
         safeCleanup(client, gameKey, author.id);
     }
@@ -518,14 +521,15 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
         const requiredOpponentsIDs = opponents.map(o => o.id);
 
         for (const opponent of opponents.values()) {
-            if (client.activePlayers.has(opponent.id)) {
+            const opKey = `race_${opponent.id}`;
+            if (client.activePlayers.has(opKey)) { // ✅ فحص المفتاح الخاص بالسباق
                 // تحقق إذا كان الخصم معلقاً
-                const startTime = client.raceTimestamps.get(opponent.id) || 0;
+                const startTime = client.raceTimestamps.get(opKey) || 0;
                 if (Date.now() - startTime > STUCK_TIMEOUT) {
                     safeCleanup(client, `${channel.id}-${opponent.id}`, opponent.id);
                 } else {
                     safeCleanup(client, gameKey, author.id); 
-                    return replyFunction({ content: `اللاعب ${opponent.displayName} مشغول في لعبة أخرى!`, ephemeral: true });
+                    return replyFunction({ content: `اللاعب ${opponent.displayName} مشغول في سباق آخر!`, ephemeral: true });
                 }
             }
 
@@ -613,7 +617,7 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                     clearInterval(raceInterval);
                     safeCleanup(client, gameKey, allPlayerIds);
                 }
-            }, 2500);
+            }, 2000); // 🔥 تقليل وقت التحديث
         };
 
         challengeCollector.on('collect', async i => {
