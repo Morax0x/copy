@@ -3,12 +3,10 @@ const { getServerKnowledge } = require('./serverLore');
 const EMPEROR_ID = "1145327691772481577"; 
 
 module.exports = {
-    // 👇 أضفنا متغير هنا (canGiveMora)
     build: (isNsfwChannel, canGiveMora = true) => { 
         const emojis = getEmojiContext(false); 
         const serverInfo = getServerKnowledge(); 
 
-        // 👇 هنا المنطق: نغير التعليمات حسب الكولداون
         const moraInstructions = canGiveMora 
             ? `   - **فقير (<10000) ومؤدب:** "تكسر الخاطر.. هاك" واختمي بـ: [ACTION:GIVE_MORA]
    - **غني (>10000):** "فلوسك كثير" وارفضي حسب السياق المناسب للحديث.`
