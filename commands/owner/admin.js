@@ -102,18 +102,29 @@ module.exports = {
                         .setStyle(ButtonStyle.Danger)
                 );
 
-                await message.author.send({ 
-                    content: `📦 **نسخة احتياطية (يدوية)**\n📆 <t:${Math.floor(Date.now() / 1000)}:R>`, 
-                    files: [attachment],
-                    components: [row] // إرفاق الزر
-                }).then(() => message.react('✅'))
-                  .catch(() => message.reply({ 
-                      content: "⚠️ الخاص مغلق، خذ النسخة هنا:", 
-                      files: [attachment],
-                      components: [row] 
-                  }));
+                // 🔥🔥🔥 التعديل الجديد: محاولة الإرسال للخاص مع كشف الأخطاء 🔥🔥🔥
+                try {
+                    await message.author.send({ 
+                        content: `📦 **نسخة احتياطية (يدوية)**\n📆 <t:${Math.floor(Date.now() / 1000)}:R>`, 
+                        files: [attachment],
+                        components: [row] // إرفاق الزر
+                    });
+                    await message.react('✅'); // تفاعل للنجاح
+                } catch (dmError) {
+                    console.error("[Admin DO] DM Failed:", dmError.message); // طباعة الخطأ في الكونسول
+                    
+                    // الخطة البديلة: الإرسال في الشات
+                    await message.reply({ 
+                        content: "⚠️ **تعذر الإرسال للخاص (الخاص مغلق أو البوت محظور).**\nإليك النسخة هنا:", 
+                        files: [attachment],
+                        components: [row] 
+                    });
+                }
 
-            } catch (err) { message.reply(`❌ خطأ: ${err.message}`); }
+            } catch (err) { 
+                console.error("[Admin DO] Global Error:", err);
+                message.reply(`❌ خطأ عام: ${err.message}`); 
+            }
         }
         
         // ============================================================
