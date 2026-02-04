@@ -88,6 +88,9 @@ try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN savedStatusText 
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastTransferDate TEXT DEFAULT ''").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dailyTransferCount INTEGER DEFAULT 0").run(); } catch (e) {}
 
+// 🔥 إضافة العمود الجديد لسجل الاقتصاد 🔥
+try { if(sql.open) sql.prepare("ALTER TABLE settings ADD COLUMN transactionLogChannelID TEXT").run(); } catch (e) {}
+
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS user_lands (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, guildID TEXT, plotID INTEGER, status TEXT DEFAULT 'empty', seedID TEXT, plantTime INTEGER)").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
