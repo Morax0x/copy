@@ -18,9 +18,34 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 // صور الفارس
 const KNIGHT_IMAGES = {
     MAIN: 'https://i.postimg.cc/d1ndBX7B/download.gif', 
-    WIN: 'https://i.postimg.cc/8Cj8xfHC/e6128ac95afc6c9b5d374946f87c573c.jpg', 
     LOSE: 'https://i.postimg.cc/fb3F8nWQ/crusader-darkest-dungeon.gif'
 };
+
+// 🔥 قائمة صور الفوز العشوائية
+const WIN_IMAGES_LIST = [
+    'https://i.postimg.cc/85MLkpTk/download.gif',
+    'https://i.postimg.cc/4xHyR8fG/download-(1).gif',
+    'https://i.postimg.cc/YqhqQXm6/download-(2).gif',
+    'https://i.postimg.cc/gkSsT0Jf/Shingeki-no-Bahamut-Jeanne-D-Arc-demon-version.gif',
+    'https://i.postimg.cc/QdSqTdLJ/Very-Cool.gif',
+    'https://i.postimg.cc/g2c9vj7f/download-(5).gif',
+    'https://i.postimg.cc/KjK7XP46/download-(8).gif',
+    'https://i.postimg.cc/MHRDM0xV/Search-happy-birthday-dabi-jan-18-hokusu.gif',
+    'https://i.postimg.cc/5t3MhvCf/download-(3).gif',
+    'https://i.postimg.cc/vBNCyvHn/download-(4).gif',
+    'https://i.postimg.cc/13SWFd8q/download-(9).gif',
+    'https://i.postimg.cc/wvrxrJC0/https-c-tenor-com-Xszop-Y9bg-XIAAAAC-muramasa-fate-go-muramasa.gif',
+    'https://i.postimg.cc/Y0g4fbvv/download-(6).gif',
+    'https://i.postimg.cc/RZbMhw01/Goblin-Slayer.gif',
+    'https://i.postimg.cc/2ymYMwHk/𝕲𝖔𝖇𝖑𝖎𝖓-𝕾𝖑𝖆𝖞𝖊𝖗.gif',
+    // الصور القديمة
+    'https://i.postimg.cc/JhMrnyLd/download-1.gif',
+    'https://i.postimg.cc/FHgv29L0/download.gif',
+    'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif',
+    'https://i.postimg.cc/4ygk8q3G/tumblr-nmao11Zm-Bx1r3rdh2o2-500-gif-500-281.gif',
+    'https://i.postimg.cc/pL6NNpdC/Epic7-Epic-Seven-GIF-Epic7-Epic-Seven-Tensura-Discover-Share-GIFs.gif',
+    'https://i.postimg.cc/05dLktNF/download-5.gif'
+];
 
 // خريطة لتخزين المعارك النشطة
 const activePveBattles = new Map();
@@ -552,7 +577,6 @@ function setupBattleCollector(battleState) {
     });
 
     collector.on('end', (collected, reason) => {
-        // ✅✅✅ تم التعديل: قبول الخمول (idle) كسبب للخسارة ✅✅✅
         if ((reason === 'time' || reason === 'idle') && !battleState.isEnded) {
             handleGuardBattleEnd(battleState, "guard", "lose");
         }
@@ -597,8 +621,8 @@ async function processGuardTurn(battleState) {
             return;
         }
 
-        // تأخير التفكير
-        await new Promise(r => setTimeout(r, 1500));
+        // 🔥🔥🔥 إلغاء وقت الانتظار (Instant Action) 🔥🔥🔥
+        // await new Promise(r => setTimeout(r, 1500)); <-- تم الحذف
 
         // ==============================================
         // 🧠 منطق الذكاء الاصطناعي (AI Logic)
@@ -749,11 +773,10 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         // 1. صحة الفارس
         const guardMaxHp = Math.floor(pMaxHp * 1.8 * multiplier); 
         
-        // 2. هجوم الفارس = (سلاح اللاعب * النسبة) + (زيادة ثابتة لكل تكرار لضمان القوة)
-        // إضافة 20 ضرر ثابت لكل مستوى غضب
+        // 2. هجوم الفارس
         const atkMultiplier = 1.4 + ((multiplier - 1) * 0.5); 
         const baseDmg = Math.floor(robberWeapon.currentDamage * atkMultiplier);
-        const flatBonus = (multiplier - 1) * 20; // +0, +20, +40...
+        const flatBonus = (multiplier - 1) * 20; 
         
         const finalGuardDmg = baseDmg + flatBonus;
 
@@ -762,10 +785,9 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             currentDamage: finalGuardDmg
         };
 
-        // 3. درع مبدئي بسيط (10%)
+        // 3. درع مبدئي
         const initialShield = Math.floor(guardMaxHp * 0.1);
 
-        // 🔥 تحديث الكائن ليتضمن عدادات المهارات الجديدة 🔥
         const defEffects = () => ({ 
             shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, 
             poison: 0, poison_turns: 0, burn: 0, burn_turns: 0, 
@@ -779,7 +801,6 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const guardEffects = defEffects();
         guardEffects.shield = initialShield;
 
-        // رسالة تحذيرية إذا كان الفارس غاضباً
         let introMsg = `🛡️ **فارس الإمبراطور** يغلق الأبواب! "لن تخرج من هنا حياً!"`;
         if (multiplier > 1) {
             introMsg = `🔥🛡️ **فارس الإمبراطور (غاضب x${multiplier})** يتذكر وجهك! "عدت للموت مجدداً؟ هذه المرة لن أرحمك!"`;
@@ -842,9 +863,15 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         if (resultType === "win") {
             playerData.mora += amount;
             setScore.run(playerData);
-            embed.setTitle(`🏆 هــروب نــاجــح!`).setColor(Colors.Green)
+            
+            // 🔥 اختيار صورة ولون عشوائي 🔥
+            const randomWinImage = WIN_IMAGES_LIST[Math.floor(Math.random() * WIN_IMAGES_LIST.length)];
+            const randomColor = Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]];
+
+            embed.setTitle(`🏆 هــروب نــاجــح!`)
+                 .setColor(randomColor) // لون عشوائي
                  .setDescription(`تمكنت من هزيمة فارس الإمبراطور والفرار بالغنيمة!\n\n💰 **المبلغ المسروق:** ${amount.toLocaleString()} ${EMOJI_MORA}`)
-                 .setImage(KNIGHT_IMAGES.WIN);
+                 .setImage(randomWinImage); // صورة عشوائية
         } else {
             if (playerData.mora >= amount) playerData.mora -= amount;
             else {
