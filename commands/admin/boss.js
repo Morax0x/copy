@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, PermissionsBitField } = require('discord.js');
 
-// دالة رسم الشريط (التصميم الجديد █ ░)
+// دالة رسم الشريط. (التصميم الجديد █ ░)
 function createProgressBar(current, max, length = 10) {
     const percent = Math.max(0, Math.min(1, current / max));
     const filled = Math.floor(percent * length);
