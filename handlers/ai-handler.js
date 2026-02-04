@@ -55,6 +55,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         // 🔥🔥 3.5 تجهيز معلومات السيرفر الحية (التوب والزعيم) 🔥🔥
         // نستخدم messageObject.guild للوصول لأسماء الأعضاء (النظام القديم للزعيم)
         if (messageObject && messageObject.guild) {
+            // 🔥🔥 تحديث: تمرير guildId لدالة البيانات الحية 🔥🔥
             const dynamicData = getDynamicServerData(guildId);
             
             if (dynamicData) {
@@ -79,8 +80,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             }
         }
 
-        // 🔥🔥🔥 الجديد: جلب التوب كنص من الدالة الجديدة (لتمريره للسيستم برومبت) 🔥🔥🔥
-        const leaderboardInfo = getLeaderboardKnowledge(sql);
+        // 🔥🔥🔥 الجديد: جلب التوب كنص من الدالة الجديدة (مع تمرير guildId) 🔥🔥🔥
+        const leaderboardInfo = getLeaderboardKnowledge(sql, guildId);
 
         // ============================================================
         // 🕒 فحص كولداون المورا (Mora Cooldown Check)
