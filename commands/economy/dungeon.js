@@ -5,7 +5,7 @@ const { startDungeon } = require("../../handlers/dungeon-handler.js");
 const { manageTickets } = require("../../handlers/dungeon/utils.js"); 
 
 const OWNER_ID = "1145327691772481577";
-const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 ساعات
+const COOLDOWN_MS = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة لتوافق الهاندلر 🔥
 
 module.exports = {
     // إعدادات سلاش كوماند
@@ -84,7 +84,8 @@ module.exports = {
             // إذا كان عليه كولداون (لإنشاء الدانجون كـ Host)
             if (diff < COOLDOWN_MS) {
                 // جلب معلومات الحد اليومي (للانضمام)
-                const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check');
+                // 🔥🔥 تعديل: تمرير العضو للتأكد من الرتب 🔥🔥
+                const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check', interaction.member);
                 
                 // حساب وقت انتهاء الكولداون (Timestamp) للعد التنازلي
                 const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
@@ -101,7 +102,6 @@ module.exports = {
                     .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
                 const payload = { 
-                    // content: `⏳ **تمهّل أيها المحارب!**`,  <-- تم حذف هذا السطر
                     embeds: [cooldownEmbed], 
                     flags: [MessageFlags.Ephemeral] 
                 };
