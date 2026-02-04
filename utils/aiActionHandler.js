@@ -92,14 +92,20 @@ module.exports = {
                     return false; 
                 }
 
-                // ج) التنفيذ: إعطاء 1000 مورا
-                sql.prepare("INSERT INTO levels (user, guild, mora) VALUES (?, ?, 1000) ON CONFLICT(user, guild) DO UPDATE SET mora = mora + 1000").run(userID, guildID);
+                // 🔥 ج) التنفيذ: إعطاء مبلغ عشوائي بين 100 و 1000 🔥
+                const amount = Math.floor(Math.random() * (1000 - 100 + 1)) + 100;
+
+                sql.prepare("INSERT INTO levels (user, guild, mora) VALUES (?, ?, ?) ON CONFLICT(user, guild) DO UPDATE SET mora = mora + ?").run(userID, guildID, amount, amount);
                 
                 // د) تسجيل الكولداون
                 sql.prepare("INSERT OR REPLACE INTO ai_cooldowns (userID, lastMoraTime) VALUES (?, ?)").run(userID, now);
 
                 await message.react('💸').catch(e => console.error("Failed to react:", e));
-                console.log("[AI Action] Give Mora Success (1000 added).");
+                
+                // إرسال رسالة صغيرة لتأكيد المبلغ
+                // await message.reply(`💰 تفضل، هذي **${amount}** مورا من الإمبراطورة.`).catch(() => {});
+
+                console.log(`[AI Action] Give Mora Success (${amount} added).`);
                 return true;
             } catch (e) {
                 console.error("[AI Action Error] Give Mora:", e);
