@@ -10,18 +10,15 @@ const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
 
-// إعدادات الصحة والعملة
 const BASE_HP = 800;        
 const HP_PER_LEVEL = 60;    
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// صور الفارس
 const KNIGHT_IMAGES = {
     MAIN: 'https://i.postimg.cc/d1ndBX7B/download.gif', 
     LOSE: 'https://i.postimg.cc/fb3F8nWQ/crusader-darkest-dungeon.gif'
 };
 
-// 🔥 قائمة صور الفوز العشوائية
 const WIN_IMAGES_LIST = [
     'https://i.postimg.cc/85MLkpTk/download.gif',
     'https://i.postimg.cc/4xHyR8fG/download-(1).gif',
@@ -38,7 +35,6 @@ const WIN_IMAGES_LIST = [
     'https://i.postimg.cc/Y0g4fbvv/download-(6).gif',
     'https://i.postimg.cc/RZbMhw01/Goblin-Slayer.gif',
     'https://i.postimg.cc/2ymYMwHk/𝕲𝖔𝖇𝖑𝖎𝖓-𝕾𝖑𝖆𝖞𝖊𝖗.gif',
-    // الصور القديمة
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
     'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif',
@@ -47,7 +43,6 @@ const WIN_IMAGES_LIST = [
     'https://i.postimg.cc/05dLktNF/download-5.gif'
 ];
 
-// خريطة لتخزين المعارك النشطة
 const activePveBattles = new Map();
 
 // ==========================================
@@ -154,20 +149,16 @@ function calculateDamage(attacker, defender, multiplier = 1) {
     return Math.max(0, finalDmg);
 }
 
-// 🔥 دالة جديدة: فحص انكسار الدرع وتفعيل الكولداون
 function checkShieldBreak(battleState, defenderId) {
     const defender = battleState.players.get(defenderId);
       
-    // إذا الدرع وصل 0 أو أقل، وكان هناك مصدر للدرع (يعني كان مفعل ولم يطبق الكولداون بعد)
     if (defender.effects.shield <= 0 && defender.effects.shield_source) {
         const skillId = defender.effects.shield_source;
         const cooldownDuration = defender.effects.shield_cd_duration || 4; 
 
-        // تفعيل الكولداون الآن
         if (!battleState.skillCooldowns[defenderId]) battleState.skillCooldowns[defenderId] = {};
         battleState.skillCooldowns[defenderId][skillId] = cooldownDuration;
 
-        // تنظيف بيانات الدرع
         defender.effects.shield_source = null;
         defender.effects.shield_cd_duration = 0;
         defender.effects.shield = 0; 
@@ -220,31 +211,23 @@ function applySkillEffect(battleState, attackerId, skill) {
     const defenderId = Array.from(battleState.players.keys()).find(id => id !== attackerId);
     const defender = battleState.players.get(defenderId);
 
-    // تحديد مدة الكولداون الافتراضية
     let cooldownDuration = 3; 
     if (skill.id === 'skill_healing') cooldownDuration = 6;
     else if (skill.id.startsWith('race_')) cooldownDuration = 5;
 
-    // 🔥🔥 منطق الدروع الجديد 🔥🔥
     const shieldSkills = ['skill_shielding', 'Cleanse_Buff_Shield', 'Reflect_Tank', 'Lifesteal_Overheal'];
-      
-    // هل المهارة تعتبر مهارة درع؟ (تقريبي لمهارة الامتصاص)
     const isShieldSkill = shieldSkills.includes(skill.id) || (skill.id === 'Lifesteal_Overheal' && (attacker.maxHp - attacker.hp) < (attacker.weapon.currentDamage * 0.6));
 
-    // ⛔ 1. منع وضع درع فوق درع
     if (isShieldSkill && attacker.effects.shield > 0) {
         return `🚫 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** حاول تفعيل درع لكن لديه درع نشط بالفعل!`;
     }
 
-    // 2. تطبيق الكولداون
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
       
     if (isShieldSkill) {
-        // إذا كانت درعاً، نحفظ الكولداون ولا نفعله الآن
         attacker.effects.shield_source = skill.id;
         attacker.effects.shield_cd_duration = cooldownDuration;
     } else {
-        // المهارات العادية تأخذ كولداون فوراً
         battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
     }
 
@@ -256,31 +239,23 @@ function applySkillEffect(battleState, attackerId, skill) {
     if (attacker.effects.weaken > 0) baseAtk *= (1 - attacker.effects.weaken);
 
     switch (statType) {
-        // 🔥🔥 مقامرة (Gamble) معدلة لقتال الفارس 🔥🔥
         case 'Gamble_Dmg': {
             if (Math.random() < 0.5) {
-                // ✅ نجاح: دمج عشوائي بين 777 و 2222
                 const minDmg = 777;
                 const maxDmg = 2222;
                 const dmgAmount = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg;
-                
                 defender.hp -= dmgAmount;
                 return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
             } else {
-                // ❌ فشل: دمج خفيف للخصم + ضرر ذاتي
                 const minFail = 100;
                 const maxFail = 200;
                 const failDmg = Math.floor(Math.random() * (maxFail - minFail + 1)) + minFail;
-                
-                const selfDmg = Math.floor(attacker.hp * 0.03); // 3% ضرر ذاتي
-
+                const selfDmg = Math.floor(attacker.hp * 0.03); 
                 defender.hp -= failDmg;
                 attacker.hp -= selfDmg;
-
                 return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
             }
         }
-
         case 'Spirit_RNG': {
             const spiritDmg = Math.floor(baseAtk * 1.3);
             defender.hp -= spiritDmg;
@@ -313,11 +288,8 @@ function applySkillEffect(battleState, attackerId, skill) {
             const shieldVal = Math.floor(attacker.maxHp * 0.25);
             attacker.effects.shield += shieldVal;
             attacker.effects.buff = 0.2; attacker.effects.buff_turns = 2;
-              
-            // تسجيل المصدر
             attacker.effects.shield_source = skill.id; 
             attacker.effects.shield_cd_duration = cooldownDuration;
-
             return `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب درعاً وقوة!`;
         }
         case 'Scale_MissingHP_Heal': {
@@ -358,19 +330,13 @@ function applySkillEffect(battleState, attackerId, skill) {
                 attacker.hp = attacker.maxHp;
                 const shieldAdd = Math.floor((healVal - missingHp) * 0.5);
                 attacker.effects.shield += shieldAdd;
-                  
-                // تسجيل المصدر
                 attacker.effects.shield_source = skill.id;
                 attacker.effects.shield_cd_duration = cooldownDuration;
-
                 return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص حياة خصمه وحول الفائض لدرع!`;
             }
             attacker.hp += healVal;
-              
-            // في حالة عدم تفعيل الدرع، يجب تفعيل الكولداون الآن يدوياً لأننا أجلناه في البداية
             battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
             attacker.effects.shield_source = null;
-
             return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP من خصمه!`;
         }
         case 'Chaos_RNG': {
@@ -393,7 +359,6 @@ function applySkillEffect(battleState, attackerId, skill) {
         case 'Reflect_Tank': {
             attacker.effects.shield += Math.floor(attacker.maxHp * 0.2);
             attacker.effects.rebound_active = 0.4; attacker.effects.rebound_turns = 2;
-            // تسجيل المصدر
             attacker.effects.shield_source = skill.id;
             attacker.effects.shield_cd_duration = cooldownDuration;
             return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
@@ -412,11 +377,9 @@ function applySkillEffect(battleState, attackerId, skill) {
             switch (skill.id) {
                 case 'skill_shielding': 
                     attacker.effects.shield += Math.floor(attacker.maxHp * (effectValue / 100)); 
-                    // تسجيل المصدر
                     attacker.effects.shield_source = skill.id;
                     attacker.effects.shield_cd_duration = cooldownDuration;
                     return `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً!`;
-                  
                 case 'skill_buffing': attacker.effects.buff = effectValue / 100; attacker.effects.buff_turns = 3; return `💪 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** رفع قوته!`;
                 case 'skill_rebound': attacker.effects.rebound_active = effectValue / 100; attacker.effects.rebound_turns = 3; return `🔄 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** جهز الانعكاس!`;
                 case 'skill_healing': const heal = Math.floor(attacker.maxHp * (effectValue / 100)); attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal); return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
@@ -517,15 +480,23 @@ function setupBattleCollector(battleState) {
     const robberId = battleState.turn[0]; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
     
-    // ✅✅✅ تم التعديل: استخدام idle بدلاً من time لتجديد الوقت مع التفاعل ✅✅✅
     const collector = battleState.message.createMessageComponentCollector({ 
         filter, 
         componentType: ComponentType.Button, 
-        idle: 300000 // 5 دقائق خمول
+        idle: 300000 
     });
 
     collector.on('collect', async i => {
-        if (battleState.processingTurn) return i.deferUpdate().catch(()=>{});
+        // 🔥🔥🔥 التغيير الجذري هنا: Defer فوراً قبل أي شيء لمنع "Interaction Failed" 🔥🔥🔥
+        if (battleState.processingTurn) return; // تجاهل إذا كان مشغولاً
+        battleState.processingTurn = true; 
+
+        try {
+            await i.deferUpdate(); // ✅ هذا يمنع ديسكورد من اعتبار التفاعل فاشلاً
+        } catch (e) {
+            // إذا فشل الـ defer (نادر)، نحاول نكمل، لكن غالباً فات الأوان
+            console.error("Defer Error:", e);
+        }
 
         try {
             const customId = i.customId;
@@ -533,46 +504,52 @@ function setupBattleCollector(battleState) {
             const guard = battleState.players.get("guard");
 
             if (customId === 'knight_attack') {
-                battleState.processingTurn = true;
                 const dmg = calculateDamage(player, guard);
                 guard.hp -= dmg;
                 battleState.log.push(`⚔️ **${cleanDisplayName(player.member.user.displayName)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
                   
-                // 🔥 فحص انكسار درع الفارس 🔥
                 const breakMsg = checkShieldBreak(battleState, "guard");
                 if (breakMsg) battleState.log.push(breakMsg);
 
                 battleState.turn = ["guard", player.member.id];
-                await i.update(buildBattleEmbed(battleState, false, 0, true));
+                
+                // تحديث الرسالة لإظهار هجوم اللاعب (مع تعطيل الأزرار مؤقتاً)
+                await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                
+                // تشغيل دور الفارس
                 await processGuardTurn(battleState);
             } 
-            else if (customId === 'knight_skill_menu') await i.update(buildBattleEmbed(battleState, true, 0));
-            else if (customId === 'knight_skill_back') await i.update(buildBattleEmbed(battleState, false));
+            else if (customId === 'knight_skill_menu') await i.editReply(buildBattleEmbed(battleState, true, 0));
+            else if (customId === 'knight_skill_back') await i.editReply(buildBattleEmbed(battleState, false));
             else if (customId.startsWith('knight_skill_page_')) {
                 const newPage = parseInt(customId.split('_')[3]);
-                await i.update(buildBattleEmbed(battleState, true, newPage));
+                await i.editReply(buildBattleEmbed(battleState, true, newPage));
             } 
             else if (customId.startsWith('knight_skill_use_')) {
-                battleState.processingTurn = true; 
                 const skillId = customId.replace('knight_skill_use_', '');
                 const skillData = player.skills[skillId];
                 if (skillData) {
                     const logMsg = applySkillEffect(battleState, i.user.id, skillData);
                     battleState.log.push(logMsg);
                       
-                    // 🔥 فحص انكسار درع الفارس (إذا كانت المهارة هجومية) 🔥
                     const breakMsg = checkShieldBreak(battleState, "guard");
                     if (breakMsg) battleState.log.push(breakMsg);
 
                     battleState.turn = ["guard", player.member.id];
-                    await i.update(buildBattleEmbed(battleState, false, 0, true));
+                    await i.editReply(buildBattleEmbed(battleState, false, 0, true));
                     await processGuardTurn(battleState);
                 }
             }
         } catch (error) {
-            console.error("Collector Error:", error);
+            console.error("Collector Logic Error:", error);
+            // في حال حدوث خطأ، نفتح الأزرار عشان ما يعلق
             battleState.processingTurn = false;
             await i.editReply(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
+        } finally {
+            // إذا لم يكن الدور للفارس (أي عمليات تصفح القوائم)، نفتح القفل فوراً
+            if (battleState.turn[0] !== "guard") {
+                battleState.processingTurn = false;
+            }
         }
     });
 
@@ -584,10 +561,13 @@ function setupBattleCollector(battleState) {
 }
 
 // =================================================================
-// 🧠 ذكاء الفارس (AI) - [تم تحديثه بالكامل ليصبح أذكى] 🔥
+// 🧠 ذكاء الفارس (AI) - [نسخة مضادة للتعليق - Anti-Freeze] 🔥
 // =================================================================
 async function processGuardTurn(battleState) {
     try {
+        // تأخير تقني بسيط (1 ثانية) لضمان استقرار API ديسكورد وعدم تداخل التحديثات
+        await new Promise(r => setTimeout(r, 1000));
+
         const guard = battleState.players.get("guard");
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
@@ -604,62 +584,43 @@ async function processGuardTurn(battleState) {
         const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
         if (logEntries.length > 0) battleState.log.push(...logEntries);
 
-        // التحقق من الموت
+        // التحقق من الموت (إذا مات الفارس من السم مثلاً)
         if (guard.hp <= 0) {
-            battleState.processingTurn = false;
             return await handleGuardBattleEnd(battleState, playerMemberId, "win");
         }
-
-        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, true));
 
         // إذا كان الفارس مشلولاً
         if (skipTurn) {
             battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
             battleState.turn = [playerMemberId, "guard"];
-            battleState.processingTurn = false;
+            // تحديث الرسالة وإعادة الدور للاعب
             await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
             return;
         }
 
-        // 🔥🔥🔥 إلغاء وقت الانتظار (Instant Action) 🔥🔥🔥
-        // await new Promise(r => setTimeout(r, 1500)); <-- تم الحذف
-
-        // ==============================================
-        // 🧠 منطق الذكاء الاصطناعي (AI Logic)
-        // ==============================================
         let actionLog = "";
           
-        // 🔥 ترتيب جديد للأولويات (البقاء أولاً!) 🔥
-
-        // 1. استخدام "قداس الدم" إذا قلت الصحة عن 30% (أولوية قصوى للعلاج والهجوم معاً)
+        // 1. قداس الدم
         if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
-            const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); // ضربة قوية (1.5x)
+            const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
             player.hp -= drainDmg;
-              
-            // زيادة الشفاء قليلاً لضمان التأثير
             const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
-
-            guard.effects.blood_liturgy_used++; // زيادة العداد
-
+            guard.effects.blood_liturgy_used++; 
             actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه (+${healAmt})! (${guard.effects.blood_liturgy_used}/5)`;
-              
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 2. استخدام "جرعات الطوارئ" إذا قلت الصحة عن 50% (للبقاء على قيد الحياة)
+        // 2. جرعات الطوارئ
         else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
-            const healAmount = Math.floor(guard.maxHp * 0.25); // 25% شفاء
+            const healAmount = Math.floor(guard.maxHp * 0.25); 
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
-              
             const shieldAmt = Math.floor(guard.maxHp * 0.10);
             guard.effects.shield += shieldAmt;
-
-            guard.effects.potions_used++; // زيادة عداد الجرعات
-
+            guard.effects.potions_used++; 
             actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
         }
-        // 3. القضاء على اللاعب الضعيف (Priority Kill) - يأتي بعد محاولة النجاة
+        // 3. إعدام
         else if (player.hp < player.maxHp * 0.20) {
             const dmg = calculateDamage(guard, player, 1.5);
             player.hp -= dmg;
@@ -667,7 +628,7 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 4. كسر درع اللاعب (Shield Breaker)
+        // 4. تحطيم الدرع
         else if (player.effects.shield > 0) {
             const dmg = calculateDamage(guard, player, 1.3); 
             player.hp -= dmg;
@@ -675,20 +636,18 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 5. مواجهة البفات القوية (Counter Buffs) - معدل ليصبح نادراً (20%)
+        // 5. انعكاس الضرر
         else if (player.effects.buff > 0 && Math.random() < 0.20) {
             guard.effects.rebound_active = 0.5; 
             guard.effects.rebound_turns = 1;
             actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
         }
-        // 6. هجوم عادي (Standard Attack)
+        // 6. هجوم عادي
         else {
             let multiplier = 1.0;
             if (player.effects.buff > 0) multiplier = 1.1;
-
             const dmg = calculateDamage(guard, player, multiplier);
             player.hp -= dmg;
-              
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `${breakMsg}\n`;
 
@@ -704,18 +663,29 @@ async function processGuardTurn(battleState) {
         battleState.log.push(actionLog);
 
         if (player.hp <= 0) {
-            battleState.processingTurn = false;
             return await handleGuardBattleEnd(battleState, "guard", "lose");
         }
 
+        // إعادة الدور للاعب
         battleState.turn = [playerMemberId, "guard"];
-        battleState.processingTurn = false;
-        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
+        
+        // 🔥🔥 محاولة التحديث: إذا فشل التعديل، نرسل رسالة جديدة (Fail-Safe) 🔥🔥
+        try {
+            await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
+        } catch (editError) {
+            console.log("[Anti-Freeze] Message edit failed, sending fresh message...");
+            const newMsg = await battleState.message.channel.send(buildBattleEmbed(battleState, false, 0, false));
+            battleState.message = newMsg; // تحديث مرجع الرسالة لتكملة اللعب
+            setupBattleCollector(battleState); // إعادة تشغيل المستمع للرسالة الجديدة
+        }
 
     } catch (error) {
-        console.error("AI Error:", error);
+        console.error("AI Logic Error:", error);
+        // محاولة أخيرة لفتح الأزرار
+        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
+    } finally {
+        // 🔥🔥 فك القفل الإجباري (أهم سطر لمنع التعليق) 🔥🔥
         battleState.processingTurn = false;
-        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
     }
 }
 
@@ -731,49 +701,33 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         }
         const robberSkills = getAllSkillData(sql, robberMember);
 
-        // ========================================================
-        // 🔥🔥 نظام غضب الفارس (تصاعد القوة مع التكرار) 🔥🔥
-        // ========================================================
-        
-        // 1. إنشاء الجدول إذا لم يكن موجوداً
         sql.prepare("CREATE TABLE IF NOT EXISTS knight_history (id TEXT PRIMARY KEY, count INTEGER, lastDate INTEGER)").run();
 
-        const today = new Date().setHours(0, 0, 0, 0); // تاريخ اليوم (بدون وقت)
+        const today = new Date().setHours(0, 0, 0, 0); 
         const userId = robberMember.id;
         const guildId = interaction.guild.id;
         const historyId = `${userId}-${guildId}`;
 
-        // 2. جلب سجل اللاعب
         let history = sql.prepare("SELECT * FROM knight_history WHERE id = ?").get(historyId);
-
-        let encounterCount = 1; // الافتراضي: المرة الأولى
+        let encounterCount = 1; 
 
         if (history) {
-            // إذا كان تاريخ آخر مواجهة هو اليوم
             if (history.lastDate === today) {
-                encounterCount = history.count + 1; // زيادة العداد
+                encounterCount = history.count + 1; 
                 sql.prepare("UPDATE knight_history SET count = ? WHERE id = ?").run(encounterCount, historyId);
             } else {
-                // إذا كان تاريخاً قديماً (يوم جديد)، نصفر العداد
                 encounterCount = 1;
                 sql.prepare("UPDATE knight_history SET count = ?, lastDate = ? WHERE id = ?").run(1, today, historyId);
             }
         } else {
-            // أول مرة يواجه الفارس إطلاقاً
             sql.prepare("INSERT INTO knight_history (id, count, lastDate) VALUES (?, ?, ?)").run(historyId, 1, today);
         }
 
-        // 🔥 3. تطبيق المضاعف (Multiplier) بناءً على عدد مرات المواجهة 🔥
         const multiplier = encounterCount; 
-
-        // 📊 طباعة للتأكد من التكرار
         console.log(`[Knight Battle] Encounter #${multiplier} for ${robberMember.displayName}`);
 
-        // 🔥🔥🔥 الموازنة الجديدة 🔥🔥🔥
-        // 1. صحة الفارس
         const guardMaxHp = Math.floor(pMaxHp * 1.8 * multiplier); 
         
-        // 2. هجوم الفارس
         const atkMultiplier = 1.4 + ((multiplier - 1) * 0.5); 
         const baseDmg = Math.floor(robberWeapon.currentDamage * atkMultiplier);
         const flatBonus = (multiplier - 1) * 20; 
@@ -785,7 +739,6 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             currentDamage: finalGuardDmg
         };
 
-        // 3. درع مبدئي
         const initialShield = Math.floor(guardMaxHp * 0.1);
 
         const defEffects = () => ({ 
@@ -794,8 +747,8 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             rebound_active: 0, rebound_turns: 0, stun: false, stun_turns: 0, 
             confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, 
             blind: 0, blind_turns: 0, shield_source: null, shield_cd_duration: 0,
-            potions_used: 0,        // عداد الجرعات
-            blood_liturgy_used: 0   // عداد قداس الدم
+            potions_used: 0,        
+            blood_liturgy_used: 0   
         });
         
         const guardEffects = defEffects();
@@ -864,14 +817,13 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
             playerData.mora += amount;
             setScore.run(playerData);
             
-            // 🔥 اختيار صورة ولون عشوائي 🔥
             const randomWinImage = WIN_IMAGES_LIST[Math.floor(Math.random() * WIN_IMAGES_LIST.length)];
             const randomColor = Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]];
 
             embed.setTitle(`🏆 هــروب نــاجــح!`)
-                 .setColor(randomColor) // لون عشوائي
+                 .setColor(randomColor) 
                  .setDescription(`تمكنت من هزيمة فارس الإمبراطور والفرار بالغنيمة!\n\n💰 **المبلغ المسروق:** ${amount.toLocaleString()} ${EMOJI_MORA}`)
-                 .setImage(randomWinImage); // صورة عشوائية
+                 .setImage(randomWinImage); 
         } else {
             if (playerData.mora >= amount) playerData.mora -= amount;
             else {
