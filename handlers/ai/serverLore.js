@@ -1,22 +1,26 @@
 // handlers/ai/serverLore.js
 
+const OWNER_ID = "1145327691772481577"; // لكي نستثني الأونر من القائمة
+
 /**
- * دالة لجلب قائمة المتصدرين (التوب) من قاعدة البيانات مباشرة
+ * دالة لجلب قائمة المتصدرين (التوب) من قاعدة البيانات للسيرفر الحالي فقط
  * @param {Object} sql - كائن قاعدة البيانات
+ * @param {string} guildID - آيدي السيرفر الحالي (مهم جداً لعزل البيانات)
  */
-function getLeaderboardKnowledge(sql) {
+function getLeaderboardKnowledge(sql, guildID) {
     if (!sql || !sql.open) return "";
 
     try {
-        // 1️⃣ توب لفل (XP)
-        const topLevels = sql.prepare("SELECT user, level FROM levels ORDER BY level DESC, xp DESC LIMIT 5").all();
+        // 1️⃣ توب لفل (XP) - 🔥 تم إضافة شرط guild = ? واستثناء الأونر
+        const topLevels = sql.prepare("SELECT user, level FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC LIMIT 5").all(guildID, OWNER_ID);
+        
         const levelText = topLevels.length > 0 
             ? topLevels.map((u, i) => `${i+1}. <@${u.user}> (Lv.${u.level})`).join('\n')
             : "لا يوجد بيانات بعد.";
 
-        // 2️⃣ توب فلوس (Economy)
-        // 🔥 تصحيح: القراءة من جدول levels وحساب (الكاش + البنك)
-        const topMora = sql.prepare("SELECT user, (mora + bank) as totalWealth FROM levels ORDER BY totalWealth DESC LIMIT 5").all();
+        // 2️⃣ توب فلوس (Economy) - 🔥 تم إضافة شرط guild = ? واستثناء الأونر
+        const topMora = sql.prepare("SELECT user, (mora + bank) as totalWealth FROM levels WHERE guild = ? AND user != ? ORDER BY totalWealth DESC LIMIT 5").all(guildID, OWNER_ID);
+        
         const moraText = topMora.length > 0 
             ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${u.totalWealth.toLocaleString()})`).join('\n')
             : "لا يوجد بيانات بعد.";
@@ -38,7 +42,7 @@ ${moraText}
 }
 
 module.exports = {
-    // تصدير دالة التوب
+    // تصدير دالة التوب المعدلة
     getLeaderboardKnowledge,
 
     // معلومات السيرفر الثابتة
