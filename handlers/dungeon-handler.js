@@ -6,7 +6,7 @@ const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js'
 const { manageTickets } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
-const COOLDOWN_TIME = 3 * 60 * 60 * 1000; // 3 ساعات
+const COOLDOWN_TIME = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة فقط 🔥
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
@@ -16,8 +16,16 @@ async function startDungeon(interaction, sql) {
     }
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-    if (!leaderData || leaderData.level < 5) {
-        return interaction.reply({ content: "🚫 **عذراً!** يجب أن تصل للمستوى **5** لتتمكن من قيادة غارة دانجون.", flags: [MessageFlags.Ephemeral] });
+    
+    // 🔥 تعديل: رفع شرط القائد لفل 10 + رسالة مخصصة 🔥
+    if (!leaderData || leaderData.level < 10) {
+        const denyEmbed = new EmbedBuilder()
+            .setTitle("✶ لا تستوفي الشروط")
+            .setDescription("- الـدانجـون محفوف بالمخـاطر، ارفع مستواك إلى **10** لتتمكن من قيادة غارة الدانجون.")
+            .setColor(Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]]) // لون عشوائي
+            .setThumbnail('https://i.postimg.cc/hPxYnBZ7/adaft-ʿnwan.png'); // الصورة المطلوبة
+
+        return interaction.reply({ embeds: [denyEmbed], flags: [MessageFlags.Ephemeral] });
     }
 
     if (user.id !== OWNER_ID) {
@@ -25,7 +33,8 @@ async function startDungeon(interaction, sql) {
         const lastDungeon = lastRun?.last_dungeon || 0;
         const now = Date.now();
         if (now - lastDungeon < COOLDOWN_TIME) {
-             return interaction.reply({ content: `⏳ **استرح قليلاً!** الكولداون نشط.`, flags: [MessageFlags.Ephemeral] });
+             const remaining = lastDungeon + COOLDOWN_TIME;
+             return interaction.reply({ content: `⏳ **استرح قليلاً!** الكولداون ينتهي <t:${Math.floor(remaining/1000)}:R>.`, flags: [MessageFlags.Ephemeral] });
         }
     }
 
@@ -78,11 +87,10 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             .setThumbnail(host.displayAvatarURL());
     };
 
-    // 🔥 تعديل ألوان الأزرار هنا 🔥
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'), // أخضر
-        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Primary).setEmoji('⚔️'), // أزرق
-        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger).setEmoji('✖️') // أحمر
+        new ButtonBuilder().setCustomId('join').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('➕'), 
+        new ButtonBuilder().setCustomId('start').setLabel('انطلاق').setStyle(ButtonStyle.Primary).setEmoji('⚔️'), 
+        new ButtonBuilder().setCustomId('cancel').setLabel('إلغاء').setStyle(ButtonStyle.Danger).setEmoji('✖️') 
     );
 
     let msg = await interaction.reply({ embeds: [updateEmbed()], components: [row], fetchReply: true });
@@ -105,8 +113,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                     
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط (لفل 5+ ومورا 100).", flags: [MessageFlags.Ephemeral] });
                     
-                    // 🔥 فحص الحد اليومي (Check Daily Limit) 🔥
-                    const limitCheck = manageTickets(i.user.id, guildId, sql, 'check');
+                    const limitCheck = manageTickets(i.user.id, guildId, sql, 'check', i.member);
                     
                     if (limitCheck.tickets <= 0) {
                         const now = new Date();
@@ -116,8 +123,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         
                         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
+                        // 🔥 تعديل: رسالة انتهاء التذاكر الجديدة 🔥
                         return i.reply({ 
-                            content: `🚫 **استنفذت محاولاتك اليومية!**\nلديك **0/${limitCheck.max}** محاولة.\nتتجدد المحاولات يومياً الساعة 12:00 ص بتوقيت السعودية.\n⏳ **الوقت المتبقي:** <t:${timestamp}:R>`, 
+                            content: `✶ **نفـذت تذاكـرك!** انتظر إلى أن تصرف نقابة المغامرين تذاكرك الجديدة.\n- **وقت تجديد التذاكر:** <t:${timestamp}:R>`, 
                             flags: [MessageFlags.Ephemeral] 
                         });
                     }
@@ -195,8 +203,10 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
                     }
                 } else {
+                    const memberObj = await msg.guild.members.fetch(id).catch(() => null);
+                    
                     // الأعضاء: خصم محاولة يومية
-                    const consumeResult = manageTickets(id, guildId, sql, 'consume');
+                    const consumeResult = manageTickets(id, guildId, sql, 'consume', memberObj);
                     
                     if (consumeResult.success) {
                         validParty.push(id);
@@ -208,7 +218,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
                         else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
                     } else {
-                        // فشل الخصم (وصل للحد الأقصى أثناء الانتظار أو خطأ ما)
+                        // فشل الخصم
                         kickedMembers.push(id);
                     }
                 }
@@ -230,7 +240,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
 
                 for (const uid of validParty) { try { await thread.members.add(uid); } catch(e){} }
 
-                // 🔥🔥🔥 إزالة المنشن من هنا 🔥🔥🔥
                 await thread.send(`🔔 **بدأت المعركة!**`);
                 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
@@ -257,18 +266,14 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                             .setColor(Colors.Red);
                         
                         if (reason === 'user_cancel') {
-                             // 1. حساب عقوبة الـ 3 دقائق
-                             const penaltyMs = 3 * 60 * 1000; // 3 دقائق
-                             const fullCooldown = 3 * 60 * 60 * 1000; // 3 ساعات
+                             const penaltyMs = 3 * 60 * 1000; 
+                             const fullCooldown = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة هنا أيضاً 🔥
 
-                             // 2. تحديث الداتابيس: نضبط الوقت بحيث يتبقى 3 دقائق فقط على انتهاء الكولداون
-                             // المعادلة: الوقت الحالي - (الكولداون الكامل - العقوبة)
                              const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
                              
                              sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?")
                                 .run(newLastDungeon, host.id, guildId);
 
-                             // 3. تجهيز التوقيت للرسالة (بعد 3 دقائق من الآن)
                              const readyTimestamp = Math.floor((Date.now() + penaltyMs) / 1000);
                              
                              cancelledEmbed.setDescription(`**قمـت بـ الغـاء الغـارة الاخيـرة .. انتـظر <t:${readyTimestamp}:R> لتفتح غـارة جديدة**`);
