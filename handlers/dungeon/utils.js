@@ -2,6 +2,9 @@
 
 const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig, OWNER_ID } = require('./constants');
 
+// آيدي رتبة العضوية المميزة
+const VIP_ROLE_ID = "1395674235002945636";
+
 function ensureInventoryTable(sql) {
     if (!sql.open) return;
       
@@ -17,7 +20,7 @@ function ensureInventoryTable(sql) {
         );
     `).run();
 
-    // 2. 🔥 جدول إحصائيات الدانجون المنفصل (الحل الجذري) 🔥
+    // 2. جدول إحصائيات الدانجون
     sql.prepare(`
         CREATE TABLE IF NOT EXISTS dungeon_stats (
             guildID TEXT,
@@ -33,27 +36,17 @@ function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
-// 🔥🔥🔥 دالة توزيع المورا الجديدة (نظام الشرائح الثابتة) 🔥🔥🔥
 function getBaseFloorMora(floor) {
-    // المرحلة الأولى: المبتدئين
     if (floor <= 10) return 100;
     if (floor <= 20) return 200;
     if (floor <= 30) return 300;
-     
-    // المرحلة الثانية: المتوسطة
     if (floor <= 40) return 400;
     if (floor <= 50) return 500;
-     
-    // المرحلة الثالثة: الصعوبة العالية (زيادة المكافأة قليلاً)
     if (floor <= 60) return 700;
     if (floor <= 70) return 900;
     if (floor <= 80) return 1200;
     if (floor <= 90) return 1500;
-     
-    // المرحلة النهائية: قبل الزعيم
     if (floor < 100) return 2000;
-     
-    // 🏆 الجائزة الكبرى: قتل موراكس (طابق 100)
     return 25000; 
 }
 
@@ -214,8 +207,10 @@ function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥🔥 دالة إدارة التذاكر (النظام الجديد المعزول) 🔥🔥🔥
-function manageTickets(userID, guildID, sql, action = 'check') {
+// 🔥🔥🔥 دالة إدارة التذاكر (المحدثة) 🔥🔥🔥
+// ⚠️ ملاحظة: نحتاج تمرير الـ client أو member للتأكد من الرتب
+// لكن للتبسيط، سنمرر member كخيار إضافي إذا توفر، وإلا نعتمد على اللفل فقط
+function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
@@ -223,46 +218,62 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     const levelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     const level = levelData ? levelData.level : 1;
 
-    let maxTickets = 0;
-    if (level >= 51) maxTickets = 7;
-    else if (level >= 31) maxTickets = 5;
-    else if (level >= 21) maxTickets = 4;
-    else if (level >= 5) maxTickets = 3;
-    else maxTickets = 0;
+    // 🔥🔥🔥 التذاكر الأساسية حسب اللفل 🔥🔥🔥
+    let baseTickets = 0;
+    if (level >= 61) baseTickets = 10;
+    else if (level >= 51) baseTickets = 9;
+    else if (level >= 41) baseTickets = 8;
+    else if (level >= 31) baseTickets = 7;
+    else if (level >= 21) baseTickets = 6;
+    else if (level >= 11) baseTickets = 5;
+    else if (level >= 5) baseTickets = 3;
+    else baseTickets = 0;
+
+    // 🔥🔥🔥 التذاكر الإضافية (VIP) 🔥🔥🔥
+    let bonusTickets = 0;
+    if (member && member.roles.cache.has(VIP_ROLE_ID)) {
+        bonusTickets = 10;
+        console.log(`[Tickets] VIP User detected: +10 tickets for ${userID}`);
+    }
+
+    let maxTickets = baseTickets + bonusTickets;
 
     // 2. جلب بيانات التذاكر
     let stats = sql.prepare("SELECT tickets, last_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
 
     const todayStr = getSaudiDateIso(); 
 
-    // إنشاء سجل جديد إذا لم يوجد
+    // إنشاء سجل جديد
     if (!stats) {
         sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)")
             .run(guildID, userID, maxTickets, todayStr);
         stats = { tickets: maxTickets, last_reset: todayStr };
-        console.log(`[DailyLimit] Created new record for ${userID}`);
     }
 
     let dbDate = stats.last_reset;
     let dbTickets = stats.tickets;
 
-    // 3. التحقق من الريست
+    // 3. التحقق من الريست (Reset)
     if (dbDate !== todayStr) {
-        console.log(`[DailyLimit] New Day Detected! Force Reset for ${userID}. Old: ${dbDate}, New: ${todayStr}`);
+        console.log(`[DailyLimit] Resetting tickets for ${userID}. New max: ${maxTickets}`);
         
         sql.prepare("UPDATE dungeon_stats SET tickets = ?, last_reset = ? WHERE userID = ? AND guildID = ?")
             .run(maxTickets, todayStr, userID, guildID);
         
         dbTickets = maxTickets;
         dbDate = todayStr;
+    } 
+    // 🔥 حالة خاصة: إذا زادت التذاكر القصوى (بسبب شراء رتبة مثلاً) ولم يحدث ريست اليوم
+    // نسمح له بأخذ الفرق، لكن لا نقلل تذاكره إذا استهلكها
+    else if (dbTickets < maxTickets && action === 'check') {
+       // هذه النقطة اختيارية: هل تريد أن يتحدث الرصيد فوراً عند الحصول على الرتبة؟
+       // حالياً سيتحدث في اليوم التالي لضمان الاستقرار، أو يمكنك تفعيل التحديث الفوري هنا.
     }
 
-    // --- حالة الفحص (Check) ---
     if (action === 'check') {
         return { tickets: dbTickets, max: maxTickets };
     }
 
-    // --- حالة الخصم (Consume) ---
     if (action === 'consume') {
         if (dbTickets > 0) {
             const newCount = dbTickets - 1;
@@ -274,11 +285,9 @@ function manageTickets(userID, guildID, sql, action = 'check') {
             if (info.changes > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
-                console.log(`[DailyLimit] SQL Error for ${userID}`);
                 return { success: false, tickets: dbTickets, max: maxTickets };
             }
         } else {
-            console.log(`[DailyLimit] Blocked ${userID}: 0 tickets.`);
             return { success: false, tickets: 0, max: maxTickets };
         }
     }
@@ -286,27 +295,14 @@ function manageTickets(userID, guildID, sql, action = 'check') {
     return { tickets: dbTickets, max: maxTickets };
 }
 
-// 🔥🔥🔥 دالة مركزية لحساب التهديد (Threat) 🔥🔥🔥
-// player: اللاعب
-// baseValue: قيمة الضرر أو الشفاء الأساسية
-// isTauntSkill: هل هذه مهارة استفزاز خاصة؟
 function calculateThreat(player, baseValue, isTauntSkill = false) {
     let threat = baseValue;
-
-    // 🛡️ المدرع: يولد تهديداً مضاعفاً دائماً
     if (player.class === 'Tank') {
-        // 1. الضربات العادية تولد 3 أضعاف التهديد
         threat = Math.floor(threat * 3);
-        
-        // 2. إذا كانت مهارة استفزاز، نضيف بونص ضخم ثابت
         if (isTauntSkill) {
             threat += 2000; 
         }
     }
-    
-    // ✨ الكاهن: عادة يولد تهديداً أقل (اختياري)
-    // if (player.class === 'Priest') threat = Math.floor(threat * 0.5);
-
     return threat;
 }
 
@@ -320,5 +316,5 @@ module.exports = {
     getRealPlayerData,
     manageTickets,
     getSaudiDateIso,
-    calculateThreat // ✅ تمت الإضافة
+    calculateThreat
 };
