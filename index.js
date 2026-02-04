@@ -463,7 +463,7 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         if (stat === 'replies_sent') totalStats.total_replies_sent = (totalStats.total_replies_sent || 0) + amount;
         if (stat === 'mentions_received') totalStats.total_mentions_received = (totalStats.total_mentions_received || 0) + amount;
         if (stat === 'vc_minutes') totalStats.total_vc_minutes = (totalStats.total_vc_minutes || 0) + amount;
-                
+                  
         client.setDailyStats.run(dailyStats);
         client.setWeeklyStats.run(weeklyStats);
         client.setTotalStats.run({
@@ -686,6 +686,9 @@ client.on(Events.ClientReady, async () => {
     // 🔥 تشغيل نظام المزاد
     startAuctionSystem(client); 
     console.log('✅ Auction System Started.');
+
+    // 🔥🔥 تشغيل نظام رتبة ولي العهد (التوب الأسبوعي) 🔥🔥
+    require('./handlers/weekly-role.js')(client);
 
     client.antiRolesCache = new Map();
     await loadRoleSettings(sql, client.antiRolesCache);
