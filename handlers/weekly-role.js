@@ -1,14 +1,23 @@
 // handlers/weekly-role.js
 
-const { OWNER_ID } = require('./dungeon/constants.js'); // تأكد ان مسار ملف الثوابت صح
+const path = require('path');
+const rootDir = process.cwd(); // ضمان المسار الصحيح دائماً
 
-// ⚙️ الإعدادات الخاصة بالسيرفر والرتبة
+// استدعاء الثوابت بشكل آمن
+let OWNER_ID = "1145327691772481577"; 
+try {
+    const constants = require(path.join(rootDir, 'handlers', 'dungeon', 'constants.js'));
+    OWNER_ID = constants.OWNER_ID;
+} catch (e) { console.log("[WeeklyRole] Warning: Constants file not found, using default ID."); }
+
+// ⚙️ الإعدادات
 const CONFIG = {
-    GUILD_ID: "848921014141845544", // آيدي السيرفر الرئيسي
-    ROLE_ID: "1408766278570872934", // آيدي رتبة ولي العهد
-    UPDATE_INTERVAL: 10 * 60 * 1000 // التحديث كل 10 دقائق
+    GUILD_ID: "848921014141845544", 
+    ROLE_ID: "1408766278570872934", 
+    UPDATE_INTERVAL: 10 * 60 * 1000 
 };
 
+// دالة حساب بداية الأسبوع (الجمعة) بدقة UTC لتطابق الداتابيس
 function getWeekStartDateString() {
     const now = new Date();
     const diff = now.getUTCDate() - (now.getUTCDay() + 2) % 7;
@@ -20,49 +29,60 @@ function getWeekStartDateString() {
 async function updateWeeklyRole(client) {
     try {
         const guild = client.guilds.cache.get(CONFIG.GUILD_ID);
-        if (!guild) return; // السيرفر غير موجود او البوت مب فيه
+        if (!guild) return; 
 
         const role = guild.roles.cache.get(CONFIG.ROLE_ID);
-        if (!role) return console.log("[WeeklyRole] Role not found!");
+        if (!role) return console.log("[WeeklyRole] ❌ Role not found!");
 
         const sql = client.sql;
         const weekStart = getWeekStartDateString();
 
-        // 1. جلب التوب 1 حالياً (باستخدام نفس معادلة السكور)
-        // (messages * 15 + vc_minutes * 10)
+        // 1. 🔥 الاستعلام المحسن (الدقيق) 🔥
+        // - COALESCE: تحول القيم الفارغة (NULL) إلى 0 عشان الحساب ما يخرب
+        // - الترتيب: بالنقاط أولاً، ثم بعدد الرسائل ككسر تعادل
         const topUser = sql.prepare(`
-            SELECT userID, (messages * 15 + vc_minutes * 10) as score 
+            SELECT userID, 
+                   (COALESCE(messages, 0) * 15 + COALESCE(vc_minutes, 0) * 10) as score 
             FROM user_weekly_stats 
-            WHERE guildID = ? AND userID != ? AND weekStartDate = ? AND score > 0 
-            ORDER BY score DESC 
+            WHERE guildID = ? AND userID != ? AND weekStartDate = ? 
+            ORDER BY score DESC, messages DESC
             LIMIT 1
         `).get(CONFIG.GUILD_ID, OWNER_ID, weekStart);
 
-        if (!topUser) return; // لا يوجد متصدرين بعد
+        if (!topUser || topUser.score <= 0) {
+            // console.log("[WeeklyRole] No active users this week yet.");
+            return; 
+        }
 
-        // 2. التحقق من صاحب الرتبة الحالي
-        // نبحث عن أي شخص معه الرتبة حالياً
+        // جلب العضو من الديسكورد للتأكد أنه موجود بالسيرفر
+        const winnerMember = await guild.members.fetch(topUser.userID).catch(() => null);
+        if (!winnerMember) return; // العضو غادر السيرفر
+
+        // 2. التحقق من أصحاب الرتبة الحاليين
         const currentHolders = role.members;
 
-        // هل المتصدر الحالي يملك الرتبة بالفعل؟
+        // هل الفائز الحالي هو نفسه اللي معه الرتبة؟
         if (currentHolders.has(topUser.userID) && currentHolders.size === 1) {
-            // كل شيء تمام، هو معه الرتبة ومافي غيره
+            // نعم هو نفسه، ولا يوجد أحد غيره معه الرتبة -> لا تفعل شيئاً
             return;
         }
 
-        console.log(`[WeeklyRole] Updating Prince Role. New King: ${topUser.userID}`);
+        console.log(`👑 [WeeklyRole] New King Detected: ${winnerMember.user.tag} (Score: ${topUser.score})`);
 
-        // 3. سحب الرتبة من الجميع (المتصدرين السابقين)
+        // 3. سحب الرتبة من القدامى
         for (const [memberID, member] of currentHolders) {
             if (memberID !== topUser.userID) {
-                await member.roles.remove(role).catch(e => console.error(`Failed to remove role from ${memberID}:`, e.message));
+                await member.roles.remove(role).catch(e => console.error(`[WeeklyRole] Failed to remove role from ${memberID}:`, e.message));
             }
         }
 
-        // 4. إعطاء الرتبة للمتصدر الجديد
-        const winnerMember = await guild.members.fetch(topUser.userID).catch(() => null);
-        if (winnerMember) {
-            await winnerMember.roles.add(role).catch(e => console.error(`Failed to add role to ${topUser.userID}:`, e.message));
+        // 4. إعطاء الرتبة للفائز الجديد
+        if (!currentHolders.has(topUser.userID)) {
+            await winnerMember.roles.add(role).catch(e => console.error(`[WeeklyRole] Failed to add role to ${topUser.userID}:`, e.message));
+            
+            // (اختياري) إرسال رسالة في شات عام تبارك له
+            // const chat = guild.channels.cache.get("آيدي_شات_عام");
+            // if(chat) chat.send(`👑 **تغير الحكم!**\nالآن <@${topUser.userID}> هو **ولي العهد** الجديد بتفاعل الأسبوع!`);
         }
 
     } catch (error) {
@@ -70,12 +90,8 @@ async function updateWeeklyRole(client) {
     }
 }
 
-// دالة التشغيل التي سنستدعيها في الملف الرئيسي
 module.exports = (client) => {
-    // تشغيل أول مرة عند بدء البوت
     setTimeout(() => updateWeeklyRole(client), 5000); 
-
-    // تشغيل دوري كل 10 دقائق
     setInterval(() => {
         updateWeeklyRole(client);
     }, CONFIG.UPDATE_INTERVAL);
