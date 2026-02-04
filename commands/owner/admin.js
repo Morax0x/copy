@@ -27,7 +27,7 @@ module.exports = {
         const commandName = message.content.split(" ")[0].slice(prefix.length).toLowerCase();
 
         // ============================================================
-        // 📥 أمر UP: رفع واستبدال قاعدة البيانات (عبر مرفق في الشات)
+        // 📥 أمر UP: رفع واستبدال قاعدة البيانات
         // ============================================================
         if (commandName === 'up') {
             const attachment = message.attachments.first();
@@ -45,13 +45,13 @@ module.exports = {
                 file.on('finish', function() {
                     file.close(async () => {
                         try {
-                            // 1. محاولة إغلاق القاعدة
+                            // 1. إغلاق الاتصال بأمان
                             try {
                                 if (client.sql && client.sql.open) {
                                     client.sql.close();
-                                    console.log("[Database] Connection closed.");
+                                    console.log("[Database] Connection closed for update.");
                                 }
-                            } catch (e) { console.log("[Database] Already closed or error."); }
+                            } catch (e) { console.log("[Database] Already closed."); }
 
                             // 2. تنظيف الملفات القديمة
                             try { if (fs.existsSync(WAL_PATH)) fs.unlinkSync(WAL_PATH); } catch(e){}
@@ -64,10 +64,9 @@ module.exports = {
                                 console.log("[Database] Replaced successfully.");
                             }
 
-                            // 4. رسالة النهاية
-                            await msg.edit("✅ **تم التحديث!**\n🔌 **جاري إعادة التشغيل تلقائياً... (انتظر دقيقة)**");
-
-                            // 5. إعادة التشغيل
+                            // 4. رسالة النهاية وإعادة التشغيل
+                            await msg.edit("✅ **تم التحديث!**\n🔌 **جاري إعادة التشغيل...**");
+                            
                             console.log("[System] Exiting process to force restart...");
                             setTimeout(() => { process.kill(process.pid); }, 1000);
 
@@ -83,52 +82,72 @@ module.exports = {
         }
 
         // ============================================================
-        // 📤 أمر DO: تحميل نسخة (مع زر الاستعادة)
+        // 📤 أمر DO: تحميل نسخة (مع فحص الحجم)
         // ============================================================
         else if (commandName === 'do') {
             try {
+                // محاولة عمل Checkpoint للتأكد من حفظ البيانات قبل النسخ
                 if (client.sql && client.sql.open) {
                     try { client.sql.pragma('wal_checkpoint(RESTART)'); } catch (e) {}
                 }
+                
                 if (!fs.existsSync(DB_PATH)) return message.reply("⚠️ الملف غير موجود!");
+
+                // 🔥 فحص حجم الملف قبل الإرسال 🔥
+                const stats = fs.statSync(DB_PATH);
+                const fileSizeInBytes = stats.size;
+                const fileSizeInMegabytes = fileSizeInBytes / (1024 * 1024);
+
+                // تنبيه إذا كان الملف كبيراً جداً (أكبر من 24 ميجا)
+                if (fileSizeInMegabytes > 24) { 
+                    return message.reply({ 
+                        content: `❌ **حجم الملف (${fileSizeInMegabytes.toFixed(2)} MB) كبير جداً!**\nديسكورد لا يسمح بإرسال ملفات أكبر من 25MB (إلا للسيرفرات المعززة).\n📂 **الحل:** يرجى تحميل ملف \`mainDB.sqlite\` يدوياً من لوحة التحكم (File Manager).`
+                    });
+                }
 
                 const attachment = new AttachmentBuilder(DB_PATH, { name: 'mainDB.sqlite' });
                 
-                // 🌟 إضافة زر الاستعادة 🌟
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId('restore_backup') // نفس الآيدي الموجود في backup-scheduler
+                        .setCustomId('restore_backup')
                         .setLabel('استعادة هذه النسخة 🔄')
                         .setStyle(ButtonStyle.Danger)
                 );
 
-                // 🔥🔥🔥 التعديل الجديد: محاولة الإرسال للخاص مع كشف الأخطاء 🔥🔥🔥
                 try {
                     await message.author.send({ 
-                        content: `📦 **نسخة احتياطية (يدوية)**\n📆 <t:${Math.floor(Date.now() / 1000)}:R>`, 
+                        content: `📦 **نسخة احتياطية** (${fileSizeInMegabytes.toFixed(2)} MB)\n📆 <t:${Math.floor(Date.now() / 1000)}:R>`, 
                         files: [attachment],
-                        components: [row] // إرفاق الزر
+                        components: [row]
                     });
-                    await message.react('✅'); // تفاعل للنجاح
+                    await message.react('✅');
                 } catch (dmError) {
-                    console.error("[Admin DO] DM Failed:", dmError.message); // طباعة الخطأ في الكونسول
+                    console.error("[Admin DO] DM Failed:", dmError.message);
                     
-                    // الخطة البديلة: الإرسال في الشات
+                    let errorMsg = "⚠️ **تعذر الإرسال للخاص!**";
+                    if (dmError.message.includes("too large")) {
+                        errorMsg = `❌ **الملف كبير جداً (${fileSizeInMegabytes.toFixed(2)} MB) ولا يمكن إرساله!**`;
+                        return message.reply({ content: `${errorMsg}\nحمله من الاستضافة.` });
+                    }
+
+                    // المحاولة في الشات إذا لم يكن السبب هو الحجم
                     await message.reply({ 
-                        content: "⚠️ **تعذر الإرسال للخاص (الخاص مغلق أو البوت محظور).**\nإليك النسخة هنا:", 
+                        content: `${errorMsg}\nإليك النسخة هنا:`, 
                         files: [attachment],
                         components: [row] 
+                    }).catch(e => {
+                        message.reply(`❌ **فشل الإرسال نهائياً:** ${e.message}`);
                     });
                 }
 
             } catch (err) { 
-                console.error("[Admin DO] Global Error:", err);
+                console.error("[Admin DO] Error:", err);
                 message.reply(`❌ خطأ عام: ${err.message}`); 
             }
         }
         
         // ============================================================
-        // ⚙️ أمر SSS (تعيين قناة الباكوب)
+        // ⚙️ أمر SSS
         // ============================================================
         else if (commandName === 'sss') {
             const channel = message.mentions.channels.first() || message.channel;
