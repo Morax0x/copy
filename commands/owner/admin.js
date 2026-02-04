@@ -45,7 +45,6 @@ module.exports = {
                 file.on('finish', function() {
                     file.close(async () => {
                         try {
-                            // 1. إغلاق الاتصال بأمان
                             try {
                                 if (client.sql && client.sql.open) {
                                     client.sql.close();
@@ -53,18 +52,15 @@ module.exports = {
                                 }
                             } catch (e) { console.log("[Database] Already closed."); }
 
-                            // 2. تنظيف الملفات القديمة
                             try { if (fs.existsSync(WAL_PATH)) fs.unlinkSync(WAL_PATH); } catch(e){}
                             try { if (fs.existsSync(SHM_PATH)) fs.unlinkSync(SHM_PATH); } catch(e){}
                             try { if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH); } catch(e){}
 
-                            // 3. وضع الملف الجديد
                             if (fs.existsSync(TEMP_PATH)) {
                                 fs.renameSync(TEMP_PATH, DB_PATH);
                                 console.log("[Database] Replaced successfully.");
                             }
 
-                            // 4. رسالة النهاية وإعادة التشغيل
                             await msg.edit("✅ **تم التحديث!**\n🔌 **جاري إعادة التشغيل...**");
                             
                             console.log("[System] Exiting process to force restart...");
@@ -82,26 +78,25 @@ module.exports = {
         }
 
         // ============================================================
-        // 📤 أمر DO: تحميل نسخة (مع فحص الحجم)
+        // 📤 أمر DO: تحميل نسخة (مع دعم 100MB لسيرفرات لفل 3)
         // ============================================================
         else if (commandName === 'do') {
             try {
-                // محاولة عمل Checkpoint للتأكد من حفظ البيانات قبل النسخ
                 if (client.sql && client.sql.open) {
                     try { client.sql.pragma('wal_checkpoint(RESTART)'); } catch (e) {}
                 }
                 
                 if (!fs.existsSync(DB_PATH)) return message.reply("⚠️ الملف غير موجود!");
 
-                // 🔥 فحص حجم الملف قبل الإرسال 🔥
+                // حساب الحجم
                 const stats = fs.statSync(DB_PATH);
                 const fileSizeInBytes = stats.size;
                 const fileSizeInMegabytes = fileSizeInBytes / (1024 * 1024);
 
-                // تنبيه إذا كان الملف كبيراً جداً (أكبر من 24 ميجا)
-                if (fileSizeInMegabytes > 24) { 
+                // 🔥 تم رفع الحد إلى 95MB لأن سيرفرك لفل 3 🔥
+                if (fileSizeInMegabytes > 95) { 
                     return message.reply({ 
-                        content: `❌ **حجم الملف (${fileSizeInMegabytes.toFixed(2)} MB) كبير جداً!**\nديسكورد لا يسمح بإرسال ملفات أكبر من 25MB (إلا للسيرفرات المعززة).\n📂 **الحل:** يرجى تحميل ملف \`mainDB.sqlite\` يدوياً من لوحة التحكم (File Manager).`
+                        content: `❌ **حجم الملف ضخم جداً (${fileSizeInMegabytes.toFixed(2)} MB)!**\nتجاوز حتى حدود السيرفر (100MB).\n📂 **الحل:** حمله من الاستضافة.`
                     });
                 }
 
@@ -115,6 +110,7 @@ module.exports = {
                 );
 
                 try {
+                    // محاولة الإرسال للخاص أولاً
                     await message.author.send({ 
                         content: `📦 **نسخة احتياطية** (${fileSizeInMegabytes.toFixed(2)} MB)\n📆 <t:${Math.floor(Date.now() / 1000)}:R>`, 
                         files: [attachment],
@@ -122,21 +118,15 @@ module.exports = {
                     });
                     await message.react('✅');
                 } catch (dmError) {
-                    console.error("[Admin DO] DM Failed:", dmError.message);
+                    console.error("[Admin DO] DM Failed (likely size limit or closed DM):", dmError.message);
                     
-                    let errorMsg = "⚠️ **تعذر الإرسال للخاص!**";
-                    if (dmError.message.includes("too large")) {
-                        errorMsg = `❌ **الملف كبير جداً (${fileSizeInMegabytes.toFixed(2)} MB) ولا يمكن إرساله!**`;
-                        return message.reply({ content: `${errorMsg}\nحمله من الاستضافة.` });
-                    }
-
-                    // المحاولة في الشات إذا لم يكن السبب هو الحجم
+                    // 🔥 الخطة البديلة: الإرسال في الشات (يستفيد من بوست السيرفر) 🔥
                     await message.reply({ 
-                        content: `${errorMsg}\nإليك النسخة هنا:`, 
+                        content: `⚠️ **لم أستطع إرساله للخاص (قد يكون الملف كبيراً على الخاص)!**\n📦 إليك النسخة هنا (بفضل بوست السيرفر):`, 
                         files: [attachment],
                         components: [row] 
                     }).catch(e => {
-                        message.reply(`❌ **فشل الإرسال نهائياً:** ${e.message}`);
+                        message.reply(`❌ **فشل الإرسال في السيرفر أيضاً:** ${e.message}`);
                     });
                 }
 
