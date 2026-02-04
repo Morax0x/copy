@@ -9,6 +9,9 @@ const colorsCommand = require('../commands/colors.js');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
+// إنشاء جدول الكولداون إذا لم يكن موجوداً
+sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
+
 module.exports = {
     /**
      * تنفيذ الأوامر المرفقة في رد الذكاء الاصطناعي
@@ -39,8 +42,10 @@ module.exports = {
         if (actionCode === 'SHOW_COLORS') {
             try {
                 // نمرر مصفوفة فارغة في args ليفهم الكود أنه طلب عرض القائمة
-                await colorsCommand.execute(message, []);
-                return true;
+                if (colorsCommand && colorsCommand.execute) {
+                    await colorsCommand.execute(message, []);
+                    return true;
+                }
             } catch (e) {
                 console.error("[AI Action Error] Show Colors:", e);
             }
@@ -51,8 +56,10 @@ module.exports = {
             try {
                 if (actionValue) {
                     // نمرر الرقم كـ args ليفهم الكود أنه طلب تغيير لون
-                    await colorsCommand.execute(message, [actionValue]);
-                    return true;
+                    if (colorsCommand && colorsCommand.execute) {
+                        await colorsCommand.execute(message, [actionValue]);
+                        return true;
+                    }
                 } else {
                     console.log("[AI Action] Set Color Rejected: No color number provided.");
                 }
@@ -62,22 +69,35 @@ module.exports = {
         }
 
         // =========================================================
-        // 2. 💰 أمر إعطاء المورا (معدل)
+        // 2. 💰 أمر إعطاء المورا (معدل + كولداون)
         // =========================================================
         if (actionCode === 'GIVE_MORA') {
             try {
+                // أ) فحص الكولداون (ساعة واحدة) 🕒
+                const oneHour = 60 * 60 * 1000;
+                const now = Date.now();
+                const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userID);
+
+                if (cooldownData && (now - cooldownData.lastMoraTime < oneHour)) {
+                    console.log(`[AI Action] Give Mora Rejected: Cooldown active for ${message.author.tag}`);
+                    return false;
+                }
+
+                // ب) فحص الثروة (الحد الأقصى 10,000) 💰
                 const userData = sql.prepare("SELECT mora, bank FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
                 const totalWealth = (userData?.mora || 0) + (userData?.bank || 0);
                 
-                // الحد الأقصى للثروة صار 10,000
                 if (totalWealth >= 10000) {
                     console.log("[AI Action] Give Mora Rejected: User is too rich (>10k).");
                     return false; 
                 }
 
-                // المبلغ الممنوح صار 1000
+                // ج) التنفيذ: إعطاء 1000 مورا
                 sql.prepare("INSERT INTO levels (user, guild, mora) VALUES (?, ?, 1000) ON CONFLICT(user, guild) DO UPDATE SET mora = mora + 1000").run(userID, guildID);
                 
+                // د) تسجيل الكولداون
+                sql.prepare("INSERT OR REPLACE INTO ai_cooldowns (userID, lastMoraTime) VALUES (?, ?)").run(userID, now);
+
                 await message.react('💸').catch(e => console.error("Failed to react:", e));
                 console.log("[AI Action] Give Mora Success (1000 added).");
                 return true;
@@ -100,7 +120,7 @@ module.exports = {
                 // 🛑 فحص الأمان 2: هل البوت يقدر عليه؟
                 if (!message.member.moderatable) {
                     console.log(`[AI Timeout] Failed: Bot cannot punish ${message.author.tag}.`);
-                    await message.reply("ما أقدر أعاقبك.. رتبتك أعلى مني! 😤").catch(() => {});
+                    // await message.reply("ما أقدر أعاقبك.. رتبتك أعلى مني! 😤").catch(() => {});
                     return false;
                 }
 
