@@ -50,7 +50,7 @@ const staticKnowledge = {
     - المُعزّز (Booster): له كل المميزات.
     - القيصر (EM Ceasar): مشترك العضوية (2.99$)، له كل المميزات.
     `,
-     
+      
     // القوانين الصارمة
     laws: `
     [المرسوم الإمبراطوري]:
@@ -66,17 +66,17 @@ const staticKnowledge = {
     dungeon: loadJsonData('dungeon-config.json').substring(0, 800),
 };
 
-// 🔥 دالة جديدة لجلب البيانات الحية (توب، بوس)
+// 🔥 دالة لجلب البيانات الحية (توب، بوس) مخصصة للسيرفر الحالي فقط
 function getDynamicServerData(guildId) {
     if (!db) return null;
     try {
-        // 1. التوب 3 في الليفل
+        // 1. التوب 3 في الليفل (خاص بالسيرفر الحالي فقط)
         const topLevels = db.prepare("SELECT user, level FROM levels WHERE guild = ? ORDER BY totalXP DESC LIMIT 3").all(guildId);
         
-        // 2. التوب 3 في الفلوس (مورا + بنك)
+        // 2. التوب 3 في الفلوس (مورا + بنك) (خاص بالسيرفر الحالي فقط)
         const topRich = db.prepare("SELECT user, (mora + bank) as total FROM levels WHERE guild = ? ORDER BY total DESC LIMIT 3").all(guildId);
 
-        // 3. حالة الزعيم
+        // 3. حالة الزعيم (خاص بالسيرفر الحالي فقط)
         const boss = db.prepare("SELECT name, currentHP, maxHP, active FROM world_boss WHERE guildID = ?").get(guildId);
 
         return { topLevels, topRich, boss };
@@ -86,11 +86,11 @@ function getDynamicServerData(guildId) {
     }
 }
 
-// دالة جلب بيانات المستخدم الفردي
+// دالة جلب بيانات المستخدم الفردي (مخصصة للسيرفر الحالي فقط)
 function getUserData(userId, guildId) {
     if (!db) return { level: 0, balance: 0, bank: 0, mora: 0, streak: 0 };
     try {
-        // 🔥 تم التعديل: جلب mora و bank معاً
+        // 🔥 تم التعديل: جلب mora و bank معاً وتحديد guild = ?
         const levelRow = db.prepare('SELECT level, xp, mora, bank FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
         const streakRow = db.prepare('SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?').get(userId, guildId);
         
@@ -110,5 +110,5 @@ function getUserData(userId, guildId) {
     }
 }
 
-// ✅ لا تنسَ تصدير الدالة الجديدة getDynamicServerData
+// ✅ تصدير الدالة الجديدة getDynamicServerData
 module.exports = { staticKnowledge, getUserData, getDynamicServerData };
