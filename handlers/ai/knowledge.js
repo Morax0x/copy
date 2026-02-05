@@ -1,3 +1,5 @@
+// handlers/ai/knowledge.js
+
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
@@ -88,7 +90,7 @@ function getDynamicServerData(guildId) {
 
 // دالة جلب بيانات المستخدم الفردي (مخصصة للسيرفر الحالي فقط)
 function getUserData(userId, guildId) {
-    if (!db) return { level: 0, balance: 0, bank: 0, mora: 0, streak: 0 };
+    if (!db) return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0 };
     try {
         // 🔥 تم التعديل: جلب mora و bank معاً وتحديد guild = ?
         const levelRow = db.prepare('SELECT level, xp, mora, bank FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
@@ -100,13 +102,16 @@ function getUserData(userId, guildId) {
         return {
             level: levelRow ? levelRow.level : 1,
             xp: levelRow ? levelRow.xp : 0,
-            mora: cash,           // الكاش فقط
-            bank: bank,           // البنك فقط
-            balance: cash + bank, // 🔥 الرصيد الكلي (المجموع) ليراه البوت كثروة كاملة
+            
+            // 🔥🔥🔥 أسماء المتغيرات الجديدة لمنع الخلط 🔥🔥🔥
+            wallet_cash: cash,           // الكاش اللي بيده
+            bank_balance: bank,          // الفلوس اللي بالبنك
+            total_wealth: cash + bank,   // مجموع الثروة (عشان ما يجمع غلط)
+            
             streak: streakRow ? streakRow.streakCount : 0
         };
     } catch (error) {
-        return { level: 0, balance: 0, bank: 0, mora: 0, streak: 0 };
+        return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0 };
     }
 }
 
