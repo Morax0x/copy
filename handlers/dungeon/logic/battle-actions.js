@@ -164,15 +164,28 @@ async function handlePlayerBattleInteraction(i, context) {
                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                 const dmgDealt = monsterHpBefore - monster.hp;
 
-                // 🔥 تطبيق سقف الدمج 🔥
+                // 🔥🔥🔥 التعديل الجديد: إظهار الدمج لكل المهارات 🔥🔥🔥
                 if (dmgDealt > 0) {
                     let finalDmg = dmgDealt;
+                    let isCapped = false;
+
+                    // تطبيق سقف الدمج
                     if (damageCap !== Infinity && finalDmg > damageCap) {
                         finalDmg = damageCap;
                         monster.hp = Math.max(0, monsterHpBefore - finalDmg);
-                        if (log.length > 0) {
-                            const lastLogIdx = log.length - 1;
-                            log[lastLogIdx] = log[lastLogIdx] + ` (مختوم: ${finalDmg})`; 
+                        isCapped = true;
+                    }
+
+                    // إضافة الرقم للسجل إذا لم يكن موجوداً
+                    if (log.length > 0) {
+                        const lastLogIdx = log.length - 1;
+                        // نتأكد أن الرسالة لا تحتوي بالفعل على الرقم لتجنب التكرار (مثل: 500 (500))
+                        if (!log[lastLogIdx].includes(finalDmg.toString())) {
+                            if (isCapped) {
+                                log[lastLogIdx] += ` (مختوم: ${finalDmg})`; 
+                            } else {
+                                log[lastLogIdx] += ` (**${finalDmg}** 💥)`; // 🔥 هنا يظهر الدمج دائماً
+                            }
                         }
                     }
                 }
@@ -437,7 +450,7 @@ async function handleImmediateDeaths(players, threadChannel, ongoingRef, collect
             // 🔥 التعديل الجديد: إعلان التحلل الفوري 🔥
             if (deadP.reviveCount && deadP.reviveCount >= 1) {
                 deadP.isPermDead = true;
-                await threadChannel.send(`☠️ **${deadP.name}** لفظ أنفاسه الأخيرة وتحللت جثته! (لا يمكن إنعاشه)`).catch(()=>{});
+                await threadChannel.send(`☠️ **${deadP.name}** لفظ أنفاسه الأخيرة وتحللت جثته!`).catch(()=>{});
             } else {
                 await threadChannel.send(`💀 **${deadP.name}** سقط في أرض المعركة!`).catch(()=>{});
             }
