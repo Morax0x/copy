@@ -126,6 +126,15 @@
       "goal": 3,
       "reward": { "mora": 30, "xp": 30 },
       "emoji": "🎟️"
+    },
+    {
+      "id": "d_ai_talk_3",
+      "name": "تحدث مع الامبراطورة",
+      "description": "تحدث مع الامبراطورة واحصل على 3 رد",
+      "stat": "ai_interactions",
+      "goal": 3,
+      "reward": { "mora": 300, "xp": 100 },
+      "emoji": "🗣️"
     }
   ],
   "weekly": [
@@ -227,6 +236,15 @@
       "goal": 50,
       "reward": { "mora": 200, "xp": 200 },
       "emoji": "🎟️"
+    },
+    {
+      "id": "w_ai_talk_100",
+      "name": "تحدث مع الامبراطورة",
+      "description": "تحدث مع الامبراطورة واحصل على 100 رد",
+      "stat": "ai_interactions",
+      "goal": 100,
+      "reward": { "mora": 777, "xp": 200 },
+      "emoji": "👑"
     }
   ],
   "achievements": [
