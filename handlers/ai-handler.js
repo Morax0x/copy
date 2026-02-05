@@ -15,6 +15,25 @@ const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
 /**
+ * 🧹 دالة تنظيف النص من المنشن المزعج والتكرار (السبام)
+ */
+function sanitizeOutput(text) {
+    if (!text) return "";
+
+    // 1. إزالة المنشن الصريح (مثل <@123456789>)
+    let cleanText = text.replace(/<@!?\d+>/g, "");
+
+    // 2. إزالة علامة @ المنفردة لمنع منشن الأسماء (يصير "يا أحمد" بدل "يا @أحمد")
+    cleanText = cleanText.replace(/@/g, "");
+
+    // 3. تقليل تكرار الأحرف (مثل هههههههههه -> هههه)
+    // أي حرف يتكرر أكثر من 3 مرات يتم تقليصه إلى 3 مرات فقط
+    cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
+
+    return cleanText.trim();
+}
+
+/**
  * 🛠️ دالة مساعدة لتحويل الآيديات إلى أسماء
  */
 async function resolveNames(guild, dataList) {
@@ -100,7 +119,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         // 5. بناء البرومبت وإرسال الطلب
         const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo, canGiveMora);
 
-        const response = await generateResponse(
+        let response = await generateResponse(
             apiKey, 
             systemInstruction, 
             messageText, 
@@ -112,6 +131,12 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             messageObject 
         );
 
+        // 🔥🔥🔥 تطبيق الفلتر القوي (Sanitizer) قبل الرد 🔥🔥🔥
+        // هذا يمنع المنشن والسبام نهائياً
+        if (response) {
+            response = sanitizeOutput(response);
+        }
+
         // 🔥🔥🔥 [مهم] تحديث المهام يدوياً لضمان العمل 100% 🔥🔥🔥
         if (response && messageObject) { 
             try {
@@ -119,19 +144,17 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
                 // 1️⃣ تحديث الإحصائيات اليومية
-                // نتأكد أولاً هل يوجد سجل لهذا اليوم؟
                 let daily = sql.prepare("SELECT id FROM user_daily_stats WHERE userID = ? AND guildID = ? AND date = ?").get(userId, guildId, dateStr);
                 if (daily) {
                     sql.prepare("UPDATE user_daily_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(daily.id);
                 } else {
-                    // إذا لم يوجد، ننشئه (وهذا نادر لأن رسالة المستخدم تنشئه عادة، لكن للاحتياط)
                     const uniqueId = `${userId}-${guildId}-${dateStr}`;
                     try {
                         sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueId, userId, guildId, dateStr);
                     } catch (e) { /* تجاهل خطأ التكرار */ }
                 }
 
-                // 2️⃣ تحديث الإحصائيات الأسبوعية (لآخر أسبوع نشط)
+                // 2️⃣ تحديث الإحصائيات الأسبوعية
                 let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? ORDER BY weekStartDate DESC LIMIT 1").get(userId, guildId);
                 if (weekly) {
                     sql.prepare("UPDATE user_weekly_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(weekly.id);
@@ -145,9 +168,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     sql.prepare("INSERT INTO user_total_stats (id, userID, guildID, total_ai_interactions) VALUES (?, ?, ?, 1)").run(`${userId}-${guildId}`, userId, guildId);
                 }
 
-                // 4️⃣ تشغيل فاحص المهام (لإرسال الجائزة إذا اكتملت)
+                // 4️⃣ تشغيل فاحص المهام
                 if (messageObject.client && typeof messageObject.client.checkQuests === 'function') {
-                    // نمرر اسم الخاصية الجديدة 'ai_interactions'
                     messageObject.client.checkQuests(messageObject, 'ai_interactions');
                 }
 
