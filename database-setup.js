@@ -117,6 +117,15 @@ function setupDatabase(clientOrSql) {
     ensureColumn('levels', 'last_rob_pardon', "TEXT DEFAULT ''");
     ensureColumn('levels', 'currentLocation', "TEXT DEFAULT 'beach'");
 
+    // 🔥🔥🔥 أعمدة الدانجون والسباق (التي تمت إضافتها) 🔥🔥🔥
+    ensureColumn('levels', 'dungeon_gate_level', 'INTEGER DEFAULT 1');
+    ensureColumn('levels', 'max_dungeon_floor', 'INTEGER DEFAULT 0');
+    ensureColumn('levels', 'dungeon_wins', 'INTEGER DEFAULT 0');
+    ensureColumn('levels', 'dungeon_join_count', 'INTEGER DEFAULT 0');
+    ensureColumn('levels', 'last_join_reset', 'INTEGER DEFAULT 0');
+    ensureColumn('levels', 'last_dungeon', 'INTEGER DEFAULT 0'); 
+    ensureColumn('levels', 'lastRace', 'INTEGER DEFAULT 0');
+
     ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions'].forEach(col => {
         ensureColumn('user_daily_stats', col, 'INTEGER DEFAULT 0');
     });
