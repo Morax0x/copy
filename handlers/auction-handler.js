@@ -78,7 +78,7 @@ async function endAuction(client, auctionData) {
 ✶ السعر النهائي: **${auctionData.current_bid.toLocaleString()}** ${EMOJI_MORA}
                 `)
                 .setColor(AUCTION_COLOR)
-                .setImage(AUCTION_IMAGE) // ✅ الصورة الذهبية
+                .setImage(AUCTION_IMAGE) 
                 .setTimestamp();
 
             await channel.send({ content: `🔔 | <@${auctionData.highest_bidder}>`, embeds: [winEmbed] });
@@ -91,7 +91,7 @@ async function endAuction(client, auctionData) {
 ✶ الحالة: **لم يتم البيع (لا يوجد مزايدات)**
                 `)
                 .setColor("Red")
-                .setImage(AUCTION_IMAGE); // ✅ الصورة الذهبية
+                .setImage(AUCTION_IMAGE); 
             
             await channel.send({ embeds: [failEmbed] });
         }
@@ -106,7 +106,12 @@ async function handleAuctionSystem(interaction) {
     const { customId, user, guild, client } = interaction;
     const sql = client.sql;
 
-    if (!sql.open) return interaction.reply({ content: "⚠️", ephemeral: true });
+    if (!sql.open) {
+        if (!interaction.replied && !interaction.deferred) {
+            return interaction.reply({ content: "⚠️ قاعدة البيانات غير متصلة.", ephemeral: true });
+        }
+        return;
+    }
 
     let messageID, action;
     if (customId.startsWith('bid_open_')) { messageID = customId.replace('bid_open_', ''); action = 'open_menu'; } 
@@ -116,7 +121,11 @@ async function handleAuctionSystem(interaction) {
     else { return; }
 
     const auction = sql.prepare("SELECT * FROM active_auctions WHERE messageID = ?").get(messageID);
-    if (!auction) return interaction.reply({ content: "❌ انتهى المزاد.", ephemeral: true });
+    if (!auction) {
+        const msg = "❌ انتهى هذا المزاد.";
+        if (interaction.replied || interaction.deferred) return interaction.followUp({ content: msg, ephemeral: true });
+        return interaction.reply({ content: msg, ephemeral: true });
+    }
 
     const userData = sql.prepare("SELECT mora, bank FROM levels WHERE user = ? AND guild = ?").get(user.id, guild.id) || { mora: 0, bank: 0 };
 
@@ -152,10 +161,12 @@ async function handleAuctionSystem(interaction) {
 
     let incrementAmount = 0;
     if (action === 'place_min_bid') {
-        await interaction.deferUpdate();
+        // 🔥 deferUpdate: يخبر الديسكورد أن الضغطة وصلت، لكن لا يرسل رسالة جديدة
+        await interaction.deferUpdate().catch(() => {});
         incrementAmount = auction.min_increment;
     } else if (action === 'submit_custom_bid') {
-        await interaction.deferReply({ ephemeral: true });
+        // 🔥 deferReply: يخبر الديسكورد أننا نجهز رداً (Bot is thinking)
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
         const val = parseInt(interaction.fields.getTextInputValue('bid_amount_input'));
         if (isNaN(val) || val < auction.min_increment) return interaction.editReply({ content: `❌ أقل مبلغ: ${auction.min_increment}` });
         incrementAmount = val;
@@ -170,10 +181,23 @@ async function handleAuctionSystem(interaction) {
         if (currentAuction.highest_bidder === user.id) cost = incrementAmount;
 
         const freshMora = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(user.id, guild.id)?.mora || 0;
+        
+        // 🛑 التحقق من الرصيد مع إصلاح الرد المكرر
         if (freshMora < cost) {
             const msg = `❌ الرصيد غير كافي. المطلوب: **${cost.toLocaleString()}**`;
-            if (interaction.type === ComponentType.ModalSubmit) return interaction.editReply(msg);
-            return interaction.reply({ content: msg, ephemeral: true });
+            
+            // إذا كان التفاعل مؤجلاً (Deferred) أو تم الرد عليه
+            if (interaction.deferred || interaction.replied) {
+                if (action === 'submit_custom_bid') {
+                    // المودال ينتظر editReply
+                    return interaction.editReply(msg);
+                } else {
+                    // الزر ينتظر followUp (لأننا استخدمنا deferUpdate)
+                    return interaction.followUp({ content: msg, ephemeral: true });
+                }
+            } else {
+                return interaction.reply({ content: msg, ephemeral: true });
+            }
         }
 
         if (currentAuction.highest_bidder && currentAuction.highest_bidder !== user.id) {
@@ -186,9 +210,9 @@ async function handleAuctionSystem(interaction) {
         const newBidCount = (currentAuction.bid_count || 0) + 1;
 
         sql.prepare("UPDATE active_auctions SET current_bid = ?, highest_bidder = ?, end_time = ?, bid_count = ? WHERE messageID = ?")
-           .run(newTotalBid, user.id, newEndTime, newBidCount, messageID);
+            .run(newTotalBid, user.id, newEndTime, newBidCount, messageID);
 
-        // تحديث الرسالة
+        // تحديث الرسالة الأصلية
         const channel = guild.channels.cache.get(currentAuction.channelID);
         if (channel) {
             const msg = await channel.messages.fetch(messageID).catch(() => null);
@@ -207,9 +231,6 @@ async function handleAuctionSystem(interaction) {
                     `)
                     .setColor("Random");
 
-                // ✅ منطق الصور الصحيح (نفس منطق الإنشاء):
-                // إذا فيه صورة سلعة -> تظهر كبيرة
-                // إذا لا -> تظهر الذهبية كبيرة
                 if (currentAuction.image_url) {
                     newEmbed.setImage(currentAuction.image_url);
                 } else {
@@ -217,18 +238,34 @@ async function handleAuctionSystem(interaction) {
                 }
 
                 await msg.edit({ embeds: [newEmbed] });
-                channel.send({ content: `🔥 **${newTotalBid.toLocaleString()}** ${EMOJI_MORA} بواسطة <@${user.id}>` }).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+                
+                // رسالة في الشات العام (تحذف بعد 5 ثواني)
+                channel.send({ content: `🔥 **${newTotalBid.toLocaleString()}** ${EMOJI_MORA} بواسطة <@${user.id}>` })
+                    .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
             }
         }
 
         const successMsg = `✅ **تم!** أنت الأعلى بـ **${newTotalBid.toLocaleString()}**`;
-        if (interaction.type === ComponentType.ModalSubmit) await interaction.editReply({ content: successMsg, components: [] });
-        else await interaction.editReply({ content: successMsg, embeds: [], components: [] });
+        
+        // ✅ الرد النهائي (الإصلاح الجذري لتجنب InteractionAlreadyReplied)
+        if (action === 'submit_custom_bid') {
+            // المودال يحتاج editReply
+            await interaction.editReply({ content: successMsg, components: [] });
+        } else {
+            // الزر يحتاج followUp (لأننا عملنا deferUpdate سابقاً، ولو عملنا editReply راح يخرب رسالة المزاد الأصلية)
+            await interaction.followUp({ content: successMsg, ephemeral: true });
+        }
 
     } catch (err) {
         console.error("Bid Error:", err);
-        const msg = "❌ حدث خطأ.";
-        if (interaction.deferred || interaction.replied) await interaction.editReply(msg); else await interaction.reply({ content: msg, ephemeral: true });
+        const msg = "❌ حدث خطأ أثناء المزايدة.";
+        
+        if (interaction.deferred || interaction.replied) {
+            if (action === 'submit_custom_bid') await interaction.editReply(msg);
+            else await interaction.followUp({ content: msg, ephemeral: true });
+        } else {
+            await interaction.reply({ content: msg, ephemeral: true });
+        }
     }
 }
 
