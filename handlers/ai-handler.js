@@ -6,7 +6,6 @@ const { getLeaderboardKnowledge } = require('./ai/serverLore');
 const { buildSystemPrompt } = require('./ai/persona');
 const { generateResponse } = require('./ai/engine');
 const aiConfig = require('../utils/aiConfig'); 
-// 👇 إضافة ملف الحماية الجديد
 const { checkSecurity } = require('./ai/security'); 
 require('dotenv').config();
 
@@ -42,81 +41,65 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             return null; 
         }
 
-        // 🔥🔥🔥 1.5 فحص الحماية (Anti-Prompt Injection) 🔥🔥🔥
-        // هذا الكود يفحص الرسالة قبل إرسالها لـ Gemini
+        // 🔥 الحماية من التلاعب
         if (checkSecurity(messageText)) {
             console.log(`[AI Security] Blocked injection attempt by ${username} (${userId})`);
-            
-            // العقاب: تايم أوت 5 دقائق
             if (messageObject && messageObject.member) {
                 if (messageObject.member.moderatable) {
                     try {
-                        await messageObject.member.timeout(5 * 60 * 1000, "محاولة التلاعب بالذكاء الاصطناعي (Prompt Injection)");
+                        await messageObject.member.timeout(5 * 60 * 1000, "محاولة التلاعب بالذكاء الاصطناعي");
                         await messageObject.react('🚫');
                         await messageObject.reply("🛑 **تم كشف محاولة تلاعب!**\nتحسبني غبية؟.. خيس بالسجن 5 دقايق عشان تتأدب! 🛡️");
                     } catch (e) {
-                        console.error("[AI Security] Failed to timeout:", e.message);
                         await messageObject.reply("حاولت تلعب بذيلك.. احمد ربك ما اقدر اسجنك، بس انقلع! 🛡️");
                     }
                 } else {
                     await messageObject.reply("حاولت تلعب بذيلك.. احمد ربك ما اقدر اسجنك، بس انقلع! 🛡️");
                 }
             }
-            return null; // ⛔ وقف التنفيذ فوراً
+            return null; 
         }
 
-        // 2. 🔞 تحديد وضع NSFW بدقة
+        // 2. إعدادات القناة والمحتوى
         const channelSettings = aiConfig.getChannelSettings(channelId);
         const finalNsfwStatus = channelSettings ? Boolean(channelSettings.nsfw) : Boolean(isDiscordNsfw);
-
-        // 3. 🔑 التجهيز
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
         const userData = getUserData(userId, guildId);
 
-        // 🔥🔥 3.5 تجهيز معلومات السيرفر الحية (التوب والزعيم) 🔥🔥
+        // 3. تجهيز بيانات السيرفر الحية
         if (messageObject && messageObject.guild) {
             const dynamicData = getDynamicServerData(guildId);
-            
             if (dynamicData) {
                 const topLevelNames = await resolveNames(messageObject.guild, dynamicData.topLevels);
                 const topRichNames = await resolveNames(messageObject.guild, dynamicData.topRich);
-                
-                let bossInfo = "لا يوجد زعيم حالياً (ميت أو لم يظهر).";
+                let bossInfo = "لا يوجد زعيم حالياً.";
                 if (dynamicData.boss && dynamicData.boss.active) {
                     const hpPercent = Math.floor((dynamicData.boss.currentHP / dynamicData.boss.maxHP) * 100);
                     bossInfo = `⚠️ الزعيم (${dynamicData.boss.name}) حي ويهدد السيرفر! صحته المتبقية: ${hpPercent}%`;
                 }
-
                 userData.serverContext = `
-[Server Live Stats - معلومات السيرفر الحالية]:
-- Top Strongest (أقوى المستويات): ${topLevelNames}
-- Top Richest (أغنى الهوامير): ${topRichNames}
-- World Boss Status (حالة الزعيم): ${bossInfo}
+[Server Live Stats]:
+- Top Strongest: ${topLevelNames}
+- Top Richest: ${topRichNames}
+- World Boss: ${bossInfo}
                 `;
             }
         }
 
-        // 🔥🔥🔥 جلب التوب كنص من الدالة الجديدة (مع تمرير guildId) 🔥🔥🔥
         const leaderboardInfo = getLeaderboardKnowledge(sql, guildId);
 
-        // ============================================================
-        // 🕒 فحص كولداون المورا (Mora Cooldown Check)
-        // ============================================================
+        // 4. فحص كولداون المورا
         sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
-        
         const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userId);
         const oneHour = 60 * 60 * 1000;
-        const now = Date.now();
         let canGiveMora = true;
-
-        if (cooldownData && (now - cooldownData.lastMoraTime < oneHour)) {
+        if (cooldownData && (Date.now() - cooldownData.lastMoraTime < oneHour)) {
             canGiveMora = false; 
         }
 
-        // 4. 🎭 بناء الشخصية
+        // 5. بناء البرومبت وإرسال الطلب
         const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo, canGiveMora);
 
-        // 5. 🧠 إرسال الطلب للمحرك
         const response = await generateResponse(
             apiKey, 
             systemInstruction, 
@@ -129,14 +112,47 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             messageObject 
         );
 
-        // 🔥🔥🔥 إضافة جديدة: زيادة عداد مهام الذكاء الاصطناعي 🔥🔥🔥
-        // نتأكد أن الرد ليس فارغاً وأن كائن الرسالة موجود
-        if (response && messageObject && messageObject.client && typeof messageObject.client.incrementQuestStats === 'function') {
+        // 🔥🔥🔥 [مهم] تحديث المهام يدوياً لضمان العمل 100% 🔥🔥🔥
+        if (response && messageObject) { 
             try {
-                // زيادة العداد بمقدار 1 (للمهام اليومية والأسبوعية)
-                messageObject.client.incrementQuestStats(userId, guildId, 'ai_interactions', 1);
+                const now = new Date();
+                const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
+                // 1️⃣ تحديث الإحصائيات اليومية
+                // نتأكد أولاً هل يوجد سجل لهذا اليوم؟
+                let daily = sql.prepare("SELECT id FROM user_daily_stats WHERE userID = ? AND guildID = ? AND date = ?").get(userId, guildId, dateStr);
+                if (daily) {
+                    sql.prepare("UPDATE user_daily_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(daily.id);
+                } else {
+                    // إذا لم يوجد، ننشئه (وهذا نادر لأن رسالة المستخدم تنشئه عادة، لكن للاحتياط)
+                    const uniqueId = `${userId}-${guildId}-${dateStr}`;
+                    try {
+                        sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueId, userId, guildId, dateStr);
+                    } catch (e) { /* تجاهل خطأ التكرار */ }
+                }
+
+                // 2️⃣ تحديث الإحصائيات الأسبوعية (لآخر أسبوع نشط)
+                let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? ORDER BY weekStartDate DESC LIMIT 1").get(userId, guildId);
+                if (weekly) {
+                    sql.prepare("UPDATE user_weekly_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(weekly.id);
+                }
+
+                // 3️⃣ تحديث الإحصائيات الكلية
+                let total = sql.prepare("SELECT id FROM user_total_stats WHERE userID = ? AND guildID = ?").get(userId, guildId);
+                if (total) {
+                    sql.prepare("UPDATE user_total_stats SET total_ai_interactions = total_ai_interactions + 1 WHERE userID = ? AND guildID = ?").run(userId, guildId);
+                } else {
+                    sql.prepare("INSERT INTO user_total_stats (id, userID, guildID, total_ai_interactions) VALUES (?, ?, ?, 1)").run(`${userId}-${guildId}`, userId, guildId);
+                }
+
+                // 4️⃣ تشغيل فاحص المهام (لإرسال الجائزة إذا اكتملت)
+                if (messageObject.client && typeof messageObject.client.checkQuests === 'function') {
+                    // نمرر اسم الخاصية الجديدة 'ai_interactions'
+                    messageObject.client.checkQuests(messageObject, 'ai_interactions');
+                }
+
             } catch (err) {
-                console.error("[Quest Update Error]", err);
+                console.error("[Quest Update Error]", err.message);
             }
         }
 
