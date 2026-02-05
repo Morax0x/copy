@@ -129,6 +129,17 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             messageObject 
         );
 
+        // 🔥🔥🔥 إضافة جديدة: زيادة عداد مهام الذكاء الاصطناعي 🔥🔥🔥
+        // نتأكد أن الرد ليس فارغاً وأن كائن الرسالة موجود
+        if (response && messageObject && messageObject.client && typeof messageObject.client.incrementQuestStats === 'function') {
+            try {
+                // زيادة العداد بمقدار 1 (للمهام اليومية والأسبوعية)
+                messageObject.client.incrementQuestStats(userId, guildId, 'ai_interactions', 1);
+            } catch (err) {
+                console.error("[Quest Update Error]", err);
+            }
+        }
+
         return response;
 
     } catch (error) {
