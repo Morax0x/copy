@@ -19,17 +19,9 @@ const sql = new SQLite(dbPath);
  */
 function sanitizeOutput(text) {
     if (!text) return "";
-
-    // 1. إزالة المنشن الصريح (مثل <@123456789>)
     let cleanText = text.replace(/<@!?\d+>/g, "");
-
-    // 2. إزالة علامة @ المنفردة لمنع منشن الأسماء (يصير "يا أحمد" بدل "يا @أحمد")
     cleanText = cleanText.replace(/@/g, "");
-
-    // 3. تقليل تكرار الأحرف (مثل هههههههههه -> هههه)
-    // أي حرف يتكرر أكثر من 3 مرات يتم تقليصه إلى 3 مرات فقط
     cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
-
     return cleanText.trim();
 }
 
@@ -132,7 +124,6 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         );
 
         // 🔥🔥🔥 تطبيق الفلتر القوي (Sanitizer) قبل الرد 🔥🔥🔥
-        // هذا يمنع المنشن والسبام نهائياً
         if (response) {
             response = sanitizeOutput(response);
         }
@@ -151,13 +142,29 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     const uniqueId = `${userId}-${guildId}-${dateStr}`;
                     try {
                         sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueId, userId, guildId, dateStr);
-                    } catch (e) { /* تجاهل خطأ التكرار */ }
+                    } catch (e) { }
                 }
 
                 // 2️⃣ تحديث الإحصائيات الأسبوعية
                 let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? ORDER BY weekStartDate DESC LIMIT 1").get(userId, guildId);
+                
                 if (weekly) {
+                    // إذا وجد سجل للأسبوع الحالي، حدثه
                     sql.prepare("UPDATE user_weekly_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(weekly.id);
+                } else {
+                    // 🔥🔥🔥 هذا هو الإصلاح: إذا لم يوجد سجل، قم بإنشائه فوراً 🔥🔥🔥
+                    // حساب بداية الأسبوع (يوم الأحد عادة)
+                    const curr = new Date();
+                    const first = curr.getDate() - curr.getDay(); // يوم الأحد
+                    const weekStart = new Date(curr.setDate(first)).toISOString().split('T')[0];
+                    const uniqueWeeklyId = `${userId}-${guildId}-${weekStart}`;
+
+                    try {
+                        sql.prepare("INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueWeeklyId, userId, guildId, weekStart);
+                    } catch (e) {
+                        // في حال فشل الإنشاء (نادر جداً)، نحاول التحديث مرة أخيرة
+                        console.error("[Weekly Stats Insert Error]", e.message);
+                    }
                 }
 
                 // 3️⃣ تحديث الإحصائيات الكلية
