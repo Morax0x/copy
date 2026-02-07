@@ -23,6 +23,7 @@ try {
 
 const EMOJI_READY = '🟢';
 const EMOJI_WAIT = '🔴';
+const HIDDEN_EMBED_IMAGE = 'https://i.postimg.cc/m2ZrjxB9/time.png';
 
 function formatTimeSimple(ms) {
     if (ms < 0) ms = 0;
@@ -84,7 +85,7 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, client, guild;
         let targetUser;
-        let originalUser; // المستخدم الذي نفذ الأمر
+        let originalUser; 
 
         try {
             if (isSlash) {
@@ -110,7 +111,6 @@ module.exports = {
 
             const now = Date.now();
             
-            // مصفوفتان لتخزين الألعاب المتاحة وغير المتاحة
             const readyGames = [];
             const waitGames = [];
 
@@ -171,17 +171,15 @@ module.exports = {
                 `)
                 .setTimestamp();
 
-            // بناء الأزرار
+            // بناء الأزرار (رمادية وبدون كلام)
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('show_ready')
-                    .setLabel('الألعاب المتاحة')
-                    .setStyle(ButtonStyle.Success)
+                    .setStyle(ButtonStyle.Secondary) // رمادي
                     .setEmoji(EMOJI_READY),
                 new ButtonBuilder()
                     .setCustomId('show_wait')
-                    .setLabel('أوقات الانتظار')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Secondary) // رمادي
                     .setEmoji(EMOJI_WAIT)
             );
 
@@ -196,36 +194,46 @@ module.exports = {
             // إنشاء كوليكتور للأزرار
             const collector = sentMessage.createMessageComponentCollector({ 
                 componentType: ComponentType.Button, 
-                time: 60000 // الأزرار تعمل لمدة دقيقة
+                time: 60000 
             });
 
             collector.on('collect', async (i) => {
-                // التأكد من أن الشخص الذي ضغط هو من طلب الأمر (اختياري، يمكن إزالته ليتمكن الجميع من الرؤية)
                 if (i.user.id !== originalUser.id) {
                     return i.reply({ content: "🚫 هذا الأمر ليس لك.", ephemeral: true });
                 }
 
                 if (i.customId === 'show_ready') {
-                    const content = readyGames.length > 0 
+                    const desc = readyGames.length > 0 
                         ? `**✅ القائمة المتاحة لـ ${targetUser.username}:**\n\n${readyGames.join('\n')}` 
                         : `❌ لا توجد ألعاب متاحة حالياً لـ ${targetUser.username}..`;
                     
-                    await i.reply({ content: content, ephemeral: true });
+                    // إيمبد الرد المخفي
+                    const hiddenEmbed = new EmbedBuilder()
+                        .setColor("Green")
+                        .setDescription(desc)
+                        .setImage(HIDDEN_EMBED_IMAGE); // الصورة الكبيرة
+
+                    await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
                 } 
                 else if (i.customId === 'show_wait') {
-                    const content = waitGames.length > 0 
+                    const desc = waitGames.length > 0 
                         ? `**⏳ قائمة الانتظار لـ ${targetUser.username}:**\n\n${waitGames.join('\n')}` 
-                        : `🎉 كل الألعاب متاحة لـ ${targetUser.username}!`;
+                        : `جـميـع الالعـاب متاحـة لـك الان !`; // الرسالة الخاصة عند خلو القائمة
 
-                    await i.reply({ content: content, ephemeral: true });
+                    // إيمبد الرد المخفي
+                    const hiddenEmbed = new EmbedBuilder()
+                        .setColor("Red")
+                        .setDescription(desc)
+                        .setImage(HIDDEN_EMBED_IMAGE); // الصورة الكبيرة
+
+                    await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
                 }
             });
 
             collector.on('end', () => {
-                // تعطيل الأزرار بعد انتهاء الوقت
                 const disabledRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('show_ready').setLabel('الألعاب المتاحة').setStyle(ButtonStyle.Success).setEmoji(EMOJI_READY).setDisabled(true),
-                    new ButtonBuilder().setCustomId('show_wait').setLabel('أوقات الانتظار').setStyle(ButtonStyle.Danger).setEmoji(EMOJI_WAIT).setDisabled(true)
+                    new ButtonBuilder().setCustomId('show_ready').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_READY).setDisabled(true),
+                    new ButtonBuilder().setCustomId('show_wait').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_WAIT).setDisabled(true)
                 );
                 
                 if (isSlash) {
