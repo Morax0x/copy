@@ -35,7 +35,7 @@ const skillsData = loadGameData('skills-config.json');
 const shopData = loadGameData('shop-items.json');
 const seedsData = loadGameData('seeds.json');
 const potionsData = loadGameData('potions.json');
-const feedItems = loadGameData('feed-items.json');
+const feedItems = loadGameData('feed-items.json'); // ✅ تم التحميل
 const farmAnimals = loadGameData('farm-animals.json');
 const dungeonData = loadGameData('dungeon-config.json');
 const questsData = loadGameData('quests-config.json');
@@ -46,6 +46,7 @@ const skillsText = formatList(skillsData);
 const shopText = formatList(shopData);
 const seedsText = formatList(seedsData);
 const potionsText = formatList(potionsData);
+const feedText = formatList(feedItems); // ✅ تم التنسيق
 const animalsText = formatList(farmAnimals);
 const questsDailyText = questsData.daily ? formatList(questsData.daily) : "لا يوجد";
 const questsWeeklyText = questsData.weekly ? formatList(questsData.weekly) : "لا يوجد";
@@ -117,6 +118,8 @@ ${potionsText}
 ${seedsText}
    - **الحيوانات:**
 ${animalsText}
+   - **الأعلاف:**
+${feedText}
 
 7. **🏰 الدانجون (Dungeons):**
    - نظام قتال وحوش وتسلق طوابق.
@@ -128,8 +131,8 @@ ${animalsText}
 
 ⚠️ **توجيه للإمبراطورة:**
 - لديك الآن وصول كامل لجميع بيانات اللعبة أعلاه.
-- إذا سألك أحد "وش أقوى سلاح؟" أو "كم سعر البيض؟" أو "وش المهام اليوم؟"، استخرجي الإجابة من القوائم أعلاه.
-- استخدمي هذه المعلومات بذكاء لتبدي خبيرة في شؤون مملكتك.
+- إذا سألك أحد "وش أقوى سلاح؟" أو "كم سعر الشي الفلاني؟" أو "وش المهام اليوم؟"، استخرجي الإجابة من القوائم أعلاه.
+- استخدمي هذه المعلومات بذكاء لتبدي خبيرة في شؤون الامبراطورية.
 `;
     }
 };
