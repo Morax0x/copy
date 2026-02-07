@@ -1,6 +1,16 @@
-const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
+const { 
+    EmbedBuilder, 
+    PermissionsBitField, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ComponentType, 
+    SlashCommandBuilder, 
+    MessageFlags 
+} = require("discord.js");
 
-const HELP_IMAGE = 'https://i.postimg.cc/h4Hb5VX6/help.png';
+const HELP_THUMBNAIL = 'https://i.postimg.cc/mkCr3Xwr/download-(1).jpg'; // الصورة الصغيرة
+const HELP_EMOJI = '<:mora:1435647151349698621>'; // إيموجي الزر
 
 // (مترجم الأوصاف الإدارية والأوامر الجديدة)
 const DESCRIPTION_TRANSLATIONS = new Map([
@@ -37,7 +47,7 @@ const DESCRIPTION_TRANSLATIONS = new Map([
     ['dungeon', 'دخول الدانجون (PvE) لمحاربة الوحوش'],
     ['arrange', 'لعبة ترتيب الأرقام (سرعة وذاكرة)'],
     ['race', 'سباق الخيول (فردي وجماعي)'],
-    ['colors', 'يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر'], // 🔥 تمت الإضافة هنا
+    ['colors', 'يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر'], 
     ['top', 'عرض قائمة المتصدرين (مورا/لفل/ستريك)']
 ]);
 
@@ -74,7 +84,7 @@ const MANUAL_ARABIC_NAMES = new Map([
     ['dungeon', 'دانجون'],
     ['arrange', 'ترتيب'],
     ['race', 'سباق'],
-    ['colors', 'الوان'] // 🔥 تمت الإضافة هنا
+    ['colors', 'الوان']
 ]);
 
 function getArabicDescription(cmd) {
@@ -98,23 +108,6 @@ function getCmdName(commands, name) {
         arabicAlias = cmd.aliases.find(a => /[\u0600-\u06FF]/.test(a));
     }
     return arabicAlias || cmd.name;
-}
-
-function buildMainMenuEmbed(client) {
-    const commands = client.commands;
-    const desc = `
-**❖ الـقـائمـة الرئـيسـيـة**
-
-✶** ${getCmdName(commands, 'level')}: ** \`يعرض مستواك في السيرفر\`
-✶** ${getCmdName(commands, 'top')}: ** \`لوحـة الصدار لـ اعلى لمصنفين في السيرفر\`
-✶** ${getCmdName(commands, 'profile')}: ** \`اظهار البروفايل الشخصي وأهم معلوماتك\`
-✶** ${getCmdName(commands, 'colors')}: ** \`يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر\`
-    `;
-
-    return new EmbedBuilder()
-        .setColor("Red")
-        .setImage(HELP_IMAGE)
-        .setDescription(desc);
 }
 
 function buildCasinoEmbed(client) {
@@ -155,68 +148,8 @@ function buildCasinoEmbed(client) {
 
     return new EmbedBuilder()
         .setColor("Red")
-        .setImage(HELP_IMAGE)
+        .setThumbnail(HELP_THUMBNAIL)
         .setDescription(desc);
-}
-
-function buildAdminSettingsEmbed(client) {
-    const settingsList = client.commands.filter(cmd => 
-        (cmd.category === 'Leveling' && (
-            cmd.name.startsWith('set-') || 
-            cmd.name.startsWith('setup-') || 
-            cmd.name.startsWith('allow-') || 
-            cmd.name.startsWith('deny-') || 
-            cmd.name.startsWith('list-') || 
-            cmd.name === 'prefix' || 
-            cmd.name === 'blacklist' || 
-            cmd.name === 'xpsettings' || 
-            cmd.name === 'vxpsettings' ||
-            cmd.name === 'setlevelmessage' ||
-            cmd.name === 'setlevelrole' || 
-            cmd.name === 'set-role-buff' ||
-            cmd.name === 'set-streak-emoji' ||
-            cmd.name === 'setup-streak-panel' ||
-            cmd.name === 'custom-rank'
-        )) ||
-        (cmd.category === 'Admin') || 
-        cmd.name === 'setquestchannel' ||
-        cmd.name === 'setup-quest-panel' ||
-        cmd.name === 'post-achievements-msg' ||
-        cmd.name === 'set-achievement-channel' ||
-        cmd.name === 'set-quest-configs' ||
-        cmd.name === 'set-race-role' ||
-        cmd.name === 'set-vip-role' || 
-        cmd.name === 'set-casino-room' ||
-        cmd.name === 'set-shop-log' || 
-        cmd.name === 'boss'
-    ).map(cmd => `✶ **${getCmdName(client.commands, cmd.name)}**\n✬ ${getArabicDescription(cmd)}`).join('\n\n'); 
-
-    return new EmbedBuilder()
-        .setColor("Red")
-        .setImage(HELP_IMAGE)
-        .setTitle('⚙️ إعدادات السيرفر (للإدارة)')
-        .setDescription(settingsList || 'لا توجد أوامر إعدادات.');
-}
-
-function buildAdminManagementEmbed(client) {
-    const managementList = client.commands.filter(cmd => 
-        (cmd.category === 'Economy' && cmd.name.endsWith('-admin')) ||
-        cmd.name === 'xp' || 
-        cmd.name === 'add-level' || 
-        cmd.name === 'remove-level' || 
-        cmd.name === 'set-level' ||
-        cmd.name === 'set-streak' || 
-        cmd.name === 'give-shield' || 
-        cmd.name === 'give-buff' ||
-        cmd.name === 'reroll' ||
-        cmd.name === 'checkdb'
-    ).map(cmd => `✶ **${getCmdName(client.commands, cmd.name)}**\n✬ ${getArabicDescription(cmd)}`).join('\n\n'); 
-
-    return new EmbedBuilder()
-        .setColor("Red")
-        .setImage(HELP_IMAGE)
-        .setTitle('👑 إدارة الأعضاء (للإدارة)')
-        .setDescription(managementList || 'لا توجد أوامر إدارة.');
 }
 
 module.exports = {
@@ -270,7 +203,7 @@ module.exports = {
         const reply = async (payload) => {
             if (isSlash) return interaction.editReply(payload);
             return message.channel.send(payload);
-        };
+        }
 
         const replyError = async (content) => {
             const payload = { content, ephemeral: true };
@@ -298,6 +231,7 @@ module.exports = {
             commandNameArg = args[0].toLowerCase();
         }
 
+        // 1. عرض تفاصيل أمر معين (إذا تم تحديده)
         if (commandNameArg) {
             const name = commandNameArg.toLowerCase();
             const command = commands.get(name) || commands.find(c => c.aliases && c.aliases.includes(name));
@@ -324,87 +258,51 @@ module.exports = {
             return reply({ embeds: [embed] });
         }
 
-        const isAdmin = guild.members.cache.get(user.id).permissions.has(PermissionsBitField.Flags.ManageGuild);
-        let settings;
-        try {
-            settings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guild.id);
-        } catch (e) { settings = null; }
+        // 2. عرض القائمة الرئيسية (لوحة الأوامر)
+        const mainEmbed = new EmbedBuilder()
+            .setTitle('✥ لـوحـة الاوامـر')
+            .setColor("Random")
+            .setThumbnail(HELP_THUMBNAIL)
+            .setDescription(`
+**لأستعـراض اوامر الكازينـو اخـتر الـزر ادنـاه**
+            `);
 
-        const isCasinoChannel = settings && settings.casinoChannelID === (isSlash ? interaction.channel.id : message.channel.id);
-        
-        const mainEmbed = buildMainMenuEmbed(client);
-        const casinoEmbed = buildCasinoEmbed(client);
-        let initialEmbed;
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('show_casino_cmds')
+                .setStyle(ButtonStyle.Secondary) // لون رمادي (محايد)
+                .setEmoji(HELP_EMOJI)
+        );
 
-        if (isCasinoChannel) {
-            initialEmbed = casinoEmbed;
-        } else {
-            initialEmbed = mainEmbed;
-        }
+        const helpMessage = await reply({ embeds: [mainEmbed], components: [row] });
 
-        const options = [
-            new StringSelectMenuOptionBuilder()
-                .setLabel('القائمة الرئيسية')
-                .setDescription('عرض الأوامر الرئيسية والبروفايل')
-                .setValue('main')
-                .setEmoji('🏠'),
-            new StringSelectMenuOptionBuilder()
-                .setLabel('اوامر الكازينو')
-                .setDescription('عرض جميع أوامر الاقتصاد والألعاب')
-                .setValue('casino')
-                .setEmoji('💰')
-        ];
-
-        if (isAdmin) {
-            options.push(
-                new StringSelectMenuOptionBuilder()
-                    .setLabel('إعدادات السيرفر (إدارة)')
-                    .setDescription('عرض أوامر الإعدادات والتحكم')
-                    .setValue('admin_settings')
-                    .setEmoji('⚙️'),
-                new StringSelectMenuOptionBuilder()
-                    .setLabel('إدارة الأعضاء (إدارة)')
-                    .setDescription('عرض أوامر تعديل بيانات الأعضاء')
-                    .setValue('admin_management')
-                    .setEmoji('👑')
-            );
-        }
-
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('help_menu')
-            .setPlaceholder('اختر قسماً لعرض الأوامر...')
-            .addOptions(options);
-
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-
-        const helpMessage = await reply({ embeds: [initialEmbed], components: [row] });
-
-        const filter = (i) => i.user.id === user.id && i.customId === 'help_menu';
-        const collector = helpMessage.createMessageComponentCollector({ filter, componentType: ComponentType.StringSelect, time: 60000 });
+        // 3. كوليكتور للأزرار
+        const filter = (i) => i.customId === 'show_casino_cmds';
+        const collector = helpMessage.createMessageComponentCollector({ filter, componentType: ComponentType.Button, time: 60000 });
 
         collector.on('collect', async (i) => {
-            const category = i.values[0];
-            let newEmbed;
-
-            if (category === 'main') {
-                newEmbed = mainEmbed; 
-            } else if (category === 'casino') {
-                newEmbed = casinoEmbed;
-            } else if (category === 'admin_settings') {
-                newEmbed = buildAdminSettingsEmbed(client);
-            } else if (category === 'admin_management') {
-                newEmbed = buildAdminManagementEmbed(client);
+            // التأكد من أن الشخص الذي ضغط هو نفسه الذي طلب الأمر (اختياري)
+            if (i.user.id !== user.id) {
+                return i.reply({ content: "🚫 هذا الأمر ليس لك.", ephemeral: true });
             }
 
-            await i.update({ embeds: [newEmbed] });
+            const casinoEmbed = buildCasinoEmbed(client);
+            await i.reply({ embeds: [casinoEmbed], ephemeral: true });
         });
 
         collector.on('end', () => {
-            const disabledRow = new ActionRowBuilder().addComponents(selectMenu.setDisabled(true));
-            if (helpMessage.editable) {
-                helpMessage.edit({ components: [disabledRow] }).catch(() => {});
-            } else if (isSlash) {
+            const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('show_casino_cmds')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji(HELP_EMOJI)
+                    .setDisabled(true)
+            );
+            
+            if (isSlash) {
                 interaction.editReply({ components: [disabledRow] }).catch(() => {});
+            } else {
+                if (helpMessage.editable) helpMessage.edit({ components: [disabledRow] }).catch(() => {});
             }
         });
     }
