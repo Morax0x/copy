@@ -1,4 +1,12 @@
-const { EmbedBuilder, SlashCommandBuilder, MessageFlags } = require("discord.js");
+const { 
+    EmbedBuilder, 
+    SlashCommandBuilder, 
+    MessageFlags, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ComponentType 
+} = require("discord.js");
 const SQLite = require("better-sqlite3");
 const path = require('path');
 
@@ -45,7 +53,6 @@ function getKSADateString(timestamp) {
 
 // قائمة الأوامر الثابتة
 const COMMANDS_TO_CHECK = [
-    // { name: 'daily' ... } -> الراتب له معالجة خاصة
     { name: 'work', db_column: 'lastWork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
     { name: 'rob', db_column: 'lastRob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
     { name: 'rps', db_column: 'lastRPS', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
@@ -54,11 +61,8 @@ const COMMANDS_TO_CHECK = [
     { name: 'emoji', db_column: 'lastMemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
     { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
     { name: 'pvp', db_column: 'lastPVP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
-    
-    // ✅ تمت إضافة السباق هنا (ساعة واحدة)
     { name: 'race', db_column: 'lastRace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
-
-    { name: 'dungeon', db_column: 'last_dungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' } 
+    { name: 'dungeon', db_column: 'last_dungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
 module.exports = {
@@ -80,6 +84,7 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, client, guild;
         let targetUser;
+        let originalUser; // المستخدم الذي نفذ الأمر
 
         try {
             if (isSlash) {
@@ -87,25 +92,15 @@ module.exports = {
                 client = interaction.client;
                 guild = interaction.guild;
                 targetUser = interaction.options.getUser('المستخدم') || interaction.user;
+                originalUser = interaction.user;
                 await interaction.deferReply();
             } else {
                 message = interactionOrMessage;
                 client = message.client;
                 guild = message.guild;
-                targetUser = message.mentions.users.first() || message.author; // تعديل بسيط لدعم المنشن في الرسائل العادية
+                targetUser = message.mentions.users.first() || message.author;
+                originalUser = message.author;
             }
-
-            const reply = async (payload) => {
-                if (payload.ephemeral) {
-                    delete payload.ephemeral;
-                    payload.flags = [MessageFlags.Ephemeral];
-                }
-                if (isSlash) {
-                    return interaction.editReply(payload);
-                } else {
-                    return message.channel.send(payload);
-                }
-            };
 
             const getScore = client.getLevel;
             let data = getScore.get(targetUser.id, guild.id);
@@ -114,7 +109,10 @@ module.exports = {
             }
 
             const now = Date.now();
-            const descriptionLines = [];
+            
+            // مصفوفتان لتخزين الألعاب المتاحة وغير المتاحة
+            const readyGames = [];
+            const waitGames = [];
 
             // 1. معالجة خاصة للراتب (Daily)
             const lastDaily = data.lastDaily || 0;
@@ -123,9 +121,9 @@ module.exports = {
 
             if (todayKSA === lastDailyKSA) {
                 const timeUntilMidnight = getTimeUntilNextMidnightKSA();
-                descriptionLines.push(`${EMOJI_WAIT} **راتب**: \`${formatTimeSimple(timeUntilMidnight)}\``);
+                waitGames.push(`${EMOJI_WAIT} **راتب**: \`${formatTimeSimple(timeUntilMidnight)}\``);
             } else {
-                descriptionLines.push(`${EMOJI_READY} **راتب**`);
+                readyGames.push(`${EMOJI_READY} **راتب**`);
             }
 
             // 2. حساب الأوامر الثابتة
@@ -135,9 +133,9 @@ module.exports = {
                 const timeLeft = lastUsed + cooldownAmount - now;
 
                 if (timeLeft > 0) {
-                    descriptionLines.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
+                    waitGames.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
                 } else {
-                    descriptionLines.push(`${EMOJI_READY} **${cmd.label}**`);
+                    readyGames.push(`${EMOJI_READY} **${cmd.label}**`);
                 }
             }
 
@@ -155,38 +153,87 @@ module.exports = {
             const fishTimeLeft = lastFish + fishCooldown - now;
 
             if (fishTimeLeft > 0) {
-                descriptionLines.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
+                waitGames.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
             } else {
-                descriptionLines.push(`${EMOJI_READY} **صيد**`);
+                readyGames.push(`${EMOJI_READY} **صيد**`);
             }
 
+            // بناء الإيمبد الرئيسي
             const embed = new EmbedBuilder()
-                .setTitle('⏱️ وقـت الألعـاب')
+                .setTitle('✥ وقـت الالعـاب')
                 .setColor("Random")
-                .setAuthor({ name: targetUser.username, iconURL: targetUser.displayAvatarURL() })
-                .setDescription(descriptionLines.join('\n'))
-                .setImage('https://i.postimg.cc/m2ZrjxB9/time.png')
+                .setThumbnail('https://i.postimg.cc/zGqbJNzm/ayqwnt.png') // الصورة الصغيرة
+                .setDescription(`
+✶ اختر الزر المناسب أدناه لعرض الوقت المتبقي لكل لعبة
+
+✶ الالعاب المتـاحـة: ${EMOJI_READY}
+✶ الالعاب الغير متـاحة: ${EMOJI_WAIT}
+                `)
                 .setTimestamp();
 
-            // ✅ تم إرسال الإيمبد وحفظ الرسالة في متغير
-            const sentMessage = await reply({ 
-                embeds: [embed] 
+            // بناء الأزرار
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('show_ready')
+                    .setLabel('الألعاب المتاحة')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji(EMOJI_READY),
+                new ButtonBuilder()
+                    .setCustomId('show_wait')
+                    .setLabel('أوقات الانتظار')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji(EMOJI_WAIT)
+            );
+
+            // إرسال الرسالة
+            let sentMessage;
+            if (isSlash) {
+                sentMessage = await interaction.editReply({ embeds: [embed], components: [row] });
+            } else {
+                sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
+            }
+
+            // إنشاء كوليكتور للأزرار
+            const collector = sentMessage.createMessageComponentCollector({ 
+                componentType: ComponentType.Button, 
+                time: 60000 // الأزرار تعمل لمدة دقيقة
             });
 
-            // ✅ كود الحذف التلقائي بعد دقيقة (60000 ميلي ثانية)
-            setTimeout(async () => {
-                try {
-                    if (isSlash) {
-                        // حذف الرد في حالة السلاش كوماند
-                        await interaction.deleteReply().catch(() => {});
-                    } else if (sentMessage) {
-                        // حذف الرسالة في حالة البريفكس
-                        await sentMessage.delete().catch(() => {});
-                    }
-                } catch (e) {
-                    // تجاهل الخطأ إذا كانت الرسالة محذوفة بالفعل
+            collector.on('collect', async (i) => {
+                // التأكد من أن الشخص الذي ضغط هو من طلب الأمر (اختياري، يمكن إزالته ليتمكن الجميع من الرؤية)
+                if (i.user.id !== originalUser.id) {
+                    return i.reply({ content: "🚫 هذا الأمر ليس لك.", ephemeral: true });
                 }
-            }, 60000);
+
+                if (i.customId === 'show_ready') {
+                    const content = readyGames.length > 0 
+                        ? `**✅ القائمة المتاحة لـ ${targetUser.username}:**\n\n${readyGames.join('\n')}` 
+                        : `❌ لا توجد ألعاب متاحة حالياً لـ ${targetUser.username}..`;
+                    
+                    await i.reply({ content: content, ephemeral: true });
+                } 
+                else if (i.customId === 'show_wait') {
+                    const content = waitGames.length > 0 
+                        ? `**⏳ قائمة الانتظار لـ ${targetUser.username}:**\n\n${waitGames.join('\n')}` 
+                        : `🎉 كل الألعاب متاحة لـ ${targetUser.username}!`;
+
+                    await i.reply({ content: content, ephemeral: true });
+                }
+            });
+
+            collector.on('end', () => {
+                // تعطيل الأزرار بعد انتهاء الوقت
+                const disabledRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('show_ready').setLabel('الألعاب المتاحة').setStyle(ButtonStyle.Success).setEmoji(EMOJI_READY).setDisabled(true),
+                    new ButtonBuilder().setCustomId('show_wait').setLabel('أوقات الانتظار').setStyle(ButtonStyle.Danger).setEmoji(EMOJI_WAIT).setDisabled(true)
+                );
+                
+                if (isSlash) {
+                    interaction.editReply({ components: [disabledRow] }).catch(() => {});
+                } else {
+                    sentMessage.edit({ components: [disabledRow] }).catch(() => {});
+                }
+            });
 
         } catch (error) {
             console.error("Error in gametime command:", error);
