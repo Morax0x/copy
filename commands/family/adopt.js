@@ -16,7 +16,7 @@ module.exports = {
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة
+        // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
@@ -26,7 +26,7 @@ module.exports = {
         const childMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
 
         if (!childMember) {
-            return replyTemp(`❌ **خطأ في الاستخدام!**\nالطريقة الصحيحة: \`${message.content.split(' ')[0]} @الطفل\`\nمثال: \`!adopt @user\``);
+            return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك منشنة الشخص الذي تريد تبنيه.\nمثال: \`!adopt @User\``);
         }
 
         if (childMember.id === userId) return replyTemp("❌ لا يمكنك تبني نفسك!");
@@ -35,11 +35,10 @@ module.exports = {
         // 2. التحقق من عدد الأطفال وحساب الرسوم التصاعدية
         sql.prepare(`CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate INTEGER, guildID TEXT)`).run();
         
-        // حساب عدد الأطفال الحاليين للوالد
         const currentChildrenCount = sql.prepare("SELECT count(*) as count FROM children WHERE parentID = ? AND guildID = ?").get(userId, guildId).count;
 
         if (currentChildrenCount >= MAX_CHILDREN) {
-            return replyTemp(`🚫 **لقد وصلت للحد الأقصى من الأطفال (${MAX_CHILDREN})!**\nاكتفِ بما لديك وربهم تربية صالحة.`);
+            return replyTemp(`🚫 **لقد وصلت للحد الأقصى من الأطفال (${MAX_CHILDREN})!**`);
         }
 
         // الرسوم = السعر الأساسي + (2000 * عدد الأطفال الحاليين)
@@ -54,7 +53,7 @@ module.exports = {
         }
 
         // ==========================================================
-        // 🧬 الفحوصات المنطقية (منع اختلاط الأنساب)
+        // 🧬 الفحوصات المنطقية (منع اختلاط الأنساب والمحارم)
         // ==========================================================
         
         // أ. هل أنت متزوج؟
@@ -63,7 +62,7 @@ module.exports = {
 
         // ب. هل تحاول تبني زوجتك؟
         if (partnerId === childMember.id) {
-            return replyTemp("🚫 **لا يمكنك تبني شريك حياتك!** هذا غير قانوني.");
+            return replyTemp("🚫 **لا يمكنك تبني شريك حياتك!**");
         }
 
         // د. هل هذا الطفل متبنى من قبلك بالفعل؟
@@ -75,7 +74,7 @@ module.exports = {
         // هـ. هل هذا الطفل هو "أبوك"؟ (منع الدورات)
         const isMyParent = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(childMember.id, userId, guildId);
         if (isMyParent) {
-            return replyTemp("🚫 **لا يمكنك تبني والدك/والدتك!** احترام الوالدين واجب.");
+            return replyTemp("🚫 **لا يمكنك تبني والدك/والدتك!**");
         }
 
         // و. هل الطفل لديه عائلة بالفعل؟ (يُسمح بوالدين فقط كحد أقصى)
@@ -102,8 +101,9 @@ module.exports = {
                 content: `${partnerMember}`,
                 embeds: [new EmbedBuilder()
                     .setColor(Colors.Gold)
-                    .setTitle('👨‍👩‍👧‍👦 قرار عائلي مشترك')
+                    .setTitle('👨‍👩‍👧‍👦 مشـورة عائليـة')
                     .setDescription(`**${message.member.displayName}** يريد تبني **${childMember.displayName}**.\nهل توافق على انضمام هذا الطفل للعائلة؟`)
+                    .setFooter({ text: 'يجب موافقة الشريكين قبل عرض الأمر على الطفل' })
                 ],
                 components: [rowPartner]
             });
@@ -121,7 +121,7 @@ module.exports = {
                     return;
                 }
                 
-                await confirmation.update({ content: `✅ **وافق الشريك!** الآن ننتظر موافقة الطفل...`, components: [] });
+                await confirmation.update({ content: `✅ **وافق الشريك!** جارٍ إرسال العرض للطفل...`, components: [] });
 
             } catch (e) {
                 return partnerMsg.edit({ content: `⏳ **انتهى الوقت!** لم يرد الشريك.`, components: [], embeds: [] });
@@ -130,19 +130,19 @@ module.exports = {
 
         // 2. طلب موافقة الطفل (الخطوة النهائية)
         const rowChild = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('child_accept').setLabel('أقبل التبني').setStyle(ButtonStyle.Primary).setEmoji('👶'),
-            new ButtonBuilder().setCustomId('child_reject').setLabel('أرفض').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('child_accept').setLabel('قبول التبني').setStyle(ButtonStyle.Primary).setEmoji('👶'),
+            new ButtonBuilder().setCustomId('child_reject').setLabel('رفض').setStyle(ButtonStyle.Secondary)
         );
 
         const childMsg = await message.channel.send({
             content: `${childMember}`,
             embeds: [new EmbedBuilder()
                 .setColor(Colors.Blue)
-                .setTitle('🏠 عرض تبني')
+                .setTitle('🏠 عرض انضمام للعائلة')
                 .setDescription(
                     `عرض عليك **${message.member.displayName}** ${partnerId ? `وشريكه` : ``} الانضمام لعائلتهم!\n` +
-                    `هل تقبل أن تكون ابنهم؟\n\n` +
-                    `💰 **هدية التبني:** سيتم تحويل **${fee.toLocaleString()}** ${MORA_EMOJI} لك!`
+                    `هل تقبل أن تكون ابناً باراً لهم؟\n\n` +
+                    `🎁 **هدية التبني:** سيصلك مبلغ **${fee.toLocaleString()}** ${MORA_EMOJI} عند القبول.`
                 )
             ],
             components: [rowChild]
@@ -161,31 +161,31 @@ module.exports = {
             }
 
             // ==========================================================
-            // ✅ التنفيذ النهائي (الخصم والتحويل والحفظ)
+            // ✅ التنفيذ النهائي
             // ==========================================================
             
             // إعادة فحص المال
             authorData = client.getLevel.get(userId, guildId);
             if (authorData.mora < fee) {
-                return childConfirm.update({ content: `❌ **فشلت العملية:** الأب مفلس!`, components: [], embeds: [] });
+                return childConfirm.update({ content: `❌ **فشلت العملية:** الأب أفلس أثناء الانتظار!`, components: [], embeds: [] });
             }
 
-            // 1. خصم الرسوم من الأب
+            // 1. الخصم
             authorData.mora -= fee;
             client.setLevel.run(authorData);
 
-            // 2. تحويل الرسوم للطفل (هدية التبني)
+            // 2. التحويل للطفل
             let childData = client.getLevel.get(childMember.id, guildId);
             if (!childData) childData = { id: `${guildId}-${childMember.id}`, user: childMember.id, guild: guildId, xp: 0, level: 1, mora: 0 };
             childData.mora += fee;
             client.setLevel.run(childData);
 
-            // 3. تسجيل الطفل للأب
+            // 3. الحفظ في الداتابيس (للأب)
             const now = Date.now();
             const stmt = sql.prepare("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES (?, ?, ?, ?)");
             stmt.run(userId, childMember.id, now, guildId);
 
-            // 4. تسجيل الطفل للشريك (الأم/الأب الثاني) إذا وجد
+            // 4. الحفظ في الداتابيس (للشريك إن وجد)
             if (partnerId) {
                 const checkPartner = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ?").get(partnerId, childMember.id);
                 if (!checkPartner) {
@@ -195,10 +195,10 @@ module.exports = {
 
             const successEmbed = new EmbedBuilder()
                 .setColor(Colors.Green)
-                .setTitle(`🎉 تهانينا للعائلة الجديدة!`)
+                .setTitle(`🎉 اكتملت العائلة!`)
                 .setDescription(
                     `أصبح **${childMember.displayName}** رسمياً ابن **${message.member.displayName}** ${partnerId ? `وشريكه` : ``}!\n` +
-                    `🎁 **هدية:** تم تحويل **${fee.toLocaleString()}** ${MORA_EMOJI} للطفل.`
+                    `🎁 **الهدية:** تم تحويل **${fee.toLocaleString()}** ${MORA_EMOJI} لرصيد الابن.`
                 )
                 .setImage(SUCCESS_IMAGE);
 
@@ -209,7 +209,7 @@ module.exports = {
             });
 
         } catch (e) {
-            childMsg.edit({ content: `⏳ **انتهى الوقت..** الطفل لم يرد.`, components: [], embeds: [] });
+            childMsg.edit({ content: `⏳ **انتهى الوقت..** الطفل لم يرد على العرض.`, components: [], embeds: [] });
         }
     }
 };
