@@ -103,7 +103,7 @@ module.exports = {
         // 2. جلب الإعدادات
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(message.guild.id);
         if (!familyConfig || !familyConfig.maleRole || !familyConfig.femaleRole) {
-            return message.reply("🚫 **لم يتم إعداد رتب العائلة!** اطلب من الإدارة استخدام `set-family-roles`.");
+            return message.reply("🚫 **لم يتم إعداد رتب العائلة!** اطلب من الإدارة استخدام `!set-family-role`.");
         }
 
         // 3. التحقق من المدخلات
@@ -117,11 +117,22 @@ module.exports = {
         if (targetMember.id === message.author.id) return replyTemp("❌ تبي تتزوج نفسك؟ استهدي بالله.");
         if (targetMember.user.bot) return replyTemp("🤖 لا يمكنك الزواج من الروبوتات!");
 
-        // 4. تحديد الجنس والرتب
-        const isAuthorMale = message.member.roles.cache.has(familyConfig.maleRole);
-        const isAuthorFemale = message.member.roles.cache.has(familyConfig.femaleRole);
-        const isTargetMale = targetMember.roles.cache.has(familyConfig.maleRole);
-        const isTargetFemale = targetMember.roles.cache.has(familyConfig.femaleRole);
+        // 🔥🔥 4. التحقق من الرتب (تم الإصلاح ليدعم التعدد) 🔥🔥
+        const checkRole = (member, rolesData) => {
+            if (!rolesData) return false;
+            try {
+                const roleIds = JSON.parse(rolesData); // يحاول يفكها كمصفوفة
+                if (Array.isArray(roleIds)) return roleIds.some(id => member.roles.cache.has(id));
+            } catch {
+                return member.roles.cache.has(rolesData); // إذا كانت نص عادي (رتبة واحدة)
+            }
+            return false;
+        };
+
+        const isAuthorMale = checkRole(message.member, familyConfig.maleRole);
+        const isAuthorFemale = checkRole(message.member, familyConfig.femaleRole);
+        const isTargetMale = checkRole(targetMember, familyConfig.maleRole);
+        const isTargetFemale = checkRole(targetMember, familyConfig.femaleRole);
 
         if (!isAuthorMale && !isAuthorFemale) return replyTemp("🚫 **يجب عليك تحديد جنسك أولاً!** (خذ رتبة ولد أو بنت).");
         if (!isTargetMale && !isTargetFemale) return replyTemp("🚫 **الطرف الآخر لم يحدد جنسه بعد!**");
@@ -234,6 +245,7 @@ module.exports = {
                 // تسجيل الزواج
                 const now = Date.now();
                 const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID) VALUES (?, ?, ?, ?)");
+                // نسجل الزواج مرتين (مرة لكل طرف) لتسهيل البحث
                 insert.run(message.author.id, targetMember.id, now, message.guild.id);
                 insert.run(targetMember.id, message.author.id, now, message.guild.id);
 
