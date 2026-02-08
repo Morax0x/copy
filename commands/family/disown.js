@@ -15,7 +15,7 @@ module.exports = {
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة
+        // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
@@ -175,6 +175,7 @@ module.exports = {
             client.setLevel.run(childData);
 
             // 4. الحذف من السجلات (فك الرابط مع جميع الآباء المذكورين)
+            // ملاحظة: نحذف سجل الابن المرتبط بأي من الوالدين
             const stmt = sql.prepare("DELETE FROM children WHERE parentID = ? AND childID = ? AND guildID = ?");
             for (const pid of parentIds) {
                 stmt.run(pid, childId, guildId);
