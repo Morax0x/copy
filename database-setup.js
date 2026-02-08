@@ -80,9 +80,12 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS ai_restricted_categories (guildID TEXT, categoryID TEXT, PRIMARY KEY (categoryID))",
         "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))",
 
-        // --- 🔥 جداول نظام العائلة (إصلاح شامل) 🔥 ---
+        // --- 🔥 جداول نظام العائلة (تم التعديل لدعم التعدد) 🔥 ---
         "CREATE TABLE IF NOT EXISTS family_config (guildID TEXT PRIMARY KEY, maleRole TEXT, femaleRole TEXT, divorceFee INTEGER DEFAULT 5000, adoptFee INTEGER DEFAULT 2000)",
-        "CREATE TABLE IF NOT EXISTS marriages (userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT, PRIMARY KEY (userID, guildID))",
+        
+        // ⚠️⚠️ تم التعديل هنا لدعم التعدد (تمت إزالة القيد على userID فقط)
+        "CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT)",
+        
         "CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate INTEGER, guildID TEXT)",
 
         // 🔥🔥🔥 [مهم] هذا هو الجدول الذي كان ناقصاً 🔥🔥🔥
@@ -151,7 +154,7 @@ function setupDatabase(clientOrSql) {
     // --- صيانة إعدادات السيرفر ---
     const settingsCols = ["questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", "dropColor", "dropFooter", "dropButtonLabel", "dropButtonEmoji", "dropMessageContent", "lastMediaUpdateSent", "lastMediaUpdateMessageID", "lastMediaUpdateChannelID", "shopChannelID", "bumpChannelID", "customRoleAnchorID", "customRolePanelTitle", "customRolePanelDescription", "customRolePanelImage", "customRolePanelColor", "lastQuestPanelChannelID", "streakTimerChannelID", "dailyTimerChannelID", "weeklyTimerChannelID", "img_level", "img_mora", "img_streak", "img_media_streak", "img_strongest", "img_weekly_xp", "img_daily_xp", "img_achievements", "voiceChannelID", "savedStatusType", "savedStatusText", "marketStatus", "boostChannelID", "shopLogChannelID", "serverTag", "levelChannel", "modLogChannelID", "bumpNotifyRoleID"];
     settingsCols.forEach(col => ensureColumn('settings', col, 'TEXT'));
-    ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'"); // إصلاح البريفكس المفقود
+    ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'");
 
     // --- 🔥 صيانة جداول العائلة (المهم جداً) 🔥 ---
     // هذا الجزء سيضيف الأعمدة الناقصة إذا كان الجدول موجوداً بأسماء قديمة
