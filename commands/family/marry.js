@@ -28,6 +28,7 @@ module.exports = {
     async execute(message, args) {
         const client = message.client;
         const sql = client.sql;
+        const guildId = message.guild.id;
 
         // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
         const replyTemp = async (content) => {
@@ -36,10 +37,10 @@ module.exports = {
         };
 
         // =========================================================================
-        // 📜 قسم المساعدة (إذا لم يكتب المستخدم أي شيء بعد الأمر)
+        // 📜 قسم المساعدة (إذا لم يحدد الشخص ومن المبلغ)
         // =========================================================================
-        // الشرط: لم يكتب أي حجج (args) أو لم يمنشن أحد
-        if (!args[0]) {
+        const targetMemberCheck = message.mentions.members.first();
+        if (!targetMemberCheck || !args[1]) {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('show_family_help')
@@ -52,14 +53,13 @@ module.exports = {
                 .setColor(Colors.Blue)
                 .setTitle('💍 نظام العائلة والزواج')
                 .setDescription('**لاستعراض كافة الأوامر المتاحة وتفاصيلها، اضغط على الزر أدناه.**')
-                .setFooter({ text: 'قائمة الأوامر ستظهر لك فقط (مخفية).' });
+                .setFooter({ text: 'قائمة الأوامر ستظهر لك فقط.' });
 
             const helpMsg = await message.reply({
                 embeds: [promptEmbed],
                 components: [row]
             });
 
-            // كوليكتور لزر المساعدة (يحذف الرسالة الأصلية بعد 30 ثانية)
             const collector = helpMsg.createMessageComponentCollector({ time: 30000 });
 
             collector.on('collect', async i => {
@@ -70,18 +70,17 @@ module.exports = {
                         .setTitle('📜 دليل أوامر العائلة')
                         .setDescription('إليك قائمة بجميع الأوامر المتاحة في النظام:')
                         .addFields(
-                            { name: '🔹 !زواج @فلان مبلغ', value: 'لطلب الزواج من عضو ودفع المهر المحدد.', inline: false },
-                            { name: '🔹 !طلاق @فلان', value: 'لإنهاء العلاقة الزوجية (طلاق أو خلع).', inline: false },
-                            { name: '🔹 !تبني @فلان', value: 'لتبني عضو جديد وضمه لشجرة عائلتك.', inline: false },
-                            { name: '🔹 !اب @فلان', value: 'لتقديم طلب للانضمام لعائلة شخص ما كابن.', inline: false },
-                            { name: '🔹 !تبرؤ @فلان', value: 'لطرد ابن من العائلة وحذفه من السجلات.', inline: false },
-                            { name: '🔹 !هروب', value: 'للهروب من العائلة والاستقلال.', inline: false },
-                            { name: '🔹 !شجرة', value: 'لعرض بطاقة شجرة العائلة.', inline: false },
-                            { name: '🔹 !قرابة @فلان', value: 'لكشف صلة القرابة بينك وبين عضو آخر.', inline: false }
+                            { name: '🔹 زواج منشن مبلغ', value: 'لطلب الزواج من عضو ودفع المهر المحدد.', inline: false },
+                            { name: '🔹 طلاق', value: 'لإنهاء العلاقة الزوجية (طلاق أو خلع).', inline: false },
+                            { name: '🔹 تبني منشن', value: 'لتبني عضو جديد وضمه لشجرة عائلتك.', inline: false },
+                            { name: '🔹 طلب-اب منشن', value: 'لتقديم طلب للانضمام لعائلة شخص ما كابن.', inline: false },
+                            { name: '🔹 تبرؤ منشن', value: 'لطرد ابن من العائلة وحذفه من السجلات.', inline: false },
+                            { name: '🔹 هروب', value: 'للهروب من العائلة والاستقلال (تدفع تعويض).', inline: false },
+                            { name: '🔹 شجرة', value: 'لعرض بطاقة شجرة العائلة المصورة.', inline: false },
+                            { name: '🔹 قرابة منشن', value: 'لكشف صلة القرابة بينك وبين عضو آخر.', inline: false }
                         )
                         .setFooter({ text: 'نظام العائلة • الإمبراطورية' });
 
-                    // الرد المخفي (Ephemeral)
                     await i.reply({
                         embeds: [helpListEmbed],
                         ephemeral: true 
@@ -89,7 +88,7 @@ module.exports = {
                 }
             });
 
-            // حذف رسالة الزر تلقائياً بعد انتهاء الوقت
+            // حذف رسالة الزر تلقائياً
             collector.on('end', () => helpMsg.delete().catch(() => {}));
             return;
         }
@@ -99,15 +98,7 @@ module.exports = {
         // =========================================================================
 
         // 1. التأكد من جدول الزواج
-        sql.prepare(`
-            CREATE TABLE IF NOT EXISTS marriages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                userID TEXT,
-                partnerID TEXT,
-                marriageDate INTEGER,
-                guildID TEXT
-            )
-        `).run();
+        sql.prepare(`CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT)`).run();
 
         // 2. جلب الإعدادات
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(message.guild.id);
@@ -119,8 +110,7 @@ module.exports = {
         const targetMember = message.mentions.members.first();
         let dowry = parseInt(args[1]);
 
-        // إذا وصل هنا، يعني كتب شي بس غلط (مثلاً: زواج @فلان ونسي المبلغ)
-        if (!targetMember || isNaN(dowry) || dowry < 0) {
+        if (isNaN(dowry) || dowry < 0) {
             return replyTemp(`⚠️ **صيغـة غير صحيحة!**\nالاستخدام الصحيح: \`زواج @الطرف_الثاني المبلغ\`\nمثال: \`زواج @فلان 5000\``);
         }
 
@@ -140,6 +130,28 @@ module.exports = {
         if ((isAuthorMale && isTargetMale) || (isAuthorFemale && isTargetFemale)) {
             return replyTemp("<:5gyy:1414564326496534628> **مـا نستقـبل شـواذ اذلـف**");
         }
+
+        // =========================================================
+        // 🧬 فحص المحارم (Incest Check) 🧬
+        // =========================================================
+        
+        // أ. هل الطرف الآخر هو أحد الوالدين؟
+        const isParent = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(targetMember.id, message.author.id, guildId);
+        if (isParent) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
+
+        // ب. هل الطرف الآخر هو أحد الأبناء؟
+        const isChild = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(message.author.id, targetMember.id, guildId);
+        if (isChild) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو ابنك/ابنتك.`);
+
+        // ج. هل الطرف الآخر أخ/أخت؟ (يشتركان في نفس الوالد)
+        const authorParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(message.author.id, guildId).map(r => r.parentID);
+        const targetParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(targetMember.id, guildId).map(r => r.parentID);
+        
+        // تقاطع المصفوفتين (هل يوجد أب مشترك؟)
+        const isSibling = authorParents.some(parent => targetParents.includes(parent));
+        if (isSibling) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو أخوك/أختك (لديكم نفس الوالدين).`);
+
+        // =========================================================
 
         // 6. التحقق من الحد الأقصى (الشرع)
         const authorCount = sql.prepare("SELECT count(*) as count FROM marriages WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id).count;
