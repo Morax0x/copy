@@ -13,17 +13,37 @@ module.exports = {
         const userA = message.author; // أنت
         
         const userBMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-        if (!userBMember) return message.reply("❌ **منشن الشخص عشان أعلمك صلة القرابة!**");
+        if (!userBMember) {
+            const msg = await message.reply("❌ **منشن الشخص عشان أعلمك صلة القرابة!**");
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+            return;
+        }
 
         const userB = userBMember.user;
-        if (userA.id === userB.id) return message.reply("🪞 **أنت هو أنت!**");
+        if (userA.id === userB.id) {
+            const msg = await message.reply("🪞 **أنت هو أنت!**");
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+            return;
+        }
 
         // إعدادات الجنس
         const config = sql.prepare("SELECT maleRole, femaleRole FROM family_config WHERE guildID = ?").get(guildId);
         
         const getTitle = (member, type) => {
-            const isMale = config && member.roles.cache.has(config.maleRole);
-            const isFemale = config && member.roles.cache.has(config.femaleRole);
+            // دعم تعدد الرتب (JSON) أو الرتبة الواحدة
+            const checkRole = (rolesData) => {
+                if (!rolesData) return false;
+                try {
+                    const roleIds = JSON.parse(rolesData);
+                    if (Array.isArray(roleIds)) return roleIds.some(id => member.roles.cache.has(id));
+                } catch {
+                    return member.roles.cache.has(rolesData);
+                }
+                return false;
+            };
+
+            const isMale = config && checkRole(config.maleRole);
+            const isFemale = config && checkRole(config.femaleRole);
             
             const titles = {
                 spouse: isMale ? "زوج" : (isFemale ? "زوجة" : "شريك"),
@@ -123,12 +143,9 @@ module.exports = {
                         }
                         else {
                             // 6. الأعمام والأخوال
-                            // هل أحد آباء A هو أخ لـ B؟ (يعني B هو عم A)
                             let isUncle = false;
                             for (const parentID of parentsA) {
-                                // آباء "والد A" (أجداد A)
                                 const gpsA = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(parentID, guildId).map(r => r.parentID);
-                                // آباء B
                                 if (gpsA.some(gp => parentsB.includes(gp))) {
                                     isUncle = true;
                                     break;
@@ -142,7 +159,6 @@ module.exports = {
                             } 
                             else {
                                 // 7. أبناء الأخ/الأخت
-                                // هل أحد آباء B هو أخ لـ A؟ (يعني B هو ابن أخ A)
                                 let isNephew = false;
                                 for (const parentID of parentsB) {
                                     const gpsB = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(parentID, guildId).map(r => r.parentID);
@@ -159,7 +175,6 @@ module.exports = {
                                 }
                                 else {
                                     // 8. أبناء العم/الخال (Cousins)
-                                    // هل "أجداد A" هم نفسهم "أجداد B"؟
                                     const grandParentsB = [];
                                     for(const pid of parentsB) {
                                         const gps = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(pid, guildId).map(r => r.parentID);
@@ -196,6 +211,9 @@ module.exports = {
             .setThumbnail(userBMember.displayAvatarURL())
             .setFooter({ text: 'نظام العائلة • الإمبراطورية' });
 
-        message.reply({ embeds: [embed] });
+        const msg = await message.reply({ embeds: [embed] });
+        
+        // 🗑️ حذف الرسالة بعد 15 ثانية كما طلبت
+        setTimeout(() => msg.delete().catch(() => {}), 15000);
     }
 };
