@@ -53,7 +53,7 @@ module.exports = {
                 .setColor(Colors.Blue)
                 .setTitle('💍 نظام العائلة والزواج')
                 .setDescription('**لاستعراض كافة الأوامر المتاحة وتفاصيلها، اضغط على الزر أدناه.**')
-                .setFooter({ text: 'قائمة الأوامر ستظهر لك فقط.' });
+                .setFooter({ text: 'قائمة الأوامر ستظهر لك فقط (مخفية).' });
 
             const helpMsg = await message.reply({
                 embeds: [promptEmbed],
@@ -70,14 +70,14 @@ module.exports = {
                         .setTitle('📜 دليل أوامر العائلة')
                         .setDescription('إليك قائمة بجميع الأوامر المتاحة في النظام:')
                         .addFields(
-                            { name: '🔹 زواج منشن مبلغ', value: 'لطلب الزواج من عضو ودفع المهر المحدد.', inline: false },
-                            { name: '🔹 طلاق', value: 'لإنهاء العلاقة الزوجية (طلاق أو خلع).', inline: false },
-                            { name: '🔹 تبني منشن', value: 'لتبني عضو جديد وضمه لشجرة عائلتك.', inline: false },
-                            { name: '🔹 طلب-اب منشن', value: 'لتقديم طلب للانضمام لعائلة شخص ما كابن.', inline: false },
-                            { name: '🔹 تبرؤ منشن', value: 'لطرد ابن من العائلة وحذفه من السجلات.', inline: false },
-                            { name: '🔹 هروب', value: 'للهروب من العائلة والاستقلال (تدفع تعويض).', inline: false },
-                            { name: '🔹 شجرة', value: 'لعرض بطاقة شجرة العائلة المصورة.', inline: false },
-                            { name: '🔹 قرابة منشن', value: 'لكشف صلة القرابة بينك وبين عضو آخر.', inline: false }
+                            { name: '🔹 !زواج @منشن مبلغ', value: 'لطلب الزواج من عضو ودفع المهر المحدد.', inline: false },
+                            { name: '🔹 !طلاق @منشن', value: 'لإنهاء العلاقة الزوجية (طلاق أو خلع).', inline: false },
+                            { name: '🔹 !تبني @منشن', value: 'لتبني عضو جديد وضمه لشجرة عائلتك.', inline: false },
+                            { name: '🔹 !طلب-اب @منشن', value: 'لتقديم طلب للانضمام لعائلة شخص ما كابن.', inline: false },
+                            { name: '🔹 !تبرؤ @منشن', value: 'لطرد ابن من العائلة وحذفه من السجلات.', inline: false },
+                            { name: '🔹 !هروب', value: 'للهروب من العائلة والاستقلال (تدفع تعويض).', inline: false },
+                            { name: '🔹 !شجرة', value: 'لعرض بطاقة شجرة العائلة المصورة.', inline: false },
+                            { name: '🔹 !قرابة @منشن', value: 'لكشف صلة القرابة بينك وبين عضو آخر.', inline: false }
                         )
                         .setFooter({ text: 'نظام العائلة • الإمبراطورية' });
 
@@ -111,7 +111,7 @@ module.exports = {
         let dowry = parseInt(args[1]);
 
         if (isNaN(dowry) || dowry < 0) {
-            return replyTemp(`⚠️ **صيغـة غير صحيحة!**\nالاستخدام الصحيح: \`زواج @الطرف_الثاني المبلغ\`\nمثال: \`زواج @فلان 5000\``);
+            return replyTemp(`⚠️ **صيغـة غير صحيحة!**\nالاستخدام الصحيح: \`!زواج @الطرف_الثاني المبلغ\`\nمثال: \`!زواج @فلان 5000\``);
         }
 
         if (targetMember.id === message.author.id) return replyTemp("❌ تبي تتزوج نفسك؟ استهدي بالله.");
