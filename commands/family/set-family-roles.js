@@ -2,7 +2,7 @@ const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 
 module.exports = {
     name: 'set-family-role',
-    description: 'تحديد رتب العائلة بشكل منفصل (للإدارة)',
+    description: 'تحديد رتب العائلة (يمكن تحديد أكثر من رتبة لنفس الجنس)',
     aliases: ['sfr', 'set-role'],
     
     async execute(message, args) {
@@ -16,20 +16,18 @@ module.exports = {
         const guildId = message.guild.id;
 
         // 2. التحقق من المدخلات
-        // الطريقة المتوقعة: !sfr [نوع] [منشن الرتبة]
-        // الأنواع: male, boy, ولد | female, girl, بنت
-
         const type = args[0] ? args[0].toLowerCase() : null;
-        const role = message.mentions.roles.first();
+        // جلب جميع الرتب المذكورة في الرسالة
+        const roles = message.mentions.roles;
 
-        if (!type || !role) {
+        if (!type || roles.size === 0) {
             return message.reply(`
 ❌ **طريقة الاستخدام خطأ!**
-حدد النوع (ولد/بنت) ثم منشن الرتبة.
+حدد النوع (ولد/بنت) ثم منشن رتبة واحدة أو أكثر.
 
 **أمثلة:**
-\`${message.content.split(' ')[0]} ولد @MaleRole\`
-\`${message.content.split(' ')[0]} بنت @FemaleRole\`
+\`${message.content.split(' ')[0]} ولد @Male1 @Male2\`
+\`${message.content.split(' ')[0]} بنت @Female\`
             `);
         }
 
@@ -44,40 +42,50 @@ module.exports = {
             )
         `).run();
 
-        // ضمان وجود سجل للسيرفر قبل التعديل
+        // ضمان وجود سجل للسيرفر
         sql.prepare("INSERT OR IGNORE INTO family_config (guildID) VALUES (?)").run(guildId);
 
-        // 4. تحديد العملية بناءً على الكلمة الأولى
+        // 4. تحديد العمود والنص
         let column = "";
         let typeText = "";
+        let color = 0x000000;
 
         if (['male', 'boy', 'ولد', 'ذكر'].includes(type)) {
             column = "maleRole";
-            typeText = "👨 الذكور (Male)";
+            typeText = "👨 الذكور (Males)";
+            color = 0x00a8ff;
         } else if (['female', 'girl', 'بنت', 'انثى'].includes(type)) {
             column = "femaleRole";
-            typeText = "👩 الإناث (Female)";
+            typeText = "👩 الإناث (Females)";
+            color = 0xff0055;
         } else {
             return message.reply("❌ **النوع غير معروف!** اكتب (ولد) أو (بنت).");
         }
 
-        // 5. التنفيذ والحفظ
+        // 5. حفظ الرتب كقائمة (JSON Array)
+        // نحول مجموعة الرتب إلى مصفوفة من الآيديات فقط
+        const roleIds = roles.map(r => r.id);
+        const rolesJson = JSON.stringify(roleIds); // يحولها لنص مثل "['123','456']"
+
         try {
-            // تحديث العمود المحدد فقط دون المساس بالآخر
             const stmt = sql.prepare(`UPDATE family_config SET ${column} = ? WHERE guildID = ?`);
-            stmt.run(role.id, guildId);
+            stmt.run(rolesJson, guildId);
+
+            // تجهيز قائمة الأسماء للإيمبد
+            const roleMentions = roles.map(r => `${r}`).join(' , ');
 
             const embed = new EmbedBuilder()
-                .setColor(column === "maleRole" ? 0x00a8ff : 0xff0055) // أزرق للولد، وردي للبنت
-                .setTitle('✅ تم تحديث الإعدادات')
-                .setDescription(`تم تعيين رتبة **${typeText}** بنجاح:\n\n**الرتبة:** ${role}`)
+                .setColor(color)
+                .setTitle('✅ تم تحديث إعدادات العائلة')
+                .setDescription(`تم تعيين رتب **${typeText}** بنجاح!\n\n**الرتب المعتمدة:**\n${roleMentions}`)
+                .setFooter({ text: `عدد الرتب: ${roles.size}` })
                 .setTimestamp();
 
             message.channel.send({ embeds: [embed] });
 
         } catch (error) {
             console.error(error);
-            message.reply("❌ حدث خطأ أثناء حفظ البيانات.");
+            message.reply("❌ حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.");
         }
     }
 };
