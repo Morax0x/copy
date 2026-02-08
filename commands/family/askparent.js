@@ -135,12 +135,11 @@ module.exports = {
                 const stmt = sql.prepare("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES (?, ?, ?, ?)");
                 stmt.run(parentUser.id, user.id, now, guildId);
 
-                // 3. التسجيل للشريك (إذا كان الأب متزوجاً) - ليظهر عند الأم أيضاً
+                // 3. التسجيل للشريك (إذا كان الأب متزوجاً)
                 const parentMarriage = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(parentUser.id, guildId);
                 let partnerText = "";
                 
                 if (parentMarriage) {
-                    // نتأكد أننا لا نسجل مرتين
                     const checkPartnerChild = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ?").get(parentMarriage.partnerID, user.id);
                     if (!checkPartnerChild) {
                         stmt.run(parentMarriage.partnerID, user.id, now, guildId);
