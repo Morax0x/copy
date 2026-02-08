@@ -2,7 +2,7 @@ const { SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder,
 const Canvas = require('canvas');
 const path = require('path');
 
-// ❌ تم حذف كود تحميل الخطوط لتفادي التعارض وتسريع البوت ❌
+// ❌ تم حذف كود الخطوط لتسريع البوت ومنع التعارض ❌
 
 // ✅✅ إعدادات النظام ✅✅
 const TEST_MODE = false; 
@@ -22,14 +22,14 @@ const THEME = {
     NAME_BG: "rgba(0, 0, 0, 0.85)" 
 };
 
-// الأبعاد (تم التعديل لتناسب 4 أجيال)
+// الأبعاد
 const DIMS = {
     NODE: 80,      // حجم صورة الشخص الأساسي
     PARTNER: 65,   // حجم صورة الزوجة
     KID: 60,       // حجم صورة الابن
     GRAND: 45,     // حجم صورة الحفيد
-    PARENT: 60,    // حجم صورة الأب/الأم (الجديد)
-    LEVEL_GAP: 220, // المسافة بين كل جيل وجيل
+    PARENT: 60,    // حجم صورة الأب/الأم
+    LEVEL_GAP: 220, // المسافة بين الأجيال
     SIB_GAP: 40,
 };
 
@@ -73,7 +73,7 @@ async function drawTreePage(treeData, pageIndex) {
     let childBlocks = [];
     let totalWidth = 0;
 
-    // حساب العرض المطلوب للأبناء
+    // حساب العرض المطلوب
     for (let child of currentChildren) {
         const spouseW = (child.partners.length * (DIMS.PARTNER * 2 + 10));
         const topW = (DIMS.KID * 2) + spouseW;
@@ -85,15 +85,12 @@ async function drawTreePage(treeData, pageIndex) {
         totalWidth += blockW + DIMS.SIB_GAP;
     }
 
-    // حساب عرض الآباء (الجيل الأول)
     const parentsWidth = (treeData.parents.length * (DIMS.PARENT * 2 + 20));
-
     const minWidth = 1000;
     const partnersWidth = (treeData.partners.length * (DIMS.PARTNER * 2 + 20)) + (DIMS.NODE * 2);
     
-    // العرض النهائي للكانفاس بناءً على الأعرض (الآباء أو الأبناء أو الشركاء)
     const canvasWidth = Math.max(totalWidth, partnersWidth, parentsWidth, minWidth) + 100;
-    const canvasHeight = 1000; // زيادة الطول لاستيعاب الآباء
+    const canvasHeight = 1000;
     const centerX = canvasWidth / 2;
 
     const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
@@ -113,7 +110,7 @@ async function drawTreePage(treeData, pageIndex) {
     for(let x=0; x<canvasWidth; x+=gridSize) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvasHeight); ctx.stroke(); }
     for(let y=0; y<canvasHeight; y+=gridSize) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvasWidth,y); ctx.stroke(); }
 
-    // تأثير Vignette
+    // Vignette
     const radGrad = ctx.createRadialGradient(centerX, canvasHeight/2, 100, centerX, canvasHeight/2, canvasWidth);
     radGrad.addColorStop(0, "rgba(0,0,0,0)");
     radGrad.addColorStop(1, "rgba(0,0,0,0.5)");
@@ -123,8 +120,7 @@ async function drawTreePage(treeData, pageIndex) {
     // --- دوال الرسم ---
     function drawNameLabel(name, x, y, color) {
         const fontSize = 18;
-        // استخدام الخطوط الافتراضية لتجنب المشاكل
-        ctx.font = `bold ${fontSize}px "Sans", "Arial"`; 
+        ctx.font = `bold ${fontSize}px "Sans", "Arial"`; // استخدام خطوط النظام للسرعة
         const textMetrics = ctx.measureText(name);
         const textWidth = textMetrics.width;
         const boxWidth = textWidth + 20;
@@ -137,7 +133,7 @@ async function drawTreePage(treeData, pageIndex) {
         ctx.fillStyle = THEME.NAME_BG;
         ctx.beginPath();
         if(ctx.roundRect) ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 10);
-        else ctx.rect(boxX, boxY, boxWidth, boxHeight); // Fallback if roundRect not supported
+        else ctx.rect(boxX, boxY, boxWidth, boxHeight);
         ctx.fill();
         
         ctx.shadowBlur = 0;
@@ -162,7 +158,7 @@ async function drawTreePage(treeData, pageIndex) {
 
         try {
             let url;
-            // 🔥 تسريع التحميل: طلب صورة صغيرة الحجم
+            // 🔥 تسريع خيالي: استخدام صورة بحجم 128px فقط
             if (typeof user.displayAvatarURL === 'function') {
                 url = user.displayAvatarURL({ extension: 'png', size: 128 });
             } else {
@@ -220,25 +216,21 @@ async function drawTreePage(treeData, pageIndex) {
     // 🖌️ الإحداثيات والطبقات
     // ==========================================
 
-    const Y_PARENTS = 80;  // الجيل 1: الآباء
-    const Y_MAIN = 320;    // الجيل 2: أنت والزوجات
-    const Y_KIDS = 560;    // الجيل 3: الأبناء
-    const Y_GRAND = 800;   // الجيل 4: الأحفاد
+    const Y_PARENTS = 80;  
+    const Y_MAIN = 320;    
+    const Y_KIDS = 560;    
+    const Y_GRAND = 800;   
 
-    // 1. رسم خطوط الآباء (من الأعلى للأسفل)
+    // رسم الخطوط...
     if (treeData.parents.length > 0) {
-        // حساب مركز الآباء
         const pTotalW = treeData.parents.length * (DIMS.PARENT * 2 + 40);
         let currentPX = centerX - (pTotalW / 2) + DIMS.PARENT + 20;
-        
         for(let i=0; i<treeData.parents.length; i++) {
-            // رسم خط من الأب إلى المستخدم الرئيسي
             drawElbowLine(currentPX, Y_PARENTS + DIMS.PARENT, centerX, Y_MAIN - DIMS.NODE);
             currentPX += DIMS.PARENT * 2 + 40;
         }
     }
 
-    // 2. خطوط الزوجات
     let leftP = [], rightP = [];
     treeData.partners.forEach((p, i) => (i%2===0 ? rightP : leftP).push(p));
 
@@ -255,20 +247,17 @@ async function drawTreePage(treeData, pageIndex) {
         pX -= DIMS.PARTNER - 20;
     }
 
-    // 3. خطوط الأبناء والأحفاد
     if (childBlocks.length > 0) {
         drawElbowLine(centerX, Y_MAIN + DIMS.NODE, centerX, Y_KIDS - DIMS.KID - 40);
         let currentX = centerX - (totalWidth / 2);
-        
         for(const block of childBlocks) {
             const blockCenter = currentX + (block.width / 2);
             const kidRealX = blockCenter - (block.spouseW / 2);
-
             drawElbowLine(centerX, Y_MAIN + DIMS.NODE, kidRealX, Y_KIDS - DIMS.KID);
             
             let spX = kidRealX + DIMS.KID + 20;
             let lastSpouseX = kidRealX;
-            if (block.data.partners && block.data.partners.length > 0) {
+            if (block.data.partners) {
                 for (const sp of block.data.partners) {
                     spX += DIMS.PARTNER;
                     drawHorizontalLine(kidRealX, Y_KIDS, spX, THEME.FEMALE);
@@ -280,14 +269,10 @@ async function drawTreePage(treeData, pageIndex) {
             let parentsCenterX = (kidRealX + lastSpouseX) / 2;
             if (block.data.offspring.length > 0) {
                 const grandCount = block.data.offspring.length;
-                const grandTotalW = grandCount * (DIMS.GRAND * 2 + 10);
-                let grandX = blockCenter - (grandTotalW / 2) + DIMS.GRAND;
-
-                const linkYStart = Y_KIDS + (block.data.partners.length > 0 ? 0 : DIMS.KID); 
+                let grandX = blockCenter - ((grandCount * (DIMS.GRAND * 2 + 10)) / 2) + DIMS.GRAND;
                 const linkYEnd = Y_GRAND - DIMS.GRAND;
-
                 for (const grand of block.data.offspring) {
-                    drawElbowLine(parentsCenterX, linkYStart, grandX, linkYEnd);
+                    drawElbowLine(parentsCenterX, Y_KIDS + (block.data.partners.length > 0 ? 0 : DIMS.KID), grandX, linkYEnd);
                     grandX += DIMS.GRAND * 2 + 10;
                 }
             }
@@ -295,25 +280,18 @@ async function drawTreePage(treeData, pageIndex) {
         }
     }
 
-    // ==========================================
-    // 🖼️ رسم الصور
-    // ==========================================
-
-    // 0. الآباء (الجيل الأول)
+    // رسم الصور...
     if (treeData.parents.length > 0) {
         const pTotalW = treeData.parents.length * (DIMS.PARENT * 2 + 40);
         let currentPX = centerX - (pTotalW / 2) + DIMS.PARENT + 20;
-        
         for(const parent of treeData.parents) {
             await drawCircleImg(parent, currentPX, Y_PARENTS, DIMS.PARENT);
             currentPX += DIMS.PARENT * 2 + 40;
         }
     }
 
-    // 1. المستخدم الرئيسي (الجيل الثاني)
     await drawCircleImg(treeData.main, centerX, Y_MAIN, DIMS.NODE, true);
 
-    // 2. الزوجات
     pX = centerX + DIMS.NODE + 40;
     for(const p of rightP) {
         pX += DIMS.PARTNER;
@@ -327,12 +305,10 @@ async function drawTreePage(treeData, pageIndex) {
         pX -= DIMS.PARTNER - 20;
     }
 
-    // 3. الأبناء (الجيل الثالث)
     let currentX = centerX - (totalWidth / 2);
     for(const block of childBlocks) {
         const blockCenter = currentX + (block.width / 2);
         const kidRealX = blockCenter - (block.spouseW / 2);
-
         await drawCircleImg(block.data, kidRealX, Y_KIDS, DIMS.KID);
 
         let spX = kidRealX + DIMS.KID + 20;
@@ -344,12 +320,10 @@ async function drawTreePage(treeData, pageIndex) {
             }
         }
 
-        // 4. الأحفاد (الجيل الرابع)
         if (block.data.offspring.length > 0) {
             const grandCount = block.data.offspring.length;
             const grandTotalW = grandCount * (DIMS.GRAND * 2 + 10);
             let grandX = blockCenter - (grandTotalW / 2) + DIMS.GRAND;
-
             for (const grand of block.data.offspring) {
                 await drawCircleImg(grand, grandX, Y_GRAND, DIMS.GRAND);
                 grandX += DIMS.GRAND * 2 + 10;
@@ -390,23 +364,22 @@ module.exports = {
             },
             partners: [],
             children: [],
-            parents: [] // إضافة خانة الآباء
+            parents: []
         };
 
         if (TEST_MODE) {
-            // (محذوف للاختصار)
+            // ...
         } else {
             const sql = client.sql;
             treeData.main.color = await getUserColor(client, targetUser.id, guild);
             
-            // 1. جلب الآباء (الجيل الأول)
+            // 1. جلب الآباء
             const parentRows = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(targetUser.id, guild.id);
             for (const row of parentRows) {
                 try {
                     let parentUser = guild.members.cache.get(row.parentID);
                     if (!parentUser) parentUser = await client.users.fetch(row.parentID).catch(() => null);
                     if (!parentUser) continue;
-
                     const pColor = await getUserColor(client, parentUser.id, guild);
                     treeData.parents.push({
                         username: parentUser.user ? parentUser.user.username : parentUser.username,
@@ -417,14 +390,13 @@ module.exports = {
                 } catch {}
             }
 
-            // 2. جلب الزوجات (الجيل الثاني - شركاء)
+            // 2. جلب الزوجات
             const marriages = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").all(targetUser.id, guild.id);
             for (const m of marriages) {
                 try {
                     let pUser = guild.members.cache.get(m.partnerID);
                     if (!pUser) pUser = await client.users.fetch(m.partnerID).catch(() => null);
                     if (!pUser) continue;
-
                     const color = await getUserColor(client, pUser.id, guild);
                     treeData.partners.push({ 
                         username: pUser.user ? pUser.user.username : pUser.username,
@@ -435,7 +407,7 @@ module.exports = {
                 } catch {}
             }
 
-            // 3. جلب الأبناء (الجيل الثالث) - بحث ذكي
+            // 3. جلب الأبناء (شامل)
             let childrenRows = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(targetUser.id, guild.id);
             for (const p of treeData.partners) {
                 const stepRows = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(p.id, guild.id);
@@ -452,8 +424,6 @@ module.exports = {
 
                     const cColor = await getUserColor(client, cUser.id, guild);
                     let cPartners = [];
-                    
-                    // زوجات الابن
                     const cMarriages = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").all(cUser.id, guild.id);
                     for (const cm of cMarriages) {
                         try {
@@ -470,7 +440,6 @@ module.exports = {
                         } catch {}
                     }
 
-                    // 4. الأحفاد (الجيل الرابع)
                     let grandChildren = [];
                     let grandRows = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(cUser.id, guild.id);
                     for(const cp of cPartners) {
@@ -507,9 +476,8 @@ module.exports = {
             }
         }
 
-        // التحقق من الوحدة
         if (treeData.parents.length === 0 && treeData.partners.length === 0 && treeData.children.length === 0) {
-            const msg = await message.reply({ content: `🍂 **شجرة ${targetUser.username} فارغة تماماً!**\nلم يبدأ عائلته بعد وليس لديه والدين مسجلين.` });
+            const msg = await message.reply({ content: `🍂 **شجرة ${targetUser.username} فارغة تماماً!**` });
             setTimeout(() => msg.delete().catch(() => {}), 5000);
             return; 
         }
@@ -527,6 +495,7 @@ module.exports = {
         };
 
         const img = await drawTreePage(treeData, currentPage);
+        // تم إزالة النص العلوي (content)
         const msg = await message.reply({ 
             files: [img],
             components: totalPages > 1 ? [getButtons(currentPage)] : []
