@@ -1,5 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder, Colors, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require("discord.js");
-const { startDungeon } = require("../../handlers/dungeon-handler.js");
 const { manageTickets } = require("../../handlers/dungeon/utils.js");
 const { startDungeonLobby } = require("../../handlers/dungeon/core/setup.js");
 
@@ -81,6 +80,7 @@ module.exports = {
             const diff = now - lastRun;
 
             if (diff < COOLDOWN_MS) {
+                // ✅ استخدام الدالة الصحيحة لفحص التذاكر
                 const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check', interaction.member);
                 const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
 
@@ -107,12 +107,10 @@ module.exports = {
         // 🔥🔥 نظام استكمال الدانجون (Campfire System) 🔥🔥
         // ====================================================
         
-        // 1. فحص التذاكر أولاً (شرط أساسي)
-        const userDataCheck = client.sql.prepare("SELECT dungeon_tickets FROM levels WHERE user = ? AND guild = ?").get(user.id, guild.id);
-        if (!userDataCheck || userDataCheck.dungeon_tickets < 1) {
-             // لكن قبل الرفض، تأكد أنه لم ينضم لفريق آخر (تجاوزنا هذه النقطة في الكود السابق، سنبقيها هنا للتبسيط)
-             // إذا كنت تريد السماح بالانضمام بدون تذاكر، يجب التعامل معها في startDungeonLobby
-             // هنا نفترض أن القائد يحتاج تذكرة لفتح الدانجون
+        // 1. فحص التذاكر أولاً (✅ التصحيح هنا: استخدام manageTickets)
+        const ticketCheck = manageTickets(user.id, guild.id, client.sql, 'check', interaction.member);
+        
+        if (ticketCheck.tickets < 1) {
              return interaction.reply({ content: "🚫 **لا تملك تذاكر كافية لفتح بوابة الدانجون!**", flags: [MessageFlags.Ephemeral] });
         }
 
@@ -144,12 +142,7 @@ module.exports = {
                 });
 
                 try {
-                    // نستخدم جامع التفاعلات (Collector)
                     const filter = i => i.user.id === user.id;
-                    // ملاحظة: createMessageComponentCollector يعمل على الرسالة المرجعة
-                    // في حالة Slash Command يجب استخدام channel.createMessageComponentCollector مع فلتر الرسالة، أو fetchReply
-                    
-                    // الطريقة الأضمن مع Slash و Prefix:
                     const collector = replyMsg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
 
                     collector.on('collect', async i => {
@@ -163,6 +156,9 @@ module.exports = {
                         // حذف الحفظ بعد الاستخدام (Anti-Farm)
                         client.sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
                         
+                        // 🔥 خصم التذكرة الآن (القائد فقط) 🔥
+                        manageTickets(user.id, guild.id, client.sql, 'consume', interaction.member);
+
                         // بدء الدانجون
                         await startDungeonLobby(interaction, startFloor);
                     });
@@ -173,7 +169,7 @@ module.exports = {
                         }
                     });
                     
-                    return; // نخرج من الدالة لننتظر الضغط
+                    return; 
 
                 } catch (e) {
                     console.log(e);
@@ -186,9 +182,10 @@ module.exports = {
 
         // 4. تشغيل النظام العادي (إذا لم يكن هناك حفظ أو انتهى الوقت)
         try {
-            // نمرر 1 كطابق افتراضي
-            // بما أن startDungeon يستدعي startDungeonLobby داخلياً، نحتاج لتعديل startDungeon أو استدعاء startDungeonLobby مباشرة
-            // هنا سنستدعي startDungeonLobby مباشرة لأننا قمنا بالتأكد من كل شيء
+            // 🔥 خصم التذكرة الآن (القائد فقط) 🔥
+            manageTickets(user.id, guild.id, client.sql, 'consume', interaction.member);
+
+            // بدء اللوبي من الطابق 1
             await startDungeonLobby(interaction, 1);
         } catch (err) {
             console.error("[Dungeon Command Error]", err);
