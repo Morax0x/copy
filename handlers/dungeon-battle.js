@@ -395,7 +395,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         // --- الفوز في الطابق 100 ---
         if (floor === maxFloors) {
             const moraxMora = getBaseFloorMora(100);
-            const moraxXp = Math.floor(moraxMora * 0.10); // 10% خبرة إضافية
+            const moraxXp = Math.floor(moraxMora * 0.10); 
 
             totalAccumulatedCoins += moraxMora;
             totalAccumulatedXP += moraxXp;
@@ -437,6 +437,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             return; 
         } 
+        // 🔥🔥 معالجة نصب المخيم 🔥🔥
+        else if (decision === 'camp') {
+            // حذف الحالة لإنهاء اللعبة الحالية (تم حفظها في الداتابيس داخل handleRestMenu)
+            deleteDungeonState(sql, threadChannel.id);
+            statusCollector.stop();
+            
+            // إزالة القائد من قائمة النشطين ليتمكن من بدء أي نشاط آخر
+            activeDungeonRequests.delete(hostId);
+            
+            // إرسال رسالة انتهاء للقناة الرئيسية (اختياري)
+            await mainChannel.send(`🏕️ **قام فريق ${players.find(p => p.id === hostId)?.name || 'غير معروف'} بنصب المخيم عند الطابق ${floor + 1}!**`).catch(()=>{});
+            
+            return; // إنهاء الدالة
+        }
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
             statusCollector.stop(); 
