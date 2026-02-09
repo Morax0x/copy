@@ -6,7 +6,8 @@ const {
     ButtonBuilder, 
     ButtonStyle, 
     Colors,
-    ComponentType 
+    ComponentType,
+    MessageFlags // ✅ ضروري لإصلاح التحذير
 } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP } = require('../constants');
@@ -18,10 +19,8 @@ const { handleLeaderSuccession } = require('../core/battle-utils');
  * تطبيق تحديثات ما بعد المعركة (غنائم + علاج)
  */
 async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
-    // 1. حساب الغنائم (باستخدام نظام الشرائح الجديد)
+    // 1. حساب الغنائم
     let baseMora = Math.floor(getBaseFloorMora(floor));
-      
-    // 🔥 نسبة الـ XP هي 3% بناءً على طلبك
     let floorXp = Math.floor(baseMora * 0.03); 
       
     players.forEach(p => { 
@@ -31,7 +30,6 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
         } 
     });
 
-    // تحديث الإجماليات (يتم تمرير كائن totals لتحديثه بالمرجع)
     totals.coins += baseMora;
     totals.xp += floorXp;
 
@@ -78,11 +76,8 @@ async function handleRestMenu(context) {
         restImage 
     } = context;
 
-    const canRetreat = true;
-
     let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
 
-    // الأزرار
     const restRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
         // 🔥 زر نصب المخيم الجديد 🔥
@@ -117,48 +112,42 @@ async function handleRestMenu(context) {
         threadChannel.send("✶ الدانجـون سيبتلـعـكم بسبب الخمـول امام القائد 60 ثانية للاستمرار").catch(()=>{});
     }, 60000); 
       
-    // انتظار القرار
     const decision = await new Promise(res => {
-        const decCollector = restMsg.createMessageComponentCollector({ time: 120000 }); // 120 ثانية
+        const decCollector = restMsg.createMessageComponentCollector({ time: 120000 });
         
         decCollector.on('collect', async i => {
             clearTimeout(warningTimeout); 
 
-            // 1. خيار الاستمرار
             if (i.customId === 'continue') {
                 let p = players.find(pl => pl.id === i.user.id);
-                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
+                // 🔥 إصلاح التحذير: استخدام flags بدلاً من ephemeral
+                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", flags: [MessageFlags.Ephemeral] });
                 await i.deferUpdate(); 
                 return decCollector.stop('continue');
             }
 
-            // 2. خيار نصب المخيم (جديد)
+            // 🔥 منطق نصب المخيم 🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
-                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه نصب المخيم!**", ephemeral: true });
+                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه نصب المخيم!**", flags: [MessageFlags.Ephemeral] });
                 
-                // حفظ البيانات في الداتابيس
                 const nextFloor = floor + 1;
-                // نحفظ بدم كامل (HP = MaxHP) لأننا سنعتبرهم ارتاحوا
-                // لا نحتاج لحفظ الـ HP هنا لأننا سنعيد حسابه عند الاستكمال بناءً على معداتهم
-                
+                // الحفظ في الداتابيس
                 sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(p.id, guild.id, nextFloor, Date.now());
                 
-                await i.reply({ content: `⛺ **قام الفريق بنصب الخيام!**\nيمكنكم العودة لاستكمال الرحلة من الطابق **${nextFloor}** خلال 24 ساعة.`, ephemeral: false });
+                // رسالة عامة للجميع (بدون Ephemeral)
+                await i.reply({ content: `⛺ **قام الفريق بنصب الخيام!**\nتم حفظ التقدم بنجاح. يمكنكم العودة لاستكمال الرحلة من الطابق **${nextFloor}** خلال 24 ساعة (أو أكثر حسب رتبة القائد).` });
                 
-                return decCollector.stop('camp'); // نوقف الكوليكتور ونرسل 'camp' كسبب
+                return decCollector.stop('camp');
             }
 
-            // 3. خيار الانسحاب
             if (i.customId === 'retreat') {
                 let p = players.find(pl => pl.id === i.user.id);
                 
-                // إذا كان المنسحب هو القائد -> انسحاب جماعي
                 if (p && p.class === 'Leader') {
                     await i.deferUpdate();
                     return decCollector.stop('retreat');
                 } 
-                // إذا كان عضواً عادياً -> انسحاب فردي
                 else {
                     const pIndex = players.findIndex(pl => pl.id === i.user.id);
                     if (pIndex > -1) {
@@ -170,13 +159,11 @@ async function handleRestMenu(context) {
                         retreatedPlayers.push(leavingPlayer);
                         players.splice(pIndex, 1); 
                         
-                        await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP.`, ephemeral: true });
+                        // 🔥 إصلاح التحذير هنا
+                        await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP.`, flags: [MessageFlags.Ephemeral] });
                         await threadChannel.send(`💨 **${leavingPlayer.name}** انسحب واكتفى بغنائمه!`).catch(()=>{});
                         
-                        // إذا أصبح الفريق فارغاً
                         if (players.length === 0) decCollector.stop('retreat');
-                        
-                        // إذا انسحب شخص وأصبح أحدهم قائداً جديداً
                         if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
                     }
                 }
