@@ -1,232 +1,210 @@
-// handlers/dungeon/core/setup.js
+const { SlashCommandBuilder, EmbedBuilder, Colors, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require("discord.js");
+// ✅ استدعاء الهاندلر من المسار الصحيح
+const { startDungeon } = require("../../handlers/dungeon-handler.js");
+// ✅ استدعاء دالة إدارة الحد اليومي
+const { manageTickets } = require("../../handlers/dungeon/utils.js");
+// ✅ استدعاء دالة بدء اللوبي لاستخدامها عند الاستكمال
+const { startDungeonLobby } = require("../../handlers/dungeon/core/setup.js");
 
-const { getRealPlayerData } = require('../utils');
-const { cleanName } = require('./battle-utils');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const OWNER_ID = "1145327691772481577";
+const COOLDOWN_MS = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة لتوافق الهاندلر 🔥
 
-/**
- * دالة لقراءة وتطبيق البفات الخاصة بالأعراق من الداتابيس (تراكمي)
- */
-function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
-    if (!currentThemeKey || !member) return "";
-    
-    // 1. التأكد من وجود الجدول
-    try {
-        const tableCheck = sql.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='race_dungeon_buffs'").get();
-        if (!tableCheck['count(*)']) return "";
-    } catch (e) { return ""; }
+module.exports = {
+    // إعدادات سلاش كوماند
+    data: new SlashCommandBuilder()
+        .setName('dungeon')
+        .setDescription('⚔️ ادخل الدانجون وحارب الوحوش !')
+        .setDMPermission(false),
 
-    let buffMsgArray = [];
+    // إعدادات البريفكس
+    name: 'dungeon',
+    aliases: ['دانجون', 'برج', 'dgn'],
+    category: "Economy",
+    description: "نظام الدانجون المتقدم (PvE)",
 
-    // 2. جلب جميع رتب اللاعب
-    const memberRoles = member.roles.cache.map(r => r.id);
-    if (memberRoles.length === 0) {
-        // console.log(`[RaceBuff] Player ${member.user.tag} has no roles to check.`);
-        return "";
-    }
+    async execute(context, args) {
+        // 1. تحديد نوع التفاعل (Slash vs Message)
+        const isSlash = context.isChatInputCommand === true;
+        let interaction;
 
-    // 3. البحث عن جميع البفات المتطابقة (Stackable)
-    const placeholders = memberRoles.map(() => '?').join(',');
-    
-    try {
-        // 🔥 التعديل: إزالة LIMIT 1 لجلب كل البفات
-        const activeBuffs = sql.prepare(`
-            SELECT * FROM race_dungeon_buffs 
-            WHERE guildID = ? AND dungeonKey = ? AND roleID IN (${placeholders})
-        `).all(guildId, currentThemeKey, ...memberRoles);
+        if (isSlash) {
+            interaction = context;
+        } else {
+            // محاكاة الانترآكشن للرسائل العادية
+            interaction = {
+                user: context.author,
+                guild: context.guild,
+                member: context.member,
+                channel: context.channel,
+                client: context.client,
+                id: context.id,
+                isChatInputCommand: false,
+                reply: async (payload) => context.reply(payload),
+                editReply: async (payload) => {
+                    if (context.lastBotReply) return context.lastBotReply.edit(payload);
+                    return context.channel.send(payload);
+                },
+                followUp: async (payload) => context.channel.send(payload),
+                deferReply: async () => {},
+                deferUpdate: async () => {},
+                awaitMessageComponent: (options) => context.channel.awaitMessageComponent(options)
+            };
+        }
 
-        if (activeBuffs && activeBuffs.length > 0) {
-            // console.log(`[RaceBuff] Found ${activeBuffs.length} buffs for ${member.user.tag}`);
+        const { client, user, guild } = interaction;
 
-            // تجهيز القيم الافتراضية
-            player.atk = Number(player.atk) || 0;
-            player.maxHp = Number(player.maxHp) || 100;
-            player.hp = Number(player.hp) || player.maxHp;
-            player.def = Number(player.def) || 0;
-            player.shield = Number(player.shield) || 0;
-            player.critRate = Number(player.critRate) || 0;
-            player.lifesteal = Number(player.lifesteal) || 0;
+        // التحقق من وجود السيرفر
+        if (!guild) {
+            return interaction.reply({ content: "🚫 **عذراً، هذا الأمر يعمل فقط داخل السيرفرات!**", ephemeral: true });
+        }
 
-            // حلقة لتطبيق كل بف على حدة
-            for (const buff of activeBuffs) {
-                let val = parseFloat(buff.buffValue); 
-                if (isNaN(val)) continue;
+        // 2. تحديث قاعدة البيانات (أمان) - ضمان وجود أعمدة التذاكر وجدول الحفظ
+        try {
+            client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
+            client.sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_tickets INTEGER DEFAULT 0").run();
+            client.sql.prepare("ALTER TABLE levels ADD COLUMN last_ticket_reset TEXT DEFAULT ''").run();
+            // 🔥 إضافة جدول الحفظ 🔥
+            client.sql.prepare("CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT PRIMARY KEY, guildID TEXT, floor INTEGER, timestamp INTEGER)").run();
+        } catch (ignored) {}
 
-                const multiplier = val / 100; 
-                const statTypeClean = buff.statType.toLowerCase().trim();
+        // 3. التحقق من وقت الانتظار (Cooldown)
+        if (user.id !== OWNER_ID) {
+            let userData = client.getLevel.get(user.id, guild.id);
+            
+            // إنشاء بيانات للمستخدم الجديد
+            if (!userData) {
+                client.setLevel.run({
+                    id: `${guild.id}-${user.id}`,
+                    user: user.id,
+                    guild: guild.id,
+                    xp: 0, level: 1, mora: 0
+                });
+                userData = client.getLevel.get(user.id, guild.id);
+            }
 
-                switch (statTypeClean) {
-                    case 'atk':
-                    case 'attack':
-                        const atkBonus = Math.floor(player.atk * multiplier);
-                        player.atk += atkBonus;
-                        buffMsgArray.push(`⚔️ +${Math.floor(val)}% هجوم`);
-                        break;
+            const lastRun = userData.last_dungeon || 0;
+            const now = Date.now();
+            const diff = now - lastRun;
 
-                    case 'hp':
-                    case 'health':
-                        const hpBonus = Math.floor(player.maxHp * multiplier);
-                        player.maxHp += hpBonus;
-                        player.hp += hpBonus; 
-                        buffMsgArray.push(`❤️ +${Math.floor(val)}% HP`);
-                        break;
+            // إذا كان عليه كولداون (لإنشاء الدانجون كـ Host)
+            if (diff < COOLDOWN_MS) {
+                // جلب معلومات الحد اليومي (للانضمام)
+                const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check', interaction.member);
+                
+                // حساب وقت انتهاء الكولداون (Timestamp) للعد التنازلي
+                const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
 
-                    case 'def':
-                    case 'defense':
-                        player.def += multiplier; 
-                        player.defense = player.def; 
-                        buffMsgArray.push(`🛡️ +${Math.floor(val)}% دفاع`);
-                        break;
+                // تصميم الإيمبد الجديد (تنسيق الأسطر)
+                const cooldownEmbed = new EmbedBuilder()
+                    .setTitle('✥ اسـتـراحـة مـحـارب !')
+                    .setDescription(
+                        `★ رويـدك ايهـا المحارب ارتح قليلا قبل غزو الدانجون مجددا !\n\n` +
+                        `★ يمكنك غـزو الدانجـون:\n ★ <t:${readyTimestamp}:R>\n\n` + 
+                        `★ لديـك **(${limitInfo.tickets}/${limitInfo.max})** تذكرة يمكنك الانضمام لفريق آخر`
+                    )
+                    .setThumbnail('https://i.postimg.cc/4xMWNV22/doun.png')
+                    .setColor(Math.floor(Math.random() * 0xFFFFFF)); // لون عشوائي
 
-                    case 'shield':
-                        const shieldBonus = Math.floor(player.maxHp * multiplier);
-                        player.shield += shieldBonus;
-                        player.startingShield = (player.startingShield || 0) + shieldBonus;
-                        buffMsgArray.push(`💠 +${shieldBonus} درع`);
-                        break;
+                const payload = { 
+                    embeds: [cooldownEmbed], 
+                    flags: [MessageFlags.Ephemeral] 
+                };
 
-                    case 'lifesteal':
-                        player.lifesteal += multiplier; // تراكمي (مثلا 0.1 + 0.05 = 0.15)
-                        buffMsgArray.push(`🩸 +${Math.floor(val)}% شفاء`);
-                        break;
+                // تجنب الرد المزدوج
+                if (isSlash && (interaction.replied || interaction.deferred)) {
+                    return await interaction.followUp(payload);
+                }
+                return await interaction.reply(payload);
+            }
+        }
 
-                    case 'crit':
-                    case 'critrate':
-                        player.critRate += multiplier;
-                        buffMsgArray.push(`✨ +${Math.floor(val)}% كريت`);
-                        break;
+        // ====================================================
+        // 🔥🔥 نظام استكمال الدانجون (Campfire System) 🔥🔥
+        // ====================================================
+        
+        // 1. فحص ملف الحفظ (بدون التأثير على السستم القديم)
+        const save = client.sql.prepare("SELECT * FROM dungeon_saves WHERE hostID = ?").get(user.id);
+        
+        if (save) {
+            // تحديد مدة الصلاحية حسب الرتب
+            let expiryTime = 24 * 60 * 60 * 1000; // الافتراضي: 24 ساعة
+            const member = interaction.member;
+            
+            if (member.roles.cache.has('1422160802416164885')) expiryTime = 72 * 60 * 60 * 1000; // 3 أيام
+            else if (member.roles.cache.has('1395674235002945636')) expiryTime = 35 * 60 * 60 * 1000; // 35 ساعة
+
+            const timeLeft = expiryTime - (Date.now() - save.timestamp);
+
+            if (timeLeft > 0) {
+                // يوجد حفظ ساري المفعول -> نعرض خيار الاستكمال
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('resume_dungeon').setLabel(`استكمال (طابق ${save.floor})`).setStyle(ButtonStyle.Success).setEmoji('⛺'),
+                    new ButtonBuilder().setCustomId('new_dungeon').setLabel('بداية جديدة').setStyle(ButtonStyle.Secondary).setEmoji('⚔️')
+                );
+
+                // نستخدم fetchReply للتأكد من الحصول على الرسالة للتفاعل معها
+                const replyMethod = isSlash ? interaction.reply.bind(interaction) : context.channel.send.bind(context.channel);
+                const replyPayload = {
+                    content: `👑 **عثرنا على رحلة سابقة توقفت عند الطابق ${save.floor}.. هل تود استكمالها؟**\n⏳ ينتهي المخيم بعد: <t:${Math.floor((Date.now() + timeLeft) / 1000)}:R>`,
+                    components: [row],
+                    fetchReply: true
+                };
+
+                let replyMsg;
+                if (isSlash) replyMsg = await interaction.reply(replyPayload);
+                else replyMsg = await context.reply(replyPayload); // استخدام reply في الرسالة العادية أفضل من send
+
+                try {
+                    const filter = i => i.user.id === user.id;
+                    // نستخدم createMessageComponentCollector على القناة أو الرسالة المرجعة
+                    // في حالة الرسالة العادية، createMessageComponentCollector متاح مباشرة على الرسالة
+                    const collector = replyMsg.createMessageComponentCollector({ filter, time: 30000, max: 1 });
+
+                    collector.on('collect', async i => {
+                        if (i.customId === 'resume_dungeon') {
+                            await i.update({ content: `⛺ **تم استكمال الرحلة من الطابق ${save.floor}!**`, components: [] });
+                            // حذف الحفظ بعد الاستخدام (Anti-Farm)
+                            client.sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
+                            
+                            // 🔥 بدء الدانجون من الطابق المحفوظ 🔥
+                            // ملاحظة: هنا نستدعي اللوبي مباشرة مع تمرير الطابق
+                            await startDungeonLobby(interaction, save.floor); 
+                        } else {
+                            await i.update({ content: `⚔️ **تم إلغاء المخيم وبدء رحلة جديدة من الطابق 1!**`, components: [] });
+                            client.sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
+                            
+                            // 🔥 بدء دانجون جديد كالمعتاد 🔥
+                            await startDungeon(interaction, client.sql);
+                        }
+                    });
+
+                    collector.on('end', collected => {
+                        if (collected.size === 0) {
+                            if (isSlash) interaction.editReply({ content: '⏰ **انتهى الوقت!** يرجى كتابة الأمر مرة أخرى.', components: [] }).catch(() => {});
+                            else replyMsg.edit({ content: '⏰ **انتهى الوقت!** يرجى كتابة الأمر مرة أخرى.', components: [] }).catch(() => {});
+                        }
+                    });
                     
-                    default:
-                        console.log(`[RaceBuff] Unknown stat: ${statTypeClean}`);
+                    return; // ⛔ نخرج من الدالة لننتظر خيار اللاعب (لا نشغل startDungeon تلقائياً)
+
+                } catch (e) {
+                    console.log(e);
                 }
+            } else {
+                // الحفظ منتهي الصلاحية -> حذف وتجاهل واكمال الكود لبدء دانجون جديد
+                client.sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
             }
         }
-    } catch(e) {
-        console.error("[Race Buff Error]", e);
-    }
 
-    return buffMsgArray.length > 0 ? `🌟 **ميزات العرق:** ${buffMsgArray.join(' | ')}` : "";
-}
-
-// ✅ الدالة الأساسية لتجهيز اللاعبين
-async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeKey) {
-    let players = [];
-    
-    const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
-    const members = await Promise.all(promises);
-
-    members.forEach((m, index) => {
-        if (m) {
-            const cls = partyClasses.get(m.id) || 'Adventurer';
-            let playerData = getRealPlayerData(m, sql, cls);
+        // 4. تشغيل النظام عبر الهاندلر (إذا لم يكن هناك حفظ)
+        try {
+            await startDungeon(interaction, client.sql);
+        } catch (err) {
+            console.error("[Dungeon Command Error]", err);
+            const errMsg = { content: "❌ حدث خطأ تقني أثناء بدء الدانجون.", flags: [MessageFlags.Ephemeral] };
             
-            // تنظيف البيانات
-            playerData.atk = Number(playerData.atk);
-            playerData.maxHp = Number(playerData.maxHp);
-            playerData.hp = playerData.maxHp; 
-            
-            playerData.originalClass = cls;
-            playerData.name = cleanName(playerData.name);
-            playerData.startingShield = 0; 
-            playerData.threat = 0;
-            playerData.totalDamage = 0;
-            playerData.shieldFloorsCount = 0; 
-            playerData.summon = null; 
-
-            // ============================================================
-            // 🔥 تطبيق ميزات العرق (تراكمي)
-            // ============================================================
-            const raceBuffMsg = applyDynamicBuffs(m, playerData, themeKey, guild.id, sql);
-            if (raceBuffMsg) {
-                playerData.raceBuffText = raceBuffMsg;
-            }
-
-            // ============================================================
-            // 🔥 فحص الختم
-            // ============================================================
-            playerData.isSealed = false;
-            playerData.sealMultiplier = 1.0; 
-            
-            if (m.id !== OWNER_ID) {
-                let maxItemLevel = 0;
-                if (playerData.skills && typeof playerData.skills === 'object') {
-                    const skillValues = Object.values(playerData.skills);
-                    for (const skill of skillValues) {
-                        const lvl = parseInt(skill.currentLevel) || parseInt(skill.level) || 0;
-                        if (lvl > maxItemLevel) maxItemLevel = lvl;
-                    }
-                }
-                if (playerData.weapon && typeof playerData.weapon === 'object') {
-                    const wLvl = parseInt(playerData.weapon.currentLevel) || parseInt(playerData.weapon.level) || parseInt(playerData.weapon.lvl) || 0;
-                    if (wLvl > maxItemLevel) maxItemLevel = wLvl;
-                }
-                if (maxItemLevel > 10) {
-                    playerData.isSealed = true;
-                    playerData.sealMultiplier = 0.2;
-                }
-            }
-
-            players.push(playerData);
+            if (interaction.replied || interaction.deferred) await interaction.followUp(errMsg);
+            else await interaction.reply(errMsg);
         }
-    });
-
-    return players;
-}
-
-// تعديل الدالة لتقبل startFloor (الافتراضي 1)
-async function startDungeonLobby(message, startFloor = 1) {
-    const client = message.client;
-    const sql = client.sql;
-    
-    // 🔥 هذا السطر يحل مشكلة الـ TypeError: Cannot read properties of undefined (reading 'username') 🔥
-    const host = message.author || message.user; 
-
-    // الأزرار
-    const activeRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('join_dungeon').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('⚔️'),
-        new ButtonBuilder().setCustomId('start_dungeon_game').setLabel('بدء المعركة').setStyle(ButtonStyle.Danger).setEmoji('🔥'),
-        new ButtonBuilder().setCustomId('cancel_dungeon').setLabel('إلغاء').setStyle(ButtonStyle.Secondary)
-    );
-
-    const lobbyEmbed = new EmbedBuilder()
-        .setTitle(`🏰 بوابة الدانجون (الطابق ${startFloor})`) // تحديث العنوان
-        .setDescription(
-            `القائد **${host.username}** يجمع فريقاً!\n` +
-            `اضغط على "انضمام" للمشاركة.\n\n` +
-            `🛑 **ملاحظة:** ستبدأ الرحلة مباشرة من الطابق **${startFloor}**.`
-        )
-        .setColor('DarkRed')
-        .setThumbnail(host.displayAvatarURL());
-
-    // في حالة السلاش، نستخدم reply أو followUp، وفي حالة الرسالة نستخدم channel.send
-    let msg;
-    if (message.reply && typeof message.reply === 'function') {
-         // إذا كان تفاعلاً (Interaction) ولم يتم الرد عليه بعد
-         if (!message.replied && !message.deferred) {
-             msg = await message.reply({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
-         } else {
-             msg = await message.followUp({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
-         }
-    } else {
-         msg = await message.channel.send({ embeds: [lobbyEmbed], components: [activeRow] });
     }
-
-    // حفظ البيانات في active_dungeons
-    const gameData = {
-        hostID: host.id,
-        players: [host.id], // القائد دائماً موجود
-        currentFloor: startFloor, // 🔥 هنا التغيير المهم
-        status: 'lobby',
-        hp: {}, // سيتم ملؤه عند البدء
-        maxHp: {},
-        startTime: Date.now()
-    };
-
-    // استخدام القناة الصحيحة (سواء كانت من رسالة أو تفاعل)
-    const channelId = message.channel ? message.channel.id : message.channelId;
-    const guildId = message.guild ? message.guild.id : message.guildId;
-
-    sql.prepare("INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data) VALUES (?, ?, ?, ?)").run(channelId, guildId, host.id, JSON.stringify(gameData));
-}
-
-module.exports = { setupPlayers, startDungeonLobby };
+};
