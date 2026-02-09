@@ -2,6 +2,7 @@
 
 const { getRealPlayerData } = require('../utils');
 const { cleanName } = require('./battle-utils');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 /**
  * دالة لقراءة وتطبيق البفات الخاصة بالأعراق من الداتابيس (تراكمي)
@@ -172,4 +173,46 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
     return players;
 }
 
-module.exports = { setupPlayers };
+// تعديل الدالة لتقبل startFloor (الافتراضي 1)
+async function startDungeonLobby(message, startFloor = 1) {
+    const client = message.client;
+    const sql = client.sql;
+    const host = message.author;
+
+    // ... (كود التحقق من وجود دانجون نشط مسبقاً يبقى كما هو) ...
+    // سنفترض أن التحقق موجود في الكود الأصلي أو تم التعامل معه في startDungeon
+
+    // الأزرار
+    const activeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('join_dungeon').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('⚔️'),
+        new ButtonBuilder().setCustomId('start_dungeon_game').setLabel('بدء المعركة').setStyle(ButtonStyle.Danger).setEmoji('🔥'),
+        new ButtonBuilder().setCustomId('cancel_dungeon').setLabel('إلغاء').setStyle(ButtonStyle.Secondary)
+    );
+
+    const lobbyEmbed = new EmbedBuilder()
+        .setTitle(`🏰 بوابة الدانجون (الطابق ${startFloor})`) // تحديث العنوان
+        .setDescription(
+            `القائد **${host.username}** يجمع فريقاً!\n` +
+            `اضغط على "انضمام" للمشاركة.\n\n` +
+            `🛑 **ملاحظة:** ستبدأ الرحلة مباشرة من الطابق **${startFloor}**.`
+        )
+        .setColor('DarkRed')
+        .setThumbnail(host.displayAvatarURL());
+
+    const msg = await message.channel.send({ embeds: [lobbyEmbed], components: [activeRow] });
+
+    // حفظ البيانات في active_dungeons
+    const gameData = {
+        hostID: host.id,
+        players: [host.id], // القائد دائماً موجود
+        currentFloor: startFloor, // 🔥 هنا التغيير المهم
+        status: 'lobby',
+        hp: {}, // سيتم ملؤه عند البدء
+        maxHp: {},
+        startTime: Date.now()
+    };
+
+    sql.prepare("INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data) VALUES (?, ?, ?, ?)").run(message.channel.id, message.guild.id, host.id, JSON.stringify(gameData));
+}
+
+module.exports = { setupPlayers, startDungeonLobby };
