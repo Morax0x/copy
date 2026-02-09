@@ -6,10 +6,46 @@ const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js'
 const { manageTickets } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
-const COOLDOWN_TIME = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة فقط 🔥
+const COOLDOWN_TIME = 1 * 60 * 60 * 1000; // ساعة واحدة
 
 async function startDungeon(interaction, sql) {
     const user = interaction.user;
+
+    // 🔥 زر التخييم الجديد (معالجة خارج اللوبي) 🔥
+    if (interaction.isButton() && interaction.customId === 'dungeon_campfire') {
+        const gameData = sql.prepare("SELECT * FROM active_dungeons WHERE channelID = ?").get(interaction.channel.id);
+        
+        if (!gameData) return interaction.reply({ content: "❌ لا توجد بيانات لهذا الدانجون.", ephemeral: true });
+        
+        const data = JSON.parse(gameData.data);
+        if (interaction.user.id !== data.hostID) {
+            return interaction.reply({ content: "🚫 **فقط القائد يمكنه نصب المخيم!**", ephemeral: true });
+        }
+
+        // حفظ البيانات
+        const nextFloor = (data.currentFloor || 0) + 1;
+        
+        // تسجيل الحفظ في الداتابيس
+        sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(data.hostID, interaction.guild.id, nextFloor, Date.now());
+
+        // حذف اللعبة الحالية
+        sql.prepare("DELETE FROM active_dungeons WHERE channelID = ?").run(interaction.channel.id);
+        activeDungeonRequests.delete(data.hostID); // إزالة القائد من النشطين
+
+        const campEmbed = new EmbedBuilder()
+            .setTitle("⛺ تم نصب المخيم")
+            .setDescription(
+                `قام الفريق بنصب الخيام للراحة عند مشارف الطابق **${nextFloor}**.\n` +
+                `تم حفظ تقدمك بنجاح! يمكنك العودة لاستكمال الرحلة لاحقاً.\n` +
+                `*(سيتم الاحتفاظ بملف الحفظ لمدة محدودة حسب رتبتك)*`
+            )
+            .setColor("Green")
+            .setImage("https://i.postimg.cc/KcJ6gtzV/22.jpg"); // صورة تعبيرية للمخيم
+
+        // نستخدم update لإلغاء رسالة الأزرار القديمة
+        await interaction.update({ content: "✅ تم الحفظ.", embeds: [campEmbed], components: [] });
+        return; // إنهاء الدالة هنا
+    }
 
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
@@ -17,13 +53,13 @@ async function startDungeon(interaction, sql) {
 
     const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
     
-    // 🔥 تعديل: رفع شرط القائد لفل 10 + رسالة مخصصة 🔥
+    // رفع شرط القائد لفل 10
     if (!leaderData || leaderData.level < 10) {
         const denyEmbed = new EmbedBuilder()
             .setTitle("✶ لا تستوفي الشروط")
             .setDescription("- الـدانجـون محفوف بالمخـاطر، ارفع مستواك إلى **10** لتتمكن من قيادة غارة الدانجون.")
-            .setColor(Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]]) // لون عشوائي
-            .setThumbnail('https://i.postimg.cc/hPxYnBZ7/adaft-ʿnwan.png'); // الصورة المطلوبة
+            .setColor(Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]])
+            .setThumbnail('https://i.postimg.cc/hPxYnBZ7/adaft-ʿnwan.png');
 
         return interaction.reply({ embeds: [denyEmbed], flags: [MessageFlags.Ephemeral] });
     }
@@ -107,7 +143,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 if (i.user.id === host.id) return i.reply({ content: "👑 أنت القائد.", flags: [MessageFlags.Ephemeral] });
                 if (party.length >= 5 && !party.includes(i.user.id)) return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
 
-                // التحقق من الشروط
                 if (!party.includes(i.user.id) && i.user.id !== OWNER_ID) {
                     const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
                     
@@ -118,12 +153,11 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                     if (limitCheck.tickets <= 0) {
                         const now = new Date();
                         const nextReset = new Date(now);
-                        nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
+                        nextReset.setUTCHours(21, 0, 0, 0); 
                         if (now > nextReset) nextReset.setDate(nextReset.getDate() + 1);
                         
                         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
-                        // 🔥 تعديل: رسالة انتهاء التذاكر الجديدة 🔥
                         return i.reply({ 
                             content: `✶ **نفـذت تذاكـرك!** انتظر إلى أن تصرف نقابة المغامرين تذاكرك الجديدة.\n- **وقت تجديد التذاكر:** <t:${timestamp}:R>`, 
                             flags: [MessageFlags.Ephemeral] 
@@ -172,14 +206,12 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
             } else if (i.customId === 'start') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
                 
-                // ✅ حماية التحديث
                 if (!i.replied && !i.deferred) await i.deferUpdate();
                 collector.stop('start');
 
             } else if (i.customId === 'cancel') {
                 if (i.user.id !== host.id) return i.reply({ content: "⛔ القائد فقط.", flags: [MessageFlags.Ephemeral] });
                 
-                // ✅ حماية التحديث
                 if (!i.replied && !i.deferred) await i.deferUpdate();
                 collector.stop('user_cancel');
             }
@@ -190,13 +222,12 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
         if (reason === 'start') {
             const now = Date.now();
             
-            // 🔥 خصم المحاولات (Entries) والمورا الآن (عند الانطلاق) 🔥
+            // خصم المحاولات (Entries) والمورا
             let validParty = [];
             let kickedMembers = [];
 
             for (const id of party) {
                 if (id === host.id || id === OWNER_ID) {
-                    // القائد والأونر لا يخصم منهم محاولات دخول
                     validParty.push(id);
                     sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                     if (id === host.id && id !== OWNER_ID) {
@@ -205,20 +236,16 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 } else {
                     const memberObj = await msg.guild.members.fetch(id).catch(() => null);
                     
-                    // الأعضاء: خصم محاولة يومية
                     const consumeResult = manageTickets(id, guildId, sql, 'consume', memberObj);
                     
                     if (consumeResult.success) {
                         validParty.push(id);
-                        // خصم المورا
                         sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
                         
-                        // تحديث إحصائيات الانضمام
                         const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
                         if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
                         else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
                     } else {
-                        // فشل الخصم
                         kickedMembers.push(id);
                     }
                 }
@@ -252,9 +279,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                 msg.channel.send("❌ خطأ في إنشاء الثريد.");
             }
         } else {
-            // =========================================================
-            // 🔥🔥 معالجة الإلغاء وتطبيق عقوبة الـ 3 دقائق 🔥🔥
-            // =========================================================
             activeDungeonRequests.delete(host.id);
             if (msg.editable) {
                 try {
@@ -267,7 +291,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql) {
                         
                         if (reason === 'user_cancel') {
                              const penaltyMs = 3 * 60 * 1000; 
-                             const fullCooldown = 1 * 60 * 60 * 1000; // 🔥 تعديل: ساعة واحدة هنا أيضاً 🔥
+                             const fullCooldown = 1 * 60 * 60 * 1000; // ساعة واحدة
 
                              const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
                              
