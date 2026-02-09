@@ -80,18 +80,16 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS ai_restricted_categories (guildID TEXT, categoryID TEXT, PRIMARY KEY (categoryID))",
         "CREATE TABLE IF NOT EXISTS ai_paid_channels (channelID TEXT, guildID TEXT, mode TEXT, expiresAt INTEGER, PRIMARY KEY (channelID))",
 
-        // --- 🔥 جداول نظام العائلة (تم التعديل لدعم التعدد) 🔥 ---
+        // --- 🔥 جداول نظام العائلة 🔥 ---
         "CREATE TABLE IF NOT EXISTS family_config (guildID TEXT PRIMARY KEY, maleRole TEXT, femaleRole TEXT, divorceFee INTEGER DEFAULT 5000, adoptFee INTEGER DEFAULT 2000)",
-        
-        // ⚠️⚠️ تم التعديل هنا لدعم التعدد (تمت إزالة القيد على userID فقط)
         "CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT)",
-        
         "CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate INTEGER, guildID TEXT)",
 
-        // 🔥🔥🔥 [مهم] هذا هو الجدول الذي كان ناقصاً 🔥🔥🔥
-        "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
+        // --- 🔥 جدول نظام الـ AFK المطور 🔥 ---
+        "CREATE TABLE IF NOT EXISTS afk (userID TEXT, guildID TEXT, reason TEXT, timestamp INTEGER, mentionsCount INTEGER DEFAULT 0, subscribers TEXT DEFAULT '[]', messages TEXT DEFAULT '[]', PRIMARY KEY (userID, guildID))",
 
-        // 🔥🔥 جدول المزاد الجديد 🔥🔥
+        // --- جداول أخرى ---
+        "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
         "CREATE TABLE IF NOT EXISTS active_auctions (messageID TEXT PRIMARY KEY, channelID TEXT, hostID TEXT, item_name TEXT, current_bid INTEGER, highest_bidder TEXT, min_increment INTEGER, end_time INTEGER, image_url TEXT, buy_now_price INTEGER DEFAULT 0)"
     ];
 
@@ -120,7 +118,7 @@ function setupDatabase(clientOrSql) {
     ensureColumn('levels', 'last_rob_pardon', "TEXT DEFAULT ''");
     ensureColumn('levels', 'currentLocation', "TEXT DEFAULT 'beach'");
 
-    // 🔥🔥🔥 أعمدة الدانجون والسباق (التي تمت إضافتها) 🔥🔥🔥
+    // أعمدة الدانجون
     ensureColumn('levels', 'dungeon_gate_level', 'INTEGER DEFAULT 1');
     ensureColumn('levels', 'max_dungeon_floor', 'INTEGER DEFAULT 0');
     ensureColumn('levels', 'dungeon_wins', 'INTEGER DEFAULT 0');
@@ -138,7 +136,6 @@ function setupDatabase(clientOrSql) {
     ensureColumn('user_total_stats', 'total_disboard_bumps', 'INTEGER DEFAULT 0');
     ensureColumn('user_total_stats', 'total_emojis_sent', 'INTEGER DEFAULT 0');
 
-    // 🔥🔥🔥 أعمدة الذكاء الاصطناعي للمهام (الجديدة) 🔥🔥🔥
     ensureColumn('user_daily_stats', 'ai_interactions', 'INTEGER DEFAULT 0');
     ensureColumn('user_weekly_stats', 'ai_interactions', 'INTEGER DEFAULT 0');
     ensureColumn('user_total_stats', 'total_ai_interactions', 'INTEGER DEFAULT 0');
@@ -156,8 +153,7 @@ function setupDatabase(clientOrSql) {
     settingsCols.forEach(col => ensureColumn('settings', col, 'TEXT'));
     ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'");
 
-    // --- 🔥 صيانة جداول العائلة (المهم جداً) 🔥 ---
-    // هذا الجزء سيضيف الأعمدة الناقصة إذا كان الجدول موجوداً بأسماء قديمة
+    // --- 🔥 صيانة جداول العائلة 🔥 ---
     ensureColumn('marriages', 'partnerID', 'TEXT');
     ensureColumn('marriages', 'userID', 'TEXT');
     ensureColumn('marriages', 'guildID', 'TEXT');
@@ -172,6 +168,11 @@ function setupDatabase(clientOrSql) {
     ensureColumn('family_config', 'femaleRole', 'TEXT');
     ensureColumn('family_config', 'divorceFee', 'INTEGER DEFAULT 5000');
     ensureColumn('family_config', 'adoptFee', 'INTEGER DEFAULT 2000');
+
+    // --- 🔥 صيانة جدول الـ AFK 🔥 ---
+    ensureColumn('afk', 'mentionsCount', 'INTEGER DEFAULT 0');
+    ensureColumn('afk', 'subscribers', "TEXT DEFAULT '[]'");
+    ensureColumn('afk', 'messages', "TEXT DEFAULT '[]'");
 
     // --- إكمال الباقي ---
     ensureColumn('user_portfolio', 'purchasePrice', 'INTEGER DEFAULT 0');
