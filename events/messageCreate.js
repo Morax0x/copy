@@ -181,7 +181,7 @@ module.exports = {
                                     .setStyle(ButtonStyle.Secondary),
                                 new ButtonBuilder()
                                     .setCustomId(`leave_msg_afk_${targetID}`)
-                                    .setLabel('اترك رسالة 📝')
+                                    .setLabel('اترك رسالـة 📩')
                                     .setStyle(ButtonStyle.Primary)
                             );
 
