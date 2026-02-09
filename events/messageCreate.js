@@ -25,7 +25,6 @@ function getWeekStartDateString() {
 
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
-    // 🛡️ فحص الأمان لقاعدة البيانات
     if (!sql || !sql.open) return;
     
     const dateStr = getTodayDateString();
@@ -50,48 +49,125 @@ async function recordBump(client, guildID, userID) {
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
-        // 👇👇 فحص الأمان لمنع الانهيار أثناء النسخ الاحتياطي 👇👇
         const client = message.client;
         const sql = client.sql;
         if (!sql || !sql.open) return; 
-        // 👆👆 انتهى الفحص 👆👆
 
         // 1. تجاهل البوتات (إلا ديسبورد) والرسائل خارج السيرفر
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
         if (!message.guild) return;
 
         // ================================================================
-        // 🛡️ نظام تنظيف الرتب المتضاربة (Auto Anti-Role Cleaner) - New Feature
+        // 🛡️ نظام تنظيف الرتب المتضاربة (Auto Anti-Role Cleaner)
         // ================================================================
         try {
             if (message.member) {
-                // جلب كل قوانين الرتب المتضاربة من قاعدة البيانات
                 const conflictRules = sql.prepare("SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''").all();
-
                 if (conflictRules.length > 0) {
                     const memberRoleIds = message.member.roles.cache.map(r => r.id);
-
                     for (const rule of conflictRules) {
-                        // 1. هل العضو يملك الرتبة الأساسية (التي تمنع غيرها)؟
                         if (memberRoleIds.includes(rule.role_id)) {
-                            // تحويل قائمة الممنوعات إلى مصفوفة
                             const prohibitedRoles = rule.anti_roles.split(',');
-
-                            // 2. فحص هل يملك أي رتبة ممنوعة؟
                             const hasForbidden = prohibitedRoles.filter(id => memberRoleIds.includes(id));
-                            
                             if (hasForbidden.length > 0) {
-                                // 3. حذف الرتب الممنوعة فوراً
                                 await message.member.roles.remove(hasForbidden).catch(() => {});
-                                // (اختياري) يمكنك إضافة لوج هنا
                             }
                         }
                     }
                 }
             }
-        } catch (error) {
-            console.error("[Anti-Role Auto Cleaner Error]", error);
-        }
+        } catch (error) { console.error("[Anti-Role Auto Cleaner Error]", error); }
+
+        // ================================================================
+        // 💤 نظام AFK (المطور) - تم دمجه هنا
+        // ================================================================
+        try {
+            // 🟢 1. عودة الشخص (إلغاء AFK + التقرير + التنبيه الذكي)
+            // نتأكد أن الجدول موجود لتجنب الأخطاء
+            const isAfkTableExists = sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='afk'").get();
+            
+            if (isAfkTableExists) {
+                const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
+
+                if (afkData) {
+                    // حذف من الداتابيس
+                    sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
+
+                    // إرجاع الاسم
+                    try {
+                        const currentName = message.member.displayName;
+                        if (currentName.includes("[AFK] ")) {
+                            await message.member.setNickname(currentName.replace("[AFK] ", ""));
+                        }
+                    } catch (e) {}
+
+                    // رسالة الترحيب والتقرير
+                    const timeAgo = `<t:${afkData.timestamp}:R>`;
+                    const welcomeMsg = await message.reply({
+                        content: `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`
+                    });
+                    // حذف الترحيب بعد 10 ثواني
+                    setTimeout(() => welcomeMsg.delete().catch(() => {}), 10000);
+
+                    // 🔥 نظام التنبيه الذكي للمنتظرين 🔥
+                    const subscribers = JSON.parse(afkData.subscribers || '[]');
+                    if (subscribers.length > 0) {
+                        // فحص صلاحيات @everyone لرؤية القناة الحالية
+                        const everyoneRole = message.guild.roles.everyone;
+                        const perms = message.channel.permissionsFor(everyoneRole);
+                        
+                        // إذا كان @everyone يملك صلاحية ViewChannel، نرسل التنبيه.
+                        if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
+                            const pings = subscribers.map(id => `<@${id}>`).join(' ');
+                            const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
+                            setTimeout(() => notifyMsg.delete().catch(() => {}), 10000);
+                        } 
+                    }
+                }
+
+                // 🔴 2. شخص منشن واحد AFK (الرد التلقائي + الزر)
+                if (message.mentions.members.size > 0) {
+                    const mentionedIds = new Set(message.mentions.members.map(m => m.id));
+
+                    mentionedIds.forEach(async targetID => {
+                        if (targetID === message.author.id) return;
+
+                        const targetAfkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, message.guild.id);
+
+                        if (targetAfkData) {
+                            // زيادة العداد
+                            sql.prepare("UPDATE afk SET mentionsCount = mentionsCount + 1 WHERE userID = ? AND guildID = ?").run(targetID, message.guild.id);
+
+                            const member = message.guild.members.cache.get(targetID);
+                            const timeAgo = `<t:${targetAfkData.timestamp}:R>`;
+
+                            const embed = new EmbedBuilder()
+                                .setColor("Random")
+                                .setThumbnail(member ? member.user.displayAvatarURL() : null)
+                                .setDescription(
+                                    `😴 **${member ? member.displayName : 'العضو'}**\n ✶ في وضع الغيـاب المؤقـت(AFK)\n📝 **السبب:** ${targetAfkData.reason}\n⏳ **منـذ:** ${timeAgo}`
+                                );
+
+                            const row = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`notify_afk_${targetID}`)
+                                    .setLabel('نبهني عند عودتـه 🔔')
+                                    .setStyle(ButtonStyle.Secondary)
+                            );
+
+                            const replyMsg = await message.reply({
+                                embeds: [embed],
+                                components: [row],
+                                allowedMentions: { repliedUser: true }
+                            });
+
+                            // 🗑️ حذف الرسالة بعد 10 ثواني
+                            setTimeout(() => replyMsg.delete().catch(() => {}), 10000);
+                        }
+                    });
+                }
+            }
+        } catch (err) { console.error("[AFK System Error]", err); }
         // ================================================================
 
         // --- BUMP SYSTEM ---
@@ -138,26 +214,19 @@ module.exports = {
         if (message.mentions.has(client.user) && !message.author.bot) {
             if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
-            // 1. تحديد إعدادات القناة (هل هي مفعلة دائماً؟)
             let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
-            let isPaidSession = false; // علامة لمعرفة هل هي قناة مدفوعة
+            let isPaidSession = false;
 
             // 🔥 فحص نظام الكتاغوري (Pay to Chat) 🔥
-            // إذا لم تكن القناة مفعلة بـ setup، نفحص الكتاغوري
             if (!aiChannelData && message.channel.parentId) {
-                
-                // هل الكتاغوري مقفل؟
                 if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
-                    // هل القناة مدفوعة حالياً؟
                     const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
                     
                     if (paidStatus) {
-                        // ✅ نعم مدفوعة -> نعتمد وضعها
                         aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
                         isPaidSession = true;
                     } else {
-                        // ❌ غير مدفوعة -> نطلب الدفع
-                        if (paymentCooldowns.has(message.channel.id)) return; // منع التكرار
+                        if (paymentCooldowns.has(message.channel.id)) return; 
 
                         paymentCooldowns.add(message.channel.id);
                         setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
@@ -178,10 +247,8 @@ module.exports = {
                 }
             }
 
-            // إذا لم نجد إعدادات (لا دائمة ولا مدفوعة) -> نتجاهل الرسالة
             if (!aiChannelData) return;
 
-            // 2. فحص الحد اليومي للمستخدم
             const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
 
             if (!usageStatus.canChat) {
@@ -233,14 +300,13 @@ module.exports = {
                     message.member.displayName,
                     imageAttachment, 
                     isNsfw,
-                    message // تمرير الرسالة للمعالج
+                    message 
                 );
                 
                 if (!reply) return;
 
                 aiLimitHandler.incrementUsage(message.author.id);
 
-                // 🔥 تنظيف النص وإعدادات الرد الآمنة
                 const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
 
                 const replyOptions = {
