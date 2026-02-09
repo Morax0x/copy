@@ -135,7 +135,9 @@ module.exports = {
                         });
                         
                         if (!msgBtnRow) {
-                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 15000);
+                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 60000);
+                        } else {
+                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 120000);
                         }
 
                         const subscribers = JSON.parse(afkData.subscribers || '[]');
@@ -145,7 +147,7 @@ module.exports = {
                             if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
                                 const pings = subscribers.map(id => `<@${id}>`).join(' ');
                                 const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
-                                setTimeout(() => notifyMsg.delete().catch(() => {}), 10000);
+                                setTimeout(() => notifyMsg.delete().catch(() => {}), 60000);
                             } 
                         }
                     } 
@@ -189,7 +191,7 @@ module.exports = {
                                 allowedMentions: { repliedUser: true }
                             });
 
-                            setTimeout(() => replyMsg.delete().catch(() => {}), 10000);
+                            setTimeout(() => replyMsg.delete().catch(() => {}), 60000);
                         }
                     });
                 }
