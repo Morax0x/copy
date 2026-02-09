@@ -6,7 +6,7 @@ const {
     ButtonBuilder, 
     ButtonStyle, 
     Colors,
-    ComponentType // ✅ إضافة ComponentType لتجنب الأخطاء
+    ComponentType 
 } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP } = require('../constants');
@@ -20,10 +20,10 @@ const { handleLeaderSuccession } = require('../core/battle-utils');
 async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
     // 1. حساب الغنائم (باستخدام نظام الشرائح الجديد)
     let baseMora = Math.floor(getBaseFloorMora(floor));
-     
-    // 🔥 تم تعديل نسبة الـ XP إلى 3% بناءً على طلبك
+      
+    // 🔥 نسبة الـ XP هي 3% بناءً على طلبك
     let floorXp = Math.floor(baseMora * 0.03); 
-     
+      
     players.forEach(p => { 
         if (!p.isDead) { 
             p.loot.mora += baseMora; 
@@ -67,45 +67,42 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
 }
 
 /**
- * إدارة قائمة الاستراحة (الاستمرار/الانسحاب)
+ * إدارة قائمة الاستراحة (الاستمرار/الانسحاب/المخيم)
  */
 async function handleRestMenu(context) {
     const { 
         floor, players, retreatState, retreatedPlayers, 
         totalAccumulatedCoins, totalAccumulatedXP, 
         threadChannel, sql, guild, log,
-        theme, // ✅ استقبال الثيم
-        restImage // ✅ استقبال صورة الثيم الجديدة
+        theme, 
+        restImage 
     } = context;
 
-    // 🔥 تعديل: الانسحاب متاح دائماً الآن
     const canRetreat = true;
 
     let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
 
-    // زر الاستمرار (دائماً موجود)
+    // الأزرار
     const restRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
+        // 🔥 زر نصب المخيم الجديد 🔥
+        new ButtonBuilder().setCustomId('camp').setLabel('نصب مخيم (حفظ)').setStyle(ButtonStyle.Secondary).setEmoji('⛺'),
+        new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
     );
 
-    // زر الانسحاب (دائماً موجود)
-    restRow.addComponents(new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger));
-
-    restDesc += `\n\n- القرار بيد **القائد** للاستمرار أو الانسحاب.`;
+    restDesc += `\n\n- القرار بيد **القائد** للاستمرار، نصب المخيم، أو الانسحاب.`;
 
     if (floor === 99) {
         restDesc += `\n\n⚠️💀 **تحذيـــر نهائـــي** 💀⚠️\nأنتم على أعتاب العرش... **الإمبراطور موراكس** بانتظاركم في الطابق القادم! لا تراجع بعد الآن!`;
     }
 
-    // ✅ استخدام الصورة الجديدة (restImage) بدلاً من الرابط الثابت
-    // إذا لم تصل الصورة، نستخدم الصورة الاحتياطية القديمة
     const finalImage = restImage || theme?.rest_image || 'https://i.postimg.cc/KcJ6gtzV/22.jpg';
 
     const restEmbed = new EmbedBuilder()
         .setTitle(`❖ استـراحـة بيـن الطـوابـق: ${theme?.name || 'مجهول'}`)
         .setDescription(restDesc)
-        .setColor(theme?.color || Colors.Red) // ✅ استخدام لون الثيم
-        .setImage(finalImage); // ✅ وضع الصورة الصحيحة
+        .setColor(theme?.color || Colors.Red)
+        .setImage(finalImage);
 
     let restMsg;
     try {
@@ -127,6 +124,7 @@ async function handleRestMenu(context) {
         decCollector.on('collect', async i => {
             clearTimeout(warningTimeout); 
 
+            // 1. خيار الاستمرار
             if (i.customId === 'continue') {
                 let p = players.find(pl => pl.id === i.user.id);
                 if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه اختيار الاستمرار!**", ephemeral: true });
@@ -134,6 +132,24 @@ async function handleRestMenu(context) {
                 return decCollector.stop('continue');
             }
 
+            // 2. خيار نصب المخيم (جديد)
+            if (i.customId === 'camp') {
+                let p = players.find(pl => pl.id === i.user.id);
+                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه نصب المخيم!**", ephemeral: true });
+                
+                // حفظ البيانات في الداتابيس
+                const nextFloor = floor + 1;
+                // نحفظ بدم كامل (HP = MaxHP) لأننا سنعتبرهم ارتاحوا
+                // لا نحتاج لحفظ الـ HP هنا لأننا سنعيد حسابه عند الاستكمال بناءً على معداتهم
+                
+                sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(p.id, guild.id, nextFloor, Date.now());
+                
+                await i.reply({ content: `⛺ **قام الفريق بنصب الخيام!**\nيمكنكم العودة لاستكمال الرحلة من الطابق **${nextFloor}** خلال 24 ساعة.`, ephemeral: false });
+                
+                return decCollector.stop('camp'); // نوقف الكوليكتور ونرسل 'camp' كسبب
+            }
+
+            // 3. خيار الانسحاب
             if (i.customId === 'retreat') {
                 let p = players.find(pl => pl.id === i.user.id);
                 
@@ -160,7 +176,7 @@ async function handleRestMenu(context) {
                         // إذا أصبح الفريق فارغاً
                         if (players.length === 0) decCollector.stop('retreat');
                         
-                        // إذا انسحب شخص وأصبح أحدهم قائداً جديداً (في حال وجود منطق لذلك)
+                        // إذا انسحب شخص وأصبح أحدهم قائداً جديداً
                         if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
                     }
                 }
@@ -171,7 +187,7 @@ async function handleRestMenu(context) {
     });
 
     await restMsg.edit({ components: [] }).catch(()=>{});
-     
+      
     return decision;
 }
 
