@@ -36,17 +36,27 @@ function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
+// 🔥🔥🔥 تعديل قيم المورا حسب طلبك 🔥🔥🔥
 function getBaseFloorMora(floor) {
+    // من 1 إلى 20 (ممتاز كما هو)
     if (floor <= 10) return 100;
     if (floor <= 20) return 200;
-    if (floor <= 30) return 300;
-    if (floor <= 40) return 400;
-    if (floor <= 50) return 500;
-    if (floor <= 60) return 700;
-    if (floor <= 70) return 900;
-    if (floor <= 80) return 1200;
-    if (floor <= 90) return 1500;
-    if (floor < 100) return 2000;
+
+    // التعديلات الجديدة
+    if (floor <= 30) return 450;
+    if (floor <= 40) return 700;
+    
+    // ⚠️ ملاحظة: لم تذكر 41-50، فوضعتها 850 لتكون وسطاً بين 700 و 1000
+    if (floor <= 50) return 850; 
+
+    if (floor <= 60) return 1000;
+    if (floor <= 70) return 2000;
+    if (floor <= 80) return 3000;
+    
+    // 81 وفوق (قبل الطابق 100)
+    if (floor < 100) return 3500;
+    
+    // الطابق 100 (كما هو)
     return 25000; 
 }
 
@@ -207,18 +217,13 @@ function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥🔥 دالة إدارة التذاكر (المحدثة) 🔥🔥🔥
-// ⚠️ ملاحظة: نحتاج تمرير الـ client أو member للتأكد من الرتب
-// لكن للتبسيط، سنمرر member كخيار إضافي إذا توفر، وإلا نعتمد على اللفل فقط
 function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
-    // 1. جلب مستوى اللاعب
     const levelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     const level = levelData ? levelData.level : 1;
 
-    // 🔥🔥🔥 التذاكر الأساسية حسب اللفل 🔥🔥🔥
     let baseTickets = 0;
     if (level >= 61) baseTickets = 10;
     else if (level >= 51) baseTickets = 9;
@@ -229,7 +234,6 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     else if (level >= 5) baseTickets = 3;
     else baseTickets = 0;
 
-    // 🔥🔥🔥 التذاكر الإضافية (VIP) 🔥🔥🔥
     let bonusTickets = 0;
     if (member && member.roles.cache.has(VIP_ROLE_ID)) {
         bonusTickets = 10;
@@ -238,12 +242,10 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
 
     let maxTickets = baseTickets + bonusTickets;
 
-    // 2. جلب بيانات التذاكر
     let stats = sql.prepare("SELECT tickets, last_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
 
     const todayStr = getSaudiDateIso(); 
 
-    // إنشاء سجل جديد
     if (!stats) {
         sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)")
             .run(guildID, userID, maxTickets, todayStr);
@@ -253,7 +255,6 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     let dbDate = stats.last_reset;
     let dbTickets = stats.tickets;
 
-    // 3. التحقق من الريست (Reset)
     if (dbDate !== todayStr) {
         console.log(`[DailyLimit] Resetting tickets for ${userID}. New max: ${maxTickets}`);
         
@@ -263,11 +264,8 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
         dbTickets = maxTickets;
         dbDate = todayStr;
     } 
-    // 🔥 حالة خاصة: إذا زادت التذاكر القصوى (بسبب شراء رتبة مثلاً) ولم يحدث ريست اليوم
-    // نسمح له بأخذ الفرق، لكن لا نقلل تذاكره إذا استهلكها
     else if (dbTickets < maxTickets && action === 'check') {
-       // هذه النقطة اختيارية: هل تريد أن يتحدث الرصيد فوراً عند الحصول على الرتبة؟
-       // حالياً سيتحدث في اليوم التالي لضمان الاستقرار، أو يمكنك تفعيل التحديث الفوري هنا.
+       // تحديث فوري إذا زاد الحد الأقصى (اختياري)
     }
 
     if (action === 'check') {
