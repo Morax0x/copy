@@ -26,7 +26,7 @@ const { applyFloorBuffs, handleTrapEvent, handleRandomEvents } = require('./dung
 // استدعاء ملف الكونفق
 const dungeonConfig = require('../json/dungeon-config.json');
 
-// 🔥 التعديل: إضافة startFloor كمعامل (الافتراضي 1)
+// 🔥 startFloor ممرر هنا (الافتراضي 1)
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, startFloor = 1, resumeData = null) {
     const guild = threadChannel.guild;
       
@@ -44,7 +44,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let retreatState = { range_30_40: false, range_41_50: false, range_51_70: false, range_71_90: false };
 
     let players = [];
-    // let startFloor = 1; // ❌ حذفنا هذا السطر لأنه ممرر كمعامل
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
     let resumedMonsterData = null;
@@ -56,20 +55,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         retreatState = resumeData.retreatState || retreatState; 
         totalAccumulatedCoins = resumeData.loot.coins;
         totalAccumulatedXP = resumeData.loot.xp;
-        startFloor = resumeData.floor; // في حال الاستعادة من كراش البوت
+        startFloor = resumeData.floor; 
         retreatedPlayers = resumeData.retreatedPlayers || [];
         isTrapActive = resumeData.isTrapActive || false;
         resumedMonsterData = resumeData.monsterData || null;
         
         await threadChannel.send(`🔄 **تم استعادة البيانات!** جاري استكمال المعركة من الطابق **${startFloor}**...`).catch(()=>{});
     } else {
-        // ✅ استخراج كود الدانجون (themeKey) لتفعيل ميزات الأعراق
         const themeKey = Object.keys(dungeonConfig.themes).find(key => dungeonConfig.themes[key].name === theme.name) || null;
-        
-        // تمرير themeKey للدالة setupPlayers
         players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeKey);
 
-        // إذا بدأنا من طابق متقدم (استكمال مخيم)، نرسل رسالة توضيحية
         if (startFloor > 1) {
              await threadChannel.send(`⛺ **تم استكمال الرحلة!** بدأ الفريق من الطابق **${startFloor}** بصحة كاملة.`).catch(()=>{});
         }
@@ -86,7 +81,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const statusCollector = startStatusMonitor(threadChannel, players);
 
     // --- GAME LOOP ---
-    // 🔥 التعديل: الحلقة تبدأ من startFloor الممرر
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -173,7 +167,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             monster = resumedMonsterData;
             resumedMonsterData = null; 
         } 
-        // الطابق 100: موراكس
         else if (floor === 100) {
             monster = getMoraxData();
         }
@@ -443,17 +436,20 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
             return; 
         } 
-        // 🔥🔥 معالجة نصب المخيم 🔥🔥
+        // 🔥🔥 معالجة نصب المخيم (معدلة حسب طلبك) 🔥🔥
         else if (decision === 'camp') {
             // حذف الحالة لإنهاء اللعبة الحالية (تم حفظها في الداتابيس داخل handleRestMenu)
             deleteDungeonState(sql, threadChannel.id);
             statusCollector.stop();
             
-            // إزالة القائد من قائمة النشطين
-            activeDungeonRequests.delete(hostId);
-            
-            // إرسال رسالة انتهاء للقناة الرئيسية (اختياري)
-            await mainChannel.send(`🏕️ **قام فريق ${players.find(p => p.id === hostId)?.name || 'غير معروف'} بنصب المخيم عند الطابق ${floor + 1}!**`).catch(()=>{});
+            // إرسال رسالة في الثريد
+            await threadChannel.send(`⛺ **تم نصب الخيام بنجاح!**\nتم حفظ تقدمكم عند الطابق **${floor + 1}**. سيتم الآن توزيع الغنائم وإغلاق البوابة.`).catch(()=>{});
+
+            // توزيع الجوائز التي جمعوها حتى الآن
+            await handleLeaderRetreat(players, sql, guild.id);
+
+            // إرسال ملخص النهاية وإغلاق الثريد
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", sql, guild.id, hostId, activeDungeonRequests);
             
             return; // إنهاء الدالة
         }
