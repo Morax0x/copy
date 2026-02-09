@@ -28,6 +28,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         color = "#FFFF00"; 
         randomImage = getRandomImage(WIN_IMAGES); 
     } 
+    // 🔥🔥 حالة نصب المخيم الجديدة 🔥🔥
+    else if (status === 'camp') {
+        title = "⛺ استـراحـة محـارب - تـم نصـب المخيـم";
+        color = "#00FF00"; // لون أخضر
+        randomImage = "https://i.postimg.cc/KcJ6gtzV/22.jpg"; // صورة المخيم
+    }
     else { 
         title = "❖ هزيمـة ساحقـة ..."; 
         color = "#FF0000"; 
@@ -48,7 +54,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             finalMora = p.finalMora || 0;
             finalXp = p.finalXp || 0;
         } else {
-            // الحساب اليدوي في حال لم يمر عبر rewards.js (مثل الخسارة المفاجئة)
+            // الحساب اليدوي في حال لم يمر عبر rewards.js (مثل الخسارة المفاجئة أو المخيم)
             
             // في حالة الخسارة بعد طابق 20، تعويض بسيط
             if (status === 'lose' && floor > 20) {
@@ -74,6 +80,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             statusEmoji = `💀 ${deathFloorInfo}`;
         } else if (p.retreatFloor) {
             statusEmoji = `🏃‍♂️ (انسحب في ${p.retreatFloor})`;
+        } else if (status === 'camp') {
+            statusEmoji = "⛺ (مخيم)";
         } else {
             statusEmoji = "✅";
         }
@@ -83,8 +91,13 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
 
+    // إضافة ملاحظة خاصة للمخيم
+    if (status === 'camp') {
+        description += `\n\n📝 **ملاحظة:** تم حفظ تقدمكم عند الطابق **${floor + 1}**. يمكن للقائد استكمال الرحلة لاحقاً.`;
+    }
+
     // 🔥🔥🔥 تعديل رسالة نجم المعركة والجائزة الإضافية 🔥🔥🔥
-    if (floor >= 10 && mvpPlayer) {
+    if (floor >= 10 && mvpPlayer && status !== 'camp') { // لا نعطي MVP عند التخييم (لأنه لم ينتهِ)
         let extraRewardText = "";
         
         // التحقق إذا الضرر تجاوز 10000
@@ -110,8 +123,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         });
     }
 
-    if (floor >= 10 && status !== 'lose' && mvpPlayer) {
-        // تطبيق البف الخاص بنجم المعركة (15%)
+    if (floor >= 10 && status !== 'lose' && status !== 'camp' && mvpPlayer) {
+        // تطبيق البف الخاص بنجم المعركة (15%) - لا يطبق عند التخييم
         const buffDuration = 15 * 60 * 1000; 
         const expiresAt = Date.now() + buffDuration;
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15);
@@ -133,7 +146,11 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     }
     
     try {
-        await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة <:emoji_69:1451172248173023263> ...**` });
+        if (status === 'camp') {
+            await thread.send({ content: `**⛺ تم حفظ التقدم وإغلاق البوابة مؤقتاً. نراكم قريباً!**` });
+        } else {
+            await thread.send({ content: `**✶ انتهت الرحلة، سيتم إغلاق البوابة غـادروا بسرعة <:emoji_69:1451172248173023263> ...**` });
+        }
         setTimeout(() => { thread.delete().catch(()=>{}); }, 10000); 
     } catch(e) { }
 }
