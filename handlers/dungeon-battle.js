@@ -26,7 +26,8 @@ const { applyFloorBuffs, handleTrapEvent, handleRandomEvents } = require('./dung
 // استدعاء ملف الكونفق
 const dungeonConfig = require('../json/dungeon-config.json');
 
-async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, resumeData = null) {
+// 🔥 التعديل: إضافة startFloor كمعامل (الافتراضي 1)
+async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, startFloor = 1, resumeData = null) {
     const guild = threadChannel.guild;
       
     if (!sql || !sql.open) {
@@ -43,7 +44,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let retreatState = { range_30_40: false, range_41_50: false, range_51_70: false, range_71_90: false };
 
     let players = [];
-    let startFloor = 1;
+    // let startFloor = 1; // ❌ حذفنا هذا السطر لأنه ممرر كمعامل
     let totalAccumulatedCoins = 0;
     let totalAccumulatedXP = 0;
     let resumedMonsterData = null;
@@ -55,7 +56,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         retreatState = resumeData.retreatState || retreatState; 
         totalAccumulatedCoins = resumeData.loot.coins;
         totalAccumulatedXP = resumeData.loot.xp;
-        startFloor = resumeData.floor;
+        startFloor = resumeData.floor; // في حال الاستعادة من كراش البوت
         retreatedPlayers = resumeData.retreatedPlayers || [];
         isTrapActive = resumeData.isTrapActive || false;
         resumedMonsterData = resumeData.monsterData || null;
@@ -67,6 +68,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         
         // تمرير themeKey للدالة setupPlayers
         players = await setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeKey);
+
+        // إذا بدأنا من طابق متقدم (استكمال مخيم)، نرسل رسالة توضيحية
+        if (startFloor > 1) {
+             await threadChannel.send(`⛺ **تم استكمال الرحلة!** بدأ الفريق من الطابق **${startFloor}** بصحة كاملة.`).catch(()=>{});
+        }
     }
 
     if (players.length === 0) {
@@ -80,6 +86,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     const statusCollector = startStatusMonitor(threadChannel, players);
 
     // --- GAME LOOP ---
+    // 🔥 التعديل: الحلقة تبدأ من startFloor الممرر
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -296,7 +303,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 
                     const result = await handlePlayerBattleInteraction(i, context);
                     
-                    // التحقق من النتيجة لتجنب الأخطاء
                     if (result && !result.ongoing) {
                         ongoing = false;
                     }
@@ -443,7 +449,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             deleteDungeonState(sql, threadChannel.id);
             statusCollector.stop();
             
-            // إزالة القائد من قائمة النشطين ليتمكن من بدء أي نشاط آخر
+            // إزالة القائد من قائمة النشطين
             activeDungeonRequests.delete(hostId);
             
             // إرسال رسالة انتهاء للقناة الرئيسية (اختياري)
