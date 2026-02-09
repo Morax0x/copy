@@ -3,7 +3,7 @@ const { EmbedBuilder, Colors } = require("discord.js");
 module.exports = {
     name: 'afk',
     description: 'تفعيل وضع الغياب المؤقت',
-    aliases: ['اختفاء', 'مشغول'],
+    aliases: ['افك','اختفاء', 'مشغول'],
 
     async execute(message, args) {
         const client = message.client;
