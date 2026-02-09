@@ -11,7 +11,7 @@ const { handleReactionRole } = require('./handlers/reaction-role-handler.js');
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
 const { handleLandInteractions } = require('./handlers/farm-land.js');
 
-// 🔥 استدعاء هاندلر المزاد الجديد (تم التصحيح) 🔥
+// 🔥 استدعاء هاندلر المزاد الجديد 🔥
 const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 
 const marketConfig = require('./json/market-items.json');
@@ -142,8 +142,68 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
+                // ====================================================
+                // 💤 معالجة أزرار نظام الـ AFK (جديد) 🔥
+                // ====================================================
+                if (id.startsWith('notify_afk_')) {
+                    const targetID = id.split('_')[2];
+                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+
+                    if (!afkData) return i.reply({ content: "❌ هذا الشخص عاد بالفعل!", flags: [MessageFlags.Ephemeral] });
+
+                    let subscribers = JSON.parse(afkData.subscribers || '[]');
+                    if (subscribers.includes(i.user.id)) return i.reply({ content: "✅ أنت مسجل بالفعل في قائمة التنبيه.", flags: [MessageFlags.Ephemeral] });
+
+                    subscribers.push(i.user.id);
+                    sql.prepare("UPDATE afk SET subscribers = ? WHERE userID = ? AND guildID = ?").run(JSON.stringify(subscribers), targetID, i.guild.id);
+                    await i.reply({ content: "🔔 **تم!** سأقوم بمنشنتك فور عودة العضو.", flags: [MessageFlags.Ephemeral] });
+                    return;
+
+                } else if (id.startsWith('leave_msg_afk_')) {
+                    const targetID = id.split('_')[3];
+                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+                    if (!afkData) return i.reply({ content: "❌ هذا الشخص عاد للتو!", flags: [MessageFlags.Ephemeral] });
+
+                    const modal = new ModalBuilder()
+                        .setCustomId(`modal_afk_msg_${targetID}`)
+                        .setTitle('ترك رسالة للمستخدم');
+
+                    const messageInput = new TextInputBuilder()
+                        .setCustomId('msg_content')
+                        .setLabel("ما هي رسالتك؟")
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setMaxLength(200)
+                        .setRequired(true);
+
+                    modal.addComponents(new ActionRowBuilder().addComponents(messageInput));
+                    await i.showModal(modal);
+                    return;
+
+                } else if (id === 'show_afk_msgs') {
+                    // نستخدم المتغير العالمي الذي عرفناه في messageCreate.js
+                    const msgs = global.afkMessagesCache ? global.afkMessagesCache.get(i.user.id) : null;
+
+                    if (!msgs || msgs.length === 0) {
+                        return i.reply({ content: "📭 لا توجد رسائل محفوظة (أو انتهت صلاحية العرض).", flags: [MessageFlags.Ephemeral] });
+                    }
+
+                    const embed = new EmbedBuilder()
+                        .setColor(Colors.Blue)
+                        .setTitle("📬 البريد الوارد أثناء غيابك")
+                        .setFooter({ text: "تم مسح الرسائل من قاعدة البيانات." });
+
+                    let desc = "";
+                    msgs.forEach((msg, x) => {
+                        desc += `**${x+1}. من <@${msg.authorID}>** (<t:${msg.timestamp}:R>):\n> ${msg.content}\n\n`;
+                    });
+
+                    embed.setDescription(desc.substring(0, 4000));
+                    await i.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                    return;
+                }
+                // ====================================================
+
                 if (id.startsWith('bid_')) { 
-                    // 🔥 زر المزاد (تم التحديث) 🔥
                     await handleAuctionSystem(i); 
                 } else if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) await handleGiveawayInteraction(client, i);
@@ -196,7 +256,33 @@ module.exports = (client, sql, antiRolesCache) => {
             }
 
             if (i.isModalSubmit()) {
-                // 🔥 إضافة معالج المودل الخاص بالمزاد (تخصيص المبلغ) 🔥
+                // ====================================================
+                // 💤 معالجة مودال الـ AFK (جديد) 🔥
+                // ====================================================
+                if (i.customId.startsWith('modal_afk_msg_')) {
+                    const targetID = i.customId.split('_')[3];
+                    const content = i.fields.getTextInputValue('msg_content');
+
+                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+                    
+                    if (afkData) {
+                        let messages = JSON.parse(afkData.messages || '[]');
+                        
+                        messages.push({
+                            authorID: i.user.id,
+                            content: content,
+                            timestamp: Math.floor(Date.now() / 1000)
+                        });
+
+                        sql.prepare("UPDATE afk SET messages = ? WHERE userID = ? AND guildID = ?").run(JSON.stringify(messages), targetID, i.guild.id);
+                        await i.reply({ content: "✅ **تم إرسال رسالتك!** سيراها فور عودته.", flags: [MessageFlags.Ephemeral] });
+                    } else {
+                        await i.reply({ content: "❌ عاد الشخص قبل أن ترسل الرسالة.", flags: [MessageFlags.Ephemeral] });
+                    }
+                    return;
+                }
+                // ====================================================
+
                 if (i.customId.startsWith('bid_')) {
                     await handleAuctionSystem(i);
                     return;
