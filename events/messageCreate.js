@@ -13,9 +13,9 @@ const aiLimitHandler = require('../utils/aiLimitHandler');
 const DISBOARD_BOT_ID = '302050872383242240'; 
 const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
-
-// 🔥 ذاكرة مؤقتة لمنع تكرار رسالة الدفع 🔥
 const paymentCooldowns = new Set();
+
+if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
 
 function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
 function getWeekStartDateString() {
@@ -53,13 +53,9 @@ module.exports = {
         const sql = client.sql;
         if (!sql || !sql.open) return; 
 
-        // 1. تجاهل البوتات (إلا ديسبورد) والرسائل خارج السيرفر
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
         if (!message.guild) return;
 
-        // ================================================================
-        // 🛡️ نظام تنظيف الرتب المتضاربة (Auto Anti-Role Cleaner)
-        // ================================================================
         try {
             if (message.member) {
                 const conflictRules = sql.prepare("SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''").all();
@@ -78,54 +74,83 @@ module.exports = {
             }
         } catch (error) { console.error("[Anti-Role Auto Cleaner Error]", error); }
 
-        // ================================================================
-        // 💤 نظام AFK (المطور) - تم دمجه هنا
-        // ================================================================
         try {
-            // 🟢 1. عودة الشخص (إلغاء AFK + التقرير + التنبيه الذكي)
-            // نتأكد أن الجدول موجود لتجنب الأخطاء
             const isAfkTableExists = sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='afk'").get();
             
             if (isAfkTableExists) {
                 const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
 
                 if (afkData) {
-                    // حذف من الداتابيس
-                    sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
+                    const content = message.content.trim();
+                    if (!(content.startsWith('(') && content.endsWith(')'))) {
+                        const now = Math.floor(Date.now() / 1000);
+                        const diffSeconds = now - afkData.timestamp;
+                        const hours = Math.floor(diffSeconds / 3600);
+                        const calculatedHours = Math.min(hours, 24); 
+                        const reward = calculatedHours * 100; 
 
-                    // إرجاع الاسم
-                    try {
-                        const currentName = message.member.displayName;
-                        if (currentName.includes("[AFK] ")) {
-                            await message.member.setNickname(currentName.replace("[AFK] ", ""));
+                        if (reward > 0) {
+                            let userLevel = client.getLevel.get(message.author.id, message.guild.id);
+                            if (userLevel) {
+                                userLevel.mora += reward;
+                                client.setLevel.run(userLevel);
+                            }
                         }
-                    } catch (e) {}
 
-                    // رسالة الترحيب والتقرير
-                    const timeAgo = `<t:${afkData.timestamp}:R>`;
-                    const welcomeMsg = await message.reply({
-                        content: `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`
-                    });
-                    // حذف الترحيب بعد 10 ثواني
-                    setTimeout(() => welcomeMsg.delete().catch(() => {}), 10000);
+                        const storedMessages = JSON.parse(afkData.messages || '[]');
+                        let msgBtnRow = null;
 
-                    // 🔥 نظام التنبيه الذكي للمنتظرين 🔥
-                    const subscribers = JSON.parse(afkData.subscribers || '[]');
-                    if (subscribers.length > 0) {
-                        // فحص صلاحيات @everyone لرؤية القناة الحالية
-                        const everyoneRole = message.guild.roles.everyone;
-                        const perms = message.channel.permissionsFor(everyoneRole);
+                        if (storedMessages.length > 0) {
+                            global.afkMessagesCache.set(message.author.id, storedMessages);
+                            setTimeout(() => global.afkMessagesCache.delete(message.author.id), 5 * 60 * 1000);
+
+                            msgBtnRow = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('show_afk_msgs')
+                                    .setLabel(`عرض الرسائل (${storedMessages.length})`)
+                                    .setEmoji('📩')
+                                    .setStyle(ButtonStyle.Primary)
+                            );
+                        }
+
+                        sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
+
+                        try {
+                            const currentName = message.member.displayName;
+                            if (currentName.includes("[AFK] ")) {
+                                await message.member.setNickname(currentName.replace("[AFK] ", ""));
+                            }
+                        } catch (e) {}
+
+                        const timeAgo = `<t:${afkData.timestamp}:R>`;
+                        let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
                         
-                        // إذا كان @everyone يملك صلاحية ViewChannel، نرسل التنبيه.
-                        if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
-                            const pings = subscribers.map(id => `<@${id}>`).join(' ');
-                            const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
-                            setTimeout(() => notifyMsg.delete().catch(() => {}), 10000);
-                        } 
-                    }
+                        if (reward > 0) {
+                            replyContent += `\n💰 **مكافأة الراحة:** حصلت على **${reward}** مورا لأنك نمت لمدة **${calculatedHours}** ساعة!`;
+                        }
+
+                        const welcomeMsg = await message.reply({ 
+                            content: replyContent,
+                            components: msgBtnRow ? [msgBtnRow] : [] 
+                        });
+                        
+                        if (!msgBtnRow) {
+                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 15000);
+                        }
+
+                        const subscribers = JSON.parse(afkData.subscribers || '[]');
+                        if (subscribers.length > 0) {
+                            const everyoneRole = message.guild.roles.everyone;
+                            const perms = message.channel.permissionsFor(everyoneRole);
+                            if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
+                                const pings = subscribers.map(id => `<@${id}>`).join(' ');
+                                const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
+                                setTimeout(() => notifyMsg.delete().catch(() => {}), 10000);
+                            } 
+                        }
+                    } 
                 }
 
-                // 🔴 2. شخص منشن واحد AFK (الرد التلقائي + الزر)
                 if (message.mentions.members.size > 0) {
                     const mentionedIds = new Set(message.mentions.members.map(m => m.id));
 
@@ -135,7 +160,6 @@ module.exports = {
                         const targetAfkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, message.guild.id);
 
                         if (targetAfkData) {
-                            // زيادة العداد
                             sql.prepare("UPDATE afk SET mentionsCount = mentionsCount + 1 WHERE userID = ? AND guildID = ?").run(targetID, message.guild.id);
 
                             const member = message.guild.members.cache.get(targetID);
@@ -152,7 +176,11 @@ module.exports = {
                                 new ButtonBuilder()
                                     .setCustomId(`notify_afk_${targetID}`)
                                     .setLabel('نبهني عند عودتـه 🔔')
-                                    .setStyle(ButtonStyle.Secondary)
+                                    .setStyle(ButtonStyle.Secondary),
+                                new ButtonBuilder()
+                                    .setCustomId(`leave_msg_afk_${targetID}`)
+                                    .setLabel('اترك رسالة 📝')
+                                    .setStyle(ButtonStyle.Primary)
                             );
 
                             const replyMsg = await message.reply({
@@ -161,16 +189,13 @@ module.exports = {
                                 allowedMentions: { repliedUser: true }
                             });
 
-                            // 🗑️ حذف الرسالة بعد 10 ثواني
                             setTimeout(() => replyMsg.delete().catch(() => {}), 10000);
                         }
                     });
                 }
             }
         } catch (err) { console.error("[AFK System Error]", err); }
-        // ================================================================
 
-        // --- BUMP SYSTEM ---
         if (message.author.id === DISBOARD_BOT_ID) {
             let settingsData;
             try { settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id); } 
@@ -206,9 +231,6 @@ module.exports = {
         let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
         let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
 
-        // ============================================================
-        // 🤖 AI System (Morax)
-        // ============================================================
         let Prefix = settings?.prefix || "-";
 
         if (message.mentions.has(client.user) && !message.author.bot) {
@@ -217,7 +239,6 @@ module.exports = {
             let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
             let isPaidSession = false;
 
-            // 🔥 فحص نظام الكتاغوري (Pay to Chat) 🔥
             if (!aiChannelData && message.channel.parentId) {
                 if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
                     const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
@@ -333,7 +354,6 @@ module.exports = {
             return;
         }
 
-        // --- Tree Watering ---
         if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
              const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
              const lowerContent = fullContent.toLowerCase();
@@ -356,7 +376,6 @@ module.exports = {
 
         if (message.author.bot) return;
 
-        // XP Ignore
         if (sql && sql.open) {
             const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
             let isCategoryIgnored = false;
@@ -366,7 +385,6 @@ module.exports = {
             if (isChannelIgnored || isCategoryIgnored) return; 
         }
 
-        // Stats & XP
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
