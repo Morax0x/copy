@@ -21,7 +21,7 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
     // 2. جلب جميع رتب اللاعب
     const memberRoles = member.roles.cache.map(r => r.id);
     if (memberRoles.length === 0) {
-        console.log(`[RaceBuff] Player ${member.user.tag} has no roles to check.`);
+        // console.log(`[RaceBuff] Player ${member.user.tag} has no roles to check.`);
         return "";
     }
 
@@ -36,7 +36,7 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
         `).all(guildId, currentThemeKey, ...memberRoles);
 
         if (activeBuffs && activeBuffs.length > 0) {
-            console.log(`[RaceBuff] Found ${activeBuffs.length} buffs for ${member.user.tag}`);
+            // console.log(`[RaceBuff] Found ${activeBuffs.length} buffs for ${member.user.tag}`);
 
             // تجهيز القيم الافتراضية
             player.atk = Number(player.atk) || 0;
@@ -177,10 +177,9 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
 async function startDungeonLobby(message, startFloor = 1) {
     const client = message.client;
     const sql = client.sql;
-    const host = message.author;
-
-    // ... (كود التحقق من وجود دانجون نشط مسبقاً يبقى كما هو) ...
-    // سنفترض أن التحقق موجود في الكود الأصلي أو تم التعامل معه في startDungeon
+    
+    // 🔥 هذا السطر يحل مشكلة الـ TypeError: Cannot read properties of undefined (reading 'username') 🔥
+    const host = message.author || message.user; 
 
     // الأزرار
     const activeRow = new ActionRowBuilder().addComponents(
@@ -199,7 +198,18 @@ async function startDungeonLobby(message, startFloor = 1) {
         .setColor('DarkRed')
         .setThumbnail(host.displayAvatarURL());
 
-    const msg = await message.channel.send({ embeds: [lobbyEmbed], components: [activeRow] });
+    // في حالة السلاش، نستخدم reply أو followUp، وفي حالة الرسالة نستخدم channel.send
+    let msg;
+    if (message.reply && typeof message.reply === 'function') {
+         // إذا كان تفاعلاً (Interaction) ولم يتم الرد عليه بعد
+         if (!message.replied && !message.deferred) {
+             msg = await message.reply({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
+         } else {
+             msg = await message.followUp({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
+         }
+    } else {
+         msg = await message.channel.send({ embeds: [lobbyEmbed], components: [activeRow] });
+    }
 
     // حفظ البيانات في active_dungeons
     const gameData = {
@@ -212,7 +222,11 @@ async function startDungeonLobby(message, startFloor = 1) {
         startTime: Date.now()
     };
 
-    sql.prepare("INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data) VALUES (?, ?, ?, ?)").run(message.channel.id, message.guild.id, host.id, JSON.stringify(gameData));
+    // استخدام القناة الصحيحة (سواء كانت من رسالة أو تفاعل)
+    const channelId = message.channel ? message.channel.id : message.channelId;
+    const guildId = message.guild ? message.guild.id : message.guildId;
+
+    sql.prepare("INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data) VALUES (?, ?, ?, ?)").run(channelId, guildId, host.id, JSON.stringify(gameData));
 }
 
 module.exports = { setupPlayers, startDungeonLobby };
