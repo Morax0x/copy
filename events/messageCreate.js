@@ -123,10 +123,10 @@ module.exports = {
                         } catch (e) {}
 
                         const timeAgo = `<t:${afkData.timestamp}:R>`;
-                        let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
+                        let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
                         
                         if (reward > 0) {
-                            replyContent += `\n💰 **مكافأة الراحة:** حصلت على **${reward}** مورا لأنك نمت لمدة **${calculatedHours}** ساعة!`;
+                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك نمت لمدة **${calculatedHours}** ساعة!`;
                         }
 
                         const welcomeMsg = await message.reply({ 
