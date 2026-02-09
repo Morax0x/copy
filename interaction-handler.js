@@ -189,12 +189,13 @@ module.exports = (client, sql, antiRolesCache) => {
 
                     const embed = new EmbedBuilder()
                         .setColor(Colors.Blue)
-                        .setTitle("📬 البريد الوارد أثناء غيابك")
-                        .setFooter({ text: "تم مسح الرسائل من قاعدة البيانات." });
+                        .setTitle("📬 البريد الوارد أثناء غيابك");
 
                     let desc = "";
                     msgs.forEach((msg, x) => {
-                        desc += `**${x+1}. من <@${msg.authorID}>** (<t:${msg.timestamp}:R>):\n> ${msg.content}\n\n`;
+                        desc += `**✶ من:** <@${msg.authorID}>\n` +
+                                `**✶ الوقت:** <t:${msg.timestamp}:R>\n` +
+                                `**✶ الرسالة:**\n${msg.content}\n\n`; // سطرين فاضيين للفصل
                     });
 
                     embed.setDescription(desc.substring(0, 4000));
