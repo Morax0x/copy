@@ -1,8 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const path = require('path');
 
-// ✅ المسار الصحيح
-const { manageTickets } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
+// ✅ المسار الصحيح: استدعاء دالة التذاكر ودالة الخيم معاً
+const { manageTickets, manageCampfires } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
     // ============================================================
@@ -10,7 +10,7 @@ module.exports = {
     // ============================================================
     data: new SlashCommandBuilder()
         .setName('tickets')
-        .setDescription('عرض عدد تذاكر الدانجون المتوفرة')
+        .setDescription('عرض عدد تذاكر وخيم الدانجون المتوفرة')
         .addUserOption(option => 
             option.setName('user')
                 .setDescription('الشخص الذي تريد رؤية تذاكره')
@@ -18,16 +18,17 @@ module.exports = {
         ),
 
     // ============================================================
-    // 2. خصائص الهاندلر (مهمة جداً لتفادي خطأ Enum)
+    // 2. خصائص الهاندلر
     // ============================================================
     name: 'tickets',
-    aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة'],
-    category: "Economy", // ✅ هذا السطر غالباً هو سبب المشكلة السابقة (كان ناقص)
-    description: 'عرض عدد تذاكر الدانجون المتوفرة وموعد التجديد.',
+    // 🔥 تمت إضافة اختصارات الخيم هنا 🔥
+    aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة', 'خيمة', 'خيم', 'مخيمات', 'camps', 'campfires'],
+    category: "Economy", 
+    description: 'عرض عدد تذاكر الدانجون والخيم المتوفرة وموعد التجديد.',
     usage: '-tickets [@user]',
 
     // ============================================================
-    // 3. التنفيذ (يدعم السلاش والرسائل العادية بنفس منطق myfarm)
+    // 3. التنفيذ
     // ============================================================
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -45,7 +46,7 @@ module.exports = {
         }
 
         const client = interactionOrMessage.client;
-        const sql = client.sql; // ✅ جلب قاعدة البيانات من الكلاينت مباشرة
+        const sql = client.sql; 
 
         if (!sql) {
             console.error("❌ Error: SQL Database is not attached to Client.");
@@ -55,9 +56,12 @@ module.exports = {
         const targetUser = targetMember.user;
 
         // 1. جلب بيانات التذاكر
-        const ticketData = manageTickets(targetUser.id, interactionOrMessage.guild.id, sql, 'check');
+        const ticketData = manageTickets(targetUser.id, interactionOrMessage.guild.id, sql, 'check', targetMember);
 
-        // 2. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
+        // 2. 🔥 جلب بيانات الخيم 🔥
+        const campData = manageCampfires(targetUser.id, interactionOrMessage.guild.id, sql, 'check', targetMember);
+
+        // 3. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
         const now = new Date();
         const nextReset = new Date(now);
         nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
@@ -68,18 +72,19 @@ module.exports = {
 
         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
-        // 3. تجهيز النصوص
+        // 4. تجهيز النصوص
         const titleText = targetUser.id === user.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
 
-        // 4. تصميم الإيمبد
+        // 5. تصميم الإيمبد
         const embed = new EmbedBuilder()
-            .setTitle('✥ تـذاكـر الدانـجـون')
+            .setTitle('✥ تـذاكـر وخيـم الدانـجـون')
             .setColor('#E8271C') 
             .setThumbnail('https://i.postimg.cc/0jksK7N9/duti.png')
             .setDescription(
                 `✶ ${titleText} ايـها المحـارب هـو **(${ticketData.tickets}/${ticketData.max})**\n\n` +
                 `✶ كلـمـا ارتقـيـت بالامبراطـوريـة زادت تـذاكـرك 🎫\n\n` +
-                `✶ تـتجـدد التذاكـر: <t:${timestamp}:R>`
+                `✶ عـدد الخيـم هو: (${campData.count}/${campData.max})⛺\n\n` + 
+                `✶ تـتجـدد التذاكـر والخيم: <t:${timestamp}:R>`
             )
             .setFooter({ text: targetUser.username, iconURL: targetUser.displayAvatarURL() });
 
