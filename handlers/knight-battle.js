@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, Comp
 const path = require('path');
 
 // ==========================================
-// ⚙️ إعدادات المسارات 0والملفات
+// ⚙️ إعدادات المسارات والملفات
 // ==========================================
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
@@ -233,6 +233,7 @@ function applySkillEffect(battleState, attackerId, skill) {
 
     const effectValue = skill.effectValue;
     const statType = skill.stat_type;
+    const skillLevel = skill.currentLevel || 1; // 🔥 تم إضافة اللفل
 
     let baseAtk = attacker.weapon ? attacker.weapon.currentDamage : 15;
     if (attacker.effects.buff > 0) baseAtk *= (1 + attacker.effects.buff);
@@ -321,9 +322,19 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.effects.confusion = true; defender.effects.confusion_turns = 2;
             return `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
         }
+        
+        // --- 🩸 Vampire (Updated for Knight Battle) ---
         case 'Lifesteal_Overheal': {
-            const dmg = Math.floor(baseAtk * 1.3);
+            // 1. زيادة الضرر (15%)
+            const dmg = Math.floor(baseAtk * 1.45); 
             defender.hp -= dmg;
+
+            // 2. النزيف
+            const bleedDmg = 100 + (skillLevel * 50);
+            defender.effects.burn = bleedDmg; // استخدام الحرق للتعبير عن النزيف
+            defender.effects.burn_turns = 2;
+
+            // 3. الشفاء والدرع
             const healVal = Math.floor(dmg * 0.5);
             const missingHp = attacker.maxHp - attacker.hp;
             if (healVal > missingHp) {
@@ -332,13 +343,14 @@ function applySkillEffect(battleState, attackerId, skill) {
                 attacker.effects.shield += shieldAdd;
                 attacker.effects.shield_source = skill.id;
                 attacker.effects.shield_cd_duration = cooldownDuration;
-                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص حياة خصمه وحول الفائض لدرع!`;
+                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع!`;
             }
             attacker.hp += healVal;
             battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
             attacker.effects.shield_source = null;
-            return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP من خصمه!`;
+            return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
         }
+
         case 'Chaos_RNG': {
             const dmg = Math.floor(baseAtk * 1.2);
             defender.hp -= dmg;
@@ -479,7 +491,7 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 function setupBattleCollector(battleState) {
     const robberId = battleState.turn[0]; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
-    
+     
     const collector = battleState.message.createMessageComponentCollector({ 
         filter, 
         componentType: ComponentType.Button, 
@@ -487,14 +499,12 @@ function setupBattleCollector(battleState) {
     });
 
     collector.on('collect', async i => {
-        // 🔥🔥🔥 التغيير الجذري هنا: Defer فوراً قبل أي شيء لمنع "Interaction Failed" 🔥🔥🔥
-        if (battleState.processingTurn) return; // تجاهل إذا كان مشغولاً
+        if (battleState.processingTurn) return; 
         battleState.processingTurn = true; 
 
         try {
-            await i.deferUpdate(); // ✅ هذا يمنع ديسكورد من اعتبار التفاعل فاشلاً
+            await i.deferUpdate(); 
         } catch (e) {
-            // إذا فشل الـ defer (نادر)، نحاول نكمل، لكن غالباً فات الأوان
             console.error("Defer Error:", e);
         }
 
@@ -513,10 +523,8 @@ function setupBattleCollector(battleState) {
 
                 battleState.turn = ["guard", player.member.id];
                 
-                // تحديث الرسالة لإظهار هجوم اللاعب (مع تعطيل الأزرار مؤقتاً)
                 await i.editReply(buildBattleEmbed(battleState, false, 0, true));
                 
-                // تشغيل دور الفارس
                 await processGuardTurn(battleState);
             } 
             else if (customId === 'knight_skill_menu') await i.editReply(buildBattleEmbed(battleState, true, 0));
@@ -542,11 +550,9 @@ function setupBattleCollector(battleState) {
             }
         } catch (error) {
             console.error("Collector Logic Error:", error);
-            // في حال حدوث خطأ، نفتح الأزرار عشان ما يعلق
             battleState.processingTurn = false;
             await i.editReply(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
         } finally {
-            // إذا لم يكن الدور للفارس (أي عمليات تصفح القوائم)، نفتح القفل فوراً
             if (battleState.turn[0] !== "guard") {
                 battleState.processingTurn = false;
             }
@@ -560,19 +566,14 @@ function setupBattleCollector(battleState) {
     });
 }
 
-// =================================================================
-// 🧠 ذكاء الفارس (AI) - [نسخة مضادة للتعليق - Anti-Freeze] 🔥
-// =================================================================
 async function processGuardTurn(battleState) {
     try {
-        // تأخير تقني بسيط (1 ثانية) لضمان استقرار API ديسكورد وعدم تداخل التحديثات
         await new Promise(r => setTimeout(r, 1000));
 
         const guard = battleState.players.get("guard");
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
 
-        // تقليل الكولداون
         const playerCooldowns = battleState.skillCooldowns[playerMemberId];
         if (playerCooldowns) {
             for (const skillId in playerCooldowns) {
@@ -580,27 +581,22 @@ async function processGuardTurn(battleState) {
             }
         }
 
-        // تأثيرات الحالة (سم، حرق)
         const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
         if (logEntries.length > 0) battleState.log.push(...logEntries);
 
-        // التحقق من الموت (إذا مات الفارس من السم مثلاً)
         if (guard.hp <= 0) {
             return await handleGuardBattleEnd(battleState, playerMemberId, "win");
         }
 
-        // إذا كان الفارس مشلولاً
         if (skipTurn) {
             battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
             battleState.turn = [playerMemberId, "guard"];
-            // تحديث الرسالة وإعادة الدور للاعب
             await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
             return;
         }
 
         let actionLog = "";
           
-        // 1. قداس الدم
         if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
             const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
             player.hp -= drainDmg;
@@ -611,7 +607,6 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 2. جرعات الطوارئ
         else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
             const healAmount = Math.floor(guard.maxHp * 0.25); 
             guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
@@ -620,7 +615,6 @@ async function processGuardTurn(battleState) {
             guard.effects.potions_used++; 
             actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
         }
-        // 3. إعدام
         else if (player.hp < player.maxHp * 0.20) {
             const dmg = calculateDamage(guard, player, 1.5);
             player.hp -= dmg;
@@ -628,7 +622,6 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 4. تحطيم الدرع
         else if (player.effects.shield > 0) {
             const dmg = calculateDamage(guard, player, 1.3); 
             player.hp -= dmg;
@@ -636,13 +629,11 @@ async function processGuardTurn(battleState) {
             const breakMsg = checkShieldBreak(battleState, playerMemberId);
             if (breakMsg) actionLog += `\n${breakMsg}`;
         }
-        // 5. انعكاس الضرر
         else if (player.effects.buff > 0 && Math.random() < 0.20) {
             guard.effects.rebound_active = 0.5; 
             guard.effects.rebound_turns = 1;
             actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
         }
-        // 6. هجوم عادي
         else {
             let multiplier = 1.0;
             if (player.effects.buff > 0) multiplier = 1.1;
@@ -666,25 +657,21 @@ async function processGuardTurn(battleState) {
             return await handleGuardBattleEnd(battleState, "guard", "lose");
         }
 
-        // إعادة الدور للاعب
         battleState.turn = [playerMemberId, "guard"];
         
-        // 🔥🔥 محاولة التحديث: إذا فشل التعديل، نرسل رسالة جديدة (Fail-Safe) 🔥🔥
         try {
             await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
         } catch (editError) {
             console.log("[Anti-Freeze] Message edit failed, sending fresh message...");
             const newMsg = await battleState.message.channel.send(buildBattleEmbed(battleState, false, 0, false));
-            battleState.message = newMsg; // تحديث مرجع الرسالة لتكملة اللعب
-            setupBattleCollector(battleState); // إعادة تشغيل المستمع للرسالة الجديدة
+            battleState.message = newMsg; 
+            setupBattleCollector(battleState); 
         }
 
     } catch (error) {
         console.error("AI Logic Error:", error);
-        // محاولة أخيرة لفتح الأزرار
         await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
     } finally {
-        // 🔥🔥 فك القفل الإجباري (أهم سطر لمنع التعليق) 🔥🔥
         battleState.processingTurn = false;
     }
 }
