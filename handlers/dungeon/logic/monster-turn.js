@@ -65,7 +65,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     const { damageCap } = getFloorCaps(floor);
 
-    // 🔥 2. حفظ حالة البرق
+    // 🔥 حفظ حالة البرق
     const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
     const lightningVal = activeLightning ? activeLightning.val : 0;
 
@@ -87,7 +87,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let effectName = "";
             let icon = "";
 
-            if (e.type === 'burn' || e.type === 'poison') {
+            if (e.type === 'burn' || e.type === 'poison' || e.type === 'bleed') {
                 let rawVal = e.val || 0;
                 if (rawVal >= 1) {
                     dmgVal = Math.floor(rawVal);
@@ -99,6 +99,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
                 if (e.type === 'burn') { effectName = "يحترق"; icon = "🔥"; }
                 if (e.type === 'poison') { effectName = "يتألم من السم"; icon = "☠️"; }
+                if (e.type === 'bleed') { effectName = "ينزف بشدة"; icon = "🩸"; }
 
                 let msg = `${icon} **${monster.name}** ${effectName}! (-${dmgVal})`;
                 if (dmgVal === damageCap) msg += " (مختوم)";
@@ -245,7 +246,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             let hitLog = [];
             
             targets.forEach(target => {
-                // الاختفاء
                 if (target.effects.some(e => e.type === 'evasion' || e.type === 'invisibility')) {
                     hitLog.push(`${target.name}: 👻 اختفاء (Miss)`);
                     return; 
@@ -253,27 +253,23 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
                 let dmg = Math.floor(monster.atk * (1 + turnCount * 0.01));
                 
-                // 🔥🔥🔥 إصلاح مهارة الإضعاف (Weaken) 🔥🔥🔥
                 if (lightningVal > 0) dmg = Math.floor(dmg * (1 - lightningVal)); 
                 
-                // البحث عن تأثير "weaken" وتطبيق القيمة الفعلية
-                const weakenEffect = monster.effects.find(e => e.type === 'weaken'); // كان weakness
+                const weakenEffect = monster.effects.find(e => e.type === 'weaken');
                 if (weakenEffect) {
-                    const weakenVal = weakenEffect.val || 0.3; // الافتراضي 30%
+                    const weakenVal = weakenEffect.val || 0.3;
                     dmg = Math.floor(dmg * (1 - weakenVal));
                 }
 
                 if (target.defending) dmg = Math.floor(dmg * 0.5);
                 
-                // 🔥🔥🔥 إصلاح مهارة الانعكاس (Reflect) 🔥🔥🔥
                 const reflectEffect = target.effects.find(e => e.type === 'reflect' || e.type === 'tank_reflect');
                 let reflectedDmg = 0;
                 
                 if (reflectEffect) {
-                    // الانعكاس الآن يعمل بالنسبة المحددة في المهارة (val)
                     reflectedDmg = Math.floor(dmg * (reflectEffect.val || 0.5)); 
-                    dmg = Math.floor(dmg - reflectedDmg); // تقليل الضرر على اللاعب
-                    monster.hp = Math.max(0, Math.floor(monster.hp - reflectedDmg)); // عكس الضرر على الوحش
+                    dmg = Math.floor(dmg - reflectedDmg);
+                    monster.hp = Math.max(0, Math.floor(monster.hp - reflectedDmg));
                 }
 
                 const takenDmg = applyDamageToPlayer(target, dmg);
