@@ -36,17 +36,13 @@ function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
-// 🔥🔥🔥 تعديل قيم المورا حسب طلبك 🔥🔥🔥
 function getBaseFloorMora(floor) {
-    // من 1 إلى 20 (ممتاز كما هو)
     if (floor <= 10) return 100;
     if (floor <= 20) return 200;
 
-    // التعديلات الجديدة
     if (floor <= 30) return 450;
     if (floor <= 40) return 700;
     
-    // ⚠️ ملاحظة: لم تذكر 41-50، فوضعتها 850 لتكون وسطاً بين 700 و 1000
     if (floor <= 50) return 850; 
 
     if (floor <= 60) return 1000;
@@ -293,6 +289,79 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     return { tickets: dbTickets, max: maxTickets };
 }
 
+// 🔥🔥🔥 دالة إدارة الخيم (Campfires) الجديدة 🔥🔥🔥
+function manageCampfires(userID, guildID, sql, action = 'check', member = null) {
+    userID = String(userID);
+    guildID = String(guildID);
+
+    // 1. تحديد الحد الأقصى للخيم بناءً على الرتب
+    let maxCampfires = 1; // الافتراضي للجميع
+
+    if (member) {
+        // رتبة عليا (مثال)
+        if (member.roles.cache.has('1422160802416164885')) {
+            maxCampfires = 5; 
+        }
+        // رتبة VIP العادية
+        else if (member.roles.cache.has(VIP_ROLE_ID)) { 
+            maxCampfires = 3;
+        }
+    }
+
+    // 2. جلب البيانات
+    let stats = sql.prepare("SELECT campfires, last_campfire_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
+    const todayStr = getSaudiDateIso();
+
+    // إنشاء سجل إذا لم يوجد (عادة manageTickets ينشئه، لكن هنا للتأكد)
+    if (!stats) {
+        // نحاول التحديث أولاً إذا كان الصف موجوداً لكن الأعمدة فارغة
+        try {
+            sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
+                .run(maxCampfires, todayStr, userID, guildID);
+            
+            // التحقق هل تم التحديث؟
+            const check = sql.prepare("SELECT campfires FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
+            if (!check) {
+                // إذا لم يوجد صف أصلاً، ندرجه
+                sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset, campfires, last_campfire_reset) VALUES (?, ?, 0, '', ?, ?)")
+                    .run(guildID, userID, maxCampfires, todayStr);
+            }
+        } catch (e) { console.log(e); }
+        
+        stats = { campfires: maxCampfires, last_campfire_reset: todayStr };
+    }
+
+    let dbDate = stats.last_campfire_reset || '';
+    let currentCampfires = (stats.campfires !== null && stats.campfires !== undefined) ? stats.campfires : maxCampfires;
+
+    // 3. التحقق من التجديد اليومي (Reset)
+    if (dbDate !== todayStr) {
+        console.log(`[Campfire] Resetting for ${userID}. New max: ${maxCampfires}`);
+        sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
+            .run(maxCampfires, todayStr, userID, guildID);
+        
+        currentCampfires = maxCampfires;
+    }
+
+    // 4. تنفيذ الأكشن
+    if (action === 'check') {
+        return { count: currentCampfires, max: maxCampfires };
+    }
+
+    if (action === 'consume') {
+        if (currentCampfires > 0) {
+            const newCount = currentCampfires - 1;
+            sql.prepare("UPDATE dungeon_stats SET campfires = ? WHERE userID = ? AND guildID = ?")
+                .run(newCount, userID, guildID);
+            return { success: true, count: newCount, max: maxCampfires };
+        } else {
+            return { success: false, count: 0, max: maxCampfires };
+        }
+    }
+
+    return { count: currentCampfires, max: maxCampfires };
+}
+
 function calculateThreat(player, baseValue, isTauntSkill = false) {
     let threat = baseValue;
     if (player.class === 'Tank') {
@@ -314,5 +383,6 @@ module.exports = {
     getRealPlayerData,
     manageTickets,
     getSaudiDateIso,
-    calculateThreat
+    calculateThreat,
+    manageCampfires // ✅ تمت إضافة الدالة هنا
 };
