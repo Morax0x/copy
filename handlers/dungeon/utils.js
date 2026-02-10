@@ -2,7 +2,7 @@
 
 const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig, OWNER_ID } = require('./constants');
 
-// آيدي رتبة العضوية المميزة
+// آيدي رتبة العضوية المميزة (للتذاكر فقط حالياً)
 const VIP_ROLE_ID = "1395674235002945636";
 
 function ensureInventoryTable(sql) {
@@ -36,6 +36,7 @@ function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
+// 🔥🔥🔥 تعديل قيم المورا (حسب طلبك) 🔥🔥🔥
 function getBaseFloorMora(floor) {
     if (floor <= 10) return 100;
     if (floor <= 20) return 200;
@@ -52,7 +53,7 @@ function getBaseFloorMora(floor) {
     // 81 وفوق (قبل الطابق 100)
     if (floor < 100) return 3500;
     
-    // الطابق 100 (كما هو)
+    // الطابق 100
     return 25000; 
 }
 
@@ -289,40 +290,46 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     return { tickets: dbTickets, max: maxTickets };
 }
 
-// 🔥🔥🔥 دالة إدارة الخيم (Campfires) الجديدة 🔥🔥🔥
+// 🔥🔥🔥 دالة إدارة الخيم (Campfires) المحدثة لتدعم أمر -setcamps 🔥🔥🔥
 function manageCampfires(userID, guildID, sql, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
-    // 1. تحديد الحد الأقصى للخيم بناءً على الرتب
-    let maxCampfires = 1; // الافتراضي للجميع
+    // 1. تحديد الحد الأقصى (الافتراضي 1)
+    let maxCampfires = 1;
 
     if (member) {
-        // رتبة عليا (مثال)
-        if (member.roles.cache.has('1422160802416164885')) {
-            maxCampfires = 5; 
-        }
-        // رتبة VIP العادية
-        else if (member.roles.cache.has(VIP_ROLE_ID)) { 
-            maxCampfires = 3;
+        // جلب جميع إعدادات الرتب الخاصة بالسيرفر من الداتابيس
+        const roleLimits = sql.prepare("SELECT roleID, limitCount FROM role_campfire_limits WHERE guildID = ?").all(guildID);
+
+        // التحقق من رتب العضو ومقارنتها
+        if (roleLimits.length > 0) {
+            const memberRoleIds = member.roles.cache.map(r => r.id);
+            
+            // نأخذ أعلى رقم مسموح للرتب التي يمتلكها العضو
+            roleLimits.forEach(config => {
+                if (memberRoleIds.includes(config.roleID)) {
+                    if (config.limitCount > maxCampfires) {
+                        maxCampfires = config.limitCount;
+                    }
+                }
+            });
         }
     }
 
-    // 2. جلب البيانات
+    // 2. جلب البيانات من الداتابيس
     let stats = sql.prepare("SELECT campfires, last_campfire_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
     const todayStr = getSaudiDateIso();
 
-    // إنشاء سجل إذا لم يوجد (عادة manageTickets ينشئه، لكن هنا للتأكد)
+    // إنشاء سجل إذا لم يوجد
     if (!stats) {
-        // نحاول التحديث أولاً إذا كان الصف موجوداً لكن الأعمدة فارغة
+        // نحاول التحديث أولاً (للمستخدمين القدامى)
         try {
-            sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
+            const updateInfo = sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
                 .run(maxCampfires, todayStr, userID, guildID);
             
-            // التحقق هل تم التحديث؟
-            const check = sql.prepare("SELECT campfires FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
-            if (!check) {
-                // إذا لم يوجد صف أصلاً، ندرجه
+            if (updateInfo.changes === 0) {
+                // مستخدم جديد كلياً
                 sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset, campfires, last_campfire_reset) VALUES (?, ?, 0, '', ?, ?)")
                     .run(guildID, userID, maxCampfires, todayStr);
             }
@@ -341,6 +348,7 @@ function manageCampfires(userID, guildID, sql, action = 'check', member = null) 
             .run(maxCampfires, todayStr, userID, guildID);
         
         currentCampfires = maxCampfires;
+        dbDate = todayStr;
     }
 
     // 4. تنفيذ الأكشن
@@ -384,5 +392,5 @@ module.exports = {
     manageTickets,
     getSaudiDateIso,
     calculateThreat,
-    manageCampfires // ✅ تمت إضافة الدالة هنا
+    manageCampfires // ✅ الدالة موجودة
 };
