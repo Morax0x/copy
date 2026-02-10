@@ -91,9 +91,10 @@ function setupDatabase(clientOrSql) {
         // --- جداول أخرى ---
         "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
         "CREATE TABLE IF NOT EXISTS active_auctions (messageID TEXT PRIMARY KEY, channelID TEXT, hostID TEXT, item_name TEXT, current_bid INTEGER, highest_bidder TEXT, min_increment INTEGER, end_time INTEGER, image_url TEXT, buy_now_price INTEGER DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT, guildID TEXT, floor INTEGER, timestamp INTEGER, PRIMARY KEY (hostID, guildID))",
         
-        // 🔥🔥🔥 التعديل هنا: جعل مفتاح الحفظ مركباً (hostID + guildID) 🔥🔥🔥
-        "CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT, guildID TEXT, floor INTEGER, timestamp INTEGER, PRIMARY KEY (hostID, guildID))"
+        // 🔥🔥 الجدول الجديد لإعدادات الخيم 🔥🔥
+        "CREATE TABLE IF NOT EXISTS role_campfire_limits (guildID TEXT, roleID TEXT, limitCount INTEGER, PRIMARY KEY (guildID, roleID))"
     ];
 
     sql.transaction((tbls) => {
