@@ -84,7 +84,7 @@ module.exports = {
                 `✶ ${titleText} ايـها المحـارب هـو **(${ticketData.tickets}/${ticketData.max})**\n\n` +
                 `✶ كلـمـا ارتقـيـت بالامبراطـوريـة زادت تـذاكـرك 🎫\n\n` +
                 `✶ عـدد الخيـم هو: (${campData.count}/${campData.max})⛺\n\n` + 
-                `✶ تـتجـدد التذاكـر والخيم: <t:${timestamp}:R>`
+                `✶ تـتجـدد التذاكـر والخيم:\n <t:${timestamp}:R>`
             )
             .setFooter({ text: targetUser.username, iconURL: targetUser.displayAvatarURL() });
 
