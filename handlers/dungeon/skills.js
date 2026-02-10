@@ -233,7 +233,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
     const result = skillCalculator.executeSkill(player, monster, skill, isOwner);
 
     // =================================================================
-    // 🛡️ تطبيق الختم (CAP) وتصحيح قيم السم والحرق (المعادلة المطلوبة)
+    // 🛡️ تطبيق الختم (CAP) على نتائج الآلة الحاسبة
     // =================================================================
 
     if (result.effectsApplied && result.effectsApplied.length > 0) {
@@ -242,8 +242,11 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
         result.effectsApplied.forEach(eff => {
             if (eff.type === 'poison' || eff.type === 'burn') {
-                // 🔥🔥🔥 التعديل هنا: 100 أساسي + 50 لكل لفل 🔥🔥🔥
+                
+                // 🔥🔥🔥 التعديل المطلوب: 100 أساسي + 50 عن كل لفل 🔥🔥🔥
                 let baseVal = 100 + (skillLevel * 50); 
+                
+                // تطبيق الختم وسقف الضرر لضمان التوازن
                 eff.val = applyCap(Math.floor(baseVal * sealMultiplier), damageCap);
             }
         });
