@@ -126,7 +126,7 @@ async function handleRestMenu(context) {
             // 🔥🔥🔥 منطق نصب الخيمة مع التحقق من الرصيد 🔥🔥🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
-                if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
+                if (!p || p.class !== 'Leader') return i.reply({ content: "⛺ **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
                 
                 // 1. جلب العضو للتحقق من الرتب
                 const member = guild.members.cache.get(p.id);
@@ -137,7 +137,7 @@ async function handleRestMenu(context) {
                 // 3. إذا فشل الخصم (الرصيد 0)
                 if (!campResult.success) {
                     return i.reply({ 
-                        content: `🚫 **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً او عزز السيرفر بـ بوست لزيادة عدد الخيم.`, 
+                        content: `⛺ **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً او عزز السيرفر بـ بوست لزيادة عدد الخيم.`, 
                         flags: [MessageFlags.Ephemeral] 
                     });
                 }
