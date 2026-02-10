@@ -11,7 +11,8 @@ const {
 } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP } = require('../constants');
-const { getBaseFloorMora } = require('../utils');
+// ✅ تم إضافة manageCampfires للاستيراد
+const { getBaseFloorMora, manageCampfires } = require('../utils');
 const { snapshotLootAtFloor20, handleMemberRetreat } = require('../core/rewards');
 const { handleLeaderSuccession } = require('../core/battle-utils');
 
@@ -77,7 +78,7 @@ async function handleRestMenu(context) {
 
     const restRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
-        // 🔥 تعديل: تغيير النص إلى "نصب خيمة" فقط 🔥
+        // 🔥 زر نصب الخيمة 🔥
         new ButtonBuilder().setCustomId('camp').setLabel('نصب خيمة').setStyle(ButtonStyle.Secondary).setEmoji('⛺'),
         new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
     );
@@ -122,15 +123,31 @@ async function handleRestMenu(context) {
                 return decCollector.stop('continue');
             }
 
+            // 🔥🔥🔥 منطق نصب الخيمة مع التحقق من الرصيد 🔥🔥🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
                 if (!p || p.class !== 'Leader') return i.reply({ content: "🚫 **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
                 
+                // 1. جلب العضو للتحقق من الرتب
+                const member = guild.members.cache.get(p.id);
+
+                // 2. محاولة خصم خيمة من الرصيد
+                const campResult = manageCampfires(p.id, guild.id, sql, 'consume', member);
+
+                // 3. إذا فشل الخصم (الرصيد 0)
+                if (!campResult.success) {
+                    return i.reply({ 
+                        content: `🚫 **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً، أو يمكنك ترقية رتبتك لزيادة الحد.`, 
+                        flags: [MessageFlags.Ephemeral] 
+                    });
+                }
+
+                // 4. إذا نجح الخصم، نتمم عملية الحفظ
                 const nextFloor = floor + 1;
-                // الحفظ في الداتابيس
+                // الحفظ في الداتابيس (مفتاح مركب hostID + guildID)
                 sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(p.id, guild.id, nextFloor, Date.now());
                 
-                await i.deferUpdate(); // مجرد تأكيد الضغط
+                await i.deferUpdate(); 
                 return decCollector.stop('camp'); // إنهاء وإرجاع 'camp'
             }
 
