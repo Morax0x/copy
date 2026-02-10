@@ -86,10 +86,10 @@ module.exports = {
                         const now = Math.floor(Date.now() / 1000);
                         const diffSeconds = now - afkData.timestamp;
                         
-                        // 🔥🔥🔥 التعديل هنا: الحساب بالدقائق 🔥🔥🔥
-                        const minutes = Math.floor(diffSeconds / 60); // تحويل الثواني لدقائق
-                        const calculatedMinutes = Math.min(minutes, 1440); // الحد الأقصى 24 ساعة = 1440 دقيقة
-                        const reward = calculatedMinutes * 2; // 2 مورا لكل دقيقة
+                        // الحساب بالدقائق (2 مورا لكل دقيقة)
+                        const minutes = Math.floor(diffSeconds / 60); 
+                        const calculatedMinutes = Math.min(minutes, 1440); // الحد الأقصى 24 ساعة
+                        const reward = calculatedMinutes * 2; 
 
                         if (reward > 0) {
                             let userLevel = client.getLevel.get(message.author.id, message.guild.id);
@@ -124,12 +124,14 @@ module.exports = {
                             }
                         } catch (e) {}
 
+                        // العداد الديناميكي من ديسكورد (منذ X دقيقة)
                         const timeAgo = `<t:${afkData.timestamp}:R>`;
+                        
                         let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
                         
-                        // تحديث نص الرسالة ليعكس الدقائق
+                        // 🔥🔥 التعديل: استخدام العداد الديناميكي في رسالة الجائزة 🔥🔥
                         if (reward > 0) {
-                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك نمت لمدة **${calculatedMinutes}** دقيقة!`;
+                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
                         }
 
                         const welcomeMsg = await message.reply({ 
