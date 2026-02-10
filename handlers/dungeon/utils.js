@@ -27,6 +27,8 @@ function ensureInventoryTable(sql) {
             userID TEXT,
             tickets INTEGER DEFAULT 0,
             last_reset TEXT DEFAULT '',
+            campfires INTEGER DEFAULT 1, 
+            last_campfire_reset TEXT DEFAULT '',
             PRIMARY KEY (guildID, userID)
         );
     `).run();
@@ -214,6 +216,7 @@ function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
+// 🔥🔥🔥 دالة إدارة التذاكر (تراكمية) 🔥🔥🔥
 function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
@@ -221,6 +224,7 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     const levelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
     const level = levelData ? levelData.level : 1;
 
+    // 1. التذاكر الأساسية من الليفل
     let baseTickets = 0;
     if (level >= 61) baseTickets = 10;
     else if (level >= 51) baseTickets = 9;
@@ -231,11 +235,12 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     else if (level >= 5) baseTickets = 3;
     else baseTickets = 0;
 
+    // 2. تذاكر إضافية من الرتب (تراكمية)
     let bonusTickets = 0;
     if (member && member.roles.cache.has(VIP_ROLE_ID)) {
-        bonusTickets = 10;
-        console.log(`[Tickets] VIP User detected: +10 tickets for ${userID}`);
+        bonusTickets += 10; // إضافة 10 تذاكر للـ VIP
     }
+    // يمكنك إضافة شروط أخرى هنا لزيادة الـ bonusTickets
 
     let maxTickets = baseTickets + bonusTickets;
 
@@ -290,28 +295,26 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     return { tickets: dbTickets, max: maxTickets };
 }
 
-// 🔥🔥🔥 دالة إدارة الخيم (Campfires) المحدثة لتدعم أمر -setcamps 🔥🔥🔥
+// 🔥🔥🔥 دالة إدارة الخيم (تراكمية) 🔥🔥🔥
 function manageCampfires(userID, guildID, sql, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
-    // 1. تحديد الحد الأقصى (الافتراضي 1)
+    // 1. تحديد الحد الأقصى (البداية 1)
     let maxCampfires = 1;
 
     if (member) {
-        // جلب جميع إعدادات الرتب الخاصة بالسيرفر من الداتابيس
+        // جلب جميع إعدادات الرتب من الداتابيس
         const roleLimits = sql.prepare("SELECT roleID, limitCount FROM role_campfire_limits WHERE guildID = ?").all(guildID);
 
-        // التحقق من رتب العضو ومقارنتها
         if (roleLimits.length > 0) {
             const memberRoleIds = member.roles.cache.map(r => r.id);
             
-            // نأخذ أعلى رقم مسموح للرتب التي يمتلكها العضو
+            // 🔥🔥 التعديل التراكمي هنا 🔥🔥
             roleLimits.forEach(config => {
                 if (memberRoleIds.includes(config.roleID)) {
-                    if (config.limitCount > maxCampfires) {
-                        maxCampfires = config.limitCount;
-                    }
+                    // بدلاً من أخذ الأعلى، نقوم بجمع الخيم من كل رتبة يمتلكها
+                    maxCampfires += config.limitCount;
                 }
             });
         }
@@ -323,13 +326,11 @@ function manageCampfires(userID, guildID, sql, action = 'check', member = null) 
 
     // إنشاء سجل إذا لم يوجد
     if (!stats) {
-        // نحاول التحديث أولاً (للمستخدمين القدامى)
         try {
             const updateInfo = sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
                 .run(maxCampfires, todayStr, userID, guildID);
             
             if (updateInfo.changes === 0) {
-                // مستخدم جديد كلياً
                 sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset, campfires, last_campfire_reset) VALUES (?, ?, 0, '', ?, ?)")
                     .run(guildID, userID, maxCampfires, todayStr);
             }
@@ -348,7 +349,6 @@ function manageCampfires(userID, guildID, sql, action = 'check', member = null) 
             .run(maxCampfires, todayStr, userID, guildID);
         
         currentCampfires = maxCampfires;
-        dbDate = todayStr;
     }
 
     // 4. تنفيذ الأكشن
@@ -392,5 +392,5 @@ module.exports = {
     manageTickets,
     getSaudiDateIso,
     calculateThreat,
-    manageCampfires // ✅ الدالة موجودة
+    manageCampfires 
 };
