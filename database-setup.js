@@ -33,7 +33,8 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS market_items (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, currentPrice INTEGER DEFAULT 0, lastChangePercent REAL DEFAULT 0.0, lastChange INTEGER DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS user_portfolio (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, itemID TEXT NOT NULL, quantity INTEGER DEFAULT 0, purchasePrice INTEGER DEFAULT 0, FOREIGN KEY (itemID) REFERENCES market_items(id), UNIQUE(guildID, userID, itemID))",
         "CREATE TABLE IF NOT EXISTS user_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT, userID TEXT, itemID TEXT, quantity INTEGER DEFAULT 0, UNIQUE(guildID, userID, itemID))",
-        "CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))",
+        // ✅ تحديث تعريف الجدول للخوادم الجديدة
+        "CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', campfires INTEGER DEFAULT 1, last_campfire_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))",
         "CREATE TABLE IF NOT EXISTS blacklistTable (id TEXT PRIMARY KEY, guild TEXT, typeId TEXT, type TEXT)",
         "CREATE TABLE IF NOT EXISTS channel (guild TEXT PRIMARY KEY, channel TEXT)",
         "CREATE TABLE IF NOT EXISTS user_farm (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, quantity INTEGER DEFAULT 1, purchaseTimestamp INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastFedTimestamp INTEGER DEFAULT 0)",
@@ -92,8 +93,6 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
         "CREATE TABLE IF NOT EXISTS active_auctions (messageID TEXT PRIMARY KEY, channelID TEXT, hostID TEXT, item_name TEXT, current_bid INTEGER, highest_bidder TEXT, min_increment INTEGER, end_time INTEGER, image_url TEXT, buy_now_price INTEGER DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT, guildID TEXT, floor INTEGER, timestamp INTEGER, PRIMARY KEY (hostID, guildID))",
-        
-        // 🔥🔥 الجدول الجديد لإعدادات الخيم 🔥🔥
         "CREATE TABLE IF NOT EXISTS role_campfire_limits (guildID TEXT, roleID TEXT, limitCount INTEGER, PRIMARY KEY (guildID, roleID))"
     ];
 
@@ -177,6 +176,11 @@ function setupDatabase(clientOrSql) {
     ensureColumn('afk', 'mentionsCount', 'INTEGER DEFAULT 0');
     ensureColumn('afk', 'subscribers', "TEXT DEFAULT '[]'");
     ensureColumn('afk', 'messages', "TEXT DEFAULT '[]'");
+
+    // --- 🔥 صيانة أعمدة الدانجون والخيم (Fix) 🔥 ---
+    // هذا الجزء هو الذي يحل المشكلة، لأنه يضيف الأعمدة للجداول الموجودة
+    ensureColumn('dungeon_stats', 'campfires', 'INTEGER DEFAULT 1');
+    ensureColumn('dungeon_stats', 'last_campfire_reset', "TEXT DEFAULT ''");
 
     // --- إكمال الباقي ---
     ensureColumn('user_portfolio', 'purchasePrice', 'INTEGER DEFAULT 0');
