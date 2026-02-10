@@ -141,7 +141,7 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             }
             else if (skill.id === 'skill_poison') {
                 result.damage = skillPower;
-                // 🔥 تصحيح: إضافة تأثير السم بقيمة افتراضية (يتم تعديلها لاحقاً في skills.js)
+                // إضافة السم (سيتم تعديل قيمته في skills.js)
                 result.effectsApplied.push({ type: 'poison', val: 100, turns: 3 });
                 result.log = `☠️ **${getName(attacker)}** سمم خصمه!`;
             }
@@ -169,8 +169,9 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             
             else if (skill.stat_type === 'TrueDMG_Burn') { // Dragon
                 result.damage = skillPower;
-                // 🔥 تصحيح: إضافة تأثير الحرق بقيمة افتراضية (يتم تعديلها لاحقاً في skills.js)
+                // ✅ تأثير الحرق للتنين
                 result.effectsApplied.push({ type: 'burn', val: 100, turns: 3 });
+                
                 if (Math.random() < 0.10) { 
                     result.effectsApplied.push({ type: 'stun', val: true, turns: 1 });
                     result.log = `🐲 **${getName(attacker)}** أطلق ${skill.name} وشـل الخصم!`;
@@ -243,7 +244,7 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             }
             else if (skill.stat_type === 'Execute_Heal') { // Ghoul
                 result.damage = skillPower;
-                // 🔥 تصحيح: إضافة تأثير السم بقيمة افتراضية
+                // ✅ تأثير السم للغول
                 result.effectsApplied.push({ type: 'poison', val: 100, turns: 3 });
                 
                 if (defender.hp < defender.maxHp * 0.20) {
@@ -277,10 +278,18 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
             break;
         }
 
-        // --- 🩸 Vampire (Overheal -> Shield) ---
+        // --- 🩸 Vampire (Updated: Bleed + Overheal Shield + Dmg Boost) ---
         case 'Lifesteal_Overheal': {
-            result.damage = skillPower;
-            const potentialHeal = Math.floor(result.damage * 0.5);
+            // 1. زيادة الضرر بنسبة 15%
+            result.damage = Math.floor(skillPower * 1.15);
+            
+            // 2. تطبيق تأثير النزيف (يستخدم كود الحرق)
+            const bleedDmg = Math.floor(result.damage * 0.2); // 20% من الضرر
+            const finalBleed = Math.max(50, bleedDmg);
+            result.effectsApplied.push({ type: 'burn', val: finalBleed, turns: 2 });
+
+            // 3. الشفاء والدرع
+            const potentialHeal = Math.floor(result.damage * 0.5); // 50% شفاء
             const currentHp = attacker.hp || 0;
             const maxHp = attacker.maxHp || 100;
             const missingHp = maxHp - currentHp;
@@ -289,10 +298,10 @@ function executeSkill(attacker, defender, skill, isOwner = false) {
                 result.heal = missingHp;
                 const overflow = potentialHeal - missingHp;
                 result.shield = Math.floor(overflow * 0.5); // 50% من الفائض يتحول لدرع
-                result.log = `🩸 **${getName(attacker)}** امتص حياة وحول الفائض لدرع! (+${result.shield} Shield)`;
+                result.log = `🩸 **${getName(attacker)}** مزق جسد الخصم وسبب نزيفاً! (شفاء +${result.heal} | درع +${result.shield})`;
             } else {
                 result.heal = potentialHeal;
-                result.log = `🩸 **${getName(attacker)}** امتص ${potentialHeal} HP!`;
+                result.log = `🩸 **${getName(attacker)}** نهش الخصم وسبب نزيفاً! (+${potentialHeal} HP)`;
             }
             break;
         }
