@@ -2,12 +2,16 @@ const { EmbedBuilder, PermissionsBitField, SlashCommandBuilder } = require("disc
 const SQLite = require("better-sqlite3");
 const sql = new SQLite('./mainDB.sqlite');
 
+// ✅ The IDs allowed to use this command
+const ALLOWED_IDS = ["1145327691772481577", "288421280368295947"];
+
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('mora-admin') // تم تعديل الاسم ليكون بالإنجليزية لضمان عمله كـ Slash Command
+        .setName('موراا') // ✅ Changed name to Arabic 'moraa'
         .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين (حتى للمغادرين).')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        // --- أمر الإضافة ---
+        // Removing default permission requirement here to handle custom check inside execute
+        // .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator) 
+        // --- Add Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('اضافة')
@@ -23,7 +27,7 @@ module.exports = {
                         )
                 )
         )
-        // --- أمر الإزالة ---
+        // --- Remove Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('ازالة')
@@ -39,7 +43,7 @@ module.exports = {
                         )
                 )
         )
-        // --- أمر التحديد ---
+        // --- Set Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('تحديد')
@@ -56,15 +60,29 @@ module.exports = {
                 )
         ),
 
-    name: 'mora-admin',
+    name: 'موراا', // Prefix command name
     aliases: ['gm', 'set-mora'],
     category: "Economy",
     description: "يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين.",
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, member, guild, client;
+        let interaction, message, user, member, guild, client;
         let method, targetUser, amount, place;
+
+        // --- 🔒 Security Check: Restrict to specific User IDs ---
+        if (isSlash) {
+            user = interactionOrMessage.user;
+        } else {
+            user = interactionOrMessage.author;
+        }
+
+        if (!ALLOWED_IDS.includes(user.id)) {
+            const content = "⛔️ **عذراً، هذا الأمر خاص بمطور البوت فقط!**";
+            if (isSlash) return interactionOrMessage.reply({ content, ephemeral: true });
+            return interactionOrMessage.reply(content);
+        }
+        // -------------------------------------------------------
 
         if (isSlash) {
             interaction = interactionOrMessage;
@@ -73,7 +91,6 @@ module.exports = {
             client = interaction.client;
 
             method = interaction.options.getSubcommand();
-            // 🔥 التعديل الأساسي: استخدام getUser بدلاً من getMember لجلب بيانات المغادرين
             targetUser = interaction.options.getUser('المستخدم'); 
             amount = interaction.options.getInteger('المبلغ');
             place = interaction.options.getString('المكان') || 'cash'; 
@@ -91,7 +108,6 @@ module.exports = {
 
             method = args[0] ? args[0].toLowerCase() : null;
             
-            // 🔥 التعديل للبريفكس: محاولة جلب المستخدم بالآيدي إذا لم يكن موجوداً كمنشن
             targetUser = message.mentions.users.first();
             if (!targetUser && args[1]) {
                 try {
@@ -116,9 +132,7 @@ module.exports = {
             return message.reply(payload);
         };
 
-        if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return replyError(`⛔️ يجب أن تكون لديك صلاحية **Administrator** لاستخدام هذا الأمر!`);
-        }
+        // Note: The admin permission check was removed because the ID check above is stricter.
 
         if (!targetUser || isNaN(amount) || amount < 0 || !['add', 'remove', 'set'].includes(method)) {
             return replyError("البيانات غير صحيحة أو المستخدم غير موجود (تأكد من الآيدي).");
@@ -127,11 +141,9 @@ module.exports = {
         const getScore = client.getLevel;
         const setScore = client.setLevel;
 
-        // استخدام targetUser.id وهو يعمل سواء كان العضو في السيرفر أم غادره
         let data = getScore.get(targetUser.id, guild.id);
 
         if (!data) {
-            // إذا لم يكن لديه داتا سابقة، ننشئ له داتا جديدة (حتى لو غادر)
             data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
         }
 
@@ -140,7 +152,7 @@ module.exports = {
 
         let actionWord = "";
         
-        // --- العمليات الحسابية ---
+        // --- Calculations ---
 
         if (method === 'add') {
             actionWord = "اضـافـة";
@@ -156,7 +168,6 @@ module.exports = {
             if (place === 'bank') {
                 data.bank = Math.max(0, data.bank - amount);
             } else {
-                // سحب من الكاش، وإذا لم يكفِ يسحب من البنك
                 if (data.mora >= amount) {
                     data.mora -= amount;
                 } else {
@@ -177,20 +188,19 @@ module.exports = {
 
         setScore.run(data);
 
-        // --- حساب المجموع الكلي للعرض ---
         let totalBalance = data.mora + data.bank;
         
         let statusText = `تـمـت ${actionWord}`;
 
         const embed = new EmbedBuilder()
-            .setColor(0xFFD700) // لون ذهبي
+            .setColor(0xFFD700) 
             .setTitle(`✥ تـم تحديـث الرصيـد`)
             .setThumbnail('https://i.postimg.cc/NfH9T3CN/5953886680689347550-120.jpg') 
             .setDescription(`
 ✶ الاسـم: <@${targetUser.id}>
 ✶ ${statusText} **${amount.toLocaleString()}** <:mora:1435647151349698621>
 ✶ الرصيـد الجديـد: **${totalBalance.toLocaleString()}** <:mora:1435647151349698621>`)
-            .setFooter({ text: `UserID: ${targetUser.id}` }) // إضافة الآيدي للتوضيح
+            .setFooter({ text: `UserID: ${targetUser.id}` }) 
             .setTimestamp();
 
         await reply({ embeds: [embed] });
