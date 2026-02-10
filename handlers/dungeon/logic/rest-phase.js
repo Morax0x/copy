@@ -137,7 +137,7 @@ async function handleRestMenu(context) {
                 // 3. إذا فشل الخصم (الرصيد 0)
                 if (!campResult.success) {
                     return i.reply({ 
-                        content: `🚫 **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً، أو يمكنك ترقية رتبتك لزيادة الحد.`, 
+                        content: `🚫 **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً او عزز السيرفر بـ بوست لزيادة عدد الخيم.`, 
                         flags: [MessageFlags.Ephemeral] 
                     });
                 }
