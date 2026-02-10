@@ -26,7 +26,7 @@ function getWeekStartDateString() {
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
-    
+     
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
     const dailyID = `${userID}-${guildID}-${dateStr}`;
@@ -76,7 +76,7 @@ module.exports = {
 
         try {
             const isAfkTableExists = sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='afk'").get();
-            
+             
             if (isAfkTableExists) {
                 const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
 
@@ -85,9 +85,11 @@ module.exports = {
                     if (!(content.startsWith('(') && content.endsWith(')'))) {
                         const now = Math.floor(Date.now() / 1000);
                         const diffSeconds = now - afkData.timestamp;
-                        const hours = Math.floor(diffSeconds / 3600);
-                        const calculatedHours = Math.min(hours, 24); 
-                        const reward = calculatedHours * 100; 
+                        
+                        // 🔥🔥🔥 التعديل هنا: الحساب بالدقائق 🔥🔥🔥
+                        const minutes = Math.floor(diffSeconds / 60); // تحويل الثواني لدقائق
+                        const calculatedMinutes = Math.min(minutes, 1440); // الحد الأقصى 24 ساعة = 1440 دقيقة
+                        const reward = calculatedMinutes * 2; // 2 مورا لكل دقيقة
 
                         if (reward > 0) {
                             let userLevel = client.getLevel.get(message.author.id, message.guild.id);
@@ -125,8 +127,9 @@ module.exports = {
                         const timeAgo = `<t:${afkData.timestamp}:R>`;
                         let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
                         
+                        // تحديث نص الرسالة ليعكس الدقائق
                         if (reward > 0) {
-                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك نمت لمدة **${calculatedHours}** ساعة!`;
+                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك نمت لمدة **${calculatedMinutes}** دقيقة!`;
                         }
 
                         const welcomeMsg = await message.reply({ 
@@ -244,7 +247,7 @@ module.exports = {
             if (!aiChannelData && message.channel.parentId) {
                 if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
                     const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                    
+                     
                     if (paidStatus) {
                         aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
                         isPaidSession = true;
