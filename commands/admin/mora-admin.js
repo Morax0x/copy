@@ -10,7 +10,7 @@ module.exports = {
         .setName('موراا') // ✅ Changed name to Arabic 'moraa'
         .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين (حتى للمغادرين).')
         // Removing default permission requirement here to handle custom check inside execute
-        // .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator) 
+        // .setDefaultMemberPermissions(Permiss.ionsBitField.Flags.Administrator) 
         // --- Add Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
