@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, Comp
 const path = require('path');
 
 // ==========================================
-// ⚙️ إعدادات المسارات والملفات
+// ⚙️ إعدادات المسارات 0والملفات
 // ==========================================
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
