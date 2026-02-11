@@ -6,7 +6,7 @@ const path = require('path');
 
 // ✅✅ إعدادات النظام ✅✅
 const TEST_MODE = false;
-const CHILDREN_PER_PAGE = 10; // 10 أبناء في الصفحة
+const CHILDREN_PER_PAGE = 10; // 10 أبناء في الصفحة الواحدة
 
 // الألوان
 const THEME = {
@@ -34,6 +34,39 @@ const Y_MAIN = Y_PARENTS + DIMS.LEVEL_GAP;
 const Y_KIDS = Y_MAIN + DIMS.LEVEL_GAP;
 const Y_GRAND = Y_KIDS + DIMS.LEVEL_GAP;
 const CANVAS_HEIGHT = Y_GRAND + DIMS.GRAND + 80;
+
+// ==========================================
+// 🛠️ الدوال المساعدة (يجب أن تكون هنا بالأعلى)
+// ==========================================
+
+// دالة جلب لون العضو
+async function getUserColor(client, userId, guild) {
+    if (TEST_MODE) return THEME.DEFAULT;
+    try {
+        const sql = client.sql;
+        const config = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(guild.id);
+        if (!config) return THEME.DEFAULT;
+        
+        let member = guild.members.cache.get(userId);
+        if (!member) member = await guild.members.fetch(userId).catch(() => null);
+        if (!member) return THEME.DEFAULT;
+        
+        const checkRole = (rolesData) => {
+            if (!rolesData) return false;
+            try {
+                const roleIds = JSON.parse(rolesData);
+                if (Array.isArray(roleIds)) return roleIds.some(id => member.roles.cache.has(id));
+            } catch {
+                return member.roles.cache.has(rolesData);
+            }
+            return false;
+        };
+
+        if (checkRole(config.maleRole)) return THEME.MALE;
+        if (checkRole(config.femaleRole)) return THEME.FEMALE;
+        return THEME.DEFAULT;
+    } catch { return THEME.DEFAULT; }
+}
 
 // ==========================================
 // 🎨 المحرك الرسومي
@@ -89,7 +122,7 @@ async function drawTreePage(treeData, pageIndex) {
     ctx.fillStyle = radGrad;
     ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
-    // --- الدوال ---
+    // --- دوال الرسم الداخلية ---
     function drawNameLabel(name, x, y, color) {
         const fontSize = 18;
         ctx.font = `bold ${fontSize}px "Sans", "Arial"`;
@@ -343,25 +376,18 @@ module.exports = {
         childrenIDs.forEach(id => allInvolvedUserIds.add(id));
 
         // -- زوجات الأبناء + الأحفاد --
-        // ملاحظة: بما أننا لا نستطيع عمل Loop هنا بسهولة بدون معرفة الأبناء مسبقاً، سنقوم بعملية ذكية
-        // سنجلب الأحفاد بناءً على قائمة الأبناء
         const childArr = Array.from(childrenIDs);
         const childPartnerMap = new Map(); // childID -> [partnerID, ...]
         const grandchildMap = new Map(); // childID -> [grandchildID, ...]
 
         if (childArr.length > 0) {
-            // جلب زوجات الأبناء
-            const childPlaceholders = childArr.map(() => '?').join(',');
-            // للأسف better-sqlite3 لا يدعم IN مع مصفوفة مباشرة بسهولة في سطر واحد لعدة استعلامات مختلفة
-            // لذا سنستخدم Loop بسيطة هنا للجمع السريع (SQL محلي سريع جداً)
-            
             for (const cid of childArr) {
                 const cMarriages = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").all(cid, guild.id);
                 const cPids = cMarriages.map(r => r.partnerID);
                 childPartnerMap.set(cid, cPids);
                 cPids.forEach(id => allInvolvedUserIds.add(id));
 
-                // الأحفاد (من الابن أو زوجته)
+                // الأحفاد
                 const g1 = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(cid, guild.id);
                 let gIds = g1.map(r => r.childID);
                 
@@ -369,31 +395,28 @@ module.exports = {
                     const g2 = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(cpid, guild.id);
                     gIds.push(...g2.map(r => r.childID));
                 }
-                // إزالة التكرار
                 gIds = [...new Set(gIds)];
                 grandchildMap.set(cid, gIds);
                 gIds.forEach(id => allInvolvedUserIds.add(id));
             }
         }
 
-        // 🔥🔥 2. جلب بيانات المستخدمين من ديسكورد دفعة واحدة (Turbo Mode) 🔥🔥
+        // 🔥🔥 2. جلب بيانات المستخدمين من ديسكورد دفعة واحدة 🔥🔥
         const allIDsArray = Array.from(allInvolvedUserIds);
-        let membersMap = new Map(); // ID -> Discord Member Object
+        let membersMap = new Map(); 
 
         try {
-            // Fetch users from API (Only works for cached users or fetchable)
             const fetchedMembers = await guild.members.fetch({ user: allIDsArray });
             fetchedMembers.forEach(m => membersMap.set(m.id, m));
         } catch (e) {
             console.error("Bulk Fetch Error (Fallback to cache):", e);
-            // في حال الفشل، نستخدم الكاش الموجود
             allIDsArray.forEach(id => {
                 const m = guild.members.cache.get(id);
                 if (m) membersMap.set(id, m);
             });
         }
 
-        // دالة مساعدة لتجهيز كائن العضو مع اللون
+        // دالة لتجهيز كائن العضو (تستخدم getUserColor المعرفة بالأعلى)
         const prepareUserObj = async (id) => {
             const m = membersMap.get(id);
             if (!m) return null;
