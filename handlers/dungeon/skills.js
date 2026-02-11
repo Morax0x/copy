@@ -38,7 +38,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
     if (skill.id === 'skill_emperor_breath') {
         players.forEach(p => {
-            p.isDead = false; p.isPermDead = false; p.reviveCount = 0; 
+            p.isDead = false; p.isPermDead = false; p.reviveCount = 0; p.deathCount = 0; // تصفير عداد الموت للإمبراطور
             p.hp = p.maxHp; p.shield = p.maxHp; 
             p.effects.push({ type: 'atk_buff', val: 1.0, turns: 10 });
         });
@@ -102,7 +102,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
          switch(classType) {
              case 'Leader': 
                 players.forEach(m => { 
-                    if(!m.isDead) {
+                    if(!m.isDead && !m.isPermDead) {
                         m.effects.push({ type: 'atk_buff', val: 0.5, turns: 2 });
                         m.effects.push({ type: 'crit_buff', val: 1.0, turns: 2 });
                         m.effects.push({ type: 'luck_buff', val: 0.5, turns: 2 });
@@ -124,17 +124,21 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                 break;
 
              case 'Priest': 
-                const dead = players.filter(m => m.isDead && !m.isPermDead); 
+                // 🔥🔥 تعديل الكاهن: يعتمد على isPermDead من السستم الجديد 🔥🔥
+                const dead = players.filter(m => m.isDead); 
                 if (dead.length > 0) {
                     const t = dead[0]; 
-                    if (t.reviveCount >= 1) {
-                        t.isPermDead = true;
-                        log.push(`💀 **${t.name}** تحللت جثته وزهقت روحه ولا يمكن إحياؤه!`);
-                        if(threadChannel) threadChannel.send(`💀 **${t.name}** <@${t.id}> تحللت جثته وزهقت روحه!`).catch(()=>{});
+                    if (t.isPermDead) {
+                        // إذا كان متحلل، نبلغ الكاهن بفشل المحاولة ولا نضيع دوره (أو نضيعه كعقاب، الخيار لك)
+                        log.push(`💀 **${player.name}** حاول إنعاش **${t.name}** لكن الجثة تحللت!`);
+                        if(threadChannel) threadChannel.send(`⚠️ **${t.name}** جثته متحللة ولا يمكن إنعاشه!`).catch(()=>{});
                     } else {
+                        // إنعاش ناجح
                         t.isDead = false; 
+                        t.status = 'alive'; // إعادة الحالة
                         t.hp = Math.floor(t.maxHp * 0.2);
-                        t.reviveCount = (t.reviveCount || 0) + 1;
+                        // لا نصفر deathCount لنعرف كم مرة مات
+                        
                         if (t.class === 'Former Leader') {
                              const currentLeader = players.find(p => p.class === 'Leader' && !p.isDead);
                              if (currentLeader) {
@@ -150,7 +154,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                         else player.special_cooldown = 7;
                     }
                 } else {
-                    players.forEach(m => { if(!m.isDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
+                    players.forEach(m => { if(!m.isDead && !m.isPermDead) m.hp = Math.min(m.maxHp, m.hp + Math.floor(m.maxHp * 0.4)); });
                     log.push(`✨ **${player.name}** عالج الفريق!`);
                     const totalHealThreat = Math.floor((player.maxHp * 0.4) * players.filter(p=>!p.isDead).length / 2);
                     player.threat = (player.threat || 0) + totalHealThreat;
@@ -241,9 +245,10 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         const skillLevel = userSkillEntry ? userSkillEntry.currentLevel : 1;
 
         result.effectsApplied.forEach(eff => {
-            if (eff.type === 'poison' || eff.type === 'burn') {
+            // 🔥🔥🔥 إصلاح النزيف: تمت إضافة bleed هنا 🔥🔥🔥
+            if (eff.type === 'poison' || eff.type === 'burn' || eff.type === 'bleed') {
                 
-                // 🔥🔥🔥 التعديل المطلوب: 100 أساسي + 50 عن كل لفل 🔥🔥🔥
+                // التعديل المطلوب: 100 أساسي + 50 عن كل لفل
                 let baseVal = 100 + (skillLevel * 50); 
                 
                 // تطبيق الختم وسقف الضرر لضمان التوازن
@@ -286,6 +291,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
             } else if (eff.type === 'dispel') {
                 monster.effects = [];
             } else {
+                // هنا يتم إضافة النزيف وغيره
                 monster.effects.push(eff);
             }
         });
