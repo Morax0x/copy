@@ -1,5 +1,7 @@
 // handlers/dungeon/logic/status-monitor.js
 
+const { EmbedBuilder, Colors } = require("discord.js");
+
 /**
  * بدء مراقبة رسائل اللاعبين لمعرفة حالتهم (HP, Shield)
  */
@@ -14,7 +16,7 @@ function startStatusMonitor(threadChannel, players) {
         const player = players.find(p => p.id === m.author.id);
         if (!player) return; 
 
-        if (player.isDead) {
+        if (player.isDead || player.status === 'dead') {
              return m.reply({ content: `👻 **${player.name}** أنت ميت حالياً!` }).catch(()=>{});
         }
 
@@ -38,6 +40,10 @@ function startStatusMonitor(threadChannel, players) {
         if (player.shield > 0) {
             msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
         }
+        
+        if (player.status === 'downed') {
+            msgContent += `\n⚠️ **حالة حرجة:** متبقي ${player.deathCounter} جولات قبل التحلل!`;
+        }
 
         await m.reply({ content: msgContent }).catch(()=>{});
     });
@@ -45,4 +51,45 @@ function startStatusMonitor(threadChannel, players) {
     return collector;
 }
 
-module.exports = { startStatusMonitor };
+/**
+ * 🔥 الدالة الجديدة: معالجة عدادات الموت والتحلل
+ * يتم استدعاؤها في بداية كل جولة من الملف الرئيسي
+ */
+async function updateDownedTimers(players, threadChannel) {
+    let decompositionHappened = false;
+
+    for (const player of players) {
+        // نتحقق فقط من اللاعبين الساقطين (Downed)
+        if (player.status === 'downed' && !player.isPermDead) {
+            
+            // إنقاص العداد
+            player.deathCounter = (player.deathCounter || 0) - 1;
+
+            // إذا انتهى الوقت (التحلل)
+            if (player.deathCounter <= 0) {
+                player.status = 'dead';      // تحويل الحالة لميت
+                player.isDead = true;        // تأكيد الموت
+                player.isPermDead = true;    // 💀 موت نهائي (لا يمكن إنعاشه)
+                player.hp = 0;
+
+                // إرسال رسالة التحلل فوراً
+                const rotEmbed = new EmbedBuilder()
+                    .setTitle('💀 تحلل جثة')
+                    .setDescription(`مـات **${player.name}**.\nتحللت جثته وأصبحت روحه جزءاً من الدانجون .`)
+                    .setColor(Colors.DarkRed)
+                    .setThumbnail('https://i.postimg.cc/QtMZBt18/skull.png'); // صورة جمجمة
+
+                await threadChannel.send({ embeds: [rotEmbed] }).catch(()=>{});
+                decompositionHappened = true;
+            } else {
+                // تذكير باقتراب الموت (اختياري، لزيادة التوتر)
+                if (player.deathCounter === 1) {
+                    await threadChannel.send(`⚠️ **تنبيه:** **${player.name}** سيموت نهائياً في الجولة القادمة إذا لم يتم إنقاذه!`).catch(()=>{});
+                }
+            }
+        }
+    }
+    return decompositionHappened;
+}
+
+module.exports = { startStatusMonitor, updateDownedTimers };
