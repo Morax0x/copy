@@ -1,3 +1,5 @@
+// commands/economy/myfarm.js
+
 const { 
     EmbedBuilder, 
     Colors, 
@@ -72,7 +74,7 @@ module.exports = {
         const isOwner = user.id === userId; 
 
         // ============================================================
-        // 💀 فحص الموت للحيوانات
+        // 💀 فحص الموت للحيوانات (عند فتح المزرعة)
         // ============================================================
         const now = Date.now();
         const deadAnimals = [];
@@ -83,6 +85,7 @@ module.exports = {
             const animalDef = farmAnimals.find(a => String(a.id) === String(row.animalID));
             const maxHunger = animalDef ? (animalDef.max_hunger_days || 7) : 7;
 
+            // إذا كان هذا الحيوان جديداً وليس له وقت إطعام، نضبطه للآن
             if (!row.lastFedTimestamp) {
                 sql.prepare("UPDATE user_farm SET lastFedTimestamp = ? WHERE id = ?").run(now, row.id);
                 continue;
@@ -91,6 +94,7 @@ module.exports = {
             const diff = now - row.lastFedTimestamp;
             const daysHungry = Math.floor(diff / DAY_MS);
 
+            // إذا تجاوز الحد المسموح للجوع -> يموت
             if (daysHungry >= maxHunger) {
                 deadAnimals.push(`${row.quantity}x ${animalDef ? animalDef.name : 'حيوان مجهول'}`);
                 sql.prepare("DELETE FROM user_farm WHERE id = ?").run(row.id);
@@ -101,7 +105,7 @@ module.exports = {
         if (deadAnimals.length > 0 && isOwner) {
             const deathEmbed = new EmbedBuilder()
                 .setTitle('☠️ لقد نفقت بعض حيواناتك من الجوع!')
-                .setDescription(`بسبب الإهمال، خسرت:\n\n❌ **${deadAnimals.join('\n❌ ')}**`)
+                .setDescription(`بسبب الإهمال وطول فترة الجوع، خسرت:\n\n❌ **${deadAnimals.join('\n❌ ')}**`)
                 .setColor(Colors.Red);
             
             const msgPayload = { embeds: [deathEmbed], flags: MessageFlags.Ephemeral };
@@ -372,6 +376,7 @@ module.exports = {
                             const animal = farmAnimals.find(a => String(a.id) === String(animalId));
                             const feedId = animal.feed_id;
                             
+                            // 🔥🔥 التحقق من الكولداون (12 ساعة) 🔥🔥
                             const sample = sql.prepare("SELECT lastFedTimestamp FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT 1").get(userId, guildId, animalId);
                             if (sample && sample.lastFedTimestamp && (Date.now() - sample.lastFedTimestamp) < 12*3600*1000) {
                                 return subI.reply({ content: `✋ **${animal.name}** شبعان!\nيمكنك إطعامه مرة كل 12 ساعة.`, flags: MessageFlags.Ephemeral });
@@ -385,7 +390,10 @@ module.exports = {
                                 return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: MessageFlags.Ephemeral });
                             }
                             
+                            // 🔥🔥 التحديث في قاعدة البيانات (الإصلاح الحقيقي) 🔥🔥
+                            // 1. خصم العلف
                             sql.prepare("UPDATE user_inventory SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(totalAnimals, userId, guildId, feedId);
+                            // 2. تحديث وقت الإطعام (عشان ما يموت)
                             sql.prepare("UPDATE user_farm SET lastFedTimestamp = ? WHERE userID = ? AND guildID = ? AND animalID = ?").run(Date.now(), userId, guildId, animalId);
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح!`, flags: MessageFlags.Ephemeral });
