@@ -1,3 +1,5 @@
+// commands/family/marry.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
 // 🟢 قوائم صور الموافقة
@@ -22,7 +24,7 @@ const MORA_EMOJI = '<:mora:1435647151349698621>';
 
 module.exports = {
     name: 'marry',
-    description: 'طلب زواج مع تحديد المهر',
+    description: 'طلب زواج مع تحديد المهر (يمنع زواج المحارم)',
     aliases: ['زواج', 'خطبة'],
     
     async execute(message, args) {
@@ -30,14 +32,14 @@ module.exports = {
         const sql = client.sql;
         const guildId = message.guild.id;
 
-        // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
+        // دالة مساعدة للردود المؤقتة
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         };
 
         // =========================================================================
-        // 📜 قسم المساعدة (إذا لم يحدد الشخص ومن المبلغ)
+        // 📜 قسم المساعدة
         // =========================================================================
         const targetMemberCheck = message.mentions.members.first();
         if (!targetMemberCheck || !args[1]) {
@@ -88,7 +90,6 @@ module.exports = {
                 }
             });
 
-            // حذف رسالة الزر تلقائياً
             collector.on('end', () => helpMsg.delete().catch(() => {}));
             return;
         }
@@ -97,16 +98,13 @@ module.exports = {
         // 💍 بداية كود الزواج الفعلي
         // =========================================================================
 
-        // 1. التأكد من جدول الزواج
         sql.prepare(`CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT)`).run();
 
-        // 2. جلب الإعدادات
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(message.guild.id);
         if (!familyConfig || !familyConfig.maleRole || !familyConfig.femaleRole) {
             return message.reply("🚫 **لم يتم إعداد رتب العائلة!** اطلب من الإدارة استخدام `!set-family-role`.");
         }
 
-        // 3. التحقق من المدخلات
         const targetMember = message.mentions.members.first();
         let dowry = parseInt(args[1]);
 
@@ -117,14 +115,13 @@ module.exports = {
         if (targetMember.id === message.author.id) return replyTemp("❌ تبي تتزوج نفسك؟ استهدي بالله.");
         if (targetMember.user.bot) return replyTemp("🤖 لا يمكنك الزواج من الروبوتات!");
 
-        // 🔥🔥 4. التحقق من الرتب (تم الإصلاح ليدعم التعدد) 🔥🔥
         const checkRole = (member, rolesData) => {
             if (!rolesData) return false;
             try {
-                const roleIds = JSON.parse(rolesData); // يحاول يفكها كمصفوفة
+                const roleIds = JSON.parse(rolesData); 
                 if (Array.isArray(roleIds)) return roleIds.some(id => member.roles.cache.has(id));
             } catch {
-                return member.roles.cache.has(rolesData); // إذا كانت نص عادي (رتبة واحدة)
+                return member.roles.cache.has(rolesData);
             }
             return false;
         };
@@ -137,34 +134,32 @@ module.exports = {
         if (!isAuthorMale && !isAuthorFemale) return replyTemp("🚫 **يجب عليك تحديد جنسك أولاً!** (خذ رتبة ولد أو بنت).");
         if (!isTargetMale && !isTargetFemale) return replyTemp("🚫 **الطرف الآخر لم يحدد جنسه بعد!**");
 
-        // 5. قوانين الزواج (منع المثلية)
         if ((isAuthorMale && isTargetMale) || (isAuthorFemale && isTargetFemale)) {
             return replyTemp("<:5gyy:1414564326496534628> **مـا نستقـبل شـواذ اذلـف**");
         }
 
         // =========================================================
-        // 🧬 فحص المحارم (Incest Check) 🧬
+        // 🧬 فحص المحارم (Incest Check) - الحماية الجديدة 🧬
         // =========================================================
         
-        // أ. هل الطرف الآخر هو أحد الوالدين؟
+        // 1. هل الطرف الآخر هو أحد الوالدين؟ (Direct Parent)
         const isParent = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(targetMember.id, message.author.id, guildId);
         if (isParent) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
 
-        // ب. هل الطرف الآخر هو أحد الأبناء؟
+        // 2. هل الطرف الآخر هو أحد الأبناء؟ (Direct Child)
         const isChild = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(message.author.id, targetMember.id, guildId);
         if (isChild) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو ابنك/ابنتك.`);
 
-        // ج. هل الطرف الآخر أخ/أخت؟ (يشتركان في نفس الوالد)
+        // 3. هل الطرف الآخر أخ/أخت؟ (Sibling Check)
+        // (إذا كان لديكم أب واحد مشترك على الأقل)
         const authorParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(message.author.id, guildId).map(r => r.parentID);
         const targetParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(targetMember.id, guildId).map(r => r.parentID);
         
-        // تقاطع المصفوفتين (هل يوجد أب مشترك؟)
         const isSibling = authorParents.some(parent => targetParents.includes(parent));
         if (isSibling) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو أخوك/أختك (لديكم نفس الوالدين).`);
 
         // =========================================================
 
-        // 6. التحقق من الحد الأقصى (الشرع)
         const authorCount = sql.prepare("SELECT count(*) as count FROM marriages WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id).count;
         const targetCount = sql.prepare("SELECT count(*) as count FROM marriages WHERE userID = ? AND guildID = ?").get(targetMember.id, message.guild.id).count;
 
@@ -177,7 +172,6 @@ module.exports = {
         const alreadyMarried = sql.prepare("SELECT * FROM marriages WHERE userID = ? AND partnerID = ? AND guildID = ?").get(message.author.id, targetMember.id, message.guild.id);
         if (alreadyMarried) return replyTemp("❌ **أنتم متزوجين بعض أصـلاً!**");
 
-        // 7. فحص المال
         let authorData = client.getLevel.get(message.author.id, message.guild.id);
         if (!authorData || authorData.mora < dowry) {
             return replyTemp(`💸 **رصيدك لا يكفي للمهر!** تملك: ${authorData ? authorData.mora : 0} ${MORA_EMOJI}`);
@@ -211,7 +205,6 @@ module.exports = {
         const collector = proposalMsg.createMessageComponentCollector({ filter, time: 120000, max: 1 });
 
         collector.on('collect', async i => {
-            // 🔴 حالة الرفض
             if (i.customId === 'reject_marry') {
                 const rejectGif = REJECT_GIFS[Math.floor(Math.random() * REJECT_GIFS.length)];
 
@@ -225,15 +218,12 @@ module.exports = {
                 return;
             }
 
-            // 🟢 حالة القبول
             if (i.customId === 'accept_marry') {
-                // إعادة فحص المال
                 authorData = client.getLevel.get(message.author.id, message.guild.id);
                 if (authorData.mora < dowry) {
                     return i.update({ content: `❌ **فشلت العملية:** العريس صرف فلوسه أثناء الانتظار!`, components: [], embeds: [] });
                 }
 
-                // خصم وإضافة المهر
                 authorData.mora -= dowry;
                 client.setLevel.run(authorData);
 
@@ -242,10 +232,8 @@ module.exports = {
                 targetData.mora += dowry;
                 client.setLevel.run(targetData);
 
-                // تسجيل الزواج
                 const now = Date.now();
                 const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID) VALUES (?, ?, ?, ?)");
-                // نسجل الزواج مرتين (مرة لكل طرف) لتسهيل البحث
                 insert.run(message.author.id, targetMember.id, now, message.guild.id);
                 insert.run(targetMember.id, message.author.id, now, message.guild.id);
 
