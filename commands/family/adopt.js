@@ -1,9 +1,22 @@
+// commands/family/adopt.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
 const MORA_EMOJI = '<:mora:1435647151349698621>';
 const MAX_CHILDREN = 10;
 const BASE_ADOPT_FEE = 2000;
-const SUCCESS_IMAGE = "https://i.postimg.cc/NFjJ9WGf/09888ef8ca948e79af1de55c4133ba56.gif";
+
+// 1. Success Images List (قائمة صور النجاح العشوائية)
+const SUCCESS_IMAGES = [
+    "https://i.postimg.cc/NFjJ9WGf/09888ef8ca948e79af1de55c4133ba56.gif",
+    "https://i.postimg.cc/rmK7wjp0/9b69370e7a44d135d98fa1c5c3cdd14f.gif",
+    "https://i.postimg.cc/3wrPPY5j/072c330217a59b0edf061c88669d663b.gif",
+    "https://i.postimg.cc/htnF1VCW/dd75d02bb40ac5721b7357b33d735489.gif"
+];
+
+// صورة الرفض الخاصة (لك وللبوت)
+const BOT_REJECT_IMAGE = "https://i.postimg.cc/qvDt3BLj/106a40ccbff92cbaf02fd54ba9de5ebc.gif";
+const OWNER_ID = "1145327691772481577"; // الآيدي الخاص بك
 
 module.exports = {
     name: 'adopt',
@@ -19,7 +32,7 @@ module.exports = {
         // دالة مساعدة للردود المؤقتة
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
-            setTimeout(() => msg.delete().catch(() => {}), 8000); // 8 ثواني للقراءة
+            setTimeout(() => msg.delete().catch(() => {}), 8000); 
         };
 
         // 1. التحقق من المدخلات
@@ -28,6 +41,23 @@ module.exports = {
         if (!childMember) {
             return replyTemp(`❌ **خطأ في الاستخدام!**\nالطريقة الصحيحة: \`${message.content.split(' ')[0]} @الطفل\`\nمثال: \`!adopt @user\``);
         }
+
+        // --- 🛡️ حماية خاصة (لك وللبوت) 🛡️ ---
+        if (childMember.id === client.user.id || childMember.id === OWNER_ID) {
+            // إرسال الصورة فقط (بدون نص)
+            await message.reply({ files: [BOT_REJECT_IMAGE] });
+            
+            // إعطاء تايم أوت (60 ثانية)
+            if (message.member.moderatable) {
+                try {
+                    await message.member.timeout(60 * 1000, "محاولة تبني غير قانونية (تطاول على المقامات)");
+                } catch (e) {
+                    console.log(`[Anti-Adopt] Could not timeout user: ${e.message}`);
+                }
+            }
+            return; // إنهاء الأمر فوراً
+        }
+        // ---------------------------------------
 
         if (childMember.id === userId) return replyTemp("❌ لا يمكنك تبني نفسك!");
         if (childMember.user.bot) return replyTemp("🤖 لا يمكنك تبني الروبوتات!");
@@ -91,7 +121,6 @@ module.exports = {
             if (checked.has(current)) continue;
             checked.add(current);
 
-            // جلب آباء الشخص الحالي
             const parents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(current, guildId);
             for (const p of parents) {
                 if (p.parentID === childMember.id) {
@@ -103,10 +132,9 @@ module.exports = {
         }
 
         // هـ. فحص "الفروع" (Descendants Check) - هل الطفل هو حفيدك أصلاً؟
-        // هذا الفحص يمنع الجد من تبني حفيدته، أو تبني ابن الحفيد
         queue = [userId];
         checked = new Set();
-        let myDescendants = new Set(); // نحفظهم لفحص المصاهرة لاحقاً
+        let myDescendants = new Set();
 
         while (queue.length > 0) {
             let current = queue.shift();
@@ -124,8 +152,7 @@ module.exports = {
             if (checked.size > 50) break;
         }
 
-        // و. فحص "المصاهرة" (In-laws Check) - هل الطفل متزوج من أحد أبنائك/أحفادك؟
-        // مثال: زوجة الابن لا يجوز للأب تبنيها
+        // و. فحص "المصاهرة" (In-laws Check)
         const targetSpouse = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(childMember.id, guildId);
         
         if (targetSpouse && myDescendants.has(targetSpouse.partnerID)) {
@@ -134,7 +161,7 @@ module.exports = {
 
 
         // ==========================================================
-        // 🚦 مرحلة الموافقات (الزوجة أولاً، ثم الطفل)
+        // 🚦 مرحلة الموافقات
         // ==========================================================
 
         if (partnerId) {
@@ -175,7 +202,7 @@ module.exports = {
             }
         }
 
-        // طلب موافقة الطفل
+        // موافقة الطفل
         const rowChild = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('child_accept').setLabel('أقبل التبني').setStyle(ButtonStyle.Primary).setEmoji('👶'),
             new ButtonBuilder().setCustomId('child_reject').setLabel('أرفض').setStyle(ButtonStyle.Secondary)
@@ -231,21 +258,23 @@ module.exports = {
             stmt.run(userId, childMember.id, now, guildId);
 
             if (partnerId) {
-                // نتأكد أن الشريك ليس مسجلاً كأب مسبقاً
                 const checkPartner = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ?").get(partnerId, childMember.id);
                 if (!checkPartner) {
                     stmt.run(partnerId, childMember.id, now, guildId);
                 }
             }
 
+            // اختيار صورة ولون عشوائي
+            const randomImage = SUCCESS_IMAGES[Math.floor(Math.random() * SUCCESS_IMAGES.length)];
+
             const successEmbed = new EmbedBuilder()
-                .setColor(Colors.Green)
+                .setColor('Random') // لون عشوائي
                 .setTitle(`🎉 تهانينا للعائلة الجديدة!`)
                 .setDescription(
                     `أصبح **${childMember.displayName}** رسمياً ابن **${message.member.displayName}** ${partnerId ? `وشريكه` : ``}!\n` +
                     `🎁 **هدية:** تم تحويل **${fee.toLocaleString()}** ${MORA_EMOJI} للطفل.`
                 )
-                .setImage(SUCCESS_IMAGE);
+                .setImage(randomImage);
 
             await childConfirm.update({
                 content: `||${message.author} ${childMember}||`,
