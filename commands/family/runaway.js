@@ -1,6 +1,8 @@
+// commands/family/runaway.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
-const RUNAWAY_FEE = 1000; // تكلفة الهروب
+const RUNAWAY_FEE = 1000; // تكلفة الهروب الثابتة (يمكن جعلها ديناميكية إذا أردت)
 const MORA_EMOJI = '<:mora:1435647151349698621>'; 
 const RUNAWAY_GIF = "https://media.tenor.com/ScoBC7-a5QkAAAAC/anime-run.gif"; 
 
@@ -15,13 +17,13 @@ module.exports = {
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
+        // دالة مساعدة للردود المؤقتة
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         };
 
-        // 1. هل أنت ابن أصلاً؟ (نجلب قائمة الآباء للتأكد ولمعرفة عددهم)
+        // 1. هل أنت ابن أصلاً؟
         const parents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(userId, guildId);
 
         if (parents.length === 0) {
@@ -68,7 +70,7 @@ module.exports = {
             }
 
             if (i.customId === 'confirm_run') {
-                // إعادة فحص المال
+                // إعادة فحص المال (للاحتياط)
                 userData = client.getLevel.get(userId, guildId);
                 if (userData.mora < RUNAWAY_FEE) {
                     return i.update({ content: `❌ **فشلت الخطة:** ليس لديك مال كافٍ للتعويض!`, embeds: [], components: [] });
@@ -78,12 +80,13 @@ module.exports = {
                 userData.mora -= RUNAWAY_FEE;
                 client.setLevel.run(userData);
 
-                // 2. توزيع المبلغ على الآباء
-                // المبلغ لكل والد = المبلغ الكلي / عدد الوالدين
+                // 2. توزيع المبلغ على الآباء (الموجودين)
+                // إذا كان هناك أب واحد يأخذ المبلغ كاملاً، إذا اثنين يتقاسمونه
                 const amountPerParent = Math.floor(RUNAWAY_FEE / parents.length);
 
                 for (const p of parents) {
                     let parentData = client.getLevel.get(p.parentID, guildId);
+                    // إذا لم يكن للأب حساب، ننشئ له واحداً لاستلام التعويض
                     if (!parentData) parentData = { id: `${guildId}-${p.parentID}`, user: p.parentID, guild: guildId, xp: 0, level: 1, mora: 0 };
                     
                     parentData.mora += amountPerParent;
@@ -110,7 +113,7 @@ module.exports = {
 
         collector.on('end', (c, reason) => {
             if (reason === 'time') {
-                confirmMsg.edit({ content: `⏳ **انتهى الوقت..** يبدو أنك خفت من العقاب.`, embeds: [], components: [] });
+                confirmMsg.edit({ content: `⏳ **انتهى الوقت..** يبدو أنك خفت من العقاب.`, embeds: [], components: [] }).catch(()=>{});
             }
         });
     }
