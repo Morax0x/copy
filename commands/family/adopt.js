@@ -44,10 +44,7 @@ module.exports = {
 
         // --- 🛡️ حماية خاصة (لك وللبوت) 🛡️ ---
         if (childMember.id === client.user.id || childMember.id === OWNER_ID) {
-            // إرسال الصورة فقط (بدون نص)
             await message.reply({ files: [BOT_REJECT_IMAGE] });
-            
-            // إعطاء تايم أوت (60 ثانية)
             if (message.member.moderatable) {
                 try {
                     await message.member.timeout(60 * 1000, "محاولة تبني غير قانونية (تطاول على المقامات)");
@@ -55,7 +52,7 @@ module.exports = {
                     console.log(`[Anti-Adopt] Could not timeout user: ${e.message}`);
                 }
             }
-            return; // إنهاء الأمر فوراً
+            return;
         }
         // ---------------------------------------
 
@@ -81,7 +78,7 @@ module.exports = {
         }
 
         // ==========================================================
-        // 🧬 فحوصات شجرة العائلة الصارمة (Tree Logic) 🧬
+        // 🧬 فحوصات شجرة العائلة الصارمة (Incest Check) 🧬
         // ==========================================================
         
         // أ. هل أنت متزوج؟
@@ -95,8 +92,7 @@ module.exports = {
         const currentParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(childMember.id, guildId);
         
         if (currentParents.length > 0) {
-            // إذا كان لديه آباء، نسمح بالتبني في حالة واحدة فقط:
-            // أن يكون المتبني هو "زوج" الوالد الحالي (Step-parent adoption) لإكمال العائلة
+            // نسمح فقط بتبني "أبناء الزوج" (Step-Parent Adoption)
             const isStepParent = currentParents.some(row => {
                 const parentSpouse = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(row.parentID, guildId);
                 return parentSpouse && parentSpouse.partnerID === userId;
@@ -106,13 +102,12 @@ module.exports = {
                 return replyTemp(`🚫 **لا يمكن إتمام العملية!**\n**${childMember.displayName}** لديه عائلة بالفعل (أب/أم).\nلا يمكنك تبنيه إلا إذا كنت متزوجاً من والده/والدته الحاليين لإكمال العائلة.`);
             }
             
-            // إذا وصل هنا، فهو زوج الأم/الأب، لكن نتأكد أنه لم يتبناه مسبقاً
             if (currentParents.some(row => row.parentID === userId)) {
                 return replyTemp(`❌ **${childMember.displayName}** هو ابنك بالفعل!`);
             }
         }
 
-        // د. فحص "الأصول" (Ancestors Check) - هل الطفل هو أبوك/جدك؟
+        // 🔥 د. فحص الأصول (Ancestors Check) - هل الطفل هو أبوك/جدك؟
         let queue = [userId]; 
         let checked = new Set();
         
@@ -131,7 +126,7 @@ module.exports = {
             if (checked.size > 20) break; 
         }
 
-        // هـ. فحص "الفروع" (Descendants Check) - هل الطفل هو حفيدك أصلاً؟
+        // 🔥 هـ. فحص الفروع (Descendants Check) - هل الطفل هو حفيدك أصلاً؟
         queue = [userId];
         checked = new Set();
         let myDescendants = new Set();
@@ -152,7 +147,16 @@ module.exports = {
             if (checked.size > 50) break;
         }
 
-        // و. فحص "المصاهرة" (In-laws Check)
+        // 🔥 و. فحص الإخوة (Siblings Check) - هل هو أخوك؟
+        // (إذا كان لديكم أب واحد مشترك على الأقل)
+        const myParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(userId, guildId).map(r => r.parentID);
+        const childParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(childMember.id, guildId).map(r => r.parentID);
+        
+        if (myParents.some(p => childParents.includes(p))) {
+            return replyTemp(`🚫 **لا يعقل!** كيف تتبنى أخاك/أختك؟`);
+        }
+
+        // ز. فحص المصاهرة (In-laws Check)
         const targetSpouse = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(childMember.id, guildId);
         
         if (targetSpouse && myDescendants.has(targetSpouse.partnerID)) {
