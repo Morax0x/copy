@@ -5,7 +5,7 @@ const { triggerMimicChest } = require('../mimic-chest');
 const { triggerMysteryMerchant } = require('../mystery-merchant');
 
 /**
- * تطبيق تعزيزات خاصة بطوابق معينة (مثل الطابق 51)
+ * تطبيق تعزيزات خاصة .بطوابق معينة (مثل الطابق 51)
  * وأيضاً تأثيرات البيئة للثيمات الجديدة
  */
 async function applyFloorBuffs(floor, players, threadChannel) {
