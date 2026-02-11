@@ -15,6 +15,9 @@ const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
 const paymentCooldowns = new Set();
 
+// 🔥 متغير جديد لتتبع من استخدم وضع الشبح
+const ghostModeUsers = new Set();
+
 if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
 
 function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
@@ -26,7 +29,7 @@ function getWeekStartDateString() {
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
-     
+      
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
     const dailyID = `${userID}-${guildID}-${dateStr}`;
@@ -76,19 +79,27 @@ module.exports = {
 
         try {
             const isAfkTableExists = sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='afk'").get();
-             
+              
             if (isAfkTableExists) {
                 const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
 
                 if (afkData) {
                     const content = message.content.trim();
-                    if (!(content.startsWith('(') && content.endsWith(')'))) {
+                    // 🔥 منطق وضع الشبح الجديد (مرة واحدة فقط)
+                    const ghostKey = `${message.author.id}-${message.guild.id}`;
+                    const isGhostMessage = content.startsWith('(') && content.endsWith(')');
+                    
+                    // هل نسمح له بالبقاء في الـ AFK؟
+                    // نعم فقط إذا كانت رسالة شبح (بين قوسين) ولم يستخدم الفرصة من قبل
+                    const allowGhost = isGhostMessage && !ghostModeUsers.has(ghostKey);
+
+                    if (!allowGhost) {
+                        // هنا يتم إلغاء الـ AFK (إما رسالة عادية، أو رسالة شبح ثانية)
                         const now = Math.floor(Date.now() / 1000);
                         const diffSeconds = now - afkData.timestamp;
                         
-                        // الحساب بالدقائق (2 مورا لكل دقيقة)
                         const minutes = Math.floor(diffSeconds / 60); 
-                        const calculatedMinutes = Math.min(minutes, 1440); // الحد الأقصى 24 ساعة
+                        const calculatedMinutes = Math.min(minutes, 1440); 
                         const reward = calculatedMinutes * 2; 
 
                         if (reward > 0) {
@@ -116,6 +127,9 @@ module.exports = {
                         }
 
                         sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
+                        
+                        // تنظيف قائمة الشبح عند الخروج
+                        ghostModeUsers.delete(ghostKey);
 
                         try {
                             const currentName = message.member.displayName;
@@ -124,12 +138,10 @@ module.exports = {
                             }
                         } catch (e) {}
 
-                        // العداد الديناميكي من ديسكورد (منذ X دقيقة)
                         const timeAgo = `<t:${afkData.timestamp}:R>`;
                         
                         let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
                         
-                        // 🔥🔥 التعديل: استخدام العداد الديناميكي في رسالة الجائزة 🔥🔥
                         if (reward > 0) {
                             replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
                         }
@@ -155,6 +167,10 @@ module.exports = {
                                 setTimeout(() => notifyMsg.delete().catch(() => {}), 60000);
                             } 
                         }
+                    } else {
+                        // إذا كانت رسالة شبح مسموحة (أول مرة)
+                        ghostModeUsers.add(ghostKey);
+                        // لا تحذف الـ AFK، وتجاهل الكود التالي (لا تحسب XP للرسالة المخفية إذا أردت، أو اتركها تكمل)
                     } 
                 }
 
@@ -249,7 +265,7 @@ module.exports = {
             if (!aiChannelData && message.channel.parentId) {
                 if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
                     const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                     
+                      
                     if (paidStatus) {
                         aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
                         isPaidSession = true;
@@ -462,8 +478,8 @@ module.exports = {
                             const isMentionOn = notifData ? notifData.levelNotif : 1; 
                             const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
                             let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
-                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
+                                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
                             const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
                             if (milestones.includes(level.level)) {
                                 contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
