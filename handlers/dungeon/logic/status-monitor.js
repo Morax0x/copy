@@ -3,10 +3,10 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 
 /**
- * بدء مراقبة رسائل اللاعبين لمعرفة حالتهم (HP, Shield)
+ * بدء مراقبة رسائل اللاعبين لمعرفة حالتهم (HP, Shield, Death Count)
  */
 function startStatusMonitor(threadChannel, players) {
-    const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي'];
+    const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي', 'وضعي'];
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
     
     // إنشاء المراقب
@@ -16,10 +16,17 @@ function startStatusMonitor(threadChannel, players) {
         const player = players.find(p => p.id === m.author.id);
         if (!player) return; 
 
-        if (player.isDead || player.status === 'dead') {
-             return m.reply({ content: `👻 **${player.name}** أنت ميت حالياً!` }).catch(()=>{});
+        // إذا كان متحلل (موت نهائي)
+        if (player.isPermDead) {
+             return m.reply({ content: `💀 **${player.name}** جثتك متحللة.. لقد غادرت عالم الأحياء نهائياً.` }).catch(()=>{});
         }
 
+        // إذا كان ميت حالياً (قابل للإنعاش)
+        if (player.isDead) {
+             return m.reply({ content: `👻 **${player.name}** أنت ميت (الموتة رقم ${player.deathCount || 0}). اطلب من الكاهن إنعاشك!` }).catch(()=>{});
+        }
+
+        // الحسابات للعرض (شريط الصحة)
         const percent = Math.max(0, Math.min(1, player.hp / player.maxHp));
         const filled = Math.round(percent * 10);
         const empty = 10 - filled;
@@ -34,6 +41,9 @@ function startStatusMonitor(threadChannel, players) {
             'Former Leader': 'قائد سابق'
         };
         const arClass = classMap[player.class] || player.class;
+        
+        const deaths = player.deathCount || 0;
+        const livesLeft = 3 - deaths; // 3 محاولات إجمالية
 
         let msgContent = `👤 **${player.name}** [${arClass}]\n[${bar}] ❤️ **${player.hp}/${player.maxHp}**`;
         
@@ -41,9 +51,8 @@ function startStatusMonitor(threadChannel, players) {
             msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
         }
         
-        if (player.status === 'downed') {
-            msgContent += `\n⚠️ **حالة حرجة:** متبقي ${player.deathCounter} جولات قبل التحلل!`;
-        }
+        // عرض حالة الموت والمحاولات
+        msgContent += `\n💀 **سجل الموت:** ${deaths}/3 (متبقي ${livesLeft} فرص للتحلل)`;
 
         await m.reply({ content: msgContent }).catch(()=>{});
     });
@@ -52,44 +61,11 @@ function startStatusMonitor(threadChannel, players) {
 }
 
 /**
- * 🔥 الدالة الجديدة: معالجة عدادات الموت والتحلل
- * يتم استدعاؤها في بداية كل جولة من الملف الرئيسي
+ * 🔥 دالة فارغة (Dummy Function) للحفاظ على توافق الملفات القديمة
+ * لم نعد بحاجة لتحديث العدادات لأن الموت أصبح فورياً عند الضربة
  */
 async function updateDownedTimers(players, threadChannel) {
-    let decompositionHappened = false;
-
-    for (const player of players) {
-        // نتحقق فقط من اللاعبين الساقطين (Downed)
-        if (player.status === 'downed' && !player.isPermDead) {
-            
-            // إنقاص العداد
-            player.deathCounter = (player.deathCounter || 0) - 1;
-
-            // إذا انتهى الوقت (التحلل)
-            if (player.deathCounter <= 0) {
-                player.status = 'dead';      // تحويل الحالة لميت
-                player.isDead = true;        // تأكيد الموت
-                player.isPermDead = true;    // 💀 موت نهائي (لا يمكن إنعاشه)
-                player.hp = 0;
-
-                // إرسال رسالة التحلل فوراً
-                const rotEmbed = new EmbedBuilder()
-                    .setTitle('💀 تحلل جثة')
-                    .setDescription(`مـات **${player.name}**.\nتحللت جثته وأصبحت روحه جزءاً من الدانجون .`)
-                    .setColor(Colors.DarkRed)
-                    .setThumbnail('https://i.postimg.cc/QtMZBt18/skull.png'); // صورة جمجمة
-
-                await threadChannel.send({ embeds: [rotEmbed] }).catch(()=>{});
-                decompositionHappened = true;
-            } else {
-                // تذكير باقتراب الموت (اختياري، لزيادة التوتر)
-                if (player.deathCounter === 1) {
-                    await threadChannel.send(`⚠️ **تنبيه:** **${player.name}** سيموت نهائياً في الجولة القادمة إذا لم يتم إنقاذه!`).catch(()=>{});
-                }
-            }
-        }
-    }
-    return decompositionHappened;
+    return false; // لا تفعل شيئاً
 }
 
 module.exports = { startStatusMonitor, updateDownedTimers };
