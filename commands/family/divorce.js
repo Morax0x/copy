@@ -1,3 +1,5 @@
+// commands/family/divorce.js
+
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require("discord.js");
 
 const ALIMONY_AMOUNT = 2500; // مبلغ النفقة
@@ -14,7 +16,7 @@ const DIVORCE_GIFS = [
 
 module.exports = {
     name: 'divorce',
-    description: 'إنهاء الزواج (الطلاق/الخلع) مع دعم تعدد الزوجات',
+    description: 'إنهاء الزواج (الطلاق/الخلع) مع دعم تعدد الزوجات والطلاق التلقائي للمغادرين',
     aliases: ['طلاق', 'انفصال', 'خلع'],
 
     async execute(message, args) {
@@ -49,11 +51,9 @@ module.exports = {
             }
 
             if (allMarriages.length > 1) {
-                // 🛑 هنا الرد التعليمي عند الخطأ (تعدد الزوجات بدون تحديد)
                 const msg = await message.reply({
                     content: `🛑 **لديك ${allMarriages.length} زوجات!**\nيجب عليك تحديد من تريد طلاقها.\n\n📝 **الصيغة الصحيحة:** \`!divorce @الزوجة\``
                 });
-                // حذف الرسالة بعد 5 ثواني
                 setTimeout(() => msg.delete().catch(() => {}), 5000);
                 return;
             }
@@ -62,13 +62,49 @@ module.exports = {
             partnerId = allMarriages[0].partnerID;
         }
 
-        // جلب كائن العضو (Partner)
-        const partner = await message.guild.members.fetch(partnerId).catch(() => null);
-        if (!partner) return message.reply("⚠️ **الشريك غير موجود بالسيرفر!** سيتم فسخ العقد تلقائياً (تواصل مع الإدارة).");
+        // 🔥🔥 التحقق من وجود الشريك في السيرفر (Auto-Divorce Logic) 🔥🔥
+        let partner = await message.guild.members.fetch(partnerId).catch(() => null);
+
+        if (!partner) {
+            // الشريك غادر السيرفر -> طلاق تلقائي فوري
+            const stmt = sql.prepare("DELETE FROM marriages WHERE (userID = ? AND partnerID = ?) OR (userID = ? AND partnerID = ?) AND guildID = ?");
+            stmt.run(user.id, partnerId, partnerId, user.id, guildId);
+
+            // تحرير الأطفال (يصبحون في حضانة الطرف الموجود)
+            sql.prepare("UPDATE children SET parentID = ? WHERE parentID = ? AND guildID = ?").run(user.id, partnerId, guildId);
+
+            const embed = new EmbedBuilder()
+                .setColor("Grey")
+                .setTitle("⚖️ فسخ عقد تلقائي")
+                .setDescription(
+                    `بما أن الشريك (<@${partnerId}>) غادر السيرفر، تم فسخ عقد الزواج تلقائياً.\n` +
+                    `👶 **الحضانة:** انتقلت حضانة جميع الأطفال إليك.`
+                )
+                .setFooter({ text: "نظام الطلاق التلقائي" });
+
+            return message.reply({ embeds: [embed] });
+        }
+
+        // ==========================================================
+        // 🔄 إجراءات الطلاق العادية (الشريك موجود)
+        // ==========================================================
 
         // 2. تحديد نوع الإجراء (طلاق أم خلع)
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(guildId);
-        const isMale = user.roles.cache.has(familyConfig?.maleRole);
+        
+        // التحقق من الرتب لتحديد الجنس
+        const checkRole = (rolesData) => {
+            if (!rolesData) return false;
+            try {
+                const roleIds = JSON.parse(rolesData);
+                if (Array.isArray(roleIds)) return roleIds.some(id => user.roles.cache.has(id));
+            } catch {
+                return user.roles.cache.has(rolesData);
+            }
+            return false;
+        };
+
+        const isMale = familyConfig && checkRole(familyConfig.maleRole);
         
         let title, desc, footer;
         let cost = 0;
@@ -140,18 +176,21 @@ module.exports = {
         const collector = courtMsg.createMessageComponentCollector({ time: 300000 });
 
         collector.on('collect', async i => {
+            // إلغاء الطلاق
             if (i.customId === 'cancel_divorce') {
                 if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'ليس لك علاقة!', ephemeral: true });
                 await i.update({ content: `🏳️ **تم إلغاء الإجراءات.**`, embeds: [], components: [] });
                 return;
             }
 
+            // تأكيد الطلاق المباشر (بدون أطفال)
             if (i.customId === 'confirm_divorce_direct') {
                 if (i.user.id !== user.id) return i.reply({ content: `⚠️ **هذا القرار بيد صاحب الطلب (${user.displayName}) فقط!**`, ephemeral: true });
                 await performDivorce(i, user, partner, cost, null);
                 return;
             }
 
+            // بدء جلسة الحضانة
             if (i.customId === 'custody_session') {
                 if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'للمتزوجين فقط!', ephemeral: true });
 
@@ -167,19 +206,23 @@ module.exports = {
                 });
             }
 
+            // خيارات الحضانة
             if (i.customId === 'keep_kids' || i.customId === 'leave_kids') {
                 const choice = i.customId === 'keep_kids' ? 'keep' : 'leave';
                 custodyVotes[i.user.id] = choice;
 
                 await i.update({ content: `✅ تم تسجيل رغبتك: **${choice === 'keep' ? 'الاحتفاظ' : 'التخلي'}**`, components: [] });
 
+                // التحقق من اكتمال التصويت
                 if (custodyVotes[user.id] && custodyVotes[partner.id]) {
                     if (custodyVotes[user.id] !== custodyVotes[partner.id]) {
+                        // اتفاق ناجح (واحد يبي والثاني ما يبي)
                         const keeper = custodyVotes[user.id] === 'keep' ? user : partner;
                         await performDivorce(courtMsg, user, partner, cost, keeper); 
                     } else {
+                        // تعارض (الاثنين يبون أو الاثنين ما يبون)
                         await courtMsg.edit({ 
-                            content: `❌ **فشل الطلاق!**\nاختلف الطرفان على الحضانة.\nحاولوا مرة أخرى.`, 
+                            content: `❌ **فشل الطلاق!**\nاختلف الطرفان على الحضانة (كلاكما اخترتما نفس الخيار).\nحاولوا مرة أخرى بتفاهم أكبر.`, 
                             embeds: [], 
                             components: [] 
                         });
