@@ -233,9 +233,18 @@ module.exports = {
                 client.setLevel.run(targetData);
 
                 const now = Date.now();
-                const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID) VALUES (?, ?, ?, ?)");
-                insert.run(message.author.id, targetMember.id, now, message.guild.id);
-                insert.run(targetMember.id, message.author.id, now, message.guild.id);
+                
+                // تسجيل الزواج (مع حماية من الأخطاء)
+                try {
+                    const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID) VALUES (?, ?, ?, ?)");
+                    insert.run(message.author.id, targetMember.id, now, message.guild.id);
+                    insert.run(targetMember.id, message.author.id, now, message.guild.id);
+                } catch (err) {
+                    if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                        return i.update({ content: `❌ **حدث خطأ في قاعدة البيانات:** يبدو أن البيانات مسجلة مسبقاً أو أن الجدول قديم لا يدعم التعدد.`, components: [], embeds: [] });
+                    }
+                    console.error(err);
+                }
 
                 const acceptGif = ACCEPT_GIFS[Math.floor(Math.random() * ACCEPT_GIFS.length)];
 
