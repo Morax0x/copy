@@ -1,3 +1,5 @@
+// commands/economy/gametime.js
+
 const { 
     EmbedBuilder, 
     SlashCommandBuilder, 
@@ -7,22 +9,21 @@ const {
     ButtonStyle, 
     ComponentType 
 } = require("discord.js");
-const SQLite = require("better-sqlite3");
 const path = require('path');
 
-// استدعاء ملف إعدادات الصيد لحساب الكولداون الديناميكي
+// استدعاء ملف إعدادات الصيد
 const rootDir = process.cwd();
 let fishingConfig = { rods: [], boats: [] };
 try {
     fishingConfig = require(path.join(rootDir, 'json', 'fishing-config.json'));
 } catch (e) {
-    console.warn("[GameTime] Could not load fishing-config.json, using defaults.");
     fishingConfig.rods = [{ level: 1, cooldown: 300000 }]; 
     fishingConfig.boats = [{ level: 1, speed_bonus: 0 }];
 }
 
 const EMOJI_READY = '🟢';
 const EMOJI_WAIT = '🔴';
+const EMOJI_ALL = '🟣';
 const HIDDEN_EMBED_IMAGE = 'https://i.postimg.cc/m2ZrjxB9/time.png';
 
 function formatTimeSimple(ms) {
@@ -32,13 +33,10 @@ function formatTimeSimple(ms) {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
 
-    if (hours > 0) {
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
+    if (hours > 0) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// دالة لحساب الوقت المتبقي لمنتصف الليل بتوقيت السعودية (للراتب)
 function getTimeUntilNextMidnightKSA() {
     const now = new Date();
     const ksaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Riyadh' }));
@@ -47,12 +45,10 @@ function getTimeUntilNextMidnightKSA() {
     return nextMidnight.getTime() - ksaTime.getTime();
 }
 
-// دالة لمعرفة تاريخ اليوم بتوقيت السعودية
 function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// قائمة الأوامر الثابتة
 const COMMANDS_TO_CHECK = [
     { name: 'work', db_column: 'lastWork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
     { name: 'rob', db_column: 'lastRob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
@@ -81,11 +77,8 @@ module.exports = {
     description: 'يعرض الوقت المتبقي لاستخدام أوامر الاقتصاد.',
 
     async execute(interactionOrMessage, args) {
-
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, guild;
-        let targetUser;
-        let originalUser; 
+        let interaction, message, client, guild, targetUser, originalUser; 
 
         try {
             if (isSlash) {
@@ -103,87 +96,83 @@ module.exports = {
                 originalUser = message.author;
             }
 
-            const getScore = client.getLevel;
-            let data = getScore.get(targetUser.id, guild.id);
-            if (!data) {
-                data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
-            }
+            // دالة لحساب البيانات لأي مستخدم
+            const calculateUserData = (userToCheck) => {
+                const getScore = client.getLevel;
+                let data = getScore.get(userToCheck.id, guild.id);
+                if (!data) data = { ...client.defaultData, user: userToCheck.id, guild: guild.id };
 
-            const now = Date.now();
-            
-            const readyGames = [];
-            const waitGames = [];
+                const now = Date.now();
+                const readyGames = [];
+                const waitGames = [];
 
-            // 1. معالجة خاصة للراتب (Daily)
-            const lastDaily = data.lastDaily || 0;
-            const todayKSA = getKSADateString(now);
-            const lastDailyKSA = getKSADateString(lastDaily);
+                // 1. الراتب
+                const lastDaily = data.lastDaily || 0;
+                const todayKSA = getKSADateString(now);
+                const lastDailyKSA = getKSADateString(lastDaily);
 
-            if (todayKSA === lastDailyKSA) {
-                const timeUntilMidnight = getTimeUntilNextMidnightKSA();
-                waitGames.push(`${EMOJI_WAIT} **راتب**: \`${formatTimeSimple(timeUntilMidnight)}\``);
-            } else {
-                readyGames.push(`${EMOJI_READY} **راتب**`);
-            }
-
-            // 2. حساب الأوامر الثابتة
-            for (const cmd of COMMANDS_TO_CHECK) {
-                const lastUsed = data[cmd.db_column] || 0;
-                const cooldownAmount = cmd.cooldown;
-                const timeLeft = lastUsed + cooldownAmount - now;
-
-                if (timeLeft > 0) {
-                    waitGames.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
+                if (todayKSA === lastDailyKSA) {
+                    const timeUntilMidnight = getTimeUntilNextMidnightKSA();
+                    waitGames.push(`${EMOJI_WAIT} **راتب**: \`${formatTimeSimple(timeUntilMidnight)}\``);
                 } else {
-                    readyGames.push(`${EMOJI_READY} **${cmd.label}**`);
+                    readyGames.push(`${EMOJI_READY} **راتب**`);
                 }
-            }
 
-            // 3. 🎣 حساب كولداون الصيد (ديناميكي)
-            const userRodLevel = data.rodLevel || 1;
-            const userBoatLevel = data.boatLevel || 1;
+                // 2. الأوامر الثابتة
+                for (const cmd of COMMANDS_TO_CHECK) {
+                    const lastUsed = data[cmd.db_column] || 0;
+                    const cooldownAmount = cmd.cooldown;
+                    const timeLeft = lastUsed + cooldownAmount - now;
 
-            const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
-            const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
+                    if (timeLeft > 0) {
+                        waitGames.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
+                    } else {
+                        readyGames.push(`${EMOJI_READY} **${cmd.label}**`);
+                    }
+                }
 
-            let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
-            if (fishCooldown < 10000) fishCooldown = 10000;
+                // 3. الصيد
+                const userRodLevel = data.rodLevel || 1;
+                const userBoatLevel = data.boatLevel || 1;
+                const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
+                const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
+                let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
+                if (fishCooldown < 10000) fishCooldown = 10000;
+                const lastFish = data.lastFish || 0;
+                const fishTimeLeft = lastFish + fishCooldown - now;
 
-            const lastFish = data.lastFish || 0;
-            const fishTimeLeft = lastFish + fishCooldown - now;
+                if (fishTimeLeft > 0) {
+                    waitGames.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
+                } else {
+                    readyGames.push(`${EMOJI_READY} **صيد**`);
+                }
 
-            if (fishTimeLeft > 0) {
-                waitGames.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
-            } else {
-                readyGames.push(`${EMOJI_READY} **صيد**`);
-            }
+                return { readyGames, waitGames };
+            };
+
+            // حساب البيانات الأساسية للرسالة الأولى
+            const initialData = calculateUserData(targetUser);
 
             // بناء الإيمبد الرئيسي
             const embed = new EmbedBuilder()
                 .setTitle('✥ وقـت الالعـاب')
                 .setColor("Random")
-                .setThumbnail('https://i.postimg.cc/zGqbJNzm/ayqwnt.png') // الصورة الصغيرة
+                .setThumbnail('https://i.postimg.cc/zGqbJNzm/ayqwnt.png')
                 .setDescription(`
 ✶ اختر الزر المناسب أدناه لعرض الوقت المتبقي لكل لعبة
 
 ✶ الالعاب المتـاحـة: ${EMOJI_READY}
 ✶ الالعاب الغير متـاحة: ${EMOJI_WAIT}
+✶ عـرض الكل: ${EMOJI_ALL}
                 `)
                 .setTimestamp();
 
-            // بناء الأزرار (رمادية وبدون كلام)
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('show_ready')
-                    .setStyle(ButtonStyle.Secondary) // رمادي
-                    .setEmoji(EMOJI_READY),
-                new ButtonBuilder()
-                    .setCustomId('show_wait')
-                    .setStyle(ButtonStyle.Secondary) // رمادي
-                    .setEmoji(EMOJI_WAIT)
+                new ButtonBuilder().setCustomId('show_ready').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_READY),
+                new ButtonBuilder().setCustomId('show_all').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_ALL),
+                new ButtonBuilder().setCustomId('show_wait').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_WAIT)
             );
 
-            // إرسال الرسالة
             let sentMessage;
             if (isSlash) {
                 sentMessage = await interaction.editReply({ embeds: [embed], components: [row] });
@@ -191,48 +180,54 @@ module.exports = {
                 sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
             }
 
-            // إنشاء كوليكتور للأزرار
             const collector = sentMessage.createMessageComponentCollector({ 
                 componentType: ComponentType.Button, 
                 time: 60000 
             });
 
             collector.on('collect', async (i) => {
-                if (i.user.id !== originalUser.id) {
-                    return i.reply({ content: "🚫 هذا الأمر ليس لك.", ephemeral: true });
-                }
+                // 🔥 التعديل هنا: تحديد من هو المستخدم المستهدف بناءً على من ضغط الزر
+                // إذا الضغط من صاحب الأمر -> نعرض بيانات التارجت الأصلي
+                // إذا الضغط من شخص غريب -> نعرض بياناته هو شخصياً
+                const clickerIsOwner = i.user.id === originalUser.id;
+                const subjectUser = clickerIsOwner ? targetUser : i.user;
+
+                // إعادة حساب البيانات للشخص المحدد
+                const { readyGames, waitGames } = calculateUserData(subjectUser);
+
+                let finalDesc = "";
+                let finalColor = "Random";
 
                 if (i.customId === 'show_ready') {
-                    const desc = readyGames.length > 0 
-                        ? `**✅ القائمة المتاحة لـ ${targetUser.username}:**\n\n${readyGames.join('\n')}` 
-                        : `❌ لا توجد ألعاب متاحة حالياً لـ ${targetUser.username}..`;
-                    
-                    // إيمبد الرد المخفي
-                    const hiddenEmbed = new EmbedBuilder()
-                        .setColor("Green")
-                        .setDescription(desc)
-                        .setImage(HIDDEN_EMBED_IMAGE); // الصورة الكبيرة
-
-                    await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
+                    finalDesc = readyGames.length > 0 
+                        ? `**✅ القائمة المتاحة لـ ${subjectUser.username}:**\n\n${readyGames.join('\n')}` 
+                        : `❌ لا توجد ألعاب متاحة حالياً لـ ${subjectUser.username}..`;
+                    finalColor = "Green";
                 } 
                 else if (i.customId === 'show_wait') {
-                    const desc = waitGames.length > 0 
-                        ? `**⏳ قائمة الانتظار لـ ${targetUser.username}:**\n\n${waitGames.join('\n')}` 
-                        : `جـميـع الالعـاب متاحـة لـك الان !`; // الرسالة الخاصة عند خلو القائمة
-
-                    // إيمبد الرد المخفي
-                    const hiddenEmbed = new EmbedBuilder()
-                        .setColor("Red")
-                        .setDescription(desc)
-                        .setImage(HIDDEN_EMBED_IMAGE); // الصورة الكبيرة
-
-                    await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
+                    finalDesc = waitGames.length > 0 
+                        ? `**⏳ قائمة الانتظار لـ ${subjectUser.username}:**\n\n${waitGames.join('\n')}` 
+                        : `جـميـع الالعـاب متاحـة لـك الان !`;
+                    finalColor = "Red";
                 }
+                else if (i.customId === 'show_all') {
+                    const allGames = [...readyGames, ...waitGames];
+                    finalDesc = `**📋 الحالة العامة لـ ${subjectUser.username}:**\n\n${allGames.join('\n')}`;
+                    finalColor = "Blue";
+                }
+
+                const hiddenEmbed = new EmbedBuilder()
+                    .setColor(finalColor)
+                    .setDescription(finalDesc)
+                    .setImage(HIDDEN_EMBED_IMAGE);
+
+                await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
             });
 
             collector.on('end', () => {
                 const disabledRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('show_ready').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_READY).setDisabled(true),
+                    new ButtonBuilder().setCustomId('show_all').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_ALL).setDisabled(true),
                     new ButtonBuilder().setCustomId('show_wait').setStyle(ButtonStyle.Secondary).setEmoji(EMOJI_WAIT).setDisabled(true)
                 );
                 
@@ -245,16 +240,6 @@ module.exports = {
 
         } catch (error) {
             console.error("Error in gametime command:", error);
-            const errorPayload = { content: "حدث خطأ أثناء جلب الأوقات.", flags: [MessageFlags.Ephemeral] };
-            if (isSlash) {
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply(errorPayload);
-                } else {
-                    await interaction.reply(errorPayload);
-                }
-            } else {
-                message.reply(errorPayload.content);
-            }
         }
     }
 };
