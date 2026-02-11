@@ -1,6 +1,6 @@
 // handlers/dungeon/logic/monster-turn.js
 
-const { EmbedBuilder } = require("discord.js"); // تأكدنا من استدعاء EmbedBuilder
+const { EmbedBuilder } = require("discord.js");
 const { getFloorCaps } = require('./seal-system'); 
 const { applyDamageToPlayer } = require('../utils'); 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
@@ -8,8 +8,8 @@ const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
 // --- 🧠 دالة تحديد الأهداف ---
 function getTacticalTargets(players, count, monster) {
-    // نستهدف الأحياء فقط (الذين ليسوا موتى ولا downed)
-    let alive = players.filter(p => p.status !== 'dead' && p.status !== 'downed');
+    // نستهدف الأحياء فقط (الذين ليسوا موتى نهائياً isPermDead ولا موتى حالياً isDead)
+    let alive = players.filter(p => !p.isDead && !p.isPermDead);
     if (alive.length === 0) return [];
 
     if (monster.targetFocusId) {
@@ -116,7 +116,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     // هجوم المستدعي
     players.forEach(p => {
-        if (!p.isDead && p.status !== 'downed' && p.summon && p.summon.active) {
+        if (!p.isDead && !p.isPermDead && p.summon && p.summon.active) {
             const atkRatio = p.summon.atkRatio || 0.7;
             let petDmg = Math.floor(p.atk * atkRatio) || 1;
             petDmg = applyLocalCap(petDmg, damageCap);
@@ -156,7 +156,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     }
 
     // --- 🎮 منطق الهجوم (AI) ---
-    const alive = players.filter(p => p.status !== 'dead' && p.status !== 'downed');
+    const alive = players.filter(p => !p.isDead && !p.isPermDead);
     if (alive.length === 0) return false;
 
     let skillUsed = false;
@@ -300,45 +300,61 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     if (isNaN(monster.hp)) monster.hp = 0;
 
     // ============================================================
-    // ☠️ معالجة الوفيات والسقوط (Downed & Death) ☠️
+    // 🔥🔥🔥 تعديل سستم الموت (The New Death System) 🔥🔥🔥
     // ============================================================
-    // نحدد اللاعبين الذين وصلوا للصفر للتو ولم يتم تغيير حالتهم بعد
-    const justDowned = players.filter(p => p.hp <= 0 && p.status === 'alive');
     
-    for (const p of justDowned) {
-        // 1. تحويل الحالة إلى downed
-        p.status = 'downed';
-        p.hp = 0; // لضمان عدم وجود أرقام سالبة
-        p.deathCounter = 3; // عدد الجولات قبل التحلل
-
-        // 2. إرسال رسالة السقوط في الشات
-        const downEmbed = new EmbedBuilder()
-            .setTitle('⚠️ سقوط محارب!')
-            .setDescription(`**${p.name}** سقط مغشياً عليه ونزف حتى الموت!\nلديه **${p.deathCounter}** جولات فقط ليتم إنقاذه قبل أن يتحلل.`)
-            .setColor('Orange');
+    // نحدد من مات في هذا الدور (وصل دمه للصفر وهو لسا عايش)
+    const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead && !p.isPermDead);
+    
+    for (const p of deadJustNow) {
+        // 1. زيادة عداد الموتات
+        p.deathCount = (p.deathCount || 0) + 1;
         
-        await threadChannel.send({ embeds: [downEmbed] }).catch(()=>{});
+        // 2. تحديث الحالة فوراً
+        p.isDead = true; 
+        p.hp = 0;
 
-        // 3. تأثير موت الكاهن (شفاء أخير)
+        // 3. الفحص: هل هذه الموتة الثالثة؟
+        if (p.deathCount >= 3) {
+            // ☠️ حالة التحلل الفوري
+            p.isPermDead = true; // علامة التحلل (مهمة للكاهن)
+            p.status = 'decomposed'; // حالة نصية للتوضيح
+
+            const rotEmbed = new EmbedBuilder()
+                .setTitle('💀 تحللت الجثة!')
+                .setDescription(`**${p.name}** سقط للمرة الثالثة والأخيرة.\nتلاشت روحه وتحللت جثته فوراً.. لا يمكن إنعاشه بعد الآن!`)
+                .setColor('DarkRed')
+                .setThumbnail('https://i.postimg.cc/QtMZBt18/skull.png');
+
+            await threadChannel.send({ embeds: [rotEmbed] }).catch(()=>{});
+
+        } else {
+            // 💀 حالة الموت القابل للإنعاش (الموتة 1 أو 2)
+            const remainingLives = 3 - p.deathCount;
+            
+            const deathEmbed = new EmbedBuilder()
+                .setTitle('🩸 سقوط محارب')
+                .setDescription(`**${p.name}** سقط في أرض المعركة! (الموتة رقم **${p.deathCount}**)\nمتبقي له **${remainingLives}** فرصة للعودة قبل التحلل.\n🚑 **الكاهن يمكنه الإنعاش الآن.**`)
+                .setColor('Red');
+
+            await threadChannel.send({ embeds: [deathEmbed] }).catch(()=>{});
+        }
+
+        // تأثير خاص لموت الكاهن (اختياري)
         if (p.class === 'Priest') {
              players.forEach(ally => {
-                if (ally.status !== 'dead' && ally.id !== p.id) {
+                if (!ally.isDead && !ally.isPermDead && ally.id !== p.id) {
                     const healAmt = Math.floor(ally.maxHp * 0.20);
                     ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
                 }
             });
-            await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
+            await threadChannel.send(`✨ **سقوط الكاهن منح الأمل الأخير للفريق (+20% HP)** ✨`).catch(()=>{});
         }
     }
 
-    // التحقق من الموت النهائي (من كان downed وانتهى وقته - يتم معالجته في بداية الجولة عادةً، لكن للاحتياط هنا أيضاً)
-    // ملاحظة: هذا الجزء عادة يكون في status-monitor.js لكن لا مانع من وجود فحص طارئ هنا
-    
-    // التحقق من خسارة الفريق بالكامل
-    // الفريق يخسر إذا كان الجميع إما (dead) أو (downed)
-    if (players.every(p => p.status === 'dead' || p.status === 'downed')) {
-        // إذا كان الجميع downed، نعتبرهم خسروا لأن الوحش سيقضي عليهم
-        return false; 
+    // التحقق من خسارة الفريق بالكامل (الكل ميت أو متحلل)
+    if (players.every(p => p.isDead || p.isPermDead)) {
+        return false; // ينهي المعركة بخسارة
     }
 
     if (log.length > 6) log = log.slice(-6);
