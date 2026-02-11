@@ -1,5 +1,6 @@
 // handlers/dungeon/logic/monster-turn.js
 
+const { EmbedBuilder } = require("discord.js"); // تأكدنا من استدعاء EmbedBuilder
 const { getFloorCaps } = require('./seal-system'); 
 const { applyDamageToPlayer } = require('../utils'); 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
@@ -7,7 +8,8 @@ const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
 // --- 🧠 دالة تحديد الأهداف ---
 function getTacticalTargets(players, count, monster) {
-    let alive = players.filter(p => !p.isDead);
+    // نستهدف الأحياء فقط (الذين ليسوا موتى ولا downed)
+    let alive = players.filter(p => p.status !== 'dead' && p.status !== 'downed');
     if (alive.length === 0) return [];
 
     if (monster.targetFocusId) {
@@ -114,7 +116,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     // هجوم المستدعي
     players.forEach(p => {
-        if (!p.isDead && p.summon && p.summon.active) {
+        if (!p.isDead && p.status !== 'downed' && p.summon && p.summon.active) {
             const atkRatio = p.summon.atkRatio || 0.7;
             let petDmg = Math.floor(p.atk * atkRatio) || 1;
             petDmg = applyLocalCap(petDmg, damageCap);
@@ -154,7 +156,7 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     }
 
     // --- 🎮 منطق الهجوم (AI) ---
-    const alive = players.filter(p => !p.isDead);
+    const alive = players.filter(p => p.status !== 'dead' && p.status !== 'downed');
     if (alive.length === 0) return false;
 
     let skillUsed = false;
@@ -297,19 +299,30 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     if (monster.hp < 0) monster.hp = 0;
     if (isNaN(monster.hp)) monster.hp = 0;
 
-    // الوفيات
-    const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead);
-    for (const p of deadJustNow) {
-        p.isDead = true; 
-        if (p.reviveCount && p.reviveCount >= 1) {
-            p.isPermDead = true;
-            await threadChannel.send(`☠️ **${p.name}** لم يحتمل المزيد... تحللت جثته! (خروج نهائي)`).catch(()=>{});
-        } else {
-            await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
-        }
+    // ============================================================
+    // ☠️ معالجة الوفيات والسقوط (Downed & Death) ☠️
+    // ============================================================
+    // نحدد اللاعبين الذين وصلوا للصفر للتو ولم يتم تغيير حالتهم بعد
+    const justDowned = players.filter(p => p.hp <= 0 && p.status === 'alive');
+    
+    for (const p of justDowned) {
+        // 1. تحويل الحالة إلى downed
+        p.status = 'downed';
+        p.hp = 0; // لضمان عدم وجود أرقام سالبة
+        p.deathCounter = 3; // عدد الجولات قبل التحلل
+
+        // 2. إرسال رسالة السقوط في الشات
+        const downEmbed = new EmbedBuilder()
+            .setTitle('⚠️ سقوط محارب!')
+            .setDescription(`**${p.name}** سقط مغشياً عليه ونزف حتى الموت!\nلديه **${p.deathCounter}** جولات فقط ليتم إنقاذه قبل أن يتحلل.`)
+            .setColor('Orange');
+        
+        await threadChannel.send({ embeds: [downEmbed] }).catch(()=>{});
+
+        // 3. تأثير موت الكاهن (شفاء أخير)
         if (p.class === 'Priest') {
              players.forEach(ally => {
-                if (!ally.isDead && ally.id !== p.id) {
+                if (ally.status !== 'dead' && ally.id !== p.id) {
                     const healAmt = Math.floor(ally.maxHp * 0.20);
                     ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
                 }
@@ -318,7 +331,16 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    if (players.every(p => p.isDead)) return false;
+    // التحقق من الموت النهائي (من كان downed وانتهى وقته - يتم معالجته في بداية الجولة عادةً، لكن للاحتياط هنا أيضاً)
+    // ملاحظة: هذا الجزء عادة يكون في status-monitor.js لكن لا مانع من وجود فحص طارئ هنا
+    
+    // التحقق من خسارة الفريق بالكامل
+    // الفريق يخسر إذا كان الجميع إما (dead) أو (downed)
+    if (players.every(p => p.status === 'dead' || p.status === 'downed')) {
+        // إذا كان الجميع downed، نعتبرهم خسروا لأن الوحش سيقضي عليهم
+        return false; 
+    }
+
     if (log.length > 6) log = log.slice(-6);
     
     try {
