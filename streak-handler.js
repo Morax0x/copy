@@ -8,6 +8,9 @@ const KSA_TIMEZONE = 'Asia/Riyadh';
 const EMOJI_MEDIA_STREAK = '<a:Streak:1438932297519730808>';
 const EMOJI_SHIELD = '<:Shield:1437804676224516146>';
 
+// 🔥🔥 قائمة المعالجة الحالية لمنع التضارب (Race Conditions) 🔥🔥
+const processingUsers = new Set();
+
 // ( 🌟 القائمة الحصر.ية للفواصل المسموحة فقط 🌟 )
 const SEPARATORS_CLEAN_LIST = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|'];
 const DEFAULT_SEPARATOR = '»';
@@ -149,12 +152,10 @@ async function updateNickname(member, sql) {
         newName = `${baseName}${suffix}`;
     }
 
-    // 🔥🔥 هذا هو الشرط الحاسم لمنع السبام 🔥🔥
-    // لن يتم استدعاء setNickname إلا إذا كان الاسم الجديد يختلف فعلياً عن الاسم الحالي
+    // 🔥 الحماية من السبام: فقط عدل إذا كان الاسم مختلفاً 🔥
     if (member.displayName !== newName) {
         try {
             await member.setNickname(newName);
-            // console.log(`[Streak] Updated nickname for ${member.user.tag}`); // للدييغ فقط
         } catch (err) {}
     }
 }
@@ -244,97 +245,114 @@ async function checkDailyStreaks(client, sql) {
 async function handleStreakMessage(message) {
     const sql = message.client.sql;
     
+    // 🔥🔥 منع التضارب: إذا كان العضو قيد المعالجة، تجاهل الرسالة 🔥🔥
+    const processId = `${message.guild.id}-${message.author.id}`;
+    if (processingUsers.has(processId)) return;
+    processingUsers.add(processId);
+
     try {
-         sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
-    } catch (e) {}
+        try {
+             sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
+        } catch (e) {}
 
-    const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
-    const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
-    const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, has12hWarning = 0 WHERE id = @id");
+        const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
+        const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
+        const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, has12hWarning = 0 WHERE id = @id");
 
-    const getLevel = message.client.getLevel;
-    const setLevel = message.client.setLevel;
+        const getLevel = message.client.getLevel;
+        const setLevel = message.client.setLevel;
 
-    const now = Date.now();
-    const todayKSA = getKSADateString(now);
+        const now = Date.now();
+        const todayKSA = getKSADateString(now);
 
-    const guildID = message.guild.id;
-    const userID = message.author.id;
-    const id = `${guildID}-${userID}`;
+        const guildID = message.guild.id;
+        const userID = message.author.id;
+        const id = `${guildID}-${userID}`;
 
-    let streakData = getStreak.get(guildID, userID);
+        let streakData = getStreak.get(guildID, userID);
 
-    if (!streakData) {
-        streakData = {
-            id: id, guildID, userID,
-            streakCount: 1,
-            lastMessageTimestamp: now,
-            hasGracePeriod: 1,
-            hasItemShield: 0,
-            nicknameActive: 1,
-            hasReceivedFreeShield: 1,
-            separator: DEFAULT_SEPARATOR, 
-            dmNotify: 1,
-            highestStreak: 1,
-            has12hWarning: 0
-        };
-        setStreak.run(streakData);
-        await updateNickname(message.member, sql);
-
-    } else {
-        const cleanCheckList = SEPARATORS_CLEAN_LIST.map(s => s.replace('\\', ''));
-        if (!cleanCheckList.includes(streakData.separator)) {
-            streakData.separator = DEFAULT_SEPARATOR;
-            sql.prepare("UPDATE streaks SET separator = ? WHERE id = ?").run(DEFAULT_SEPARATOR, id);
-        }
-
-        // 🔥🔥🔥 تم إعادة تفعيل التحديث هنا مع كل رسالة 🔥🔥🔥
-        // لأن دالة updateNickname تحتوي الآن على حماية (if name != newName)
-        if (streakData.nicknameActive === 1) {
-            await updateNickname(message.member, sql);
-        }
-
-        const lastDateKSA = getKSADateString(streakData.lastMessageTimestamp);
-        if (todayKSA === lastDateKSA) return;
-
-        if (typeof streakData.dmNotify === 'undefined' || typeof streakData.highestStreak === 'undefined') {
-            streakData.dmNotify = streakData.dmNotify ?? 1;
-            streakData.highestStreak = streakData.highestStreak ?? streakData.streakCount;
-            sql.prepare("UPDATE streaks SET dmNotify = ?, highestStreak = ? WHERE id = ?").run(streakData.dmNotify, streakData.highestStreak, id);
-        }
-
-        if (streakData.streakCount === 0) {
-            streakData.streakCount = 1;
-            streakData.lastMessageTimestamp = now;
-            streakData.hasGracePeriod = 0;
-            streakData.hasItemShield = 0;
-            if (streakData.highestStreak < 1) streakData.highestStreak = 1;
-            streakData.has12hWarning = 0;
+        if (!streakData) {
+            streakData = {
+                id: id, guildID, userID,
+                streakCount: 1,
+                lastMessageTimestamp: now,
+                hasGracePeriod: 1,
+                hasItemShield: 0,
+                nicknameActive: 1,
+                hasReceivedFreeShield: 1,
+                separator: DEFAULT_SEPARATOR, 
+                dmNotify: 1,
+                highestStreak: 1,
+                has12hWarning: 0
+            };
             setStreak.run(streakData);
             await updateNickname(message.member, sql);
+
         } else {
-            const diffDays = getDayDifference(todayKSA, lastDateKSA);
-            if (diffDays === 1) {
-                streakData.streakCount += 1;
+            const cleanCheckList = SEPARATORS_CLEAN_LIST.map(s => s.replace('\\', ''));
+            if (!cleanCheckList.includes(streakData.separator)) {
+                streakData.separator = DEFAULT_SEPARATOR;
+                sql.prepare("UPDATE streaks SET separator = ? WHERE id = ?").run(DEFAULT_SEPARATOR, id);
+            }
+
+            // فحص وتعديل الاسم (مع الحماية الموجودة في الدالة)
+            if (streakData.nicknameActive === 1) {
+                await updateNickname(message.member, sql);
+            }
+
+            const lastDateKSA = getKSADateString(streakData.lastMessageTimestamp);
+            
+            // إذا كان في نفس اليوم، نحدث التوقيت فقط لتجنب التحذيرات
+            if (todayKSA === lastDateKSA) {
+                sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
+                return; // 🛑 خروج مبكر لمنع التضارب
+            }
+
+            if (typeof streakData.dmNotify === 'undefined' || typeof streakData.highestStreak === 'undefined') {
+                streakData.dmNotify = streakData.dmNotify ?? 1;
+                streakData.highestStreak = streakData.highestStreak ?? streakData.streakCount;
+                sql.prepare("UPDATE streaks SET dmNotify = ?, highestStreak = ? WHERE id = ?").run(streakData.dmNotify, streakData.highestStreak, id);
+            }
+
+            if (streakData.streakCount === 0) {
+                streakData.streakCount = 1;
                 streakData.lastMessageTimestamp = now;
-                if (streakData.streakCount > streakData.highestStreak) {
-                    streakData.highestStreak = streakData.streakCount;
-                }
-                updateStreakData.run(streakData);
-                
-                if (streakData.streakCount > 10) {
-                    let levelData = getLevel.get(userID, guildID);
-                    if (!levelData) levelData = { ...message.client.defaultData, user: userID, guild: guildID };
-                    levelData.mora = (levelData.mora || 0) + 100;
-                    levelData.xp = (levelData.xp || 0) + 100;
-                    levelData.totalXP = (levelData.totalXP || 0) + 100;
-                    setLevel.run(levelData);
-                }
+                streakData.hasGracePeriod = 0;
+                streakData.hasItemShield = 0;
+                if (streakData.highestStreak < 1) streakData.highestStreak = 1;
+                streakData.has12hWarning = 0;
+                setStreak.run(streakData);
                 await updateNickname(message.member, sql);
             } else {
-                sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
+                const diffDays = getDayDifference(todayKSA, lastDateKSA);
+                if (diffDays === 1) {
+                    streakData.streakCount += 1;
+                    streakData.lastMessageTimestamp = now;
+                    if (streakData.streakCount > streakData.highestStreak) {
+                        streakData.highestStreak = streakData.streakCount;
+                    }
+                    updateStreakData.run(streakData);
+                    
+                    if (streakData.streakCount > 10) {
+                        let levelData = getLevel.get(userID, guildID);
+                        if (!levelData) levelData = { ...message.client.defaultData, user: userID, guild: guildID };
+                        levelData.mora = (levelData.mora || 0) + 100;
+                        levelData.xp = (levelData.xp || 0) + 100;
+                        levelData.totalXP = (levelData.totalXP || 0) + 100;
+                        setLevel.run(levelData);
+                    }
+                    await updateNickname(message.member, sql);
+                } else {
+                    // تحديث الوقت فقط وتصفير التحذير (حالة احتياطية)
+                    sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
+                }
             }
         }
+    } catch (err) {
+        console.error("Streak Error:", err);
+    } finally {
+        // 🔥🔥 فك القفل بعد 2 ثانية (لضمان انتهاء التحديثات) 🔥🔥
+        setTimeout(() => processingUsers.delete(processId), 2000);
     }
 }
 
