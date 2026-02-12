@@ -5,24 +5,34 @@ const { triggerMimicChest } = require('../mimic-chest');
 const { triggerMysteryMerchant } = require('../mystery-merchant');
 
 /**
- * تطبيق تعزيزات خاصة بطوابق معينة (مثل الطابق 51)
- * وأيضاً تأثيرات البيئة للثيمات الجديدة
+ * تطبيق تعزيزات خاصة بطوابق معينة (51 و 75)
+ * يضمن بقاء البف حتى لو خرج اللاعب وعاد (Save/Load)
  */
 async function applyFloorBuffs(floor, players, threadChannel) {
     
-    // --- 1. تعزيز منتصف الطريق (الطابق 51) ---
-    if (floor === 51) {
+    // ====================================================
+    // ⚡ 1. تعزيز الفرسان (يبدأ من الطابق 51 ويستمر)
+    // ====================================================
+    if (floor >= 51) {
         let buffApplied = false;
+        // متغير لعرض الرسالة فقط إذا كنا في الطابق 51 بالضبط
+        let showMessage = (floor === 51); 
+
         players.forEach(p => {
-            if (!p.isDead) {
-                p.maxHp = Math.floor(p.maxHp * 2.0); // زيادة 100% (ضرب في 2)
-                p.hp = p.maxHp; 
-                p.effects.push({ type: 'atk_buff', val: 0.70, floors: 100 }); // زيادة 70%
+            // نتحقق: هل هو حي؟ وهل أخذ البف سابقاً؟
+            // p.hasFloor51Buff: علامة نضعها لنعرف أنه استلم البف
+            if (!p.isDead && !p.isPermDead && !p.hasFloor51Buff) {
+                p.maxHp = Math.floor(p.maxHp * 2.0); // زيادة 100% (x2)
+                p.hp = p.maxHp; // علاج كامل
+                p.effects.push({ type: 'atk_buff', val: 0.70, floors: 100 }); // ضرر +70%
+                
+                p.hasFloor51Buff = true; // ✅ تم استلام البف
                 buffApplied = true;
             }
         });
         
-        if (buffApplied) {
+        // نرسل الرسالة فقط في لحظة الوصول للطابق 51
+        if (showMessage && buffApplied) {
             const buffEmbed = new EmbedBuilder()
                 .setTitle('⚡ فـرسـان الدانـجون!')
                 .setDescription(`**حـصـلتـم علـى اعتـراف الامبراطـور بسبب وصولكم لمنتصف الدانجـون:**\n\n🩸 **نقاط الصحة +100%** \n⚔️ **ضرر +70%** `)
@@ -31,32 +41,60 @@ async function applyFloorBuffs(floor, players, threadChannel) {
         }
     }
 
-    // --- 2. تأثيرات البيئة للثيمات الجديدة (Debuffs) ---
+    // ====================================================
+    // 🔥 2. تعزيز النخبة (يبدأ من الطابق 75 ويستمر) - إضافي
+    // ====================================================
+    if (floor >= 75) {
+        let buffApplied = false;
+        let showMessage = (floor === 75);
+
+        players.forEach(p => {
+            // نتحقق: هل هو حي؟ وهل أخذ بف الـ 75؟
+            if (!p.isDead && !p.isPermDead && !p.hasFloor75Buff) {
+                // زيادة إضافية فوق الزيادة السابقة
+                p.maxHp = Math.floor(p.maxHp * 2.0); // دبل مرة أخرى (المجموع x4 عن الأصل)
+                p.hp = p.maxHp; 
+                p.effects.push({ type: 'atk_buff', val: 0.80, floors: 100 }); // ضرر إضافي +80%
+                
+                p.hasFloor75Buff = true; // ✅ تم استلام البف
+                buffApplied = true;
+            }
+        });
+
+        if (showMessage && buffApplied) {
+            const eliteEmbed = new EmbedBuilder()
+                .setTitle('🔥 أسـيـاد الجحـيـم!')
+                .setDescription(`**لقد تجاوزتم حدود البشر ووصلتم للأعماق السحيقة!**\nمنحكم الإمبراطور قوته الخاصة:\n\n🩸 **نقاط الصحة +100% (إضافي)** \n⚔️ **ضرر +80% (إضافي)** `)
+                .setColor(Colors.Red)
+                .setThumbnail('https://i.postimg.cc/NMkWVyLV/line.png'); // صورة تعبيرية
+            await threadChannel.send({ embeds: [eliteEmbed] }).catch(()=>{});
+        }
+    }
+
+    // ====================================================
+    // 🌍 3. تأثيرات البيئة (Debuffs)
+    // ====================================================
     
-    // 🌊 ثيم أطلانتس (طوابق 71-80 افتراضياً للماء)
-    // التأثير: "ضغط الماء" - يقلل الدفاع بنسبة 15%
+    // 🌊 ثيم أطلانتس (71-80)
     if (floor >= 71 && floor <= 80) {
         let debuffApplied = false;
         players.forEach(p => {
-            if (!p.isDead && !p.effects.some(e => e.type === 'water_pressure')) {
-                p.effects.push({ type: 'water_pressure', val: 0.15, turns: 1 }); // تأثير مستمر لكل طابق
-                // ملاحظة: هذا التأثير رمزي حالياً، يمكن تفعيله في حساب الضرر لاحقاً
+            if (!p.isDead && !p.isPermDead && !p.effects.some(e => e.type === 'water_pressure')) {
+                p.effects.push({ type: 'water_pressure', val: 0.15, turns: 1 });
                 debuffApplied = true;
             }
         });
-        if (debuffApplied && floor === 71) { // رسالة تظهر مرة واحدة عند دخول المنطقة
+        if (debuffApplied && floor === 71) {
             await threadChannel.send(`🌊 **ضغط الأعماق يسحق أجسادكم!** (الدفاع انخفض بنسبة 15%)`).catch(()=>{});
         }
     }
 
-    // ⚙️ ثيم الأطلال المنسية (طوابق 81-90 افتراضياً للآلات)
-    // التأثير: "الضباب الدخاني" - يقلل الدقة/الكريت بنسبة 10%
+    // ⚙️ ثيم الأطلال (81-90)
     if (floor >= 81 && floor <= 90) {
         let debuffApplied = false;
         players.forEach(p => {
-            if (!p.isDead) {
-                // تقليل الكريت ريت
-                if (!p.originalCrit) p.originalCrit = p.critRate || 0.1; // حفظ القيمة الأصلية
+            if (!p.isDead && !p.isPermDead) {
+                if (!p.originalCrit) p.originalCrit = p.critRate || 0.1;
                 p.critRate = Math.max(0, (p.critRate || 0.1) - 0.10);
                 debuffApplied = true;
             }
@@ -69,12 +107,9 @@ async function applyFloorBuffs(floor, players, threadChannel) {
 
 /**
  * معالجة منطق الفخاخ (Trap System)
- * يعود بـ كائن يحتوي على النتيجة (هل تم تفعيل الفخ؟ وما هو الطابق الجديد؟)
  */
 async function handleTrapEvent(floor, players, threadChannel, isTrapActive) {
-    // 🔥 التعديل هنا:
-    // 1. النسبة أصبحت 0.001 (أي 0.1%)
-    // 2. الشرط !isTrapActive يضمن عدم تكرار الفخ إذا حدث سابقاً في الرحلة
+    // النسبة 0.1% (0.001) وشرط عدم التكرار (!isTrapActive)
     if (floor > 10 && floor < 90 && !isTrapActive && Math.random() < 0.001) { 
         const trapStartFloor = floor;
         const minTarget = floor + 2;
@@ -89,7 +124,6 @@ async function handleTrapEvent(floor, players, threadChannel, isTrapActive) {
         
         await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
 
-        // نعيد triggered: true ليقوم النظام الرئيسي بحفظ isTrapActive = true
         return { triggered: true, newFloor: targetFloor, trapStartFloor: trapStartFloor };
     }
     
@@ -117,7 +151,7 @@ async function handleRandomEvents(floor, lastEventFloor, lastEventType, threadCh
         }
     }
     
-    return { type: lastEventType, floor: lastEventFloor }; // لا تغيير
+    return { type: lastEventType, floor: lastEventFloor };
 }
 
 module.exports = { applyFloorBuffs, handleTrapEvent, handleRandomEvents };
