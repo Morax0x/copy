@@ -20,7 +20,6 @@ async function applyFloorBuffs(floor, players, threadChannel) {
 
         players.forEach(p => {
             // نتحقق: هل هو حي؟ وهل أخذ البف سابقاً؟
-            // p.hasFloor51Buff: علامة نضعها لنعرف أنه استلم البف
             if (!p.isDead && !p.isPermDead && !p.hasFloor51Buff) {
                 p.maxHp = Math.floor(p.maxHp * 2.0); // زيادة 100% (x2)
                 p.hp = p.maxHp; // علاج كامل
@@ -36,7 +35,8 @@ async function applyFloorBuffs(floor, players, threadChannel) {
             const buffEmbed = new EmbedBuilder()
                 .setTitle('⚡ فـرسـان الدانـجون!')
                 .setDescription(`**حـصـلتـم علـى اعتـراف الامبراطـور بسبب وصولكم لمنتصف الدانجـون:**\n\n🩸 **نقاط الصحة +100%** \n⚔️ **ضرر +70%** `)
-                .setColor(Colors.Gold);
+                .setColor(Colors.Gold)
+                .setThumbnail('https://i.postimg.cc/PJSQZfwh/75.png'); // صورة التعزيز
             await threadChannel.send({ embeds: [buffEmbed] }).catch(()=>{});
         }
     }
@@ -66,7 +66,7 @@ async function applyFloorBuffs(floor, players, threadChannel) {
                 .setTitle('🔥 أسـيـاد الدانـجـون!')
                 .setDescription(`**لقد تجاوزتم حدود البشر ووصلتم للأعماق السحيقة!**\nتعـزيـز تراكـمي:\n\n🩸 **نقاط الصحة +100%** \n⚔️ **ضرر +80%** `)
                 .setColor(Colors.Red)
-                .setThumbnail('https://i.postimg.cc/NMkWVyLV/line.png'); // صورة تعبيرية
+                .setThumbnail('https://i.postimg.cc/PJSQZfwh/75.png'); // صورة التعزيز
             await threadChannel.send({ embeds: [eliteEmbed] }).catch(()=>{});
         }
     }
@@ -120,7 +120,7 @@ async function handleTrapEvent(floor, players, threadChannel, isTrapActive) {
             .setTitle('⚠️ انـذار: شـذوذ زمـكـانـي!')
             .setDescription(`🌀 **لقد وقعتم في فخ الأبعاد!**\nتم قذفكم قسراً للأمام إلى الطابق **${targetFloor}**!\n\n☠️ الوحوش هنا لا ترحم...!`)
             .setColor(Colors.DarkRed)
-            .setThumbnail('https://media.discordapp.net/attachments/1145327691772481577/115000000000000000/blackhole.gif'); 
+            .setImage('https://i.postimg.cc/sxT4SfhV/bla.png'); // صورة الشذوذ الكبيرة
         
         await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
 
