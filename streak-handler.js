@@ -1,3 +1,5 @@
+// streak-handler.js
+
 const { PermissionsBitField, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,40 +30,32 @@ function getDayDifference(dateStr1, dateStr2) {
     return Math.round(diffTime / DAY_MS);
 }
 
-// 🌟 دالة حساب معزز الخبرة (XP) - (تم التعديل لتكون تراكمية) 🌟
+// 🌟 دالة حساب معزز الخبرة (XP) 🌟
 function calculateBuffMultiplier(member, sql) {
     if (!sql || typeof sql.prepare !== 'function') return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
     
-    // البحث عن buffType = 'xp' حصراً (من المتجر)
     const getUserBuffs = sql.prepare("SELECT * FROM user_buffs WHERE userID = ? AND guildID = ? AND expiresAt > ? AND buffType = 'xp'");
     let totalPercent = 0.0;
     
-    // بونص الويكند للخبرة
     const day = new Date().getUTCDay();
     if (day === 5 || day === 6 || day === 0) totalPercent += 0.10;
     
-    // 🔥🔥 بفات الرتب للخبرة (تراكمي الآن) 🔥🔥
     const userRoles = member.roles.cache.map(r => r.id);
     if (userRoles.length > 0) {
         const placeholders = userRoles.map(() => '?').join(',');
         try {
             const roleBuffs = sql.prepare(`SELECT * FROM role_buffs WHERE roleID IN (${placeholders})`).all(...userRoles);
-            
-            // جمع كل النسب بدلاً من أخذ الأعلى
             let rolesTotalBuff = 0;
             for (const buff of roleBuffs) {
                 rolesTotalBuff += buff.buffPercent;
             }
-            
             totalPercent += (rolesTotalBuff / 100);
-
         } catch (e) {
             console.error("Error calculating XP Role Buff:", e);
         }
     }
     
-    // جمع بفات المتجر (XP)
     let itemBuffTotal = 0;
     const userBuffs = getUserBuffs.all(member.id, member.guild.id, Date.now());
     for (const buff of userBuffs) {
@@ -73,39 +67,32 @@ function calculateBuffMultiplier(member, sql) {
     return 1.0 + totalPercent;
 }
 
-// 🌟 دالة حساب معزز المورا (الأموال) - (تراكمي) 🌟
+// 🌟 دالة حساب معزز المورا (الأموال) 🌟
 function calculateMoraBuff(member, sql) {
     if (!sql || typeof sql.prepare !== 'function') return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
 
     let totalBuffPercent = 0;
 
-    // بونص الويكند للمورا (10%)
     const day = new Date().getUTCDay(); 
     if (day === 5 || day === 6 || day === 0) {
         totalBuffPercent += 10; 
     }
 
-    // بفات الرتب للمورا (تراكمي)
     const userRoles = member.roles.cache.map(r => r.id);
     const guildID = member.guild.id;
     try {
         const allBuffRoles = sql.prepare("SELECT * FROM role_mora_buffs WHERE guildID = ?").all(guildID);
-        
         let roleBuffSum = 0;
         for (const roleId of userRoles) {
-            // البحث هل الرتبة الحالية للعضو موجودة في قائمة البفات
             const buffRole = allBuffRoles.find(r => r.roleID === roleId);
-            // إذا وجدت، نجمع نسبتها
             if (buffRole) roleBuffSum += buffRole.buffPercent;
         }
         totalBuffPercent += roleBuffSum;
-
     } catch (e) {
         console.error("Error calculating Mora Role Buff:", e);
     }
 
-    // بفات المتجر للمورا (تراكمي)
     const tempBuffs = sql.prepare("SELECT * FROM user_buffs WHERE guildID = ? AND userID = ? AND buffType = 'mora' AND expiresAt > ?")
         .all(guildID, member.id, Date.now());
 
@@ -132,9 +119,7 @@ async function updateNickname(member, sql) {
     const settings = sql.prepare("SELECT streakEmoji FROM settings WHERE guild = ?").get(member.guild.id);
     const streakEmoji = settings?.streakEmoji || '🔥';
 
-    // 1. تحديد الفاصلة (إذا كانت غير موجودة في القائمة، نرجع للأساسية)
     let separator = streakData?.separator;
-    // تنظيف الـ \ من القائمة للمقارنة
     const checkList = SEPARATORS_CLEAN_LIST.map(s => s.replace('\\', ''));
     if (!checkList.includes(separator)) {
         separator = DEFAULT_SEPARATOR;
@@ -145,19 +130,14 @@ async function updateNickname(member, sql) {
 
     let baseName = member.displayName;
 
-    // 2. تنظيف الاسم من الأرقام القديمة والفواصل
-    // يحذف [123] في البداية
+    // تنظيف الاسم
     baseName = baseName.replace(/^\[\d+\]\s*/, '').trim();
-    
-    // يحذف " فاصلة + رقم + أي شيء بعدها " في النهاية
     const cleanRegex = new RegExp(`\\s*(${SEPARATORS_CLEAN_LIST.join('|')})\\s*\\d+.*$`, 'i');
     baseName = baseName.replace(cleanRegex, '').trim();
-    // تكرار للتأكد من التنظيف العميق
     baseName = baseName.replace(cleanRegex, '').trim();
 
     let newName;
     if (streakCount > 0 && nicknameActive) {
-        // الشكل: الاسم » الرقم 🔥
         newName = `${baseName} ${separator} ${streakCount} ${streakEmoji}`;
     } else {
         newName = baseName;
@@ -169,9 +149,12 @@ async function updateNickname(member, sql) {
         newName = `${baseName}${suffix}`;
     }
 
+    // 🔥🔥 هذا هو الشرط الحاسم لمنع السبام 🔥🔥
+    // لن يتم استدعاء setNickname إلا إذا كان الاسم الجديد يختلف فعلياً عن الاسم الحالي
     if (member.displayName !== newName) {
         try {
             await member.setNickname(newName);
+            // console.log(`[Streak] Updated nickname for ${member.user.tag}`); // للدييغ فقط
         } catch (err) {}
     }
 }
@@ -261,15 +244,12 @@ async function checkDailyStreaks(client, sql) {
 async function handleStreakMessage(message) {
     const sql = message.client.sql;
     
-    // 🔥🔥 ضمان وجود العمود لتجنب الأخطاء 🔥🔥
     try {
          sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
     } catch (e) {}
 
     const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
-    // 🔥🔥 إضافة has12hWarning للـ INSERT 🔥🔥
     const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
-    // 🔥🔥 تحديث has12hWarning وتصفيره عند التفاعل 🔥🔥
     const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, has12hWarning = 0 WHERE id = @id");
 
     const getLevel = message.client.getLevel;
@@ -296,7 +276,7 @@ async function handleStreakMessage(message) {
             separator: DEFAULT_SEPARATOR, 
             dmNotify: 1,
             highestStreak: 1,
-            has12hWarning: 0 // 🔥🔥 قيمة افتراضية 🔥🔥
+            has12hWarning: 0
         };
         setStreak.run(streakData);
         await updateNickname(message.member, sql);
@@ -308,6 +288,8 @@ async function handleStreakMessage(message) {
             sql.prepare("UPDATE streaks SET separator = ? WHERE id = ?").run(DEFAULT_SEPARATOR, id);
         }
 
+        // 🔥🔥🔥 تم إعادة تفعيل التحديث هنا مع كل رسالة 🔥🔥🔥
+        // لأن دالة updateNickname تحتوي الآن على حماية (if name != newName)
         if (streakData.nicknameActive === 1) {
             await updateNickname(message.member, sql);
         }
@@ -327,7 +309,7 @@ async function handleStreakMessage(message) {
             streakData.hasGracePeriod = 0;
             streakData.hasItemShield = 0;
             if (streakData.highestStreak < 1) streakData.highestStreak = 1;
-            streakData.has12hWarning = 0; // 🔥🔥
+            streakData.has12hWarning = 0;
             setStreak.run(streakData);
             await updateNickname(message.member, sql);
         } else {
@@ -350,7 +332,6 @@ async function handleStreakMessage(message) {
                 }
                 await updateNickname(message.member, sql);
             } else {
-                // تحديث الوقت فقط وتصفير التحذير
                 sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
             }
         }
@@ -512,7 +493,7 @@ async function checkDailyMediaStreaks(client, sql) {
                 streakData.lastMediaTimestamp = Date.now(); 
                 updateStreak.run(streakData);
                 if (sendDM) {
-                     const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Green)
+                      const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Green)
                         .setDescription(`- 🛡️ **تم تفعيل فترة السماح!**\n- تم حماية ستريك الميديا (${streakData.streakCount} ${emoji}).\n- لا تنسَ الإرسال اليوم!`);
                     member.send({ embeds: [embed], components: [row] }).catch(() => {});
                 }
@@ -521,7 +502,7 @@ async function checkDailyMediaStreaks(client, sql) {
                 streakData.hasGracePeriod = 0;
                 updateStreak.run(streakData);
                 if(sendDM) {
-                     const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Red)
+                      const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Red)
                         .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت ستريك الميديا 💔\n- لم تكن تملك أي درع.\n- حاول مرة أخرى!`);
                     member.send({ embeds: [embed], components: [row] }).catch(() => {});
                 }
@@ -613,7 +594,6 @@ async function sendDailyMediaUpdate(client, sql) {
         const guildID = channelData.guildID;
         
         if (!guildsStats[guildID]) {
-            // 🔥 التعديل: جلب أعلى 3 فقط 🔥
             const topStreaks = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND streakCount > 0 ORDER BY streakCount DESC LIMIT 3").all(guildID);
             let description = `**${EMOJI_MEDIA_STREAK} بـدأ يـوم جـديـد لستريـك الميـديـا! ${EMOJI_MEDIA_STREAK}**\n\n- لا تنسـوا إرسـال المـيـديـا الخـاصـة بكـم لهـذا اليـوم.\n\n`;
             
@@ -624,18 +604,16 @@ async function sendDailyMediaUpdate(client, sql) {
                 const leaderboard = topStreaks.map((streak, index) => {
                     const medals = ['🥇', '🥈', '🥉'];
                     const rank = medals[index] || `**${index + 1}.**`;
-                    // 🔥 التعديل: استبدال "يوم" بـ "الإيموجي المتحرك" 🔥
                     return `${rank} <@${streak.userID}> - \`${streak.streakCount}\` ${EMOJI_MEDIA_STREAK}`;
                 });
                 description += leaderboard.join('\n');
 
-                // 🔥 التعديل: وضع صورة التوب 1 كصورة مصغرة 🔥
                 try {
                     const topMember = await client.guilds.cache.get(guildID)?.members.fetch(topStreaks[0].userID).catch(() => null);
                     if (topMember) {
                         embed.setThumbnail(topMember.user.displayAvatarURL({ dynamic: true }));
                     } else {
-                        embed.setThumbnail('https://i.postimg.cc/mD7Q31TR/New-Day.png'); // صورة احتياطية
+                        embed.setThumbnail('https://i.postimg.cc/mD7Q31TR/New-Day.png');
                     }
                 } catch (e) {
                     embed.setThumbnail('https://i.postimg.cc/mD7Q31TR/New-Day.png');
@@ -680,7 +658,6 @@ async function sendDailyMediaUpdate(client, sql) {
 
 async function sendStreakWarnings(client, sql) {
     console.log("[Streak Warning] ⏰ بدء فحص تحذيرات الـ 12 ساعة...");
-    // 🔥🔥 ضمان وجود العمود لتجنب الأخطاء 🔥🔥
     try {
          sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
     } catch (e) {}
@@ -703,8 +680,6 @@ async function sendStreakWarnings(client, sql) {
         } catch (err) { continue; }
 
         const streakEmoji = settings.get(streakData.guildID)?.streakEmoji || '🔥';
-        // 🔥 التعديل: حذف دالة الوقت واستبدالها بنص عام 🔥
-        // const timeLeft = (streakData.lastMessageTimestamp + (36 * 60 * 60 * 1000)) - now; 
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
