@@ -5,7 +5,7 @@ const { triggerMimicChest } = require('../mimic-chest');
 const { triggerMysteryMerchant } = require('../mystery-merchant');
 
 /**
- * تطبيق تعزيزات خاصة .بطوابق معينة (مثل الطابق 51)
+ * تطبيق تعزيزات خاصة بطوابق معينة (مثل الطابق 51)
  * وأيضاً تأثيرات البيئة للثيمات الجديدة
  */
 async function applyFloorBuffs(floor, players, threadChannel) {
@@ -72,8 +72,10 @@ async function applyFloorBuffs(floor, players, threadChannel) {
  * يعود بـ كائن يحتوي على النتيجة (هل تم تفعيل الفخ؟ وما هو الطابق الجديد؟)
  */
 async function handleTrapEvent(floor, players, threadChannel, isTrapActive) {
-    // شروط الفخ: بين الطابق 10 و 90، نسبة 0.02%، والفخ غير نشط مسبقاً
-    if (floor > 10 && floor < 90 && !isTrapActive && Math.random() < 0.0002) { 
+    // 🔥 التعديل هنا:
+    // 1. النسبة أصبحت 0.001 (أي 0.1%)
+    // 2. الشرط !isTrapActive يضمن عدم تكرار الفخ إذا حدث سابقاً في الرحلة
+    if (floor > 10 && floor < 90 && !isTrapActive && Math.random() < 0.001) { 
         const trapStartFloor = floor;
         const minTarget = floor + 2;
         const maxTarget = 90; 
@@ -87,6 +89,7 @@ async function handleTrapEvent(floor, players, threadChannel, isTrapActive) {
         
         await threadChannel.send({ content: `**🌀 شذوذ زمكاني!**`, embeds: [trapEmbed] }).catch(()=>{});
 
+        // نعيد triggered: true ليقوم النظام الرئيسي بحفظ isTrapActive = true
         return { triggered: true, newFloor: targetFloor, trapStartFloor: trapStartFloor };
     }
     
