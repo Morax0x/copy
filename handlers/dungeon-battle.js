@@ -356,27 +356,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 }
                 
-                const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead);
-                for (const p of deadJustNow) {
-                    p.isDead = true;
-
-                    if (p.reviveCount && p.reviveCount >= 1) {
-                        p.isPermDead = true; 
-                        await threadChannel.send(`☠️ **${p.name}** تـحـللـت جثتـه ..`).catch(()=>{});
-                    } else {
-                        await threadChannel.send(`💀 **${p.name}** سقط في أرض المعركة!`).catch(()=>{});
-                    }
-
-                    if (p.class === 'Priest') {
-                        players.forEach(ally => {
-                            if (!ally.isDead && ally.id !== p.id) {
-                                const healAmt = Math.floor(ally.maxHp * 0.20);
-                                ally.hp = Math.min(ally.maxHp, ally.hp + healAmt);
-                            }
-                        });
-                        await threadChannel.send(`✨ **سـقـط الكـاهن وعـالج الفريـق عـلى الرمـق الاخيـر ✨**`).catch(()=>{});
-                    }
-                }
+                // 🔥 تم حذف كود الموت الزائد من هنا لأن processMonsterTurn يقوم به 🔥
 
                 if (ongoing) handleLeaderSuccession(players, log);
             }
