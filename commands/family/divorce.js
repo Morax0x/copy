@@ -30,7 +30,6 @@ module.exports = {
         let partnerId;
 
         if (targetMember) {
-            // الحالة أ: المستخدم حدد شخصاً (منشن)
             const specificMarriage = sql.prepare("SELECT * FROM marriages WHERE userID = ? AND partnerID = ? AND guildID = ?").get(user.id, targetMember.id, guildId);
             
             if (!specificMarriage) {
@@ -41,7 +40,6 @@ module.exports = {
             partnerId = targetMember.id;
 
         } else {
-            // الحالة ب: المستخدم لم يمنشن أحداً
             const allMarriages = sql.prepare("SELECT * FROM marriages WHERE userID = ? AND guildID = ?").all(user.id, guildId);
 
             if (allMarriages.length === 0) {
@@ -58,7 +56,6 @@ module.exports = {
                 return;
             }
 
-            // عنده زوجة واحدة فقط -> نختارها تلقائياً
             partnerId = allMarriages[0].partnerID;
         }
 
@@ -66,11 +63,9 @@ module.exports = {
         let partner = await message.guild.members.fetch(partnerId).catch(() => null);
 
         if (!partner) {
-            // الشريك غادر السيرفر -> طلاق تلقائي فوري
             const stmt = sql.prepare("DELETE FROM marriages WHERE (userID = ? AND partnerID = ?) OR (userID = ? AND partnerID = ?) AND guildID = ?");
             stmt.run(user.id, partnerId, partnerId, user.id, guildId);
 
-            // تحرير الأطفال (يصبحون في حضانة الطرف الموجود)
             sql.prepare("UPDATE children SET parentID = ? WHERE parentID = ? AND guildID = ?").run(user.id, partnerId, guildId);
 
             const embed = new EmbedBuilder()
@@ -89,10 +84,8 @@ module.exports = {
         // 🔄 إجراءات الطلاق العادية (الشريك موجود)
         // ==========================================================
 
-        // 2. تحديد نوع الإجراء (طلاق أم خلع)
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(guildId);
         
-        // التحقق من الرتب لتحديد الجنس
         const checkRole = (rolesData) => {
             if (!rolesData) return false;
             try {
@@ -127,7 +120,6 @@ module.exports = {
             footer = "المدعية: الزوجة";
         }
 
-        // 3. التحقق من وجود أطفال مشتركين
         const children = sql.prepare("SELECT * FROM children WHERE (parentID = ? OR parentID = ?) AND guildID = ?").all(user.id, partner.id, guildId);
         const hasChildren = children.length > 0;
 
@@ -135,7 +127,6 @@ module.exports = {
             desc += `\n✶ حضـانـة اطفالـكم ستكـون بالتراضـي قـرروا من يحتفظ بالاطفـال`;
         }
 
-        // 4. التحقق من الرصيد
         let userData = client.getLevel.get(user.id, guildId);
         if (!userData || userData.mora < cost) {
             const msg = await message.reply(`💸 **لا تملك قيمة النفقة/التعويض!** المطلوب: ${cost.toLocaleString()} ${MORA_EMOJI}`);
@@ -169,6 +160,7 @@ module.exports = {
             .setDescription(desc)
             .setFooter({ text: footer });
 
+        // نرسل الرسالة ونحفظها في متغير
         const courtMsg = await message.channel.send({ content: `${partner}`, embeds: [embed], components: [row] });
 
         let custodyVotes = { [user.id]: null, [partner.id]: null };
@@ -186,7 +178,9 @@ module.exports = {
             // تأكيد الطلاق المباشر (بدون أطفال)
             if (i.customId === 'confirm_divorce_direct') {
                 if (i.user.id !== user.id) return i.reply({ content: `⚠️ **هذا القرار بيد صاحب الطلب (${user.displayName}) فقط!**`, ephemeral: true });
-                await performDivorce(i, user, partner, cost, null);
+                // نمرر courtMsg هنا وليس i لأن i قد لا يكون قادراً على تعديل الرسالة الأصلية بعد الرد
+                // لكن بما أنه direct، نستخدم i للتحديث المباشر
+                await performDivorce(i, user, partner, cost, null); 
                 return;
             }
 
@@ -211,6 +205,7 @@ module.exports = {
                 const choice = i.customId === 'keep_kids' ? 'keep' : 'leave';
                 custodyVotes[i.user.id] = choice;
 
+                // تحديث الرد السري للمستخدم فقط
                 await i.update({ content: `✅ تم تسجيل رغبتك: **${choice === 'keep' ? 'الاحتفاظ' : 'التخلي'}**`, components: [] });
 
                 // التحقق من اكتمال التصويت
@@ -218,6 +213,10 @@ module.exports = {
                     if (custodyVotes[user.id] !== custodyVotes[partner.id]) {
                         // اتفاق ناجح (واحد يبي والثاني ما يبي)
                         const keeper = custodyVotes[user.id] === 'keep' ? user : partner;
+                        
+                        // 🔥🔥 التعديل الهام هنا 🔥🔥
+                        // نستخدم courtMsg لتنفيذ الطلاق لأن i هنا هو تفاعل سري (ephemeral) ولا يمكنه تعديل الرسالة العامة الأصلية بسهولة
+                        // لذا نمرر courtMsg كـ interactionOrMsg ولكن يجب التعامل معه كرسالة
                         await performDivorce(courtMsg, user, partner, cost, keeper); 
                     } else {
                         // تعارض (الاثنين يبون أو الاثنين ما يبون)
@@ -236,10 +235,13 @@ module.exports = {
         // ==========================================================
         async function performDivorce(interactionOrMsg, payer, receiver, amount, kidsKeeper) {
             const payerDB = client.getLevel.get(payer.id, guildId);
+            // إعادة التحقق من الرصيد لحظة التنفيذ
             if (payerDB.mora < amount) {
                 const msg = `❌ **فشلت العملية:** ${payer.displayName} أفلس أثناء المحكمة!`;
-                if (interactionOrMsg.edit) interactionOrMsg.edit({ content: msg, components: [], embeds: [] });
-                else interactionOrMsg.update({ content: msg, components: [], embeds: [] });
+                // التعامل مع نوع الكائن (هل هو interaction أم message؟)
+                if (interactionOrMsg.editReply) await interactionOrMsg.editReply({ content: msg, components: [], embeds: [] }); // للـ interaction المؤجل
+                else if (interactionOrMsg.update) await interactionOrMsg.update({ content: msg, components: [], embeds: [] }); // للـ interaction العادي
+                else await interactionOrMsg.edit({ content: msg, components: [], embeds: [] }); // للرسالة العادية (مثل courtMsg)
                 return;
             }
 
@@ -259,6 +261,7 @@ module.exports = {
             // 3. نقل الأطفال
             let kidsMsg = "";
             if (kidsKeeper && children.length > 0) {
+                // نصحح الاستعلام: نحدث كل طفل يملكه أحد الوالدين ليصبح تابعاً للحاضن الجديد
                 const moveStmt = sql.prepare("UPDATE children SET parentID = ? WHERE (parentID = ? OR parentID = ?) AND guildID = ?");
                 moveStmt.run(kidsKeeper.id, payer.id, receiver.id, guildId);
                 kidsMsg = `\n👶 **الحضانة:** انتقلت جميع الأطفال إلى كفالة **${kidsKeeper.displayName}**.`;
@@ -278,8 +281,17 @@ module.exports = {
                 .setImage(finalGif)
                 .setTimestamp();
 
-            if (interactionOrMsg.edit) await interactionOrMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
-            else await interactionOrMsg.update({ content: ``, embeds: [finalEmbed], components: [] });
+            // التعامل النهائي مع الرسالة/التفاعل
+            try {
+                if (interactionOrMsg.update) {
+                    await interactionOrMsg.update({ content: ``, embeds: [finalEmbed], components: [] });
+                } else {
+                    await interactionOrMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
+                }
+            } catch (err) {
+                // في حال فشل التعديل (مثلاً الرد السري اختفى)، نرسل رسالة جديدة في القناة
+                await message.channel.send({ embeds: [finalEmbed] });
+            }
         }
     }
 };
