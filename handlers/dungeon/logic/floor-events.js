@@ -63,8 +63,8 @@ async function applyFloorBuffs(floor, players, threadChannel) {
 
         if (showMessage && buffApplied) {
             const eliteEmbed = new EmbedBuilder()
-                .setTitle('🔥 أسـيـاد الجحـيـم!')
-                .setDescription(`**لقد تجاوزتم حدود البشر ووصلتم للأعماق السحيقة!**\nمنحكم الإمبراطور قوته الخاصة:\n\n🩸 **نقاط الصحة +100% (إضافي)** \n⚔️ **ضرر +80% (إضافي)** `)
+                .setTitle('🔥 أسـيـاد الدانـجـون!')
+                .setDescription(`**لقد تجاوزتم حدود البشر ووصلتم للأعماق السحيقة!**\nتعـزيـز تراكـمي:\n\n🩸 **نقاط الصحة +100%** \n⚔️ **ضرر +80%** `)
                 .setColor(Colors.Red)
                 .setThumbnail('https://i.postimg.cc/NMkWVyLV/line.png'); // صورة تعبيرية
             await threadChannel.send({ embeds: [eliteEmbed] }).catch(()=>{});
