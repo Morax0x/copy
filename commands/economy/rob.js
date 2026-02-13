@@ -6,7 +6,6 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMPRESS_BOT_ID = "1434804075484020755"; // 👑 آيدي بوت الإمبراطورة (الهدف الجديد)
 const REAL_OWNER_ID = "1145327691772481577"; // 👑 آيديك أنت (للحماية)
 
-// إعدادات النسب والمبالغ
 const MIN_CASH_PERCENT = 0.05;
 const MAX_CASH_PERCENT = 0.10;
 const MIN_BANK_PERCENT = 0.01;
