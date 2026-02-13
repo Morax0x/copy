@@ -186,10 +186,10 @@ module.exports = {
                 new ButtonBuilder().setCustomId(`fish_click_down`).setEmoji('⬇️').setStyle(ButtonStyle.Secondary)
             );
             
-            // الصف الثاني: يمين ويسار (تم عكس الترتيب ليكون يمين ثم يسار في الكود كما طلبت)
+            // الصف الثاني: يسار ويمين (تم التعديل هنا: اليسار أولاً ثم اليمين)
             const rowHorizontal = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fish_click_right`).setEmoji('➡️').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId(`fish_click_left`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId(`fish_click_left`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`fish_click_right`).setEmoji('➡️').setStyle(ButtonStyle.Secondary)
             );
 
             // عرض التسلسل المطلوب
