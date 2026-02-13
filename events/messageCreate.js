@@ -158,7 +158,8 @@ module.exports = {
                             if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
                                 const pings = subscribers.map(id => `<@${id}>`).join(' ');
                                 const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
-                                setTimeout(() => notifyMsg.delete().catch(() => {}), 60000);
+                                // 🔥 تم إزالة حذف رسالة التنبيه (حسب طلبك)
+                                // setTimeout(() => notifyMsg.delete().catch(() => {}), 60000);
                             } 
                         }
                     } else {
@@ -248,7 +249,7 @@ module.exports = {
 
         let Prefix = settings?.prefix || "-";
 
-        // 🔥🔥 نظام الذكاء الاصطناعي (AI) مع إصلاح التضارب مع الأوامر 🔥🔥
+        // 🔥🔥 نظام الذكاء الاصطناعي (AI) مع فحص الاختصارات (Shortcuts) 🔥🔥
         if (message.mentions.has(client.user) && !message.author.bot) {
             
             // 1. إذا كانت الرسالة تبدأ بالبريفكس، تجاهل الـ AI
@@ -259,10 +260,18 @@ module.exports = {
                 // 2. إذا كانت الكلمة الأولى هي اسم أمر (لأوامر الكازينو بدون بريفكس)، تجاهل الـ AI
                 const argsRaw = message.content.trim().split(/ +/);
                 const firstWord = argsRaw[0].toLowerCase();
+                
+                // فحص الأوامر الأساسية والـ Aliases
                 const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
+                
+                // 🔥🔥 التعديل: فحص الاختصارات المخصصة (Shortcuts) 🔥🔥
+                let isShortcut = false;
+                try {
+                    isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND shortcutWord = ?").get(message.guild.id, firstWord);
+                } catch(e) {}
 
-                if (isCommand) {
-                    // أمر معروف -> تجاهل الـ AI
+                if (isCommand || isShortcut) {
+                    // أمر معروف أو اختصار -> تجاهل الـ AI
                 } 
                 else {
                     // 🔥 تفعيل الـ AI هنا فقط
