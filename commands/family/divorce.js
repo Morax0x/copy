@@ -90,7 +90,7 @@ module.exports = {
             // 🔥🔥 التحقق من وجود الشريك في السيرفر (Auto-Divorce Logic) 🔥🔥
             if (!partner) {
                 const stmt = sql.prepare("DELETE FROM marriages WHERE userID = ? AND partnerID = ? AND guildID = ?");
-                stmt.run(user.id, partnerId, guildId); // تم التصحيح: الحذف يعتمد على الـ ID المحدد فقط
+                stmt.run(user.id, partnerId, guildId); 
 
                 // نقل الأطفال للأب المتبقي
                 sql.prepare("UPDATE children SET parentID = ? WHERE parentID = ? AND guildID = ?").run(user.id, partnerId, guildId);
@@ -222,36 +222,38 @@ module.exports = {
                     );
 
                     await i.reply({ 
-                        content: `🔒 **جلسة سرية:** ماذا تريد أن تفعل بالأطفال؟\n(يجب أن يختار أحدكما "احتفاظ" والآخر "تخلي" ليتم الأمر)`, 
+                        content: `🔒 **جلسة سرية:** ماذا تريد أن تفعل بالأطفال؟\n(اختر بحكمة، إذا تخلى أحدكما سيتم الطلاق فوراً للحاضن)`, 
                         components: [custodyRow], 
                         ephemeral: true 
                     });
                 }
 
-                // خيارات الحضانة
+                // 🔥🔥 خيارات الحضانة (التعديل الجديد) 🔥🔥
                 if (i.customId === 'keep_kids' || i.customId === 'leave_kids') {
                     const choice = i.customId === 'keep_kids' ? 'keep' : 'leave';
-                    custodyVotes[i.user.id] = choice;
+                    
+                    // ✅ سيناريو 1: إذا ضغط الشخص "تخلي" (leave)، يتم الطلاق فوراً ويأخذ الطرف الآخر الأطفال
+                    if (choice === 'leave') {
+                        // الحاضن هو الطرف الآخر (ليس الضاحط على الزر)
+                        const keeper = i.user.id === user.id ? partner : user;
+                        
+                        await i.update({ content: `✅ **لقد تخليت عن الحضانة.** سيتم إنهاء الإجراءات الآن.`, components: [] });
+                        await performDivorce(courtMsg, user, partner, cost, keeper, false);
+                        return;
+                    }
 
-                    // تحديث الرد السري للمستخدم فقط
-                    await i.update({ content: `✅ تم تسجيل رغبتك: **${choice === 'keep' ? 'الاحتفاظ' : 'التخلي'}**`, components: [] });
+                    // ✅ سيناريو 2: إذا ضغط "احتفاظ" (keep)، ننتظر الطرف الآخر
+                    custodyVotes[i.user.id] = 'keep';
+                    await i.update({ content: `✅ **تم تسجيل رغبتك بالاحتفاظ.** بانتظار قرار الطرف الآخر...`, components: [] });
 
-                    // التحقق من اكتمال التصويت
-                    if (custodyVotes[user.id] && custodyVotes[partner.id]) {
-                        if (custodyVotes[user.id] !== custodyVotes[partner.id]) {
-                            // اتفاق ناجح (واحد يبي والثاني ما يبي)
-                            const keeper = custodyVotes[user.id] === 'keep' ? user : partner;
-                            
-                            // تنفيذ الطلاق وتحديث الرسالة العامة الأصلية
-                            await performDivorce(courtMsg, user, partner, cost, keeper, false); 
-                        } else {
-                            // تعارض (الاثنين يبون أو الاثنين ما يبون)
-                            await courtMsg.edit({ 
-                                content: `❌ **فشل الطلاق!**\nاختلف الطرفان على الحضانة (كلاكما اخترتما نفس الخيار).\nحاولوا مرة أخرى بتفاهم أكبر.`, 
-                                embeds: [], 
-                                components: [] 
-                            });
-                        }
+                    // التحقق من اكتمال التصويت (إذا كلاهما اختار "احتفاظ")
+                    if (custodyVotes[user.id] === 'keep' && custodyVotes[partner.id] === 'keep') {
+                        // تعارض (الاثنين يبون الأطفال)
+                        await courtMsg.edit({ 
+                            content: `❌ **فشل الطلاق!**\nكلاكما يتمسك بالحضانة. يجب أن يتنازل أحدكما.\nحاولوا مرة أخرى بتفاهم أكبر.`, 
+                            embeds: [], 
+                            components: [] 
+                        });
                     }
                 }
             });
@@ -280,7 +282,6 @@ module.exports = {
                 client.setLevel.run(receiverDB);
 
                 // 2. حذف الزواج (تصحيح الشرط للحذف الدقيق)
-                // نحذف السجل حيث المستخدم هو الزوج أو الزوجة
                 const stmt = sql.prepare("DELETE FROM marriages WHERE ((userID = ? AND partnerID = ?) OR (userID = ? AND partnerID = ?)) AND guildID = ?");
                 stmt.run(payer.id, receiver.id, receiver.id, payer.id, guildId);
 
