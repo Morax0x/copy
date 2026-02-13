@@ -192,13 +192,17 @@ module.exports = {
 
             let custodyVotes = { [user.id]: null, [partner.id]: null };
 
-            const collector = courtMsg.createMessageComponentCollector({ time: 300000 }); // 5 دقائق
+            // 🔥🔥 تحسين الفلتر ليقبل الزوج والزوجة فقط 🔥🔥
+            const collector = courtMsg.createMessageComponentCollector({ 
+                filter: i => (i.user.id === user.id || i.user.id === partner.id),
+                time: 300000 
+            });
 
             collector.on('collect', async i => {
                 // إلغاء الطلاق
                 if (i.customId === 'cancel_divorce') {
-                    if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'ليس لك علاقة!', ephemeral: true });
-                    await courtMsg.delete().catch(() => {}); // حذف رسالة المحكمة
+                    // أي طرف يمكنه الإلغاء
+                    await courtMsg.delete().catch(() => {}); 
                     await i.reply({ content: `🏳️ **تم إلغاء إجراءات الطلاق.**`, ephemeral: false });
                     return;
                 }
@@ -214,8 +218,6 @@ module.exports = {
 
                 // بدء جلسة الحضانة
                 if (i.customId === 'custody_session') {
-                    if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'للمتزوجين فقط!', ephemeral: true });
-
                     const custodyRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('keep_kids').setLabel('الاحتفـاظ بحضانـة الاطفال').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId('leave_kids').setLabel('التخـلي عن حضـانة الاطفـال').setStyle(ButtonStyle.Danger)
@@ -238,6 +240,10 @@ module.exports = {
                         const keeper = i.user.id === user.id ? partner : user;
                         
                         await i.update({ content: `✅ **لقد تخليت عن الحضانة.** سيتم إنهاء الإجراءات الآن.`, components: [] });
+                        
+                        // نستخدم courtMsg هنا لأن i.update قامت بالرد على الرسالة السرية (ephemeral)
+                        // نريد تعديل الرسالة العامة الأصلية، لذا نمرر courtMsg
+                        // ونمرر false في النهاية لأننا لا نستخدم interaction للتحديث (courtMsg هي رسالة)
                         await performDivorce(courtMsg, user, partner, cost, keeper, false);
                         return;
                     }
