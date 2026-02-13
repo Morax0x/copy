@@ -2,7 +2,7 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ComponentType } = require("discord.js");
 
-const ALIMONY_AMOUNT = 2500; // مبلغ النفقة
+const DEFAULT_ALIMONY = 2500; // المبلغ الافتراضي للنفقة (في حال عدم وجود مهر أو إذا الزوج طلق)
 const MORA_EMOJI = '<:mora:1435647151349698621>';
 
 // 💔 قائمة صور الانفصال
@@ -30,6 +30,7 @@ module.exports = {
             const targetMember = message.mentions.members.first();
             let partnerId;
             let partner;
+            let marriageData; // لتخزين بيانات الزواج (بما فيها المهر)
 
             // جلب كل الزيجات للمستخدم
             const allMarriages = sql.prepare("SELECT * FROM marriages WHERE userID = ? AND guildID = ?").all(user.id, guildId);
@@ -41,8 +42,8 @@ module.exports = {
             }
 
             if (targetMember) {
-                const specificMarriage = allMarriages.find(m => m.partnerID === targetMember.id);
-                if (!specificMarriage) {
+                marriageData = allMarriages.find(m => m.partnerID === targetMember.id);
+                if (!marriageData) {
                     const msg = await message.reply(`🚫 **أنت لست متزوجاً من ${targetMember.displayName}!**`);
                     setTimeout(() => msg.delete().catch(() => {}), 5000);
                     return;
@@ -51,7 +52,8 @@ module.exports = {
                 partner = targetMember;
             } else {
                 if (allMarriages.length === 1) {
-                    partnerId = allMarriages[0].partnerID;
+                    marriageData = allMarriages[0];
+                    partnerId = marriageData.partnerID;
                     partner = await message.guild.members.fetch(partnerId).catch(() => null);
                 } else {
                     // قائمة اختيار إذا كان لديه أكثر من زوجة ولم يحدد
@@ -60,7 +62,7 @@ module.exports = {
                         return {
                             label: p ? p.displayName : `Unknown User (${m.partnerID})`,
                             value: m.partnerID,
-                            description: `الزوجة رقم ${m.id}`,
+                            description: `المهر: ${m.dowry || 0}`, // عرض المهر في الوصف
                             emoji: '💍'
                         };
                     }));
@@ -78,6 +80,7 @@ module.exports = {
                     try {
                         const selection = await selectMsg.awaitMessageComponent({ filter, time: 30000, componentType: ComponentType.StringSelect });
                         partnerId = selection.values[0];
+                        marriageData = allMarriages.find(m => m.partnerID === partnerId);
                         partner = await message.guild.members.fetch(partnerId).catch(() => null);
                         await selection.deferUpdate(); // تأكيد الاختيار
                         await selectMsg.delete().catch(() => {});
@@ -105,7 +108,7 @@ module.exports = {
                     .setFooter({ text: "نظام الطلاق التلقائي" });
 
                 const sentMsg = await message.reply({ embeds: [embed] });
-                setTimeout(() => sentMsg.delete().catch(() => {}), 15000); // حذف تلقائي
+                setTimeout(() => sentMsg.delete().catch(() => {}), 15000);
                 return;
             }
 
@@ -128,25 +131,32 @@ module.exports = {
 
             const isMale = familyConfig && checkRole(familyConfig.maleRole);
             
-            let title, desc, footer;
+            // 🔥🔥 حساب التكلفة (المهر أو النفقة) 🔥🔥
             let cost = 0;
+            let title, desc, footer;
+            
+            // المهر المدفوع (أو 0 إذا لم يكن مسجلاً)
+            const dowryPaid = marriageData.dowry || 0;
 
             if (isMale) {
+                // الزوج يطلق: يدفع نفقة (مبلغ ثابت)
+                cost = DEFAULT_ALIMONY;
                 title = "✥ طـلب طــلاق";
                 desc = `
     ✶ تقـدم ${user} بطلب الطـلاق منـك
-    ✶ حـكمـت المحكمـة عليـه بدفع نفـقة لك ومقدراها **${ALIMONY_AMOUNT.toLocaleString()}** ${MORA_EMOJI}
+    ✶ حـكمـت المحكمـة عليـه بدفع نفـقة لك ومقدراها **${cost.toLocaleString()}** ${MORA_EMOJI}
                 `;
-                cost = ALIMONY_AMOUNT;
                 footer = "المدعي: الزوج";
             } else {
+                // الزوجة تخلع: ترجع المهر للزوج
+                // إذا كان المهر 0 (زواج قديم)، تدفع المبلغ الافتراضي
+                cost = dowryPaid > 0 ? dowryPaid : DEFAULT_ALIMONY;
                 title = "✥ طـلب خـلـع";
                 desc = `
     ✶ تقـدمت ${user} بطلب الخـلـع منـك
-    ✶ حـكمـت المحكمـة عليـها بدفع تعويض لك ومقداره **${ALIMONY_AMOUNT.toLocaleString()}** ${MORA_EMOJI}
+    ✶ حـكمـت المحكمـة عليـها بإرجاع المهر/التعويض لك ومقداره **${cost.toLocaleString()}** ${MORA_EMOJI}
                 `;
-                cost = ALIMONY_AMOUNT;
-                footer = "المدعية: الزوجة";
+                footer = "المدعية: الزوجة (إرجاع المهر)";
             }
 
             const children = sql.prepare("SELECT * FROM children WHERE (parentID = ? OR parentID = ?) AND guildID = ?").all(user.id, partner.id, guildId);
@@ -158,7 +168,7 @@ module.exports = {
 
             let userData = client.getLevel.get(user.id, guildId);
             if (!userData || userData.mora < cost) {
-                const msg = await message.reply(`💸 **لا تملك قيمة النفقة/التعويض!** المطلوب: ${cost.toLocaleString()} ${MORA_EMOJI}`);
+                const msg = await message.reply(`💸 **لا تملك المبلغ المطلوب!** (${cost.toLocaleString()} ${MORA_EMOJI})`);
                 setTimeout(() => msg.delete().catch(() => {}), 5000);
                 return;
             }
@@ -203,7 +213,6 @@ module.exports = {
             collector.on('collect', async i => {
                 // إلغاء الطلاق
                 if (i.customId === 'cancel_divorce') {
-                    // أي طرف يمكنه الإلغاء
                     await courtMsg.delete().catch(() => {}); 
                     const cancelMsg = await message.channel.send({ content: `🏳️ **تم إلغاء إجراءات الطلاق.**` });
                     setTimeout(() => cancelMsg.delete().catch(() => {}), 5000);
@@ -214,15 +223,12 @@ module.exports = {
                 if (i.customId === 'confirm_divorce_direct') {
                     if (i.user.id !== user.id) return i.reply({ content: `⚠️ **هذا القرار بيد صاحب الطلب (${user.displayName}) فقط!**`, ephemeral: true });
                     
-                    // نستخدم i.update لتحديث الرسالة مباشرة
                     await performDivorce(i, user, partner, cost, null, true); 
                     return;
                 }
 
                 // بدء جلسة الحضانة
                 if (i.customId === 'custody_session') {
-                    if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'للمتزوجين فقط!', ephemeral: true });
-
                     const custodyRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('keep_kids').setLabel('الاحتفـاظ بحضانـة الاطفال').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId('leave_kids').setLabel('التخـلي عن حضـانة الاطفـال').setStyle(ButtonStyle.Danger)
@@ -246,7 +252,7 @@ module.exports = {
                         
                         await i.update({ content: `✅ **لقد تخليت عن الحضانة.** سيتم إنهاء الإجراءات الآن.`, components: [] });
                         
-                        // نستخدم courtMsg هنا للتحديث العام
+                        // نستخدم courtMsg هنا لأن i.update قامت بالرد على الرسالة السرية (ephemeral)
                         await performDivorce(courtMsg, user, partner, cost, keeper, false);
                         return;
                     }
@@ -257,7 +263,6 @@ module.exports = {
 
                     // التحقق من اكتمال التصويت (إذا كلاهما اختار "احتفاظ")
                     if (custodyVotes[user.id] === 'keep' && custodyVotes[partner.id] === 'keep') {
-                        // تعارض (الاثنين يبون الأطفال)
                         await courtMsg.edit({ 
                             content: `❌ **فشل الطلاق!**\nكلاكما يتمسك بالحضانة. يجب أن يتنازل أحدكما.\nحاولوا مرة أخرى بتفاهم أكبر.`, 
                             embeds: [], 
@@ -291,14 +296,13 @@ module.exports = {
                 receiverDB.mora += amount;
                 client.setLevel.run(receiverDB);
 
-                // 2. حذف الزواج (تصحيح الشرط للحذف الدقيق)
+                // 2. حذف الزواج
                 const stmt = sql.prepare("DELETE FROM marriages WHERE ((userID = ? AND partnerID = ?) OR (userID = ? AND partnerID = ?)) AND guildID = ?");
                 stmt.run(payer.id, receiver.id, receiver.id, payer.id, guildId);
 
                 // 3. نقل الأطفال
                 let kidsMsg = "";
                 if (kidsKeeper && children.length > 0) {
-                    // تحديث كل طفل يملكه أحد الوالدين ليصبح تابعاً للحاضن الجديد
                     const moveStmt = sql.prepare("UPDATE children SET parentID = ? WHERE (parentID = ? OR parentID = ?) AND guildID = ?");
                     moveStmt.run(kidsKeeper.id, payer.id, receiver.id, guildId);
                     kidsMsg = `\n👶 **الحضانة:** انتقلت جميع الأطفال إلى كفالة **${kidsKeeper.displayName}**.`;
@@ -312,7 +316,7 @@ module.exports = {
                     .setTitle(`⚖️ حكمت المحكمة`)
                     .setDescription(
                         `تم التفريق بين **${payer.displayName}** و **${receiver.displayName}** رسمياً.\n` +
-                        `💸 **النفقة المدفوعة:** ${amount.toLocaleString()} ${MORA_EMOJI}\n` +
+                        `💸 **المبلغ المدفوع:** ${amount.toLocaleString()} ${MORA_EMOJI}\n` +
                         kidsMsg
                     )
                     .setImage(finalGif)
@@ -326,12 +330,11 @@ module.exports = {
                         await interactionOrMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
                     }
                     
-                    // 🗑️ حذف الرسالة تلقائياً بعد 15 ثانية (ميزة جديدة)
+                    // 🗑️ حذف الرسالة تلقائياً بعد 15 ثانية
                     if (!isInteraction) {
                         setTimeout(() => interactionOrMsg.delete().catch(() => {}), 15000);
                     }
                 } catch (err) {
-                    // في حال فشل التعديل، نرسل رسالة جديدة ونحذفها لاحقاً
                     const newMsg = await message.channel.send({ embeds: [finalEmbed] });
                     setTimeout(() => newMsg.delete().catch(() => {}), 15000);
                 }
