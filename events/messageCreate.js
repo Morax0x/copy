@@ -15,7 +15,6 @@ const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
 const paymentCooldowns = new Set();
 
-// 🔥 متغير جديد لتتبع من استخدم وضع الشبح
 const ghostModeUsers = new Set();
 
 if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
@@ -85,16 +84,12 @@ module.exports = {
 
                 if (afkData) {
                     const content = message.content.trim();
-                    // 🔥 منطق وضع الشبح الجديد (مرة واحدة فقط)
                     const ghostKey = `${message.author.id}-${message.guild.id}`;
                     const isGhostMessage = content.startsWith('(') && content.endsWith(')');
                     
-                    // هل نسمح له بالبقاء في الـ AFK؟
-                    // نعم فقط إذا كانت رسالة شبح (بين قوسين) ولم يستخدم الفرصة من قبل
                     const allowGhost = isGhostMessage && !ghostModeUsers.has(ghostKey);
 
                     if (!allowGhost) {
-                        // هنا يتم إلغاء الـ AFK (إما رسالة عادية، أو رسالة شبح ثانية)
                         const now = Math.floor(Date.now() / 1000);
                         const diffSeconds = now - afkData.timestamp;
                         
@@ -128,7 +123,6 @@ module.exports = {
 
                         sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
                         
-                        // تنظيف قائمة الشبح عند الخروج
                         ghostModeUsers.delete(ghostKey);
 
                         try {
@@ -168,9 +162,7 @@ module.exports = {
                             } 
                         }
                     } else {
-                        // إذا كانت رسالة شبح مسموحة (أول مرة)
                         ghostModeUsers.add(ghostKey);
-                        // لا تحذف الـ AFK، وتجاهل الكود التالي (لا تحسب XP للرسالة المخفية إذا أردت، أو اتركها تكمل)
                     } 
                 }
 
@@ -256,125 +248,144 @@ module.exports = {
 
         let Prefix = settings?.prefix || "-";
 
+        // 🔥🔥 نظام الذكاء الاصطناعي (AI) مع إصلاح التضارب مع الأوامر 🔥🔥
         if (message.mentions.has(client.user) && !message.author.bot) {
-            if (message.content.includes("@everyone") || message.content.includes("@here")) return;
+            
+            // 1. إذا كانت الرسالة تبدأ بالبريفكس، تجاهل الـ AI
+            if (message.content.startsWith(Prefix)) {
+                // دع الكود يكمل للأسفل
+            } 
+            else {
+                // 2. إذا كانت الكلمة الأولى هي اسم أمر (لأوامر الكازينو بدون بريفكس)، تجاهل الـ AI
+                const argsRaw = message.content.trim().split(/ +/);
+                const firstWord = argsRaw[0].toLowerCase();
+                const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
 
-            let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
-            let isPaidSession = false;
+                if (isCommand) {
+                    // أمر معروف -> تجاهل الـ AI
+                } 
+                else {
+                    // 🔥 تفعيل الـ AI هنا فقط
+                    if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
-            if (!aiChannelData && message.channel.parentId) {
-                if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
-                    const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                      
-                    if (paidStatus) {
-                        aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
-                        isPaidSession = true;
-                    } else {
-                        if (paymentCooldowns.has(message.channel.id)) return; 
+                    let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
+                    let isPaidSession = false;
 
-                        paymentCooldowns.add(message.channel.id);
-                        setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
+                    if (!aiChannelData && message.channel.parentId) {
+                        if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
+                            const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
+                            
+                            if (paidStatus) {
+                                aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                                isPaidSession = true;
+                            } else {
+                                if (paymentCooldowns.has(message.channel.id)) return; 
 
-                        const payBtn = new ActionRowBuilder().addComponents(
+                                paymentCooldowns.add(message.channel.id);
+                                setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
+
+                                const payBtn = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId('ai_pay_category_1000')
+                                        .setLabel('فتح الشات (1000 مورا)')
+                                        .setEmoji('🔓')
+                                        .setStyle(ButtonStyle.Primary)
+                                );
+
+                                return message.reply({
+                                    content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`,
+                                    components: [payBtn]
+                                });
+                            }
+                        }
+                    }
+
+                    if (!aiChannelData) return;
+
+                    const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
+
+                    if (!usageStatus.canChat) {
+                        if (paymentCooldowns.has(message.author.id)) {
+                            return; 
+                        }
+
+                        paymentCooldowns.add(message.author.id);
+                        setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
+
+                        const payButton = new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
-                                .setCustomId('ai_pay_category_1000')
-                                .setLabel('فتح الشات (1000 مورا)')
-                                .setEmoji('🔓')
-                                .setStyle(ButtonStyle.Primary)
+                                .setCustomId('ai_topup_2500') 
+                                .setLabel('ادفـع 2500 مورا')
+                                .setEmoji(client.EMOJI_MORA || '💰')
+                                .setStyle(ButtonStyle.Success)
                         );
 
                         return message.reply({
-                            content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`,
-                            components: [payBtn]
+                            content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`,
+                            components: [payButton]
                         });
                     }
-                }
-            }
 
-            if (!aiChannelData) return;
-
-            const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
-
-            if (!usageStatus.canChat) {
-                if (paymentCooldowns.has(message.author.id)) {
-                    return; 
-                }
-
-                paymentCooldowns.add(message.author.id);
-                setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
-
-                const payButton = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('ai_topup_2500') 
-                        .setLabel('ادفـع 2500 مورا')
-                        .setEmoji(client.EMOJI_MORA || '💰')
-                        .setStyle(ButtonStyle.Success)
-                );
-
-                return message.reply({
-                    content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`,
-                    components: [payButton]
-                });
-            }
-
-            if (paymentCooldowns.has(message.author.id)) {
-                paymentCooldowns.delete(message.author.id);
-            }
-
-            const isNsfw = Boolean(aiChannelData.nsfw); 
-
-            try {
-                await message.channel.sendTyping();
-                const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
-                if (!cleanContent) return message.reply("نـعـم .. ؟");
-
-                let imageAttachment = null;
-                if (message.attachments.size > 0) {
-                    const attachment = message.attachments.first();
-                    if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-                        imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
+                    if (paymentCooldowns.has(message.author.id)) {
+                        paymentCooldowns.delete(message.author.id);
                     }
+
+                    const isNsfw = Boolean(aiChannelData.nsfw); 
+
+                    try {
+                        await message.channel.sendTyping();
+                        const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
+                        if (!cleanContent) return message.reply("نـعـم .. ؟");
+
+                        let imageAttachment = null;
+                        if (message.attachments.size > 0) {
+                            const attachment = message.attachments.first();
+                            if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+                                imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
+                            }
+                        }
+
+                        const reply = await askMorax(
+                            message.author.id, 
+                            message.guild.id, 
+                            message.channel.id, 
+                            cleanContent, 
+                            message.member.displayName,
+                            imageAttachment, 
+                            isNsfw,
+                            message 
+                        );
+                        
+                        if (!reply) return;
+
+                        aiLimitHandler.incrementUsage(message.author.id);
+
+                        const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
+
+                        const replyOptions = {
+                            repliedUser: true, 
+                            parse: ['users']    
+                        };
+
+                        if (safeReply.length > 2000) {
+                            const chunks = safeReply.match(/[\s\S]{1,1950}/g) || [];
+                            for (const chunk of chunks) {
+                                await message.reply({ 
+                                    content: chunk, 
+                                    allowedMentions: replyOptions 
+                                });
+                            }
+                        } else {
+                            return message.reply({ 
+                                content: safeReply, 
+                                allowedMentions: replyOptions 
+                            });
+                        }
+
+                    } catch (err) { console.error("AI Response Failed:", err); }
+                    return; // 🛑 إيقاف هنا إذا تم الرد بالـ AI
                 }
-
-                const reply = await askMorax(
-                    message.author.id, 
-                    message.guild.id, 
-                    message.channel.id, 
-                    cleanContent, 
-                    message.member.displayName,
-                    imageAttachment, 
-                    isNsfw,
-                    message 
-                );
-                
-                if (!reply) return;
-
-                aiLimitHandler.incrementUsage(message.author.id);
-
-                const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
-
-                const replyOptions = {
-                    repliedUser: true, 
-                    parse: ['users']    
-                };
-
-                if (safeReply.length > 2000) {
-                    const chunks = safeReply.match(/[\s\S]{1,1950}/g) || [];
-                    for (const chunk of chunks) {
-                        await message.reply({ 
-                            content: chunk, 
-                            allowedMentions: replyOptions 
-                        });
-                    }
-                } else {
-                    return message.reply({ 
-                        content: safeReply, 
-                        allowedMentions: replyOptions 
-                    });
-                }
-
-            } catch (err) { console.error("AI Response Failed:", err); }
-            return;
+            }
         }
 
         if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
@@ -489,8 +500,8 @@ module.exports = {
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
-                                        `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
+                                                `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                                `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
                         message.channel.send(backupMsg);
                     }
                 } else {
@@ -499,11 +510,18 @@ module.exports = {
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
+            
+            // 🔥🔥 توزيع رتب الليفل (Level Roles) 🔥🔥
             try {
                 let currentLevelRole = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
+                
+                // إذا وصل لمستوى يستحق رتبة
                 if (currentLevelRole && message.member) {
                     if (!message.member.roles.cache.has(currentLevelRole.roleID)) {
+                        // إضافة الرتبة الجديدة
                         await message.member.roles.add(currentLevelRole.roleID).catch(e => console.error(`[Level Role Add Error]: ${e.message}`));
+                        
+                        // إزالة الرتب السابقة (التنظيف التلقائي)
                         const oldRoles = sql.prepare("SELECT roleID FROM level_roles WHERE guildID = ? AND level < ?").all(message.guild.id, level.level);
                         for (const roleData of oldRoles) {
                             if (message.member.roles.cache.has(roleData.roleID)) {
@@ -513,6 +531,7 @@ module.exports = {
                     }
                 }
             } catch (e) { console.error("[Level Role Logic Error]: ", e); }
+
         } catch (err) { console.error("[Stats Error]", err); }
 
         try {
