@@ -8,7 +8,7 @@ const { EmbedBuilder, Colors } = require("discord.js");
 function startStatusMonitor(threadChannel, players) {
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي', 'وضعي'];
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
-    
+     
     // إنشاء المراقب
     const collector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
 
@@ -16,16 +16,24 @@ function startStatusMonitor(threadChannel, players) {
         const player = players.find(p => p.id === m.author.id);
         if (!player) return; 
 
-        // إذا كان متحلل (موت نهائي)
+        // 🔥🔥 التعديل: تحديث حالة التحلل بناءً على عدد الميتات فوراً 🔥🔥
+        const deaths = player.deathCount || 0;
+        if (deaths >= 3) {
+            player.isPermDead = true;
+            player.isDead = true; // تأكيد أنه ميت
+        }
+
+        // 1. فحص التحلل (بعد التحديث)
         if (player.isPermDead) {
-             return m.reply({ content: `💀 **${player.name}** جثتك متحللة.. لقد غادرت عالم الأحياء نهائياً.` }).catch(()=>{});
+             return m.reply({ content: `💀 **${player.name}** جثتك متحللة (3/3).. لقد غادرت عالم الأحياء نهائياً.` }).catch(()=>{});
         }
 
-        // إذا كان ميت حالياً (قابل للإنعاش)
+        // 2. فحص الموت العادي (قابل للإنعاش)
         if (player.isDead) {
-             return m.reply({ content: `👻 **${player.name}** أنت ميت (الموتة رقم ${player.deathCount || 0}). اطلب من الكاهن إنعاشك!` }).catch(()=>{});
+             return m.reply({ content: `👻 **${player.name}** أنت ميت (الموتة رقم ${deaths}/3). اطلب من الكاهن إنعاشك قبل أن تتحلل!` }).catch(()=>{});
         }
 
+        // 3. عرض الحالة للأحياء
         // الحسابات للعرض (شريط الصحة)
         const percent = Math.max(0, Math.min(1, player.hp / player.maxHp));
         const filled = Math.round(percent * 10);
@@ -42,8 +50,7 @@ function startStatusMonitor(threadChannel, players) {
         };
         const arClass = classMap[player.class] || player.class;
         
-        const deaths = player.deathCount || 0;
-        const livesLeft = 3 - deaths; // 3 محاولات إجمالية
+        const livesLeft = 3 - deaths; // عدد الفرص المتبقية قبل التحلل النهائي
 
         let msgContent = `👤 **${player.name}** [${arClass}]\n[${bar}] ❤️ **${player.hp}/${player.maxHp}**`;
         
@@ -52,7 +59,7 @@ function startStatusMonitor(threadChannel, players) {
         }
         
         // عرض حالة الموت والمحاولات
-        msgContent += `\n💀 **سجل الموت:** ${deaths}/3 (متبقي ${livesLeft} فرص للتحلل)`;
+        msgContent += `\n💀 **سجل الموت:** ${deaths}/3 (متبقي ${livesLeft} فرص قبل التحلل)`;
 
         await m.reply({ content: msgContent }).catch(()=>{});
     });
