@@ -88,6 +88,8 @@ function applyDamageToPlayer(player, damageAmount) {
     if (dmgReduction) remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
 
     const hadShield = player.shield > 0;
+    // 🔥 نحتفظ بمصدر الدرع قبل كسره للفحص لاحقاً
+    const shieldSource = player.effects.shield_source; 
 
     if (player.shield > 0) {
         player.shield = Math.floor(player.shield);
@@ -108,9 +110,20 @@ function applyDamageToPlayer(player, damageAmount) {
         player.isDead = true;
     }
 
+    // 🔥🔥🔥 التعديل هنا: استثناء مهارة البشر من الكولداون عند الكسر 🔥🔥🔥
     if (hadShield && player.shield <= 0) {
-        if (!player.skillCooldowns) player.skillCooldowns = {};
-        player.skillCooldowns['skill_shielding'] = 3; 
+        // إذا كان مصدر الدرع هو مهارة البشر، لا نطبق كولداون إضافي
+        if (shieldSource !== 'Cleanse_Buff_Shield') {
+            if (!player.skillCooldowns) player.skillCooldowns = {};
+            // نطبق الكولداون فقط للدروع العادية (skill_shielding)
+            // أو أي درع آخر يعتمد على هذا النظام، ما عدا مهارة البشر
+            if (shieldSource === 'skill_shielding' || !shieldSource) {
+                 player.skillCooldowns['skill_shielding'] = 3; 
+            }
+        }
+        
+        // تنظيف مصدر الدرع بعد الكسر
+        player.effects.shield_source = null;
     }
       
     return remainingDamage; 
