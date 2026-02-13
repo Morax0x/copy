@@ -234,7 +234,7 @@ module.exports = {
                         .setTitle('❖ سـطـو نـاجـح !')
                         .setColor(Colors.Green)
                         .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
-                        .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطورة!`);
+                        .setDescription(`لقد تمكنت من التسلل وسرقة **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من خزانة الإمبراطور!`);
                     
                     await i.update({ embeds: [winEmbed], components: [] });
                     activeRobberies.delete(robber.id); // إنهاء
