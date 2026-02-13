@@ -104,7 +104,9 @@ module.exports = {
                     )
                     .setFooter({ text: "نظام الطلاق التلقائي" });
 
-                return message.reply({ embeds: [embed] });
+                const sentMsg = await message.reply({ embeds: [embed] });
+                setTimeout(() => sentMsg.delete().catch(() => {}), 15000); // حذف تلقائي
+                return;
             }
 
             // ==========================================================
@@ -203,7 +205,8 @@ module.exports = {
                 if (i.customId === 'cancel_divorce') {
                     // أي طرف يمكنه الإلغاء
                     await courtMsg.delete().catch(() => {}); 
-                    await i.reply({ content: `🏳️ **تم إلغاء إجراءات الطلاق.**`, ephemeral: false });
+                    const cancelMsg = await message.channel.send({ content: `🏳️ **تم إلغاء إجراءات الطلاق.**` });
+                    setTimeout(() => cancelMsg.delete().catch(() => {}), 5000);
                     return;
                 }
 
@@ -218,6 +221,8 @@ module.exports = {
 
                 // بدء جلسة الحضانة
                 if (i.customId === 'custody_session') {
+                    if (i.user.id !== user.id && i.user.id !== partner.id) return i.reply({ content: 'للمتزوجين فقط!', ephemeral: true });
+
                     const custodyRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('keep_kids').setLabel('الاحتفـاظ بحضانـة الاطفال').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId('leave_kids').setLabel('التخـلي عن حضـانة الاطفـال').setStyle(ButtonStyle.Danger)
@@ -241,9 +246,7 @@ module.exports = {
                         
                         await i.update({ content: `✅ **لقد تخليت عن الحضانة.** سيتم إنهاء الإجراءات الآن.`, components: [] });
                         
-                        // نستخدم courtMsg هنا لأن i.update قامت بالرد على الرسالة السرية (ephemeral)
-                        // نريد تعديل الرسالة العامة الأصلية، لذا نمرر courtMsg
-                        // ونمرر false في النهاية لأننا لا نستخدم interaction للتحديث (courtMsg هي رسالة)
+                        // نستخدم courtMsg هنا للتحديث العام
                         await performDivorce(courtMsg, user, partner, cost, keeper, false);
                         return;
                     }
@@ -260,6 +263,7 @@ module.exports = {
                             embeds: [], 
                             components: [] 
                         });
+                        setTimeout(() => courtMsg.delete().catch(() => {}), 15000); // حذف رسالة الفشل
                     }
                 }
             });
@@ -321,9 +325,15 @@ module.exports = {
                     } else {
                         await interactionOrMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
                     }
+                    
+                    // 🗑️ حذف الرسالة تلقائياً بعد 15 ثانية (ميزة جديدة)
+                    if (!isInteraction) {
+                        setTimeout(() => interactionOrMsg.delete().catch(() => {}), 15000);
+                    }
                 } catch (err) {
-                    // في حال فشل التعديل، نرسل رسالة جديدة
-                    await message.channel.send({ embeds: [finalEmbed] });
+                    // في حال فشل التعديل، نرسل رسالة جديدة ونحذفها لاحقاً
+                    const newMsg = await message.channel.send({ embeds: [finalEmbed] });
+                    setTimeout(() => newMsg.delete().catch(() => {}), 15000);
                 }
             }
 
