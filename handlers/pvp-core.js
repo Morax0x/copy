@@ -26,8 +26,8 @@ const LOSE_IMAGES = [
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-const BASE_HP = 800;      
-const HP_PER_LEVEL = 60;  
+const BASE_HP = 800;       
+const HP_PER_LEVEL = 60;   
 const SKILL_COOLDOWN_TURNS = 3; 
 
 const activePvpChallenges = new Set();
@@ -64,7 +64,7 @@ function getAllSkillData(sql, member) {
     const userRace = getUserRace(member, sql);
     const skillsOutput = {};
     const userSkillsData = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(member.id, member.guild.id);
-    
+     
     if (userSkillsData) {
         userSkillsData.forEach(userSkill => {
             const skillConfig = skillsConfig.find(s => s.id === userSkill.skillID);
@@ -375,6 +375,19 @@ function applySkillEffect(battleState, attackerId, skill) {
             }
             defender.hp -= dmg;
             return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه وترك فيه سمّاً!`;
+        }
+
+        // 🔥🔥🔥 إضافة مهارة نصل السموم (Poison_Blade) 🔥🔥🔥
+        case 'Poison_Blade': { 
+            const directDmg = Math.floor(baseAtk * 1.2); // ضرر مباشر 120%
+            defender.hp -= directDmg;
+            
+            // ضرر السم المستمر (40% من الهجوم لمدة 3 أدوار)
+            const poisonDmg = Math.floor(baseAtk * 0.4); 
+            defender.effects.poison = poisonDmg;
+            defender.effects.poison_turns = 3;
+
+            return `🐍 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غرز نصل السموم! (${directDmg} ضرر + سم)`;
         }
 
         default:
