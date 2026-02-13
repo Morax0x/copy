@@ -247,8 +247,8 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'TrueDMG_Burn': { // Dragon
-            // 🔥 الحسبة الجديدة: ضرر الحرق يعتمد على لفل المهارة
-            const burnDmgFixed = 100 + (skillLevel * 50);
+            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) = 550 Max 🔥🔥
+            const burnDmgFixed = 50 + (skillLevel * 25);
             defender.effects.burn = burnDmgFixed;
             defender.effects.burn_turns = 3;
             const dmg = Math.floor(baseAtk * 1.4); 
@@ -304,12 +304,11 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'Lifesteal_Overheal': { // Vampire Optimized
-            // 🔥 زيادة ضرر "نتفة" (15% إضافية)
             const dmg = Math.floor(baseAtk * 1.45); 
             defender.hp -= dmg;
 
-            // 🔥 إضافة تأثير النزيف (نفس حسبة السم/الحرق الجديدة)
-            const bleedDmg = 100 + (skillLevel * 50);
+            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) 🔥🔥
+            const bleedDmg = 50 + (skillLevel * 25);
             defender.effects.burn = bleedDmg;
             defender.effects.burn_turns = 2;
 
@@ -322,10 +321,10 @@ function applySkillEffect(battleState, attackerId, skill) {
                 attacker.hp = maxHp;
                 const overflowShield = Math.floor((healVal - missingHp) * 0.5);
                 attacker.effects.shield += overflowShield;
-                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع (+${overflowShield})!`;
+                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه مسبباً نزيفاً (${bleedDmg}) وحول الفائض لدرع!`;
             } else {
                 attacker.hp += healVal;
-                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
+                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP وسبب نزيفاً (${bleedDmg})!`;
             }
         }
 
@@ -334,16 +333,17 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.hp -= dmg;
             const randomEffect = Math.random();
             let effectMsg = "";
+            // 🔥🔥 التعديل الجديد للقيم العشوائية 🔥🔥
+            const chaosVal = 50 + (skillLevel * 25);
+
             if (randomEffect < 0.25) {
-                const burnVal = 100 + (skillLevel * 50);
-                defender.effects.burn = burnVal; defender.effects.burn_turns = 3; effectMsg = "حرق";
+                defender.effects.burn = chaosVal; defender.effects.burn_turns = 3; effectMsg = "حرق";
             } else if (randomEffect < 0.50) {
                 defender.effects.weaken = 0.3; defender.effects.weaken_turns = 2; effectMsg = "إضعاف";
             } else if (randomEffect < 0.75) {
                 defender.effects.confusion = true; defender.effects.confusion_turns = 2; effectMsg = "ارتباك";
             } else {
-                const poisonVal = 100 + (skillLevel * 50);
-                defender.effects.poison = poisonVal; defender.effects.poison_turns = 3; effectMsg = "سم";
+                defender.effects.poison = chaosVal; defender.effects.poison_turns = 3; effectMsg = "سم";
             }
             return `🌀 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سبب فوضى (${effectMsg})!`;
         }
@@ -363,8 +363,9 @@ function applySkillEffect(battleState, attackerId, skill) {
 
         case 'Execute_Heal': { // Ghoul Optimized
             const dmg = Math.floor(baseAtk * 1.6);
-            // إضافة تأثير السم الثابت
-            const ghoulPoison = 100 + (skillLevel * 50);
+            
+            // 🔥🔥 التعديل الجديد للسم 🔥🔥
+            const ghoulPoison = 50 + (skillLevel * 25);
             defender.effects.poison = ghoulPoison;
             defender.effects.poison_turns = 3;
 
@@ -374,20 +375,20 @@ function applySkillEffect(battleState, attackerId, skill) {
                 return `🥩 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** افترس خصمه المسموم واستعاد صحته!`;
             }
             defender.hp -= dmg;
-            return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه وترك فيه سمّاً!`;
+            return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه وترك فيه سمّاً (${ghoulPoison})!`;
         }
 
-        // 🔥🔥🔥 إضافة مهارة نصل السموم (Poison_Blade) 🔥🔥🔥
+        // 🔥🔥🔥 تعديل نصل السموم 🔥🔥🔥
         case 'Poison_Blade': { 
-            const directDmg = Math.floor(baseAtk * 1.2); // ضرر مباشر 120%
+            const directDmg = Math.floor(baseAtk * 1.2); 
             defender.hp -= directDmg;
             
-            // ضرر السم المستمر (40% من الهجوم لمدة 3 أدوار)
-            const poisonDmg = Math.floor(baseAtk * 0.4); 
+            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) 🔥🔥
+            const poisonDmg = 50 + (skillLevel * 25); 
             defender.effects.poison = poisonDmg;
             defender.effects.poison_turns = 3;
 
-            return `🐍 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غرز نصل السموم! (${directDmg} ضرر + سم)`;
+            return `🐍 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غرز نصل السموم! (${directDmg} ضرر + سم ${poisonDmg})`;
         }
 
         default:
@@ -406,7 +407,8 @@ function applySkillEffect(battleState, attackerId, skill) {
                     attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
                     return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
                 case 'skill_poison': {
-                    const pVal = 100 + (skillLevel * 50);
+                    // 🔥🔥 تعديل المهارة الافتراضية أيضاً 🔥🔥
+                    const pVal = 50 + (skillLevel * 25);
                     defender.effects.poison = pVal; defender.effects.poison_turns = 3;
                     return `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه (-${pVal})!`;
                 }
