@@ -98,7 +98,15 @@ module.exports = {
         // 💍 بداية كود الزواج الفعلي
         // =========================================================================
 
-        sql.prepare(`CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT)`).run();
+        // 🔥🔥 1. إنشاء الجدول وتحديثه لضمان وجود عمود dowry 🔥🔥
+        sql.prepare(`CREATE TABLE IF NOT EXISTS marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, partnerID TEXT, marriageDate INTEGER, guildID TEXT, dowry INTEGER DEFAULT 0)`).run();
+        
+        // محاولة إضافة العمود للجدول القديم إذا كان موجوداً مسبقاً بدون dowry
+        try {
+            sql.prepare("ALTER TABLE marriages ADD COLUMN dowry INTEGER DEFAULT 0").run();
+        } catch (e) {
+            // العمود موجود مسبقاً، لا مشكلة
+        }
 
         const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(message.guild.id);
         if (!familyConfig || !familyConfig.maleRole || !familyConfig.femaleRole) {
@@ -139,19 +147,15 @@ module.exports = {
         }
 
         // =========================================================
-        // 🧬 فحص المحارم (Incest Check) - الحماية الجديدة 🧬
+        // 🧬 فحص المحارم (Incest Check)
         // =========================================================
         
-        // 1. هل الطرف الآخر هو أحد الوالدين؟ (Direct Parent)
         const isParent = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(targetMember.id, message.author.id, guildId);
         if (isParent) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
 
-        // 2. هل الطرف الآخر هو أحد الأبناء؟ (Direct Child)
         const isChild = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(message.author.id, targetMember.id, guildId);
         if (isChild) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو ابنك/ابنتك.`);
 
-        // 3. هل الطرف الآخر أخ/أخت؟ (Sibling Check)
-        // (إذا كان لديكم أب واحد مشترك على الأقل)
         const authorParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(message.author.id, guildId).map(r => r.parentID);
         const targetParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(targetMember.id, guildId).map(r => r.parentID);
         
@@ -234,14 +238,14 @@ module.exports = {
 
                 const now = Date.now();
                 
-                // تسجيل الزواج (مع حماية من الأخطاء)
+                // 🔥🔥 2. تسجيل الزواج مع حفظ المهر (dowry) 🔥🔥
                 try {
-                    const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID) VALUES (?, ?, ?, ?)");
-                    insert.run(message.author.id, targetMember.id, now, message.guild.id);
-                    insert.run(targetMember.id, message.author.id, now, message.guild.id);
+                    const insert = sql.prepare("INSERT INTO marriages (userID, partnerID, marriageDate, guildID, dowry) VALUES (?, ?, ?, ?, ?)");
+                    insert.run(message.author.id, targetMember.id, now, message.guild.id, dowry);
+                    insert.run(targetMember.id, message.author.id, now, message.guild.id, dowry);
                 } catch (err) {
                     if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-                        return i.update({ content: `❌ **حدث خطأ في قاعدة البيانات:** يبدو أن البيانات مسجلة مسبقاً أو أن الجدول قديم لا يدعم التعدد.`, components: [], embeds: [] });
+                        return i.update({ content: `❌ **حدث خطأ:** يبدو أن البيانات مسجلة مسبقاً.`, components: [], embeds: [] });
                     }
                     console.error(err);
                 }
