@@ -11,7 +11,8 @@ const defaultTotalStats = {
     total_replies_sent: 0, 
     total_mentions_received: 0, 
     total_vc_minutes: 0, 
-    total_disboard_bumps: 0 
+    total_disboard_bumps: 0,
+    total_topgg_votes: 0 // ✅ (1) تمت الإضافة هنا
 };
 
 const defaultDailyStats = {
@@ -19,8 +20,8 @@ const defaultDailyStats = {
     reactions_added: 0, replies_sent: 0, mentions_received: 0, 
     vc_minutes: 0, water_tree: 0, counting_channel: 0, meow_count: 0, 
     streaming_minutes: 0, disboard_bumps: 0,
-    // 🔥 القيمة الجديدة للمهمة اليومية 🔥
-    boost_channel_reactions: 0 
+    boost_channel_reactions: 0,
+    topgg_votes: 0 // ✅ يفضل إضافتها هنا أيضاً للاتساق
 };
 
 function safeMerge(base, defaults) {
@@ -86,8 +87,7 @@ module.exports = {
             weeklyStats.reactions_added += 1;
             totalStats.total_reactions_added += 1;
 
-            // 🔥🔥 التحقق من روم التعزيز (Boost Channel) 🔥🔥
-            // تم التعديل هنا لاستخدام boostChannelID بدلاً من bumpChannelID
+            // التحقق من روم التعزيز (Boost Channel)
             const settings = sql.prepare("SELECT boostChannelID FROM settings WHERE guild = ?").get(guildID);
             
             // إذا كان التفاعل في الروم المحدد، نزيد العداد الخاص
@@ -111,7 +111,8 @@ module.exports = {
                 total_replies_sent: totalStats.total_replies_sent,
                 total_mentions_received: totalStats.total_mentions_received,
                 total_vc_minutes: totalStats.total_vc_minutes,
-                total_disboard_bumps: totalStats.total_disboard_bumps
+                total_disboard_bumps: totalStats.total_disboard_bumps,
+                total_topgg_votes: totalStats.total_topgg_votes || 0 // ✅ (2) تم الإصلاح: إرسال القيمة لتجنب الخطأ
             });
 
             // التحقق من المهام
