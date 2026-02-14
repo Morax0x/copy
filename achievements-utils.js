@@ -35,6 +35,7 @@ async function checkAchievements(client, member, levelData, totalStats) {
         has_caesar_role: member.roles.cache.has(questsConfig.special_roles?.caesar_role) ? 1 : 0,
         has_race_role: 0, 
         has_tree_role: member.roles.cache.has(questsConfig.special_roles?.tree_role) ? 1 : 0,
+        // 🔥🔥 تأكدنا أن total_topgg_votes موجودة هنا لأنها تأتي من totalStats 🔥🔥
     };
 
     // حلقة تكرارية على جميع الإنجازات
@@ -79,9 +80,9 @@ async function checkAchievements(client, member, levelData, totalStats) {
 // 2. دالة منح الجائزة وإرسال الرسالة
 // =====================================================================
 async function grantAchievementReward(client, member, achievement, sql, isRepeatable = false) {
-    let xpReward = achievement.reward_xp || 0;
-    let moraReward = achievement.reward_mora || 0;
-    let roleReward = achievement.reward_role || null;
+    let xpReward = achievement.reward.xp || 0; // 🔥 تصحيح: الهيكل هو reward.xp وليس reward_xp
+    let moraReward = achievement.reward.mora || 0;
+    let roleReward = achievement.reward.role || null;
 
     let userData = client.getLevel.get(member.id, member.guild.id);
     if (userData) {
@@ -103,9 +104,9 @@ async function grantAchievementReward(client, member, achievement, sql, isRepeat
             const EMOJI_MORA = '<:mora:1435647151349698621>';
 
             let desc = `**الإنجـاز:** ${achievement.name}\n` +
-                       `**المتطلب:** ${achievement.description}\n` +
-                       `────────────────────\n` +
-                       `🎁 **الـجـوائـز:**\n`;
+                        `**المتطلب:** ${achievement.description}\n` +
+                        `────────────────────\n` +
+                        `🎁 **الـجـوائـز:**\n`;
 
             if (xpReward > 0) desc += `• ${xpReward} ${EMOJI_XP}\n`;
             if (moraReward > 0) desc += `• ${moraReward} ${EMOJI_MORA}\n`;
@@ -136,10 +137,10 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
     sql.prepare("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)").run();
 
     const achievements = questsConfig.achievements;
-    
+     
     const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
     const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-    
+     
     // الآن هذا السطر لن يسبب خطأ
     const trackingData = sql.prepare("SELECT id, count FROM achievement_tracking WHERE id LIKE ?").all(`${member.id}-${member.guild.id}-%`);
 
@@ -176,6 +177,10 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
                 currentProgress = streakData[ach.stat];
             } else if (ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
                 currentProgress = 0; 
+            }
+            // 🔥🔥 إضافة Top.gg هنا للعرض الصحيح 🔥🔥
+            else if (ach.stat === 'total_topgg_votes') {
+                currentProgress = totalStats.total_topgg_votes || 0;
             }
         }
 
