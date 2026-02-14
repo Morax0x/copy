@@ -24,18 +24,17 @@ function getKSADateString(timestamp) {
 // دالة لحساب الوقت المتبقي حتى منتصف الليل بتوقيت السعودية
 function getTimeUntilNextMidnightKSA() {
     const now = new Date();
-    // الحصول على الوقت الحالي في السعودية
     const ksaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Riyadh' }));
     
     const nextMidnight = new Date(ksaTime);
-    nextMidnight.setHours(24, 0, 0, 0); // ضبط الوقت لمنتصف الليل القادم
+    nextMidnight.setHours(24, 0, 0, 0); 
     
     return nextMidnight.getTime() - ksaTime.getTime();
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('راتب')
+        .setName('daily')
         .setDescription('احصل على راتبك اليومي (يتجدد الساعة 12 ص بتوقيت السعودية).'),
 
     name: 'daily',
@@ -89,8 +88,6 @@ module.exports = {
 
         if (todayKSA === lastDailyKSA) {
             const timeLeft = getTimeUntilNextMidnightKSA();
-            
-            // حساب الوقت القادم بصيغة Timestamp للديسكورد (Relative Time)
             const nextTimeUnix = Math.floor((Date.now() + timeLeft) / 1000);
 
             const cooldownEmbed = new EmbedBuilder()
@@ -106,25 +103,25 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        // 2. حساب الستريك
+        // 2. حساب الستريك (المنطق المحسن)
         let newStreak = data.dailyStreak || 0;
         
-        // حساب فرق الأيام لمعرفة إذا الستريك مستمر أم انقطع
-        // ملاحظة: نستخدم Date.parse للتأكد من حساب الفرق بين تواريخ نصية بشكل صحيح
         const date1 = new Date(todayKSA);
         const date2 = new Date(lastDailyKSA);
-        const dayDifference = (date1 - date2) / (1000 * 60 * 60 * 24);
+        
+        // 🔥 التعديل: استخدام Math.round لضمان عدد صحيح وتجنب الكسور
+        const dayDifference = Math.round((date1 - date2) / (1000 * 60 * 60 * 24));
 
         if (dayDifference === 1) {
             // استلم بالأمس، نزيد الستريك
             newStreak += 1;
         } else {
             // انقطع الستريك (أو أول مرة)
+            // إذا كان الفرق 0 (نفس اليوم) تم صيده في الشرط الأول، فهنا يعني أكثر من 1
             newStreak = 1;
         }
 
-        // 🔥 التعديل هنا: لا نعيد التعيين للصفر، بل نستخدم سقف الجائزة فقط 🔥
-        // نختار مفتاح الجائزة: إذا كان الستريك أكبر من 7، نستخدم 7. وإلا نستخدم رقم الستريك نفسه.
+        // تحديد سقف الجائزة (وليس العداد)
         const currentRewardKey = newStreak > MAX_STREAK_DAY ? MAX_STREAK_DAY : newStreak;
         
         const rewardRange = REWARDS[currentRewardKey];
@@ -153,7 +150,8 @@ module.exports = {
         descriptionLines = [
             `✥ استلـمـت جـائـزتـك اليـوميـة`,
             `✶ حـصـلـت عـلـى **${finalAmount}** <:mora:1435647151349698621>${buffString}`,
-            `✶ أنت في اليوم **${newStreak}** على التوالـي!`
+            `✶ أنت في اليوم **${newStreak}** على التوالـي!`,
+            `⚠️ **تنبيه:** ينتهي يومك الحالي عند الساعة 12 منتصف الليل بتوقيت السعودية.`
         ];
 
         const embed = new EmbedBuilder()
