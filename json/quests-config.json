@@ -1,4 +1,6 @@
-{
+const fs = require('fs');
+
+const questsConfig = {
   "daily": [
     {
       "id": "d_mention_1",
@@ -135,6 +137,15 @@
       "goal": 3,
       "reward": { "mora": 300, "xp": 100 },
       "emoji": "🗣️"
+    },
+    {
+      "id": "daily_vote_topgg",
+      "name": "صوت للسيرفر على TOP GG",
+      "description": "اكتب تصويت بروم الاوامر لتحصل على رابط التصويت",
+      "stat": "topgg_votes",
+      "goal": 1,
+      "reward": { "mora": 2000, "xp": 500 },
+      "emoji": "🗳️"
     }
   ],
   "weekly": [
@@ -245,6 +256,15 @@
       "goal": 100,
       "reward": { "mora": 777, "xp": 200 },
       "emoji": "👑"
+    },
+    {
+      "id": "weekly_vote_topgg",
+      "name": "صوت للسيرفر 8 مرات",
+      "description": "ادعم السيرفر بالتصويت طوال الأسبوع لرفع التقييم",
+      "stat": "topgg_votes",
+      "goal": 8,
+      "reward": { "mora": 3500, "xp": 999 },
+      "emoji": "🗳️"
     }
   ],
   "achievements": [
@@ -610,6 +630,48 @@
       "reward": { "mora": 50000, "xp": 50000 },
       "emoji": "👑",
       "rarity": "legendary"
+    },
+    {
+      "id": "ach_vote_10",
+      "name": "صوت للسيرفر 10 مرات",
+      "description": "شكراً لدعمك المستمر!",
+      "stat": "total_topgg_votes",
+      "goal": 10,
+      "reward": { "mora": 1000, "xp": 300 },
+      "emoji": "🗳️",
+      "rarity": "common"
+    },
+    {
+      "id": "ach_vote_30",
+      "name": "صوت للسيرفر 30 مرة",
+      "description": "أنت من الداعمين الأوفياء!",
+      "stat": "total_topgg_votes",
+      "goal": 30,
+      "reward": { "mora": 3000, "xp": 400 },
+      "emoji": "🗳️",
+      "rarity": "uncommon"
+    },
+    {
+      "id": "ach_vote_50",
+      "name": "صوت للسيرفر 50 مرة",
+      "description": "دعمك لا يقدر بثمن!",
+      "stat": "total_topgg_votes",
+      "goal": 50,
+      "reward": { "mora": 15000, "xp": 999 },
+      "emoji": "🗳️",
+      "rarity": "rare"
+    },
+    {
+      "id": "ach_vote_100",
+      "name": "صوت للسيرفر 100 مرة",
+      "description": "أنت أسطورة في دعم السيرفر!",
+      "stat": "total_topgg_votes",
+      "goal": 100,
+      "reward": { "mora": 25000, "xp": 5000 },
+      "emoji": "🗳️",
+      "rarity": "epic"
     }
   ]
-}
+};
+
+fs.writeFileSync('json/quests-config.json', JSON.stringify(questsConfig, null, 2));
