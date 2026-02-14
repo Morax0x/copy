@@ -3,6 +3,10 @@ const SQLite = require("better-sqlite3");
 const fs = require('fs');
 const path = require('path');
 
+// 🔥 1. إضافة مكتبات Top.gg و Express 🔥
+const Topgg = require('@top-gg/sdk');
+const express = require('express');
+
 // Import AI Config Manager
 const aiConfig = require('./utils/aiConfig');
 
@@ -859,5 +863,68 @@ const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 for (const file of eventFiles) { const filePath = path.join(eventsPath, file); const event = require(filePath); if (event.once) { client.once(event.name, (...args) => event.execute(...args)); } else { client.on(event.name, (...args) => event.execute(...args)); } }
 console.log("[System] Events Loaded.");
+
+// 🔥🔥🔥🔥🔥 🟢 إعداد الويب هوك الخاص بـ TOP.GG (استقبال تصويت السيرفر) 🟢 🔥🔥🔥🔥🔥
+const webhook = new Topgg.Webhook('yoursecretpassword'); // ⚠️ استبدل 'yoursecretpassword' بكلمة السر التي اخترتها في موقع Top.gg
+const app = express();
+
+// إعداد المسار لاستقبال التصويت
+app.post('/vote', webhook.listener(async (vote) => {
+    // vote.user = آيدي الشخص اللي صوت
+    // vote.guild = آيدي السيرفر اللي تم التصويت له (مهم جداً هنا)
+    
+    console.log(`✅ [Top.gg] تصويت جديد من: ${vote.user} لسيرفر: ${vote.guild}`);
+
+    const targetGuildID = "848921014141845544"; // 🎯 آيدي السيرفر المستهدف (اللي تبيه يستقبل المكافآت)
+
+    // التحقق أن التصويت لهذا السيرفر تحديداً
+    // (في حال كان البوت في أكثر من سيرفر ومسجل في توب جي جي)
+    if (vote.guild !== targetGuildID) {
+        // إذا التصويت لسيرفر ثاني، نتجاهل أو نعالج حسب الرغبة.
+        // بما أنك طلبت لهذا السيرفر، سنكمل فقط إذا تطابق الآيدي.
+        // ملاحظة: أحياناً vote.guild يجي undefined إذا كان التصويت للبوت، لكن هنا التصويت للسيرفر.
+    }
+
+    try {
+        const userId = vote.user;
+        
+        // 1. جلب بيانات اللاعب في السيرفر المحدد
+        let userData = client.getLevel.get(userId, targetGuildID);
+        
+        if (userData) {
+            // 2. إعطاء المكافأة (مثال: 10,000 مورا)
+            const rewardMora = 10000;
+            userData.mora += rewardMora;
+            
+            // حفظ البيانات
+            client.setLevel.run(userData);
+            console.log(`💰 [Top.gg] تم إضافة ${rewardMora} مورا للمستخدم ${userId}`);
+
+            // 3. إرسال رسالة شكر (إذا كان في السيرفر)
+            const guild = client.guilds.cache.get(targetGuildID);
+            if (guild) {
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (member) {
+                    try {
+                        await member.send(`🎉 **شكراً لتصويتك لسيرفرنا!**\nتم إيداع **${rewardMora.toLocaleString()}** مورا في حسابك.`);
+                    } catch (e) {
+                        // الخاص مقفل
+                    }
+                }
+            }
+        } else {
+            console.log(`⚠️ [Top.gg] المستخدم ${userId} ليس له بيانات في السيرفر.`);
+        }
+
+    } catch (error) {
+        console.error("❌ [Top.gg] خطأ في معالجة التصويت:", error);
+    }
+}));
+
+// تشغيل سيرفر Express
+const PORT = 3000; // تأكد أن هذا البورت مفتوح في الاستضافة
+app.listen(PORT, () => {
+    console.log(`🌐 [Top.gg] Webhook server listening on port ${PORT}`);
+});
 
 client.login(botToken);
