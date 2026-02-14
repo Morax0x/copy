@@ -4,10 +4,13 @@ const express = require('express');
 
 module.exports = (client, sql) => {
     // ⚙️ إعدادات الربط
-    const WEBHOOK_PASSWORD = 'yoursecretpassword'; // نفس الكلمة اللي في موقع Top.gg
-    const PORT = 3000; 
+    // ✅ تم وضع كلمة السر الخاصة بك هنا
+    const WEBHOOK_PASSWORD = 'EmoraxServerVote2026'; 
     
-    // آيدي السيرفر اللي الناس تصوت له (سيرفرك)
+    // ✅ تم تعديل البورت ليعمل مع Railway بشكل تلقائي
+    const PORT = process.env.PORT || 3000; 
+    
+    // آيدي السيرفر الخاص بك
     const MY_SERVER_ID = "848921014141845544"; 
 
     const webhook = new Topgg.Webhook(WEBHOOK_PASSWORD);
@@ -16,15 +19,13 @@ module.exports = (client, sql) => {
     console.log(`[Top.gg] Server Voting Handler initialized on port ${PORT}`);
 
     app.post('/vote', webhook.listener(async (vote) => {
-        // vote.user: آيدي الشخص اللي صوت للسيرفر
-        // vote.type: نوع التصويت
+        // vote.user: آيدي الشخص الذي صوت
         console.log(`✅ [Server Vote] تصويت جديد للسيرفر من العضو: ${vote.user}`);
 
         try {
             const userId = vote.user;
 
             // 🔥 الوظيفة الوحيدة: إبلاغ نظام المهام أن هذا الشخص صوت للسيرفر 🔥
-            // نمرر آيدي الشخص + آيدي السيرفر حقك + اسم الإحصائية
             if (client.incrementQuestStats) {
                 await client.incrementQuestStats(userId, MY_SERVER_ID, 'topgg_votes', 1);
                 console.log(`📈 [Server Vote] تم تسجيل نقطة في مهام السيرفر للمستخدم ${userId}.`);
