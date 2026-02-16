@@ -7,43 +7,58 @@ module.exports = (client, sql) => {
 
     const app = express();
 
-    // 1. ضروري جداً لاستقبال البيانات (بديل عن مكتبة Top.gg مؤقتاً)
+    // استقبال البيانات بصيغة JSON
     app.use(express.json());
 
-    // 2. مراقبة أي اتصال
+    // مراقبة الاتصال
     app.use((req, res, next) => {
         console.log(`📨 [Webhook Traffic] ${req.method} request to ${req.path}`);
         next();
     });
 
-    console.log(`[Top.gg] Debug Handler initialized on port ${PORT}`);
+    console.log(`[Top.gg] Handler initialized on port ${PORT}`);
 
-    // 3. استقبال التصويت (بدون كلمة سر)
     app.post('/vote', async (req, res) => {
-        // طباعة البيانات القادمة من الموقع للتأكد
-        console.log("📦 [Payload Received]:", req.body);
+        // 1. طباعة البيانات لفهم الهيكل (للتأكد فقط)
+        console.log("📦 [Payload Received]:", JSON.stringify(req.body, null, 2));
 
-        // إرسال رد "ناجح" للموقع فوراً ليظهر الزر الأخضر
+        // 2. إرسال رد النجاح للموقع فوراً
         res.status(200).send({ success: true });
 
         try {
-            // بيانات التصويت عادة تكون في req.body
-            // user: آيدي الشخص
-            // type: "upvote"
-            const vote = req.body;
+            const payload = req.body;
+            let userId;
 
-            if (vote.type === 'test') {
-                console.log(`🧪 [Test Vote] تجربة ناجحة! الموقع متصل بالبوت.`);
+            // 🔥 التعديل هنا: استخراج الآيدي بذكاء حسب نوع البيانات 🔥
+            
+            // الحالة 1: التنسيق الجديد (الذي ظهر في اللوج عندك)
+            if (payload.data && payload.data.user && payload.data.user.platform_id) {
+                userId = payload.data.user.platform_id;
+            }
+            // الحالة 2: تنسيق Top.gg القديم (التقليدي)
+            else if (payload.user) {
+                // أحياناً يكون user عبارة عن ID مباشر، وأحياناً كائن
+                userId = typeof payload.user === 'string' ? payload.user : payload.user.id;
+            }
+            // الحالة 3: بيانات داخل `vote` (تنسيقات أخرى)
+            else if (payload.vote && payload.vote.user) {
+                userId = payload.vote.user;
+            }
+
+            // التحقق هل وجدنا الآيدي أم لا
+            if (!userId) {
+                console.error("❌ [Server Vote] فشل استخراج آيدي العضو من البيانات المستلمة!");
                 return;
             }
 
-            const userId = vote.user;
-            console.log(`✅ [Server Vote] تصويت حقيقي من: ${userId}`);
+            console.log(`✅ [Server Vote] تم استخراج الآيدي بنجاح: ${userId}`);
 
-            // تنفيذ المكافأة
+            // 3. تنفيذ المكافأة
             if (client.incrementQuestStats) {
+                // التحقق من أن العضو موجود في الداتابيس (اختياري لكن مفضل)
+                // لكن incrementQuestStats تقوم باللازم عادة
                 await client.incrementQuestStats(userId, MY_SERVER_ID, 'topgg_votes', 1);
-                console.log(`📈 [Reward] تم تسجيل النقطة.`);
+                console.log(`📈 [Reward] تم تسجيل نقطة التصويت للعضو ${userId} بنجاح.`);
             }
 
         } catch (error) {
@@ -51,9 +66,8 @@ module.exports = (client, sql) => {
         }
     });
 
-    // صفحة تأكيد التشغيل
     app.get('/', (req, res) => {
-        res.send('Emorax Vote Handler is Online (No Auth Mode)');
+        res.send('Emorax Vote Handler is Online (Fixed Payload)');
     });
 
     app.listen(PORT, () => {
