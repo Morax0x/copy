@@ -37,9 +37,12 @@ try {
 // تفكيك المتغيرات من utils
 const { 
     shopItems = [], potionItems = [], weaponsConfig = [], skillsConfig = [], rodsConfig = [], boatsConfig = [], baitsConfig = [], 
-    EMOJI_MORA = '<:mora:1435647151349698621>', OWNER_ID, XP_EXCHANGE_RATE, BANNER_URL, THUMBNAILS, 
+    EMOJI_MORA = '<:mora:1435647151349698621>', OWNER_ID, BANNER_URL, THUMBNAILS, 
     ensureInventoryTable, sendShopLog 
 } = utils;
+
+// 🔥🔥🔥 تعديل السعر هنا 🔥🔥🔥
+const CUSTOM_XP_RATE = 5; // (1 XP = 5 Mora)
 
 const path = require('path');
 
@@ -839,10 +842,16 @@ async function _handleXpExchangeModal(i, client, sql) {
         const userMora = userData.mora || 0;
         const amountString = i.fields.getTextInputValue('xp_amount_input').trim().toLowerCase();
         let amountToBuy = 0;
-        if (amountString === 'all') amountToBuy = Math.floor(userMora / XP_EXCHANGE_RATE);
+        // -----------------------------------------------------------
+        // 🔥🔥🔥 استخدام السعر الجديد (CUSTOM_XP_RATE = 5) 🔥🔥🔥
+        // -----------------------------------------------------------
+        if (amountString === 'all') amountToBuy = Math.floor(userMora / CUSTOM_XP_RATE);
         else amountToBuy = parseInt(amountString.replace(/,/g, ''));
+        
         if (isNaN(amountToBuy) || amountToBuy <= 0) return await i.editReply({ content: '❌ رقم غير صالح.' });
-        const totalCost = amountToBuy * XP_EXCHANGE_RATE;
+        
+        const totalCost = amountToBuy * CUSTOM_XP_RATE;
+        
         if (userMora < totalCost) {
             const userBank = userData.bank || 0;
             let msg = `❌ رصيدك غير كافي.`;
@@ -1035,7 +1044,8 @@ async function handleShopSelectMenu(i, client, sql) {
 
         if (selected === 'exchange_xp') {
              const btn = new ButtonBuilder().setCustomId('open_xp_modal').setLabel('بدء التبادل').setStyle(ButtonStyle.Primary).setEmoji('🪙');
-             const embed = new EmbedBuilder().setTitle('تبديل الخبرة').setDescription(`السعر: ${XP_EXCHANGE_RATE} مورا = 1 XP`).setColor(Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('exchange_xp'));
+             // 🔥🔥 استخدام السعر الجديد في العرض 🔥🔥
+             const embed = new EmbedBuilder().setTitle('تبديل الخبرة').setDescription(`السعر: ${CUSTOM_XP_RATE} مورا = 1 XP`).setColor(Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('exchange_xp'));
              return await i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)], flags: MessageFlags.Ephemeral });
         }
           
