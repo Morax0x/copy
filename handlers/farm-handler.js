@@ -149,8 +149,7 @@ async function checkFarmIncome(client, sql) {
                 continue; 
             }
 
-            // تحديث وقت التقرير
-            stmtUpdatePayout.run(payoutID, now);
+            // 🔥 تم إزالة التحديث المبكر من هنا لنقله للأسفل 🔥
 
             // حساب دخل الحيوانات اليومي (يضاف مرة واحدة في اليوم)
             let dailyAnimalIncome = 0;
@@ -203,8 +202,11 @@ async function checkFarmIncome(client, sql) {
             // تنظيف السجلات القديمة
             stmtClearDailyLogs.run(userID, guildID);
 
-            // إذا لم يحدث شيء يذكر، لا ترسل تقرير
-            if (dailyAnimalIncome <= 0 && dailyLogs.length === 0) continue;
+            // إذا لم يحدث شيء يذكر، لا ترسل تقرير، لكن حدث الوقت
+            if (dailyAnimalIncome <= 0 && dailyLogs.length === 0) {
+                stmtUpdatePayout.run(payoutID, now); // ✅ تحديث الوقت هنا لتجنب التكرار
+                continue;
+            }
 
             // إرسال التقرير
             const guildObj = client.guilds.cache.get(guildID);
@@ -261,6 +263,9 @@ async function checkFarmIncome(client, sql) {
                 .setTimestamp();
 
             await channel.send({ content: `<@${userID}>`, embeds: [embed] }).catch(() => {});
+
+            // ✅ التحديث النهائي للوقت بعد نجاح الإرسال
+            stmtUpdatePayout.run(payoutID, now);
 
         } catch (err) {
             console.error(`[Farm Critical Error] User: ${owner.userID}`, err);
