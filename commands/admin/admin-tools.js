@@ -9,6 +9,12 @@ const skillsConfig = require('../../json/skills-config.json');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
+// ✅ القائمة البيضاء لعناصر السوق فقط (عشان ما يأثر على السمك وغيره)
+const REAL_MARKET_IDS = [
+    'APPLE', 'ANDROID', 'TESLA', 'GOLD', 'LAND', 
+    'BITCOIN', 'SPACEX', 'SILVER', 'ART'
+];
+
 // --- دوال مساعدة للوقت والنصوص ---
 function getWeekStartDateString() {
     const now = new Date();
@@ -267,6 +273,9 @@ module.exports = {
             
             let report = [];
             for (const item of allItems) {
+                // 🔥 تخطي العناصر التي ليست في القائمة البيضاء للسوق (مثل السمك)
+                if (!REAL_MARKET_IDS.includes(item.id)) continue;
+
                 const dropPercent = (Math.random() * 0.20) + 0.20; 
                 const newPrice = Math.max(10, Math.floor(item.currentPrice * (1 - dropPercent)));
                 const changePercent = ((newPrice - item.currentPrice) / item.currentPrice);
@@ -285,6 +294,9 @@ module.exports = {
             
             let report = [];
             for (const item of allItems) {
+                // 🔥 تخطي العناصر التي ليست في القائمة البيضاء للسوق
+                if (!REAL_MARKET_IDS.includes(item.id)) continue;
+
                 const risePercent = (Math.random() * 0.20) + 0.15; 
                 const newPrice = Math.floor(item.currentPrice * (1 + risePercent));
                 const changePercent = ((newPrice - item.currentPrice) / item.currentPrice);
@@ -307,6 +319,9 @@ module.exports = {
             
             if (!item) return message.reply("❌ السهم غير موجود.");
 
+            // 🔥 منع تعديل سعر عنصر ليس من السوق الحقيقي عن طريق الخطأ
+            if (!REAL_MARKET_IDS.includes(item.id)) return message.reply("❌ هذا العنصر ليس ضمن أسهم السوق القابلة للتداول.");
+
             const dbItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(item.id);
             const currentPrice = dbItem ? dbItem.currentPrice : item.price;
 
@@ -327,6 +342,7 @@ module.exports = {
 
             const msg = await message.reply("⚠️ **جاري حساب قيمة الأصول وبيعها لجميع الأعضاء وإرسال الإشعارات... يرجى الانتظار.**");
 
+            // جلب المحفظة ولكن سنفلتر لاحقاً للتأكد من بيع أسهم السوق فقط
             const allPortfolios = sql.prepare("SELECT * FROM user_portfolio WHERE guildID = ?").all(guildID);
             
             if (allPortfolios.length === 0) {
@@ -337,15 +353,20 @@ module.exports = {
             const priceMap = new Map();
             const nameMap = new Map();
             
+            // تخزين بيانات العناصر الأصلية
             marketItems.forEach(i => {
                 priceMap.set(i.id, i.price);
                 nameMap.set(i.id, i.name);
             });
+            // تحديث الأسعار من قاعدة البيانات
             dbItems.forEach(i => priceMap.set(i.id, i.currentPrice));
 
             const userAssets = {};
 
             for (const entry of allPortfolios) {
+                // 🔥 تجاهل أي شيء ليس في القائمة البيضاء (مثل السمك)
+                if (!REAL_MARKET_IDS.includes(entry.itemID)) continue;
+
                 const price = priceMap.get(entry.itemID);
                 const name = nameMap.get(entry.itemID) || entry.itemID;
                 
@@ -359,18 +380,25 @@ module.exports = {
 
                 userAssets[entry.userID].total += value;
                 userAssets[entry.userID].items.push(`✶ ${name} (x${entry.quantity}): **${value.toLocaleString()}**`);
+                
+                // نقوم بتسجيل العنصر لحذفه لاحقاً (بدل حذف الجدول بالكامل)
+                if (!userAssets[entry.userID].idsToDelete) userAssets[entry.userID].idsToDelete = [];
+                userAssets[entry.userID].idsToDelete.push(entry.id);
             }
 
             const transaction = sql.transaction(() => {
                 const updateMora = sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?");
-                
+                const deleteItem = sql.prepare("DELETE FROM user_portfolio WHERE id = ?");
+
                 for (const [userID, data] of Object.entries(userAssets)) {
                     const bonus = Math.floor(data.total * 0.0005);
                     const finalRefund = data.total + bonus;
                     updateMora.run(finalRefund, userID, guildID);
+                    
+                    // حذف العناصر المباعة فقط
+                    data.idsToDelete.forEach(id => deleteItem.run(id));
                 }
 
-                sql.prepare("DELETE FROM user_portfolio WHERE guildID = ?").run(guildID);
                 sql.prepare("UPDATE settings SET marketStatus = 'normal' WHERE guild = ?").run(guildID);
             });
 
@@ -397,7 +425,12 @@ module.exports = {
                 await new Promise(res => setTimeout(res, 500));
             }
 
-            await msg.edit(`✅ **تمت العملية بنجاح!** تم بيع الأصول وتعويض ${Object.keys(userAssets).length} عضو، وإرسال الإشعارات في ${casinoChannel}.`);
+            const affectedUsersCount = Object.keys(userAssets).length;
+            if (affectedUsersCount > 0) {
+                await msg.edit(`✅ **تمت العملية بنجاح!** تم بيع الأصول وتعويض ${affectedUsersCount} عضو، وإرسال الإشعارات في ${casinoChannel}.`);
+            } else {
+                await msg.edit("⚠️ لم يتم العثور على أصول سوقية (Market Items) للبيع. (قد يمتلك الأعضاء عناصر أخرى لم تتأثر).");
+            }
         }
     },
 
