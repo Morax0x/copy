@@ -266,7 +266,7 @@ module.exports = {
         if (message.mentions.has(client.user) && !message.author.bot) {
             
             if (message.content.startsWith(Prefix)) {
-                // Ignore AI
+                // Ignore AI if prefix used
             } 
             else {
                 const argsRaw = message.content.trim().split(/ +/);
@@ -278,9 +278,20 @@ module.exports = {
                 } catch(e) {}
 
                 if (isCommand || isShortcut) {
-                    // Ignore AI
+                    // Ignore AI if command
                 } 
                 else {
+                    // 🔥 تجاهل الردود على رسائل الأوامر (Embeds) 🔥
+                    if (message.reference) {
+                        try {
+                            const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                            if (repliedMsg && repliedMsg.author.id === client.user.id) {
+                                // إذا كانت الرسالة المردود عليها من البوت وتحتوي على Embed، أو كانت تفاعلاً (Slash Command)
+                                if (repliedMsg.embeds.length > 0 || repliedMsg.interaction) return;
+                            }
+                        } catch (e) {}
+                    }
+
                     if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
                     let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
@@ -288,76 +299,60 @@ module.exports = {
                     const OWNER_ID = "1145327691772481577"; 
                     const isOwnerMentioning = message.author.id === OWNER_ID;
 
-                    if (!aiChannelData && !isOwnerMentioning && message.channel.parentId) {
-                        if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
-                            const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                            
-                            if (paidStatus) {
-                                aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
-                            } else {
-                                if (paymentCooldowns.has(message.channel.id)) return; 
-
-                                paymentCooldowns.add(message.channel.id);
-                                setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
-
-                                const payBtn = new ActionRowBuilder().addComponents(
-                                    new ButtonBuilder()
-                                        .setCustomId('ai_pay_category_1000')
-                                        .setLabel('فتح الشات (1000 مورا)')
-                                        .setEmoji('🔓')
-                                        .setStyle(ButtonStyle.Primary)
-                                );
-
-                                return message.reply({
-                                    content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`,
-                                    components: [payBtn]
-                                }).catch(()=>{});
+                    // منطق السماح بالقنوات
+                    if (!isOwnerMentioning) {
+                        if (!aiChannelData && message.channel.parentId) {
+                            if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
+                                const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
+                                if (paidStatus) {
+                                    aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                                } else {
+                                    if (paymentCooldowns.has(message.channel.id)) return; 
+                                    paymentCooldowns.add(message.channel.id);
+                                    setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
+                                    const payBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_pay_category_1000').setLabel('فتح الشات (1000 مورا)').setEmoji('🔓').setStyle(ButtonStyle.Primary));
+                                    return message.reply({ content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`, components: [payBtn] }).catch(()=>{});
+                                }
                             }
                         }
+                        if (!aiChannelData) return;
                     }
 
-                    if (!aiChannelData && !isOwnerMentioning) return;
-
+                    // التحقق من حدود الاستخدام
                     const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
-
                     if (!usageStatus.canChat && !isOwnerMentioning) {
                         if (paymentCooldowns.has(message.author.id)) return; 
-
                         paymentCooldowns.add(message.author.id);
                         setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
-
-                        const payButton = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('ai_topup_2500') 
-                                .setLabel('ادفـع 2500 مورا')
-                                .setEmoji(client.EMOJI_MORA || '💰')
-                                .setStyle(ButtonStyle.Success)
-                        );
-
-                        return message.reply({
-                            content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`,
-                            components: [payButton]
-                        }).catch(()=>{});
+                        const payButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_topup_2500').setLabel('ادفـع 2500 مورا').setEmoji(client.EMOJI_MORA || '💰').setStyle(ButtonStyle.Success));
+                        return message.reply({ content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`, components: [payButton] }).catch(()=>{});
                     }
 
-                    if (paymentCooldowns.has(message.author.id)) {
-                        paymentCooldowns.delete(message.author.id);
-                    }
+                    if (paymentCooldowns.has(message.author.id)) paymentCooldowns.delete(message.author.id);
 
                     const isNsfw = aiChannelData ? Boolean(aiChannelData.nsfw) : false; 
 
                     try {
                         await message.channel.sendTyping();
                         const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
-                        if (!cleanContent && !message.attachments.size) return message.reply("نـعـم .. ؟");
-
+                        
+                        // 🔥 التعامل مع الستيكرات والصور 🔥
                         let imageAttachment = null;
+                        
                         if (message.attachments.size > 0) {
                             const attachment = message.attachments.first();
                             if (attachment.contentType && attachment.contentType.startsWith('image/')) {
                                 imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
                             }
+                        } 
+                        else if (message.stickers.size > 0) {
+                            const sticker = message.stickers.first();
+                            if (sticker.format === 1 || sticker.format === 2) { 
+                                 imageAttachment = { url: sticker.url, mimeType: 'image/png' };
+                            }
                         }
+
+                        if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
 
                         const reply = await askMorax(
                             message.author.id, 
@@ -372,30 +367,18 @@ module.exports = {
                         
                         if (!reply) return;
 
-                        if (!isOwnerMentioning) {
-                            aiLimitHandler.incrementUsage(message.author.id);
-                        }
+                        if (!isOwnerMentioning) aiLimitHandler.incrementUsage(message.author.id);
 
                         const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
-
-                        const replyOptions = {
-                            repliedUser: true, 
-                            parse: ['users']    
-                        };
+                        const replyOptions = { repliedUser: true, parse: ['users'] };
 
                         if (safeReplyMsg.length > 2000) {
                             const chunks = safeReplyMsg.match(/[\s\S]{1,1950}/g) || [];
                             for (const chunk of chunks) {
-                                await safeReply(message, { 
-                                    content: chunk, 
-                                    allowedMentions: replyOptions 
-                                });
+                                await safeReply(message, { content: chunk, allowedMentions: replyOptions });
                             }
                         } else {
-                            await safeReply(message, { 
-                                content: safeReplyMsg, 
-                                allowedMentions: replyOptions 
-                            });
+                            await safeReply(message, { content: safeReplyMsg, allowedMentions: replyOptions });
                         }
 
                     } catch (err) { console.error("AI Response Failed:", err); }
@@ -607,20 +590,6 @@ module.exports = {
                     return; 
                 }
             }
-        }
-
-        if (reportSettings && reportSettings.reportChannelID && message.channel.id === reportSettings.reportChannelID) {
-            if (message.content.trim().startsWith("بلاغ")) {
-                const args = message.content.trim().split(/ +/); args.shift(); await message.delete().catch(() => {});
-                const allowedRoles = sql.prepare("SELECT roleID FROM report_permissions WHERE guildID = ?").all(message.guild.id).map(r => r.roleID);
-                const hasPerm = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || allowedRoles.length === 0 || message.member.roles.cache.some(r => allowedRoles.includes(r.id));
-                if (!hasPerm) return sendReportError(message, "❖ ليس لـديـك صلاحيـات", "ليس لديك صلاحيات التبليغ.");
-                const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-                const reason = args.slice(1).join(" ");
-                if (!target || !reason) return sendReportError(message, "✶ خطأ في التنسيق", "`بلاغ @user السبب`");
-                await processReportLogic(client, message, target, reason);
-            }
-            return; 
         }
 
         if (settings && ((settings.casinoChannelID && message.channel.id === settings.casinoChannelID) || (settings.casinoChannelID2 && message.channel.id === settings.casinoChannelID2))) {
