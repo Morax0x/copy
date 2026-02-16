@@ -2,6 +2,15 @@ const { EmbedBuilder, PermissionsBitField, SlashCommandBuilder } = require("disc
 const SQLite = require("better-sqlite3");
 const sql = new SQLite('./mainDB.sqlite');
 
+// ✅ استدعاء اللوجر (تأكد من المسار)
+let logTransaction;
+try {
+    ({ logTransaction } = require('../../handlers/economy-logger.js'));
+} catch (e) {
+    // في حال عدم وجود الملف أو خطأ في المسار
+    logTransaction = async () => {}; 
+}
+
 // ✅ The IDs allowed to use this command
 const ALLOWED_IDS = ["1145327691772481577", "288421280368295947"];
 
@@ -9,8 +18,6 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('موراا') // ✅ Changed name to Arabic 'moraa'
         .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين (حتى للمغادرين).')
-        // Removing default permission requirement here to handle custom check inside execute
-        // .setDefaultMemberPermissions(Permiss.ionsBitField.Flags.Administrator) 
         // --- Add Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
@@ -132,8 +139,6 @@ module.exports = {
             return message.reply(payload);
         };
 
-        // Note: The admin permission check was removed because the ID check above is stricter.
-
         if (!targetUser || isNaN(amount) || amount < 0 || !['add', 'remove', 'set'].includes(method)) {
             return replyError("البيانات غير صحيحة أو المستخدم غير موجود (تأكد من الآيدي).");
         }
@@ -160,6 +165,11 @@ module.exports = {
                 data.bank += amount;
             } else {
                 data.mora += amount;
+            }
+            
+            // 🔥🔥 تسجيل العملية (للمبالغ الكبيرة) 🔥🔥
+            if (logTransaction) {
+                await logTransaction(client, targetUser.id, guild.id, amount, `Admin Add (${user.username})`);
             }
 
         } else if (method === 'remove') {
