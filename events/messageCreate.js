@@ -94,8 +94,14 @@ module.exports = {
                         const diffSeconds = now - afkData.timestamp;
                         
                         const minutes = Math.floor(diffSeconds / 60); 
-                        const calculatedMinutes = Math.min(minutes, 1440); 
-                        const reward = calculatedMinutes * 2; 
+                        
+                        // 🔥 التعديل المطلوب هنا 🔥
+                        // 1. الحد الأقصى 12 ساعة (720 دقيقة)
+                        const cappedMinutes = Math.min(minutes, 720); 
+                        
+                        // 2. الجائزة 0 إذا كانت المدة أقل من 60 دقيقة
+                        // 3. الحساب: 1 مورا لكل دقيقة
+                        const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
                         if (reward > 0) {
                             let userLevel = client.getLevel.get(message.author.id, message.guild.id);
@@ -158,8 +164,6 @@ module.exports = {
                             if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
                                 const pings = subscribers.map(id => `<@${id}>`).join(' ');
                                 const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
-                                // 🔥 تم إزالة حذف رسالة التنبيه (حسب طلبك)
-                                // setTimeout(() => notifyMsg.delete().catch(() => {}), 60000);
                             } 
                         }
                     } else {
@@ -280,7 +284,11 @@ module.exports = {
                     let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
                     let isPaidSession = false;
 
-                    if (!aiChannelData && message.channel.parentId) {
+                    // 🔥🔥 تعديل هنا: السماح للأونر بالرد في كل مكان 🔥🔥
+                    const OWNER_ID = "1145327691772481577"; // آيديك
+                    const isOwnerMentioning = message.author.id === OWNER_ID;
+
+                    if (!aiChannelData && !isOwnerMentioning && message.channel.parentId) {
                         if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
                             const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
                             
@@ -309,11 +317,12 @@ module.exports = {
                         }
                     }
 
-                    if (!aiChannelData) return;
+                    // إذا لم تكن القناة مفعلة ولم يكن الأونر -> تجاهل
+                    if (!aiChannelData && !isOwnerMentioning) return;
 
                     const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
 
-                    if (!usageStatus.canChat) {
+                    if (!usageStatus.canChat && !isOwnerMentioning) {
                         if (paymentCooldowns.has(message.author.id)) {
                             return; 
                         }
@@ -339,12 +348,12 @@ module.exports = {
                         paymentCooldowns.delete(message.author.id);
                     }
 
-                    const isNsfw = Boolean(aiChannelData.nsfw); 
+                    const isNsfw = aiChannelData ? Boolean(aiChannelData.nsfw) : false; 
 
                     try {
                         await message.channel.sendTyping();
                         const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
-                        if (!cleanContent) return message.reply("نـعـم .. ؟");
+                        if (!cleanContent && !message.attachments.size) return message.reply("نـعـم .. ؟");
 
                         let imageAttachment = null;
                         if (message.attachments.size > 0) {
@@ -367,7 +376,9 @@ module.exports = {
                         
                         if (!reply) return;
 
-                        aiLimitHandler.incrementUsage(message.author.id);
+                        if (!isOwnerMentioning) {
+                            aiLimitHandler.incrementUsage(message.author.id);
+                        }
 
                         const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
 
@@ -509,8 +520,8 @@ module.exports = {
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
-                                                `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                                `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
+                                                                `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                                                `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
                         message.channel.send(backupMsg);
                     }
                 } else {
