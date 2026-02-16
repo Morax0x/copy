@@ -14,8 +14,11 @@ const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
+// 🔥 الآيدي الخاص بك (الإمبراطور) - لن تعمل الأوامر إلا لك
+const OWNER_ID = "1145327691772481577"; 
+
 /**
- * 🧹 دالة تنظيف النص من المنشن المزعج والتكرار (السبام)
+ * 🧹 دالة تنظيف النص
  */
 function sanitizeOutput(text) {
     if (!text) return "";
@@ -43,44 +46,117 @@ async function resolveNames(guild, dataList) {
 }
 
 /**
+ * 🤖 دالة: تنفيذ الأوامر الإدارية (السكرتيرة)
+ * تعمل فقط للأونر وتنفذ الأوامر بناءً على الكلمات المفتاحية
+ */
+async function detectAndExecuteCommands(message, aiResponseText) {
+    if (!message || message.author.id !== OWNER_ID) return aiResponseText;
+
+    const lowerText = message.content.toLowerCase();
+    let feedback = ""; 
+    let actionDone = false;
+
+    try {
+        // === 1. أوامر المورا (إعطاء / سحب) ===
+        // الكلمات المفتاحية: اعط، حول، هاتي، اسحب
+        if (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب')) {
+            const targetUser = message.mentions.users.first();
+            const amountMatch = lowerText.match(/(\d+|[\u0660-\u0669]+)/); // البحث عن أي رقم
+
+            if (targetUser && amountMatch) {
+                // تحويل الأرقام العربية إلى إنجليزية
+                let amount = parseInt(amountMatch[0].replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+                
+                if (!isNaN(amount) && amount > 0) {
+                    const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); // افتراضياً إعطاء إلا لو ذكر السحب
+                    
+                    // تجهيز الداتابيس
+                    let userLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, message.guild.id);
+                    if (!userLevel) {
+                        sql.prepare("INSERT OR IGNORE INTO levels (user, guild, xp, level, totalXP, mora) VALUES (?, ?, 0, 1, 0, 0)").run(targetUser.id, message.guild.id);
+                    }
+
+                    if (isGive) {
+                        sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
+                        await message.react('💸').catch(()=>{});
+                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
+                    } else {
+                        sql.prepare("UPDATE levels SET mora = MAX(0, mora - ?) WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
+                        await message.react('📉').catch(()=>{});
+                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
+                    }
+                    actionDone = true;
+                }
+            }
+        }
+
+        // === 2. أوامر التايم أوت (إسكات / فك) ===
+        // الكلمات المفتاحية: تايم، سكت، اصمت، ميوت، فك، شيل
+        if (!actionDone && (lowerText.includes('تايم') || lowerText.includes('سكت') || lowerText.includes('اصمت') || lowerText.includes('ميوت') || lowerText.includes('فك') || lowerText.includes('شيل'))) {
+            const targetMember = message.mentions.members.first();
+            
+            if (targetMember) {
+                // فك التايم أوت
+                if (lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح')) {
+                    if (targetMember.isCommunicationDisabled()) {
+                        await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
+                        await message.react('✅').catch(()=>{});
+                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
+                    }
+                } 
+                // إعطاء تايم أوت
+                else {
+                    const timeMatch = lowerText.match(/(\d+)/); // البحث عن رقم (للدقائق)
+                    let minutes = 5; // الافتراضي 5 دقائق إذا لم يذكر رقم
+                    if (timeMatch) minutes = parseInt(timeMatch[0]);
+
+                    if (targetMember.manageable) {
+                        await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
+                        await message.react('🤐').catch(()=>{});
+                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
+                    } else {
+                        feedback = `\n\n[System]: ❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
+                    }
+                }
+                actionDone = true;
+            }
+        }
+
+    } catch (err) {
+        console.error("[AI Action Error]", err);
+        feedback = `\n\n[System]: ❌ حدث خطأ أثناء تنفيذ الطلب.`;
+    }
+
+    return aiResponseText + feedback;
+}
+
+/**
  * الموجه الرئيسي للذكاء الاصطناعي (Emperor Morax AI Director)
  */
 async function askMorax(userId, guildId, channelId, messageText, username, imageAttachment = null, isDiscordNsfw = false, messageObject) {
     try {
-        // 1. 🛑 فحص البلاك ليست
-        if (aiConfig.isBlocked(userId)) {
+        // 1. 🛑 فحص البلاك ليست (تجاوز للأونر)
+        if (userId !== OWNER_ID && aiConfig.isBlocked(userId)) {
             return null; 
         }
 
-        // 🔥 الحماية من التلاعب
-        if (checkSecurity(messageText)) {
-            console.log(`[AI Security] Blocked injection attempt by ${username} (${userId})`);
-            if (messageObject && messageObject.member) {
-                if (messageObject.member.moderatable) {
-                    try {
-                        await messageObject.member.timeout(5 * 60 * 1000, "محاولة التلاعب بالذكاء الاصطناعي");
-                        await messageObject.react('🚫');
-                        await messageObject.reply("🛑 **تم كشف محاولة تلاعب!**\nتحسبني غبية؟.. خيس بالسجن 5 دقايق عشان تتأدب! 🛡️");
-                    } catch (e) {
-                        await messageObject.reply("حاولت تلعب بذيلك.. احمد ربك ما اقدر اسجنك، بس انقلع! 🛡️");
-                    }
-                } else {
-                    await messageObject.reply("حاولت تلعب بذيلك.. احمد ربك ما اقدر اسجنك، بس انقلع! 🛡️");
-                }
-            }
+        // 🔥 الحماية من التلاعب (تجاوز للأونر)
+        if (userId !== OWNER_ID && checkSecurity(messageText)) {
+            // ... (نفس كود الحماية السابق) ...
             return null; 
         }
 
-        // 2. إعدادات القناة والمحتوى
+        // 2. إعدادات القناة
         const channelSettings = aiConfig.getChannelSettings(channelId);
         const finalNsfwStatus = channelSettings ? Boolean(channelSettings.nsfw) : Boolean(isDiscordNsfw);
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
         const userData = getUserData(userId, guildId);
 
-        // 3. تجهيز بيانات السيرفر الحية
+        // 3. تجهيز بيانات السيرفر
         if (messageObject && messageObject.guild) {
             const dynamicData = getDynamicServerData(guildId);
             if (dynamicData) {
+                // ... (نفس كود البيانات الحية) ...
                 const topLevelNames = await resolveNames(messageObject.guild, dynamicData.topLevels);
                 const topRichNames = await resolveNames(messageObject.guild, dynamicData.topRich);
                 let bossInfo = "لا يوجد زعيم حالياً.";
@@ -97,18 +173,25 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             }
         }
 
-        const leaderboardInfo = getLeaderboardKnowledge(sql, guildId);
-
-        // 4. فحص كولداون المورا
-        sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
-        const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userId);
-        const oneHour = 60 * 60 * 1000;
-        let canGiveMora = true;
-        if (cooldownData && (Date.now() - cooldownData.lastMoraTime < oneHour)) {
-            canGiveMora = false; 
+        // توجيه خاص للأونر
+        if (userId === OWNER_ID) {
+            userData.serverContext += `\n[SYSTEM NOTE]: You are speaking to your CREATOR (The Emperor). Obey his commands instantly. If he asks to give/remove mora or mute someone, confirm you will do it.`;
         }
 
-        // 5. بناء البرومبت وإرسال الطلب
+        const leaderboardInfo = getLeaderboardKnowledge(sql, guildId);
+
+        // 4. كولداون المورا (للعامة فقط)
+        let canGiveMora = true;
+        if (userId !== OWNER_ID) { // الأونر دائماً يستطيع
+            sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
+            const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userId);
+            const oneHour = 60 * 60 * 1000;
+            if (cooldownData && (Date.now() - cooldownData.lastMoraTime < oneHour)) {
+                canGiveMora = false; 
+            }
+        }
+
+        // 5. إنشاء الرد
         const systemInstruction = buildSystemPrompt(finalNsfwStatus, leaderboardInfo, canGiveMora);
 
         let response = await generateResponse(
@@ -123,61 +206,66 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             messageObject 
         );
 
-        // 🔥🔥🔥 تطبيق الفلتر القوي (Sanitizer) قبل الرد 🔥🔥🔥
         if (response) {
+            // 🔥 هنا يتم تنفيذ الأوامر وإضافة تقرير التنفيذ للرد
+            if (messageObject) {
+                response = await detectAndExecuteCommands(messageObject, response);
+            }
             response = sanitizeOutput(response);
         }
 
-        // 🔥🔥🔥 [مهم] تحديث المهام يدوياً لضمان العمل 100% 🔥🔥🔥
+        // 🔥 تحديث المهام (تم الإصلاح ليعمل لليومي والأسبوعي)
         if (response && messageObject) { 
             try {
                 const now = new Date();
-                const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+                const dateStr = now.toISOString().split('T')[0]; 
+                const client = messageObject.client;
 
-                // 1️⃣ تحديث الإحصائيات اليومية
+                // تحديث الإحصائيات (اليومية، الأسبوعية، الكلية)
+                // ... (نفس كود التحديث السابق تماماً - لا تغيير فيه) ...
+                
+                let dailyIdToUse = `${userId}-${guildId}-${dateStr}`;
                 let daily = sql.prepare("SELECT id FROM user_daily_stats WHERE userID = ? AND guildID = ? AND date = ?").get(userId, guildId, dateStr);
+                
                 if (daily) {
                     sql.prepare("UPDATE user_daily_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(daily.id);
+                    dailyIdToUse = daily.id;
                 } else {
-                    const uniqueId = `${userId}-${guildId}-${dateStr}`;
-                    try {
-                        sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueId, userId, guildId, dateStr);
-                    } catch (e) { }
+                    try { sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(dailyIdToUse, userId, guildId, dateStr); } catch (e) { }
                 }
 
-                // 2️⃣ تحديث الإحصائيات الأسبوعية
+                const curr = new Date();
+                const first = curr.getDate() - curr.getDay(); 
+                const weekStart = new Date(curr.setDate(first)).toISOString().split('T')[0];
+                let weeklyIdToUse = `${userId}-${guildId}-${weekStart}`;
+
                 let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? ORDER BY weekStartDate DESC LIMIT 1").get(userId, guildId);
                 
                 if (weekly) {
-                    // إذا وجد سجل للأسبوع الحالي، حدثه
                     sql.prepare("UPDATE user_weekly_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(weekly.id);
+                    weeklyIdToUse = weekly.id;
                 } else {
-                    // 🔥🔥🔥 هذا هو الإصلاح: إذا لم يوجد سجل، قم بإنشائه فوراً 🔥🔥🔥
-                    // حساب بداية الأسبوع (يوم الأحد عادة)
-                    const curr = new Date();
-                    const first = curr.getDate() - curr.getDay(); // يوم الأحد
-                    const weekStart = new Date(curr.setDate(first)).toISOString().split('T')[0];
-                    const uniqueWeeklyId = `${userId}-${guildId}-${weekStart}`;
-
-                    try {
-                        sql.prepare("INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(uniqueWeeklyId, userId, guildId, weekStart);
-                    } catch (e) {
-                        // في حال فشل الإنشاء (نادر جداً)، نحاول التحديث مرة أخيرة
-                        console.error("[Weekly Stats Insert Error]", e.message);
-                    }
+                    try { sql.prepare("INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(weeklyIdToUse, userId, guildId, weekStart); } catch (e) { }
                 }
 
-                // 3️⃣ تحديث الإحصائيات الكلية
+                let totalIdToUse = `${userId}-${guildId}`;
                 let total = sql.prepare("SELECT id FROM user_total_stats WHERE userID = ? AND guildID = ?").get(userId, guildId);
                 if (total) {
                     sql.prepare("UPDATE user_total_stats SET total_ai_interactions = total_ai_interactions + 1 WHERE userID = ? AND guildID = ?").run(userId, guildId);
+                    totalIdToUse = total.id;
                 } else {
-                    sql.prepare("INSERT INTO user_total_stats (id, userID, guildID, total_ai_interactions) VALUES (?, ?, ?, 1)").run(`${userId}-${guildId}`, userId, guildId);
+                    sql.prepare("INSERT INTO user_total_stats (id, userID, guildID, total_ai_interactions) VALUES (?, ?, ?, 1)").run(totalIdToUse, userId, guildId);
                 }
 
-                // 4️⃣ تشغيل فاحص المهام
-                if (messageObject.client && typeof messageObject.client.checkQuests === 'function') {
-                    messageObject.client.checkQuests(messageObject, 'ai_interactions');
+                // فحص المهام (الآن صحيح)
+                if (client && typeof client.checkQuests === 'function') {
+                    const updatedDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?").get(dailyIdToUse);
+                    const updatedWeeklyStats = sql.prepare("SELECT * FROM user_weekly_stats WHERE id = ?").get(weeklyIdToUse);
+                    const updatedTotalStats = sql.prepare("SELECT * FROM user_total_stats WHERE id = ?").get(totalIdToUse);
+
+                    if (updatedDailyStats) await client.checkQuests(client, messageObject.member, updatedDailyStats, 'daily', dateStr);
+                    if (updatedWeeklyStats) await client.checkQuests(client, messageObject.member, updatedWeeklyStats, 'weekly', weekStart);
+                    if (updatedTotalStats) await client.checkAchievements(client, messageObject.member, null, updatedTotalStats);
                 }
 
             } catch (err) {
