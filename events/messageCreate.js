@@ -25,6 +25,20 @@ function getWeekStartDateString() {
     const friday = new Date(now.setUTCDate(diff)); friday.setUTCHours(0, 0, 0, 0); return friday.toISOString().split('T')[0];
 }
 
+// ✅ دالة مساعدة للإرسال الآمن (تمنع توقف البوت إذا حذفت الرسالة)
+async function safeReply(message, options) {
+    try {
+        return await message.reply(options);
+    } catch (error) {
+        // 10008: Unknown Message, 50035: Invalid Form Body (reference unknown)
+        if (error.code === 10008 || error.code === 50035) {
+            const { allowedMentions, ...newOptions } = options;
+            return await message.channel.send(newOptions).catch(() => null);
+        }
+        throw error;
+    }
+}
+
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
@@ -95,12 +109,7 @@ module.exports = {
                         
                         const minutes = Math.floor(diffSeconds / 60); 
                         
-                        // 🔥 التعديل المطلوب هنا 🔥
-                        // 1. الحد الأقصى 12 ساعة (720 دقيقة)
                         const cappedMinutes = Math.min(minutes, 720); 
-                        
-                        // 2. الجائزة 0 إذا كانت المدة أقل من 60 دقيقة
-                        // 3. الحساب: 1 مورا لكل دقيقة
                         const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
                         if (reward > 0) {
@@ -146,15 +155,15 @@ module.exports = {
                             replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
                         }
 
-                        const welcomeMsg = await message.reply({ 
+                        // ✅ استخدام safeReply بدلاً من message.reply المباشر
+                        const welcomeMsg = await safeReply(message, { 
                             content: replyContent,
                             components: msgBtnRow ? [msgBtnRow] : [] 
                         });
                         
-                        if (!msgBtnRow) {
-                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 60000);
-                        } else {
-                            setTimeout(() => welcomeMsg.delete().catch(() => {}), 120000);
+                        if (welcomeMsg) {
+                            const deleteTime = msgBtnRow ? 120000 : 60000;
+                            setTimeout(() => welcomeMsg.delete().catch(() => {}), deleteTime);
                         }
 
                         const subscribers = JSON.parse(afkData.subscribers || '[]');
@@ -163,7 +172,7 @@ module.exports = {
                             const perms = message.channel.permissionsFor(everyoneRole);
                             if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
                                 const pings = subscribers.map(id => `<@${id}>`).join(' ');
-                                const notifyMsg = await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`);
+                                await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`).catch(()=>{});
                             } 
                         }
                     } else {
@@ -203,13 +212,14 @@ module.exports = {
                                     .setStyle(ButtonStyle.Primary)
                             );
 
-                            const replyMsg = await message.reply({
+                            // ✅ استخدام safeReply هنا أيضاً
+                            const replyMsg = await safeReply(message, {
                                 embeds: [embed],
                                 components: [row],
                                 allowedMentions: { repliedUser: true }
                             });
 
-                            setTimeout(() => replyMsg.delete().catch(() => {}), 60000);
+                            if (replyMsg) setTimeout(() => replyMsg.delete().catch(() => {}), 60000);
                         }
                     });
                 }
@@ -253,39 +263,29 @@ module.exports = {
 
         let Prefix = settings?.prefix || "-";
 
-        // 🔥🔥 نظام الذكاء الاصطناعي (AI) مع فحص الاختصارات (Shortcuts) 🔥🔥
         if (message.mentions.has(client.user) && !message.author.bot) {
             
-            // 1. إذا كانت الرسالة تبدأ بالبريفكس، تجاهل الـ AI
             if (message.content.startsWith(Prefix)) {
-                // دع الكود يكمل للأسفل
+                // Ignore AI
             } 
             else {
-                // 2. إذا كانت الكلمة الأولى هي اسم أمر (لأوامر الكازينو بدون بريفكس)، تجاهل الـ AI
                 const argsRaw = message.content.trim().split(/ +/);
                 const firstWord = argsRaw[0].toLowerCase();
-                
-                // فحص الأوامر الأساسية والـ Aliases
                 const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
-                
-                // 🔥🔥 التعديل: فحص الاختصارات المخصصة (Shortcuts) 🔥🔥
                 let isShortcut = false;
                 try {
                     isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND shortcutWord = ?").get(message.guild.id, firstWord);
                 } catch(e) {}
 
                 if (isCommand || isShortcut) {
-                    // أمر معروف أو اختصار -> تجاهل الـ AI
+                    // Ignore AI
                 } 
                 else {
-                    // 🔥 تفعيل الـ AI هنا فقط
                     if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
                     let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
-                    let isPaidSession = false;
-
-                    // 🔥🔥 تعديل هنا: السماح للأونر بالرد في كل مكان 🔥🔥
-                    const OWNER_ID = "1145327691772481577"; // آيديك
+                    
+                    const OWNER_ID = "1145327691772481577"; 
                     const isOwnerMentioning = message.author.id === OWNER_ID;
 
                     if (!aiChannelData && !isOwnerMentioning && message.channel.parentId) {
@@ -294,7 +294,6 @@ module.exports = {
                             
                             if (paidStatus) {
                                 aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
-                                isPaidSession = true;
                             } else {
                                 if (paymentCooldowns.has(message.channel.id)) return; 
 
@@ -312,20 +311,17 @@ module.exports = {
                                 return message.reply({
                                     content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`,
                                     components: [payBtn]
-                                });
+                                }).catch(()=>{});
                             }
                         }
                     }
 
-                    // إذا لم تكن القناة مفعلة ولم يكن الأونر -> تجاهل
                     if (!aiChannelData && !isOwnerMentioning) return;
 
                     const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
 
                     if (!usageStatus.canChat && !isOwnerMentioning) {
-                        if (paymentCooldowns.has(message.author.id)) {
-                            return; 
-                        }
+                        if (paymentCooldowns.has(message.author.id)) return; 
 
                         paymentCooldowns.add(message.author.id);
                         setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
@@ -341,7 +337,7 @@ module.exports = {
                         return message.reply({
                             content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`,
                             components: [payButton]
-                        });
+                        }).catch(()=>{});
                     }
 
                     if (paymentCooldowns.has(message.author.id)) {
@@ -380,30 +376,30 @@ module.exports = {
                             aiLimitHandler.incrementUsage(message.author.id);
                         }
 
-                        const safeReply = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
+                        const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
 
                         const replyOptions = {
                             repliedUser: true, 
                             parse: ['users']    
                         };
 
-                        if (safeReply.length > 2000) {
-                            const chunks = safeReply.match(/[\s\S]{1,1950}/g) || [];
+                        if (safeReplyMsg.length > 2000) {
+                            const chunks = safeReplyMsg.match(/[\s\S]{1,1950}/g) || [];
                             for (const chunk of chunks) {
-                                await message.reply({ 
+                                await safeReply(message, { 
                                     content: chunk, 
                                     allowedMentions: replyOptions 
                                 });
                             }
                         } else {
-                            return message.reply({ 
-                                content: safeReply, 
+                            await safeReply(message, { 
+                                content: safeReplyMsg, 
                                 allowedMentions: replyOptions 
                             });
                         }
 
                     } catch (err) { console.error("AI Response Failed:", err); }
-                    return; // 🛑 إيقاف هنا إذا تم الرد بالـ AI
+                    return; 
                 }
             }
         }
@@ -531,17 +527,11 @@ module.exports = {
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
             
-            // 🔥🔥 توزيع رتب الليفل (Level Roles) 🔥🔥
             try {
                 let currentLevelRole = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
-                
-                // إذا وصل لمستوى يستحق رتبة
                 if (currentLevelRole && message.member) {
                     if (!message.member.roles.cache.has(currentLevelRole.roleID)) {
-                        // إضافة الرتبة الجديدة
                         await message.member.roles.add(currentLevelRole.roleID).catch(e => console.error(`[Level Role Add Error]: ${e.message}`));
-                        
-                        // إزالة الرتب السابقة (التنظيف التلقائي)
                         const oldRoles = sql.prepare("SELECT roleID FROM level_roles WHERE guildID = ? AND level < ?").all(message.guild.id, level.level);
                         for (const roleData of oldRoles) {
                             if (message.member.roles.cache.has(roleData.roleID)) {
@@ -669,7 +659,8 @@ module.exports = {
                         const now = Date.now();
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
                             const files = autoReply.images ? JSON.parse(autoReply.images) : [];
-                            await message.reply({ content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
+                            // استخدام safeReply هنا أيضاً
+                            await safeReply(message, { content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
                             autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
                             setTimeout(() => autoResponderCooldowns.delete(cooldownKey), cooldownTime);
                         }
