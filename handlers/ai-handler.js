@@ -65,7 +65,6 @@ async function detectAndExecuteCommands(message, aiResponseText) {
         if (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب')) {
             
             // ✅ إصلاح: استخراج الرقم (تجاهل أرقام الـ ID الطويلة والمنشن)
-            // يبحث عن رقم لا يسبقه @ أو < ولا يزيد طوله عن 15 خانة (لضمان أنه ليس ID)
             const numbers = lowerText.match(/\b\d+\b/g);
             let amount = 0;
             
@@ -97,11 +96,13 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                 if (isGive) {
                     sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
                     await message.react('💸').catch(()=>{});
-                    feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
+                    // ✨ تم تعديل الرد هنا
+                    feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
                 } else {
                     sql.prepare("UPDATE levels SET mora = MAX(0, mora - ?) WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
                     await message.react('📉').catch(()=>{});
-                    feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
+                    // ✨ تم تعديل الرد هنا
+                    feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
                 }
                 actionDone = true;
             }
@@ -119,7 +120,8 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                     if (targetMember.isCommunicationDisabled()) {
                         await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
                         await message.react('✅').catch(()=>{});
-                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
+                        // ✨ تم تعديل الرد هنا
+                        feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
                     }
                 } 
                 // إعطاء تايم أوت
@@ -134,9 +136,11 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                     if (targetMember.manageable) {
                         await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
                         await message.react('🤐').catch(()=>{});
-                        feedback = `\n\n[System]: ✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
+                        // ✨ تم تعديل الرد هنا
+                        feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
                     } else {
-                        feedback = `\n\n[System]: ❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
+                        // ✨ تم تعديل الرد هنا
+                        feedback = `\n\n❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
                     }
                 }
                 actionDone = true;
@@ -145,7 +149,8 @@ async function detectAndExecuteCommands(message, aiResponseText) {
 
     } catch (err) {
         console.error("[AI Action Error]", err);
-        feedback = `\n\n[System]: ❌ حدث خطأ أثناء تنفيذ الطلب.`;
+        // ✨ تم تعديل الرد هنا
+        feedback = `\n\n❌ حدث خطأ تقني أثناء تنفيذ الطلب.`;
     }
 
     return aiResponseText + feedback;
@@ -216,8 +221,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             messageText, 
             userData, 
             userId, 
-            username,
-            imageAttachment,
+            username, 
+            imageAttachment, 
             finalNsfwStatus,
             messageObject 
         );
