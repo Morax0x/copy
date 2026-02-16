@@ -81,6 +81,9 @@ module.exports = {
         
         const allUserAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
         
+        // 🔥🔥 [تصحيح] تحضير أمر تسجيل السجل لضمان ظهوره في التقرير اليومي 🔥🔥
+        const stmtLogDeath = sql.prepare("INSERT INTO farm_daily_log (userID, guildID, actionType, itemName, count, timestamp) VALUES (?, ?, ?, ?, ?, ?)");
+
         for (const row of allUserAnimals) {
             const animalDef = farmAnimals.find(a => String(a.id) === String(row.animalID));
             const maxHunger = animalDef ? (animalDef.max_hunger_days || 7) : 7;
@@ -96,8 +99,16 @@ module.exports = {
 
             // إذا تجاوز الحد المسموح للجوع -> يموت
             if (daysHungry >= maxHunger) {
-                deadAnimals.push(`${row.quantity}x ${animalDef ? animalDef.name : 'حيوان مجهول'}`);
+                const animalName = animalDef ? animalDef.name : 'حيوان مجهول';
+                const qty = row.quantity || 1;
+
+                deadAnimals.push(`${qty}x ${animalName}`);
+                
+                // حذف الحيوان
                 sql.prepare("DELETE FROM user_farm WHERE id = ?").run(row.id);
+
+                // 🔥🔥 [تصحيح] تسجيل الوفاة في السجل اليومي 🔥🔥
+                stmtLogDeath.run(userId, guildId, 'death_starve', animalName, qty, now);
             }
         }
 
