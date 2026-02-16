@@ -10,6 +10,10 @@ module.exports = {
         const channel = message.mentions.channels.first() || message.channel;
         const sql = message.client.sql;
 
+        // 1. تأكد من وجود السيرفر في الجدول أولاً
+        sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(message.guild.id);
+
+        // 2. الآن قم بالتحديث
         sql.prepare("UPDATE settings SET transactionLogChannelID = ? WHERE guild = ?").run(channel.id, message.guild.id);
 
         message.reply(`✅ **تم تعيين قناة سجلات الاقتصاد:** ${channel}`);
