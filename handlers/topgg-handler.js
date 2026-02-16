@@ -1,42 +1,62 @@
 // handlers/topgg-handler.js
-const Topgg = require('@top-gg/sdk');
 const express = require('express');
 
 module.exports = (client, sql) => {
-    // ⚙️ إعدادات الربط
-    // ✅ تم وضع كلمة السر الخاصة بك هنا
-    const WEBHOOK_PASSWORD = 'EmoraxServerVote2026'; 
-    
-    // ✅ تم تعديل البورت ليعمل مع Railway بشكل تلقائي
     const PORT = process.env.PORT || 3000; 
-    
-    // آيدي السيرفر الخاص بك
     const MY_SERVER_ID = "848921014141845544"; 
 
-    const webhook = new Topgg.Webhook(WEBHOOK_PASSWORD);
     const app = express();
 
-    console.log(`[Top.gg] Server Voting Handler initialized on port ${PORT}`);
+    // 1. ضروري جداً لاستقبال البيانات (بديل عن مكتبة Top.gg مؤقتاً)
+    app.use(express.json());
 
-    app.post('/vote', webhook.listener(async (vote) => {
-        // vote.user: آيدي الشخص الذي صوت
-        console.log(`✅ [Server Vote] تصويت جديد للسيرفر من العضو: ${vote.user}`);
+    // 2. مراقبة أي اتصال
+    app.use((req, res, next) => {
+        console.log(`📨 [Webhook Traffic] ${req.method} request to ${req.path}`);
+        next();
+    });
+
+    console.log(`[Top.gg] Debug Handler initialized on port ${PORT}`);
+
+    // 3. استقبال التصويت (بدون كلمة سر)
+    app.post('/vote', async (req, res) => {
+        // طباعة البيانات القادمة من الموقع للتأكد
+        console.log("📦 [Payload Received]:", req.body);
+
+        // إرسال رد "ناجح" للموقع فوراً ليظهر الزر الأخضر
+        res.status(200).send({ success: true });
 
         try {
-            const userId = vote.user;
+            // بيانات التصويت عادة تكون في req.body
+            // user: آيدي الشخص
+            // type: "upvote"
+            const vote = req.body;
 
-            // 🔥 الوظيفة الوحيدة: إبلاغ نظام المهام أن هذا الشخص صوت للسيرفر 🔥
+            if (vote.type === 'test') {
+                console.log(`🧪 [Test Vote] تجربة ناجحة! الموقع متصل بالبوت.`);
+                return;
+            }
+
+            const userId = vote.user;
+            console.log(`✅ [Server Vote] تصويت حقيقي من: ${userId}`);
+
+            // تنفيذ المكافأة
             if (client.incrementQuestStats) {
                 await client.incrementQuestStats(userId, MY_SERVER_ID, 'topgg_votes', 1);
-                console.log(`📈 [Server Vote] تم تسجيل نقطة في مهام السيرفر للمستخدم ${userId}.`);
+                console.log(`📈 [Reward] تم تسجيل النقطة.`);
             }
 
         } catch (error) {
-            console.error("❌ [Server Vote] Error processing vote:", error);
+            console.error("❌ [Vote Error]:", error);
         }
-    }));
+    });
+
+    // صفحة تأكيد التشغيل
+    app.get('/', (req, res) => {
+        res.send('Emorax Vote Handler is Online (No Auth Mode)');
+    });
 
     app.listen(PORT, () => {
-        console.log(`🌐 [Top.gg] Listening for Server Votes on port ${PORT}`);
+        console.log(`🌐 [Top.gg] Listening on port ${PORT}`);
     });
 };
