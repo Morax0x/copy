@@ -50,8 +50,15 @@ const activePveBattles = new Map();
 // ==========================================
 
 function cleanDisplayName(name) {
-    if (!name) return "لاعب";
+    if (!name) return "لاعب مجهول";
     return name.replace(/<a?:.+?:\d+>/g, '').trim();
+}
+
+// ✅ دالة آمنة لجلب اسم اللاعب حتى لو غادر
+function getSafeName(playerObj) {
+    if (playerObj.isMonster) return playerObj.name;
+    if (playerObj.member && playerObj.member.user) return cleanDisplayName(playerObj.member.user.displayName);
+    return "اللاعب";
 }
 
 function buildHpBar(currentHp, maxHp) {
@@ -163,7 +170,7 @@ function checkShieldBreak(battleState, defenderId) {
         defender.effects.shield_cd_duration = 0;
         defender.effects.shield = 0; 
 
-        return `💔 **انكسر درع ${defender.isMonster ? defender.name : cleanDisplayName(defender.member.user.displayName)}**! (بدأ الكولداون)`;
+        return `💔 **انكسر درع ${getSafeName(defender)}**! (بدأ الكولداون)`;
     }
     return null;
 }
@@ -186,20 +193,20 @@ function applyPersistentEffects(battleState, attackerId) {
 
     if (attacker.effects.poison > 0) {
         attacker.hp -= attacker.effects.poison;
-        logEntries.push(`☠️ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يتألم من السم (-${attacker.effects.poison})!`);
+        logEntries.push(`☠️ ${getSafeName(attacker)} يتألم من السم (-${attacker.effects.poison})!`);
         attacker.effects.poison_turns--;
         if (attacker.effects.poison_turns <= 0) attacker.effects.poison = 0;
     }
 
     if (attacker.effects.burn > 0) {
         attacker.hp -= attacker.effects.burn;
-        logEntries.push(`🔥 ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يحترق (-${attacker.effects.burn})!`);
+        logEntries.push(`🔥 ${getSafeName(attacker)} يحترق (-${attacker.effects.burn})!`);
         attacker.effects.burn_turns--;
         if (attacker.effects.burn_turns <= 0) attacker.effects.burn = 0;
     }
 
     if (attacker.effects.stun) {
-        logEntries.push(`⚡ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} مشلول ولا يستطيع الحركة!`);
+        logEntries.push(`⚡ ${getSafeName(attacker)} مشلول ولا يستطيع الحركة!`);
         skipTurn = true;
     }
 
@@ -219,7 +226,7 @@ function applySkillEffect(battleState, attackerId, skill) {
     const isShieldSkill = shieldSkills.includes(skill.id) || (skill.id === 'Lifesteal_Overheal' && (attacker.maxHp - attacker.hp) < (attacker.weapon.currentDamage * 0.6));
 
     if (isShieldSkill && attacker.effects.shield > 0) {
-        return `🚫 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** حاول تفعيل درع لكن لديه درع نشط بالفعل!`;
+        return `🚫 **${getSafeName(attacker)}** حاول تفعيل درع لكن لديه درع نشط بالفعل!`;
     }
 
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
@@ -233,7 +240,7 @@ function applySkillEffect(battleState, attackerId, skill) {
 
     const effectValue = skill.effectValue;
     const statType = skill.stat_type;
-    const skillLevel = skill.currentLevel || 1; // 🔥 تم إضافة اللفل
+    const skillLevel = skill.currentLevel || 1;
 
     let baseAtk = attacker.weapon ? attacker.weapon.currentDamage : 15;
     if (attacker.effects.buff > 0) baseAtk *= (1 + attacker.effects.buff);
@@ -246,7 +253,7 @@ function applySkillEffect(battleState, attackerId, skill) {
                 const maxDmg = 2222;
                 const dmgAmount = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg;
                 defender.hp -= dmgAmount;
-                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
+                return `🎲 **${getSafeName(attacker)}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
             } else {
                 const minFail = 100;
                 const maxFail = 200;
@@ -254,7 +261,7 @@ function applySkillEffect(battleState, attackerId, skill) {
                 const selfDmg = Math.floor(attacker.hp * 0.03); 
                 defender.hp -= failDmg;
                 attacker.hp -= selfDmg;
-                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
+                return `🎲 **${getSafeName(attacker)}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
             }
         }
         case 'Spirit_RNG': {
@@ -271,13 +278,13 @@ function applySkillEffect(battleState, attackerId, skill) {
                 defender.effects.weaken = (defender.effects.weaken || 0) + 0.15; defender.effects.weaken_turns = 3;
                 effectMsg = "💀 **سرقة الروح!** (امتصاص القوة)";
             } else { effectMsg = "(هجوم طيفي)"; }
-            return `👻 **${cleanDisplayName(attacker.member.user.displayName)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
+            return `👻 **${getSafeName(attacker)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
         }
         case 'TrueDMG_Burn': {
             const burnDmg = Math.floor(baseAtk * 0.2);
             defender.effects.burn = burnDmg; defender.effects.burn_turns = 3;
             const dmg = Math.floor(baseAtk * 1.4); defender.hp -= dmg;
-            return `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أحرق خصمه! (${dmg} ضرر + حرق)`;
+            return `🐲 **${getSafeName(attacker)}** أحرق خصمه! (${dmg} ضرر + حرق)`;
         }
         case 'Cleanse_Buff_Shield': {
             attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
@@ -291,7 +298,7 @@ function applySkillEffect(battleState, attackerId, skill) {
             attacker.effects.buff = 0.2; attacker.effects.buff_turns = 2;
             attacker.effects.shield_source = skill.id; 
             attacker.effects.shield_cd_duration = cooldownDuration;
-            return `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب درعاً وقوة!`;
+            return `⚔️ **${getSafeName(attacker)}** طهر نفسه واكتسب درعاً وقوة!`;
         }
         case 'Scale_MissingHP_Heal': {
             const missingHpPercent = (attacker.maxHp - attacker.hp) / attacker.maxHp;
@@ -300,41 +307,34 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.hp -= dmg;
             const healVal = Math.floor(attacker.maxHp * 0.15);
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + healVal);
-            return `⚖️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
+            return `⚖️ **${getSafeName(attacker)}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
         }
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
             attacker.hp -= selfDmg;
             const dmg = Math.floor(baseAtk * 2.0);
             defender.hp -= dmg;
-            return `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
+            return `👹 **${getSafeName(attacker)}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
         }
         case 'Stun_Vulnerable': {
             const dmg = Math.floor(baseAtk * 1.1);
             defender.hp -= dmg;
             defender.effects.stun = true; defender.effects.stun_turns = 1;
             defender.effects.weaken = 0.5; defender.effects.weaken_turns = 2;
-            return `🍃 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** شل حركة الخصم وجعله هشاً!`;
+            return `🍃 **${getSafeName(attacker)}** شل حركة الخصم وجعله هشاً!`;
         }
         case 'Confusion': {
             const dmg = Math.floor(baseAtk * 1.2);
             defender.hp -= dmg;
             defender.effects.confusion = true; defender.effects.confusion_turns = 2;
-            return `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
+            return `😵 **${getSafeName(attacker)}** أربك خصمه بلعنة الجنون!`;
         }
-        
-        // --- 🩸 Vampire (Updated for Knight Battle) ---
         case 'Lifesteal_Overheal': {
-            // 1. زيادة الضرر (15%)
             const dmg = Math.floor(baseAtk * 1.45); 
             defender.hp -= dmg;
-
-            // 2. النزيف
             const bleedDmg = 100 + (skillLevel * 50);
-            defender.effects.burn = bleedDmg; // استخدام الحرق للتعبير عن النزيف
+            defender.effects.burn = bleedDmg;
             defender.effects.burn_turns = 2;
-
-            // 3. الشفاء والدرع
             const healVal = Math.floor(dmg * 0.5);
             const missingHp = attacker.maxHp - attacker.hp;
             if (healVal > missingHp) {
@@ -343,14 +343,13 @@ function applySkillEffect(battleState, attackerId, skill) {
                 attacker.effects.shield += shieldAdd;
                 attacker.effects.shield_source = skill.id;
                 attacker.effects.shield_cd_duration = cooldownDuration;
-                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع!`;
+                return `🍷 **${getSafeName(attacker)}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع!`;
             }
             attacker.hp += healVal;
             battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
             attacker.effects.shield_source = null;
-            return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
+            return `🍷 **${getSafeName(attacker)}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
         }
-
         case 'Chaos_RNG': {
             const dmg = Math.floor(baseAtk * 1.2);
             defender.hp -= dmg;
@@ -360,30 +359,30 @@ function applySkillEffect(battleState, attackerId, skill) {
             else if (randomEffect < 0.50) { defender.effects.weaken = 0.3; defender.effects.weaken_turns = 2; effectMsg = "إضعاف"; }
             else if (randomEffect < 0.75) { defender.effects.confusion = true; defender.effects.confusion_turns = 2; effectMsg = "ارتباك"; }
             else { defender.effects.poison = Math.floor(baseAtk * 0.15); defender.effects.poison_turns = 3; effectMsg = "سم"; }
-            return `🌀 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سبب فوضى (${effectMsg})!`;
+            return `🌀 **${getSafeName(attacker)}** سبب فوضى (${effectMsg})!`;
         }
         case 'Dmg_Evasion': {
             const dmg = Math.floor(baseAtk * 1.3);
             defender.hp -= dmg;
             attacker.effects.evasion = 1; attacker.effects.evasion_turns = 1;
-            return `👻 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضرب واختفى (مراوغة تامة)!`;
+            return `👻 **${getSafeName(attacker)}** ضرب واختفى (مراوغة تامة)!`;
         }
         case 'Reflect_Tank': {
             attacker.effects.shield += Math.floor(attacker.maxHp * 0.2);
             attacker.effects.rebound_active = 0.4; attacker.effects.rebound_turns = 2;
             attacker.effects.shield_source = skill.id;
             attacker.effects.shield_cd_duration = cooldownDuration;
-            return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
+            return `🔨 **${getSafeName(attacker)}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
         case 'Execute_Heal': {
             const dmg = Math.floor(baseAtk * 1.6);
             if (defender.hp - dmg <= 0) {
                 defender.hp = 0;
                 attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.floor(attacker.maxHp * 0.25));
-                return `🥩 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** افترس خصمه واستعاد صحته!`;
+                return `🥩 **${getSafeName(attacker)}** افترس خصمه واستعاد صحته!`;
             }
             defender.hp -= dmg;
-            return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه بضرر وحشي!`;
+            return `🧟 **${getSafeName(attacker)}** نهش خصمه بضرر وحشي!`;
         }
         default:
             switch (skill.id) {
@@ -391,19 +390,19 @@ function applySkillEffect(battleState, attackerId, skill) {
                     attacker.effects.shield += Math.floor(attacker.maxHp * (effectValue / 100)); 
                     attacker.effects.shield_source = skill.id;
                     attacker.effects.shield_cd_duration = cooldownDuration;
-                    return `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً!`;
-                case 'skill_buffing': attacker.effects.buff = effectValue / 100; attacker.effects.buff_turns = 3; return `💪 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** رفع قوته!`;
-                case 'skill_rebound': attacker.effects.rebound_active = effectValue / 100; attacker.effects.rebound_turns = 3; return `🔄 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** جهز الانعكاس!`;
-                case 'skill_healing': const heal = Math.floor(attacker.maxHp * (effectValue / 100)); attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal); return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
-                case 'skill_poison': defender.effects.poison = Math.floor(baseAtk * (effectValue / 100)); defender.effects.poison_turns = 3; return `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه!`;
-                case 'skill_weaken': defender.effects.weaken = effectValue / 100; defender.effects.weaken_turns = 3; return `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
-                case 'skill_dispel': defender.effects = { shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, rebound_active: 0, rebound_turns: 0, penetrate: 0, burn: 0, burn_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 }; return `💨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** بدد كل سحر الخصم!`;
+                    return `🛡️ **${getSafeName(attacker)}** اكتسب درعاً!`;
+                case 'skill_buffing': attacker.effects.buff = effectValue / 100; attacker.effects.buff_turns = 3; return `💪 **${getSafeName(attacker)}** رفع قوته!`;
+                case 'skill_rebound': attacker.effects.rebound_active = effectValue / 100; attacker.effects.rebound_turns = 3; return `🔄 **${getSafeName(attacker)}** جهز الانعكاس!`;
+                case 'skill_healing': const heal = Math.floor(attacker.maxHp * (effectValue / 100)); attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal); return `💖 **${getSafeName(attacker)}** استعاد ${heal} HP!`;
+                case 'skill_poison': defender.effects.poison = Math.floor(baseAtk * (effectValue / 100)); defender.effects.poison_turns = 3; return `☠️ **${getSafeName(attacker)}** سمم خصمه!`;
+                case 'skill_weaken': defender.effects.weaken = effectValue / 100; defender.effects.weaken_turns = 3; return `📉 **${getSafeName(attacker)}** أضعف خصمه!`;
+                case 'skill_dispel': defender.effects = { shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, rebound_active: 0, rebound_turns: 0, penetrate: 0, burn: 0, burn_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 }; return `💨 **${getSafeName(attacker)}** بدد كل سحر الخصم!`;
                 case 'skill_cleanse': 
                     attacker.effects.poison = 0; attacker.effects.poison_turns = 0; attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
                     attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0; attacker.effects.stun = false; attacker.effects.stun_turns = 0;
                     attacker.effects.confusion = false; attacker.effects.confusion_turns = 0; attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
-                    return `✨ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه من اللعنات!`;
-                default: const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1); defender.hp -= d; return `💥 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استخدم ${skill.name} وسبب ${d} ضرر!`;
+                    return `✨ **${getSafeName(attacker)}** طهر نفسه من اللعنات!`;
+                default: const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1); defender.hp -= d; return `💥 **${getSafeName(attacker)}** استخدم ${skill.name} وسبب ${d} ضرر!`;
             }
     }
 }
@@ -420,18 +419,18 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 
     embed.addFields(
         { 
-            name: `${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)}`, 
+            name: `${getSafeName(attacker)}`, 
             value: `HP: ${buildHpBar(attacker.hp, attacker.maxHp)}\nتأثيرات: ${buildEffectsString(attacker.effects)}`, 
             inline: true 
         },
         { 
-            name: `${defender.isMonster ? defender.name : cleanDisplayName(defender.member.user.displayName)}`, 
+            name: `${getSafeName(defender)}`, 
             value: `HP: ${buildHpBar(defender.hp, defender.maxHp)}\nتأثيرات: ${buildEffectsString(defender.effects)}`, 
             inline: true 
         }
     );
 
-    embed.setDescription(`**قـُبـض عليـك قاتل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!\nالدور الآن لـ: **${attacker.isMonster ? attacker.name : attacker.member}**`);
+    embed.setDescription(`**قـُبـض عليـك قاتل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!\nالدور الآن لـ: **${getSafeName(attacker)}**`);
 
     if (battleState.log.length > 0) {
         embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-3).join('\n'), inline: false });
@@ -492,11 +491,16 @@ function setupBattleCollector(battleState) {
     const robberId = battleState.turn[0]; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
      
+    // ✅ حفظ المستمع في الحالة لإيقافه لاحقاً
+    if (battleState.collector) battleState.collector.stop();
+
     const collector = battleState.message.createMessageComponentCollector({ 
         filter, 
         componentType: ComponentType.Button, 
         idle: 300000 
     });
+
+    battleState.collector = collector;
 
     collector.on('collect', async i => {
         if (battleState.processingTurn) return; 
@@ -516,7 +520,7 @@ function setupBattleCollector(battleState) {
             if (customId === 'knight_attack') {
                 const dmg = calculateDamage(player, guard);
                 guard.hp -= dmg;
-                battleState.log.push(`⚔️ **${cleanDisplayName(player.member.user.displayName)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
+                battleState.log.push(`⚔️ **${getSafeName(player)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
                   
                 const breakMsg = checkShieldBreak(battleState, "guard");
                 if (breakMsg) battleState.log.push(breakMsg);
@@ -551,6 +555,7 @@ function setupBattleCollector(battleState) {
         } catch (error) {
             console.error("Collector Logic Error:", error);
             battleState.processingTurn = false;
+            // محاولة إعادة الأزرار
             await i.editReply(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
         } finally {
             if (battleState.turn[0] !== "guard") {
@@ -574,6 +579,12 @@ async function processGuardTurn(battleState) {
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
 
+        // ✅ تأكد من وجود اللاعب، إذا غادر، ننهي المعركة فوراً
+        if (!player || !player.member) {
+            console.log("Player left mid-battle, ending.");
+            return activePveBattles.delete(battleState.message.channel.id);
+        }
+
         const playerCooldowns = battleState.skillCooldowns[playerMemberId];
         if (playerCooldowns) {
             for (const skillId in playerCooldowns) {
@@ -590,6 +601,7 @@ async function processGuardTurn(battleState) {
 
         if (skipTurn) {
             battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
+            // 🛑 هنا نقطة مهمة: يجب إرجاع الدور للاعب
             battleState.turn = [playerMemberId, "guard"];
             await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
             return;
@@ -657,12 +669,16 @@ async function processGuardTurn(battleState) {
             return await handleGuardBattleEnd(battleState, "guard", "lose");
         }
 
+        // ✅ إعادة الدور للاعب قبل تحديث الرسالة
         battleState.turn = [playerMemberId, "guard"];
         
         try {
             await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
         } catch (editError) {
             console.log("[Anti-Freeze] Message edit failed, sending fresh message...");
+            // ✅ عند إرسال رسالة جديدة، يجب إيقاف المستمع القديم!
+            if (battleState.collector) battleState.collector.stop();
+            
             const newMsg = await battleState.message.channel.send(buildBattleEmbed(battleState, false, 0, false));
             battleState.message = newMsg; 
             setupBattleCollector(battleState); 
@@ -670,6 +686,9 @@ async function processGuardTurn(battleState) {
 
     } catch (error) {
         console.error("AI Logic Error:", error);
+        // ✅ في حال حدوث كارثة، نعيد الأزرار للاعب ليتمكن من الإكمال
+        const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
+        battleState.turn = [playerMemberId, "guard"];
         await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
     } finally {
         battleState.processingTurn = false;
@@ -755,7 +774,8 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             players: new Map([
                 [robberMember.id, { isMonster: false, member: robberMember, hp: pMaxHp, maxHp: pMaxHp, weapon: robberWeapon, skills: robberSkills, effects: defEffects() }],
                 ["guard", { isMonster: true, name: `فـارس الإمبراطور ${multiplier > 1 ? `(x${multiplier})` : ''}`, hp: guardMaxHp, maxHp: guardMaxHp, weapon: guardWeapon, skills: {}, effects: guardEffects }]
-            ])
+            ]),
+            collector: null // ✅ تخزين المستمع هنا
         };
 
         activePveBattles.set(interaction.channel.id, battleState);
@@ -783,6 +803,8 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     if (battleState.isEnded) return;
     battleState.isEnded = true;
+
+    if (battleState.collector) battleState.collector.stop(); // ✅ إيقاف المستمع
 
     try {
         const client = battleState.message.client;
