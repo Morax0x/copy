@@ -54,7 +54,6 @@ function cleanDisplayName(name) {
     return name.replace(/<a?:.+?:\d+>/g, '').trim();
 }
 
-// ✅ دالة آمنة لجلب اسم اللاعب حتى لو غادر
 function getSafeName(playerObj) {
     if (playerObj.isMonster) return playerObj.name;
     if (playerObj.member && playerObj.member.user) return cleanDisplayName(playerObj.member.user.displayName);
@@ -408,9 +407,9 @@ function applySkillEffect(battleState, attackerId, skill) {
 }
 
 function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0, disableAll = false) {
-    const [attackerId, defenderId] = battleState.turn;
+    const attackerId = Array.from(battleState.players.keys()).find(id => id !== "guard"); // التحديث يظهر اللاعب دائماً كمهاجم في الـ UI
     const attacker = battleState.players.get(attackerId);
-    const defender = battleState.players.get(defenderId);
+    const defender = battleState.players.get("guard");
       
     const embed = new EmbedBuilder()
         .setTitle('⚔️ مبارزة الموت: ضد فارس الإمبراطور')
@@ -430,10 +429,10 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         }
     );
 
-    embed.setDescription(`**قـُبـض عليـك قاتل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!\nالدور الآن لـ: **${getSafeName(attacker)}**`);
+    embed.setDescription(`**قـُبـض عليـك! قـاتـل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!`);
 
     if (battleState.log.length > 0) {
-        embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-3).join('\n'), inline: false });
+        embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-4).join('\n'), inline: false });
     }
 
     const componentsToSend = [];
@@ -487,11 +486,100 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: componentsToSend };
 }
 
+// 🔥 الهجوم اللحظي للفارس (لا يوجد تأخير ولا انتظار) 🔥
+function processGuardTurn(battleState) {
+    const guard = battleState.players.get("guard");
+    const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
+    const player = battleState.players.get(playerMemberId);
+
+    if (!player || !player.member) return; // اللاعب غير موجود
+
+    // تقليل وقت انتظار مهارات اللاعب
+    const playerCooldowns = battleState.skillCooldowns[playerMemberId];
+    if (playerCooldowns) {
+        for (const skillId in playerCooldowns) {
+            if (playerCooldowns[skillId] > 0) playerCooldowns[skillId]--;
+        }
+    }
+
+    // تطبيق تأثيرات السم والنار للفارس
+    const guardEffects = applyPersistentEffects(battleState, "guard");
+    if (guardEffects.logEntries.length > 0) battleState.log.push(...guardEffects.logEntries);
+
+    // تطبيق تأثيرات السم والنار للاعب
+    const playerEffects = applyPersistentEffects(battleState, playerMemberId);
+    if (playerEffects.logEntries.length > 0) battleState.log.push(...playerEffects.logEntries);
+
+    if (guard.hp <= 0 || player.hp <= 0) return; // تم الموت، الإكمال في الكوليكتر
+
+    if (guardEffects.skipTurn) {
+        battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
+        return;
+    }
+
+    let actionLog = "";
+      
+    if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
+        const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
+        player.hp -= drainDmg;
+        const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
+        guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
+        guard.effects.blood_liturgy_used++; 
+        actionLog = `🩸 **فارس الإمبراطور** استخدم "قداس الدم"! امتص **${drainDmg}** HP وشفى نفسه!`;
+        const breakMsg = checkShieldBreak(battleState, playerMemberId);
+        if (breakMsg) actionLog += `\n${breakMsg}`;
+    }
+    else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
+        const healAmount = Math.floor(guard.maxHp * 0.25); 
+        guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
+        const shieldAmt = Math.floor(guard.maxHp * 0.10);
+        guard.effects.shield += shieldAmt;
+        guard.effects.potions_used++; 
+        actionLog = `🧪 **فارس الإمبراطور** شرب جرعة علاج! (+${healAmount} HP ودرع)`;
+    }
+    else if (player.hp < player.maxHp * 0.20) {
+        const dmg = calculateDamage(guard, player, 1.5);
+        player.hp -= dmg;
+        actionLog = `💀 **فارس الإمبراطور** استخدم "إعدام"! سبب **${dmg}** ضرر!`;
+        const breakMsg = checkShieldBreak(battleState, playerMemberId);
+        if (breakMsg) actionLog += `\n${breakMsg}`;
+    }
+    else if (player.effects.shield > 0) {
+        const dmg = calculateDamage(guard, player, 1.3); 
+        player.hp -= dmg;
+        actionLog = `🔨 **فارس الإمبراطور** حطم درعك! سبب **${dmg}** ضرر!`;
+        const breakMsg = checkShieldBreak(battleState, playerMemberId);
+        if (breakMsg) actionLog += `\n${breakMsg}`;
+    }
+    else if (player.effects.buff > 0 && Math.random() < 0.20) {
+        guard.effects.rebound_active = 0.5; 
+        guard.effects.rebound_turns = 1;
+        actionLog = `🛡️ **فارس الإمبراطور** اتخذ وضعية "انعكاس الضرر"!`;
+    }
+    else {
+        let multiplier = 1.0;
+        if (player.effects.buff > 0) multiplier = 1.1;
+        const dmg = calculateDamage(guard, player, multiplier);
+        player.hp -= dmg;
+        const breakMsg = checkShieldBreak(battleState, playerMemberId);
+        if (breakMsg) actionLog += `${breakMsg}\n`;
+
+        if (Math.random() < 0.2) {
+            player.effects.burn = Math.floor(guard.weapon.currentDamage * 0.1);
+            player.effects.burn_turns = 2;
+            actionLog += `⚔️ **فارس الإمبراطور** جرحك وسبب نزيفاً! (**${dmg}** ضرر)`;
+        } else {
+            actionLog += `⚔️ **فارس الإمبراطور** هاجمك وسبب **${dmg}** ضرر!`;
+        }
+    }
+
+    battleState.log.push(actionLog);
+}
+
 function setupBattleCollector(battleState) {
-    const robberId = battleState.turn[0]; 
+    const robberId = Array.from(battleState.players.keys()).find(id => id !== "guard"); 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
      
-    // ✅ حفظ المستمع في الحالة لإيقافه لاحقاً
     if (battleState.collector) battleState.collector.stop();
 
     const collector = battleState.message.createMessageComponentCollector({ 
@@ -508,16 +596,13 @@ function setupBattleCollector(battleState) {
 
         try {
             await i.deferUpdate(); 
-        } catch (e) {
-            console.error("Defer Error:", e);
-        }
 
-        try {
             const customId = i.customId;
             const player = battleState.players.get(i.user.id);
             const guard = battleState.players.get("guard");
 
             if (customId === 'knight_attack') {
+                // 1. هجوم اللاعب
                 const dmg = calculateDamage(player, guard);
                 guard.hp -= dmg;
                 battleState.log.push(`⚔️ **${getSafeName(player)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
@@ -525,11 +610,21 @@ function setupBattleCollector(battleState) {
                 const breakMsg = checkShieldBreak(battleState, "guard");
                 if (breakMsg) battleState.log.push(breakMsg);
 
-                battleState.turn = ["guard", player.member.id];
+                if (guard.hp <= 0) {
+                    await i.editReply(buildBattleEmbed(battleState, false, 0, true)); // إقفال الأزرار
+                    return await handleGuardBattleEnd(battleState, player.member.id, "win");
+                }
+
+                // 2. هجوم الفارس اللحظي!
+                processGuardTurn(battleState);
+
+                if (player.hp <= 0) {
+                    await i.editReply(buildBattleEmbed(battleState, false, 0, true)); // إقفال الأزرار
+                    return await handleGuardBattleEnd(battleState, "guard", "lose");
+                }
                 
-                await i.editReply(buildBattleEmbed(battleState, false, 0, true));
-                
-                await processGuardTurn(battleState);
+                // 3. تحديث الرسالة مرة واحدة فقط لكلا الهجومين
+                await i.editReply(buildBattleEmbed(battleState, false, 0, false));
             } 
             else if (customId === 'knight_skill_menu') await i.editReply(buildBattleEmbed(battleState, true, 0));
             else if (customId === 'knight_skill_back') await i.editReply(buildBattleEmbed(battleState, false));
@@ -541,26 +636,35 @@ function setupBattleCollector(battleState) {
                 const skillId = customId.replace('knight_skill_use_', '');
                 const skillData = player.skills[skillId];
                 if (skillData) {
+                    // 1. مهارة اللاعب
                     const logMsg = applySkillEffect(battleState, i.user.id, skillData);
                     battleState.log.push(logMsg);
                       
                     const breakMsg = checkShieldBreak(battleState, "guard");
                     if (breakMsg) battleState.log.push(breakMsg);
 
-                    battleState.turn = ["guard", player.member.id];
-                    await i.editReply(buildBattleEmbed(battleState, false, 0, true));
-                    await processGuardTurn(battleState);
+                    if (guard.hp <= 0) {
+                        await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                        return await handleGuardBattleEnd(battleState, i.user.id, "win");
+                    }
+
+                    // 2. هجوم الفارس اللحظي!
+                    processGuardTurn(battleState);
+
+                    if (player.hp <= 0) {
+                        await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                        return await handleGuardBattleEnd(battleState, "guard", "lose");
+                    }
+
+                    // 3. تحديث الرسالة مرة واحدة 
+                    await i.editReply(buildBattleEmbed(battleState, false, 0, false));
                 }
             }
         } catch (error) {
             console.error("Collector Logic Error:", error);
-            battleState.processingTurn = false;
-            // محاولة إعادة الأزرار
             await i.editReply(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
         } finally {
-            if (battleState.turn[0] !== "guard") {
-                battleState.processingTurn = false;
-            }
+            battleState.processingTurn = false;
         }
     });
 
@@ -569,130 +673,6 @@ function setupBattleCollector(battleState) {
             handleGuardBattleEnd(battleState, "guard", "lose");
         }
     });
-}
-
-async function processGuardTurn(battleState) {
-    try {
-        await new Promise(r => setTimeout(r, 1000));
-
-        const guard = battleState.players.get("guard");
-        const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
-        const player = battleState.players.get(playerMemberId);
-
-        // ✅ تأكد من وجود اللاعب، إذا غادر، ننهي المعركة فوراً
-        if (!player || !player.member) {
-            console.log("Player left mid-battle, ending.");
-            return activePveBattles.delete(battleState.message.channel.id);
-        }
-
-        const playerCooldowns = battleState.skillCooldowns[playerMemberId];
-        if (playerCooldowns) {
-            for (const skillId in playerCooldowns) {
-                if (playerCooldowns[skillId] > 0) playerCooldowns[skillId]--;
-            }
-        }
-
-        const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
-        if (logEntries.length > 0) battleState.log.push(...logEntries);
-
-        if (guard.hp <= 0) {
-            return await handleGuardBattleEnd(battleState, playerMemberId, "win");
-        }
-
-        if (skipTurn) {
-            battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
-            // 🛑 هنا نقطة مهمة: يجب إرجاع الدور للاعب
-            battleState.turn = [playerMemberId, "guard"];
-            await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
-            return;
-        }
-
-        let actionLog = "";
-          
-        if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
-            const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
-            player.hp -= drainDmg;
-            const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
-            guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
-            guard.effects.blood_liturgy_used++; 
-            actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه (+${healAmt})! (${guard.effects.blood_liturgy_used}/5)`;
-            const breakMsg = checkShieldBreak(battleState, playerMemberId);
-            if (breakMsg) actionLog += `\n${breakMsg}`;
-        }
-        else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
-            const healAmount = Math.floor(guard.maxHp * 0.25); 
-            guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
-            const shieldAmt = Math.floor(guard.maxHp * 0.10);
-            guard.effects.shield += shieldAmt;
-            guard.effects.potions_used++; 
-            actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
-        }
-        else if (player.hp < player.maxHp * 0.20) {
-            const dmg = calculateDamage(guard, player, 1.5);
-            player.hp -= dmg;
-            actionLog = `💀 **فارس الإمبراطور** رأى ضعفك واستخدم "إعدام"! سبب **${dmg}** ضرر!`;
-            const breakMsg = checkShieldBreak(battleState, playerMemberId);
-            if (breakMsg) actionLog += `\n${breakMsg}`;
-        }
-        else if (player.effects.shield > 0) {
-            const dmg = calculateDamage(guard, player, 1.3); 
-            player.hp -= dmg;
-            actionLog = `🔨 **فارس الإمبراطور** سدد ضربة ثقيلة لتحطيم درعك! سبب **${dmg}** ضرر!`;
-            const breakMsg = checkShieldBreak(battleState, playerMemberId);
-            if (breakMsg) actionLog += `\n${breakMsg}`;
-        }
-        else if (player.effects.buff > 0 && Math.random() < 0.20) {
-            guard.effects.rebound_active = 0.5; 
-            guard.effects.rebound_turns = 1;
-            actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
-        }
-        else {
-            let multiplier = 1.0;
-            if (player.effects.buff > 0) multiplier = 1.1;
-            const dmg = calculateDamage(guard, player, multiplier);
-            player.hp -= dmg;
-            const breakMsg = checkShieldBreak(battleState, playerMemberId);
-            if (breakMsg) actionLog += `${breakMsg}\n`;
-
-            if (Math.random() < 0.2) {
-                player.effects.burn = Math.floor(guard.weapon.currentDamage * 0.1);
-                player.effects.burn_turns = 2;
-                actionLog += `⚔️ **فارس الإمبراطور** جرحك وسـبب نزيفاً! (**${dmg}** ضرر)`;
-            } else {
-                actionLog += `⚔️ **فارس الإمبراطور** هاجمك وسبب **${dmg}** ضرر!`;
-            }
-        }
-
-        battleState.log.push(actionLog);
-
-        if (player.hp <= 0) {
-            return await handleGuardBattleEnd(battleState, "guard", "lose");
-        }
-
-        // ✅ إعادة الدور للاعب قبل تحديث الرسالة
-        battleState.turn = [playerMemberId, "guard"];
-        
-        try {
-            await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
-        } catch (editError) {
-            console.log("[Anti-Freeze] Message edit failed, sending fresh message...");
-            // ✅ عند إرسال رسالة جديدة، يجب إيقاف المستمع القديم!
-            if (battleState.collector) battleState.collector.stop();
-            
-            const newMsg = await battleState.message.channel.send(buildBattleEmbed(battleState, false, 0, false));
-            battleState.message = newMsg; 
-            setupBattleCollector(battleState); 
-        }
-
-    } catch (error) {
-        console.error("AI Logic Error:", error);
-        // ✅ في حال حدوث كارثة، نعيد الأزرار للاعب ليتمكن من الإكمال
-        const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
-        battleState.turn = [playerMemberId, "guard"];
-        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
-    } finally {
-        battleState.processingTurn = false;
-    }
 }
 
 async function startGuardBattle(interaction, client, sql, robberMember, amountToSteal) {
@@ -775,7 +755,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
                 [robberMember.id, { isMonster: false, member: robberMember, hp: pMaxHp, maxHp: pMaxHp, weapon: robberWeapon, skills: robberSkills, effects: defEffects() }],
                 ["guard", { isMonster: true, name: `فـارس الإمبراطور ${multiplier > 1 ? `(x${multiplier})` : ''}`, hp: guardMaxHp, maxHp: guardMaxHp, weapon: guardWeapon, skills: {}, effects: guardEffects }]
             ]),
-            collector: null // ✅ تخزين المستمع هنا
+            collector: null 
         };
 
         activePveBattles.set(interaction.channel.id, battleState);
@@ -804,7 +784,7 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     if (battleState.isEnded) return;
     battleState.isEnded = true;
 
-    if (battleState.collector) battleState.collector.stop(); // ✅ إيقاف المستمع
+    if (battleState.collector) battleState.collector.stop();
 
     try {
         const client = battleState.message.client;
@@ -819,8 +799,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
         const embed = new EmbedBuilder();
         activePveBattles.delete(battleState.message.channel.id);
-
-        await battleState.message.edit({ components: [] }).catch(() => {});
 
         if (resultType === "win") {
             playerData.mora += amount;
