@@ -14,12 +14,8 @@ const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
-// 🔥 الآيدي الخاص بك (الإمبراطور) - لن تعمل الأوامر إلا لك
 const OWNER_ID = "1145327691772481577"; 
 
-/**
- * 🧹 دالة تنظيف النص
- */
 function sanitizeOutput(text) {
     if (!text) return "";
     let cleanText = text.replace(/<@!?\d+>/g, "");
@@ -28,9 +24,6 @@ function sanitizeOutput(text) {
     return cleanText.trim();
 }
 
-/**
- * 🛠️ دالة مساعدة لتحويل الآيديات إلى أسماء
- */
 async function resolveNames(guild, dataList) {
     if (!dataList || dataList.length === 0) return "لا يوجد بيانات";
     const names = [];
@@ -45,10 +38,6 @@ async function resolveNames(guild, dataList) {
     return names.join(', ');
 }
 
-/**
- * 🤖 دالة: تنفيذ الأوامر الإدارية (السكرتيرة)
- * تعمل فقط للأونر وتنفذ الأوامر بناءً على الكلمات المفتاحية
- */
 async function detectAndExecuteCommands(message, aiResponseText) {
     if (!message || message.author.id !== OWNER_ID) return aiResponseText;
 
@@ -56,25 +45,20 @@ async function detectAndExecuteCommands(message, aiResponseText) {
     let feedback = ""; 
     let actionDone = false;
 
-    // استخراج المنشن الصحيح (تجاهل منشن البوت إذا كان في البداية)
     const mentions = message.mentions.users.filter(u => u.id !== message.client.user.id);
     const targetUser = mentions.first(); 
 
     try {
-        // === 1. أوامر المورا (إعطاء / سحب) ===
         if (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب')) {
             
-            // ✅ إصلاح: استخراج الرقم (تجاهل أرقام الـ ID الطويلة والمنشن)
             const numbers = lowerText.match(/\b\d+\b/g);
             let amount = 0;
             
             if (numbers) {
-                // نأخذ أول رقم معقول (أقل من 17 خانة) لنتجنب الـ IDs
                 const validNumber = numbers.find(n => n.length < 17);
                 if (validNumber) amount = parseInt(validNumber);
             }
 
-            // دعم الأرقام العربية
             if (amount === 0) {
                 const arabicMatch = lowerText.match(/[\u0660-\u0669]+/);
                 if (arabicMatch) {
@@ -83,7 +67,6 @@ async function detectAndExecuteCommands(message, aiResponseText) {
             }
 
             if (targetUser && amount > 0) {
-                // منع استهداف النفس أو البوت
                 if (targetUser.id === message.client.user.id || targetUser.id === OWNER_ID) return aiResponseText;
 
                 const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); 
@@ -96,50 +79,42 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                 if (isGive) {
                     sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
                     await message.react('💸').catch(()=>{});
-                    // ✨ تم تعديل الرد هنا
                     feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
                 } else {
                     sql.prepare("UPDATE levels SET mora = MAX(0, mora - ?) WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
                     await message.react('📉').catch(()=>{});
-                    // ✨ تم تعديل الرد هنا
                     feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
                 }
                 actionDone = true;
             }
         }
 
-        // === 2. أوامر التايم أوت ===
         if (!actionDone && (lowerText.includes('تايم') || lowerText.includes('سكت') || lowerText.includes('اصمت') || lowerText.includes('ميوت') || lowerText.includes('فك') || lowerText.includes('شيل'))) {
             
             if (targetUser) {
                 const targetMember = await message.guild.members.fetch(targetUser.id).catch(()=>null);
                 if (!targetMember) return aiResponseText;
 
-                // فك التايم أوت
                 if (lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح')) {
                     if (targetMember.isCommunicationDisabled()) {
                         await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
                         await message.react('✅').catch(()=>{});
-                        // ✨ تم تعديل الرد هنا
                         feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
                     }
                 } 
-                // إعطاء تايم أوت
                 else {
                     const numbers = lowerText.match(/\b\d+\b/g);
                     let minutes = 5; 
                     if (numbers) {
-                        const validNumber = numbers.find(n => n.length < 5); // رقم صغير للدقائق
+                        const validNumber = numbers.find(n => n.length < 5); 
                         if (validNumber) minutes = parseInt(validNumber);
                     }
 
                     if (targetMember.manageable) {
                         await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
                         await message.react('🤐').catch(()=>{});
-                        // ✨ تم تعديل الرد هنا
                         feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
                     } else {
-                        // ✨ تم تعديل الرد هنا
                         feedback = `\n\n❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
                     }
                 }
@@ -149,16 +124,12 @@ async function detectAndExecuteCommands(message, aiResponseText) {
 
     } catch (err) {
         console.error("[AI Action Error]", err);
-        // ✨ تم تعديل الرد هنا
         feedback = `\n\n❌ حدث خطأ تقني أثناء تنفيذ الطلب.`;
     }
 
     return aiResponseText + feedback;
 }
 
-/**
- * الموجه الرئيسي للذكاء الاصطناعي (Emperor Morax AI Director)
- */
 async function askMorax(userId, guildId, channelId, messageText, username, imageAttachment = null, isDiscordNsfw = false, messageObject) {
     try {
         if (userId !== OWNER_ID && aiConfig.isBlocked(userId)) {
@@ -224,7 +195,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             username, 
             imageAttachment, 
             finalNsfwStatus,
-            messageObject 
+            messageObject,
+            channelId 
         );
 
         if (response) {
