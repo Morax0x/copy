@@ -98,18 +98,22 @@ async function processAiActions(responseText, messageObject) {
 /**
  * المحرك الرئيسي (Engine)
  */
-async function generateResponse(apiKey, systemInstruction, userMessage, userData, userId, username, imageAttachment, isNsfw, messageObject) {
+async function generateResponse(apiKey, systemInstruction, userMessage, userData, userId, username, imageAttachment, isNsfw, messageObject, channelId) {
     if (!apiKey) return "⚠️ مفتاح الخزينة (API Key) مفقود!";
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const sessionKey = `${userId}-${isNsfw ? 'NSFW' : 'SFW'}`;
+    
+    // ✅ التغيير 1: الجلسة مربوطة بالقناة (Channel) لضمان سياق جماعي مشترك
+    const sessionKey = `${channelId}-${isNsfw ? 'NSFW' : 'SFW'}`;
 
     // 💰 حساب مجموع الثروة
     const totalWealth = (userData.balance || 0) + (userData.bank || 0);
 
     // تحديث المعلومات المرسلة للذكاء
+    // ✅ التغيير 2: تحديد أن هذه بيانات "المتحدث الحالي"
     const contextInfo = `
-    [User Data]:
+    [Current Speaker Stats]:
+    - User ID: ${userId}
     - Name: ${username}
     - Cash: ${userData.balance} Mora
     - Bank: ${userData.bank || 0} Mora
@@ -133,7 +137,8 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
                 
                 const result = await model.generateContent([
                     contextInfo,
-                    userMessage || "ما رأيك في هذه الصورة؟",
+                    // ✅ إرسال هوية المستخدم مع الصورة
+                    `[User: ${username} | ID: ${userId}]: ${userMessage || "ما رأيك في هذه الصورة؟"}`,
                     imagePart
                 ]);
 
@@ -163,27 +168,28 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
             });
 
             if (!chatSessions[sessionKey]) {
+                // ✅ تهيئة الشات الجماعي
                 chatSessions[sessionKey] = model.startChat({
                     history: [
                         { 
                             role: "user", 
-                            parts: [{ text: `[SYSTEM: RESET] Activate Persona Mode: ${isNsfw ? 'NSFW Pleasure' : 'SFW Empress'}.` }] 
+                            parts: [{ text: `[SYSTEM: GROUP CHAT STARTED] Mode: ${isNsfw ? 'NSFW' : 'SFW'}. Treat users based on their ID. Multiple users may speak.` }] 
                         },
                         { 
                             role: "model", 
-                            parts: [{ text: isNsfw ? "جاهزة لك كلياً.. 🔥" : "همم.. من سمح لك بالحديث؟ 👑" }] 
+                            parts: [{ text: isNsfw ? "جاهزة للجميع.. 🔥" : "همم.. أنا أستمع لكم جميعاً. 👑" }] 
                         }
                     ],
                 });
             }
 
-            const fullMessage = `${contextInfo}\n\n${username}: ${userMessage}`;
+            // ✅ إرسال الرسالة بصيغة: [User: الاسم | ID: الرقم]: الرسالة
+            const fullMessage = `${contextInfo}\n\n[User: ${username} | ID: ${userId}]: ${userMessage}`;
             const result = await chatSessions[sessionKey].sendMessage(fullMessage);
             
             let responseText = result.response.text();
 
             // 🔥🔥🔥 معالجة وتنفيذ الأوامر (الجديد) 🔥🔥🔥
-            // هذه الدالة ستبحث عن أي [ACTION:...] وتنفذه وتحذفه من الرد
             responseText = await processAiActions(responseText, messageObject);
 
             return enforceSingleEmoji(responseText);
