@@ -1,16 +1,16 @@
-const Canvas = require('canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { AttachmentBuilder } = require('discord.js');
 const path = require('path');
 
-// 🔥 تسجيل الخط العربي الفخم 🔥
+// 🔥 تسجيل الخط العربي الفخم (عبر المحرك الجديد) 🔥
 try {
-    const rootDir = process.cwd();
-    Canvas.registerFont(path.join(rootDir, 'fonts', 'bein-ar-normal.ttf'), { family: 'BeinAr' });
+    GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
     console.log("❌ لم يتم العثور على الخط bein-ar-normal.ttf، سيتم استخدام الخط الافتراضي.");
 }
 
-// دالة مساعدة لرسم المستطيل ذو الزوايا الدائرية
+const FONT_MAIN = '"Bein", "Arial", sans-serif';
+
 function drawRoundedRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -25,7 +25,6 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-// 🔥 دالة اختيار تدرج لوني عشوائي متناسق وفخم 🔥
 function getHarmoniousGradient() {
     const gradients = [
         ['#0f0c29', '#302b63', '#24243e'],
@@ -44,84 +43,8 @@ function getHarmoniousGradient() {
     return gradients[Math.floor(Math.random() * gradients.length)];
 }
 
-// 🛠️ دالة لاستخراج رابط الإيموجي
-function getEmojiUrl(emoji) {
-    if (!emoji) return null;
-    
-    // 1. إيموجي مخصص من ديسكورد
-    const customMatch = emoji.match(/<?(a)?:?(\w{2,32}):(\d{17,19})>?/);
-    if (customMatch) {
-        const ext = customMatch[1] ? 'gif' : 'png';
-        return `https://cdn.discordapp.com/emojis/${customMatch[3]}.${ext}`;
-    }
-
-    // 2. إيموجي عادي (Unicode)
-    // نتجاوز النصوص العادية والأرقام (نعتبر أي شيء ليس حرفاً أو رقماً أو رمزاً خاصاً كإيموجي محتمل)
-    if (/^[a-zA-Z0-9\u0600-\u06FF\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]*$/.test(emoji)) {
-        return null; 
-    }
-
-    try {
-        const codePoints = [...emoji]
-            .map(c => c.codePointAt(0).toString(16))
-            .filter(cp => cp !== 'fe0f')
-            .join('-');
-        return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${codePoints}.png`;
-    } catch (e) {
-        return null;
-    }
-}
-
-// دالة بسيطة لتشبيك الحروف العربية (Visual Reshaping) إذا لم تكن المكتبة موجودة
-function shapeArabicText(text) {
-    // هذه محاولة بسيطة لعكس الكلمة فقط لأن الكانفاس يرسم الحروف العربية مقطعة من اليسار لليمين
-    if (!/[\u0600-\u06FF]/.test(text)) return text;
-    // نقوم بعكس حروف الكلمة الواحدة فقط لتتصل ببعضها (خدعة الكانفاس)
-    return text.split("").reverse().join("");
-}
-
-// 🛠️ دالة رسم النص المختلط مع الإيموجي (بدون عكس الجملة)
-async function fillMixedText(ctx, text, x, y, fontSize) {
-    ctx.font = `bold ${fontSize}px "BeinAr", "Arial"`;
-    
-    // تقسيم النص: نفصل الكلمات والإيموجيات
-    const parts = text.split(/(\s+|<?a?:?\w{2,32}:\d{17,19}>?|[\uD800-\uDBFF][\uDC00-\uDFFF])/g).filter(p => p);
-
-    let currentX = x;
-    const emojiSize = fontSize; 
-    const baselineOffset = fontSize * 0.15;
-
-    // نقوم برسم الأجزاء بالترتيب الطبيعي
-    for (const part of parts) {
-        if (!part) continue;
-
-        const emojiUrl = getEmojiUrl(part);
-
-        if (emojiUrl) {
-            try {
-                const img = await Canvas.loadImage(emojiUrl);
-                ctx.drawImage(img, currentX, y - emojiSize + baselineOffset, emojiSize, emojiSize);
-                currentX += emojiSize + 5; 
-            } catch (e) {
-                ctx.fillText(part, currentX, y);
-                currentX += ctx.measureText(part).width;
-            }
-        } else {
-            // معالجة النص العربي
-            let textToDraw = part;
-            if (/[\u0600-\u06FF]/.test(part)) {
-                // نعالج "تشبيك الحروف" للكلمة الواحدة فقط، دون تغيير مكانها
-                textToDraw = shapeArabicText(part); 
-            }
-            
-            ctx.fillText(textToDraw, currentX, y);
-            currentX += ctx.measureText(textToDraw).width;
-        }
-    }
-}
-
 async function generateLevelUpCard(member, oldLevel, newLevel) {
-    const canvas = Canvas.createCanvas(900, 280);
+    const canvas = createCanvas(900, 280);
     const ctx = canvas.getContext('2d');
 
     // 1. الخلفية (ألوان متناسقة)
@@ -145,7 +68,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.fill();
 
-    // 2. تموجات الخلفية
+    // 2. تموجات الخلفية (زينة)
     ctx.save();
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.clip();
@@ -172,7 +95,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     // 3. الإطار المتوهج
     const glowColor = colors[1] || '#00d2ff';
     ctx.shadowColor = glowColor;
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 20;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.lineWidth = 3;
     drawRoundedRect(ctx, 10, 10, canvas.width - 20, canvas.height - 20, 15);
@@ -192,7 +115,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     
     try {
         const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 256 });
-        const avatar = await Canvas.loadImage(avatarURL);
+        const avatar = await loadImage(avatarURL);
         ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
     } catch (e) {
         ctx.fillStyle = '#ccc';
@@ -213,19 +136,23 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillStyle = '#ffffff'; 
     ctx.shadowColor = '#000000';
     ctx.shadowBlur = 5;
-    ctx.font = 'bold 30px "BeinAr", "Arial"';
+    ctx.font = `bold 30px ${FONT_MAIN}`;
     ctx.fillText('LEVEL UP!', textX, 70);
     ctx.shadowBlur = 0;
 
-    // 🔥 رسم اليوزرنيم الأصلي (Username) بدلاً من الاسم المزخرف 🔥
-    // هذا يضمن ظهور الاسم بشكل صحيح ونظيف دائماً
+    // رسم اليوزرنيم الأصلي (مكتبة napi-rs تدعم الإيموجي والعربي تلقائياً)
+    let displayName = member.user.username;
+    // تقصير الاسم إذا كان طويل جداً عشان ما يطلع برة البطاقة
+    if (ctx.measureText(displayName).width > 550) {
+        displayName = displayName.substring(0, 15) + '...';
+    }
     ctx.fillStyle = '#ffffff';
-    // نستخدم member.user.username بدلاً من member.displayName
-    await fillMixedText(ctx, member.user.username, textX, 125, 50);
+    ctx.font = `bold 50px ${FONT_MAIN}`;
+    ctx.fillText(displayName, textX, 130);
 
     // المستوى القديم
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.font = 'bold 40px "BeinAr", "Arial"';
+    ctx.font = `bold 40px ${FONT_MAIN}`;
     ctx.fillText(`Lvl ${oldLevel}`, textX, 200);
 
     const oldLevelWidth = ctx.measureText(`Lvl ${oldLevel}`).width;
@@ -233,7 +160,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
 
     // السهم (»)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.font = 'bold 40px "BeinAr", "Arial"'; 
+    ctx.font = `bold 40px ${FONT_MAIN}`; 
     ctx.fillText('»', arrowX, 200);
 
     // المستوى الجديد
@@ -241,11 +168,11 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillStyle = '#FFD700'; 
     ctx.shadowColor = '#FFD700'; 
     ctx.shadowBlur = 25; 
-    ctx.font = 'bold 65px "BeinAr", "Arial"'; 
+    ctx.font = `bold 65px ${FONT_MAIN}`; 
     ctx.fillText(`${newLevel}`, arrowX + 50, 205);
     ctx.restore();
 
-    return new AttachmentBuilder(canvas.toBuffer(), { name: 'levelup.png' });
+    return new AttachmentBuilder(canvas.toBuffer('image/png'), { name: 'levelup.png' });
 }
 
 module.exports = { generateLevelUpCard };
