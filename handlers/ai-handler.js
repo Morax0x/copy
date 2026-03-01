@@ -14,6 +14,12 @@ const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
+let updateGuildStat;
+try {
+    ({ updateGuildStat } = require('./guild-tracker.js'));
+} catch (e) {}
+
+// 🔥 الآيدي الخاص بك (الإمبراطور) - لن تعمل الأوامر إلا لك
 const OWNER_ID = "1145327691772481577"; 
 
 function sanitizeOutput(text) {
@@ -195,8 +201,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             username, 
             imageAttachment, 
             finalNsfwStatus,
-            messageObject,
-            channelId 
+            messageObject 
         );
 
         if (response) {
@@ -206,12 +211,18 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             response = sanitizeOutput(response);
         }
 
+        // ==========================================
+        // 🔥 تحديث الإحصائيات اليومية والأسبوعية للمهام
+        // ==========================================
         if (response && messageObject) { 
             try {
-                const now = new Date();
-                const dateStr = now.toISOString().split('T')[0]; 
                 const client = messageObject.client;
-
+                
+                // حساب التوقيت بتوقيت السعودية لضمان الدقة
+                const nowKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+                const dateStr = nowKSA.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                
+                // 1. تحديث اليومي
                 let dailyIdToUse = `${userId}-${guildId}-${dateStr}`;
                 let daily = sql.prepare("SELECT id FROM user_daily_stats WHERE userID = ? AND guildID = ? AND date = ?").get(userId, guildId, dateStr);
                 
@@ -222,20 +233,34 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     try { sql.prepare("INSERT INTO user_daily_stats (id, userID, guildID, date, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(dailyIdToUse, userId, guildId, dateStr); } catch (e) { }
                 }
 
-                const curr = new Date();
-                const first = curr.getDate() - curr.getDay(); 
-                const weekStart = new Date(curr.setDate(first)).toISOString().split('T')[0];
+                // 👑 تحديث متعقب الملوك (المستشار الملكي)
+                if (updateGuildStat) {
+                    updateGuildStat(client, guildId, userId, 'ai_interactions', 1);
+                }
+
+                // 2. تحديث الأسبوعي (تم إصلاح المشكلة هنا 🔥)
+                const dayOfWeek = nowKSA.getDay(); // 0 = Sunday
+                const diff = nowKSA.getDate() - dayOfWeek;
+                const weekStartKSA = new Date(nowKSA);
+                weekStartKSA.setDate(diff);
+                const weekStart = weekStartKSA.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                
                 let weeklyIdToUse = `${userId}-${guildId}-${weekStart}`;
 
-                let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? ORDER BY weekStartDate DESC LIMIT 1").get(userId, guildId);
+                // ✅ الفحص الصارم للأسبوع الحالي فقط (AND weekStartDate = ?)
+                let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? AND weekStartDate = ?").get(userId, guildId, weekStart);
                 
+                // إضافة العامود في حال لم يكن موجوداً (احتياطياً)
+                try { sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN ai_interactions INTEGER DEFAULT 0").run(); } catch(e){}
+
                 if (weekly) {
-                    sql.prepare("UPDATE user_weekly_stats SET ai_interactions = ai_interactions + 1 WHERE id = ?").run(weekly.id);
+                    sql.prepare("UPDATE user_weekly_stats SET ai_interactions = COALESCE(ai_interactions, 0) + 1 WHERE id = ?").run(weekly.id);
                     weeklyIdToUse = weekly.id;
                 } else {
                     try { sql.prepare("INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, ai_interactions) VALUES (?, ?, ?, ?, 1)").run(weeklyIdToUse, userId, guildId, weekStart); } catch (e) { }
                 }
 
+                // 3. تحديث الإجمالي
                 let totalIdToUse = `${userId}-${guildId}`;
                 let total = sql.prepare("SELECT id FROM user_total_stats WHERE userID = ? AND guildID = ?").get(userId, guildId);
                 if (total) {
@@ -245,6 +270,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     sql.prepare("INSERT INTO user_total_stats (id, userID, guildID, total_ai_interactions) VALUES (?, ?, ?, 1)").run(totalIdToUse, userId, guildId);
                 }
 
+                // 4. تشغيل فاحص المهام
                 if (client && typeof client.checkQuests === 'function') {
                     const updatedDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?").get(dailyIdToUse);
                     const updatedWeeklyStats = sql.prepare("SELECT * FROM user_weekly_stats WHERE id = ?").get(weeklyIdToUse);
@@ -256,7 +282,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 }
 
             } catch (err) {
-                console.error("[Quest Update Error]", err.message);
+                console.error("[Quest Update Error in AI]:", err.message);
             }
         }
 
