@@ -5,6 +5,9 @@ const questsConfig = require('../json/quests-config.json');
 // قائمة لمنع تكرار جائزة البوستر
 const recentBoosters = new Set();
 
+// 🔥 قائمة تبريد لمنع اللوب اللانهائي لأسماء الستريك 🔥
+const recentNicknameUpdates = new Set();
+
 module.exports = {
     name: Events.GuildMemberUpdate,
     async execute(oldMember, newMember) {
@@ -20,9 +23,16 @@ module.exports = {
         try {
             // 1. حماية الستريك (النك نيم)
             if (oldMember.nickname !== newMember.nickname) {
+                
+                // 🛑 حماية من اللوب: إذا البوت عدل اسمه قبل ثواني، نتجاهل الإيفنت
+                if (recentNicknameUpdates.has(userID)) return;
+
                 const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildID, userID);
                 if (streakData && streakData.nicknameActive === 1) {
+                    
+                    recentNicknameUpdates.add(userID); // قفل اللاعب لمنع التضارب
                     await updateNickname(newMember, sql);
+                    setTimeout(() => recentNicknameUpdates.delete(userID), 5000); // فتح القفل بعد 5 ثواني
                 }
             }
 
