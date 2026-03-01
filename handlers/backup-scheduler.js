@@ -10,10 +10,10 @@ const DB_PATH = path.join(process.cwd(), 'mainDB.sqlite');
 const TEMP_PATH = path.join(process.cwd(), 'temp_restore.sqlite');
 
 // ⚠️ ضع آيدي قناة الباكب هنا يدوياً لتجنب مشاكل قاعدة البيانات
-const BACKUP_CHANNEL_ID_CONST = "123456789012345678"; // <--- ضع آيدي القناة هنا
+const BACKUP_CHANNEL_ID_CONST = "123456789012345678"; // <--- تأكد من وضع آيدي القناة الصحيح هنا
 
 module.exports = (client, sql) => {
-    // 1. دالة النسخ الاحتياطي التلقائي
+    // 1. دالة النسخ الاحتياطي التلقائي (Backup Only - بدون استرجاع تلقائي)
     const performBackup = async () => {
         try {
             let backupChannelID = BACKUP_CHANNEL_ID_CONST;
@@ -28,13 +28,14 @@ module.exports = (client, sql) => {
                 } catch (e) {}
             }
 
-            if (!backupChannelID) return; 
+            if (!backupChannelID || backupChannelID === "123456789012345678") return; 
 
             const channel = await client.channels.fetch(backupChannelID).catch(() => null);
             if (!channel) return;
 
+            // إجبار الداتابيس على كتابة كل التغييرات المعلقة في ملف الـ WAL قبل أخذ النسخة
             if (sql.open) {
-                try { sql.pragma('wal_checkpoint(RESTART)'); } catch (e) {}
+                try { sql.pragma('wal_checkpoint(TRUNCATE)'); } catch (e) {}
             }
             
             if (!fs.existsSync(DB_PATH)) return;
@@ -57,9 +58,10 @@ module.exports = (client, sql) => {
         } catch (err) { console.error("[Backup] Error:", err); }
     };
 
+    // تشغيل النسخ التلقائي كل 3 ساعات فقط
     setInterval(performBackup, BACKUP_INTERVAL);
 
-    // 2. معالج زر الاستعادة (Restore)
+    // 2. معالج زر الاستعادة (Restore) - يعمل فقط عند ضغط الزر من قبل المالك
     client.on('interactionCreate', async interaction => {
         if (!interaction.isButton()) return;
         if (interaction.customId !== 'restore_backup') return;
@@ -79,7 +81,7 @@ module.exports = (client, sql) => {
                 return interaction.editReply({ content: "⚠️ لا يوجد ملف قاعدة بيانات صالح في هذه الرسالة." });
             }
 
-            await interaction.editReply("⏳ **جاري تحميل النسخة واستبدال القاعدة...**");
+            await interaction.editReply("⏳ **جاري تحميل النسخة واستبدال القاعدة... يرجى عدم إيقاف البوت!**");
 
             const file = fs.createWriteStream(TEMP_PATH);
             
@@ -88,24 +90,31 @@ module.exports = (client, sql) => {
                 file.on('finish', () => {
                     file.close(async () => {
                         try {
+                            // إغلاق الاتصال الحالي بقاعدة البيانات بشكل آمن لمنع تعليق الملفات
                             if (sql.open) sql.close();
 
                             if (fs.existsSync(TEMP_PATH)) {
+                                // حذف القاعدة الحالية وملفات الـ WAL والـ SHM الخاصة بها
                                 const filesToRemove = [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
                                 filesToRemove.forEach(f => {
-                                    if (fs.existsSync(f)) fs.unlinkSync(f);
+                                    if (fs.existsSync(f)) {
+                                        try { fs.unlinkSync(f); } catch(e){}
+                                    }
                                 });
                                 
+                                // استبدال الملف القديم بالنسخة المحملة
                                 fs.renameSync(TEMP_PATH, DB_PATH);
-                                console.log("[Backup Restore] Database replaced successfully.");
+                                console.log("🚨 [Backup Restore] Database replaced successfully by Owner!");
                                 
                                 await interaction.editReply("✅ **تمت الاستعادة بنجاح!**\n🔌 جاري إعادة التشغيل...");
                                 
-                                setTimeout(() => process.exit(0), 1000);
+                                // إعادة تشغيل البوت لتطبيق النسخة الجديدة
+                                setTimeout(() => process.exit(0), 2000);
                             }
                         } catch (err) {
                             console.error(err);
                             await interaction.editReply(`❌ **فشل الاستعادة:** ${err.message}`);
+                            // محاولة إعادة فتح الاتصال بالقاعدة إذا فشلت الاستعادة
                             try { client.sql = new Database(DB_PATH); } catch(e){}
                         }
                     });
