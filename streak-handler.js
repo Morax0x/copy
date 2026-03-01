@@ -109,7 +109,7 @@ function calculateMoraBuff(member, sql) {
     return finalMultiplier;
 }
 
-// 🌟 دالة تحديث الاسم (بالفواصل المحددة فقط) 🌟
+// 🌟 دالة تحديث الاسم (تم إضافة حماية اللفل من الحذف) 🌟
 async function updateNickname(member, sql) {
     if (!member) return;
     if (!sql || typeof sql.prepare !== 'function') return;
@@ -133,23 +133,30 @@ async function updateNickname(member, sql) {
 
     let baseName = member.displayName;
 
-    // تنظيف الاسم
-    baseName = baseName.replace(/^\[\d+\]\s*/, '').trim();
+    // 🔥🔥 حفظ بادئة اللفل (عشان ما يتهاوش البوت مع نفسه) 🔥🔥
+    let prefix = "";
+    const prefixMatch = baseName.match(/^(\[.*?\]|【.*?】)\s*/);
+    if (prefixMatch) {
+        prefix = prefixMatch[0];
+        baseName = baseName.replace(/^(\[.*?\]|【.*?】)\s*/, '').trim();
+    }
+
+    // تنظيف الستريك القديم فقط
     const cleanRegex = new RegExp(`\\s*(${SEPARATORS_CLEAN_LIST.join('|')})\\s*\\d+.*$`, 'i');
     baseName = baseName.replace(cleanRegex, '').trim();
     baseName = baseName.replace(cleanRegex, '').trim();
 
     let newName;
     if (streakCount > 0 && nicknameActive) {
-        newName = `${baseName} ${separator} ${streakCount} ${streakEmoji}`;
+        newName = `${prefix}${baseName} ${separator} ${streakCount} ${streakEmoji}`;
     } else {
-        newName = baseName;
+        newName = `${prefix}${baseName}`;
     }
 
     if (newName.length > 32) {
         const suffix = ` ${separator} ${streakCount} ${streakEmoji}`;
-        baseName = baseName.substring(0, 32 - suffix.length);
-        newName = `${baseName}${suffix}`;
+        baseName = baseName.substring(0, 32 - suffix.length - prefix.length);
+        newName = `${prefix}${baseName}${suffix}`;
     }
 
     // 🔥 الحماية من السبام: فقط عدل إذا كان الاسم مختلفاً 🔥
