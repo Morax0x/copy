@@ -144,7 +144,7 @@
       "goal": 1,
       "reward": { "mora": 2000, "xp": 500 },
       "emoji": "🗳️"
-    }
+    },
   ],
   "weekly": [
     {
@@ -263,7 +263,7 @@
       "goal": 8,
       "reward": { "mora": 3500, "xp": 999 },
       "emoji": "🗳️"
-    }
+    },
   ],
   "achievements": [
     {
@@ -493,6 +493,7 @@
       "stat": "level",
       "goal": 60,
       "reward": { "mora": 3000, "xp": 1500 },
+      "repReward": 5,
       "emoji": "🏅",
       "rarity": "epic"
     },
@@ -503,6 +504,7 @@
       "stat": "level",
       "goal": 70,
       "reward": { "mora": 3300, "xp": 1800 },
+      "repReward": 10,
       "emoji": "🏅",
       "rarity": "epic"
     },
@@ -513,6 +515,7 @@
       "stat": "totalVCTime",
       "goal": 4320,
       "reward": { "mora": 4000, "xp": 2500 },
+      "repReward": 10,
       "emoji": "🎙️",
       "rarity": "epic"
     },
@@ -523,6 +526,7 @@
       "stat": "level",
       "goal": 80,
       "reward": { "mora": 4000, "xp": 2000 },
+      "repReward": 15,
       "emoji": "🏅",
       "rarity": "epic"
     },
@@ -533,6 +537,7 @@
       "stat": "level",
       "goal": 90,
       "reward": { "mora": 5000, "xp": 3000 },
+      "repReward": 20,
       "emoji": "🏅",
       "rarity": "epic"
     },
@@ -543,6 +548,7 @@
       "stat": "total_messages",
       "goal": 100000,
       "reward": { "mora": 7600, "xp": 5000 },
+      "repReward": 25,
       "emoji": "👑",
       "rarity": "epic"
     },
@@ -553,6 +559,7 @@
       "stat": "total_reactions_added",
       "goal": 500,
       "reward": { "mora": 7600, "xp": 5000 },
+      "repReward": 10,
       "emoji": "👑",
       "rarity": "epic"
     },
@@ -563,6 +570,7 @@
       "stat": "totalVCTime",
       "goal": 10080,
       "reward": { "mora": 7600, "xp": 5000 },
+      "repReward": 30,
       "emoji": "👑",
       "rarity": "epic"
     },
@@ -573,6 +581,7 @@
       "stat": "boost_count",
       "goal": 1,
       "reward": { "mora": 8000, "xp": 5000 },
+      "repReward": 20,
       "emoji": "🚀",
       "rarity": "epic"
     },
@@ -582,10 +591,7 @@
       "description": "ضع تاق السيرفر في حالتك",
       "stat": "has_tag_role",
       "goal": 1,
-      "reward": {
-        "mora": 1,
-        "xp": 1
-      },
+      "reward": { "mora": 1, "xp": 1 },
       "emoji": "💎",
       "rarity": "rare"
     },
@@ -596,6 +602,7 @@
       "stat": "highestStreak",
       "goal": 100,
       "reward": { "mora": 10000, "xp": 10000 },
+      "repReward": 15,
       "emoji": "👑",
       "rarity": "epic"
     },
@@ -606,6 +613,7 @@
       "stat": "level",
       "goal": 99,
       "reward": { "mora": 10000, "xp": 10000 },
+      "repReward": 50,
       "emoji": "👑",
       "rarity": "legendary"
     },
@@ -615,7 +623,8 @@
       "description": "تحصل على رول القيصر",
       "stat": "has_caesar_role",
       "goal": 1,
-      "reward": { "mora": 10000, "xp": 8000 },
+      "reward": { "mora": 30000, "xp": 8000 },
+      "repReward": 25,
       "emoji": "💎",
       "rarity": "legendary"
     },
@@ -626,6 +635,7 @@
       "stat": "highestStreak",
       "goal": 200,
       "reward": { "mora": 50000, "xp": 50000 },
+      "repReward": 30,
       "emoji": "👑",
       "rarity": "legendary"
     },
@@ -656,6 +666,7 @@
       "stat": "total_topgg_votes",
       "goal": 50,
       "reward": { "mora": 15000, "xp": 999 },
+      "repReward": 5,
       "emoji": "🗳️",
       "rarity": "rare"
     },
@@ -666,6 +677,7 @@
       "stat": "total_topgg_votes",
       "goal": 100,
       "reward": { "mora": 25000, "xp": 5000 },
+      "repReward": 10,
       "emoji": "🗳️",
       "rarity": "epic"
     }
