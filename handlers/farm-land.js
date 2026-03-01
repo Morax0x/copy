@@ -1,46 +1,31 @@
-// handlers/farm-land.js
-
-const { 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    StringSelectMenuBuilder, 
-    StringSelectMenuOptionBuilder,
-    MessageFlags,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-    AttachmentBuilder,
-    Colors
-    // ❌ تم إزالة EmbedBuilder لأننا لن نستخدمه
-} = require("discord.js");
-
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, Colors } = require("discord.js");
 const Canvas = require('canvas');
 const path = require('path');
 const seedsData = require('../json/seeds.json');
 const { getLandPlots } = require('../utils/farmUtils.js');
 
 let sendLevelUpMessage;
+let updateGuildStat;
 try {
     ({ sendLevelUpMessage } = require('./handler-utils.js')); 
+    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة 🔥
+    ({ updateGuildStat } = require('./guild-board-handler.js'));
 } catch (e) {
-    try { ({ sendLevelUpMessage } = require('../handlers/handler-utils.js')); } catch (e2) {}
+    try { 
+        ({ sendLevelUpMessage } = require('../handlers/handler-utils.js')); 
+        ({ updateGuildStat } = require('../handlers/guild-board-handler.js'));
+    } catch (e2) {}
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PLOW_COST_BULK = 10; 
 
-// ========================================================
-// ⚙️ إعدادات الشبكة (6x6 = 36 أرض)
-// ========================================================
 const TILE_SIZE = 64;   
 const GRID_COLS = 6;    
 const GRID_ROWS = 6;    
 const MAX_GAME_PLOTS = 36; 
 
-// مسار الصور
 const ASSETS_PATH = path.join(__dirname, '..', 'images', 'farm');
-
 let GLOBAL_IMAGES = null;
 
 async function loadAllImages() {
@@ -97,6 +82,16 @@ function ensureLandTable(sql) {
     `).run();
 }
 
+function getGrowthMultiplier(member, guildId, sql) {
+    try {
+        const settings = sql.prepare("SELECT roleFarmKing FROM settings WHERE guild = ?").get(guildId);
+        if (settings && settings.roleFarmKing && member && member.roles && member.roles.cache.has(settings.roleFarmKing)) {
+            return 0.70; 
+        }
+    } catch(e) {}
+    return 1.0;
+}
+
 async function renderLand(interaction, client, sql) {
     ensureLandTable(sql);
     
@@ -112,41 +107,35 @@ async function renderLand(interaction, client, sql) {
     const userPlots = sql.prepare("SELECT * FROM user_lands WHERE userID = ? AND guildID = ?").all(userId, guildId);
     const now = Date.now();
 
-    // 🚜 متغيرات لتحديد الأزرار المطلوبة
-    let canPlow = false;        // هل توجد أرض بور؟
-    let hasTilled = false;      // هل توجد أرض محروثة (للزراعة)؟
-    let readyCount = 0;         // هل يوجد حصاد؟
-    let witheredCount = 0;      // هل يوجد نبات ميت؟
-    
-    // 🔥 متغير لحساب أقرب وقت نمو
-    let minRemainingTime = Infinity;
+    const member = interaction.member || await interaction.guild.members.fetch(userId).catch(()=>null);
+    const growthMultiplier = getGrowthMultiplier(member, guildId, sql);
 
+    let canPlow = false;        
+    let hasTilled = false;      
+    let readyCount = 0;         
+    let witheredCount = 0;      
+    let minRemainingTime = Infinity;
     let totalPlowCost = 0;
 
-    // فحص الحالة قبل الرسم
     for (let i = 1; i <= unlockedPlots; i++) {
         const p = userPlots.find(x => x.plotID === i);
         
-        // فحص إمكانية الحراثة (أرض غير موجودة أو فارغة)
         if (!p || p.status === 'empty') {
             totalPlowCost += PLOW_COST_BULK;
             canPlow = true;
         }
         
-        // فحص إمكانية الزراعة (أرض محروثة)
         if (p && p.status === 'tilled') {
             hasTilled = true;
         }
 
-        // 🔥 حساب أقرب وقت نمو 🔥
         if (p && p.status === 'planted' && p.seedID) {
             const seed = seedsData.find(s => s.id === p.seedID);
             if (seed) {
-                const growthMs = seed.growth_time_hours * 3600000;
+                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                 const age = now - p.plantTime;
                 const remaining = growthMs - age;
 
-                // إذا بقي وقت موجب، قارنه بالحد الأدنى
                 if (remaining > 0 && remaining < minRemainingTime) {
                     minRemainingTime = remaining;
                 }
@@ -154,7 +143,6 @@ async function renderLand(interaction, client, sql) {
         }
     }
 
-    // --- الرسم (Canvas) ---
     const totalWidth = (GRID_COLS * TILE_SIZE) + (TILE_SIZE * 2);
     const totalHeight = (GRID_ROWS * TILE_SIZE) + (TILE_SIZE * 2);
 
@@ -212,7 +200,7 @@ async function renderLand(interaction, client, sql) {
 
                 const seed = seedsData.find(s => s.id === plotData.seedID);
                 if (seed) {
-                    const growthMs = seed.growth_time_hours * 3600000;
+                    const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                     const witherMs = seed.wither_time_hours * 3600000;
                     const age = now - plotData.plantTime;
 
@@ -235,7 +223,6 @@ async function renderLand(interaction, client, sql) {
 
     const rowActions = new ActionRowBuilder();
     
-    // ✅ إخفاء أزرار الحراثة إذا لم تكن متاحة
     if (canPlow) {
         rowActions.addComponents(
             new ButtonBuilder().setCustomId(`land_plow_one_${userId}`).setLabel(`حـراثـة`).setStyle(ButtonStyle.Secondary).setEmoji('⛏️'),
@@ -243,7 +230,6 @@ async function renderLand(interaction, client, sql) {
         );
     }
 
-    // ✅ إخفاء زر الزراعة إذا لم تكن هناك أرض محروثة
     if (hasTilled) {
         rowActions.addComponents(
             new ButtonBuilder().setCustomId(`land_start_plant_${userId}`).setLabel(`زراعـة`).setStyle(ButtonStyle.Success).setEmoji('🌱')
@@ -262,24 +248,22 @@ async function renderLand(interaction, client, sql) {
         );
     }
 
-    // 🔥🔥🔥 زر وقت النمو (يظهر فقط إذا كان هناك نبات ينمو) 🔥🔥🔥
     if (minRemainingTime !== Infinity) {
         const hours = Math.floor(minRemainingTime / (1000 * 60 * 60));
         const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
+        let kingBuffText = growthMultiplier < 1.0 ? "👑 " : "";
+
         rowActions.addComponents(
             new ButtonBuilder()
-                .setCustomId('info_growth_time') // ID وهمي
-                .setLabel(`⏳ النـمو: ${timeString}`)
+                .setCustomId('info_growth_time') 
+                .setLabel(`${kingBuffText}⏳ النـمو: ${timeString}`)
                 .setStyle(ButtonStyle.Secondary)
-                .setDisabled(true) // ✅ الزر مجرد شكل
+                .setDisabled(true) 
         );
     }
 
-    // ========================================================
-    // 👨‍🌾 زر حالة عامل المزرعة (New Feature: Button Only)
-    // ========================================================
     try {
         const workerBuff = sql.prepare("SELECT expiresAt FROM user_buffs WHERE userID = ? AND guildID = ? AND buffType = 'farm_worker' AND expiresAt > ?").get(userId, guildId, now);
         
@@ -288,49 +272,44 @@ async function renderLand(interaction, client, sql) {
             const daysLeft = Math.floor(timeLeft / (24 * 60 * 60 * 1000));
             const hoursLeft = Math.floor((timeLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
             
-            // تنسيق الوقت: 2 يـ 12 سـ
             const timeString = `${daysLeft} يـ ${hoursLeft} سـ`;
 
             rowActions.addComponents(
                 new ButtonBuilder()
                     .setCustomId('info_worker_status')
                     .setLabel(`👨‍🌾 العامل: ${timeString}`)
-                    .setStyle(ButtonStyle.Secondary) // لون رمادي
-                    .setDisabled(true) // معطل (شكل فقط)
+                    .setStyle(ButtonStyle.Secondary) 
+                    .setDisabled(true) 
             );
         }
     } catch (e) { console.error("Error fetching worker status:", e); }
 
-    // 🔥 تم حذف الـ Embed بالكامل وإرجاع محتوى نصي فارغ وصورة فقط 🔥
     return { 
-        content: `**🌱 مزرعة ${interaction.member.displayName}**`, // عنوان نصي بسيط
+        content: `**🌱 مزرعة ${interaction.member.displayName}**`, 
         components: rowActions.components.length > 0 ? [rowActions] : [], 
         files: [attachment]
-        // ❌ لا يوجد embeds هنا
     };
 }
 
-// --- معالجة التفاعلات (مع الحماية والتحديث) ---
 async function handleLandInteractions(i, client, sql) {
     ensureLandTable(sql); 
     
     if (!i.customId.startsWith('land_') && !i.customId.startsWith('farm_plant_modal_')) return;
 
-    // استخراج ID المالك
     const parts = i.customId.split('_');
-    const ownerId = parts[parts.length - 1]; // آخر جزء دائماً هو ID المالك
-    const baseAction = parts.slice(0, parts.length - 1).join('_'); // الباقي هو اسم الزر
+    const ownerId = parts[parts.length - 1]; 
+    const baseAction = parts.slice(0, parts.length - 1).join('_'); 
 
-    // ⛔ منع الغرباء
     if (i.user.id !== ownerId) {
         return await i.reply({ 
             content: `🚫 **هذه المزرعة ليست لك!**\nاستخدم أمر \`/مزرعتي\` لعرض مزرعتك الخاصة.`, 
-            flags: MessageFlags.Ephemeral 
+            flags: [MessageFlags.Ephemeral] 
         });
     }
 
     const userId = i.user.id;
     const guildId = i.guild.id;
+    const growthMultiplier = getGrowthMultiplier(i.member, guildId, sql);
 
     const updateView = async () => {
         const data = await renderLand(i, client, sql);
@@ -338,7 +317,7 @@ async function handleLandInteractions(i, client, sql) {
             content: data.content, 
             components: data.components, 
             files: data.files,
-            embeds: [] // ✅ تفريغ الإيمبد لضمان عدم ظهوره عند التحديث
+            embeds: [] 
         });
     };
 
@@ -360,7 +339,7 @@ async function handleLandInteractions(i, client, sql) {
             }
         }
 
-        if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: MessageFlags.Ephemeral });
+        if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: [MessageFlags.Ephemeral] });
 
         sql.prepare("INSERT OR REPLACE INTO user_lands (userID, guildID, plotID, status) VALUES (?, ?, ?, 'tilled')")
             .run(userId, guildId, targetPlot);
@@ -386,17 +365,16 @@ async function handleLandInteractions(i, client, sql) {
             }
         }
 
-        if (plotsToPlow.length === 0) return await i.followUp({ content: "🚫 **لا توجد أراضي بور!**", flags: MessageFlags.Ephemeral });
+        if (plotsToPlow.length === 0) return await i.followUp({ content: "🚫 **لا توجد أراضي بور!**", flags: [MessageFlags.Ephemeral] });
 
         const totalCost = plotsToPlow.length * PLOW_COST_BULK;
         let userData = client.getLevel.get(userId, guildId);
         
-        // 🔥🔥🔥 الحماية من البيانات المفقودة (Fix) 🔥🔥🔥
         if (!userData) {
-            return await i.followUp({ content: "❌ **لم يتم العثور على بياناتك!** حاول كتابة رسالة في الشات أولاً لتسجيل دخولك.", flags: MessageFlags.Ephemeral });
+            return await i.followUp({ content: "❌ **لم يتم العثور على بياناتك!** حاول كتابة رسالة في الشات أولاً لتسجيل دخولك.", flags: [MessageFlags.Ephemeral] });
         }
 
-        if (userData.mora < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: MessageFlags.Ephemeral });
+        if (userData.mora < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
         
         userData.mora -= totalCost;
         client.setLevel.run(userData);
@@ -419,7 +397,6 @@ async function handleLandInteractions(i, client, sql) {
             .setEmoji(s.emoji)
         );
 
-        // ✅ تمرير معرف الرسالة الأصلية في الـ ID حتى نتمكن من تحديثها لاحقاً
         const msgId = i.message.id;
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -428,11 +405,10 @@ async function handleLandInteractions(i, client, sql) {
                 .addOptions(seedOptions)
         );
 
-        await i.reply({ content: '🌱 **اختر البذور:**', components: [row], flags: MessageFlags.Ephemeral });
+        await i.reply({ content: '🌱 **اختر البذور:**', components: [row], flags: [MessageFlags.Ephemeral] });
         return;
     }
 
-    // التعامل مع القائمة المنسدلة للزراعة
     if (i.isStringSelectMenu() && i.customId.startsWith('land_plant_select_seed')) {
         const rawAction = i.customId; 
         const rawParts = rawAction.split('_');
@@ -448,9 +424,8 @@ async function handleLandInteractions(i, client, sql) {
         return; 
     }
 
-    // التعامل مع المودال (الزراعة الفعلية)
     if (i.isModalSubmit() && i.customId.startsWith('farm_plant_modal_')) {
-        await i.deferReply({ flags: MessageFlags.Ephemeral });
+        await i.deferReply({ flags: [MessageFlags.Ephemeral] });
         
         const rawModalId = i.customId.replace('farm_plant_modal_', ''); 
         const firstUnderscore = rawModalId.indexOf('_');
@@ -485,14 +460,13 @@ async function handleLandInteractions(i, client, sql) {
 
         await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
 
-        // ✅✅✅ تحديث الرسالة الأصلية بالصورة الجديدة ✅✅✅
         try {
             const mainMsg = await i.channel.messages.fetch(msgId).catch(() => null);
             if (mainMsg) {
                 const newData = await renderLand(i, client, sql);
                 await mainMsg.edit({
                     content: newData.content,
-                    embeds: [], // ✅ إفراغ الإيمبد عند التحديث
+                    embeds: [], 
                     components: newData.components,
                     files: newData.files
                 });
@@ -514,7 +488,7 @@ async function handleLandInteractions(i, client, sql) {
         for (const plot of plantedPlots) {
             const seed = seedsData.find(s => s.id === plot.seedID);
             if (!seed) continue;
-            const growthMs = seed.growth_time_hours * 3600000;
+            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
             const witherMs = seed.wither_time_hours * 3600000;
             const age = now - plot.plantTime;
 
@@ -526,7 +500,7 @@ async function handleLandInteractions(i, client, sql) {
             }
         }
 
-        if (harvestedCount === 0) return await i.followUp({ content: "🚫 لا يوجد حصاد جاهز.", flags: MessageFlags.Ephemeral });
+        if (harvestedCount === 0) return await i.followUp({ content: "🚫 لا يوجد حصاد جاهز.", flags: [MessageFlags.Ephemeral] });
 
         const stmtReset = sql.prepare("UPDATE user_lands SET status = 'empty', seedID = NULL, plantTime = NULL WHERE userID = ? AND guildID = ? AND plotID = ?");
         const transaction = sql.transaction(() => {
@@ -536,9 +510,7 @@ async function handleLandInteractions(i, client, sql) {
 
         let userData = client.getLevel.get(userId, guildId);
         
-        // 🔥🔥🔥 الحماية من البيانات المفقودة (Fix) 🔥🔥🔥
         if (!userData) {
-            // إنشاء بيانات افتراضية في حال عدم وجودها (نادر الحدوث عند الحصاد)
             userData = { user: userId, guild: guildId, xp: 0, level: 1, mora: 0, totalXP: 0 };
         }
 
@@ -547,9 +519,11 @@ async function handleLandInteractions(i, client, sql) {
         userData.totalXP += totalXP;
         client.setLevel.run(userData);
 
-        if (sendLevelUpMessage) { /* منطق الليفل */ }
+        if (updateGuildStat) {
+            updateGuildStat(client, guildId, userId, 'crops_harvested', harvestedCount);
+        }
 
-        await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: MessageFlags.Ephemeral });
+        await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] });
         await updateView();
         return;
     }
@@ -563,7 +537,7 @@ async function handleLandInteractions(i, client, sql) {
         for (const plot of plantedPlots) {
             const seed = seedsData.find(s => s.id === plot.seedID);
             if (!seed) { plotsToReset.push(plot.plotID); continue; }
-            const growthMs = seed.growth_time_hours * 3600000;
+            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
             const witherMs = seed.wither_time_hours * 3600000;
             const age = now - plot.plantTime;
             if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID);
@@ -575,7 +549,7 @@ async function handleLandInteractions(i, client, sql) {
         });
         transaction();
 
-        await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: MessageFlags.Ephemeral });
+        await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: [MessageFlags.Ephemeral] });
         await updateView();
         return;
     }
