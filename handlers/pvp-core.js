@@ -1,7 +1,10 @@
-// handlers/pvp-core.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require("discord.js");
 const path = require('path');
+
+let updateGuildStat;
+try {
+    ({ updateGuildStat } = require('./guild-board-handler.js'));
+} catch (e) {}
 
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
@@ -246,8 +249,7 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `👻 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
         }
 
-        case 'TrueDMG_Burn': { // Dragon
-            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) = 550 Max 🔥🔥
+        case 'TrueDMG_Burn': { 
             const burnDmgFixed = 50 + (skillLevel * 25);
             defender.effects.burn = burnDmgFixed;
             defender.effects.burn_turns = 3;
@@ -303,11 +305,10 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
         }
 
-        case 'Lifesteal_Overheal': { // Vampire Optimized
+        case 'Lifesteal_Overheal': { 
             const dmg = Math.floor(baseAtk * 1.45); 
             defender.hp -= dmg;
 
-            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) 🔥🔥
             const bleedDmg = 50 + (skillLevel * 25);
             defender.effects.burn = bleedDmg;
             defender.effects.burn_turns = 2;
@@ -333,7 +334,6 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.hp -= dmg;
             const randomEffect = Math.random();
             let effectMsg = "";
-            // 🔥🔥 التعديل الجديد للقيم العشوائية 🔥🔥
             const chaosVal = 50 + (skillLevel * 25);
 
             if (randomEffect < 0.25) {
@@ -361,10 +361,9 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
 
-        case 'Execute_Heal': { // Ghoul Optimized
+        case 'Execute_Heal': { 
             const dmg = Math.floor(baseAtk * 1.6);
             
-            // 🔥🔥 التعديل الجديد للسم 🔥🔥
             const ghoulPoison = 50 + (skillLevel * 25);
             defender.effects.poison = ghoulPoison;
             defender.effects.poison_turns = 3;
@@ -378,12 +377,10 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه وترك فيه سمّاً (${ghoulPoison})!`;
         }
 
-        // 🔥🔥🔥 تعديل نصل السموم 🔥🔥🔥
         case 'Poison_Blade': { 
             const directDmg = Math.floor(baseAtk * 1.2); 
             defender.hp -= directDmg;
             
-            // 🔥🔥 التعديل الجديد: 50 + (25 * Level) 🔥🔥
             const poisonDmg = 50 + (skillLevel * 25); 
             defender.effects.poison = poisonDmg;
             defender.effects.poison_turns = 3;
@@ -407,7 +404,6 @@ function applySkillEffect(battleState, attackerId, skill) {
                     attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
                     return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
                 case 'skill_poison': {
-                    // 🔥🔥 تعديل المهارة الافتراضية أيضاً 🔥🔥
                     const pVal = 50 + (skillLevel * 25);
                     defender.effects.poison = pVal; defender.effects.poison_turns = 3;
                     return `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه (-${pVal})!`;
@@ -582,14 +578,53 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
     } else {
         const getScore = battleState.message.client.getLevel;
         const setScore = battleState.message.client.setLevel;
-        const finalWinnings = battleState.totalPot;
+        let finalWinnings = battleState.totalPot;
+        let kingText = "";
+        let casinoTaxText = "";
+
+        const settings = sql.prepare("SELECT rolePvPKing, roleCasinoKing FROM settings WHERE guild = ?").get(battleState.message.guild.id);
 
         let winnerData = getScore.get(winnerId, battleState.message.guild.id);
+        let loserData = getScore.get(loserId, battleState.message.guild.id);
+
+        if (settings && settings.rolePvPKing && winner.member.roles.cache.has(settings.rolePvPKing)) {
+            const stealAmount = Math.floor(battleState.bet * 0.10);
+            
+            if (loserData.mora >= stealAmount) {
+                loserData.mora -= stealAmount;
+            } else if (loserData.bank >= stealAmount) {
+                loserData.bank -= stealAmount;
+            } else {
+                loserData.mora = 0; 
+            }
+            
+            finalWinnings += stealAmount;
+            kingText = `\n👑 جلالة ملك النزاع نهب **${stealAmount}** إضافية من ثروة الخصم!`;
+            setScore.run(loserData);
+        }
+
+        if (settings && settings.roleCasinoKing && !winner.member.roles.cache.has(settings.roleCasinoKing)) {
+            const kingMembers = battleState.message.guild.roles.cache.get(settings.roleCasinoKing)?.members;
+            if (kingMembers && kingMembers.size > 0) {
+                const king = kingMembers.first();
+                const casinoTax = Math.floor(finalWinnings * 0.01);
+                if (casinoTax > 0) {
+                    finalWinnings -= casinoTax;
+                    casinoTaxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
+                    sql.prepare('UPDATE levels SET bank = bank + ? WHERE user = ? AND guild = ?').run(casinoTax, king.id, battleState.message.guild.id);
+                }
+            }
+        }
+
         winnerData.mora += finalWinnings;
         setScore.run(winnerData);
 
+        if (updateGuildStat) {
+            updateGuildStat(battleState.message.client, battleState.message.guild.id, winnerId, 'pvp_wins', 1);
+        }
+
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'mora', 0.15);
+        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, winnerId, 15, expireTime, 'xp', 0.15);
 
         const loserExpiresAt = Date.now() + (15 * 60 * 1000);
         sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(battleState.message.guild.id, loserId, -15, loserExpiresAt, 'mora', -0.15);
@@ -602,7 +637,8 @@ async function endBattle(battleState, winnerId, sql, reason = "win", buffCalcula
             .setImage(randomWinImage)
             .setTitle(`★ الـفـائـز هـو ${cleanDisplayName(winner.member.user.displayName)}`)
             .setDescription(
-                `✶ مبـلغ الرهـان: ${finalWinnings.toLocaleString()} ${EMOJI_MORA}\n\n` +
+                `✶ مبـلغ الرهـان: ${battleState.totalPot.toLocaleString()} ${EMOJI_MORA}\n` +
+                `✶ إجمالـي الربح: ${finalWinnings.toLocaleString()} ${EMOJI_MORA}${kingText}${casinoTaxText}\n\n` +
                 `✶ الـفائـز: ${winner.member} حصل علـى تعزيـز 15% مورا واكس بي لـ 15د <a:buff:1438796257522094081>\n\n` +
                 `✶ الـخـاسـر: ${loser.member} اصبح جريح وبطور الشفـاء اصابته لعـنة -15% مورا واكس بي لـ 15د <a:Nerf:1438795685280612423>`
             );
