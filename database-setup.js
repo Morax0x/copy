@@ -17,7 +17,9 @@ function setupDatabase(clientOrSql) {
 
     const tables = [
         "CREATE TABLE IF NOT EXISTS levels (user TEXT NOT NULL, guild TEXT NOT NULL, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, totalXP INTEGER DEFAULT 0, mora INTEGER DEFAULT 0, lastWork INTEGER DEFAULT 0, lastDaily INTEGER DEFAULT 0, dailyStreak INTEGER DEFAULT 0, bank INTEGER DEFAULT 0, lastInterest INTEGER DEFAULT 0, totalInterestEarned INTEGER DEFAULT 0, hasGuard INTEGER DEFAULT 0, guardExpires INTEGER DEFAULT 0, totalVCTime INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastRob INTEGER DEFAULT 0, last_rob_pardon TEXT DEFAULT '', lastGuess INTEGER DEFAULT 0, lastRPS INTEGER DEFAULT 0, lastRoulette INTEGER DEFAULT 0, lastTransfer INTEGER DEFAULT 0, lastDeposit INTEGER DEFAULT 0, shop_purchases INTEGER DEFAULT 0, total_meow_count INTEGER DEFAULT 0, boost_count INTEGER DEFAULT 0, lastPVP INTEGER DEFAULT 0, lastFarmYield INTEGER DEFAULT 0, lastFish INTEGER DEFAULT 0, rodLevel INTEGER DEFAULT 1, boatLevel INTEGER DEFAULT 1, currentLocation TEXT DEFAULT 'beach', lastMemory INTEGER DEFAULT 0, lastArrange INTEGER DEFAULT 0, last_dungeon INTEGER DEFAULT 0, dungeon_tickets INTEGER DEFAULT 0, last_ticket_reset TEXT DEFAULT '', dungeon_gate_level INTEGER DEFAULT 1, max_dungeon_floor INTEGER DEFAULT 0, dungeon_wins INTEGER DEFAULT 0, dungeon_join_count INTEGER DEFAULT 0, last_join_reset INTEGER DEFAULT 0, lastRace INTEGER DEFAULT 0, PRIMARY KEY (user, guild))",
-        "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, prefix TEXT DEFAULT '-', voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, casinoChannelID2 TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT, serverTag TEXT, levelChannel TEXT, modLogChannelID TEXT, bumpNotifyRoleID TEXT, transactionLogChannelID TEXT)", // ✅ Added transactionLogChannelID here
+        
+        "CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, prefix TEXT DEFAULT '-', voiceXP INTEGER DEFAULT 0, voiceCooldown INTEGER DEFAULT 60000, customXP INTEGER DEFAULT 25, customCooldown INTEGER DEFAULT 60000, levelUpMessage TEXT, lvlUpTitle TEXT, lvlUpDesc TEXT, lvlUpImage TEXT, lvlUpColor TEXT, lvlUpMention INTEGER DEFAULT 1, streakEmoji TEXT DEFAULT '🔥', questChannelID TEXT, treeBotID TEXT, treeChannelID TEXT, treeMessageID TEXT, countingChannelID TEXT, vipRoleID TEXT, casinoChannelID TEXT, casinoChannelID2 TEXT, dropGiveawayChannelID TEXT, dropTitle TEXT, dropDescription TEXT, dropColor TEXT, dropFooter TEXT, dropButtonLabel TEXT, dropButtonEmoji TEXT, dropMessageContent TEXT, lastMediaUpdateSent TEXT, lastMediaUpdateMessageID TEXT, lastMediaUpdateChannelID TEXT, shopChannelID TEXT, bumpChannelID TEXT, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT, lastQuestPanelChannelID TEXT, streakTimerChannelID TEXT, dailyTimerChannelID TEXT, weeklyTimerChannelID TEXT, img_level TEXT, img_mora TEXT, img_streak TEXT, img_media_streak TEXT, img_strongest TEXT, img_weekly_xp TEXT, img_daily_xp TEXT, img_achievements TEXT, voiceChannelID TEXT, savedStatusType TEXT, savedStatusText TEXT, marketStatus TEXT DEFAULT 'normal', boostChannelID TEXT, shopLogChannelID TEXT, serverTag TEXT, levelChannel TEXT, modLogChannelID TEXT, bumpNotifyRoleID TEXT, transactionLogChannelID TEXT, guildBoardChannelID TEXT, guildBoardMessageID TEXT, kingsBoardMessageID TEXT, guildAnnounceChannelID TEXT, roleCasinoKing TEXT, roleMerchant TEXT, rolePhilanthropist TEXT, roleAdvisor TEXT, roleAbyss TEXT, roleChatter TEXT, roleKnightSlayer TEXT, roleFisherKing TEXT, rolePvPKing TEXT, roleFarmKing TEXT, roleDailyQuester TEXT, roleWeeklyQuester TEXT, roleRankSS TEXT, roleRankS TEXT, roleRankA TEXT, roleRankB TEXT, roleRankC TEXT, roleRankD TEXT)", 
+        
         "CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, reportChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)",
         "CREATE TABLE IF NOT EXISTS report_permissions (guildID TEXT NOT NULL, roleID TEXT NOT NULL, PRIMARY KEY (guildID, roleID))",
         "CREATE TABLE IF NOT EXISTS active_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, targetID TEXT NOT NULL, reporterID TEXT NOT NULL, timestamp INTEGER NOT NULL, UNIQUE(guildID, targetID, reporterID))",
@@ -33,13 +35,14 @@ function setupDatabase(clientOrSql) {
         "CREATE TABLE IF NOT EXISTS market_items (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, currentPrice INTEGER DEFAULT 0, lastChangePercent REAL DEFAULT 0.0, lastChange INTEGER DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS user_portfolio (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, itemID TEXT NOT NULL, quantity INTEGER DEFAULT 0, purchasePrice INTEGER DEFAULT 0, FOREIGN KEY (itemID) REFERENCES market_items(id), UNIQUE(guildID, userID, itemID))",
         "CREATE TABLE IF NOT EXISTS user_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT, userID TEXT, itemID TEXT, quantity INTEGER DEFAULT 0, UNIQUE(guildID, userID, itemID))",
-        // ✅ تحديث تعريف الجدول للخوادم الجديدة
         "CREATE TABLE IF NOT EXISTS dungeon_stats (guildID TEXT, userID TEXT, tickets INTEGER DEFAULT 0, last_reset TEXT DEFAULT '', campfires INTEGER DEFAULT 1, last_campfire_reset TEXT DEFAULT '', PRIMARY KEY (guildID, userID))",
         "CREATE TABLE IF NOT EXISTS blacklistTable (id TEXT PRIMARY KEY, guild TEXT, typeId TEXT, type TEXT)",
         "CREATE TABLE IF NOT EXISTS channel (guild TEXT PRIMARY KEY, channel TEXT)",
         "CREATE TABLE IF NOT EXISTS user_farm (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, quantity INTEGER DEFAULT 1, purchaseTimestamp INTEGER DEFAULT 0, lastCollected INTEGER DEFAULT 0, lastFedTimestamp INTEGER DEFAULT 0)",
         "CREATE INDEX IF NOT EXISTS idx_user_farm_lookup ON user_farm (guildID, userID)",
-        "CREATE TABLE IF NOT EXISTS user_daily_stats (id TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, date TEXT NOT NULL, messages INTEGER DEFAULT 0, images INTEGER DEFAULT 0, stickers INTEGER DEFAULT 0, emojis_sent INTEGER DEFAULT 0, reactions_added INTEGER DEFAULT 0, replies_sent INTEGER DEFAULT 0, mentions_received INTEGER DEFAULT 0, vc_minutes INTEGER DEFAULT 0, water_tree INTEGER DEFAULT 0, counting_channel INTEGER DEFAULT 0, meow_count INTEGER DEFAULT 0, streaming_minutes INTEGER DEFAULT 0, disboard_bumps INTEGER DEFAULT 0, boost_channel_reactions INTEGER DEFAULT 0, ai_interactions INTEGER DEFAULT 0)",
+        
+        "CREATE TABLE IF NOT EXISTS user_daily_stats (id TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, date TEXT NOT NULL, messages INTEGER DEFAULT 0, images INTEGER DEFAULT 0, stickers INTEGER DEFAULT 0, emojis_sent INTEGER DEFAULT 0, reactions_added INTEGER DEFAULT 0, replies_sent INTEGER DEFAULT 0, mentions_received INTEGER DEFAULT 0, vc_minutes INTEGER DEFAULT 0, water_tree INTEGER DEFAULT 0, counting_channel INTEGER DEFAULT 0, meow_count INTEGER DEFAULT 0, streaming_minutes INTEGER DEFAULT 0, disboard_bumps INTEGER DEFAULT 0, boost_channel_reactions INTEGER DEFAULT 0, ai_interactions INTEGER DEFAULT 0, casino_profit INTEGER DEFAULT 0, mora_earned INTEGER DEFAULT 0, mora_donated INTEGER DEFAULT 0, knights_defeated INTEGER DEFAULT 0, fish_caught INTEGER DEFAULT 0, pvp_wins INTEGER DEFAULT 0, crops_harvested INTEGER DEFAULT 0)",
+        
         "CREATE TABLE IF NOT EXISTS user_achievements (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT NOT NULL, guildID TEXT NOT NULL, achievementID TEXT NOT NULL, timestamp INTEGER NOT NULL, UNIQUE(userID, guildID, achievementID))",
         "CREATE TABLE IF NOT EXISTS user_quest_claims (claimID TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, questID TEXT NOT NULL, dateStr TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS user_weekly_stats (id TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, weekStartDate TEXT NOT NULL, messages INTEGER DEFAULT 0, images INTEGER DEFAULT 0, stickers INTEGER DEFAULT 0, emojis_sent INTEGER DEFAULT 0, reactions_added INTEGER DEFAULT 0, replies_sent INTEGER DEFAULT 0, mentions_received INTEGER DEFAULT 0, vc_minutes INTEGER DEFAULT 0, water_tree INTEGER DEFAULT 0, counting_channel INTEGER DEFAULT 0, meow_count INTEGER DEFAULT 0, streaming_minutes INTEGER DEFAULT 0, disboard_bumps INTEGER DEFAULT 0, ai_interactions INTEGER DEFAULT 0)",
@@ -89,6 +92,9 @@ function setupDatabase(clientOrSql) {
         // --- 🔥 جدول نظام الـ AFK المطور 🔥 ---
         "CREATE TABLE IF NOT EXISTS afk (userID TEXT, guildID TEXT, reason TEXT, timestamp INTEGER, mentionsCount INTEGER DEFAULT 0, subscribers TEXT DEFAULT '[]', messages TEXT DEFAULT '[]', PRIMARY KEY (userID, guildID))",
 
+        // --- 🔥 جداول نظام السمعة (Reputation) 🔥 ---
+        "CREATE TABLE IF NOT EXISTS user_reputation (userID TEXT, guildID TEXT, rep_points INTEGER DEFAULT 0, last_rep_given INTEGER DEFAULT 0, weekly_reps_given INTEGER DEFAULT 0, PRIMARY KEY (userID, guildID))",
+
         // --- جداول أخرى ---
         "CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue REAL, PRIMARY KEY (guildID, roleID, dungeonKey))",
         "CREATE TABLE IF NOT EXISTS active_auctions (messageID TEXT PRIMARY KEY, channelID TEXT, hostID TEXT, item_name TEXT, current_bid INTEGER, highest_bidder TEXT, min_increment INTEGER, end_time INTEGER, image_url TEXT, buy_now_price INTEGER DEFAULT 0)",
@@ -114,6 +120,8 @@ function setupDatabase(clientOrSql) {
     }
 
     // --- صيانة الجداول الرئيسية ---
+    ensureColumn('levels', 'id', 'TEXT UNIQUE'); // 🔥 لحماية بيانات الدانجون وإحصائيات الملوك 🔥
+
     ['mora', 'lastWork', 'lastDaily', 'dailyStreak', 'bank', 'lastInterest', 'totalInterestEarned', 'hasGuard', 'guardExpires', 'lastCollected', 'totalVCTime', 'lastRob', 'lastGuess', 'lastRPS', 'lastRoulette', 'lastTransfer', 'lastDeposit', 'shop_purchases', 'total_meow_count', 'boost_count', 'lastPVP', 'lastFarmYield', 'lastFish', 'rodLevel', 'boatLevel', 'lastMemory', 'lastArrange', 'last_dungeon', 'lastRace'].forEach(col => ensureColumn('levels', col, 'INTEGER DEFAULT 0'));
       
     ensureColumn('levels', 'dungeon_tickets', 'INTEGER DEFAULT 0');
@@ -130,7 +138,8 @@ function setupDatabase(clientOrSql) {
     ensureColumn('levels', 'last_dungeon', 'INTEGER DEFAULT 0'); 
     ensureColumn('levels', 'lastRace', 'INTEGER DEFAULT 0');
 
-    ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions'].forEach(col => {
+    // ✅ إضافة الأعمدة اليومية لنقابة المغامرين (شاملة الملوك الجدد)
+    ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions', 'casino_profit', 'mora_earned', 'mora_donated', 'knights_defeated', 'fish_caught', 'pvp_wins', 'crops_harvested'].forEach(col => {
         ensureColumn('user_daily_stats', col, 'INTEGER DEFAULT 0');
     });
     ensureColumn('user_weekly_stats', 'emojis_sent', 'INTEGER DEFAULT 0');
@@ -152,7 +161,23 @@ function setupDatabase(clientOrSql) {
     ensureColumn('streaks', 'has12hWarning', 'INTEGER DEFAULT 0');
       
     // --- صيانة إعدادات السيرفر ---
-    const settingsCols = ["questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", "dropColor", "dropFooter", "dropButtonLabel", "dropButtonEmoji", "dropMessageContent", "lastMediaUpdateSent", "lastMediaUpdateMessageID", "lastMediaUpdateChannelID", "shopChannelID", "bumpChannelID", "customRoleAnchorID", "customRolePanelTitle", "customRolePanelDescription", "customRolePanelImage", "customRolePanelColor", "lastQuestPanelChannelID", "streakTimerChannelID", "dailyTimerChannelID", "weeklyTimerChannelID", "img_level", "img_mora", "img_streak", "img_media_streak", "img_strongest", "img_weekly_xp", "img_daily_xp", "img_achievements", "voiceChannelID", "savedStatusType", "savedStatusText", "marketStatus", "boostChannelID", "shopLogChannelID", "serverTag", "levelChannel", "modLogChannelID", "bumpNotifyRoleID", "transactionLogChannelID"]; // ✅ Added transactionLogChannelID here too
+    const settingsCols = [
+        "questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", 
+        "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", 
+        "dropColor", "dropFooter", "dropButtonLabel", "dropButtonEmoji", "dropMessageContent", 
+        "lastMediaUpdateSent", "lastMediaUpdateMessageID", "lastMediaUpdateChannelID", "shopChannelID", 
+        "bumpChannelID", "customRoleAnchorID", "customRolePanelTitle", "customRolePanelDescription", 
+        "customRolePanelImage", "customRolePanelColor", "lastQuestPanelChannelID", "streakTimerChannelID", 
+        "dailyTimerChannelID", "weeklyTimerChannelID", "img_level", "img_mora", "img_streak", "img_media_streak", 
+        "img_strongest", "img_weekly_xp", "img_daily_xp", "img_achievements", "voiceChannelID", "savedStatusType", 
+        "savedStatusText", "marketStatus", "boostChannelID", "shopLogChannelID", "serverTag", "levelChannel", 
+        "modLogChannelID", "bumpNotifyRoleID", "transactionLogChannelID",
+        "guildBoardChannelID", "guildBoardMessageID", "kingsBoardMessageID", "guildAnnounceChannelID", 
+        "roleCasinoKing", "roleMerchant", "rolePhilanthropist", "roleAdvisor", "roleAbyss", 
+        "roleChatter", "roleKnightSlayer", "roleFisherKing", "rolePvPKing", "roleFarmKing",
+        "roleDailyQuester", "roleWeeklyQuester",
+        "roleRankSS", "roleRankS", "roleRankA", "roleRankB", "roleRankC", "roleRankD"
+    ]; 
     settingsCols.forEach(col => ensureColumn('settings', col, 'TEXT'));
     ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'");
 
@@ -178,7 +203,6 @@ function setupDatabase(clientOrSql) {
     ensureColumn('afk', 'messages', "TEXT DEFAULT '[]'");
 
     // --- 🔥 صيانة أعمدة الدانجون والخيم (Fix) 🔥 ---
-    // هذا الجزء هو الذي يحل المشكلة، لأنه يضيف الأعمدة للجداول الموجودة
     ensureColumn('dungeon_stats', 'campfires', 'INTEGER DEFAULT 1');
     ensureColumn('dungeon_stats', 'last_campfire_reset', "TEXT DEFAULT ''");
 
