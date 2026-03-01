@@ -12,11 +12,9 @@ async function startDungeon(interaction, sql) {
     const user = interaction.user;
 
     // 🔥🔥 معالجة زر نصب المخيم (Campfire) القادم من داخل اللعبة 🔥🔥
-    // ✅ التأكد من أن isButton دالة موجودة قبل استدعائها لمنع الكراش
     const isButtonInteraction = interaction.isButton && typeof interaction.isButton === 'function' && interaction.isButton();
 
     if (isButtonInteraction && interaction.customId === 'dungeon_campfire') {
-        // هذا الجزء احتياطي، المعالجة الفعلية تتم في dungeon-battle.js و rest-phase.js
         return; 
     }
 
@@ -39,7 +37,16 @@ async function startDungeon(interaction, sql) {
         return interaction.reply({ embeds: [denyEmbed], flags: [MessageFlags.Ephemeral] });
     }
 
-    if (user.id !== OWNER_ID) {
+    // 👑 التحقق مما إذا كان اللاعب هو "ملك الهاوية"
+    let abyssKing = false;
+    try {
+        const settings = sql.prepare("SELECT roleAbyss FROM settings WHERE guild = ?").get(interaction.guild.id);
+        if (settings && settings.roleAbyss && interaction.member.roles.cache.has(settings.roleAbyss)) {
+            abyssKing = true;
+        }
+    } catch (e) {}
+
+    if (user.id !== OWNER_ID && !abyssKing) { // 👑 استثناء ملك الهاوية من الفحص المبدئي هنا أيضاً للاحتياط
         const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
         const lastDungeon = lastRun?.last_dungeon || 0;
         const now = Date.now();
@@ -74,17 +81,16 @@ async function startDungeon(interaction, sql) {
         const timeLeft = expiryTime - (Date.now() - save.timestamp);
 
         if (timeLeft > 0) {
-            startFloor = save.floor; // ✅ وجدنا حفظاً صالحاً، نعتمد الطابق فوراً
+            startFloor = save.floor; 
         } else {
-            // انتهى وقت الحفظ، نحذفه
             sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
         }
     }
 
-    activeDungeonRequests.set(user.id, { status: 'lobby' });
+    // 💡 حفظ الطابق في الجلسة ليتمكن ملف end-game من حسابه بشكل صحيح
+    activeDungeonRequests.set(user.id, { status: 'lobby', startFloor: startFloor });
 
     try {
-        // نمرر startFloor مباشرة للوبي ليظهر في الإيمبد ويبدأ منه
         await lobbyPhase(interaction, null, selectedTheme, sql, startFloor);
     } catch (err) {
         console.error(err);
@@ -102,6 +108,17 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
     let partyClasses = new Map();
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
+
+    // دالة مساعدة سريعة لفحص ميزة ملك الهاوية لعضو معين
+    const isUserAbyssKing = async (userId) => {
+        try {
+            const settings = sql.prepare("SELECT roleAbyss FROM settings WHERE guild = ?").get(guildId);
+            if (!settings || !settings.roleAbyss) return false;
+            const member = await interaction.guild.members.fetch(userId).catch(() => null);
+            if (member && member.roles.cache.has(settings.roleAbyss)) return true;
+        } catch (e) {}
+        return false;
+    };
       
     const updateEmbed = () => {
         const memberList = party.map((id, i) => {
@@ -117,7 +134,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
 
         const imageUrl = theme.image || 'https://i.postimg.cc/NMkWVyLV/line.png';
 
-        // 🔥 إضافة ملاحظة الاستكمال في الوصف كما طلبت 🔥
         let desc = `**القائد:** ${host}\n**الشروط:** لفل 5+ و 100 ${EMOJI_MORA}\n\n🔮 **تم فتح البوابة إلى ${theme.name}!**`;
         
         if (startFloor > 1) {
@@ -141,7 +157,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
     );
 
     let msg;
-    // التأكد من طريقة الرد (سلاش أو رسالة عادية)
     if (interaction.reply && typeof interaction.reply === 'function') {
         if (interaction.replied || interaction.deferred) {
             msg = await interaction.followUp({ embeds: [updateEmbed()], components: [row], fetchReply: true });
@@ -164,7 +179,9 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                 if (i.user.id === host.id) return i.reply({ content: "👑 أنت القائد.", flags: [MessageFlags.Ephemeral] });
                 if (party.length >= 5 && !party.includes(i.user.id)) return i.reply({ content: "🚫 الفريق ممتلئ.", flags: [MessageFlags.Ephemeral] });
 
-                if (!party.includes(i.user.id) && i.user.id !== OWNER_ID) {
+                const targetIsKing = await isUserAbyssKing(i.user.id);
+
+                if (!party.includes(i.user.id) && i.user.id !== OWNER_ID && !targetIsKing) {
                     const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
                     
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط (لفل 5+ ومورا 100).", flags: [MessageFlags.Ephemeral] });
@@ -183,6 +200,10 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                             flags: [MessageFlags.Ephemeral] 
                         });
                     }
+                }
+
+                if (targetIsKing && !party.includes(i.user.id)) {
+                    await i.followUp({ content: "👑 **بصفتك سيد الهاوية، تم تخطي شروط وتذاكر الدخول لك!**", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
                 }
 
                 const takenClasses = [];
@@ -242,7 +263,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
         if (reason === 'start') {
             const now = Date.now();
             
-            // 🔥 عند الانطلاق، إذا كان هناك حفظ سابق، نحذفه (لأنه تم استخدامه الآن) 🔥
             if (startFloor > 1) {
                 sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(host.id);
             }
@@ -251,10 +271,17 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
             let kickedMembers = [];
 
             for (const id of party) {
-                if (id === host.id || id === OWNER_ID) {
+                const targetIsKing = await isUserAbyssKing(id);
+
+                if (id === host.id || id === OWNER_ID || targetIsKing) {
                     validParty.push(id);
-                    sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
-                    if (id === host.id && id !== OWNER_ID) {
+                    
+                    // 👑 إعفاء الملوك من رسوم الدخول 100 مورا والكولداون
+                    if (id !== OWNER_ID && !targetIsKing) {
+                        sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
+                    }
+                    
+                    if (id === host.id && id !== OWNER_ID && !targetIsKing) {
                         sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
                     }
                 } else {
@@ -294,7 +321,6 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                // 🔥 تمرير startFloor الصحيح للمعركة 🔥
                 await runDungeon(thread, msg.channel, validParty, theme, sql, host.id, partyClasses, activeDungeonRequests, startFloor);
 
             } catch (e) {
@@ -314,17 +340,18 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                             .setColor(Colors.Red);
                         
                         if (reason === 'user_cancel') {
-                             const penaltyMs = 3 * 60 * 1000; 
-                             const fullCooldown = 1 * 60 * 60 * 1000; 
-
-                             const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
+                             const hostIsKing = await isUserAbyssKing(host.id);
+                             const penaltyMs = hostIsKing ? 0 : 3 * 60 * 1000; // 👑 إعفاء من عقوبة الإلغاء
                              
-                             sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?")
-                                .run(newLastDungeon, host.id, guildId);
-
-                             const readyTimestamp = Math.floor((Date.now() + penaltyMs) / 1000);
-                             
-                             cancelledEmbed.setDescription(`**قمـت بـ الغـاء الغـارة الاخيـرة .. انتـظر <t:${readyTimestamp}:R> لتفتح غـارة جديدة**`);
+                             if (!hostIsKing) {
+                                 const fullCooldown = 1 * 60 * 60 * 1000; 
+                                 const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
+                                 sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(newLastDungeon, host.id, guildId);
+                                 const readyTimestamp = Math.floor((Date.now() + penaltyMs) / 1000);
+                                 cancelledEmbed.setDescription(`**قمـت بـ الغـاء الغـارة الاخيـرة .. انتـظر <t:${readyTimestamp}:R> لتفتح غـارة جديدة**`);
+                             } else {
+                                 cancelledEmbed.setDescription(`**👑 بصفتك ملك الهاوية، يمكنك فتح غارة جديدة متى شئت**`);
+                             }
                              cancelledEmbed.setFooter({ text: "قام القائد بإلغاء الغارة" });
                         } else {
                              cancelledEmbed.setFooter({ text: "انتهى وقت الانتظار" });
