@@ -1,5 +1,3 @@
-// events/messageCreate.js
-
 const { Events, ChannelType, PermissionsBitField, EmbedBuilder, Colors, Collection, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
@@ -10,6 +8,9 @@ const { askMorax } = require('../handlers/ai-handler');
 const aiConfig = require('../utils/aiConfig'); 
 const aiLimitHandler = require('../utils/aiLimitHandler');
 
+// استدعاء دالة التحديث الآمنة للوحة الملوك
+const { updateGuildStat } = require('../handlers/guild-board-handler.js');
+
 const DISBOARD_BOT_ID = '302050872383242240'; 
 const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
@@ -19,18 +20,22 @@ const ghostModeUsers = new Set();
 
 if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
 
-function getTodayDateString() { return new Date().toISOString().split('T')[0]; }
-function getWeekStartDateString() {
-    const now = new Date(); const diff = now.getUTCDate() - (now.getUTCDay() + 2) % 7; 
-    const friday = new Date(now.setUTCDate(diff)); friday.setUTCHours(0, 0, 0, 0); return friday.toISOString().split('T')[0];
+// 🔥 توحيد صارم لتوقيت السعودية (KSA) لمنع أي تضارب في تسجيل الأيام 🔥
+function getTodayDateString() { 
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 }
 
-// ✅ دالة مساعدة للإرسال الآمن (تمنع توقف البوت إذا حذفت الرسالة)
+function getWeekStartDateString() {
+    const ksaTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+    const diff = ksaTime.getDate() - (ksaTime.getDay() + 2) % 7; 
+    const friday = new Date(ksaTime.setDate(diff));
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(friday);
+}
+
 async function safeReply(message, options) {
     try {
         return await message.reply(options);
     } catch (error) {
-        // 10008: Unknown Message, 50035: Invalid Form Body (reference unknown)
         if (error.code === 10008 || error.code === 50035) {
             const { allowedMentions, ...newOptions } = options;
             return await message.channel.send(newOptions).catch(() => null);
@@ -39,6 +44,7 @@ async function safeReply(message, options) {
     }
 }
 
+// 🔥 تحصين نظام تسجيل البومب (Atomic Update) 🔥
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
@@ -49,9 +55,10 @@ async function recordBump(client, guildID, userID) {
     const weeklyID = `${userID}-${guildID}-${weekStr}`;
     const totalID = `${userID}-${guildID}`;
     try {
-        sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = disboard_bumps + 1`).run(dailyID, userID, guildID, dateStr);
-        sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = disboard_bumps + 1`).run(weeklyID, userID, guildID, weekStr);
-        sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = total_disboard_bumps + 1`).run(totalID, userID, guildID);
+        sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(dailyID, userID, guildID, dateStr);
+        sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(weeklyID, userID, guildID, weekStr);
+        sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = CAST(COALESCE(total_disboard_bumps, 0) AS INTEGER) + 1`).run(totalID, userID, guildID);
+        
         const member = await client.guilds.cache.get(guildID)?.members.fetch(userID).catch(() => null);
         if (member && client.checkQuests) {
             const updatedDaily = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?").get(dailyID);
@@ -155,7 +162,6 @@ module.exports = {
                             replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
                         }
 
-                        // ✅ استخدام safeReply بدلاً من message.reply المباشر
                         const welcomeMsg = await safeReply(message, { 
                             content: replyContent,
                             components: msgBtnRow ? [msgBtnRow] : [] 
@@ -212,7 +218,6 @@ module.exports = {
                                     .setStyle(ButtonStyle.Primary)
                             );
 
-                            // ✅ استخدام safeReply هنا أيضاً
                             const replyMsg = await safeReply(message, {
                                 embeds: [embed],
                                 components: [row],
@@ -266,7 +271,6 @@ module.exports = {
         if (message.mentions.has(client.user) && !message.author.bot) {
             
             if (message.content.startsWith(Prefix)) {
-                // Ignore AI if prefix used
             } 
             else {
                 const argsRaw = message.content.trim().split(/ +/);
@@ -274,19 +278,16 @@ module.exports = {
                 const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
                 let isShortcut = false;
                 try {
-                    isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND shortcutWord = ?").get(message.guild.id, firstWord);
+                    isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?").get(message.guild.id, message.channel.id, firstWord);
                 } catch(e) {}
 
                 if (isCommand || isShortcut) {
-                    // Ignore AI if command
                 } 
                 else {
-                    // 🔥 تجاهل الردود على رسائل الأوامر (Embeds) 🔥
                     if (message.reference) {
                         try {
                             const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
                             if (repliedMsg && repliedMsg.author.id === client.user.id) {
-                                // إذا كانت الرسالة المردود عليها من البوت وتحتوي على Embed، أو كانت تفاعلاً (Slash Command)
                                 if (repliedMsg.embeds.length > 0 || repliedMsg.interaction) return;
                             }
                         } catch (e) {}
@@ -299,8 +300,14 @@ module.exports = {
                     const OWNER_ID = "1145327691772481577"; 
                     const isOwnerMentioning = message.author.id === OWNER_ID;
 
-                    // منطق السماح بالقنوات
-                    if (!isOwnerMentioning) {
+                    let isWisdomKing = false;
+                    try {
+                        if (settings && settings.roleAdvisor && message.member.roles.cache.has(settings.roleAdvisor)) {
+                            isWisdomKing = true;
+                        }
+                    } catch(e) {}
+
+                    if (!isOwnerMentioning && !isWisdomKing) {
                         if (!aiChannelData && message.channel.parentId) {
                             if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
                                 const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
@@ -318,9 +325,8 @@ module.exports = {
                         if (!aiChannelData) return;
                     }
 
-                    // التحقق من حدود الاستخدام
                     const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
-                    if (!usageStatus.canChat && !isOwnerMentioning) {
+                    if (!usageStatus.canChat && !isOwnerMentioning && !isWisdomKing) {
                         if (paymentCooldowns.has(message.author.id)) return; 
                         paymentCooldowns.add(message.author.id);
                         setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
@@ -336,7 +342,6 @@ module.exports = {
                         await message.channel.sendTyping();
                         const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
                         
-                        // 🔥 التعامل مع الستيكرات والصور 🔥
                         let imageAttachment = null;
                         
                         if (message.attachments.size > 0) {
@@ -367,7 +372,7 @@ module.exports = {
                         
                         if (!reply) return;
 
-                        if (!isOwnerMentioning) aiLimitHandler.incrementUsage(message.author.id);
+                        if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id);
 
                         const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
                         const replyOptions = { repliedUser: true, parse: ['users'] };
@@ -421,6 +426,48 @@ module.exports = {
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
+
+            // 🔥 استدعاء التحديث للوحة الملوك المعزولة 🔥
+            updateGuildStat(client, guildID, userID, 'messages', 1);
+
+            // 🔥 نظام منح وسام ثرثار الحانة محصّن بـ CAST و Atomic Update 🔥
+            if (settings && settings.chatterChannelID && message.channel.id === settings.chatterChannelID) {
+                const todayDate = getTodayDateString();
+                const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
+                
+                try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN main_chat_messages INTEGER DEFAULT 0").run(); } catch(e){}
+                try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN chatter_badge_given INTEGER DEFAULT 0").run(); } catch(e){}
+                
+                sql.prepare(`
+                    INSERT INTO user_daily_stats (id, userID, guildID, date, main_chat_messages) 
+                    VALUES (?, ?, ?, ?, 1) 
+                    ON CONFLICT(id) DO UPDATE SET main_chat_messages = CAST(COALESCE(main_chat_messages, 0) AS INTEGER) + 1
+                `).run(dailyIdForBadge, userID, guildID, todayDate);
+
+                const dailyDataCheck = sql.prepare("SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = ?").get(dailyIdForBadge);
+                
+                if (dailyDataCheck && dailyDataCheck.main_chat_messages >= 100 && dailyDataCheck.chatter_badge_given === 0) {
+                    sql.prepare("UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = ?").run(dailyIdForBadge);
+                    
+                    let roleToGive = settings.roleChatterBadge || settings.roleChatter;
+                    if (roleToGive) message.member.roles.add(roleToGive).catch(()=>{});
+
+                    if (settings.guildAnnounceChannelID) {
+                        const announceChannel = message.guild.channels.cache.get(settings.guildAnnounceChannelID);
+                        if (announceChannel) {
+                            const badgeEmbed = new EmbedBuilder()
+                                .setTitle('🗣️ انـجـاز يـومـي: ثـرثـار الـحـانـة!')
+                                .setDescription(`🎉 أثبت <@${userID}> أنه روح المكان!\n\nلقد أرسل **100 رسالة** في الشات الرئيسي اليوم واستحق وسام الشرف بجدارة!`)
+                                .setColor('#F1C40F')
+                                .setThumbnail(message.author.displayAvatarURL());
+                            announceChannel.send({ content: `<@${userID}>`, embeds: [badgeEmbed] }).catch(()=>{});
+                        }
+                    } else {
+                        message.channel.send(`🗣️ **وســام جديــد!**\n<@${userID}> أرسل 100 رسالة وحصل على وسام **🗣️ ثرثار الحانة**!`).catch(()=>{});
+                    }
+                }
+            }
+
             if (client.incrementQuestStats) {
                 await client.incrementQuestStats(userID, guildID, 'messages', 1);
                 if (message.attachments.size > 0) await client.incrementQuestStats(userID, guildID, 'images', 1);
@@ -465,16 +512,27 @@ module.exports = {
                 }
             }
             await handleStreakMessage(message);
+
             let level = client.getLevel.get(message.author.id, message.guild.id);
             const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
             if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
+            
             let getXpfromDB = settings?.customXP || 25;
             let getCooldownfromDB = settings?.customCooldown || 60000;
+
             if (!client.talkedRecently.get(message.author.id)) {
-                const buff = calculateBuffMultiplier(message.member, sql);
+                let buff = calculateBuffMultiplier(message.member, sql);
+
+                if (settings && settings.roleChatter && message.member.roles.cache.has(settings.roleChatter)) {
+                    buff += 0.50; 
+                }
+
                 const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
-                level.xp += xp; level.totalXP += xp;
+                level.xp += xp; 
+                level.totalXP += xp;
+                
                 const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
+                
                 if (level.xp >= nextXP) {
                     const oldLvl = level.level;
                     level.xp -= nextXP; level.level++;
@@ -488,8 +546,8 @@ module.exports = {
                             const isMentionOn = notifData ? notifData.levelNotif : 1; 
                             const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
                             let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
-                                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
+                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
                             const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
                             if (milestones.includes(level.level)) {
                                 contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
@@ -499,8 +557,8 @@ module.exports = {
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
-                                                                `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                                                `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
+                                        `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
+                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
                         message.channel.send(backupMsg);
                     }
                 } else {
@@ -628,7 +686,6 @@ module.exports = {
                         const now = Date.now();
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
                             const files = autoReply.images ? JSON.parse(autoReply.images) : [];
-                            // استخدام safeReply هنا أيضاً
                             await safeReply(message, { content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
                             autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
                             setTimeout(() => autoResponderCooldowns.delete(cooldownKey), cooldownTime);
