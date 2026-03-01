@@ -1,5 +1,3 @@
-// handlers/dungeon-battle.js
-
 const { EmbedBuilder, Colors } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP, OWNER_ID } = require('./dungeon/constants');
@@ -12,10 +10,8 @@ const { sendEndMessage } = require('./dungeon/core/end-game');
 const { processMonsterTurn } = require('./dungeon/logic/monster-turn');
 const { handleTeamWipe, handleLeaderRetreat, snapshotLootAtFloor20 } = require('./dungeon/core/rewards');
 
-// استدعاء ملف الزعيم الأخير
 const { getMoraxData, processMoraxTurn } = require('./dungeon/logic/final-boss');
 
-// --- Imported Logic Modules ---
 const { saveDungeonState, deleteDungeonState } = require('./dungeon/core/state-manager');
 const { handlePlayerBattleInteraction } = require('./dungeon/logic/battle-actions');
 const { startStatusMonitor } = require('./dungeon/logic/status-monitor');
@@ -23,10 +19,16 @@ const { applyPostBattleUpdates, handleRestMenu } = require('./dungeon/logic/rest
 const { checkSealMessages } = require('./dungeon/logic/seal-system');
 const { applyFloorBuffs, handleTrapEvent, handleRandomEvents } = require('./dungeon/logic/floor-events');
 
-// استدعاء ملف الكونفق
 const dungeonConfig = require('../json/dungeon-config.json');
 
-// 🔥 startFloor ممرر هنا (الافتراضي 1)
+let updateGuildStat;
+try {
+    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
+    ({ updateGuildStat } = require('./guild-board-handler.js'));
+} catch (e) {
+    try { ({ updateGuildStat } = require('../handlers/guild-board-handler.js')); } catch (e2) {}
+}
+
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, startFloor = 1, resumeData = null) {
     const guild = threadChannel.guild;
       
@@ -48,7 +50,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
     let totalAccumulatedXP = 0;
     let resumedMonsterData = null;
 
-    // --- SETUP / RESUME ---
     if (resumeData) {
         players = resumeData.players;
         merchantState = resumeData.merchantState || merchantState;
@@ -77,10 +78,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
     const maxFloors = 100; 
 
-    // --- START STATUS MONITOR ---
     const statusCollector = startStatusMonitor(threadChannel, players);
 
-    // --- GAME LOOP ---
     for (let floor = startFloor; floor <= maxFloors; floor++) {
         
         if (players.length === 0 || players.every(p => p.isDead)) {
@@ -88,10 +87,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
             return; 
         }
 
-        // --- MERCHANT SKIP LOGIC ---
         if (merchantState.skipFloors > 0) {
             let floorsSkipped = 0;
             let targetFloor = 0;
@@ -128,11 +127,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             continue; 
         }
 
-        // --- SEAL MESSAGES & FLOOR BUFFS ---
         await checkSealMessages(floor, players, threadChannel); 
         await applyFloorBuffs(floor, players, threadChannel);
 
-        // --- SHIELD DECAY & CLEANUP ---
         for (let p of players) {
             if (!p.isDead) { 
                 if (p.shieldPersistent) {
@@ -161,7 +158,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             } 
         }
 
-        // --- MONSTER GENERATION ---
         let monster;
         if (resumedMonsterData) {
             monster = resumedMonsterData;
@@ -234,7 +230,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             break;
         }
 
-        // --- BATTLE LOOP ---
         while (ongoing) {
             const collector = battleMsg.createMessageComponentCollector({ time: 24 * 60 * 60 * 1000 });
             let actedPlayers = [];
@@ -356,8 +351,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     ongoing = await processMonsterTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 }
                 
-                // 🔥 تم حذف كود الموت الزائد من هنا لأن processMonsterTurn يقوم به 🔥
-
                 if (ongoing) handleLeaderSuccession(players, log);
             }
         }
@@ -368,10 +361,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', finalFloor);
             return; 
         }
 
-        // --- الفوز في الطابق 100 ---
         if (floor === maxFloors) {
             const moraxMora = getBaseFloorMora(100);
             const moraxXp = Math.floor(moraxMora * 0.10); 
@@ -386,10 +379,10 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                 } 
             });
 
-            break; // الخروج للاحتفال
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', 100);
+            break; 
         }
           
-        // --- REST PHASE ---
         const lootTotals = { coins: totalAccumulatedCoins, xp: totalAccumulatedXP };
         await applyPostBattleUpdates(players, floor, threadChannel, lootTotals);
         totalAccumulatedCoins = lootTotals.coins;
@@ -414,30 +407,27 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
             return; 
         } 
-        // 🔥🔥 معالجة نصب المخيم (معدلة حسب طلبك) 🔥🔥
         else if (decision === 'camp') {
-            // حذف الحالة لإنهاء اللعبة الحالية (تم حفظها في الداتابيس داخل handleRestMenu)
             deleteDungeonState(sql, threadChannel.id);
             statusCollector.stop();
             
-            // إرسال رسالة في الثريد
             await threadChannel.send(`⛺ **تم نصب الخيام بنجاح!**\nتم حفظ تقدمكم عند الطابق **${floor + 1}**. سيتم الآن توزيع الغنائم وإغلاق البوابة.`).catch(()=>{});
 
-            // توزيع الجوائز التي جمعوها حتى الآن
             await handleLeaderRetreat(players, sql, guild.id);
 
-            // إرسال ملخص النهاية وإغلاق الثريد
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", sql, guild.id, hostId, activeDungeonRequests);
-            
-            return; // إنهاء الدالة
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
+            return; 
         }
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
             statusCollector.stop(); 
             await handleLeaderRetreat(players, sql, guild.id);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
+            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
             return; 
         } 
         else if (decision === 'continue') {
@@ -480,6 +470,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
 
         await handleLeaderRetreat(alivePlayers, sql, guild.id);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
+        if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', 100);
     }
 } 
 
