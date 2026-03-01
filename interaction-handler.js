@@ -1,6 +1,5 @@
 const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionsBitField, MessageFlags, Colors } = require("discord.js");
 
-const { handleQuestPanel } = require('./handlers/quest-panel-handler.js');
 const { handleStreakPanel } = require('./handlers/streak-panel-handler.js');
 const { handleShopInteractions, handleShopModal, handleShopSelectMenu, handleSkillSelectMenu } = require('./handlers/shop-handler.js');
 const { handlePvpInteraction } = require('./handlers/pvp-handler.js');
@@ -11,8 +10,11 @@ const { handleReactionRole } = require('./handlers/reaction-role-handler.js');
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
 const { handleLandInteractions } = require('./handlers/farm-land.js');
 
-// 🔥 استدعاء هاندلر المزاد الجديد 🔥
 const { handleAuctionSystem } = require('./handlers/auction-handler.js');
+const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
+
+// 🔥 استدعاء مولد الإشعارات عشان يشتغل وما يعطي خطأ 🔥
+const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
 const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -180,7 +182,6 @@ module.exports = (client, sql, antiRolesCache) => {
                     return;
 
                 } else if (id === 'show_afk_msgs') {
-                    // نستخدم المتغير العالمي الذي عرفناه في messageCreate.js
                     const msgs = global.afkMessagesCache ? global.afkMessagesCache.get(i.user.id) : null;
 
                     if (!msgs || msgs.length === 0) {
@@ -195,7 +196,7 @@ module.exports = (client, sql, antiRolesCache) => {
                     msgs.forEach((msg, x) => {
                         desc += `**✶ من:** <@${msg.authorID}>\n` +
                                 `**✶ الوقت:** <t:${msg.timestamp}:R>\n` +
-                                `**✶ الرسالة:**\n${msg.content}\n\n`; // سطرين فاضيين للفصل
+                                `**✶ الرسالة:**\n${msg.content}\n\n`; 
                     });
 
                     embed.setDescription(desc.substring(0, 4000));
@@ -203,6 +204,12 @@ module.exports = (client, sql, antiRolesCache) => {
                     return;
                 }
                 // ====================================================
+
+                // 👑 معالجة أزرار لوحة نقابة المغامرين
+                if (id.startsWith('guild_board_')) {
+                    await handleGuildBoard(i, client, sql);
+                    return;
+                }
 
                 if (id.startsWith('bid_')) { 
                     await handleAuctionSystem(i); 
@@ -224,9 +231,12 @@ module.exports = (client, sql, antiRolesCache) => {
                     await handleReactionRole(i, client, sql, antiRolesCache);
                 } else if (id === 'g_reroll_select') {
                     await handleReroll(i, client, sql);
-                } else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
+                } 
+                // 🔥 تحديث شامل للقط جميع أوامر الدليل والمهام بدقة 🔥
+                else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
                     await handleQuestPanel(i, client, sql);
-                } else if (id.startsWith('pvp_')) {
+                } 
+                else if (id.startsWith('pvp_')) {
                     await handlePvpInteraction(i, client, sql);
                 } else if (
                     id === 'shop_open_menu' ||
