@@ -1,11 +1,6 @@
-// handlers/knight-battle.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ComponentType } = require("discord.js");
 const path = require('path');
 
-// ==========================================
-// ⚙️ إعدادات المسارات والملفات
-// ==========================================
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
@@ -45,19 +40,9 @@ const WIN_IMAGES_LIST = [
 
 const activePveBattles = new Map();
 
-// ==========================================
-// 🛠️ دوال مساعدة
-// ==========================================
-
 function cleanDisplayName(name) {
-    if (!name) return "لاعب مجهول";
+    if (!name) return "لاعب";
     return name.replace(/<a?:.+?:\d+>/g, '').trim();
-}
-
-function getSafeName(playerObj) {
-    if (playerObj.isMonster) return playerObj.name;
-    if (playerObj.member && playerObj.member.user) return cleanDisplayName(playerObj.member.user.displayName);
-    return "اللاعب";
 }
 
 function buildHpBar(currentHp, maxHp) {
@@ -169,7 +154,7 @@ function checkShieldBreak(battleState, defenderId) {
         defender.effects.shield_cd_duration = 0;
         defender.effects.shield = 0; 
 
-        return `💔 **انكسر درع ${getSafeName(defender)}**! (بدأ الكولداون)`;
+        return `💔 **انكسر درع ${defender.isMonster ? defender.name : cleanDisplayName(defender.member.user.displayName)}**! (بدأ الكولداون)`;
     }
     return null;
 }
@@ -192,20 +177,20 @@ function applyPersistentEffects(battleState, attackerId) {
 
     if (attacker.effects.poison > 0) {
         attacker.hp -= attacker.effects.poison;
-        logEntries.push(`☠️ ${getSafeName(attacker)} يتألم من السم (-${attacker.effects.poison})!`);
+        logEntries.push(`☠️ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يتألم من السم (-${attacker.effects.poison})!`);
         attacker.effects.poison_turns--;
         if (attacker.effects.poison_turns <= 0) attacker.effects.poison = 0;
     }
 
     if (attacker.effects.burn > 0) {
         attacker.hp -= attacker.effects.burn;
-        logEntries.push(`🔥 ${getSafeName(attacker)} يحترق (-${attacker.effects.burn})!`);
+        logEntries.push(`🔥 ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} يحترق (-${attacker.effects.burn})!`);
         attacker.effects.burn_turns--;
         if (attacker.effects.burn_turns <= 0) attacker.effects.burn = 0;
     }
 
     if (attacker.effects.stun) {
-        logEntries.push(`⚡ ${getSafeName(attacker)} مشلول ولا يستطيع الحركة!`);
+        logEntries.push(`⚡ ${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)} مشلول ولا يستطيع الحركة!`);
         skipTurn = true;
     }
 
@@ -225,7 +210,7 @@ function applySkillEffect(battleState, attackerId, skill) {
     const isShieldSkill = shieldSkills.includes(skill.id) || (skill.id === 'Lifesteal_Overheal' && (attacker.maxHp - attacker.hp) < (attacker.weapon.currentDamage * 0.6));
 
     if (isShieldSkill && attacker.effects.shield > 0) {
-        return `🚫 **${getSafeName(attacker)}** حاول تفعيل درع لكن لديه درع نشط بالفعل!`;
+        return `🚫 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** حاول تفعيل درع لكن لديه درع نشط بالفعل!`;
     }
 
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
@@ -239,7 +224,7 @@ function applySkillEffect(battleState, attackerId, skill) {
 
     const effectValue = skill.effectValue;
     const statType = skill.stat_type;
-    const skillLevel = skill.currentLevel || 1;
+    const skillLevel = skill.currentLevel || 1; 
 
     let baseAtk = attacker.weapon ? attacker.weapon.currentDamage : 15;
     if (attacker.effects.buff > 0) baseAtk *= (1 + attacker.effects.buff);
@@ -252,7 +237,7 @@ function applySkillEffect(battleState, attackerId, skill) {
                 const maxDmg = 2222;
                 const dmgAmount = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg;
                 defender.hp -= dmgAmount;
-                return `🎲 **${getSafeName(attacker)}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
+                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** غامر وربح! سدد **${dmgAmount}** ضرر!`;
             } else {
                 const minFail = 100;
                 const maxFail = 200;
@@ -260,7 +245,7 @@ function applySkillEffect(battleState, attackerId, skill) {
                 const selfDmg = Math.floor(attacker.hp * 0.03); 
                 defender.hp -= failDmg;
                 attacker.hp -= selfDmg;
-                return `🎲 **${getSafeName(attacker)}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
+                return `🎲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** خسر الرهان... خدش الخصم بـ **${failDmg}** وأذى نفسه بـ **${selfDmg}**!`;
             }
         }
         case 'Spirit_RNG': {
@@ -277,13 +262,13 @@ function applySkillEffect(battleState, attackerId, skill) {
                 defender.effects.weaken = (defender.effects.weaken || 0) + 0.15; defender.effects.weaken_turns = 3;
                 effectMsg = "💀 **سرقة الروح!** (امتصاص القوة)";
             } else { effectMsg = "(هجوم طيفي)"; }
-            return `👻 **${getSafeName(attacker)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
+            return `👻 **${cleanDisplayName(attacker.member.user.displayName)}** أطلق طيفاً! سبب **${spiritDmg}** ضرر + ${effectMsg}`;
         }
         case 'TrueDMG_Burn': {
             const burnDmg = Math.floor(baseAtk * 0.2);
             defender.effects.burn = burnDmg; defender.effects.burn_turns = 3;
             const dmg = Math.floor(baseAtk * 1.4); defender.hp -= dmg;
-            return `🐲 **${getSafeName(attacker)}** أحرق خصمه! (${dmg} ضرر + حرق)`;
+            return `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أحرق خصمه! (${dmg} ضرر + حرق)`;
         }
         case 'Cleanse_Buff_Shield': {
             attacker.effects.poison = 0; attacker.effects.poison_turns = 0;
@@ -297,7 +282,7 @@ function applySkillEffect(battleState, attackerId, skill) {
             attacker.effects.buff = 0.2; attacker.effects.buff_turns = 2;
             attacker.effects.shield_source = skill.id; 
             attacker.effects.shield_cd_duration = cooldownDuration;
-            return `⚔️ **${getSafeName(attacker)}** طهر نفسه واكتسب درعاً وقوة!`;
+            return `⚔️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه واكتسب درعاً وقوة!`;
         }
         case 'Scale_MissingHP_Heal': {
             const missingHpPercent = (attacker.maxHp - attacker.hp) / attacker.maxHp;
@@ -306,34 +291,36 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.hp -= dmg;
             const healVal = Math.floor(attacker.maxHp * 0.15);
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + healVal);
-            return `⚖️ **${getSafeName(attacker)}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
+            return `⚖️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
         }
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
             attacker.hp -= selfDmg;
             const dmg = Math.floor(baseAtk * 2.0);
             defender.hp -= dmg;
-            return `👹 **${getSafeName(attacker)}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
+            return `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
         }
         case 'Stun_Vulnerable': {
             const dmg = Math.floor(baseAtk * 1.1);
             defender.hp -= dmg;
             defender.effects.stun = true; defender.effects.stun_turns = 1;
             defender.effects.weaken = 0.5; defender.effects.weaken_turns = 2;
-            return `🍃 **${getSafeName(attacker)}** شل حركة الخصم وجعله هشاً!`;
+            return `🍃 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** شل حركة الخصم وجعله هشاً!`;
         }
         case 'Confusion': {
             const dmg = Math.floor(baseAtk * 1.2);
             defender.hp -= dmg;
             defender.effects.confusion = true; defender.effects.confusion_turns = 2;
-            return `😵 **${getSafeName(attacker)}** أربك خصمه بلعنة الجنون!`;
+            return `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
         }
         case 'Lifesteal_Overheal': {
             const dmg = Math.floor(baseAtk * 1.45); 
             defender.hp -= dmg;
+
             const bleedDmg = 100 + (skillLevel * 50);
-            defender.effects.burn = bleedDmg;
+            defender.effects.burn = bleedDmg; 
             defender.effects.burn_turns = 2;
+
             const healVal = Math.floor(dmg * 0.5);
             const missingHp = attacker.maxHp - attacker.hp;
             if (healVal > missingHp) {
@@ -342,12 +329,12 @@ function applySkillEffect(battleState, attackerId, skill) {
                 attacker.effects.shield += shieldAdd;
                 attacker.effects.shield_source = skill.id;
                 attacker.effects.shield_cd_duration = cooldownDuration;
-                return `🍷 **${getSafeName(attacker)}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع!`;
+                return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه مسبباً نزيفاً وحول الفائض لدرع!`;
             }
             attacker.hp += healVal;
             battleState.skillCooldowns[attackerId][skill.id] = cooldownDuration;
             attacker.effects.shield_source = null;
-            return `🍷 **${getSafeName(attacker)}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
+            return `🍷 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** امتص ${healVal} HP وسبب نزيفاً للخصم!`;
         }
         case 'Chaos_RNG': {
             const dmg = Math.floor(baseAtk * 1.2);
@@ -358,30 +345,30 @@ function applySkillEffect(battleState, attackerId, skill) {
             else if (randomEffect < 0.50) { defender.effects.weaken = 0.3; defender.effects.weaken_turns = 2; effectMsg = "إضعاف"; }
             else if (randomEffect < 0.75) { defender.effects.confusion = true; defender.effects.confusion_turns = 2; effectMsg = "ارتباك"; }
             else { defender.effects.poison = Math.floor(baseAtk * 0.15); defender.effects.poison_turns = 3; effectMsg = "سم"; }
-            return `🌀 **${getSafeName(attacker)}** سبب فوضى (${effectMsg})!`;
+            return `🌀 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سبب فوضى (${effectMsg})!`;
         }
         case 'Dmg_Evasion': {
             const dmg = Math.floor(baseAtk * 1.3);
             defender.hp -= dmg;
             attacker.effects.evasion = 1; attacker.effects.evasion_turns = 1;
-            return `👻 **${getSafeName(attacker)}** ضرب واختفى (مراوغة تامة)!`;
+            return `👻 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضرب واختفى (مراوغة تامة)!`;
         }
         case 'Reflect_Tank': {
             attacker.effects.shield += Math.floor(attacker.maxHp * 0.2);
             attacker.effects.rebound_active = 0.4; attacker.effects.rebound_turns = 2;
             attacker.effects.shield_source = skill.id;
             attacker.effects.shield_cd_duration = cooldownDuration;
-            return `🔨 **${getSafeName(attacker)}** تحصن بالجبل (دفاع وعكس ضرر)!`;
+            return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
         case 'Execute_Heal': {
             const dmg = Math.floor(baseAtk * 1.6);
             if (defender.hp - dmg <= 0) {
                 defender.hp = 0;
                 attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.floor(attacker.maxHp * 0.25));
-                return `🥩 **${getSafeName(attacker)}** افترس خصمه واستعاد صحته!`;
+                return `🥩 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** افترس خصمه واستعاد صحته!`;
             }
             defender.hp -= dmg;
-            return `🧟 **${getSafeName(attacker)}** نهش خصمه بضرر وحشي!`;
+            return `🧟 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** نهش خصمه بضرر وحشي!`;
         }
         default:
             switch (skill.id) {
@@ -389,27 +376,27 @@ function applySkillEffect(battleState, attackerId, skill) {
                     attacker.effects.shield += Math.floor(attacker.maxHp * (effectValue / 100)); 
                     attacker.effects.shield_source = skill.id;
                     attacker.effects.shield_cd_duration = cooldownDuration;
-                    return `🛡️ **${getSafeName(attacker)}** اكتسب درعاً!`;
-                case 'skill_buffing': attacker.effects.buff = effectValue / 100; attacker.effects.buff_turns = 3; return `💪 **${getSafeName(attacker)}** رفع قوته!`;
-                case 'skill_rebound': attacker.effects.rebound_active = effectValue / 100; attacker.effects.rebound_turns = 3; return `🔄 **${getSafeName(attacker)}** جهز الانعكاس!`;
-                case 'skill_healing': const heal = Math.floor(attacker.maxHp * (effectValue / 100)); attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal); return `💖 **${getSafeName(attacker)}** استعاد ${heal} HP!`;
-                case 'skill_poison': defender.effects.poison = Math.floor(baseAtk * (effectValue / 100)); defender.effects.poison_turns = 3; return `☠️ **${getSafeName(attacker)}** سمم خصمه!`;
-                case 'skill_weaken': defender.effects.weaken = effectValue / 100; defender.effects.weaken_turns = 3; return `📉 **${getSafeName(attacker)}** أضعف خصمه!`;
-                case 'skill_dispel': defender.effects = { shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, rebound_active: 0, rebound_turns: 0, penetrate: 0, burn: 0, burn_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 }; return `💨 **${getSafeName(attacker)}** بدد كل سحر الخصم!`;
+                    return `🛡️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** اكتسب درعاً!`;
+                case 'skill_buffing': attacker.effects.buff = effectValue / 100; attacker.effects.buff_turns = 3; return `💪 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** رفع قوته!`;
+                case 'skill_rebound': attacker.effects.rebound_active = effectValue / 100; attacker.effects.rebound_turns = 3; return `🔄 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** جهز الانعكاس!`;
+                case 'skill_healing': const heal = Math.floor(attacker.maxHp * (effectValue / 100)); attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal); return `💖 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استعاد ${heal} HP!`;
+                case 'skill_poison': defender.effects.poison = Math.floor(baseAtk * (effectValue / 100)); defender.effects.poison_turns = 3; return `☠️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سمم خصمه!`;
+                case 'skill_weaken': defender.effects.weaken = effectValue / 100; defender.effects.weaken_turns = 3; return `📉 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أضعف خصمه!`;
+                case 'skill_dispel': defender.effects = { shield: 0, buff: 0, buff_turns: 0, weaken: 0, weaken_turns: 0, poison: 0, poison_turns: 0, rebound_active: 0, rebound_turns: 0, penetrate: 0, burn: 0, burn_turns: 0, stun: false, stun_turns: 0, confusion: false, confusion_turns: 0, evasion: 0, evasion_turns: 0, blind: 0, blind_turns: 0 }; return `💨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** بدد كل سحر الخصم!`;
                 case 'skill_cleanse': 
                     attacker.effects.poison = 0; attacker.effects.poison_turns = 0; attacker.effects.burn = 0; attacker.effects.burn_turns = 0;
                     attacker.effects.weaken = 0; attacker.effects.weaken_turns = 0; attacker.effects.stun = false; attacker.effects.stun_turns = 0;
                     attacker.effects.confusion = false; attacker.effects.confusion_turns = 0; attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
-                    return `✨ **${getSafeName(attacker)}** طهر نفسه من اللعنات!`;
-                default: const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1); defender.hp -= d; return `💥 **${getSafeName(attacker)}** استخدم ${skill.name} وسبب ${d} ضرر!`;
+                    return `✨ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** طهر نفسه من اللعنات!`;
+                default: const d = calculateDamage(attacker, defender, skill.stat_type === '%' ? 1.5 : 1); defender.hp -= d; return `💥 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** استخدم ${skill.name} وسبب ${d} ضرر!`;
             }
     }
 }
 
 function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0, disableAll = false) {
-    const attackerId = Array.from(battleState.players.keys()).find(id => id !== "guard"); // التحديث يظهر اللاعب دائماً كمهاجم في الـ UI
+    const [attackerId, defenderId] = battleState.turn;
     const attacker = battleState.players.get(attackerId);
-    const defender = battleState.players.get("guard");
+    const defender = battleState.players.get(defenderId);
       
     const embed = new EmbedBuilder()
         .setTitle('⚔️ مبارزة الموت: ضد فارس الإمبراطور')
@@ -418,21 +405,21 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 
     embed.addFields(
         { 
-            name: `${getSafeName(attacker)}`, 
+            name: `${attacker.isMonster ? attacker.name : cleanDisplayName(attacker.member.user.displayName)}`, 
             value: `HP: ${buildHpBar(attacker.hp, attacker.maxHp)}\nتأثيرات: ${buildEffectsString(attacker.effects)}`, 
             inline: true 
         },
         { 
-            name: `${getSafeName(defender)}`, 
+            name: `${defender.isMonster ? defender.name : cleanDisplayName(defender.member.user.displayName)}`, 
             value: `HP: ${buildHpBar(defender.hp, defender.maxHp)}\nتأثيرات: ${buildEffectsString(defender.effects)}`, 
             inline: true 
         }
     );
 
-    embed.setDescription(`**قـُبـض عليـك! قـاتـل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!`);
+    embed.setDescription(`**قـُبـض عليـك قاتل لتنجـو!**\nفارس الإمبراطور يغلق الابواب!\nالدور الآن لـ: **${attacker.isMonster ? attacker.name : attacker.member}**`);
 
     if (battleState.log.length > 0) {
-        embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-4).join('\n'), inline: false });
+        embed.addFields({ name: "📝 سجل المعركة:", value: battleState.log.slice(-3).join('\n'), inline: false });
     }
 
     const componentsToSend = [];
@@ -486,109 +473,15 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: componentsToSend };
 }
 
-// 🔥 الهجوم اللحظي للفارس (لا يوجد تأخير ولا انتظار) 🔥
-function processGuardTurn(battleState) {
-    const guard = battleState.players.get("guard");
-    const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
-    const player = battleState.players.get(playerMemberId);
-
-    if (!player || !player.member) return; // اللاعب غير موجود
-
-    // تقليل وقت انتظار مهارات اللاعب
-    const playerCooldowns = battleState.skillCooldowns[playerMemberId];
-    if (playerCooldowns) {
-        for (const skillId in playerCooldowns) {
-            if (playerCooldowns[skillId] > 0) playerCooldowns[skillId]--;
-        }
-    }
-
-    // تطبيق تأثيرات السم والنار للفارس
-    const guardEffects = applyPersistentEffects(battleState, "guard");
-    if (guardEffects.logEntries.length > 0) battleState.log.push(...guardEffects.logEntries);
-
-    // تطبيق تأثيرات السم والنار للاعب
-    const playerEffects = applyPersistentEffects(battleState, playerMemberId);
-    if (playerEffects.logEntries.length > 0) battleState.log.push(...playerEffects.logEntries);
-
-    if (guard.hp <= 0 || player.hp <= 0) return; // تم الموت، الإكمال في الكوليكتر
-
-    if (guardEffects.skipTurn) {
-        battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
-        return;
-    }
-
-    let actionLog = "";
-      
-    if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
-        const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
-        player.hp -= drainDmg;
-        const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
-        guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
-        guard.effects.blood_liturgy_used++; 
-        actionLog = `🩸 **فارس الإمبراطور** استخدم "قداس الدم"! امتص **${drainDmg}** HP وشفى نفسه!`;
-        const breakMsg = checkShieldBreak(battleState, playerMemberId);
-        if (breakMsg) actionLog += `\n${breakMsg}`;
-    }
-    else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
-        const healAmount = Math.floor(guard.maxHp * 0.25); 
-        guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
-        const shieldAmt = Math.floor(guard.maxHp * 0.10);
-        guard.effects.shield += shieldAmt;
-        guard.effects.potions_used++; 
-        actionLog = `🧪 **فارس الإمبراطور** شرب جرعة علاج! (+${healAmount} HP ودرع)`;
-    }
-    else if (player.hp < player.maxHp * 0.20) {
-        const dmg = calculateDamage(guard, player, 1.5);
-        player.hp -= dmg;
-        actionLog = `💀 **فارس الإمبراطور** استخدم "إعدام"! سبب **${dmg}** ضرر!`;
-        const breakMsg = checkShieldBreak(battleState, playerMemberId);
-        if (breakMsg) actionLog += `\n${breakMsg}`;
-    }
-    else if (player.effects.shield > 0) {
-        const dmg = calculateDamage(guard, player, 1.3); 
-        player.hp -= dmg;
-        actionLog = `🔨 **فارس الإمبراطور** حطم درعك! سبب **${dmg}** ضرر!`;
-        const breakMsg = checkShieldBreak(battleState, playerMemberId);
-        if (breakMsg) actionLog += `\n${breakMsg}`;
-    }
-    else if (player.effects.buff > 0 && Math.random() < 0.20) {
-        guard.effects.rebound_active = 0.5; 
-        guard.effects.rebound_turns = 1;
-        actionLog = `🛡️ **فارس الإمبراطور** اتخذ وضعية "انعكاس الضرر"!`;
-    }
-    else {
-        let multiplier = 1.0;
-        if (player.effects.buff > 0) multiplier = 1.1;
-        const dmg = calculateDamage(guard, player, multiplier);
-        player.hp -= dmg;
-        const breakMsg = checkShieldBreak(battleState, playerMemberId);
-        if (breakMsg) actionLog += `${breakMsg}\n`;
-
-        if (Math.random() < 0.2) {
-            player.effects.burn = Math.floor(guard.weapon.currentDamage * 0.1);
-            player.effects.burn_turns = 2;
-            actionLog += `⚔️ **فارس الإمبراطور** جرحك وسبب نزيفاً! (**${dmg}** ضرر)`;
-        } else {
-            actionLog += `⚔️ **فارس الإمبراطور** هاجمك وسبب **${dmg}** ضرر!`;
-        }
-    }
-
-    battleState.log.push(actionLog);
-}
-
 function setupBattleCollector(battleState) {
-    const robberId = Array.from(battleState.players.keys()).find(id => id !== "guard"); 
+    const robberId = battleState.turn[0]; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
      
-    if (battleState.collector) battleState.collector.stop();
-
     const collector = battleState.message.createMessageComponentCollector({ 
         filter, 
         componentType: ComponentType.Button, 
         idle: 300000 
     });
-
-    battleState.collector = collector;
 
     collector.on('collect', async i => {
         if (battleState.processingTurn) return; 
@@ -596,35 +489,28 @@ function setupBattleCollector(battleState) {
 
         try {
             await i.deferUpdate(); 
+        } catch (e) {
+            console.error("Defer Error:", e);
+        }
 
+        try {
             const customId = i.customId;
             const player = battleState.players.get(i.user.id);
             const guard = battleState.players.get("guard");
 
             if (customId === 'knight_attack') {
-                // 1. هجوم اللاعب
                 const dmg = calculateDamage(player, guard);
                 guard.hp -= dmg;
-                battleState.log.push(`⚔️ **${getSafeName(player)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
+                battleState.log.push(`⚔️ **${cleanDisplayName(player.member.user.displayName)}** هاجم الفارس وسبب **${dmg}** ضرر!`);
                   
                 const breakMsg = checkShieldBreak(battleState, "guard");
                 if (breakMsg) battleState.log.push(breakMsg);
 
-                if (guard.hp <= 0) {
-                    await i.editReply(buildBattleEmbed(battleState, false, 0, true)); // إقفال الأزرار
-                    return await handleGuardBattleEnd(battleState, player.member.id, "win");
-                }
-
-                // 2. هجوم الفارس اللحظي!
-                processGuardTurn(battleState);
-
-                if (player.hp <= 0) {
-                    await i.editReply(buildBattleEmbed(battleState, false, 0, true)); // إقفال الأزرار
-                    return await handleGuardBattleEnd(battleState, "guard", "lose");
-                }
+                battleState.turn = ["guard", player.member.id];
                 
-                // 3. تحديث الرسالة مرة واحدة فقط لكلا الهجومين
-                await i.editReply(buildBattleEmbed(battleState, false, 0, false));
+                await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                
+                await processGuardTurn(battleState);
             } 
             else if (customId === 'knight_skill_menu') await i.editReply(buildBattleEmbed(battleState, true, 0));
             else if (customId === 'knight_skill_back') await i.editReply(buildBattleEmbed(battleState, false));
@@ -636,35 +522,25 @@ function setupBattleCollector(battleState) {
                 const skillId = customId.replace('knight_skill_use_', '');
                 const skillData = player.skills[skillId];
                 if (skillData) {
-                    // 1. مهارة اللاعب
                     const logMsg = applySkillEffect(battleState, i.user.id, skillData);
                     battleState.log.push(logMsg);
                       
                     const breakMsg = checkShieldBreak(battleState, "guard");
                     if (breakMsg) battleState.log.push(breakMsg);
 
-                    if (guard.hp <= 0) {
-                        await i.editReply(buildBattleEmbed(battleState, false, 0, true));
-                        return await handleGuardBattleEnd(battleState, i.user.id, "win");
-                    }
-
-                    // 2. هجوم الفارس اللحظي!
-                    processGuardTurn(battleState);
-
-                    if (player.hp <= 0) {
-                        await i.editReply(buildBattleEmbed(battleState, false, 0, true));
-                        return await handleGuardBattleEnd(battleState, "guard", "lose");
-                    }
-
-                    // 3. تحديث الرسالة مرة واحدة 
-                    await i.editReply(buildBattleEmbed(battleState, false, 0, false));
+                    battleState.turn = ["guard", player.member.id];
+                    await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                    await processGuardTurn(battleState);
                 }
             }
         } catch (error) {
             console.error("Collector Logic Error:", error);
+            battleState.processingTurn = false;
             await i.editReply(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
         } finally {
-            battleState.processingTurn = false;
+            if (battleState.turn[0] !== "guard") {
+                battleState.processingTurn = false;
+            }
         }
     });
 
@@ -673,6 +549,116 @@ function setupBattleCollector(battleState) {
             handleGuardBattleEnd(battleState, "guard", "lose");
         }
     });
+}
+
+async function processGuardTurn(battleState) {
+    try {
+        await new Promise(r => setTimeout(r, 1000));
+
+        const guard = battleState.players.get("guard");
+        const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
+        const player = battleState.players.get(playerMemberId);
+
+        const playerCooldowns = battleState.skillCooldowns[playerMemberId];
+        if (playerCooldowns) {
+            for (const skillId in playerCooldowns) {
+                if (playerCooldowns[skillId] > 0) playerCooldowns[skillId]--;
+            }
+        }
+
+        const { logEntries, skipTurn } = applyPersistentEffects(battleState, "guard");
+        if (logEntries.length > 0) battleState.log.push(...logEntries);
+
+        if (guard.hp <= 0) {
+            return await handleGuardBattleEnd(battleState, playerMemberId, "win");
+        }
+
+        if (skipTurn) {
+            battleState.log.push(`💤 **فارس الإمبراطور** مشلول ولا يستطيع الحركة!`);
+            battleState.turn = [playerMemberId, "guard"];
+            await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
+            return;
+        }
+
+        let actionLog = "";
+          
+        if (guard.hp < guard.maxHp * 0.30 && guard.effects.blood_liturgy_used < 5) {
+            const drainDmg = Math.floor(guard.weapon.currentDamage * 1.5); 
+            player.hp -= drainDmg;
+            const healAmt = Math.max(Math.floor(drainDmg * 0.8), Math.floor(guard.maxHp * 0.15));
+            guard.hp = Math.min(guard.maxHp, guard.hp + healAmt);
+            guard.effects.blood_liturgy_used++; 
+            actionLog = `🩸 **فارس الإمبراطور** يلفظ أنفاسه ويستخدم "قداس الدم"! امتص **${drainDmg}** من صحتك وشفى نفسه (+${healAmt})! (${guard.effects.blood_liturgy_used}/5)`;
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `\n${breakMsg}`;
+        }
+        else if (guard.hp < guard.maxHp * 0.50 && guard.effects.potions_used < 5) {
+            const healAmount = Math.floor(guard.maxHp * 0.25); 
+            guard.hp = Math.min(guard.maxHp, guard.hp + healAmount);
+            const shieldAmt = Math.floor(guard.maxHp * 0.10);
+            guard.effects.shield += shieldAmt;
+            guard.effects.potions_used++; 
+            actionLog = `🧪 **فارس الإمبراطور** شرب جرعة الطوارئ واستعاد **${healAmount}** HP واكتسب درعاً! (${guard.effects.potions_used}/5)`;
+        }
+        else if (player.hp < player.maxHp * 0.20) {
+            const dmg = calculateDamage(guard, player, 1.5);
+            player.hp -= dmg;
+            actionLog = `💀 **فارس الإمبراطور** رأى ضعفك واستخدم "إعدام"! سبب **${dmg}** ضرر!`;
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `\n${breakMsg}`;
+        }
+        else if (player.effects.shield > 0) {
+            const dmg = calculateDamage(guard, player, 1.3); 
+            player.hp -= dmg;
+            actionLog = `🔨 **فارس الإمبراطور** سدد ضربة ثقيلة لتحطيم درعك! سبب **${dmg}** ضرر!`;
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `\n${breakMsg}`;
+        }
+        else if (player.effects.buff > 0 && Math.random() < 0.20) {
+            guard.effects.rebound_active = 0.5; 
+            guard.effects.rebound_turns = 1;
+            actionLog = `🛡️ **فارس الإمبراطور** لاحظ قوتك واتخذ وضعية "انعكاس الضرر"! (احذر من الهجوم)`;
+        }
+        else {
+            let multiplier = 1.0;
+            if (player.effects.buff > 0) multiplier = 1.1;
+            const dmg = calculateDamage(guard, player, multiplier);
+            player.hp -= dmg;
+            const breakMsg = checkShieldBreak(battleState, playerMemberId);
+            if (breakMsg) actionLog += `${breakMsg}\n`;
+
+            if (Math.random() < 0.2) {
+                player.effects.burn = Math.floor(guard.weapon.currentDamage * 0.1);
+                player.effects.burn_turns = 2;
+                actionLog += `⚔️ **فارس الإمبراطور** جرحك وسـبب نزيفاً! (**${dmg}** ضرر)`;
+            } else {
+                actionLog += `⚔️ **فارس الإمبراطور** هاجمك وسبب **${dmg}** ضرر!`;
+            }
+        }
+
+        battleState.log.push(actionLog);
+
+        if (player.hp <= 0) {
+            return await handleGuardBattleEnd(battleState, "guard", "lose");
+        }
+
+        battleState.turn = [playerMemberId, "guard"];
+        
+        try {
+            await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false));
+        } catch (editError) {
+            console.log("[Anti-Freeze] Message edit failed, sending fresh message...");
+            const newMsg = await battleState.message.channel.send(buildBattleEmbed(battleState, false, 0, false));
+            battleState.message = newMsg; 
+            setupBattleCollector(battleState); 
+        }
+
+    } catch (error) {
+        console.error("AI Logic Error:", error);
+        await battleState.message.edit(buildBattleEmbed(battleState, false, 0, false)).catch(()=>{});
+    } finally {
+        battleState.processingTurn = false;
+    }
 }
 
 async function startGuardBattle(interaction, client, sql, robberMember, amountToSteal) {
@@ -689,7 +675,10 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 
         sql.prepare("CREATE TABLE IF NOT EXISTS knight_history (id TEXT PRIMARY KEY, count INTEGER, lastDate INTEGER)").run();
 
-        const today = new Date().setHours(0, 0, 0, 0); 
+        // إحضار التاريخ بناءً على توقيت السعودية وتخزينه كرقم YYYYMMDD
+        const nowKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+        const todayInt = parseInt(nowKSA.toLocaleDateString('en-CA').replace(/-/g, ''));
+        
         const userId = robberMember.id;
         const guildId = interaction.guild.id;
         const historyId = `${userId}-${guildId}`;
@@ -698,19 +687,18 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         let encounterCount = 1; 
 
         if (history) {
-            if (history.lastDate === today) {
+            if (history.lastDate === todayInt) {
                 encounterCount = history.count + 1; 
                 sql.prepare("UPDATE knight_history SET count = ? WHERE id = ?").run(encounterCount, historyId);
             } else {
                 encounterCount = 1;
-                sql.prepare("UPDATE knight_history SET count = ?, lastDate = ? WHERE id = ?").run(1, today, historyId);
+                sql.prepare("UPDATE knight_history SET count = ?, lastDate = ? WHERE id = ?").run(1, todayInt, historyId);
             }
         } else {
-            sql.prepare("INSERT INTO knight_history (id, count, lastDate) VALUES (?, ?, ?)").run(historyId, 1, today);
+            sql.prepare("INSERT INTO knight_history (id, count, lastDate) VALUES (?, ?, ?)").run(historyId, 1, todayInt);
         }
 
         const multiplier = encounterCount; 
-        console.log(`[Knight Battle] Encounter #${multiplier} for ${robberMember.displayName}`);
 
         const guardMaxHp = Math.floor(pMaxHp * 1.8 * multiplier); 
         
@@ -754,8 +742,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             players: new Map([
                 [robberMember.id, { isMonster: false, member: robberMember, hp: pMaxHp, maxHp: pMaxHp, weapon: robberWeapon, skills: robberSkills, effects: defEffects() }],
                 ["guard", { isMonster: true, name: `فـارس الإمبراطور ${multiplier > 1 ? `(x${multiplier})` : ''}`, hp: guardMaxHp, maxHp: guardMaxHp, weapon: guardWeapon, skills: {}, effects: guardEffects }]
-            ]),
-            collector: null 
+            ])
         };
 
         activePveBattles.set(interaction.channel.id, battleState);
@@ -784,10 +771,9 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     if (battleState.isEnded) return;
     battleState.isEnded = true;
 
-    if (battleState.collector) battleState.collector.stop();
-
     try {
         const client = battleState.message.client;
+        const sql = client.sql;
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
         
@@ -800,6 +786,8 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         const embed = new EmbedBuilder();
         activePveBattles.delete(battleState.message.channel.id);
 
+        await battleState.message.edit({ components: [] }).catch(() => {});
+
         if (resultType === "win") {
             playerData.mora += amount;
             setScore.run(playerData);
@@ -811,6 +799,49 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                  .setColor(randomColor) 
                  .setDescription(`تمكنت من هزيمة فارس الإمبراطور والفرار بالغنيمة!\n\n💰 **المبلغ المسروق:** ${amount.toLocaleString()} ${EMOJI_MORA}`)
                  .setImage(randomWinImage); 
+
+            // 🔥 ==========================================
+            // 🔥 نظام إعطاء وسام "قاهر الفرسان" (4 انتصارات)
+            // 🔥 ==========================================
+            try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN knights_defeated INTEGER DEFAULT 0").run(); } catch(e) {}
+            try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN knight_badge_given INTEGER DEFAULT 0").run(); } catch(e) {}
+
+            const todayStr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" })).toLocaleDateString('en-CA');
+            const dailyID = `${player.member.id}-${battleState.message.guild.id}-${todayStr}`;
+            
+            sql.prepare(`
+                INSERT INTO user_daily_stats (id, userID, guildID, date, knights_defeated) 
+                VALUES (?, ?, ?, ?, 1) 
+                ON CONFLICT(id) DO UPDATE SET knights_defeated = knights_defeated + 1
+            `).run(dailyID, player.member.id, battleState.message.guild.id, todayStr);
+
+            const dailyData = sql.prepare("SELECT knights_defeated, knight_badge_given FROM user_daily_stats WHERE id = ?").get(dailyID);
+
+            // تم التحقق: الهزيمة 4 مرات في اليوم يحصل على الوسام
+            if (dailyData && dailyData.knights_defeated >= 4 && dailyData.knight_badge_given === 0) {
+                sql.prepare("UPDATE user_daily_stats SET knight_badge_given = 1 WHERE id = ?").run(dailyID);
+                
+                const settings = sql.prepare("SELECT guildAnnounceChannelID, roleKnightSlayer FROM settings WHERE guild = ?").get(battleState.message.guild.id);
+                
+                if (settings && settings.roleKnightSlayer) {
+                    player.member.roles.add(settings.roleKnightSlayer).catch(()=>{});
+                }
+
+                if (settings && settings.guildAnnounceChannelID) {
+                    const announceChannel = battleState.message.guild.channels.cache.get(settings.guildAnnounceChannelID);
+                    if (announceChannel) {
+                        const badgeEmbed = new EmbedBuilder()
+                            .setTitle('🛡️ انـجـاز يـومـي: قـاهـر الـفـرسـان!')
+                            .setDescription(`🎉 أثبت <@${player.member.id}> قوته الساحقة اليوم!\n\nلقد تمكن من إسقاط **فارس الإمبراطور 4 مرات** في يوم واحد واستحق وسام الشرف بجدارة!`)
+                            .setColor('#C0C0C0')
+                            .setThumbnail(player.member.user.displayAvatarURL());
+                        announceChannel.send({ content: `<@${player.member.id}>`, embeds: [badgeEmbed] }).catch(()=>{});
+                    }
+                }
+
+                embed.addFields({ name: '🎖️ إنجاز يومي!', value: 'لقد حصلت على وسام **🛡️ قاهر الفرسان** لليوم!' });
+            }
+
         } else {
             if (playerData.mora >= amount) playerData.mora -= amount;
             else {
