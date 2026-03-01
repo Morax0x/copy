@@ -144,7 +144,7 @@
       "goal": 1,
       "reward": { "mora": 2000, "xp": 500 },
       "emoji": "🗳️"
-    },
+    }
   ],
   "weekly": [
     {
@@ -263,7 +263,7 @@
       "goal": 8,
       "reward": { "mora": 3500, "xp": 999 },
       "emoji": "🗳️"
-    },
+    }
   ],
   "achievements": [
     {
