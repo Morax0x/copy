@@ -22,7 +22,6 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         color = `#${randomHex}`; 
         randomImage = getRandomImage(WIN_IMAGES); 
     } 
-    // 🔥🔥 دمج حالة المخيم مع الانسحاب 🔥🔥
     else if (status === 'retreat' || status === 'camp') { 
         title = "❖ انـسـحـاب تـكـتيـكـي !"; 
         color = "#FFFF00"; 
@@ -35,9 +34,24 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
-    
     let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
     
+    // 🌟 خريطة السمعة حسب طلبك (لكل طابق محدد)
+    const repMilestones = {
+        20: 1, 30: 1, 35: 1, 40: 1, 45: 1, 50: 1,
+        55: 2, 60: 2, 65: 3, 70: 3, 75: 4, 
+        80: 5, 85: 5, 90: 5, 95: 5, 100: 5
+    };
+
+    // 💡 محاولة معرفة "طابق البداية" للرحلة الحالية عشان الخيمة
+    let sessionStartFloor = 1;
+    if (activeDungeonRequests && activeDungeonRequests.has(hostId)) {
+        const sessionData = activeDungeonRequests.get(hostId);
+        if (sessionData && sessionData.startFloor) {
+            sessionStartFloor = sessionData.startFloor;
+        }
+    }
+
     let lootString = "";
     allParticipants.forEach(p => {
         let finalMora = 0;
@@ -62,6 +76,33 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             
             sql.prepare("UPDATE levels SET xp = xp + ?, mora = mora + ? WHERE user = ? AND guild = ?").run(finalXp, finalMora, p.id, guildId);
         }
+
+        // ==========================================
+        // 🌟 حساب السمعة التراكمي للرحلة الحالية فقط
+        // ==========================================
+        let effectiveEndFloor = floor;
+        if (p.isDead && p.deathFloor) effectiveEndFloor = p.deathFloor - 1; 
+        else if (p.retreatFloor) effectiveEndFloor = p.retreatFloor; 
+        else if (status === 'lose') effectiveEndFloor = floor - 1; // لو خسروا الطابق الحالي، ما ينحسب لهم
+
+        // تحديد طابق البداية الفعلي للاعب
+        let playerStartFloor = p.startFloor || sessionStartFloor;
+        if (playerStartFloor > effectiveEndFloor) playerStartFloor = effectiveEndFloor;
+
+        let repReward = 0;
+        // المرور على الطوابق التي اجتازها اللاعب "في هذه الرحلة فقط"
+        for (let f = playerStartFloor; f <= effectiveEndFloor; f++) {
+            if (repMilestones[f]) {
+                repReward += repMilestones[f];
+            }
+        }
+
+        // إضافة السمعة للداتابيس
+        if (repReward > 0) {
+            try {
+                sql.prepare("INSERT INTO user_reputation (userID, guildID, rep_points) VALUES (?, ?, ?) ON CONFLICT(userID, guildID) DO UPDATE SET rep_points = CAST(rep_points AS INTEGER) + ?").run(p.id, guildId, repReward, repReward);
+            } catch (err) {}
+        }
         
         let statusEmoji = "";
         if (p.isDead) { 
@@ -75,30 +116,28 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             statusEmoji = "✅";
         }
 
-        lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP\n`;
+        // إظهار السمعة في التقرير النهائي
+        let repString = repReward > 0 ? ` | 🌟 سمعة: **${repReward}**` : "";
+        lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP${repString}\n`;
     });
 
     let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
 
-    // 🔥🔥 إضافة ملاحظة الحفظ فقط إذا كان مخيماً 🔥🔥
     if (status === 'camp') {
         description += `\n**🏕️ تـم نصـب خيمـة وحفـظ التقـدم عنـد الطابـق ${floor + 1}**`;
     }
 
     if (floor >= 10 && mvpPlayer && status !== 'camp') {
         let extraRewardText = "";
-        
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
             sql.prepare("UPDATE levels SET mora = mora + 500 WHERE user = ? AND guild = ?").run(mvpPlayer.id, guildId);
         }
-
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
 
     if (floor >= 10 && status === 'lose') {
         description += `\n\n**💀 لعنـة الهزيمـة:**\nأصابت اللعنة جميع المشاركين! (-15% مورا واكس بي لـ 15د) ${EMOJI_NERF}`;
-        
         const debuffDuration = 15 * 60 * 1000;
         const expiresAt = Date.now() + debuffDuration;
         allParticipants.forEach(p => {
