@@ -38,7 +38,7 @@ module.exports = {
             client = interaction.client;
             user = interaction.user;
             targetMember = interaction.options.getMember('المستخدم') || interaction.member;
-            await interaction.deferReply();
+            await interaction.deferReply().catch(() => {});
         } else {
             message = interactionOrMessage;
             guild = message.guild;
@@ -48,8 +48,8 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) return interaction.editReply(payload);
-            return message.channel.send(payload);
+            if (isSlash) return interaction.editReply(payload).catch(() => {});
+            return message.channel.send(payload).catch(() => {});
         };
 
         const sql = client.sql;
@@ -97,8 +97,8 @@ module.exports = {
                 .setColor(Colors.Red);
             
             const msgPayload = { embeds: [deathEmbed], flags: [MessageFlags.Ephemeral] };
-            if (isSlash) await interaction.followUp(msgPayload);
-            else message.reply(msgPayload);
+            if (isSlash) await interaction.followUp(msgPayload).catch(() => {});
+            else message.reply(msgPayload).catch(() => {});
         }
 
         const renderFarmAnimals = (page = 0) => {
@@ -274,7 +274,7 @@ module.exports = {
         const collector = msg.createMessageComponentCollector({ 
             filter: i => {
                 if (i.user.id === user.id) return true;
-                i.reply({ content: `🚫 هذا الأمر خاص بـ ${user}`, flags: [MessageFlags.Ephemeral] });
+                i.reply({ content: `🚫 هذا الأمر خاص بـ ${user}`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                 return false;
             }, 
             time: 300000 
@@ -283,7 +283,7 @@ module.exports = {
         collector.on('collect', async i => {
             try {
                 if (i.customId === 'btn_back_home') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(() => {});
                     currentView = 'land';
                     const landData = await renderLand(mockInteraction, client, sql);
                     
@@ -298,35 +298,35 @@ module.exports = {
                         components: [...(landData.components || []), navRow], 
                         files: landData.files,
                         attachments: [] 
-                    });
+                    }).catch(() => {});
                 }
                 else if (i.customId === 'open_animals_view') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(() => {});
                     currentView = 'animals';
                     currentPage = 0;
                     const data = renderFarmAnimals(0);
-                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' });
+                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' }).catch(() => {});
                 }
                 else if (i.customId === 'farm_prev') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(() => {});
                     currentPage--;
                     const data = renderFarmAnimals(currentPage);
-                    await i.editReply({ embeds: [data.embed], components: data.rows });
+                    await i.editReply({ embeds: [data.embed], components: data.rows }).catch(() => {});
                 } 
                 else if (i.customId === 'farm_next') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(() => {});
                     currentPage++;
                     const data = renderFarmAnimals(currentPage);
-                    await i.editReply({ embeds: [data.embed], components: data.rows });
+                    await i.editReply({ embeds: [data.embed], components: data.rows }).catch(() => {});
                 }
                 else if (i.customId === 'open_feed_store') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(() => {});
                     currentView = 'feed_store';
                     const data = renderFeedStore();
-                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' });
+                    await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' }).catch(() => {});
                 }
                 else if (i.customId === 'btn_feed_animal') {
-                    if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: [MessageFlags.Ephemeral] });
+                    if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
 
                     const userAnimalsRows = sql.prepare("SELECT animalID FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
                     const distinctAnimalIds = [...new Set(userAnimalsRows.map(r => r.animalID))];
@@ -338,11 +338,13 @@ module.exports = {
                         options.push({ label: `إطعام ${animal.name}`, description: `يتطلب ${feedItems.find(f=>f.id===animal.feed_id)?.name}`, value: animal.id, emoji: animal.emoji });
                     }
 
-                    if (options.length === 0) return await i.reply({ content: '❌ لا تملك حيوانات.', flags: [MessageFlags.Ephemeral] });
+                    if (options.length === 0) return await i.reply({ content: '❌ لا تملك حيوانات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
 
                     const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('menu_feed_animal').setPlaceholder('اختر الحيوان...').addOptions(options));
-                    const response = await i.reply({ content: '🥄 **الإطعام:**', components: [row], flags: [MessageFlags.Ephemeral], fetchReply: true });
+                    const response = await i.reply({ content: '🥄 **الإطعام:**', components: [row], flags: [MessageFlags.Ephemeral], fetchReply: true }).catch(() => {});
                     
+                    if (!response) return; // توقف هنا إذا لم تنجح الاستجابة
+
                     const subCollector = response.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 60000, max: 1 });
                     
                     subCollector.on('collect', async subI => {
@@ -353,7 +355,7 @@ module.exports = {
                             
                             const sample = sql.prepare("SELECT lastFedTimestamp FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT 1").get(userId, guildId, animalId);
                             if (sample && sample.lastFedTimestamp && (Date.now() - sample.lastFedTimestamp) < 12*3600*1000) {
-                                return subI.reply({ content: `✋ **${animal.name}** شبعان!\nيمكنك إطعامه مرة كل 12 ساعة.`, flags: [MessageFlags.Ephemeral] });
+                                return subI.reply({ content: `✋ **${animal.name}** شبعان!\nيمكنك إطعامه مرة كل 12 ساعة.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
 
                             const countRow = sql.prepare("SELECT SUM(quantity) as total FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, animalId);
@@ -361,17 +363,17 @@ module.exports = {
                             const invRow = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, feedId);
                             
                             if (!invRow || invRow.quantity < totalAnimals) {
-                                return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: [MessageFlags.Ephemeral] });
+                                return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
                             
                             sql.prepare("UPDATE user_inventory SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(totalAnimals, userId, guildId, feedId);
                             sql.prepare("UPDATE user_farm SET lastFedTimestamp = ? WHERE userID = ? AND guildID = ? AND animalID = ?").run(Date.now(), userId, guildId, animalId);
                             
-                            await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] });
+                            await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             
                             if (currentView === 'feed_store') {
                                 const data = renderFeedStore();
-                                await msg.edit({ embeds: [data.embed], components: data.rows, files: [], attachments: [] });
+                                await msg.edit({ embeds: [data.embed], components: data.rows, files: [], attachments: [] }).catch(() => {});
                             }
                         }
                     });
