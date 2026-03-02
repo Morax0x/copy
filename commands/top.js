@@ -1,3 +1,5 @@
+// commands/top.js
+
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const path = require('path');
 
@@ -270,5 +272,7 @@ module.exports = {
         });
 
         collector.on('end', () => msg.edit({ components: [] }).catch(() => {}));
-    }
+    },
+    // 🔥 هذا هو السطر اللي كان ناقص وحل المشكلة 🔥
+    fetchLeaderboardData
 };
