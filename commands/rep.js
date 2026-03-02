@@ -1,7 +1,9 @@
-const { AttachmentBuilder, MessageFlags } = require('discord.js');
+const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const { generateRepCard } = require('../generators/rep-card-generator.js');
 
 const OWNER_ID = "1145327691772481577";
+
+const getRandomColor = () => Math.floor(Math.random() * 16777215);
 
 function getRepRank(points) {
     if (points >= 1000) return { rank: 'SS', name: '👑 مغامـر رتبـة SS', color: '#FF00FF', next: 'الحد الأقصى' };
@@ -30,7 +32,7 @@ function getNextResetTime() {
 module.exports = {
     name: 'rep',
     description: 'منح نقطة سمعة لمغامر آخر',
-    usage: '-rep <@user>',
+    usage: 'rep <@user>',
     aliases: ['سمعة', 'reputation', 'سمعه', 'تزكية', 'تزكيه', 'شهادة'],
 
     async execute(message, args) {
@@ -39,25 +41,52 @@ module.exports = {
         const guildId = message.guild.id;
 
         const targetMember = message.mentions.members.first();
-        if (!targetMember) {
-            return message.reply("❌ **يجب عليك منشنة الشخص الذي تريد منحه السمعة!**\nمثال: `-rep @user`");
+        
+        if (!targetMember || targetMember.user.bot) {
+            const noMentionEmbed = new EmbedBuilder()
+                .setDescription('منشـن الشخص الذي تريد تزكيـتـه ..؟')
+                .setThumbnail('https://i.postimg.cc/02jPwF12/download.jpg')
+                .setColor(getRandomColor());
+            return message.reply({ embeds: [noMentionEmbed] });
         }
 
         const targetId = targetMember.id;
 
-        if (targetMember.user.bot) {
-            return message.reply("🤖 **لا يمكنك منح السمعة للبوتات!**");
-        }
-
         if (targetId === senderId) {
-            return message.reply("🚫 **لا يمكنك منح السمعة لنفسك!** ابحث عن شخص يستحقها.");
+            const selfEmbed = new EmbedBuilder()
+                .setDescription('حـاول مجـددًا ولـكن منشن شخـص آخـر .. لا يمكنـك الشهـادة لنفسـك <:FBI:1439666820016508929>!')
+                .setThumbnail('https://i.postimg.cc/qRnVwHM6/ayqwnt-(1).png')
+                .setColor(getRandomColor());
+            return message.reply({ embeds: [selfEmbed] });
         }
 
         const senderLevelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(senderId, guildId);
         const senderLevel = senderLevelData ? senderLevelData.level : 1;
 
         if (senderId !== OWNER_ID && senderLevel < 10) {
-            return message.reply(`🔒 **صوتك ليس مسموعاً في النقابة بعد!**\nيجب أن تصل إلى **المستوى 10** لكي تتمكن من منح نقاط السمعة للآخرين. (مستواك الحالي: ${senderLevel})`);
+            const lvlEmbed = new EmbedBuilder()
+                .setTitle('✥ لا تسـتوفـي شـروط التزكيـة ..')
+                .setDescription('✦ يجـب ان يـكـون مستـواك 10 عـلى الاقـل لتزكـي أحدهـم')
+                .setThumbnail('https://i.postimg.cc/mrLwL056/ayqwnt-(3).png')
+                .setColor(getRandomColor());
+            return message.reply({ embeds: [lvlEmbed] });
+        }
+
+        const dbDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+        
+        if (senderId !== OWNER_ID) {
+            const dailyStatId = `${senderId}-${guildId}-${dbDateStr}`;
+            const dailyStats = sql.prepare("SELECT messages FROM user_daily_stats WHERE id = ?").get(dailyStatId);
+            const todayMessages = dailyStats ? (parseInt(dailyStats.messages) || 0) : 0;
+
+            if (todayMessages < 20) {
+                const msgEmbed = new EmbedBuilder()
+                    .setTitle('✥ لا تسـتوفـي شـروط التزكيـة ..')
+                    .setDescription('✦ يجـب ان تكـون متفـاعـل بالدردشـة لهـذا اليوم')
+                    .setThumbnail('https://i.postimg.cc/mrLwL056/ayqwnt-(3).png')
+                    .setColor(getRandomColor());
+                return message.reply({ embeds: [msgEmbed] });
+            }
         }
 
         let senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
@@ -76,7 +105,12 @@ module.exports = {
         
         if (senderId !== OWNER_ID && senderRep.last_rep_given === todayDateStr) {
             const nextRepTime = getNextResetTime();
-            return message.reply(`⏳ **لقد استنفدت صوتك لهذا اليوم!**\nيـمكنـك منح شهـادتك مجـددًا: <t:${nextRepTime}:R>.`);
+            const cooldownEmbed = new EmbedBuilder()
+                .setTitle('✥ استفـدت صـوتـك لهـذا اليـوم .. ⏳')
+                .setDescription(`✦ يمـكنـك التـزكيـة مـجـددًا: <t:${nextRepTime}:R>`)
+                .setThumbnail('https://i.postimg.cc/66YzP12B/ayqwnt-(2).png')
+                .setColor(getRandomColor());
+            return message.reply({ embeds: [cooldownEmbed] });
         }
 
         const newTargetPoints = targetRep.rep_points + 1;
@@ -104,7 +138,10 @@ module.exports = {
             
         } catch (error) {
             console.error("Error generating rep card:", error);
-            message.reply("✅ **تم منح السمعة بنجاح!** (حدث خطأ أثناء رسم الشهادة).");
+            const errorEmbed = new EmbedBuilder()
+                .setDescription('✅ **تم منح السمعة بنجاح!**')
+                .setColor(getRandomColor());
+            message.reply({ embeds: [errorEmbed] });
         }
     }
 };
