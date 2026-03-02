@@ -1,10 +1,11 @@
+// handlers/guild-board-handler.js
+
 const { EmbedBuilder, Colors, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags, AttachmentBuilder, PermissionsBitField } = require("discord.js");
 const { buildAchievementsEmbed, buildDailyEmbed, buildWeeklyEmbed } = require('../commands/achievements.js');
-const { generateLeaderboard } = require('../commands/top.js'); 
+const { fetchLeaderboardData } = require('../commands/top.js'); // 🔥 تأكدنا من استدعاء الدالة الصحيحة من ملف التوب
 const questsConfig = require('../json/quests-config.json');
 const weaponsConfig = require('../json/weapons-config.json');
 
-// 🔥 تم إزالة الاستدعاءات اللي تسبب Circular Dependency من فوق
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js'); 
 const { generateHallOfFame } = require('../generators/hall-of-fame-generator.js');
 const { generateGuideImage } = require('../generators/guide-generator.js'); 
@@ -393,11 +394,17 @@ async function handleQuestPanel(i, client, sql) {
         data = await buildMyAchievementsEmbed(i, sql, currentPage);
     } 
     else if (section === 'top_achievements') {
-        data = await generateLeaderboard(sql, i.guild, 'achievements', currentPage);
+        // 🔥 هنا استدعينا الدالة الجديدة اللي أضفناها لتوب الإنجازات
+        const lbData = await fetchLeaderboardData(client, sql, i.guild, 'achievements', currentPage, null);
+        if (lbData && lbData.imageBuffer) {
+            const attachment = new AttachmentBuilder(lbData.imageBuffer, { name: 'top_achievements.png' });
+            data = { embeds: [], files: [attachment], totalPages: lbData.totalPages };
+        } else {
+            data = { embeds: [new EmbedBuilder().setTitle('خطأ').setDescription('❌ لا توجد بيانات لعرضها.').setColor(Colors.Red)], files: [], totalPages: 1 };
+        }
     } 
     else if (section === 'adventurer_card') {
         try {
-            // استدعاء ملف الـPVP وقت الحاجة فقط
             const pvpCore = require('./pvp-core.js'); 
             const repData = sql.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(userId, guildId) || { rep_points: 0 };
             const points = parseInt(repData.rep_points) || 0;
@@ -523,7 +530,7 @@ async function handleQuestPanel(i, client, sql) {
         components.push(...chunkButtons(buttons.slice(0, 20))); 
     }
 
-    if (totalPages > 1 && !['adventurer_card', 'hall_of_fame'].includes(section)) {
+    if (totalPages > 1 && !['adventurer_card', 'hall_of_fame', 'top_achievements'].includes(section)) {
         if (components.length < 5) {
             const pageRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -689,7 +696,6 @@ async function autoUpdateKingsBoard(client, sql) {
     }
 }
 
-// 🔥 تم إزالة الطباعة للكونسول (حسب طلبك) حتى يظل نظيف 🔥
 async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     try {
         const sql = client.sql;
