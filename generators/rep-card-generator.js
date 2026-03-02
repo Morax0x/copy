@@ -137,10 +137,10 @@ async function generateRepCard(senderAvatar, receiverAvatar, receiverName, curre
     ctx.fillStyle = '#888888';
     ctx.font = '20px "Bein", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(fixAr("المُـزكّـي:"), 145, 75);
+    ctx.fillText(fixAr("المـزكـي:"), 145, 75);
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein", sans-serif';
-    ctx.fillText(fixAr("عـضـو الـنـقـابـة"), 145, 100);
+    ctx.fillText(fixAr("الرعـيـة"), 145, 100);
 
     // 5️⃣ معلومات المستلم
     ctx.textAlign = 'right';
