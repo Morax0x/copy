@@ -11,7 +11,6 @@ const {
 } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP } = require('../constants');
-// ✅ تم إضافة manageCampfires للاستيراد
 const { getBaseFloorMora, manageCampfires } = require('../utils');
 const { snapshotLootAtFloor20, handleMemberRetreat } = require('../core/rewards');
 const { handleLeaderSuccession } = require('../core/battle-utils');
@@ -63,6 +62,25 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
 }
 
 /**
+ * حساب السمعة المتراكمة بناءً على طابق البداية
+ */
+function calculateAccumulatedRep(startFloor, currentFloor) {
+    const repMilestones = {
+        20: 1, 30: 1, 35: 1, 40: 1, 45: 1, 50: 1,
+        55: 2, 60: 2, 65: 3, 70: 3, 75: 4, 
+        80: 5, 85: 5, 90: 5, 95: 5, 100: 5
+    };
+
+    let totalRep = 0;
+    for (let f = startFloor; f <= currentFloor; f++) {
+        if (repMilestones[f]) {
+            totalRep += repMilestones[f];
+        }
+    }
+    return totalRep;
+}
+
+/**
  * إدارة قائمة الاستراحة (الاستمرار/الانسحاب/المخيم)
  */
 async function handleRestMenu(context) {
@@ -74,11 +92,26 @@ async function handleRestMenu(context) {
         restImage 
     } = context;
 
+    // 🔥 حساب طابق البداية للقائد كمرجع أساسي لحساب السمعة الجماعية 🔥
+    let sessionStartFloor = 1;
+    const leader = players.find(p => p.class === 'Leader');
+    if (leader && leader.startFloor) {
+        sessionStartFloor = leader.startFloor;
+    } else if (players.length > 0 && players[0].startFloor) {
+        sessionStartFloor = players[0].startFloor;
+    }
+
+    const currentRep = calculateAccumulatedRep(sessionStartFloor, floor);
+    
+    // بناء النص وعرض السمعة إذا كانت أكبر من صفر
     let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
+    
+    if (currentRep > 0) {
+        restDesc += `\n✬ REP: **${currentRep}** 🌟`;
+    }
 
     const restRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('continue').setLabel('الاستمرار').setStyle(ButtonStyle.Success),
-        // 🔥 زر نصب الخيمة 🔥
         new ButtonBuilder().setCustomId('camp').setLabel('نصب خيمة').setStyle(ButtonStyle.Secondary).setEmoji('⛺'),
         new ButtonBuilder().setCustomId('retreat').setLabel('انسـحـاب').setStyle(ButtonStyle.Danger)
     );
@@ -123,18 +156,13 @@ async function handleRestMenu(context) {
                 return decCollector.stop('continue');
             }
 
-            // 🔥🔥🔥 منطق نصب الخيمة مع التحقق من الرصيد 🔥🔥🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
                 if (!p || p.class !== 'Leader') return i.reply({ content: "⛺ **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
                 
-                // 1. جلب العضو للتحقق من الرتب
                 const member = guild.members.cache.get(p.id);
-
-                // 2. محاولة خصم خيمة من الرصيد
                 const campResult = manageCampfires(p.id, guild.id, sql, 'consume', member);
 
-                // 3. إذا فشل الخصم (الرصيد 0)
                 if (!campResult.success) {
                     return i.reply({ 
                         content: `⛺ **عذراً، نفذت خيامك لهذا اليوم!**\nرصيدك الحالي: \`0 / ${campResult.max}\`\nيتم تجديد الخيم يومياً او عزز السيرفر بـ بوست لزيادة عدد الخيم.`, 
@@ -142,13 +170,11 @@ async function handleRestMenu(context) {
                     });
                 }
 
-                // 4. إذا نجح الخصم، نتمم عملية الحفظ
                 const nextFloor = floor + 1;
-                // الحفظ في الداتابيس (مفتاح مركب hostID + guildID)
                 sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(p.id, guild.id, nextFloor, Date.now());
                 
                 await i.deferUpdate(); 
-                return decCollector.stop('camp'); // إنهاء وإرجاع 'camp'
+                return decCollector.stop('camp'); 
             }
 
             if (i.customId === 'retreat') {
@@ -166,8 +192,15 @@ async function handleRestMenu(context) {
                         const rewards = await handleMemberRetreat(leavingPlayer, floor, sql, guild.id, threadChannel);
                         retreatedPlayers.push(leavingPlayer);
                         players.splice(pIndex, 1); 
-                        await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP.`, flags: [MessageFlags.Ephemeral] });
+                        
+                        let repMsg = "";
+                        const pStart = leavingPlayer.startFloor || sessionStartFloor;
+                        const pRep = calculateAccumulatedRep(pStart, floor);
+                        if (pRep > 0) repMsg = ` و **${pRep}** 🌟 سمعة`;
+
+                        await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP${repMsg}.`, flags: [MessageFlags.Ephemeral] });
                         await threadChannel.send(`💨 **${leavingPlayer.name}** انسحب واكتفى بغنائمه!`).catch(()=>{});
+                        
                         if (players.length === 0) decCollector.stop('retreat');
                         if (leavingPlayer.class === 'Leader') handleLeaderSuccession(players, log);
                     }
