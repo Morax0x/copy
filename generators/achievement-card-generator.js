@@ -19,8 +19,8 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     ctx.direction = 'rtl';
 
     const bgGrad = ctx.createRadialGradient(width/2, height/2, 10, width/2, height/2, 600);
-    bgGrad.addColorStop(0, '#3a1c00'); 
-    bgGrad.addColorStop(1, '#0a0505'); 
+    bgGrad.addColorStop(0, '#3a1c00');
+    bgGrad.addColorStop(1, '#0a0505');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
@@ -42,7 +42,7 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     ctx.restore();
 
     ctx.lineWidth = 4;
-    ctx.strokeStyle = '#FFD700'; 
+    ctx.strokeStyle = '#FFD700';
     ctx.strokeRect(15, 15, width - 30, height - 30);
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
@@ -106,7 +106,7 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
         rewardsText += ` | ${repReward.toLocaleString()} REP 🌟`;
     }
 
-    ctx.fillStyle = '#00FF88'; 
+    ctx.fillStyle = '#00FF88';
     ctx.font = 'bold 26px "Bein", sans-serif';
     ctx.fillText(fixAr(rewardsText), width / 2, 403);
 
