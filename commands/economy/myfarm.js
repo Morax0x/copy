@@ -10,6 +10,7 @@ const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 const ITEMS_PER_PAGE = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -132,13 +133,22 @@ module.exports = {
                 const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
                 const lastFed = row.lastFedTimestamp || now;
-                const hungerDays = Math.floor((now - lastFed) / DAY_MS);
+                const hungerTimeMs = now - lastFed;
+                const hungerDays = Math.floor(hungerTimeMs / DAY_MS);
                 const maxHunger = animalData.max_hunger_days || 7;
                 const daysUntilDeath = Math.max(0, maxHunger - hungerDays);
 
-                let hungerStatusText = `🟢 شبعان - ${daysUntilDeath} أيام متبقية`;
-                if (daysUntilDeath <= 1) hungerStatusText = `🔴 على وشك الموت - يوم واحد متبقي!`;
-                else if (daysUntilDeath <= Math.ceil(maxHunger / 2)) hungerStatusText = `🟡 بدأ يجوع - ${daysUntilDeath} أيام متبقية`;
+                let hungerStatusText = "";
+                const cooldownMs = 12 * HOUR_MS; 
+
+                // 🔥 التعديل هنا: إذا كان شبعان، يكتب الساعات المتبقية للإطعام 🔥
+                if (hungerTimeMs < cooldownMs) {
+                    const remainingHours = Math.ceil((cooldownMs - hungerTimeMs) / HOUR_MS);
+                    hungerStatusText = `🟢 شبعان - متبقي ${remainingHours} ساعات للإطعام 🥄`;
+                } else {
+                    if (daysUntilDeath <= 1) hungerStatusText = `🔴 على وشك الموت - يوم واحد متبقي!`;
+                    else hungerStatusText = `🟡 بدأ يجوع - ${daysUntilDeath} أيام متبقية`;
+                }
 
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
