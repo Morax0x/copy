@@ -1,9 +1,7 @@
-const { createCanvas, loadImage } = require('canvas'); // ❌ تم حذف registerFont
+const { createCanvas, loadImage } = require('canvas'); 
 const { AttachmentBuilder } = require('discord.js');
-// ❌ تم حذف path و fs لأننا لم نعد نحتاج تحميل ملفات هنا
 
 // --- ( 1. تعريف الخطوط ) ---
-// نستخدم الاسم "Cairo" الذي سجلناه في ملف index.js
 const FONT_MAIN = '"Cairo", "NotoEmoji"'; 
 const FONT_EMOJI = '"NotoEmoji"'; 
 
@@ -19,6 +17,7 @@ const WEEKLY_COLOR = { base: '#1a3e4b', frame: '#2d6a86', highlight: '#349eeb', 
 
 const COLOR_XP = '#349eeb'; 
 const COLOR_MORA = '#ebc934'; 
+const COLOR_REP = '#FFD700'; // لون السمعة الذهبي 👑
 
 const BASE_COLORS = {
     background: '#1a1827', 
@@ -29,6 +28,7 @@ const BASE_COLORS = {
 
 const EMOJI_MORA = 'M';
 const EMOJI_STAR = 'XP';
+const EMOJI_REP = 'REP';
 const PADDING = 20;
 const PAGE_MARGIN = 25;
 const CARD_WIDTH = 800;
@@ -86,6 +86,7 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
 }
+
 function drawProgressBar(ctx, x, y, width, height, progressPercent, colorStart, colorEnd) { 
     ctx.save();
     ctx.fillStyle = '#2c2f33';
@@ -101,6 +102,7 @@ function drawProgressBar(ctx, x, y, width, height, progressPercent, colorStart, 
     }
     ctx.restore();
 }
+
 function drawWavyBackground(ctx, x, y, width, height, color1, color2) { 
     ctx.save();
     drawRoundedRect(ctx, x, y, width, height, 15);
@@ -192,10 +194,7 @@ async function drawQuestCard(ctx, x, y, questData) {
 
     // 5. النصوص
     ctx.fillStyle = isDone ? rarityColors.glow : BASE_COLORS.text;
-    
-    // 👇 استخدام الخط الموحد هنا
     ctx.font = `bold 32px ${FONT_QUEST_TITLE}`;
-    
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(quest.name, textX, y + PADDING);
@@ -210,23 +209,37 @@ async function drawQuestCard(ctx, x, y, questData) {
     // 6. المكافآت
     ctx.textAlign = 'right'; 
     const rewardY = y + 65; 
-    const rewardXStart = textRightX; 
+    let currentRewardX = textRightX; // يبدأ من أقصى اليمين ويمشي لليسار
 
     ctx.font = `bold 20px ${FONT_ACH_DESCRIPTION}`; 
 
-    // XP
+    // رسم XP
     ctx.fillStyle = COLOR_XP; 
     const xpText = `${quest.reward.xp.toLocaleString()}`;
     const xpTextWidth = ctx.measureText(xpText).width;
-    ctx.fillText(xpText, rewardXStart - 25, rewardY); 
-    ctx.fillText(EMOJI_STAR, rewardXStart, rewardY); 
+    ctx.fillText(xpText, currentRewardX - 25, rewardY); 
+    ctx.fillText(EMOJI_STAR, currentRewardX, rewardY); 
 
-    // Mora
-    const moraRewardXStart = rewardXStart - 25 - xpTextWidth - 35; 
+    // تحريك الموشر لليسار
+    currentRewardX -= (xpTextWidth + 40);
+
+    // رسم Mora
     ctx.fillStyle = COLOR_MORA; 
     const moraText = `${quest.reward.mora.toLocaleString()}`;
-    ctx.fillText(moraText, moraRewardXStart - 25, rewardY); 
-    ctx.fillText(EMOJI_MORA, moraRewardXStart, rewardY);
+    const moraTextWidth = ctx.measureText(moraText).width;
+    ctx.fillText(moraText, currentRewardX - 25, rewardY); 
+    ctx.fillText(EMOJI_MORA, currentRewardX, rewardY);
+
+    // تحريك الموشر لليسار
+    currentRewardX -= (moraTextWidth + 40);
+
+    // 🔥 رسم السمعة (REP) إذا كانت موجودة في المهمة
+    if (quest.repReward && quest.repReward > 0) {
+        ctx.fillStyle = COLOR_REP; 
+        const repText = `${quest.repReward.toLocaleString()}`;
+        ctx.fillText(repText, currentRewardX - 45, rewardY); 
+        ctx.fillText(EMOJI_REP, currentRewardX, rewardY);
+    }
 
     // 7. التقدم
     const barY = y + 103; 
@@ -261,12 +274,8 @@ async function generateWeeklyQuestsImage(member, questsData, page = 1) {
     const avatarSize = 60; 
     const avatarY = PAGE_MARGIN;
      
-    // --- ( التنسيق الجديد ) ---
     ctx.fillStyle = BASE_COLORS.text;
-    
-    // 👇 استخدام الخط الموحد هنا
     ctx.font = `bold 36px ${FONT_PAGE_TITLE}`; 
-    
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(`المهام الأسبوعية لـ ${member.displayName}`, PAGE_MARGIN + PADDING, avatarY + avatarSize / 2);
@@ -279,7 +288,6 @@ async function generateWeeklyQuestsImage(member, questsData, page = 1) {
 
     const countdownText = getWeeklyResetCountdown();
     ctx.fillText(countdownText, PAGE_WIDTH - PAGE_MARGIN - PADDING, avatarY + 45);
-    // ------------------------
 
     let currentY = PAGE_MARGIN + 80;
     for (const data of questsToShow) { 
