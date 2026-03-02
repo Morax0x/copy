@@ -11,7 +11,15 @@ const {
     LOSE_IMAGES 
 } = require('../constants'); 
 
-async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests) {
+// استدعاء دالة التحديث للوحة الملوك
+let updateGuildStat;
+try {
+    ({ updateGuildStat } = require('../../guild-board-handler.js'));
+} catch (e) {
+    console.log("⚠️ Could not load updateGuildStat for Dungeon End-Game.");
+}
+
+async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests, client) {
     if (!sql || !sql.open) return;
     
     let title = "", color = "", randomImage = null;
@@ -34,7 +42,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     }
 
     const allParticipants = [...activePlayers, ...retreatedPlayers];
-    let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => (p.totalDamage > c.totalDamage) ? p : c) : null;
+    
+    // 💡 تحديد نجم المعركة (يجب أن يكون الضرر أعلى من 0 ليعتبر نجم حقيقي)
+    let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => ((p.totalDamage || 0) > (c.totalDamage || 0)) ? p : c) : null;
+    if (mvpPlayer && (mvpPlayer.totalDamage || 0) === 0) {
+        mvpPlayer = null; // إلغاء النجم إذا لم يكن هناك أي ضرر
+    }
     
     // 🌟 خريطة السمعة حسب طلبك (لكل طابق محدد)
     const repMilestones = {
@@ -78,19 +91,18 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         }
 
         // ==========================================
-        // 🌟 حساب السمعة التراكمي للرحلة الحالية فقط
+        // 🌟 حساب السمعة التراكمي وتحديث ملك الهاوية
         // ==========================================
         let effectiveEndFloor = floor;
         if (p.isDead && p.deathFloor) effectiveEndFloor = p.deathFloor - 1; 
         else if (p.retreatFloor) effectiveEndFloor = p.retreatFloor; 
-        else if (status === 'lose') effectiveEndFloor = floor - 1; // لو خسروا الطابق الحالي، ما ينحسب لهم
+        else if (status === 'lose') effectiveEndFloor = Math.max(1, floor - 1); 
 
         // تحديد طابق البداية الفعلي للاعب
         let playerStartFloor = p.startFloor || sessionStartFloor;
         if (playerStartFloor > effectiveEndFloor) playerStartFloor = effectiveEndFloor;
 
         let repReward = 0;
-        // المرور على الطوابق التي اجتازها اللاعب "في هذه الرحلة فقط"
         for (let f = playerStartFloor; f <= effectiveEndFloor; f++) {
             if (repMilestones[f]) {
                 repReward += repMilestones[f];
@@ -102,6 +114,19 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             try {
                 sql.prepare("INSERT INTO user_reputation (userID, guildID, rep_points) VALUES (?, ?, ?) ON CONFLICT(userID, guildID) DO UPDATE SET rep_points = CAST(rep_points AS INTEGER) + ?").run(p.id, guildId, repReward, repReward);
             } catch (err) {}
+        }
+
+        // 🔥🔥 التحديث السحري لملك الهاوية (شرط نجم المعركة) 🔥🔥
+        if (updateGuildStat && client) {
+            if (mvpPlayer) {
+                // إذا وجدنا نجم للمعركة، هو فقط من يتحدث رقمه في اللوحة
+                if (p.id === mvpPlayer.id) {
+                    updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
+                }
+            } else {
+                // إذا لم يكن هناك نجم، يتم منح الإنجاز للجميع كالمعتاد
+                updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
+            }
         }
         
         let statusEmoji = "";
@@ -121,7 +146,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP${repString}\n`;
     });
 
-    let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'N/A'}\n\n${lootString}`;
+    let description = `**الطابق:** ${floor}\n\n**✶ تقـريـر المعـركـة:**\nنجم المعركة: ${mvpPlayer ? `<@${mvpPlayer.id}>` : 'لا يوجد'}\n\n${lootString}`;
 
     if (status === 'camp') {
         description += `\n**🏕️ تـم نصـب خيمـة وحفـظ التقـدم عنـد الطابـق ${floor + 1}**`;
