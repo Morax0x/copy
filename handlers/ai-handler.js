@@ -14,12 +14,15 @@ const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
+// 🔥 تم التعديل هنا: جلب الدالة من المكان الصحيح 🔥
 let updateGuildStat;
 try {
-    ({ updateGuildStat } = require('./guild-tracker.js'));
-} catch (e) {}
+    ({ updateGuildStat } = require('./guild-board-handler.js'));
+} catch (e) {
+    console.log("⚠️ Could not load updateGuildStat for AI Tracker.");
+}
 
-// 🔥 الآيدي الخاص بك (الإمبراطور) - لن تعمل الأوامر إلا لك
+// الآيدي الخاص بك (الإمبراطور) - لن تعمل الأوامر إلا لك
 const OWNER_ID = "1145327691772481577"; 
 
 function sanitizeOutput(text) {
@@ -218,9 +221,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             try {
                 const client = messageObject.client;
                 
-                // حساب التوقيت بتوقيت السعودية لضمان الدقة
                 const nowKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-                const dateStr = nowKSA.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                const dateStr = nowKSA.toLocaleDateString('en-CA'); 
                 
                 // 1. تحديث اليومي
                 let dailyIdToUse = `${userId}-${guildId}-${dateStr}`;
@@ -235,22 +237,20 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
 
                 // 👑 تحديث متعقب الملوك (المستشار الملكي)
                 if (updateGuildStat) {
-                    updateGuildStat(client, guildId, userId, 'ai_interactions', 1);
+                    await updateGuildStat(client, guildId, userId, 'ai_interactions', 1);
                 }
 
-                // 2. تحديث الأسبوعي (تم إصلاح المشكلة هنا 🔥)
-                const dayOfWeek = nowKSA.getDay(); // 0 = Sunday
+                // 2. تحديث الأسبوعي
+                const dayOfWeek = nowKSA.getDay(); 
                 const diff = nowKSA.getDate() - dayOfWeek;
                 const weekStartKSA = new Date(nowKSA);
                 weekStartKSA.setDate(diff);
-                const weekStart = weekStartKSA.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                const weekStart = weekStartKSA.toLocaleDateString('en-CA'); 
                 
                 let weeklyIdToUse = `${userId}-${guildId}-${weekStart}`;
 
-                // ✅ الفحص الصارم للأسبوع الحالي فقط (AND weekStartDate = ?)
                 let weekly = sql.prepare("SELECT id FROM user_weekly_stats WHERE userID = ? AND guildID = ? AND weekStartDate = ?").get(userId, guildId, weekStart);
                 
-                // إضافة العامود في حال لم يكن موجوداً (احتياطياً)
                 try { sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN ai_interactions INTEGER DEFAULT 0").run(); } catch(e){}
 
                 if (weekly) {
