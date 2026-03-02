@@ -8,7 +8,6 @@ let sendLevelUpMessage;
 let updateGuildStat;
 try {
     ({ sendLevelUpMessage } = require('./handler-utils.js')); 
-    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة 🔥
     ({ updateGuildStat } = require('./guild-board-handler.js'));
 } catch (e) {
     try { 
@@ -520,7 +519,8 @@ async function handleLandInteractions(i, client, sql) {
         client.setLevel.run(userData);
 
         if (updateGuildStat) {
-            updateGuildStat(client, guildId, userId, 'crops_harvested', harvestedCount);
+            // 🔥 تم تغيير harvestedCount إلى totalRevenue لإضافة القيمة السوقية في اللوحة 🔥
+            updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue);
         }
 
         await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] });
