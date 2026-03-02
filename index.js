@@ -967,7 +967,9 @@ const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'
 for (const file of eventFiles) { const filePath = path.join(eventsPath, file); const event = require(filePath); if (event.once) { client.once(event.name, (...args) => event.execute(...args)); } else { client.on(event.name, (...args) => event.execute(...args)); } }
 
 try {
-    require('./handlers/topgg-handler.js');
-} catch (err) {}
+    require('./handlers/topgg-handler.js')(client, sql);
+} catch (err) {
+    console.error("Top.gg Handler Error:", err);
+}
 
 client.login(botToken);
