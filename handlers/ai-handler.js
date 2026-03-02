@@ -27,7 +27,9 @@ const OWNER_ID = "1145327691772481577";
 
 function sanitizeOutput(text) {
     if (!text) return "";
-    let cleanText = text.replace(/<@!?\d+>/g, "");
+    let cleanText = text.replace(/@(everyone|here)/gi, "");
+    // استبدال المنشن الخاطئ بكلمة (مغامر) بدلاً من مسحه بالكامل وترك فراغ
+    cleanText = cleanText.replace(/<@!?\d+>/g, "(مغامر)"); 
     cleanText = cleanText.replace(/@/g, "");
     cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
     return cleanText.trim();
@@ -159,7 +161,9 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         const userData = getUserData(userId, guildId);
 
         if (messageObject && messageObject.guild) {
+            let dynamicContext = "";
             const dynamicData = getDynamicServerData(guildId);
+            
             if (dynamicData) {
                 const topLevelNames = await resolveNames(messageObject.guild, dynamicData.topLevels);
                 const topRichNames = await resolveNames(messageObject.guild, dynamicData.topRich);
@@ -168,13 +172,28 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     const hpPercent = Math.floor((dynamicData.boss.currentHP / dynamicData.boss.maxHP) * 100);
                     bossInfo = `⚠️ الزعيم (${dynamicData.boss.name}) حي ويهدد السيرفر! صحته المتبقية: ${hpPercent}%`;
                 }
-                userData.serverContext = `
-[Server Live Stats]:
-- Top Strongest: ${topLevelNames}
-- Top Richest: ${topRichNames}
-- World Boss: ${bossInfo}
-                `;
+                dynamicContext = `\n[Server Live Stats]:\n- Top Strongest: ${topLevelNames}\n- Top Richest: ${topRichNames}\n- World Boss: ${bossInfo}\n`;
             }
+
+            // 💡 استخراج أسماء الأشخاص المذكورين كـ نصوص عادية حتى يتعرف عليهم الذكاء
+            let mentionedNames = [];
+            messageObject.mentions.users.forEach(u => {
+                if (u.id !== messageObject.client.user.id) {
+                    const mem = messageObject.guild.members.cache.get(u.id);
+                    mentionedNames.push(mem ? mem.displayName : u.username);
+                }
+            });
+            const mentionedContext = mentionedNames.length > 0 ? `\n- الأسماء المذكورة في رسالة اللاعب: ${mentionedNames.join(' و ')}. استخدم هذه الأسماء للرد عليه.` : "";
+
+            // 🔥 تعليمات صارمة لحل مشكلة المورا والمنشن 🔥
+            // حساب الثروة الإجمالية كاحتياط
+            const totalWealth = userData.total_wealth || ((userData.mora || 0) + (userData.bank || 0)) || ((userData.wallet_cash || 0) + (userData.bank_balance || 0));
+
+            userData.serverContext = dynamicContext + `
+[CRITICAL AI INSTRUCTIONS]:
+1. ثروة اللاعب الذي يحادثك هي بالضبط: ${totalWealth} مورا (هذا مجموع ماله الكلي). عامله على أساس هذا الرقم، ولا تقل أبداً أنه مفلس إذا كان يمتلك مورا.
+2. يُمنع منعاً باتاً استخدام المنشن في ردودك (مثل <@123456>). اكتب أسماء الأعضاء كنص عادي فقط.${mentionedContext}
+            `;
         }
 
         if (userId === OWNER_ID) {
