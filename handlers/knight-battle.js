@@ -38,6 +38,7 @@ const WIN_IMAGES_LIST = [
     'https://i.postimg.cc/05dLktNF/download-5.gif'
 ];
 
+// 🔥 تطوير: Map لتتبع اللاعبين المنخرطين في قتال حالياً لمنعهم من استخدام أوامر أخرى
 const activePveBattles = new Map();
 
 function cleanDisplayName(name) {
@@ -291,7 +292,7 @@ function applySkillEffect(battleState, attackerId, skill) {
             defender.hp -= dmg;
             const healVal = Math.floor(attacker.maxHp * 0.15);
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + healVal);
-            return `⚖️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
+            return `秤 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
         }
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
@@ -430,7 +431,7 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
         const skillsPerPage = 4;
         const totalPages = Math.ceil(availableSkills.length / skillsPerPage);
           
-        page = Math.max(0, Math.min(skillPage, totalPages - 1));
+        let page = Math.max(0, Math.min(skillPage, totalPages - 1));
         if (totalPages === 0) page = 0;
         battleState.skillPage = page;
 
@@ -474,7 +475,7 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
 }
 
 function setupBattleCollector(battleState) {
-    const robberId = battleState.turn[0]; 
+    const robberId = battleState.userId; 
     const filter = i => i.user.id === robberId && i.customId.startsWith('knight_');
      
     const collector = battleState.message.createMessageComponentCollector({ 
@@ -508,8 +509,8 @@ function setupBattleCollector(battleState) {
 
                 battleState.turn = ["guard", player.member.id];
                 
+                // 🔥 تعديل: تحديث الواجهة ثم معالجة دور الفارس فوراً دون انتظار
                 await i.editReply(buildBattleEmbed(battleState, false, 0, true));
-                
                 await processGuardTurn(battleState);
             } 
             else if (customId === 'knight_skill_menu') await i.editReply(buildBattleEmbed(battleState, true, 0));
@@ -530,6 +531,7 @@ function setupBattleCollector(battleState) {
 
                     battleState.turn = ["guard", player.member.id];
                     await i.editReply(buildBattleEmbed(battleState, false, 0, true));
+                    // 🔥 تعديل: رد فعل الفارس فوري
                     await processGuardTurn(battleState);
                 }
             }
@@ -553,7 +555,7 @@ function setupBattleCollector(battleState) {
 
 async function processGuardTurn(battleState) {
     try {
-        await new Promise(r => setTimeout(r, 1000));
+        // 🔥 تم حذف الـ setTimeout ليكون الهجوم فورياً بناءً على طلب الإمبراطور
 
         const guard = battleState.players.get("guard");
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
@@ -675,7 +677,6 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
 
         sql.prepare("CREATE TABLE IF NOT EXISTS knight_history (id TEXT PRIMARY KEY, count INTEGER, lastDate INTEGER)").run();
 
-        // إحضار التاريخ بناءً على توقيت السعودية وتخزينه كرقم YYYYMMDD
         const nowKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
         const todayInt = parseInt(nowKSA.toLocaleDateString('en-CA').replace(/-/g, ''));
         
@@ -736,7 +737,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         const battleState = {
             isPvE: true, isGuardBattle: true, amountToSteal,
             message: null, turn: [robberMember.id, "guard"], processingTurn: false,
-            isEnded: false, 
+            isEnded: false, userId: robberMember.id,
             log: [introMsg], 
             skillPage: 0, skillCooldowns: { [robberMember.id]: {}, "guard": {} },
             players: new Map([
@@ -745,7 +746,8 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
             ])
         };
 
-        activePveBattles.set(interaction.channel.id, battleState);
+        // 🔥 التجميد: إضافة اللاعب للقائمة النشطة لمنع الأوامر الأخرى
+        activePveBattles.set(robberMember.id, battleState);
         
         const { embeds, components } = buildBattleEmbed(battleState, false, 0, false);
         const msgPayload = { content: `**قـاتـل لتنجـو بحيـاتـك!** <@${robberMember.id}>`, embeds, components };
@@ -763,7 +765,7 @@ async function startGuardBattle(interaction, client, sql, robberMember, amountTo
         
     } catch (error) {
         console.error("Error starting knight battle:", error);
-        activePveBattles.delete(interaction.channel.id);
+        activePveBattles.delete(robberMember.id);
     }
 }
 
@@ -771,10 +773,13 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
     if (battleState.isEnded) return;
     battleState.isEnded = true;
 
+    const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
+    // 🔥 إلغاء التجميد: حذف اللاعب من القائمة النشطة للسماح له بالأوامر مجدداً
+    activePveBattles.delete(playerMemberId);
+
     try {
         const client = battleState.message.client;
         const sql = client.sql;
-        const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
         
         const setScore = client.setLevel;
@@ -784,8 +789,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         const amount = battleState.amountToSteal;
 
         const embed = new EmbedBuilder();
-        activePveBattles.delete(battleState.message.channel.id);
-
         await battleState.message.edit({ components: [] }).catch(() => {});
 
         if (resultType === "win") {
@@ -800,9 +803,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                  .setDescription(`تمكنت من هزيمة فارس الإمبراطور والفرار بالغنيمة!\n\n💰 **المبلغ المسروق:** ${amount.toLocaleString()} ${EMOJI_MORA}`)
                  .setImage(randomWinImage); 
 
-            // 🔥 ==========================================
-            // 🔥 نظام إعطاء وسام "قاهر الفرسان" (4 انتصارات)
-            // 🔥 ==========================================
             try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN knights_defeated INTEGER DEFAULT 0").run(); } catch(e) {}
             try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN knight_badge_given INTEGER DEFAULT 0").run(); } catch(e) {}
 
@@ -817,16 +817,12 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
             const dailyData = sql.prepare("SELECT knights_defeated, knight_badge_given FROM user_daily_stats WHERE id = ?").get(dailyID);
 
-            // تم التحقق: الهزيمة 4 مرات في اليوم يحصل على الوسام
             if (dailyData && dailyData.knights_defeated >= 4 && dailyData.knight_badge_given === 0) {
                 sql.prepare("UPDATE user_daily_stats SET knight_badge_given = 1 WHERE id = ?").run(dailyID);
-                
                 const settings = sql.prepare("SELECT guildAnnounceChannelID, roleKnightSlayer FROM settings WHERE guild = ?").get(battleState.message.guild.id);
-                
                 if (settings && settings.roleKnightSlayer) {
                     player.member.roles.add(settings.roleKnightSlayer).catch(()=>{});
                 }
-
                 if (settings && settings.guildAnnounceChannelID) {
                     const announceChannel = battleState.message.guild.channels.cache.get(settings.guildAnnounceChannelID);
                     if (announceChannel) {
@@ -838,7 +834,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                         announceChannel.send({ content: `<@${player.member.id}>`, embeds: [badgeEmbed] }).catch(()=>{});
                     }
                 }
-
                 embed.addFields({ name: '🎖️ إنجاز يومي!', value: 'لقد حصلت على وسام **🛡️ قاهر الفرسان** لليوم!' });
             }
 
