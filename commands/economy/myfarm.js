@@ -141,7 +141,7 @@ module.exports = {
                 let hungerStatusText = "";
                 const cooldownMs = 12 * HOUR_MS; 
 
-                // 🔥 التعديل هنا: إذا كان شبعان، يكتب الساعات المتبقية للإطعام 🔥
+                // 🔥 التعديل المطلوب: حساب الساعات إذا كان أقل من 12 ساعة، والأيام إذا تجاوزها 🔥
                 if (hungerTimeMs < cooldownMs) {
                     const remainingHours = Math.ceil((cooldownMs - hungerTimeMs) / HOUR_MS);
                     hungerStatusText = `🟢 شبعان - متبقي ${remainingHours} ساعات للإطعام 🥄`;
