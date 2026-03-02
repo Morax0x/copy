@@ -1,18 +1,16 @@
-// handlers/guild-board-handler.js
-
 const { EmbedBuilder, Colors, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags, AttachmentBuilder, PermissionsBitField } = require("discord.js");
 const { buildAchievementsEmbed, buildDailyEmbed, buildWeeklyEmbed } = require('../commands/achievements.js');
-const { fetchLeaderboardData } = require('../commands/top.js'); // 🔥 تأكدنا من استدعاء الدالة الصحيحة من ملف التوب
+const { fetchLeaderboardData } = require('../commands/top.js'); 
 const questsConfig = require('../json/quests-config.json');
 const weaponsConfig = require('../json/weapons-config.json');
 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js'); 
 const { generateHallOfFame } = require('../generators/hall-of-fame-generator.js');
 const { generateGuideImage } = require('../generators/guide-generator.js'); 
-
 const { generateKingsBoardImage } = require('../generators/guild-boards-generator.js');
 const { generateEpicAnnouncement } = require('../generators/announcement-generator.js');
 const { generateNotificationControlPanel } = require('../generators/notification-generator.js');
+const { generateAchievementCard } = require('../generators/achievement-card-generator.js');
 
 const { GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
@@ -279,9 +277,18 @@ async function handleQuestPanel(i, client, sql) {
                     }
                 })();
 
-                let msg = `🏅 **وسام عظيم!** استلمت "${ach.name}" وحصلت على: 💰 **${ach.reward.mora}** | ✨ **${ach.reward.xp}**`;
-                if (ach.repReward) msg += ` | 🌟 **+${ach.repReward}** سمعة!`;
-                return i.editReply({ content: msg }).catch(()=>{});
+                const userAvatar = i.user.displayAvatarURL({ extension: 'png', size: 256 });
+                const userName = i.member.displayName || i.user.username;
+                
+                try {
+                    const buffer = await generateAchievementCard(userAvatar, userName, ach.name, ach.description, ach.reward.mora, ach.reward.xp, ach.repReward);
+                    const attachment = new AttachmentBuilder(buffer, { name: 'achievement.png' });
+                    return i.editReply({ content: `<@${userId}>`, files: [attachment] }).catch(()=>{});
+                } catch(e) {
+                    let fallbackMsg = `🏅 **وسام عظيم!** استلمت "${ach.name}" وحصلت على: 💰 **${ach.reward.mora}** | ✨ **${ach.reward.xp}**`;
+                    if (ach.repReward) fallbackMsg += ` | 🌟 **+${ach.repReward}** سمعة!`;
+                    return i.editReply({ content: fallbackMsg }).catch(()=>{});
+                }
             }
         } catch (err) {
             return i.editReply({ content: '❌ حدث خطأ أثناء تسليم الجائزة.' }).catch(()=>{});
@@ -394,7 +401,6 @@ async function handleQuestPanel(i, client, sql) {
         data = await buildMyAchievementsEmbed(i, sql, currentPage);
     } 
     else if (section === 'top_achievements') {
-        // 🔥 هنا استدعينا الدالة الجديدة اللي أضفناها لتوب الإنجازات
         const lbData = await fetchLeaderboardData(client, sql, i.guild, 'achievements', currentPage, null);
         if (lbData && lbData.imageBuffer) {
             const attachment = new AttachmentBuilder(lbData.imageBuffer, { name: 'top_achievements.png' });
@@ -707,11 +713,14 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
         if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
 
         if (statName === 'max_dungeon_floor') {
-            sql.prepare(`
-                INSERT INTO levels (id, user, guild, max_dungeon_floor) 
-                VALUES (?, ?, ?, ?) 
-                ON CONFLICT(id) DO UPDATE SET max_dungeon_floor = MAX(COALESCE(max_dungeon_floor, 0), ?)
-            `).run(`${guildId}-${userId}`, userId, guildId, addedVal, addedVal);
+            const row = sql.prepare("SELECT max_dungeon_floor FROM levels WHERE user = ? AND guild = ?").get(userId, guildId);
+            if (row) {
+                if (addedVal > (row.max_dungeon_floor || 0)) {
+                    sql.prepare("UPDATE levels SET max_dungeon_floor = ? WHERE user = ? AND guild = ?").run(addedVal, userId, guildId);
+                }
+            } else {
+                sql.prepare("INSERT INTO levels (user, guild, xp, level, totalXP, mora, max_dungeon_floor) VALUES (?, ?, 0, 1, 0, 0, ?)").run(userId, guildId, addedVal);
+            }
         } else {
             const dailyID = `${userId}-${guildId}-${todayStr}`;
             
@@ -729,7 +738,9 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
                 `).run(dailyID, userId, guildId, todayStr, addedVal, addedVal);
             } catch(e){}
         }
-    } catch (error) {}
+    } catch (error) {
+        console.error("[Guild Stat Update Error]:", error);
+    }
 }
 
 module.exports = { handleQuestPanel, handleGuildBoard: handleQuestPanel, autoUpdateKingsBoard, updateGuildStat };
