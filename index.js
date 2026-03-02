@@ -122,6 +122,9 @@ const handleMarketCrash = require('./handlers/market-crash-handler.js');
 const { startAuctionSystem } = require('./handlers/auction-handler.js');
 const { autoUpdateKingsBoard } = require('./handlers/guild-board-handler.js'); 
 
+// 🔥 تم إضافة استدعاء السوالف التلقائية هنا 🔥
+const { startAutoChat } = require('./handlers/ai/auto-chat.js');
+
 const announcementsTexts = require('./json/announcements-texts.js');
 
 const client = new Client({
@@ -810,6 +813,9 @@ client.on(Events.ClientReady, async () => {
     
     startAuctionSystem(client); 
     setTimeout(() => { autoUpdateKingsBoard(client, sql).catch(() => {}); }, 5000);
+
+    // 🔥 تشغيل نظام السوالف التلقائية للذكاء الاصطناعي 🔥
+    startAutoChat(client);
 
     require('./handlers/weekly-role.js')(client);
 
