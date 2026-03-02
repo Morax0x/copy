@@ -627,7 +627,7 @@ async function autoUpdateKingsBoard(client, sql) {
                         await getKingInfo(advisorData, 'تفاعل', 'ملك الحكمة', '🧠'),
                         await getKingInfo(fisherData, 'سمكة', 'ملك القنص', '🎣'),
                         await getKingInfo(pvpData, 'انتصار', 'ملك النزاع', '⚔️'),
-                        await getKingInfo(farmData, 'محصول', 'ملك الحصاد', '🌾')
+                        await getKingInfo(farmData, 'مورا', 'ملك الحصاد', '🌾')
                     ];
 
                     const kingsBoardBuffer = await generateKingsBoardImage(kingsArray);
@@ -637,7 +637,7 @@ async function autoUpdateKingsBoard(client, sql) {
                     if (oldHash) {
                         const oldParts = oldHash.split('|');
                         const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الحكمة', 'ملك القنص', 'ملك النزاع', 'ملك الحصاد'];
-                        const suffixes = ['مورا', 'طابق', 'رسالة', 'مورا', 'تفاعل', 'سمكة', 'انتصار', 'محصول'];
+                        const suffixes = ['مورا', 'طابق', 'رسالة', 'مورا', 'تفاعل', 'سمكة', 'انتصار', 'الحصاد'];
                         const colors = ['#FFD700', '#9D00FF', '#00BFFF', '#FF8C00', '#00FF88', '#00CED1', '#DC143C', '#32CD32'];
                         const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 'roleFisherKing', 'rolePvPKing', 'roleFarmKing'];
 
