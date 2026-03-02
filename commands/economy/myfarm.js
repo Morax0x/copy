@@ -22,7 +22,7 @@ module.exports = {
             .setRequired(false)),
 
     name: 'myfarm',
-    aliases: ['مزرعتي', 'حيواناتي'],
+    aliases: ['مزرعتي', 'حيواناتي','mf'],
     category: "Economy",
     description: 'يعرض مزرعتك وحالة الحيوانات ومخزن الأعلاف والأراضي.',
     usage: '-myfarm [@user]',
