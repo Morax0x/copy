@@ -1,3 +1,5 @@
+// handlers/dungeon-battle.js
+
 const { EmbedBuilder, Colors } = require('discord.js');
 
 const { EMOJI_MORA, EMOJI_XP, OWNER_ID } = require('./dungeon/constants');
@@ -21,16 +23,9 @@ const { applyFloorBuffs, handleTrapEvent, handleRandomEvents } = require('./dung
 
 const dungeonConfig = require('../json/dungeon-config.json');
 
-let updateGuildStat;
-try {
-    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
-    ({ updateGuildStat } = require('./guild-board-handler.js'));
-} catch (e) {
-    try { ({ updateGuildStat } = require('../handlers/guild-board-handler.js')); } catch (e2) {}
-}
-
 async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, hostId, partyClasses, activeDungeonRequests, startFloor = 1, resumeData = null) {
     const guild = threadChannel.guild;
+    const client = threadChannel.client; // 🔥 جلب الـ client وتمريره للدوال اللي تحتاجه
       
     if (!sql || !sql.open) {
         return threadChannel.send("⚠️ **خطأ تقني:** قاعدة البيانات غير متصلة حالياً.").catch(() => {});
@@ -86,8 +81,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             deleteDungeonState(sql, threadChannel.id); 
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
+            // 🔥 تم تمرير client إلى sendEndMessage
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
 
@@ -360,8 +355,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             deleteDungeonState(sql, threadChannel.id); 
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', finalFloor);
+            // 🔥 تم تمرير client إلى sendEndMessage
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", sql, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
 
@@ -378,8 +373,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
                     p.loot.xp += moraxXp; 
                 } 
             });
-
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', 100);
             break; 
         }
           
@@ -406,8 +399,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
             statusCollector.stop(); 
             await handleTeamWipe(players, floor, sql, guild.id);
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests);
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
+            // 🔥 تم تمرير client إلى sendEndMessage
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", sql, guild.id, hostId, activeDungeonRequests, client);
             return; 
         } 
         else if (decision === 'camp') {
@@ -417,17 +410,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
             await threadChannel.send(`⛺ **تم نصب الخيام بنجاح!**\nتم حفظ تقدمكم عند الطابق **${floor + 1}**. سيتم الآن توزيع الغنائم وإغلاق البوابة.`).catch(()=>{});
 
             await handleLeaderRetreat(players, sql, guild.id);
-
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", sql, guild.id, hostId, activeDungeonRequests);
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
+            // 🔥 تم تمرير client إلى sendEndMessage
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", sql, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
         else if (decision === 'retreat') {
             deleteDungeonState(sql, threadChannel.id); 
             statusCollector.stop(); 
             await handleLeaderRetreat(players, sql, guild.id);
-            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
-            if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', floor);
+            // 🔥 تم تمرير client إلى sendEndMessage
+            await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", sql, guild.id, hostId, activeDungeonRequests, client);
             return; 
         } 
         else if (decision === 'continue') {
@@ -469,8 +461,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, sql, host
         }
 
         await handleLeaderRetreat(alivePlayers, sql, guild.id);
-        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests);
-        if (updateGuildStat) updateGuildStat(threadChannel.client, guild.id, hostId, 'max_dungeon_floor', 100);
+        // 🔥 تم تمرير client إلى sendEndMessage
+        await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", sql, guild.id, hostId, activeDungeonRequests, client);
     }
 } 
 
