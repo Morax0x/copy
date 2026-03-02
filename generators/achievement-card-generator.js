@@ -1,5 +1,3 @@
-// generators/achievement-card-generator.js
-
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
@@ -20,14 +18,12 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     const ctx = canvas.getContext('2d');
     ctx.direction = 'rtl';
 
-    // 1️⃣ الخلفية السينمائية
     const bgGrad = ctx.createRadialGradient(width/2, height/2, 10, width/2, height/2, 600);
-    bgGrad.addColorStop(0, '#3a1c00'); // ذهبي غامق/نحاسي بالمنتصف
-    bgGrad.addColorStop(1, '#0a0505'); // أسود محمر بالأطراف
+    bgGrad.addColorStop(0, '#3a1c00'); 
+    bgGrad.addColorStop(1, '#0a0505'); 
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 2️⃣ رسم أشعة ضوئية تخرج من الأفاتار (خلفية فخمة)
     ctx.save();
     ctx.translate(width / 2, 160);
     for (let i = 0; i < 16; i++) {
@@ -45,15 +41,13 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     }
     ctx.restore();
 
-    // 3️⃣ الإطار الملكي
     ctx.lineWidth = 4;
-    ctx.strokeStyle = '#FFD700'; // ذهبي
+    ctx.strokeStyle = '#FFD700'; 
     ctx.strokeRect(15, 15, width - 30, height - 30);
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.strokeRect(25, 25, width - 50, height - 50);
 
-    // 4️⃣ العنوان العلوي
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 45px "Bein", sans-serif';
     ctx.textAlign = 'center';
@@ -62,7 +56,6 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     ctx.fillText(fixAr("🎉 إنجـاز جـديـد مـفـتـوح 🎉"), width / 2, 75);
     ctx.shadowBlur = 0;
 
-    // 5️⃣ رسم أفاتار اللاعب في المنتصف
     const avatarSize = 130;
     const avatarX = (width / 2) - (avatarSize / 2);
     const avatarY = 110;
@@ -77,7 +70,6 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
         ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
         ctx.restore();
 
-        // إطار الأفاتار المتوهج
         ctx.beginPath();
         ctx.arc(width/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
         ctx.strokeStyle = '#FFD700';
@@ -88,7 +80,6 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
         ctx.shadowBlur = 0;
     } catch (e) {}
 
-    // 6️⃣ اسم اللاعب + اسم الوسام + الوصف
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 40px "Bein", sans-serif';
     ctx.fillText(fixAr(achName), width / 2, 290);
@@ -97,8 +88,7 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     ctx.font = '24px "Bein", sans-serif';
     ctx.fillText(fixAr(achDesc), width / 2, 335);
 
-    // 7️⃣ صندوق المكافآت بالأسفل
-    const pillW = 600;
+    const pillW = 680;
     const pillH = 55;
     const pillX = (width / 2) - (pillW / 2);
     const pillY = 365;
@@ -111,12 +101,12 @@ async function generateAchievementCard(userAvatar, userName, achName, achDesc, r
     ctx.fill();
     ctx.stroke();
 
-    let rewardsText = `المكافأة: ${rewardMora.toLocaleString()} مورا | ${rewardXp.toLocaleString()} XP`;
+    let rewardsText = `المكافأة: ${rewardMora.toLocaleString()} M | ${rewardXp.toLocaleString()} XP`;
     if (repReward && repReward > 0) {
-        rewardsText += ` | ${repReward} 🌟 سمعة`;
+        rewardsText += ` | ${repReward.toLocaleString()} REP 🌟`;
     }
 
-    ctx.fillStyle = '#00FF88'; // أخضر نيون للمكافأة
+    ctx.fillStyle = '#00FF88'; 
     ctx.font = 'bold 26px "Bein", sans-serif';
     ctx.fillText(fixAr(rewardsText), width / 2, 403);
 
