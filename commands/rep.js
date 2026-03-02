@@ -40,14 +40,44 @@ module.exports = {
         const senderId = message.author.id;
         const guildId = message.guild.id;
 
+        try {
+            sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run();
+        } catch (e) {}
+
+        let maxVotes = 1;
+        if (message.member) {
+            if (message.member.roles.cache.has('1422160802416164885')) {
+                maxVotes = 3;
+            } else if (message.member.roles.cache.has('1395674235002945636')) {
+                maxVotes = 2;
+            }
+        }
+
+        let senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
+        if (!senderRep) {
+            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(senderId, guildId);
+            senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
+        }
+
+        const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
+        
+        let currentDailyReps = 0;
+        if (senderRep.last_rep_given === todayDateStr) {
+            currentDailyReps = senderRep.daily_reps_given || 0;
+        }
+
+        let remainingVotes = maxVotes - currentDailyReps;
+        if (remainingVotes < 0) remainingVotes = 0;
+        let displayRemaining = senderId === OWNER_ID ? 'غير محدود' : remainingVotes;
+
         const targetMember = message.mentions.members.first();
         
         if (!targetMember || targetMember.user.bot) {
-            const noMentionEmbed = new EmbedBuilder()
-                .setDescription('منشـن الشخص الذي تريد تزكيـتـه ..؟')
-                .setThumbnail('https://i.postimg.cc/02jPwF12/download.jpg')
+            const usageEmbed = new EmbedBuilder()
+                .setDescription(`✶ طريـقـة التزكيـة الصحيحة:\nتزكية @منشن\n\nتمـلـك « ${displayRemaining} » شـهـادة تزكيـة لهـذا اليـوم`)
+                .setThumbnail('https://i.postimg.cc/zG4FYy12/ayqwnt-(4).png')
                 .setColor(getRandomColor());
-            return message.reply({ embeds: [noMentionEmbed] });
+            return message.reply({ embeds: [usageEmbed] });
         }
 
         const targetId = targetMember.id;
@@ -89,21 +119,7 @@ module.exports = {
             }
         }
 
-        let senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
-        if (!senderRep) {
-            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(senderId, guildId);
-            senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
-        }
-
-        let targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
-        if (!targetRep) {
-            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(targetId, guildId);
-            targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
-        }
-
-        const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
-        
-        if (senderId !== OWNER_ID && senderRep.last_rep_given === todayDateStr) {
+        if (senderId !== OWNER_ID && remainingVotes <= 0) {
             const nextRepTime = getNextResetTime();
             const cooldownEmbed = new EmbedBuilder()
                 .setTitle('✥ استفـدت صـوتـك لهـذا اليـوم .. ⏳')
@@ -113,11 +129,18 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
+        let targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
+        if (!targetRep) {
+            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(targetId, guildId);
+            targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
+        }
+
         const newTargetPoints = targetRep.rep_points + 1;
+        const newDailyRepsGiven = currentDailyReps + 1;
         
         sql.transaction(() => {
             sql.prepare("UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userID = ? AND guildID = ?").run(targetId, guildId);
-            sql.prepare("UPDATE user_reputation SET last_rep_given = ?, weekly_reps_given = weekly_reps_given + 1 WHERE userID = ? AND guildID = ?").run(todayDateStr, senderId, guildId);
+            sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = ?, weekly_reps_given = weekly_reps_given + 1 WHERE userID = ? AND guildID = ?").run(todayDateStr, newDailyRepsGiven, senderId, guildId);
         })();
 
         const targetRankData = getRepRank(newTargetPoints);
