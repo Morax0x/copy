@@ -656,92 +656,126 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
     } catch (err) {}
 }
 
+// 1. تحسين دالة تحديث أسعار السوق
 function updateMarketPrices() {
     if (!sql.open) return;
     try {
         if (!client.marketLocks) client.marketLocks = new Set();
-
         const allItems = sql.prepare("SELECT * FROM market_items").all();
         if (allItems.length === 0) return;
 
-        const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-        
-        const CRASH_PRICE = 10; 
+        const updatePricesTransaction = sql.transaction((items) => {
+            const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
+            const getOwnedStmt = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?");
+            const CRASH_PRICE = 10; 
 
-        for (const item of allItems) {
-            if (client.marketLocks.has(item.id)) continue;
+            for (const item of items) {
+                if (client.marketLocks.has(item.id)) continue;
 
-            const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
-            const totalOwned = result.total || 0;
+                const result = getOwnedStmt.get(item.id);
+                const totalOwned = result.total || 0;
 
-            let randomPercent = (Math.random() * 0.20) - 0.10;
-            const saturationPenalty = (totalOwned / 2000) * 0.02;
-            let finalChangePercent = randomPercent - saturationPenalty;
+                let randomPercent = (Math.random() * 0.20) - 0.10;
+                const saturationPenalty = (totalOwned / 2000) * 0.02;
+                let finalChangePercent = randomPercent - saturationPenalty;
 
-            if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
-            if (finalChangePercent < -0.30) finalChangePercent = -0.30;
+                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
+                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
-            const oldPrice = item.currentPrice;
-            let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
+                const oldPrice = item.currentPrice;
+                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
-            if (newPrice <= CRASH_PRICE) {
-                handleMarketCrash(client, sql, item); 
-                continue; 
+                if (newPrice <= CRASH_PRICE) {
+                    // تجنب الاستدعاء المتزامن داخل الـ Transaction للوظائف الثقيلة
+                    setTimeout(() => handleMarketCrash(client, sql, item), 0); 
+                    continue; 
+                }
+                
+                if (newPrice > 50000) newPrice = 50000;
+
+                const changeAmount = newPrice - oldPrice;
+                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
+                
+                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
             }
-            
-            if (newPrice > 50000) newPrice = 50000;
+        });
 
-            const changeAmount = newPrice - oldPrice;
-            const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-            
-            updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
-        }
-    } catch (err) {}
-}
-
-async function checkTemporaryRoles(client) {
-    if (!sql.open) return;
-    const now = Date.now();
-    const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
-    for (const record of expiredRoles) {
-        try {
-            const guild = client.guilds.cache.get(record.guildID);
-            if (!guild) {
-                sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?").run(record.userID, record.guildID, record.roleID);
-                continue;
-            }
-            const member = await guild.members.fetch(record.userID).catch(() => null);
-            const role = guild.roles.cache.get(record.roleID);
-            if (member && role) {
-                await member.roles.remove(role, "انتهاء مدة الرتبة المؤقتة");
-            }
-        } catch (e) {}
-        sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?").run(record.userID, record.guildID, record.roleID);
+        updatePricesTransaction(allItems);
+    } catch (err) {
+        console.error("Error in updateMarketPrices:", err);
     }
 }
 
+// 2. تحسين دالة فحص الرتب المؤقتة
+async function checkTemporaryRoles(client) {
+    if (!sql.open) return;
+    const now = Date.now();
+    try {
+        const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
+        if (expiredRoles.length === 0) return;
+
+        // نحذف من قاعدة البيانات بسرعة داخل Transaction
+        const deleteRolesTransaction = sql.transaction((roles) => {
+            const deleteStmt = sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?");
+            for (const record of roles) {
+                deleteStmt.run(record.userID, record.guildID, record.roleID);
+            }
+        });
+        deleteRolesTransaction(expiredRoles);
+
+        // نزيل الرتب في ديسكورد تدريجياً في الخلفية بدون تعليق البوت
+        for (const record of expiredRoles) {
+            const guild = client.guilds.cache.get(record.guildID);
+            if (!guild) continue;
+            const member = await guild.members.fetch(record.userID).catch(() => null);
+            const role = guild.roles.cache.get(record.roleID);
+            if (member && role) {
+                member.roles.remove(role, "انتهاء مدة الرتبة المؤقتة").catch(() => {});
+            }
+        }
+    } catch (err) {
+        console.error("Error in checkTemporaryRoles:", err);
+    }
+}
+
+// 3. تحسين دالة الفوائد البنكية
 const calculateInterest = () => {
     if (!sql.open) return;
     const now = Date.now();
     const INTEREST_RATE = 0.0005; 
     const COOLDOWN = 24 * 60 * 60 * 1000; 
     const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
-    const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
-    for (const user of allUsers) {
-        if ((now - user.lastInterest) >= COOLDOWN) {
-            const timeSinceDaily = now - (user.lastDaily || 0);
-            const timeSinceWork = now - (user.lastWork || 0);
-            if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?").run(now, user.user, user.guild);
-                continue; 
+    
+    try {
+        const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
+        
+        // استخدام Transaction لتسريع العملية ومنع تعليق البوت
+        const processInterest = sql.transaction((users) => {
+            const updateInactive = sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?");
+            const updateActive = sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?");
+            
+            for (const user of users) {
+                if ((now - user.lastInterest) >= COOLDOWN) {
+                    const timeSinceDaily = now - (user.lastDaily || 0);
+                    const timeSinceWork = now - (user.lastWork || 0);
+                    
+                    if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
+                        updateInactive.run(now, user.user, user.guild);
+                    } else {
+                        const interestAmount = Math.floor(user.bank * INTEREST_RATE);
+                        if (interestAmount > 0) {
+                            updateActive.run(interestAmount, now, interestAmount, user.user, user.guild);
+                        } else {
+                            updateInactive.run(now, user.user, user.guild);
+                        }
+                    }
+                }
             }
-            const interestAmount = Math.floor(user.bank * INTEREST_RATE);
-            if (interestAmount > 0) {
-                sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?").run(interestAmount, now, interestAmount, user.user, user.guild);
-            } else {
-                sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?").run(now, user.user, user.guild);
-            }
-        }
+        });
+        
+        processInterest(allUsers);
+    } catch (err) {
+        console.error("Error in calculateInterest:", err);
     }
 };
 
