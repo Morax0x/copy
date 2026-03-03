@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } = require('discord.js');
-const aiConfig = require('../../../utils/aiConfig'); 
+// 🔥 تم تصحيح المسار هنا ليصبح صحيحاً ويقرأه البوت 🔥
+const aiConfig = require('../../utils/aiConfig.js'); 
 
 module.exports = {
     data: new SlashCommandBuilder()
