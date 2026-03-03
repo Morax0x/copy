@@ -28,7 +28,8 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
         if (type === 'level') {
             allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guild.id, OWNER_ID);
         } else if (type === 'rep') {
-            allUsers = sql.prepare("SELECT userID as user, CAST(rep_points AS INTEGER) as rp FROM user_reputation WHERE guildID = ? AND CAST(rep_points AS INTEGER) > 0 ORDER BY rp DESC").all(guild.id);
+            // 🔥 تم الإصلاح هنا: إخفاء الإمبراطور من توب السمعة 🔥
+            allUsers = sql.prepare("SELECT userID as user, CAST(rep_points AS INTEGER) as rp FROM user_reputation WHERE guildID = ? AND userID != ? AND CAST(rep_points AS INTEGER) > 0 ORDER BY rp DESC").all(guild.id, OWNER_ID);
         } else if (type === 'weekly_xp') {
             const weekStart = getWeekStartDateString();
             allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildID = ? AND userID != ? AND weekStartDate = ? AND score > 0 ORDER BY score DESC`).all(guild.id, OWNER_ID, weekStart);
