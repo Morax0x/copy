@@ -99,150 +99,132 @@ module.exports = {
 
         collector.on('collect', async interaction => {
             const val = interaction.values[0];
+            const guildID = message.guild.id;
+            const userID = targetUser.id;
 
             if (val === 'check') {
                 await this.checkUser(interaction, client, sql, targetUser);
             } 
             else if (val === 'economy') {
-                const modal = new ModalBuilder().setCustomId(`mod_eco_${targetUser.id}`).setTitle('إدارة الموارد');
+                const modalId = `mod_eco_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة الموارد');
                 const typeInput = new TextInputBuilder().setCustomId('eco_type').setLabel('النوع (مورا / خبرة)').setStyle(TextInputStyle.Short).setRequired(true);
                 const actionInput = new TextInputBuilder().setCustomId('eco_action').setLabel('الإجراء (اضافة / خصم / تحديد)').setStyle(TextInputStyle.Short).setRequired(true);
                 const amountInput = new TextInputBuilder().setCustomId('eco_amount').setLabel('الكمية (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(typeInput), new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const type = normalize(modalSubmit.fields.getTextInputValue('eco_type'));
+                    const action = normalize(modalSubmit.fields.getTextInputValue('eco_action'));
+                    const amount = parseInt(modalSubmit.fields.getTextInputValue('eco_amount'));
+                    
+                    if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
+                    let ud = client.getLevel.get(userID, guildID) || { ...client.defaultData, user: userID, guild: guildID };
+                    let field = type.includes('مورا') || type.includes('فلوس') ? 'mora' : 'xp';
+                    
+                    if (action.includes('اضاف')) ud[field] += amount;
+                    else if (action.includes('خصم')) ud[field] = Math.max(0, ud[field] - amount);
+                    else if (action.includes('تحديد')) ud[field] = amount;
+
+                    client.setLevel.run(ud);
+                    await modalSubmit.reply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
+                } catch(e) {}
             }
             else if (val === 'reputation') {
-                const modal = new ModalBuilder().setCustomId(`mod_rep_${targetUser.id}`).setTitle('إدارة السمعة (النقاط)');
+                const modalId = `mod_rep_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة السمعة (النقاط)');
                 const actionInput = new TextInputBuilder().setCustomId('rep_action').setLabel('الإجراء (اضافة / خصم / تحديد)').setStyle(TextInputStyle.Short).setRequired(true);
                 const amountInput = new TextInputBuilder().setCustomId('rep_amount').setLabel('النقاط (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const action = normalize(modalSubmit.fields.getTextInputValue('rep_action'));
+                    const amount = parseInt(modalSubmit.fields.getTextInputValue('rep_amount'));
+                    if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
+
+                    let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    if (!repData) {
+                        sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(userID, guildID);
+                        repData = { rep_points: 0 };
+                    }
+
+                    let newPoints = repData.rep_points;
+                    if (action.includes('اضاف') || action.includes('زود')) newPoints += amount;
+                    else if (action.includes('خصم') || action.includes('نقص') || action.includes('ازال')) newPoints = Math.max(0, newPoints - amount);
+                    else if (action.includes('تحديد') || action.includes('حط')) newPoints = amount;
+                    else return modalSubmit.reply({ content: "❌ إجراء غير معروف.", ephemeral: true });
+
+                    sql.prepare("UPDATE user_reputation SET rep_points = ? WHERE userID = ? AND guildID = ?").run(newPoints, userID, guildID);
+                    await modalSubmit.reply({ content: `✅ تم ضبط سمعة ${targetUser} لتصبح **${newPoints}** 🌟` });
+                } catch(e) {}
             }
             else if (val === 'rep_chances') {
-                const modal = new ModalBuilder().setCustomId(`mod_repchan_${targetUser.id}`).setTitle('منح فرص تزكية');
+                const modalId = `mod_repchan_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('منح فرص تزكية');
                 const amountInput = new TextInputBuilder().setCustomId('repchan_amount').setLabel('عدد الفرص الإضافية (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const amount = parseInt(modalSubmit.fields.getTextInputValue('repchan_amount'));
+                    if (isNaN(amount) || amount <= 0) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح وموجب.", ephemeral: true });
+
+                    const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
+                    try { sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run(); } catch(e) {}
+
+                    let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    if (!repData) {
+                        sql.prepare("INSERT INTO user_reputation (userID, guildID, last_rep_given, daily_reps_given) VALUES (?, ?, ?, ?)").run(userID, guildID, todayDateStr, -amount);
+                    } else {
+                        sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = COALESCE(daily_reps_given, 0) - ? WHERE userID = ? AND guildID = ?").run(todayDateStr, amount, userID, guildID);
+                    }
+
+                    await modalSubmit.reply({ content: `✅ تم منح **${amount}** فرصة تزكية إضافية لـ ${targetUser} بنجاح! يمكنه استخدامها الآن. 🗳️` });
+                } catch(e) {}
             }
             else if (val === 'tickets') {
-                const modal = new ModalBuilder().setCustomId(`mod_tkt_${targetUser.id}`).setTitle('إدارة تذاكر الدانجون');
+                const modalId = `mod_tkt_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة تذاكر الدانجون');
                 const amountInput = new TextInputBuilder().setCustomId('tkt_amount').setLabel('الكمية للإضافة').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const amount = parseInt(modalSubmit.fields.getTextInputValue('tkt_amount'));
+                    if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
+
+                    const userStats = sql.prepare("SELECT * FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    if (userStats) {
+                        sql.prepare("UPDATE dungeon_stats SET tickets = tickets + ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
+                    } else {
+                        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+                        sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)").run(guildID, userID, amount, todayStr);
+                    }
+                    await modalSubmit.reply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
+                } catch(e) {}
             }
-            // 🔥 إضافة خيمة الدانجون 🔥
             else if (val === 'dungeon_tent') {
-                const modal = new ModalBuilder().setCustomId(`mod_tent_${targetUser.id}`).setTitle('منح خيمة حفظ (الدانجون)');
+                const modalId = `mod_tent_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('منح خيمة حفظ (الدانجون)');
                 const floorInput = new TextInputBuilder().setCustomId('tent_floor').setLabel('رقم الطابق المراد الحفظ عنده').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(floorInput));
                 await interaction.showModal(modal);
-            }
-            else if (val === 'items') {
-                const modal = new ModalBuilder().setCustomId(`mod_item_${targetUser.id}`).setTitle('إدارة العناصر');
-                const actionInput = new TextInputBuilder().setCustomId('itm_action').setLabel('الإجراء (اعطاء / ازالة)').setStyle(TextInputStyle.Short).setRequired(true);
-                const nameInput = new TextInputBuilder().setCustomId('itm_name').setLabel('اسم العنصر').setStyle(TextInputStyle.Short).setRequired(true);
-                const qtyInput = new TextInputBuilder().setCustomId('itm_qty').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true);
-                modal.addComponents(new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(nameInput), new ActionRowBuilder().addComponents(qtyInput));
-                await interaction.showModal(modal);
-            }
-            else if (val === 'media_shield') {
-                await this.giveMediaShield(interaction, sql, targetUser);
-            }
-            else if (val === 'reset') {
-                await this.resetUser(interaction, client, sql, targetUser);
-            }
-        });
-
-        client.on('interactionCreate', async modalSubmit => {
-            if (!modalSubmit.isModalSubmit()) return;
-            if (modalSubmit.user.id !== message.author.id) return;
-
-            const guildID = message.guild.id;
-            const userID = targetUser.id;
-
-            if (modalSubmit.customId === `mod_rep_${targetUser.id}`) {
-                const action = normalize(modalSubmit.fields.getTextInputValue('rep_action'));
-                const amount = parseInt(modalSubmit.fields.getTextInputValue('rep_amount'));
-                if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
-
-                let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
-                if (!repData) {
-                    sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(userID, guildID);
-                    repData = { rep_points: 0 };
-                }
-
-                let newPoints = repData.rep_points;
-                if (action.includes('اضاف') || action.includes('زود')) newPoints += amount;
-                else if (action.includes('خصم') || action.includes('نقص') || action.includes('ازال')) newPoints = Math.max(0, newPoints - amount);
-                else if (action.includes('تحديد') || action.includes('حط')) newPoints = amount;
-                else return modalSubmit.reply({ content: "❌ إجراء غير معروف.", ephemeral: true });
-
-                sql.prepare("UPDATE user_reputation SET rep_points = ? WHERE userID = ? AND guildID = ?").run(newPoints, userID, guildID);
-                await modalSubmit.reply({ content: `✅ تم ضبط سمعة ${targetUser} لتصبح **${newPoints}** 🌟` });
-            }
-
-            else if (modalSubmit.customId === `mod_repchan_${targetUser.id}`) {
-                const amount = parseInt(modalSubmit.fields.getTextInputValue('repchan_amount'));
-                if (isNaN(amount) || amount <= 0) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح وموجب.", ephemeral: true });
-
-                const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
-                
-                try { sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run(); } catch(e) {}
-
-                let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
-                if (!repData) {
-                    sql.prepare("INSERT INTO user_reputation (userID, guildID, last_rep_given, daily_reps_given) VALUES (?, ?, ?, ?)").run(userID, guildID, todayDateStr, -amount);
-                } else {
-                    sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = COALESCE(daily_reps_given, 0) - ? WHERE userID = ? AND guildID = ?").run(todayDateStr, amount, userID, guildID);
-                }
-
-                await modalSubmit.reply({ content: `✅ تم منح **${amount}** فرصة تزكية إضافية لـ ${targetUser} بنجاح! يمكنه استخدامها الآن. 🗳️` });
-            }
-
-            else if (modalSubmit.customId === `mod_eco_${targetUser.id}`) {
-                const type = normalize(modalSubmit.fields.getTextInputValue('eco_type'));
-                const action = normalize(modalSubmit.fields.getTextInputValue('eco_action'));
-                const amount = parseInt(modalSubmit.fields.getTextInputValue('eco_amount'));
-                
-                if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
-
-                let ud = client.getLevel.get(userID, guildID) || { ...client.defaultData, user: userID, guild: guildID };
-
-                let field = type.includes('مورا') || type.includes('فلوس') ? 'mora' : 'xp';
-                
-                if (action.includes('اضاف')) ud[field] += amount;
-                else if (action.includes('خصم')) ud[field] = Math.max(0, ud[field] - amount);
-                else if (action.includes('تحديد')) ud[field] = amount;
-
-                client.setLevel.run(ud);
-                await modalSubmit.reply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
-            }
-
-            else if (modalSubmit.customId === `mod_tkt_${targetUser.id}`) {
-                const amount = parseInt(modalSubmit.fields.getTextInputValue('tkt_amount'));
-                if (isNaN(amount)) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح.", ephemeral: true });
-
-                const userStats = sql.prepare("SELECT * FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
-                if (userStats) {
-                    sql.prepare("UPDATE dungeon_stats SET tickets = tickets + ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
-                } else {
-                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
-                    sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)").run(guildID, userID, amount, todayStr);
-                }
-                await modalSubmit.reply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
-            }
-
-            // 🔥 تنفيذ خيمة الدانجون السحرية 🔥
-            else if (modalSubmit.customId === `mod_tent_${targetUser.id}`) {
-                const floorStr = modalSubmit.fields.getTextInputValue('tent_floor');
-                const targetFloor = parseInt(floorStr);
-                
-                if (isNaN(targetFloor) || targetFloor <= 0) {
-                    return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم طابق صحيح وموجب.", ephemeral: true });
-                }
 
                 try {
-                    // تحديث بيانات حفظ الدانجون للاعب
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const floorStr = modalSubmit.fields.getTextInputValue('tent_floor');
+                    const targetFloor = parseInt(floorStr);
+                    
+                    if (isNaN(targetFloor) || targetFloor <= 0) {
+                        return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم طابق صحيح وموجب.", ephemeral: true });
+                    }
+
                     const updateStmt = sql.prepare(`
                         INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
                         VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)
@@ -252,44 +234,57 @@ module.exports = {
                     updateStmt.run(guildID, userID, targetFloor, targetFloor);
                     
                     await modalSubmit.reply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
-                } catch (err) {
-                    console.error(err);
-                    await modalSubmit.reply({ content: "❌ حدث خطأ أثناء إعداد الخيمة في قاعدة البيانات.", ephemeral: true });
-                }
+                } catch(e) {}
             }
+            else if (val === 'items') {
+                const modalId = `mod_item_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة العناصر');
+                const actionInput = new TextInputBuilder().setCustomId('itm_action').setLabel('الإجراء (اعطاء / ازالة)').setStyle(TextInputStyle.Short).setRequired(true);
+                const nameInput = new TextInputBuilder().setCustomId('itm_name').setLabel('اسم العنصر').setStyle(TextInputStyle.Short).setRequired(true);
+                const qtyInput = new TextInputBuilder().setCustomId('itm_qty').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(nameInput), new ActionRowBuilder().addComponents(qtyInput));
+                await interaction.showModal(modal);
 
-            else if (modalSubmit.customId === `mod_item_${targetUser.id}`) {
-                const action = normalize(modalSubmit.fields.getTextInputValue('itm_action'));
-                const name = modalSubmit.fields.getTextInputValue('itm_name');
-                const qty = parseInt(modalSubmit.fields.getTextInputValue('itm_qty')) || 1;
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const action = normalize(modalSubmit.fields.getTextInputValue('itm_action'));
+                    const name = modalSubmit.fields.getTextInputValue('itm_name');
+                    const qty = parseInt(modalSubmit.fields.getTextInputValue('itm_qty')) || 1;
 
-                const item = this.findItem(name);
-                if (!item) return modalSubmit.reply({ content: `❌ لم يتم العثور على عنصر باسم "${name}".`, ephemeral: true });
+                    const item = this.findItem(name);
+                    if (!item) return modalSubmit.reply({ content: `❌ لم يتم العثور على عنصر باسم "${name}".`, ephemeral: true });
 
-                if (action.includes('اعطاء') || action.includes('اضاف')) {
-                    if (item.type === 'market') {
-                        const pfItem = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userID, guildID, item.id);
-                        if (pfItem) sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(qty, pfItem.id);
-                        else sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?)").run(guildID, userID, item.id, qty);
-                    } else if (item.type === 'farm') {
-                        const now = Date.now();
-                        const stmt = sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected, lastFedTimestamp) VALUES (?, ?, ?, ?, ?, ?)");
-                        for (let i = 0; i < qty; i++) stmt.run(guildID, userID, item.id, now, now, now);
+                    if (action.includes('اعطاء') || action.includes('اضاف')) {
+                        if (item.type === 'market') {
+                            const pfItem = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userID, guildID, item.id);
+                            if (pfItem) sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(qty, pfItem.id);
+                            else sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?)").run(guildID, userID, item.id, qty);
+                        } else if (item.type === 'farm') {
+                            const now = Date.now();
+                            const stmt = sql.prepare("INSERT INTO user_farm (guildID, userID, animalID, purchaseTimestamp, lastCollected, lastFedTimestamp) VALUES (?, ?, ?, ?, ?, ?)");
+                            for (let i = 0; i < qty; i++) stmt.run(guildID, userID, item.id, now, now, now);
+                        }
+                        await modalSubmit.reply({ content: `✅ تم إضافة **${qty}** × **${item.name}** لـ ${targetUser}.` });
+                    } 
+                    else if (action.includes('ازال') || action.includes('سحب')) {
+                        if (item.type === 'market') {
+                            const pfItem = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userID, guildID, item.id);
+                            if (!pfItem) return modalSubmit.reply({ content: "❌ لا يمتلك هذا العنصر.", ephemeral: true });
+                            if (pfItem.quantity - qty <= 0) sql.prepare("DELETE FROM user_portfolio WHERE id = ?").run(pfItem.id);
+                            else sql.prepare("UPDATE user_portfolio SET quantity = quantity - ? WHERE id = ?").run(qty, pfItem.id);
+                        } else if (item.type === 'farm') {
+                            const animals = sql.prepare("SELECT id FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT ?").all(userID, guildID, item.id, qty);
+                            animals.forEach(a => sql.prepare("DELETE FROM user_farm WHERE id = ?").run(a.id));
+                        }
+                        await modalSubmit.reply({ content: `✅ تم سحب **${qty}** × **${item.name}** من ${targetUser}.` });
                     }
-                    await modalSubmit.reply({ content: `✅ تم إضافة **${qty}** × **${item.name}** لـ ${targetUser}.` });
-                } 
-                else if (action.includes('ازال') || action.includes('سحب')) {
-                    if (item.type === 'market') {
-                        const pfItem = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userID, guildID, item.id);
-                        if (!pfItem) return modalSubmit.reply({ content: "❌ لا يمتلك هذا العنصر.", ephemeral: true });
-                        if (pfItem.quantity - qty <= 0) sql.prepare("DELETE FROM user_portfolio WHERE id = ?").run(pfItem.id);
-                        else sql.prepare("UPDATE user_portfolio SET quantity = quantity - ? WHERE id = ?").run(qty, pfItem.id);
-                    } else if (item.type === 'farm') {
-                        const animals = sql.prepare("SELECT id FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT ?").all(userID, guildID, item.id, qty);
-                        animals.forEach(a => sql.prepare("DELETE FROM user_farm WHERE id = ?").run(a.id));
-                    }
-                    await modalSubmit.reply({ content: `✅ تم سحب **${qty}** × **${item.name}** من ${targetUser}.` });
-                }
+                } catch(e) {}
+            }
+            else if (val === 'media_shield') {
+                await this.giveMediaShield(interaction, sql, targetUser);
+            }
+            else if (val === 'reset') {
+                await this.resetUser(interaction, client, sql, targetUser);
             }
         });
     },
@@ -349,50 +344,50 @@ module.exports = {
                 await interaction.reply({ content: `📈 **انتعاش السوق!**\n\`\`\`\n${report.join('\n')}\n\`\`\`` });
             }
             else if (val === 'status') {
-                const modal = new ModalBuilder().setCustomId('mod_mrkt_status').setTitle('حالة السوق');
+                const modalId = `mod_mrkt_status_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('حالة السوق');
                 const statInput = new TextInputBuilder().setCustomId('m_status').setLabel('اكتب: ركود أو ازدهار أو طبيعي').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(statInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const status = normalize(modalSubmit.fields.getTextInputValue('m_status'));
+                    let statusKey = 'normal';
+                    if (status.includes('ركود')) statusKey = 'recession';
+                    if (status.includes('ازدهار')) statusKey = 'boom';
+                    
+                    sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(message.guild.id);
+                    sql.prepare("UPDATE settings SET marketStatus = ? WHERE guild = ?").run(statusKey, message.guild.id);
+                    await modalSubmit.reply({ content: `✅ تم ضبط حالة السوق على: **${statusKey}**` });
+                } catch(e) {}
             }
             else if (val === 'price') {
-                const modal = new ModalBuilder().setCustomId('mod_mrkt_price').setTitle('تحديد السعر');
+                const modalId = `mod_mrkt_price_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('تحديد السعر');
                 const nameInput = new TextInputBuilder().setCustomId('m_name').setLabel('اسم السهم أو الكود').setStyle(TextInputStyle.Short).setRequired(true);
                 const priceInput = new TextInputBuilder().setCustomId('m_price').setLabel('السعر الجديد').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(nameInput), new ActionRowBuilder().addComponents(priceInput));
                 await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    const itemID = modalSubmit.fields.getTextInputValue('m_name');
+                    const price = parseInt(modalSubmit.fields.getTextInputValue('m_price'));
+                    
+                    const item = this.findItem(itemID);
+                    if (!item || item.type !== 'market') return modalSubmit.reply({ content: "❌ السهم غير موجود.", ephemeral: true });
+
+                    const dbItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(item.id);
+                    const currentPrice = dbItem ? dbItem.currentPrice : item.price;
+                    const changePercent = ((price - currentPrice) / currentPrice).toFixed(2);
+                    sql.prepare("UPDATE market_items SET currentPrice = ?, lastChangePercent = ? WHERE id = ?").run(price, changePercent, item.id);
+
+                    await modalSubmit.reply({ content: `✅ تم ضبط سعر **${item.name}** إلى **${price}**` });
+                } catch(e) {}
             }
             else if (val === 'reset_market') {
                 await interaction.reply({ content: "☢️ سيتم تنفيذ تصفير السوق يدوياً، يرجى كتابة `-ادمن تصفير-السوق` للتأكيد." });
-            }
-        });
-
-        message.client.on('interactionCreate', async modalSubmit => {
-            if (!modalSubmit.isModalSubmit()) return;
-            if (modalSubmit.user.id !== message.author.id) return;
-
-            if (modalSubmit.customId === 'mod_mrkt_status') {
-                const status = normalize(modalSubmit.fields.getTextInputValue('m_status'));
-                let statusKey = 'normal';
-                if (status.includes('ركود')) statusKey = 'recession';
-                if (status.includes('ازدهار')) statusKey = 'boom';
-                
-                sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(message.guild.id);
-                sql.prepare("UPDATE settings SET marketStatus = ? WHERE guild = ?").run(statusKey, message.guild.id);
-                await modalSubmit.reply({ content: `✅ تم ضبط حالة السوق على: **${statusKey}**` });
-            }
-            else if (modalSubmit.customId === 'mod_mrkt_price') {
-                const itemID = modalSubmit.fields.getTextInputValue('m_name');
-                const price = parseInt(modalSubmit.fields.getTextInputValue('m_price'));
-                
-                const item = this.findItem(itemID);
-                if (!item || item.type !== 'market') return modalSubmit.reply({ content: "❌ السهم غير موجود.", ephemeral: true });
-
-                const dbItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(item.id);
-                const currentPrice = dbItem ? dbItem.currentPrice : item.price;
-                const changePercent = ((price - currentPrice) / currentPrice).toFixed(2);
-                sql.prepare("UPDATE market_items SET currentPrice = ?, lastChangePercent = ? WHERE id = ?").run(price, changePercent, item.id);
-
-                await modalSubmit.reply({ content: `✅ تم ضبط سعر **${item.name}** إلى **${price}**` });
             }
         });
     },
