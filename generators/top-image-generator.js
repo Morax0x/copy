@@ -24,15 +24,15 @@ try {
 // ==========================================
 // 🏅 دالة حساب حرف الرتبة للسمعة
 // ==========================================
-function getRankLetter(points) {
-    if (points >= 1000) return 'SS';
-    if (points >= 500)  return 'S';
-    if (points >= 250)  return 'A';
-    if (points >= 100)  return 'B';
-    if (points >= 50)   return 'C';
-    if (points >= 25)   return 'D';
-    if (points >= 10)   return 'E';
-    return 'F';
+function getRankInfo(points) {
+    if (points >= 1000) return { letter: 'SS', color: '#FF0055' };
+    if (points >= 500)  return { letter: 'S',  color: '#00FFFF' };
+    if (points >= 250)  return { letter: 'A',  color: '#FFD700' };
+    if (points >= 100)  return { letter: 'B',  color: '#C0C0C0' };
+    if (points >= 50)   return { letter: 'C',  color: '#CD7F32' };
+    if (points >= 25)   return { letter: 'D',  color: '#2E8B57' };
+    if (points >= 10)   return { letter: 'E',  color: '#8B4513' };
+    return { letter: 'F', color: '#A0522D' };
 }
 
 // ==========================================
@@ -65,6 +65,43 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
         else ctx.lineTo(x, y);
     }
     ctx.closePath();
+}
+
+function drawRankShield(ctx, x, y, width, height, color) {
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 15;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+
+    ctx.beginPath();
+    ctx.moveTo(x, y); 
+    ctx.lineTo(x + width / 2, y + height * 0.2); 
+    ctx.lineTo(x + width, y); 
+    ctx.lineTo(x + width, y + height * 0.7); 
+    ctx.quadraticCurveTo(x + width, y + height, x + width / 2, y + height); 
+    ctx.quadraticCurveTo(x, y + height, x, y + height * 0.7); 
+    ctx.closePath();
+    
+    ctx.fill();
+    ctx.stroke();
+    
+    // إطار داخلي نحيف أبيض لمزيد من الفخامة
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 5, y + 5); 
+    ctx.lineTo(x + width / 2, y + height * 0.2 + 3); 
+    ctx.lineTo(x + width - 5, y + 5); 
+    ctx.lineTo(x + width - 5, y + height * 0.7 - 2); 
+    ctx.quadraticCurveTo(x + width - 5, y + height - 5, x + width / 2, y + height - 5); 
+    ctx.quadraticCurveTo(x + 5, y + height - 5, x + 5, y + height * 0.7 - 2); 
+    ctx.closePath();
+    ctx.stroke();
+    
+    ctx.restore();
 }
 
 // ==========================================
@@ -213,10 +250,11 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         let statVal = "";
         let statLabel = "";
         let subStat = "";
+        let rankInfo = null;
 
         if (type === 'rep') {
             statVal = item.db.rp.toLocaleString();
-            statLabel = `[ ${getRankLetter(item.db.rp)} ]`; // 🔥 استبدال السمعة بحرف الرتبة
+            rankInfo = getRankInfo(item.db.rp);
         } 
         else if (type === 'mora') {
             statVal = ((item.db.mora||0) + (item.db.bank||0)).toLocaleString();
@@ -248,19 +286,45 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
             subStat = `💬 ${msgs.toLocaleString()} | 🎙️ ${vc.toLocaleString()} د`;
         }
 
-        // 🔥 رسم الرقم (بلون الثيم)
-        ctx.fillStyle = theme.color;
-        ctx.font = 'bold 32px "Arial", sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(statVal, 140, startY + 52);
+        // --- رسم القيم على اليسار ---
+        if (type === 'rep' && rankInfo) {
+            // 🔥 حالة خاصة بالسمعة: رسم الدرع والحرف
+            const shieldW = 50; // عرض الدرع
+            const shieldH = 60; // ارتفاع الدرع
+            const shieldX = 140; // مكان الدرع
+            const shieldY = startY + (cardHeight - shieldH) / 2;
 
-        // قياس عرض الرقم عشان نحط الكلمة جنبه
-        const valWidth = ctx.measureText(statVal).width;
+            drawRankShield(ctx, shieldX, shieldY, shieldW, shieldH, rankInfo.color);
 
-        // 🔥 رسم الكلمة (دائماً بالأبيض المريح للعين)
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 22px "Bein", sans-serif';
-        ctx.fillText(fixAr(statLabel), 140 + valWidth + 8, startY + 50);
+            // رسم الحرف
+            ctx.fillStyle = rankInfo.color;
+            ctx.font = 'bold 26px "Arial", sans-serif'; 
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle'; 
+            ctx.fillText(rankInfo.letter, shieldX + shieldW / 2, shieldY + shieldH / 2 + 5);
+            ctx.textBaseline = 'alphabetic'; 
+
+            // رسم الرقم
+            ctx.fillStyle = theme.color;
+            ctx.font = 'bold 30px "Arial", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(statVal, shieldX + shieldW + 15, startY + 52);
+
+        } else {
+            // 🔥 رسم الرقم (بلون الثيم)
+            ctx.fillStyle = theme.color;
+            ctx.font = 'bold 32px "Arial", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(statVal, 140, startY + 52);
+
+            // قياس عرض الرقم عشان نحط الكلمة جنبه
+            const valWidth = ctx.measureText(statVal).width;
+
+            // 🔥 رسم الكلمة (دائماً بالأبيض المريح للعين)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px "Bein", sans-serif';
+            ctx.fillText(fixAr(statLabel), 140 + valWidth + 8, startY + 50);
+        }
 
         // رسم التفاصيل تحت الاسم (إن وجدت)
         if (subStat) {
