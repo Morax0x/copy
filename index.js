@@ -109,7 +109,9 @@ const { checkLoanPayments } = require('./handlers/loan-handler.js');
 const questsConfig = require('./json/quests-config.json');
 const farmAnimals = require('./json/farm-animals.json');
 
-const { generateSingleAchievementAlert, generateQuestAlert } = require('./generators/achievement-generator.js'); 
+const { generateQuestAlert } = require('./generators/achievement-generator.js'); 
+const { generateAchievementCard } = require('./generators/achievement-card-generator.js'); // 🔥 استدعاء الأوسمة
+
 const { createRandomDropGiveaway, endGiveaway, getUserWeight, initGiveaways } = require('./handlers/giveaway-handler.js');
 const { checkUnjailTask } = require('./handlers/report-handler.js'); 
 const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
@@ -120,9 +122,9 @@ const autoJoin = require('./handlers/auto-join.js');
 const handleMarketCrash = require('./handlers/market-crash-handler.js');
 
 const { startAuctionSystem } = require('./handlers/auction-handler.js');
-const { autoUpdateKingsBoard } = require('./handlers/guild-board-handler.js'); 
+const { autoUpdateKingsBoard, rewardDailyKings } = require('./handlers/guild-board-handler.js'); // 🔥 جلب توزيع الرواتب
 
-// 🔥 تم إضافة استدعاء السوالف التلقائية هنا 🔥
+// 🔥 السوالف التلقائية للذكاء الاصطناعي
 const { startAutoChat } = require('./handlers/ai/auto-chat.js');
 
 const announcementsTexts = require('./json/announcements-texts.js');
@@ -158,8 +160,8 @@ client.EMOJI_COOL = '<a:NekoCool:1435572459276337245>';
 const EMOJI_XP_ANIM = '<a:levelup:1437805366048985290>';
 
 client.sql = sql;
-client.generateSingleAchievementAlert = generateSingleAchievementAlert;
 client.generateQuestAlert = generateQuestAlert;
+client.generateAchievementCard = generateAchievementCard; // 🔥 دالة الأوسمة
 
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
@@ -229,6 +231,129 @@ function getWeekStartDateString() {
     friday.setUTCHours(0, 0, 0, 0); 
     return friday.toISOString().split('T')[0];
 }
+
+// 1. تحسين دالة تحديث أسعار السوق
+function updateMarketPrices() {
+    if (!sql.open) return;
+    try {
+        if (!client.marketLocks) client.marketLocks = new Set();
+        const allItems = sql.prepare("SELECT * FROM market_items").all();
+        if (allItems.length === 0) return;
+
+        const updatePricesTransaction = sql.transaction((items) => {
+            const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
+            const getOwnedStmt = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?");
+            const CRASH_PRICE = 10; 
+
+            for (const item of items) {
+                if (client.marketLocks.has(item.id)) continue;
+
+                const result = getOwnedStmt.get(item.id);
+                const totalOwned = result.total || 0;
+
+                let randomPercent = (Math.random() * 0.20) - 0.10;
+                const saturationPenalty = (totalOwned / 2000) * 0.02;
+                let finalChangePercent = randomPercent - saturationPenalty;
+
+                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
+                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
+
+                const oldPrice = item.currentPrice;
+                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
+
+                if (newPrice <= CRASH_PRICE) {
+                    // تجنب الاستدعاء المتزامن داخل الـ Transaction للوظائف الثقيلة
+                    setTimeout(() => handleMarketCrash(client, sql, item), 0); 
+                    continue; 
+                }
+                
+                if (newPrice > 50000) newPrice = 50000;
+
+                const changeAmount = newPrice - oldPrice;
+                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
+                
+                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+            }
+        });
+
+        updatePricesTransaction(allItems);
+    } catch (err) {
+        console.error("Error in updateMarketPrices:", err);
+    }
+}
+
+// 2. تحسين دالة فحص الرتب المؤقتة
+async function checkTemporaryRoles(client) {
+    if (!sql.open) return;
+    const now = Date.now();
+    try {
+        const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
+        if (expiredRoles.length === 0) return;
+
+        // نحذف من قاعدة البيانات بسرعة داخل Transaction
+        const deleteRolesTransaction = sql.transaction((roles) => {
+            const deleteStmt = sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?");
+            for (const record of roles) {
+                deleteStmt.run(record.userID, record.guildID, record.roleID);
+            }
+        });
+        deleteRolesTransaction(expiredRoles);
+
+        // نزيل الرتب في ديسكورد تدريجياً في الخلفية بدون تعليق البوت
+        for (const record of expiredRoles) {
+            const guild = client.guilds.cache.get(record.guildID);
+            if (!guild) continue;
+            const member = await guild.members.fetch(record.userID).catch(() => null);
+            const role = guild.roles.cache.get(record.roleID);
+            if (member && role) {
+                member.roles.remove(role, "انتهاء مدة الرتبة المؤقتة").catch(() => {});
+            }
+        }
+    } catch (err) {
+        console.error("Error in checkTemporaryRoles:", err);
+    }
+}
+
+// 3. تحسين دالة الفوائد البنكية
+const calculateInterest = () => {
+    if (!sql.open) return;
+    const now = Date.now();
+    const INTEREST_RATE = 0.0005; 
+    const COOLDOWN = 24 * 60 * 60 * 1000; 
+    const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
+    
+    try {
+        const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
+        
+        // استخدام Transaction لتسريع العملية ومنع تعليق البوت
+        const processInterest = sql.transaction((users) => {
+            const updateInactive = sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?");
+            const updateActive = sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?");
+            
+            for (const user of users) {
+                if ((now - user.lastInterest) >= COOLDOWN) {
+                    const timeSinceDaily = now - (user.lastDaily || 0);
+                    const timeSinceWork = now - (user.lastWork || 0);
+                    
+                    if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
+                        updateInactive.run(now, user.user, user.guild);
+                    } else {
+                        const interestAmount = Math.floor(user.bank * INTEREST_RATE);
+                        if (interestAmount > 0) {
+                            updateActive.run(interestAmount, now, interestAmount, user.user, user.guild);
+                        } else {
+                            updateInactive.run(now, user.user, user.guild);
+                        }
+                    }
+                }
+            }
+        });
+        
+        processInterest(allUsers);
+    } catch (err) {
+        console.error("Error in calculateInterest:", err);
+    }
+};
 
 client.checkAndAwardLevelRoles = async function(member, newLevel) {
     if (!client.sql.open) return;
@@ -392,14 +517,18 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
         if (canAttachFiles) { 
             try { 
                 let attachment; 
+                // 🔥 التعديل هنا: استخدام دالة generateAchievementCard الجديدة للأوسمة بدلاً من القديمة 🔥
                 if (questType === 'achievement') { 
-                    attachment = await client.generateSingleAchievementAlert(member, quest); 
+                    const userAvatar = member.user.displayAvatarURL({ extension: 'png', size: 256 });
+                    const userName = member.displayName || member.user.username;
+                    const buffer = await client.generateAchievementCard(userAvatar, userName, quest.name, quest.description, quest.reward.mora, quest.reward.xp, quest.repReward || 0);
+                    attachment = new AttachmentBuilder(buffer, { name: 'achievement.png' });
                 } else { 
                     const typeForAlert = questType === 'weekly' ? 'rare' : 'daily'; 
                     attachment = await client.generateQuestAlert(member, quest, typeForAlert); 
                 } 
                 if(attachment) files.push(attachment); 
-            } catch (imgErr) {} 
+            } catch (imgErr) { console.error("Error generating quest image:", imgErr); } 
         } 
         
         message = announcementsTexts.getQuestMessage(questType, userIdentifier, questName, rewardDetails, panelChannelLink, client);
@@ -656,129 +785,6 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
     } catch (err) {}
 }
 
-// 1. تحسين دالة تحديث أسعار السوق
-function updateMarketPrices() {
-    if (!sql.open) return;
-    try {
-        if (!client.marketLocks) client.marketLocks = new Set();
-        const allItems = sql.prepare("SELECT * FROM market_items").all();
-        if (allItems.length === 0) return;
-
-        const updatePricesTransaction = sql.transaction((items) => {
-            const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-            const getOwnedStmt = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?");
-            const CRASH_PRICE = 10; 
-
-            for (const item of items) {
-                if (client.marketLocks.has(item.id)) continue;
-
-                const result = getOwnedStmt.get(item.id);
-                const totalOwned = result.total || 0;
-
-                let randomPercent = (Math.random() * 0.20) - 0.10;
-                const saturationPenalty = (totalOwned / 2000) * 0.02;
-                let finalChangePercent = randomPercent - saturationPenalty;
-
-                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
-                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
-
-                const oldPrice = item.currentPrice;
-                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
-
-                if (newPrice <= CRASH_PRICE) {
-                    // تجنب الاستدعاء المتزامن داخل الـ Transaction للوظائف الثقيلة
-                    setTimeout(() => handleMarketCrash(client, sql, item), 0); 
-                    continue; 
-                }
-                
-                if (newPrice > 50000) newPrice = 50000;
-
-                const changeAmount = newPrice - oldPrice;
-                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-                
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
-            }
-        });
-
-        updatePricesTransaction(allItems);
-    } catch (err) {
-        console.error("Error in updateMarketPrices:", err);
-    }
-}
-
-// 2. تحسين دالة فحص الرتب المؤقتة
-async function checkTemporaryRoles(client) {
-    if (!sql.open) return;
-    const now = Date.now();
-    try {
-        const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
-        if (expiredRoles.length === 0) return;
-
-        // نحذف من قاعدة البيانات بسرعة داخل Transaction
-        const deleteRolesTransaction = sql.transaction((roles) => {
-            const deleteStmt = sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?");
-            for (const record of roles) {
-                deleteStmt.run(record.userID, record.guildID, record.roleID);
-            }
-        });
-        deleteRolesTransaction(expiredRoles);
-
-        // نزيل الرتب في ديسكورد تدريجياً في الخلفية بدون تعليق البوت
-        for (const record of expiredRoles) {
-            const guild = client.guilds.cache.get(record.guildID);
-            if (!guild) continue;
-            const member = await guild.members.fetch(record.userID).catch(() => null);
-            const role = guild.roles.cache.get(record.roleID);
-            if (member && role) {
-                member.roles.remove(role, "انتهاء مدة الرتبة المؤقتة").catch(() => {});
-            }
-        }
-    } catch (err) {
-        console.error("Error in checkTemporaryRoles:", err);
-    }
-}
-
-// 3. تحسين دالة الفوائد البنكية
-const calculateInterest = () => {
-    if (!sql.open) return;
-    const now = Date.now();
-    const INTEREST_RATE = 0.0005; 
-    const COOLDOWN = 24 * 60 * 60 * 1000; 
-    const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
-    
-    try {
-        const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
-        
-        // استخدام Transaction لتسريع العملية ومنع تعليق البوت
-        const processInterest = sql.transaction((users) => {
-            const updateInactive = sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?");
-            const updateActive = sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?");
-            
-            for (const user of users) {
-                if ((now - user.lastInterest) >= COOLDOWN) {
-                    const timeSinceDaily = now - (user.lastDaily || 0);
-                    const timeSinceWork = now - (user.lastWork || 0);
-                    
-                    if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                        updateInactive.run(now, user.user, user.guild);
-                    } else {
-                        const interestAmount = Math.floor(user.bank * INTEREST_RATE);
-                        if (interestAmount > 0) {
-                            updateActive.run(interestAmount, now, interestAmount, user.user, user.guild);
-                        } else {
-                            updateInactive.run(now, user.user, user.guild);
-                        }
-                    }
-                }
-            }
-        });
-        
-        processInterest(allUsers);
-    } catch (err) {
-        console.error("Error in calculateInterest:", err);
-    }
-};
-
 async function updateTimerChannels(client) {
     if (!sql.open) return;
     const guilds = client.guilds.cache.values();
@@ -961,14 +967,19 @@ client.on(Events.ClientReady, async () => {
         const nowKSA = new Date().toLocaleString('en-US', { timeZone: KSA_TIMEZONE }); 
         const ksaDate = new Date(nowKSA); 
         const ksaHour = ksaDate.getHours(); 
+        
         if (ksaHour === 0 && lastUpdateSentHour !== ksaHour) { 
             sendDailyMediaUpdate(client, sql); 
+            // 🔥 توزيع الجوائز على الملوك عند منتصف الليل 🔥
+            rewardDailyKings(client, sql);
             lastUpdateSentHour = ksaHour; 
         } else if (ksaHour !== 0) lastUpdateSentHour = -1; 
+        
         if (ksaHour === 12 && lastWarningSentHour !== ksaHour) { 
             sendStreakWarnings(client, sql); 
             lastWarningSentHour = ksaHour; 
         } else if (ksaHour !== 12) lastWarningSentHour = -1; 
+        
         if (ksaHour === 15 && lastReminderSentHour !== ksaHour) { 
             sendMediaStreakReminders(client, sql); 
             lastReminderSentHour = ksaHour; 
@@ -986,7 +997,7 @@ client.on(Events.ClientReady, async () => {
         } catch (e) {}
     }, 30 * 60 * 1000); 
 
-    // 🔥 التحديث كل 60 ثانية (لجعل الإشعارات سريعة جداً) 🔥
+    // 🔥 التحديث كل 60 ثانية للوحة الملوك 🔥
     setInterval(() => {
         autoUpdateKingsBoard(client, sql).catch(() => {});
     }, 60 * 1000);
