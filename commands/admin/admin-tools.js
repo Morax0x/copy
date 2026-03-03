@@ -37,7 +37,7 @@ function normalize(str) {
 
 module.exports = {
     name: 'admin-tools',
-    description: 'لوحة التحكم الشاملة',
+    description: 'لـوحـة الامبراطـور',
     aliases: ['ادمن', 'admin', 'تعديل-ادمن', 'ادوات-ادمن', 'control'],
     category: 'Admin',
 
@@ -71,10 +71,10 @@ module.exports = {
 
     async sendUserPanel(message, targetUser, targetMember, sql, client) {
         const embed = new EmbedBuilder()
-            .setTitle(`👑 لوحة تحكم اللاعب: ${targetUser.username}`)
+            .setTitle(`👑 لـوحـة الامبراطـور: ${targetUser.username}`)
             .setThumbnail(targetUser.displayAvatarURL())
             .setColor(Colors.Gold)
-            .setDescription("الرجاء اختيار الإجراء المطلوب من القائمة أدناه:");
+            .setDescription("مـا امـرك سيـادة الامبراطـور؟");
 
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
