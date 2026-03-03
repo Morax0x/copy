@@ -63,7 +63,7 @@ async function triggerAutoChat(client) {
 function startAutoChat(client) {
     setInterval(() => {
         triggerAutoChat(client);
-    }, 1000 * 60 * 20); // ⏱️ تم التعديل هنا: 20 دقيقة
+    }, 1000 * 60 * 40); // ⏱️ تم التعديل هنا: 40 دقيقة
 }
 
 module.exports = { startAutoChat, triggerAutoChat };
