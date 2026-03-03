@@ -79,22 +79,17 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                 }
             }
 
-            // 1️⃣ نظام الخيمة (الدانجون)
+            // 1️⃣ نظام الخيمة (الدانجون) - تم تصحيح الأعمدة هنا
             if (lowerText.includes('خيم') || lowerText.includes('طابق')) {
                 if (amount > 0) {
                     const guildID = message.guild.id;
                     const userID = targetUser.id;
-                    const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE hostID = ? AND guildID = ?").get(userID, guildID);
                     
                     if (existingSave) {
-                        sql.prepare("UPDATE dungeon_saves SET current_floor = ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
+                        sql.prepare("UPDATE dungeon_saves SET floor = ?, timestamp = ? WHERE hostID = ? AND guildID = ?").run(amount, Date.now(), userID, guildID);
                     } else {
-                        try {
-                            const saveId = `${guildID}-${userID}`;
-                            sql.prepare(`INSERT INTO dungeon_saves (id, guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) VALUES (?, ?, ?, ?, 100, 100, 50, 'warrior', 20)`).run(saveId, guildID, userID, amount);
-                        } catch (err2) {
-                            sql.prepare(`INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)`).run(guildID, userID, amount);
-                        }
+                        sql.prepare("INSERT INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(userID, guildID, amount, Date.now());
                     }
                     await message.react('⛺').catch(()=>{});
                     feedback = `\n\n⛺ **تم التنفيذ:** تم منح **${targetUser.username}** خيمة حفظ في الدانجون عند الطابق **${amount}**.`;
