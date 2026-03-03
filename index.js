@@ -89,7 +89,7 @@ try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN topgg_vo
 try { if(sql.open) sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN topgg_votes INTEGER DEFAULT 0").run(); } catch (e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_topgg_votes INTEGER DEFAULT 0").run(); } catch (e) {}
 
-// 🔥 تحديثات قاعدة بيانات الإشعارات (لحل الكراش) 🔥
+// 🔥 تحديثات قاعدة بيانات الإشعارات 🔥
 try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS quest_notifications (id TEXT PRIMARY KEY, userID TEXT, guildID TEXT, dailyNotif INTEGER DEFAULT 1, weeklyNotif INTEGER DEFAULT 1, achievementsNotif INTEGER DEFAULT 1, levelNotif INTEGER DEFAULT 1, kingsNotif INTEGER DEFAULT 1, badgesNotif INTEGER DEFAULT 1)").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE quest_notifications ADD COLUMN kingsNotif INTEGER DEFAULT 1").run(); } catch(e) {}
 try { if(sql.open) sql.prepare("ALTER TABLE quest_notifications ADD COLUMN badgesNotif INTEGER DEFAULT 1").run(); } catch(e) {}
@@ -110,7 +110,7 @@ const questsConfig = require('./json/quests-config.json');
 const farmAnimals = require('./json/farm-animals.json');
 
 const { generateQuestAlert } = require('./generators/achievement-generator.js'); 
-const { generateAchievementCard } = require('./generators/achievement-card-generator.js'); // 🔥 استدعاء الأوسمة
+const { generateAchievementCard } = require('./generators/achievement-card-generator.js'); 
 
 const { createRandomDropGiveaway, endGiveaway, getUserWeight, initGiveaways } = require('./handlers/giveaway-handler.js');
 const { checkUnjailTask } = require('./handlers/report-handler.js'); 
@@ -122,7 +122,7 @@ const autoJoin = require('./handlers/auto-join.js');
 const handleMarketCrash = require('./handlers/market-crash-handler.js');
 
 const { startAuctionSystem } = require('./handlers/auction-handler.js');
-const { autoUpdateKingsBoard, rewardDailyKings } = require('./handlers/guild-board-handler.js'); // 🔥 جلب توزيع الرواتب
+const { autoUpdateKingsBoard, rewardDailyKings } = require('./handlers/guild-board-handler.js'); 
 
 // 🔥 السوالف التلقائية للذكاء الاصطناعي
 const { startAutoChat } = require('./handlers/ai/auto-chat.js');
@@ -161,7 +161,7 @@ const EMOJI_XP_ANIM = '<a:levelup:1437805366048985290>';
 
 client.sql = sql;
 client.generateQuestAlert = generateQuestAlert;
-client.generateAchievementCard = generateAchievementCard; // 🔥 دالة الأوسمة
+client.generateAchievementCard = generateAchievementCard; 
 
 if (sql.open) {
     client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
@@ -232,7 +232,6 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-// 1. تحسين دالة تحديث أسعار السوق
 function updateMarketPrices() {
     if (!sql.open) return;
     try {
@@ -262,7 +261,6 @@ function updateMarketPrices() {
                 let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
                 if (newPrice <= CRASH_PRICE) {
-                    // تجنب الاستدعاء المتزامن داخل الـ Transaction للوظائف الثقيلة
                     setTimeout(() => handleMarketCrash(client, sql, item), 0); 
                     continue; 
                 }
@@ -282,7 +280,6 @@ function updateMarketPrices() {
     }
 }
 
-// 2. تحسين دالة فحص الرتب المؤقتة
 async function checkTemporaryRoles(client) {
     if (!sql.open) return;
     const now = Date.now();
@@ -290,7 +287,6 @@ async function checkTemporaryRoles(client) {
         const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
         if (expiredRoles.length === 0) return;
 
-        // نحذف من قاعدة البيانات بسرعة داخل Transaction
         const deleteRolesTransaction = sql.transaction((roles) => {
             const deleteStmt = sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?");
             for (const record of roles) {
@@ -299,7 +295,6 @@ async function checkTemporaryRoles(client) {
         });
         deleteRolesTransaction(expiredRoles);
 
-        // نزيل الرتب في ديسكورد تدريجياً في الخلفية بدون تعليق البوت
         for (const record of expiredRoles) {
             const guild = client.guilds.cache.get(record.guildID);
             if (!guild) continue;
@@ -314,7 +309,6 @@ async function checkTemporaryRoles(client) {
     }
 }
 
-// 3. تحسين دالة الفوائد البنكية
 const calculateInterest = () => {
     if (!sql.open) return;
     const now = Date.now();
@@ -325,7 +319,6 @@ const calculateInterest = () => {
     try {
         const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
         
-        // استخدام Transaction لتسريع العملية ومنع تعليق البوت
         const processInterest = sql.transaction((users) => {
             const updateInactive = sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?");
             const updateActive = sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?");
@@ -411,8 +404,7 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
             await member.roles.add(roleToAdd).catch(()=>{});
         }
 
-    } catch (err) {
-    }
+    } catch (err) {}
 }
 
 client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) {
@@ -517,7 +509,6 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
         if (canAttachFiles) { 
             try { 
                 let attachment; 
-                // 🔥 التعديل هنا: استخدام دالة generateAchievementCard الجديدة للأوسمة بدلاً من القديمة 🔥
                 if (questType === 'achievement') { 
                     const userAvatar = member.user.displayAvatarURL({ extension: 'png', size: 256 });
                     const userName = member.displayName || member.user.username;
@@ -1018,3 +1009,26 @@ try {
 }
 
 client.login(botToken);
+
+// --- 🛡️ نظام الإغلاق الآمن (Graceful Shutdown) لمنع النسخ الشبحية وقفل البيانات ---
+function shutdownGracefully(signal) {
+    console.log(`\n⚠️ Received ${signal}. Starting graceful shutdown...`);
+    try {
+        if (client) {
+            console.log("🔌 Disconnecting Discord Bot...");
+            client.destroy();
+        }
+        if (sql && sql.open) {
+            console.log("💾 Closing SQLite database safely...");
+            sql.close(); // هذا السطر يدمج ملفات WAL ويمنع تعليق الداتابيس
+        }
+        console.log("✅ Shutdown complete.");
+        process.exit(0);
+    } catch (err) {
+        console.error("❌ Error during shutdown:", err);
+        process.exit(1);
+    }
+}
+
+process.on('SIGINT', () => shutdownGracefully('SIGINT'));   // Ctrl+C أو PM2 stop
+process.on('SIGTERM', () => shutdownGracefully('SIGTERM')); // PM2 restart/delete
