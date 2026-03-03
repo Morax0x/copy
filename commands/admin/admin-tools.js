@@ -83,7 +83,8 @@ module.exports = {
                 .addOptions([
                     { label: '📋 فحص الحساب', value: 'check', description: 'عرض إحصائيات اللاعب' },
                     { label: '💰 إدارة المورا والخبرة', value: 'economy', emoji: '🪙' },
-                    { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد', emoji: '🌟' },
+                    { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
+                    { label: '🗳️ فرص التزكية', value: 'rep_chances', description: 'منح فرص تصويت (تزكية) إضافية لليوم', emoji: '🗳️' },
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
                     { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض', emoji: '🎒' },
                     { label: '🛡️ إعطاء درع ميديا', value: 'media_shield', emoji: '🛡️' },
@@ -110,10 +111,17 @@ module.exports = {
                 await interaction.showModal(modal);
             }
             else if (val === 'reputation') {
-                const modal = new ModalBuilder().setCustomId(`mod_rep_${targetUser.id}`).setTitle('إدارة السمعة');
+                const modal = new ModalBuilder().setCustomId(`mod_rep_${targetUser.id}`).setTitle('إدارة السمعة (النقاط)');
                 const actionInput = new TextInputBuilder().setCustomId('rep_action').setLabel('الإجراء (اضافة / خصم / تحديد)').setStyle(TextInputStyle.Short).setRequired(true);
                 const amountInput = new TextInputBuilder().setCustomId('rep_amount').setLabel('النقاط (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(amountInput));
+                await interaction.showModal(modal);
+            }
+            // 🔥 إضافة قائمة الفرص الإضافية للتزكية 🔥
+            else if (val === 'rep_chances') {
+                const modal = new ModalBuilder().setCustomId(`mod_repchan_${targetUser.id}`).setTitle('منح فرص تزكية');
+                const amountInput = new TextInputBuilder().setCustomId('repchan_amount').setLabel('عدد الفرص الإضافية (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
             }
             else if (val === 'tickets') {
@@ -164,6 +172,29 @@ module.exports = {
 
                 sql.prepare("UPDATE user_reputation SET rep_points = ? WHERE userID = ? AND guildID = ?").run(newPoints, userID, guildID);
                 await modalSubmit.reply({ content: `✅ تم ضبط سمعة ${targetUser} لتصبح **${newPoints}** 🌟` });
+            }
+
+            // 🔥 تنفيذ منح فرص التزكية 🔥
+            else if (modalSubmit.customId === `mod_repchan_${targetUser.id}`) {
+                const amount = parseInt(modalSubmit.fields.getTextInputValue('repchan_amount'));
+                if (isNaN(amount) || amount <= 0) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح وموجب.", ephemeral: true });
+
+                const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
+                
+                try {
+                    // نتأكد أن العامود موجود لتجنب أي أخطاء
+                    sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run();
+                } catch(e) {}
+
+                let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                if (!repData) {
+                    sql.prepare("INSERT INTO user_reputation (userID, guildID, last_rep_given, daily_reps_given) VALUES (?, ?, ?, ?)").run(userID, guildID, todayDateStr, -amount);
+                } else {
+                    // نقوم بإنقاص الفرص المستخدمة (ليصبح بالسالب لو لزم الأمر) لكي يستطيع التصويت مجدداً اليوم
+                    sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = COALESCE(daily_reps_given, 0) - ? WHERE userID = ? AND guildID = ?").run(todayDateStr, amount, userID, guildID);
+                }
+
+                await modalSubmit.reply({ content: `✅ تم منح **${amount}** فرصة تزكية إضافية لـ ${targetUser} بنجاح! يمكنه استخدامها الآن. 🗳️` });
             }
 
             else if (modalSubmit.customId === `mod_eco_${targetUser.id}`) {
