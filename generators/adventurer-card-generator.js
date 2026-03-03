@@ -1,5 +1,3 @@
-// generators/adventurer-card-generator.js
-
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas'); 
 const path = require('path');
 
@@ -174,21 +172,26 @@ async function generateAdventurerCard(data) {
     ctx.shadowBlur = 10;
     let dName = data.displayName;
     if (dName.length > 15) dName = dName.substring(0, 15) + '..';
-    ctx.fillText(dName, textRightX, 90);
+    ctx.fillText(dName, textRightX, 85);
     ctx.shadowBlur = 0;
 
+    // 🔥 التعديل هنا: تكبير خط العرق والسلاح وزيادة حجم الإطار 🔥
     const drawTag = (text, y) => {
-        ctx.font = 'bold 18px "Bein", sans-serif';
-        const tagW = ctx.measureText(text).width + 40;
+        ctx.font = 'bold 24px "Bein", sans-serif'; // تم تكبير الخط من 18 إلى 24
+        const tagW = ctx.measureText(text).width + 60; // تم زيادة عرض المربع ليتناسب مع الخط الكبير
         ctx.fillStyle = 'rgba(20, 20, 25, 0.85)';
-        ctx.beginPath(); roundRect(ctx, textRightX - tagW, y, tagW, 35, 8); ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = primaryColor; ctx.stroke();
+        ctx.beginPath(); 
+        roundRect(ctx, textRightX - tagW, y, tagW, 45, 10); // تم تكبير ارتفاع المربع من 35 إلى 45
+        ctx.fill();
+        ctx.lineWidth = 2; // تم تعريض الإطار قليلاً ليتناسب مع الحجم الجديد
+        ctx.strokeStyle = primaryColor; 
+        ctx.stroke();
         ctx.fillStyle = '#e0e0e0';
         ctx.textAlign = 'center';
-        ctx.fillText(text, textRightX - (tagW / 2), y + 23);
+        ctx.fillText(text, textRightX - (tagW / 2), y + 31); // تم ضبط موقع النص داخل المربع الجديد
     };
 
-    drawTag(`🩸 ${data.raceName}   |   ⚔️ ${data.weaponName}`, 125);
+    drawTag(`🩸 ${data.raceName}   |   ⚔️ ${data.weaponName}`, 115); // تم رفع المربع قليلاً ليتناسق مع الاسم
 
     // 3. الشبكة الهندسية (الإحصائيات)
     const col4X = 830;
@@ -255,7 +258,8 @@ async function generateAdventurerCard(data) {
     ctx.fillStyle = primaryColor;
     ctx.font = 'bold 24px "Bein", sans-serif';
     ctx.textAlign = 'center';
-    ctx.shadowColor = primaryColor; ctx.shadowBlur = 10;
+    ctx.shadowColor = primaryColor;
+    ctx.shadowBlur = 10;
     ctx.fillText('🏆 التصنيف', col1X + (boxW / 2), row1Y + 45);
     ctx.shadowBlur = 0;
 
