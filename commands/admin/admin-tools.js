@@ -130,7 +130,7 @@ module.exports = {
 
                     client.setLevel.run(ud);
                     await modalSubmit.reply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'reputation') {
                 const modalId = `mod_rep_${Date.now()}`;
@@ -160,7 +160,7 @@ module.exports = {
 
                     sql.prepare("UPDATE user_reputation SET rep_points = ? WHERE userID = ? AND guildID = ?").run(newPoints, userID, guildID);
                     await modalSubmit.reply({ content: `✅ تم ضبط سمعة ${targetUser} لتصبح **${newPoints}** 🌟` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'rep_chances') {
                 const modalId = `mod_repchan_${Date.now()}`;
@@ -185,7 +185,7 @@ module.exports = {
                     }
 
                     await modalSubmit.reply({ content: `✅ تم منح **${amount}** فرصة تزكية إضافية لـ ${targetUser} بنجاح! يمكنه استخدامها الآن. 🗳️` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'tickets') {
                 const modalId = `mod_tkt_${Date.now()}`;
@@ -207,8 +207,9 @@ module.exports = {
                         sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)").run(guildID, userID, amount, todayStr);
                     }
                     await modalSubmit.reply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
+            // 🔥 تنفيذ خيمة الدانجون السحرية (النسخة الآمنة 100%) 🔥
             else if (val === 'dungeon_tent') {
                 const modalId = `mod_tent_${Date.now()}`;
                 const modal = new ModalBuilder().setCustomId(modalId).setTitle('منح خيمة حفظ (الدانجون)');
@@ -225,16 +226,36 @@ module.exports = {
                         return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم طابق صحيح وموجب.", ephemeral: true });
                     }
 
-                    const updateStmt = sql.prepare(`
-                        INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
-                        VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)
-                        ON CONFLICT(guildID, userID) 
-                        DO UPDATE SET current_floor = ?
-                    `);
-                    updateStmt.run(guildID, userID, targetFloor, targetFloor);
-                    
-                    await modalSubmit.reply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
-                } catch(e) {}
+                    try {
+                        // نبحث إذا كان اللاعب عنده بيانات حفظ أصلاً
+                        const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                        
+                        if (existingSave) {
+                            // إذا موجود، نحدث الطابق فقط
+                            sql.prepare("UPDATE dungeon_saves SET current_floor = ? WHERE userID = ? AND guildID = ?").run(targetFloor, userID, guildID);
+                        } else {
+                            // إذا مو موجود، نسوي له ملف جديد بطاقة كاملة
+                            try {
+                                const saveId = `${guildID}-${userID}`;
+                                sql.prepare(`
+                                    INSERT INTO dungeon_saves (id, guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
+                                    VALUES (?, ?, ?, ?, 100, 100, 50, 'warrior', 20)
+                                `).run(saveId, guildID, userID, targetFloor);
+                            } catch (err2) {
+                                // في حال كان الجدول ما يطلب id
+                                sql.prepare(`
+                                    INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
+                                    VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)
+                                `).run(guildID, userID, targetFloor);
+                            }
+                        }
+                        
+                        await modalSubmit.reply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
+                    } catch (dbError) {
+                        console.error("[Dungeon Tent Error]:", dbError);
+                        await modalSubmit.reply({ content: `❌ حدث خطأ برمجي أثناء حفظ الخيمة:\n\`${dbError.message}\``, ephemeral: true });
+                    }
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'items') {
                 const modalId = `mod_item_${Date.now()}`;
@@ -278,7 +299,7 @@ module.exports = {
                         }
                         await modalSubmit.reply({ content: `✅ تم سحب **${qty}** × **${item.name}** من ${targetUser}.` });
                     }
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'media_shield') {
                 await this.giveMediaShield(interaction, sql, targetUser);
@@ -360,7 +381,7 @@ module.exports = {
                     sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(message.guild.id);
                     sql.prepare("UPDATE settings SET marketStatus = ? WHERE guild = ?").run(statusKey, message.guild.id);
                     await modalSubmit.reply({ content: `✅ تم ضبط حالة السوق على: **${statusKey}**` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'price') {
                 const modalId = `mod_mrkt_price_${Date.now()}`;
@@ -384,7 +405,7 @@ module.exports = {
                     sql.prepare("UPDATE market_items SET currentPrice = ?, lastChangePercent = ? WHERE id = ?").run(price, changePercent, item.id);
 
                     await modalSubmit.reply({ content: `✅ تم ضبط سعر **${item.name}** إلى **${price}**` });
-                } catch(e) {}
+                } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'reset_market') {
                 await interaction.reply({ content: "☢️ سيتم تنفيذ تصفير السوق يدوياً، يرجى كتابة `-ادمن تصفير-السوق` للتأكيد." });
