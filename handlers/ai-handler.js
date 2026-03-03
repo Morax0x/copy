@@ -14,7 +14,7 @@ const path = require('path');
 const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
 const sql = new SQLite(dbPath);
 
-// 🔥 تم التعديل هنا: جلب الدالة من المكان الصحيح 🔥
+// 🔥 جلب الدالة من المكان الصحيح 🔥
 let updateGuildStat;
 try {
     ({ updateGuildStat } = require('./guild-board-handler.js'));
@@ -28,7 +28,6 @@ const OWNER_ID = "1145327691772481577";
 function sanitizeOutput(text) {
     if (!text) return "";
     let cleanText = text.replace(/@(everyone|here)/gi, "");
-    // استبدال المنشن الخاطئ بكلمة (مغامر) بدلاً من مسحه بالكامل وترك فراغ
     cleanText = cleanText.replace(/<@!?\d+>/g, "(مغامر)"); 
     cleanText = cleanText.replace(/@/g, "");
     cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
@@ -49,6 +48,7 @@ async function resolveNames(guild, dataList) {
     return names.join(', ');
 }
 
+// 🔥 محرك الأوامر الملكية المطور 🔥
 async function detectAndExecuteCommands(message, aiResponseText) {
     if (!message || message.author.id !== OWNER_ID) return aiResponseText;
 
@@ -60,8 +60,10 @@ async function detectAndExecuteCommands(message, aiResponseText) {
     const targetUser = mentions.first(); 
 
     try {
-        if (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب')) {
-            
+        if (targetUser) {
+            if (targetUser.id === message.client.user.id || targetUser.id === OWNER_ID) return aiResponseText;
+
+            // 🔢 استخراج الرقم من كلامك
             const numbers = lowerText.match(/\b\d+\b/g);
             let amount = 0;
             
@@ -77,62 +79,104 @@ async function detectAndExecuteCommands(message, aiResponseText) {
                 }
             }
 
-            if (targetUser && amount > 0) {
-                if (targetUser.id === message.client.user.id || targetUser.id === OWNER_ID) return aiResponseText;
-
-                const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); 
-                
-                let userLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, message.guild.id);
-                if (!userLevel) {
-                    sql.prepare("INSERT OR IGNORE INTO levels (user, guild, xp, level, totalXP, mora) VALUES (?, ?, 0, 1, 0, 0)").run(targetUser.id, message.guild.id);
-                }
-
-                if (isGive) {
-                    sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
-                    await message.react('💸').catch(()=>{});
-                    feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
-                } else {
-                    sql.prepare("UPDATE levels SET mora = MAX(0, mora - ?) WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
-                    await message.react('📉').catch(()=>{});
-                    feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
-                }
-                actionDone = true;
-            }
-        }
-
-        if (!actionDone && (lowerText.includes('تايم') || lowerText.includes('سكت') || lowerText.includes('اصمت') || lowerText.includes('ميوت') || lowerText.includes('فك') || lowerText.includes('شيل'))) {
-            
-            if (targetUser) {
-                const targetMember = await message.guild.members.fetch(targetUser.id).catch(()=>null);
-                if (!targetMember) return aiResponseText;
-
-                if (lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح')) {
-                    if (targetMember.isCommunicationDisabled()) {
-                        await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
-                        await message.react('✅').catch(()=>{});
-                        feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
-                    }
-                } 
-                else {
-                    const numbers = lowerText.match(/\b\d+\b/g);
-                    let minutes = 5; 
-                    if (numbers) {
-                        const validNumber = numbers.find(n => n.length < 5); 
-                        if (validNumber) minutes = parseInt(validNumber);
-                    }
-
-                    if (targetMember.manageable) {
-                        await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
-                        await message.react('🤐').catch(()=>{});
-                        feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
+            // 1️⃣ نظام الخيمة (الدانجون)
+            if (lowerText.includes('خيم') || lowerText.includes('طابق')) {
+                if (amount > 0) {
+                    const guildID = message.guild.id;
+                    const userID = targetUser.id;
+                    const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    
+                    if (existingSave) {
+                        sql.prepare("UPDATE dungeon_saves SET current_floor = ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
                     } else {
-                        feedback = `\n\n❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
+                        try {
+                            const saveId = `${guildID}-${userID}`;
+                            sql.prepare(`INSERT INTO dungeon_saves (id, guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) VALUES (?, ?, ?, ?, 100, 100, 50, 'warrior', 20)`).run(saveId, guildID, userID, amount);
+                        } catch (err2) {
+                            sql.prepare(`INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)`).run(guildID, userID, amount);
+                        }
                     }
+                    await message.react('⛺').catch(()=>{});
+                    feedback = `\n\n⛺ **تم التنفيذ:** تم منح **${targetUser.username}** خيمة حفظ في الدانجون عند الطابق **${amount}**.`;
+                    actionDone = true;
                 }
-                actionDone = true;
+            }
+            
+            // 2️⃣ نظام السمعة (التزكية)
+            else if (!actionDone && (lowerText.includes('سمع') || lowerText.includes('تزكي') || lowerText.includes('نقاط'))) {
+                if (amount > 0) {
+                    const guildID = message.guild.id;
+                    const userID = targetUser.id;
+                    const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب') && !lowerText.includes('خصم') && !lowerText.includes('نقص'); 
+                    
+                    let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                    if (!repData) {
+                        sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(userID, guildID);
+                    }
+
+                    if (isGive) {
+                        sql.prepare("UPDATE user_reputation SET rep_points = rep_points + ? WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
+                        await message.react('🌟').catch(()=>{});
+                        feedback = `\n\n🌟 **تم التنفيذ:** تم إضافة **${amount}** نقطة سمعة إلى **${targetUser.username}**.`;
+                    } else {
+                        sql.prepare("UPDATE user_reputation SET rep_points = MAX(0, rep_points - ?) WHERE userID = ? AND guildID = ?").run(amount, userID, guildID);
+                        await message.react('💔').catch(()=>{});
+                        feedback = `\n\n💔 **تم التنفيذ:** تم خصم **${amount}** نقطة سمعة من **${targetUser.username}**.`;
+                    }
+                    actionDone = true;
+                }
+            }
+
+            // 3️⃣ نظام المورا
+            else if (!actionDone && (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب'))) {
+                if (amount > 0) {
+                    const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); 
+                    
+                    let userLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, message.guild.id);
+                    if (!userLevel) {
+                        sql.prepare("INSERT OR IGNORE INTO levels (user, guild, xp, level, totalXP, mora) VALUES (?, ?, 0, 1, 0, 0)").run(targetUser.id, message.guild.id);
+                    }
+
+                    if (isGive) {
+                        sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
+                        await message.react('💸').catch(()=>{});
+                        feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
+                    } else {
+                        sql.prepare("UPDATE levels SET mora = MAX(0, mora - ?) WHERE user = ? AND guild = ?").run(amount, targetUser.id, message.guild.id);
+                        await message.react('📉').catch(()=>{});
+                        feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
+                    }
+                    actionDone = true;
+                }
+            }
+
+            // 4️⃣ نظام العقوبات (الميوت/التايم اوت)
+            if (!actionDone && (lowerText.includes('تايم') || lowerText.includes('سكت') || lowerText.includes('اصمت') || lowerText.includes('ميوت') || lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح'))) {
+                const targetMember = await message.guild.members.fetch(targetUser.id).catch(()=>null);
+                if (targetMember) {
+                    if (lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح')) {
+                        if (targetMember.isCommunicationDisabled()) {
+                            await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
+                            await message.react('✅').catch(()=>{});
+                            feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
+                        }
+                    } 
+                    else {
+                        let minutes = 5; 
+                        if (amount > 0) minutes = amount; // إذا حطيت رقم بياخذه كدقائق
+
+                        if (targetMember.manageable) {
+                            await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
+                            await message.react('🤐').catch(()=>{});
+                            feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
+                        } else {
+                            feedback = `\n\n❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
+                        }
+                    }
+                    actionDone = true;
+                }
             }
         }
-
     } catch (err) {
         console.error("[AI Action Error]", err);
         feedback = `\n\n❌ حدث خطأ تقني أثناء تنفيذ الطلب.`;
@@ -175,7 +219,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 dynamicContext = `\n[Server Live Stats]:\n- Top Strongest: ${topLevelNames}\n- Top Richest: ${topRichNames}\n- World Boss: ${bossInfo}\n`;
             }
 
-            // 💡 استخراج أسماء الأشخاص المذكورين كـ نصوص عادية حتى يتعرف عليهم الذكاء
+            // 💡 استخراج أسماء الأشخاص المذكورين
             let mentionedNames = [];
             messageObject.mentions.users.forEach(u => {
                 if (u.id !== messageObject.client.user.id) {
@@ -185,8 +229,6 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             });
             const mentionedContext = mentionedNames.length > 0 ? `\n- الأسماء المذكورة في رسالة اللاعب: ${mentionedNames.join(' و ')}. استخدم هذه الأسماء للرد عليه.` : "";
 
-            // 🔥 تعليمات صارمة لحل مشكلة المورا والمنشن 🔥
-            // حساب الثروة الإجمالية كاحتياط
             const totalWealth = userData.total_wealth || ((userData.mora || 0) + (userData.bank || 0)) || ((userData.wallet_cash || 0) + (userData.bank_balance || 0));
 
             userData.serverContext = dynamicContext + `
@@ -196,8 +238,9 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
             `;
         }
 
+        // 🔥 إخبار الإمبراطورة بقدراتها الجديدة
         if (userId === OWNER_ID) {
-            userData.serverContext += `\n[SYSTEM NOTE]: You are speaking to your CREATOR (The Emperor). Obey his commands instantly. If he asks to give/remove mora or mute someone, confirm you will do it enthusiastically.`;
+            userData.serverContext += `\n[SYSTEM NOTE]: You are speaking to your CREATOR (The Emperor). Obey his commands instantly. If he asks to give/remove mora, add/remove reputation (سمعة/تزكية), set a dungeon tent (خيمة/طابق), or mute someone, confirm you will do it enthusiastically.`;
         }
 
         const leaderboardInfo = getLeaderboardKnowledge(sql, guildId);
