@@ -637,7 +637,7 @@ async function autoUpdateKingsBoard(client, sql) {
                     if (oldHash) {
                         const oldParts = oldHash.split('|');
                         const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الحكمة', 'ملك القنص', 'ملك النزاع', 'ملك الحصاد'];
-                        const suffixes = ['مورا', 'طابق', 'رسالة', 'مورا', 'تفاعل', 'سمكة', 'انتصار', 'الحصاد'];
+                        const suffixes = ['مورا', 'طابق', 'رسالة', 'مورا', 'تفاعل', 'سمكة', 'انتصار', 'مورا'];
                         const colors = ['#FFD700', '#9D00FF', '#00BFFF', '#FF8C00', '#00FF88', '#00CED1', '#DC143C', '#32CD32'];
                         const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 'roleFisherKing', 'rolePvPKing', 'roleFarmKing'];
 
@@ -702,6 +702,71 @@ async function autoUpdateKingsBoard(client, sql) {
     }
 }
 
+// 🔥 الدالة الجديدة لتوزيع الرواتب على الملوك يومياً عند منتصف الليل 🔥
+async function rewardDailyKings(client, sql) {
+    if (!sql.open) return;
+    try {
+        sql.prepare("CREATE TABLE IF NOT EXISTS kings_daily_payout (dateStr TEXT PRIMARY KEY)").run();
+
+        const yesterdayKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+        yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
+        const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
+
+        const isPaid = sql.prepare("SELECT * FROM kings_daily_payout WHERE dateStr = ?").get(yesterdayStr);
+        if (isPaid) return; 
+
+        for (const guild of client.guilds.cache.values()) {
+            const guildId = guild.id;
+            const settings = sql.prepare("SELECT guildAnnounceChannelID FROM settings WHERE guild = ?").get(guildId);
+            if (!settings || !settings.guildAnnounceChannelID) continue;
+
+            const casinoData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(casino_profit, 0) AS INTEGER) + CAST(COALESCE(mora_earned, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(casino_profit, 0) AS INTEGER) + CAST(COALESCE(mora_earned, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const abyssData = sql.prepare(`SELECT user AS userID FROM levels WHERE guild = ? AND CAST(max_dungeon_floor AS INTEGER) > 0 ORDER BY CAST(max_dungeon_floor AS INTEGER) DESC LIMIT 1`).get(guildId);
+            const chatterData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(messages, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(messages, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const philanData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(mora_donated, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(mora_donated, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const advisorData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(ai_interactions, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(ai_interactions, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const fisherData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(fish_caught, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(fish_caught, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const pvpData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(pvp_wins, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(pvp_wins, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+            const farmData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(crops_harvested, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(crops_harvested, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
+
+            const winners = [
+                { id: casinoData?.userID, title: 'ملك الكازينو' },
+                { id: abyssData?.userID, title: 'ملك الهاوية' },
+                { id: chatterData?.userID, title: 'ملك البلاغة' },
+                { id: philanData?.userID, title: 'ملك الكرم' },
+                { id: advisorData?.userID, title: 'ملك الحكمة' },
+                { id: fisherData?.userID, title: 'ملك القنص' },
+                { id: pvpData?.userID, title: 'ملك النزاع' },
+                { id: farmData?.userID, title: 'ملك الحصاد' }
+            ].filter(w => w.id && w.id !== 'none');
+
+            if (winners.length === 0) continue;
+
+            const REP_REWARD = 5; 
+            const updateRep = sql.prepare("INSERT INTO user_reputation (userID, guildID, rep_points) VALUES (?, ?, ?) ON CONFLICT(userID, guildID) DO UPDATE SET rep_points = CAST(rep_points AS INTEGER) + ?");
+            
+            let descriptionLines = [];
+
+            for (const w of winners) {
+                updateRep.run(w.id, guildId, REP_REWARD, REP_REWARD);
+                descriptionLines.push(`👑 **${w.title}**: <@${w.id}> (+${REP_REWARD} 🌟)`);
+            }
+
+            const announceChannel = guild.channels.cache.get(settings.guildAnnounceChannelID);
+            if (announceChannel) {
+                const embed = new EmbedBuilder()
+                    .setTitle('✨ حـصـاد المـلـوك لـيـوم أمـس ✨')
+                    .setDescription(`بأمر من الإمبراطور، تم توزيع جوائز السمعة الملكية على أسياد الأمس:\n\n${descriptionLines.join('\n')}`)
+                    .setColor(Colors.Gold)
+                    .setImage('https://i.postimg.cc/q73QZ6W2/5902480522066201408-120-removebg-preview.png'); 
+                announceChannel.send({ embeds: [embed] }).catch(()=>{});
+            }
+        }
+
+        sql.prepare("INSERT INTO kings_daily_payout (dateStr) VALUES (?)").run(yesterdayStr);
+    } catch (e) { console.error("Reward Daily Kings Error:", e); }
+}
+
 async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     try {
         const sql = client.sql;
@@ -743,4 +808,4 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     }
 }
 
-module.exports = { handleQuestPanel, handleGuildBoard: handleQuestPanel, autoUpdateKingsBoard, updateGuildStat };
+module.exports = { handleQuestPanel, handleGuildBoard: handleQuestPanel, autoUpdateKingsBoard, updateGuildStat, rewardDailyKings };
