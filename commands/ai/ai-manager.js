@@ -9,7 +9,7 @@ module.exports = {
         
         // 1. إضافة قناة (دائمة)
         .addSubcommand(sub => 
-            sub.setName('setup') // غيرت الاسم لـ setup ليكون أوضح، أو اتركه add كما تفضل
+            sub.setName('setup')
                .setDescription('✅ تفعيل الذكاء في قناة معينة بشكل دائم')
                .addChannelOption(option => option.setName('channel').setDescription('اختر القناة').setRequired(true))
                .addStringOption(option => 
