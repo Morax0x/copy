@@ -23,19 +23,26 @@ function loadJsonData(fileName) {
     } catch (e) { return "{}"; }
 }
 
-// 📜 السجلات الإمبراطورية الثابتة (رتب، قوانين، متجر، وتعليمات التفعيل)
+// 📜 السجلات الإمبراطورية الثابتة (رتب، قوانين، متجر، وتعليمات)
 const staticKnowledge = {
-    // تعليمات التفعيل (الهنتاي والساحة)
-    unlock_tips: `
-    [نظام فتح القنوات والميزات]:
-    - قاعدة ثابتة: الساحة (Arena/Dungeon) والمحتوى الخاص (NSFW/Hentai) يفتحون تلقائياً بالتفاعل.
-    - إذا سأل أحد "كيف أفعل الهنتاي؟" أو "كيف أدخل الساحة؟" أو "ليش ما فتح عندي؟":
-    - الرد الإلزامي: "تفاعل وتكلم وهي تتفعل لحالها.. إذا ما تفعلت عندك يعني أنت مو متفاعل كفاية يا صنم".
+    
+    // 🔥 تم إضافة نظام رتب المغامرين (السمعة) 🔥
+    adventurer_ranks: `
+    [رتب المغامرين بناءً على نقاط السمعة (التزكية)]:
+    - 1000 نقطة فما فوق: رتبة SS 👑
+    - 500 نقطة فما فوق: رتبة S 💎
+    - 250 نقطة فما فوق: رتبة A 🥇
+    - 100 نقطة فما فوق: رتبة B 🥈
+    - 50 نقطة فما فوق: رتبة C 🥉
+    - 25 نقطة فما فوق: رتبة D ⚔️
+    - 10 نقاط فما فوق: رتبة E 🛡️
+    - أقل من 10 نقاط: رتبة F 🪵
+    ملاحظة: السمعة هي مقياس لاحترام وثقة الإمبراطورية في المغامر، ويمكن للأعضاء تزكية بعضهم يومياً لرفع هذه النقاط.
     `,
 
-    // الرتب والمكافآت كما أمر الإمبراطور
+    // الرتب والمكافآت (مستويات الشات)
     ranks: `
-    [سلم النبالة والمكافآت]:
+    [سلم النبالة والمكافآت - باللفل]:
     - المستوى 5 (رحال Traveler): فتح الوسائط (صور/فيديو)، الدعوات، والخاص.
     - المستوى 10 (مغامر Adventurer): إضافة صوت مخصص، قيادة الدنجن.
     - المستوى 20 (فارس Knight): إضافة إيموجي خاص للسيرفر.
@@ -90,11 +97,14 @@ function getDynamicServerData(guildId) {
 
 // دالة جلب بيانات المستخدم الفردي (مخصصة للسيرفر الحالي فقط)
 function getUserData(userId, guildId) {
-    if (!db) return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0 };
+    if (!db) return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     try {
-        // 🔥 تم التعديل: جلب mora و bank معاً وتحديد guild = ?
         const levelRow = db.prepare('SELECT level, xp, mora, bank FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
         const streakRow = db.prepare('SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?').get(userId, guildId);
+        
+        // جلب بيانات السمعة والدانجون
+        const repRow = db.prepare('SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?').get(userId, guildId);
+        const dungeonRow = db.prepare('SELECT current_floor FROM dungeon_saves WHERE userID = ? AND guildID = ?').get(userId, guildId);
         
         const cash = levelRow ? (levelRow.mora || 0) : 0;
         const bank = levelRow ? (levelRow.bank || 0) : 0;
@@ -103,17 +113,17 @@ function getUserData(userId, guildId) {
             level: levelRow ? levelRow.level : 1,
             xp: levelRow ? levelRow.xp : 0,
             
-            // 🔥🔥🔥 أسماء المتغيرات الجديدة لمنع الخلط 🔥🔥🔥
-            wallet_cash: cash,           // الكاش اللي بيده
-            bank_balance: bank,          // الفلوس اللي بالبنك
-            total_wealth: cash + bank,   // مجموع الثروة (عشان ما يجمع غلط)
+            wallet_cash: cash,           
+            bank_balance: bank,          
+            total_wealth: cash + bank,   
             
-            streak: streakRow ? streakRow.streakCount : 0
+            streak: streakRow ? streakRow.streakCount : 0,
+            reputation: repRow ? (repRow.rep_points || 0) : 0,           
+            dungeon_floor: dungeonRow ? (dungeonRow.current_floor || 0) : 0 
         };
     } catch (error) {
-        return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0 };
+        return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     }
 }
 
-// ✅ تصدير الدالة الجديدة getDynamicServerData
 module.exports = { staticKnowledge, getUserData, getDynamicServerData };
