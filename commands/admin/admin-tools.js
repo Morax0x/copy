@@ -209,7 +209,7 @@ module.exports = {
                     await modalSubmit.reply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 تنفيذ خيمة الدانجون السحرية (النسخة الآمنة 100%) 🔥
+            // 🔥 تنفيذ خيمة الدانجون السحرية (النسخة المصححة) 🔥
             else if (val === 'dungeon_tent') {
                 const modalId = `mod_tent_${Date.now()}`;
                 const modal = new ModalBuilder().setCustomId(modalId).setTitle('منح خيمة حفظ (الدانجون)');
@@ -227,27 +227,13 @@ module.exports = {
                     }
 
                     try {
-                        // نبحث إذا كان اللاعب عنده بيانات حفظ أصلاً
-                        const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE userID = ? AND guildID = ?").get(userID, guildID);
+                        // 🔥 التصحيح المعتمد: استخدام hostID و floor ليتطابق مع الداتابيس
+                        const existingSave = sql.prepare("SELECT * FROM dungeon_saves WHERE hostID = ? AND guildID = ?").get(userID, guildID);
                         
                         if (existingSave) {
-                            // إذا موجود، نحدث الطابق فقط
-                            sql.prepare("UPDATE dungeon_saves SET current_floor = ? WHERE userID = ? AND guildID = ?").run(targetFloor, userID, guildID);
+                            sql.prepare("UPDATE dungeon_saves SET floor = ?, timestamp = ? WHERE hostID = ? AND guildID = ?").run(targetFloor, Date.now(), userID, guildID);
                         } else {
-                            // إذا مو موجود، نسوي له ملف جديد بطاقة كاملة
-                            try {
-                                const saveId = `${guildID}-${userID}`;
-                                sql.prepare(`
-                                    INSERT INTO dungeon_saves (id, guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
-                                    VALUES (?, ?, ?, ?, 100, 100, 50, 'warrior', 20)
-                                `).run(saveId, guildID, userID, targetFloor);
-                            } catch (err2) {
-                                // في حال كان الجدول ما يطلب id
-                                sql.prepare(`
-                                    INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
-                                    VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)
-                                `).run(guildID, userID, targetFloor);
-                            }
+                            sql.prepare("INSERT INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(userID, guildID, targetFloor, Date.now());
                         }
                         
                         await modalSubmit.reply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
@@ -442,7 +428,7 @@ module.exports = {
         await interaction.reply({ embeds: [embed] });
     },
 
-    async giveMediaShield(interaction, sql, targetUser) {
+    async giveMediaShield(interaction, client, sql, targetUser) {
         const id = `${interaction.guild.id}-${targetUser.id}`;
         sql.prepare(`INSERT INTO media_streaks (id, guildID, userID, hasItemShield) VALUES (?, ?, ?, 1) ON CONFLICT(id) DO UPDATE SET hasItemShield = 1`).run(id, interaction.guild.id, targetUser.id);
         await interaction.reply({ content: `✅ تم تفعيل درع ميديا لـ ${targetUser}.` });
