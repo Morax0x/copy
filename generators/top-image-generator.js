@@ -52,6 +52,57 @@ const THEMES = {
 };
 
 // ==========================================
+// 💠 دالة رسم الدرع الفخم لحرف الرتبة
+// ==========================================
+function drawRankShield(ctx, x, y, width, height, color) {
+    ctx.save();
+    
+    // الظل الخارجي
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    
+    // الإطار الخارجي
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = color;
+    
+    // التعبئة الداخلية (تدرج خفيف)
+    const shieldGrad = ctx.createLinearGradient(x, y, x, y + height);
+    shieldGrad.addColorStop(0, 'rgba(30, 30, 35, 0.9)');
+    shieldGrad.addColorStop(1, 'rgba(10, 10, 15, 0.9)');
+    ctx.fillStyle = shieldGrad;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y - height/2); 
+    ctx.lineTo(x + width/2, y - height/3.5); 
+    ctx.lineTo(x + width/2, y + height/8); 
+    ctx.quadraticCurveTo(x + width/2, y + height/2.2, x, y + height/2); 
+    ctx.quadraticCurveTo(x - width/2, y + height/2.2, x - width/2, y + height/8); 
+    ctx.lineTo(x - width/2, y - height/3.5); 
+    ctx.closePath();
+    
+    ctx.fill();
+    ctx.stroke();
+    
+    // إطار داخلي رفيع لمزيد من الفخامة
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    
+    ctx.beginPath();
+    ctx.moveTo(x, y - height/2 + 4); 
+    ctx.lineTo(x + width/2 - 4, y - height/3.5 + 2); 
+    ctx.lineTo(x + width/2 - 4, y + height/8 - 2); 
+    ctx.quadraticCurveTo(x + width/2 - 4, y + height/2.2 - 4, x, y + height/2 - 4); 
+    ctx.quadraticCurveTo(x - width/2 + 4, y + height/2.2 - 4, x - width/2 + 4, y + height/8 - 2); 
+    ctx.lineTo(x - width/2 + 4, y - height/3.5 + 2); 
+    ctx.closePath();
+    
+    ctx.stroke();
+    ctx.restore();
+}
+
+
+// ==========================================
 // 💠 تأثير الزجاج المعشق (من قاعة الأساطير)
 // ==========================================
 function drawRandomPolygon(ctx, cx, cy, radius, sides) {
@@ -65,43 +116,6 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
         else ctx.lineTo(x, y);
     }
     ctx.closePath();
-}
-
-function drawRankShield(ctx, x, y, width, height, color) {
-    ctx.save();
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 15;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-
-    ctx.beginPath();
-    ctx.moveTo(x, y); 
-    ctx.lineTo(x + width / 2, y + height * 0.2); 
-    ctx.lineTo(x + width, y); 
-    ctx.lineTo(x + width, y + height * 0.7); 
-    ctx.quadraticCurveTo(x + width, y + height, x + width / 2, y + height); 
-    ctx.quadraticCurveTo(x, y + height, x, y + height * 0.7); 
-    ctx.closePath();
-    
-    ctx.fill();
-    ctx.stroke();
-    
-    // إطار داخلي نحيف أبيض لمزيد من الفخامة
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x + 5, y + 5); 
-    ctx.lineTo(x + width / 2, y + height * 0.2 + 3); 
-    ctx.lineTo(x + width - 5, y + 5); 
-    ctx.lineTo(x + width - 5, y + height * 0.7 - 2); 
-    ctx.quadraticCurveTo(x + width - 5, y + height - 5, x + width / 2, y + height - 5); 
-    ctx.quadraticCurveTo(x + 5, y + height - 5, x + 5, y + height * 0.7 - 2); 
-    ctx.closePath();
-    ctx.stroke();
-    
-    ctx.restore();
 }
 
 // ==========================================
@@ -245,7 +259,7 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         ctx.fillText(fixAr(displayName), avatarX - 20, startY + 40);
 
         // ==========================================
-        // 📊 التعديل الجذري: فصل الرقم عن الكلمة
+        // 📊 التعديل الجذري: فصل الرقم عن الكلمة / الرتبة
         // ==========================================
         let statVal = "";
         let statLabel = "";
@@ -288,27 +302,27 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
 
         // --- رسم القيم على اليسار ---
         if (type === 'rep' && rankInfo) {
-            // 🔥 حالة خاصة بالسمعة: رسم الدرع والحرف
-            const shieldW = 50; // عرض الدرع
-            const shieldH = 60; // ارتفاع الدرع
-            const shieldX = 140; // مكان الدرع
-            const shieldY = startY + (cardHeight - shieldH) / 2;
+            // 🔥 رسم الدرع الخاص بالرتبة
+            const shieldW = 60;
+            const shieldH = 65;
+            const shieldX = 260; // ضبط مكان الدرع ليصبح مناسباً
+            const shieldY = startY + cardHeight / 2;
 
             drawRankShield(ctx, shieldX, shieldY, shieldW, shieldH, rankInfo.color);
 
-            // رسم الحرف
+            // رسم الحرف داخل الدرع
             ctx.fillStyle = rankInfo.color;
-            ctx.font = 'bold 26px "Arial", sans-serif'; 
+            ctx.font = 'bold 24px "Arial", sans-serif'; 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle'; 
-            ctx.fillText(rankInfo.letter, shieldX + shieldW / 2, shieldY + shieldH / 2 + 5);
+            ctx.fillText(rankInfo.letter, shieldX, shieldY + 5);
             ctx.textBaseline = 'alphabetic'; 
 
-            // رسم الرقم
+            // رسم الرقم (نقاط السمعة)
             ctx.fillStyle = theme.color;
-            ctx.font = 'bold 30px "Arial", sans-serif';
+            ctx.font = 'bold 32px "Arial", sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText(statVal, shieldX + shieldW + 15, startY + 52);
+            ctx.fillText(statVal, 140, startY + 52);
 
         } else {
             // 🔥 رسم الرقم (بلون الثيم)
