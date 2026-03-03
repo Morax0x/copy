@@ -22,13 +22,27 @@ try {
 } catch (e) { console.error("Canvas Font Error:", e); }
 
 // ==========================================
+// 🏅 دالة حساب حرف الرتبة للسمعة
+// ==========================================
+function getRankLetter(points) {
+    if (points >= 1000) return 'SS';
+    if (points >= 500)  return 'S';
+    if (points >= 250)  return 'A';
+    if (points >= 100)  return 'B';
+    if (points >= 50)   return 'C';
+    if (points >= 25)   return 'D';
+    if (points >= 10)   return 'E';
+    return 'F';
+}
+
+// ==========================================
 // 🎨 إعدادات الثيمات لكل تصنيف
 // ==========================================
 const THEMES = {
-    rep: { title: "قـاعـة الـمـغـامـريـن", color: "#FFD700", icon: "🌟", unit: "سمعة" }, // تم التعديل هنا 🔥
+    rep: { title: "قـاعـة الـمـغـامـريـن", color: "#FFD700", icon: "🌟", unit: "رتبة" }, 
     mora: { title: "أثـريـاء الإمـبـراطـوريـة", color: "#F1C40F", icon: "💰", unit: "مورا" },
-    level: { title: "أعـلـى الـمـسـتـويـات", color: "#9D00FF", icon: "🏆", unit: "XP" },
-    strongest: { title: "الأقـوى فـي الـسـيـرفـر", color: "#FF3366", icon: "⚔️", unit: "قوة" },
+    level: { title: "أعـلـى الـمـسـتـويـات", color: "#C266FF", icon: "🏆", unit: "Lv." }, // تم تفتيح البنفسجي ليكون مريح
+    strongest: { title: "الأقـوى فـي الـسـيـرفـر", color: "#FF3366", icon: "⚔️", unit: "⚡" },
     achievements: { title: "قـاعـة الإنـجـازات والأوسـمـة", color: "#FF8C00", icon: "🎖️", unit: "وسام" },
     streak: { title: "مـلـوك الـسـتـريـك الـيـومـي", color: "#FF5500", icon: "🔥", unit: "يوم" },
     media_streak: { title: "مـلـوك الـمـيـديـا", color: "#00E5FF", icon: "📸", unit: "يوم" },
@@ -58,7 +72,6 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
 // ==========================================
 async function generateTopImage(pageData, type, page, totalPages, targetUserId, extraData = {}) {
     const width = 950;
-    // تم تثبيت الطول ليكون فخم ومتناسق حتى لو الصفحة فيها شخص واحد
     const height = 1150; 
     
     const canvas = createCanvas(width, height);
@@ -85,7 +98,7 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
 
         drawRandomPolygon(ctx, x, y, radius, sides);
 
-        ctx.globalAlpha = 0.08; // شفافية منخفضة جداً عشان ما تؤذي العين
+        ctx.globalAlpha = 0.08;
         ctx.fillStyle = shardGrad;
         ctx.fill();
 
@@ -113,13 +126,11 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
     ctx.font = 'bold 50px "Bein", sans-serif';
     ctx.textAlign = 'center';
     
-    // توهج خفيف للعنوان فقط
     ctx.shadowColor = theme.color;
     ctx.shadowBlur = 15;
     ctx.fillText(fixAr(`${theme.icon} ${theme.title}`), width / 2, 80);
     ctx.shadowBlur = 0; 
 
-    // خط فاصل أنيق تحت العنوان
     const lineGrad = ctx.createLinearGradient(width / 2 - 250, 0, width / 2 + 250, 0);
     lineGrad.addColorStop(0, 'rgba(0,0,0,0)');
     lineGrad.addColorStop(0.5, theme.color);
@@ -145,7 +156,6 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         const rank = (page - 1) * ROWS_PER_PAGE + i + 1;
         const isMe = item.uid === targetUserId;
 
-        // إعداد ألوان المركز الهادئة (الخلفية سوداء شفافة)
         let cardBg = 'rgba(0, 0, 0, 0.6)';
         let borderColor = 'rgba(255, 255, 255, 0.05)';
         let rankColor = '#888888';
@@ -156,22 +166,19 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
 
         if (isMe) { borderColor = '#00FF88'; cardBg = 'rgba(0, 255, 136, 0.1)'; rankColor = '#00FF88'; }
 
-        // رسم خلفية الكرت
         ctx.fillStyle = cardBg;
         ctx.strokeStyle = borderColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.roundRect(40, startY, width - 80, cardHeight, 15);
         ctx.fill();
-        if (rank <= 3 || isMe) ctx.stroke(); // الإطار فقط للمراكز الأولى أو لنفسك
+        if (rank <= 3 || isMe) ctx.stroke(); 
 
-        // رسم الترتيب (رقم المركز)
         ctx.fillStyle = rankColor;
         ctx.font = 'bold 35px "Arial", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`#${rank}`, 90, startY + 52);
 
-        // رسم الأفاتار الدائري
         const avatarSize = 56;
         const avatarX = width - 140;
         const avatarY = startY + 12;
@@ -194,7 +201,6 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
             }
         } catch (e) { }
 
-        // رسم اسم اللاعب
         ctx.fillStyle = isMe ? '#00FF88' : '#FFFFFF';
         ctx.font = 'bold 26px "Bein", sans-serif';
         ctx.textAlign = 'right';
@@ -202,31 +208,61 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         ctx.fillText(fixAr(displayName), avatarX - 20, startY + 40);
 
         // ==========================================
-        // 📊 تنسيق الإحصائيات بشكل أنيق
+        // 📊 التعديل الجذري: فصل الرقم عن الكلمة
         // ==========================================
-        let mainStat = "";
+        let statVal = "";
+        let statLabel = "";
         let subStat = "";
 
-        if (type === 'rep') mainStat = `${item.db.rp.toLocaleString()} ${theme.unit}`;
-        else if (type === 'mora') mainStat = `${((item.db.mora||0) + (item.db.bank||0)).toLocaleString()} ${theme.unit}`;
-        else if (type === 'level') { mainStat = `Lvl ${item.db.level}`; subStat = `XP: ${item.db.totalXP.toLocaleString()}`; }
-        else if (type === 'strongest') { mainStat = `${item.db.powerScore.toLocaleString()} ⚡`; subStat = `DMG: ${item.db.damage} | HP: ${item.db.hp}`; }
-        else if (type === 'achievements') mainStat = `${item.db.count} ${theme.unit}`;
-        else if (type === 'streak' || type === 'media_streak') mainStat = `${item.db.streakCount} ${theme.unit}`;
+        if (type === 'rep') {
+            statVal = item.db.rp.toLocaleString();
+            statLabel = `[ ${getRankLetter(item.db.rp)} ]`; // 🔥 استبدال السمعة بحرف الرتبة
+        } 
+        else if (type === 'mora') {
+            statVal = ((item.db.mora||0) + (item.db.bank||0)).toLocaleString();
+            statLabel = theme.unit;
+        } 
+        else if (type === 'level') {
+            statVal = `${item.db.level}`;
+            statLabel = theme.unit; // Lv.
+            subStat = `XP: ${item.db.totalXP.toLocaleString()}`;
+        } 
+        else if (type === 'strongest') {
+            statVal = item.db.powerScore.toLocaleString();
+            statLabel = theme.unit;
+            subStat = `DMG: ${item.db.damage} | HP: ${item.db.hp}`;
+        } 
+        else if (type === 'achievements') {
+            statVal = `${item.db.count}`;
+            statLabel = theme.unit;
+        } 
+        else if (type === 'streak' || type === 'media_streak') {
+            statVal = `${item.db.streakCount}`;
+            statLabel = theme.unit;
+        } 
         else if (type.includes('xp')) { 
-            mainStat = `${item.db.score.toLocaleString()} ${theme.unit}`; 
+            statVal = item.db.score.toLocaleString();
+            statLabel = theme.unit;
             const msgs = item.db.messages || item.db.total_messages || 0;
             const vc = item.db.vc_minutes || item.db.total_vc || 0;
             subStat = `💬 ${msgs.toLocaleString()} | 🎙️ ${vc.toLocaleString()} د`;
         }
 
-        // الرقم البارز (يسار الكرت)
+        // 🔥 رسم الرقم (بلون الثيم)
         ctx.fillStyle = theme.color;
-        ctx.font = 'bold 28px "Bein", sans-serif';
+        ctx.font = 'bold 32px "Arial", sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(fixAr(mainStat), 140, startY + 50);
+        ctx.fillText(statVal, 140, startY + 52);
 
-        // التفاصيل الإضافية (تحت الاسم)
+        // قياس عرض الرقم عشان نحط الكلمة جنبه
+        const valWidth = ctx.measureText(statVal).width;
+
+        // 🔥 رسم الكلمة (دائماً بالأبيض المريح للعين)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 22px "Bein", sans-serif';
+        ctx.fillText(fixAr(statLabel), 140 + valWidth + 8, startY + 50);
+
+        // رسم التفاصيل تحت الاسم (إن وجدت)
         if (subStat) {
             ctx.fillStyle = '#AAAAAA';
             ctx.font = '18px "Arial", sans-serif';
