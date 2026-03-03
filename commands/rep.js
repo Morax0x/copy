@@ -151,10 +151,13 @@ module.exports = {
 
         try {
             const senderAvatar = message.author.displayAvatarURL({ extension: 'png', size: 128 });
+            // 🔥 التعديل هنا: جلب اسم المزكي وتمريره للدالة
+            const senderName = message.member ? message.member.displayName : message.author.username;
             const receiverAvatar = targetMember.user.displayAvatarURL({ extension: 'png', size: 256 });
             const receiverName = targetMember.displayName || targetMember.user.username;
 
-            const imageBuffer = await generateRepCard(senderAvatar, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
+            // 🔥 تم إضافة senderName في سطر الاستدعاء
+            const imageBuffer = await generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'reputation.png' });
 
             await message.reply({ content: `<@${targetId}>`, files: [attachment] });
