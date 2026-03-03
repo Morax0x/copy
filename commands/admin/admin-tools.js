@@ -86,6 +86,7 @@ module.exports = {
                     { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
                     { label: '🗳️ فرص التزكية', value: 'rep_chances', description: 'منح فرص تصويت (تزكية) إضافية لليوم', emoji: '🗳️' },
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
+                    { label: '⛺ منح خيمة (دانجون)', value: 'dungeon_tent', description: 'تحديد طابق الحفظ في الدانجون', emoji: '⛺' },
                     { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض', emoji: '🎒' },
                     { label: '🛡️ إعطاء درع ميديا', value: 'media_shield', emoji: '🛡️' },
                     { label: '⚠️ تصفير الحساب', value: 'reset', description: 'مسح جميع البيانات!', emoji: '⚠️' }
@@ -117,7 +118,6 @@ module.exports = {
                 modal.addComponents(new ActionRowBuilder().addComponents(actionInput), new ActionRowBuilder().addComponents(amountInput));
                 await interaction.showModal(modal);
             }
-            // 🔥 إضافة قائمة الفرص الإضافية للتزكية 🔥
             else if (val === 'rep_chances') {
                 const modal = new ModalBuilder().setCustomId(`mod_repchan_${targetUser.id}`).setTitle('منح فرص تزكية');
                 const amountInput = new TextInputBuilder().setCustomId('repchan_amount').setLabel('عدد الفرص الإضافية (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
@@ -128,6 +128,13 @@ module.exports = {
                 const modal = new ModalBuilder().setCustomId(`mod_tkt_${targetUser.id}`).setTitle('إدارة تذاكر الدانجون');
                 const amountInput = new TextInputBuilder().setCustomId('tkt_amount').setLabel('الكمية للإضافة').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+                await interaction.showModal(modal);
+            }
+            // 🔥 إضافة خيمة الدانجون 🔥
+            else if (val === 'dungeon_tent') {
+                const modal = new ModalBuilder().setCustomId(`mod_tent_${targetUser.id}`).setTitle('منح خيمة حفظ (الدانجون)');
+                const floorInput = new TextInputBuilder().setCustomId('tent_floor').setLabel('رقم الطابق المراد الحفظ عنده').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(floorInput));
                 await interaction.showModal(modal);
             }
             else if (val === 'items') {
@@ -174,23 +181,18 @@ module.exports = {
                 await modalSubmit.reply({ content: `✅ تم ضبط سمعة ${targetUser} لتصبح **${newPoints}** 🌟` });
             }
 
-            // 🔥 تنفيذ منح فرص التزكية 🔥
             else if (modalSubmit.customId === `mod_repchan_${targetUser.id}`) {
                 const amount = parseInt(modalSubmit.fields.getTextInputValue('repchan_amount'));
                 if (isNaN(amount) || amount <= 0) return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم صحيح وموجب.", ephemeral: true });
 
                 const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
                 
-                try {
-                    // نتأكد أن العامود موجود لتجنب أي أخطاء
-                    sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run();
-                } catch(e) {}
+                try { sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run(); } catch(e) {}
 
                 let repData = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(userID, guildID);
                 if (!repData) {
                     sql.prepare("INSERT INTO user_reputation (userID, guildID, last_rep_given, daily_reps_given) VALUES (?, ?, ?, ?)").run(userID, guildID, todayDateStr, -amount);
                 } else {
-                    // نقوم بإنقاص الفرص المستخدمة (ليصبح بالسالب لو لزم الأمر) لكي يستطيع التصويت مجدداً اليوم
                     sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = COALESCE(daily_reps_given, 0) - ? WHERE userID = ? AND guildID = ?").run(todayDateStr, amount, userID, guildID);
                 }
 
@@ -228,6 +230,32 @@ module.exports = {
                     sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)").run(guildID, userID, amount, todayStr);
                 }
                 await modalSubmit.reply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
+            }
+
+            // 🔥 تنفيذ خيمة الدانجون السحرية 🔥
+            else if (modalSubmit.customId === `mod_tent_${targetUser.id}`) {
+                const floorStr = modalSubmit.fields.getTextInputValue('tent_floor');
+                const targetFloor = parseInt(floorStr);
+                
+                if (isNaN(targetFloor) || targetFloor <= 0) {
+                    return modalSubmit.reply({ content: "❌ الرجاء إدخال رقم طابق صحيح وموجب.", ephemeral: true });
+                }
+
+                try {
+                    // تحديث بيانات حفظ الدانجون للاعب
+                    const updateStmt = sql.prepare(`
+                        INSERT INTO dungeon_saves (guildID, userID, current_floor, hp, base_hp, mana, classType, weapon_damage) 
+                        VALUES (?, ?, ?, 100, 100, 50, 'warrior', 20)
+                        ON CONFLICT(guildID, userID) 
+                        DO UPDATE SET current_floor = ?
+                    `);
+                    updateStmt.run(guildID, userID, targetFloor, targetFloor);
+                    
+                    await modalSubmit.reply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
+                } catch (err) {
+                    console.error(err);
+                    await modalSubmit.reply({ content: "❌ حدث خطأ أثناء إعداد الخيمة في قاعدة البيانات.", ephemeral: true });
+                }
             }
 
             else if (modalSubmit.customId === `mod_item_${targetUser.id}`) {
