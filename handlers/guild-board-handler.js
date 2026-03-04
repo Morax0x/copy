@@ -12,6 +12,14 @@ const { generateEpicAnnouncement } = require('../generators/announcement-generat
 const { generateNotificationControlPanel } = require('../generators/notification-generator.js');
 const { generateAchievementCard } = require('../generators/achievement-card-generator.js');
 
+// 🔥 استدعاء صانع صور الملوك الجديد
+let generateKingsAnnouncementImage;
+try {
+    generateKingsAnnouncementImage = require('../generators/kings-reward-generator.js').generateKingsAnnouncementImage;
+} catch (e) {
+    console.error("يرجى التأكد من إضافة ملف kings-reward-generator.js");
+}
+
 const { GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const announcementsTexts = require('../json/announcements-texts.js');
@@ -702,7 +710,7 @@ async function autoUpdateKingsBoard(client, sql) {
     }
 }
 
-// 🔥 الدالة الجديدة لتوزيع الرواتب على الملوك يومياً عند منتصف الليل 🔥
+// 🔥 الدالة المعدلة لتوزيع الرواتب على الملوك مع السمعة المخصصة والصورة الفخمة 🔥
 async function rewardDailyKings(client, sql) {
     if (!sql.open) return;
     try {
@@ -717,7 +725,7 @@ async function rewardDailyKings(client, sql) {
 
         for (const guild of client.guilds.cache.values()) {
             const guildId = guild.id;
-            const settings = sql.prepare("SELECT guildAnnounceChannelID FROM settings WHERE guild = ?").get(guildId);
+            const settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guildId);
             if (!settings || !settings.guildAnnounceChannelID) continue;
 
             const casinoData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(casino_profit, 0) AS INTEGER) + CAST(COALESCE(mora_earned, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(casino_profit, 0) AS INTEGER) + CAST(COALESCE(mora_earned, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
@@ -729,37 +737,70 @@ async function rewardDailyKings(client, sql) {
             const pvpData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(pvp_wins, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(pvp_wins, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
             const farmData = sql.prepare(`SELECT userID FROM kings_board_tracker WHERE guildID = ? AND date = ? GROUP BY userID HAVING SUM(CAST(COALESCE(crops_harvested, 0) AS INTEGER)) > 0 ORDER BY SUM(CAST(COALESCE(crops_harvested, 0) AS INTEGER)) DESC LIMIT 1`).get(guildId, yesterdayStr);
 
-            const winners = [
-                { id: casinoData?.userID, title: 'ملك الكازينو' },
-                { id: abyssData?.userID, title: 'ملك الهاوية' },
-                { id: chatterData?.userID, title: 'ملك البلاغة' },
-                { id: philanData?.userID, title: 'ملك الكرم' },
-                { id: advisorData?.userID, title: 'ملك الحكمة' },
-                { id: fisherData?.userID, title: 'ملك القنص' },
-                { id: pvpData?.userID, title: 'ملك النزاع' },
-                { id: farmData?.userID, title: 'ملك الحصاد' }
+            // 🔥 توزيع السمعة الصحيحة المحددة في الدليل
+            const winnersRaw = [
+                { id: casinoData?.userID, title: 'ملك الكازينو', rep: 5, roleCol: 'roleCasinoKing' },
+                { id: abyssData?.userID, title: 'ملك الهاوية', rep: 4, roleCol: 'roleAbyss' },
+                { id: chatterData?.userID, title: 'ملك البلاغة', rep: 7, roleCol: 'roleChatter' },
+                { id: philanData?.userID, title: 'ملك الكرم', rep: 1, roleCol: 'rolePhilanthropist' },
+                { id: advisorData?.userID, title: 'ملك الحكمة', rep: 2, roleCol: 'roleAdvisor' },
+                { id: fisherData?.userID, title: 'ملك القنص', rep: 2, roleCol: 'roleFisherKing' },
+                { id: pvpData?.userID, title: 'ملك النزاع', rep: 3, roleCol: 'rolePvPKing' },
+                { id: farmData?.userID, title: 'ملك الحصاد', rep: 2, roleCol: 'roleFarmKing' }
             ].filter(w => w.id && w.id !== 'none');
 
-            if (winners.length === 0) continue;
+            if (winnersRaw.length === 0) continue;
 
-            const REP_REWARD = 5; 
+            let kingsToAnnounce = [];
             const updateRep = sql.prepare("INSERT INTO user_reputation (userID, guildID, rep_points) VALUES (?, ?, ?) ON CONFLICT(userID, guildID) DO UPDATE SET rep_points = CAST(rep_points AS INTEGER) + ?");
-            
-            let descriptionLines = [];
 
-            for (const w of winners) {
-                updateRep.run(w.id, guildId, REP_REWARD, REP_REWARD);
-                descriptionLines.push(`👑 **${w.title}**: <@${w.id}> (+${REP_REWARD} 🌟)`);
+            for (const w of winnersRaw) {
+                // إزالة التاج من الملك القديم
+                if (settings[w.roleCol]) {
+                    const oldRole = guild.roles.cache.get(settings[w.roleCol]);
+                    if (oldRole) {
+                        for (const member of oldRole.members.values()) {
+                            await member.roles.remove(oldRole, "تجريد العرش اليومي").catch(()=>{});
+                        }
+                    }
+                }
+
+                const member = await guild.members.fetch(w.id).catch(()=>null);
+                const user = member ? member.user : await client.users.fetch(w.id).catch(()=>null);
+                
+                // إعطاء التاج للملك الجديد
+                if (member && settings[w.roleCol]) {
+                    member.roles.add(settings[w.roleCol], `تتويج بلقب ${w.title}`).catch(()=>{});
+                }
+
+                // إعطاء السمعة الصحيحة وإضافته لقائمة الإعلان
+                if (user) {
+                    updateRep.run(w.id, guildId, w.rep, w.rep);
+                    kingsToAnnounce.push({
+                        title: w.title,
+                        name: member ? member.displayName : user.username,
+                        rep: w.rep
+                    });
+                }
             }
 
+            // إرسال الصورة الفخمة
             const announceChannel = guild.channels.cache.get(settings.guildAnnounceChannelID);
-            if (announceChannel) {
-                const embed = new EmbedBuilder()
-                    .setTitle('✨ حـصـاد المـلـوك لـيـوم أمـس ✨')
-                    .setDescription(`بأمر من الإمبراطور، تم توزيع جوائز السمعة الملكية على أسياد الأمس:\n\n${descriptionLines.join('\n')}`)
-                    .setColor(Colors.Gold)
-                    .setImage('https://i.postimg.cc/q73QZ6W2/5902480522066201408-120-removebg-preview.png'); 
-                announceChannel.send({ embeds: [embed] }).catch(()=>{});
+            if (announceChannel && kingsToAnnounce.length > 0) {
+                const perms = announceChannel.permissionsFor(guild.members.me);
+                if (perms && perms.has(PermissionsBitField.Flags.SendMessages) && perms.has(PermissionsBitField.Flags.AttachFiles)) {
+                    try {
+                        if (generateKingsAnnouncementImage) {
+                            const buffer = await generateKingsAnnouncementImage(kingsToAnnounce, yesterdayStr);
+                            const attachment = new AttachmentBuilder(buffer, { name: 'kings-board.png' });
+                            
+                            await announceChannel.send({
+                                content: `## 👑 || تـتـويـج مـلـوك الإمـبـراطـوريـة || 👑\nانتهى اليوم، وتم تتويج هؤلاء الأبطال بألقاب الملوك لجهودهم العظيمة!`,
+                                files: [attachment]
+                            }).catch(()=>{});
+                        }
+                    } catch(e) { console.error("Error generating kings image:", e); }
+                }
             }
         }
 
