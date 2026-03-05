@@ -51,9 +51,8 @@ module.exports = {
     description: `تحدي البوت (فردي) أو تحدي أصدقائك (جماعي) في لعبة تخمين الرقم.`,
 
     async execute(interactionOrMessage, args) {
-
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, author, client, guild, sql, channel;
+        let interaction, message, author, client, guild, db, channel;
         let betInput, opponents = new Collection();
 
         if (isSlash) {
@@ -62,7 +61,7 @@ module.exports = {
             client = interaction.client;
             guild = interaction.guild;
             channel = interaction.channel;
-            sql = client.sql; 
+            db = client.sql; 
             betInput = interaction.options.getInteger('الرهان');
             for (let i = 1; i <= 5; i++) {
                 const user = interaction.options.getUser(`الخصم${i}`);
@@ -78,7 +77,7 @@ module.exports = {
             client = message.client;
             guild = message.guild;
             channel = message.channel;
-            sql = client.sql; 
+            db = client.sql; 
             if (args[0] && !isNaN(parseInt(args[0]))) {
                 betInput = parseInt(args[0]);
                 if (message.mentions.members.size > 0) opponents = message.mentions.members;
@@ -110,12 +109,13 @@ module.exports = {
             return reply({ content: "🚫 **هناك لعبة جارية في هذه القناة.** انتظر انتهائها.", ephemeral: true });
         }
 
-        let userData = client.getLevel.get(author.id, guild.id);
+        let userData = await client.getLevel(author.id, guild.id);
         if (!userData) userData = { ...client.defaultData, user: author.id, guild: guild.id };
 
         const now = Date.now();
         if (author.id !== OWNER_ID) {
-            const timeLeft = (userData.lastGuess || 0) + COOLDOWN_MS - now;
+            const lastGuess = Number(userData.lastGuess) || 0;
+            const timeLeft = lastGuess + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
@@ -123,19 +123,19 @@ module.exports = {
 
         if (!betInput) {
             let proposedBet = 100;
-            const userBalance = userData.mora;
+            const userBalance = Number(userData.mora) || 0;
 
             if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
             if (userBalance < 100) proposedBet = userBalance;
 
-            return startGuessGame(channel, author, opponents, proposedBet, client, guild, sql, replyError, reply);
+            return startGuessGame(channel, author, opponents, proposedBet, client, guild, db, replyError, reply);
         } else {
-            return startGuessGame(channel, author, opponents, betInput, client, guild, sql, replyError, reply);
+            return startGuessGame(channel, author, opponents, betInput, client, guild, db, replyError, reply);
         }
     }
 };
 
-async function startGuessGame(channel, author, opponents, bet, client, guild, sql, replyError, replyFunction) {
+async function startGuessGame(channel, author, opponents, bet, client, guild, db, replyError, replyFunction) {
     const channelId = channel.id;
 
     if (client.activeGames.has(channelId)) {
@@ -153,10 +153,10 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, sq
         return replyError(`الحد الأدنى للرهان هو **${MIN_BET}** ${EMOJI_MORA} !`);
     }
 
-    const getScore = client.getLevel;
-    const setScore = client.setLevel;
-    let authorData = getScore.get(author.id, guild.id);
+    let authorData = await client.getLevel(author.id, guild.id);
     if (!authorData) authorData = { ...client.defaultData, user: author.id, guild: guild.id };
+    authorData.mora = Number(authorData.mora) || 0;
+    authorData.level = Number(authorData.level) || 1;
 
     if (authorData.mora < bet) {
         return replyError(`ليس لديك مورا كافية لهذا الرهان! (رصيدك: ${authorData.mora})`);
@@ -171,10 +171,10 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, sq
         client.activePlayers.add(author.id);
 
         if (author.id !== OWNER_ID) authorData.lastGuess = Date.now();
-        setScore.run(authorData);
+        await client.setLevel(authorData);
         
         try {
-            await playSolo(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client);
+            await playSolo(channel, author, bet, authorData, db, replyFunction, client);
         } catch (err) {
             console.error("Solo Guess Error:", err);
             client.activeGames.delete(channelId);
@@ -183,18 +183,24 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, sq
 
     } else {
         if (bet > MAX_LOAN_BET) {
-            const authorLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(author.id, guild.id);
-            if (authorLoan && authorLoan.remainingAmount > 0) {
-                return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
-            }
+            try {
+                const authorLoanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [author.id, guild.id]);
+                const authorLoan = authorLoanRes.rows[0];
+                if (authorLoan && Number(authorLoan.remainingamount || authorLoan.remainingAmount) > 0) {
+                    return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
+                }
+            } catch(e) {}
         }
 
         if (bet > MAX_LOAN_BET) {
             for (const opponent of opponents.values()) {
-                const opponentLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(opponent.id, guild.id);
-                if (opponentLoan && opponentLoan.remainingAmount > 0) {
-                    return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
-                }
+                try {
+                    const opponentLoanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
+                    const opponentLoan = opponentLoanRes.rows[0];
+                    if (opponentLoan && Number(opponentLoan.remainingamount || opponentLoan.remainingAmount) > 0) {
+                        return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
+                    }
+                } catch(e) {}
             }
         }
 
@@ -202,10 +208,10 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, sq
         client.activePlayers.add(author.id); 
 
         if (author.id !== OWNER_ID) authorData.lastGuess = Date.now();
-        setScore.run(authorData);
+        await client.setLevel(authorData);
         
         try {
-            await playChallenge(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client);
+            await playChallenge(channel, author, opponents, bet, authorData, db, replyFunction, client);
         } catch (err) {
             console.error("Challenge Guess Error:", err);
             client.activeGames.delete(channelId);
@@ -215,7 +221,7 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, sq
     }
 }
 
-async function playSolo(channel, author, bet, authorData, getScore, setScore, sql, replyFunction, client) {
+async function playSolo(channel, author, bet, authorData, db, replyFunction, client) {
     const channelId = channel.id;
     const targetNumber = Math.floor(Math.random() * 100) + 1;
     let attempts = 0;
@@ -223,7 +229,7 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
     const maxAttempts = getMaxAttempts(authorData.level);
 
     authorData.mora -= bet;
-    setScore.run(authorData);
+    await client.setLevel(authorData);
 
     const startingPrize = bet * 5; 
     let currentWinnings = startingPrize;
@@ -243,7 +249,7 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
 
     let hasWon = false;
 
-    collector.on('collect', (msg) => {
+    collector.on('collect', async (msg) => {
         const guess = parseInt(msg.content);
         if (isNaN(guess)) return;
 
@@ -252,27 +258,36 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
 
         if (guess === targetNumber) {
             hasWon = true; 
-            const moraMultiplier = calculateMoraBuff(author, sql);
+            let moraMultiplier = 1.0;
+            try {
+                moraMultiplier = await calculateMoraBuff(author, db);
+            } catch(e) {}
+            
             let finalWinnings = Math.floor(currentWinnings * moraMultiplier);
 
             let casinoTax = 0;
             let taxText = "";
-            const settings = sql.prepare("SELECT roleCasinoKing FROM settings WHERE guild = ?").get(channel.guild.id);
-            if (settings && settings.roleCasinoKing && !author.roles.cache.has(settings.roleCasinoKing)) {
-                const kingMembers = channel.guild.roles.cache.get(settings.roleCasinoKing)?.members;
-                if (kingMembers && kingMembers.size > 0) {
-                    const king = kingMembers.first();
-                    casinoTax = Math.floor(finalWinnings * 0.01);
-                    if (casinoTax > 0) {
-                        finalWinnings -= casinoTax;
-                        taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                        sql.prepare('UPDATE levels SET bank = bank + ? WHERE user = ? AND guild = ?').run(casinoTax, king.id, channel.guild.id);
+            try {
+                const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [channel.guild.id]);
+                const settings = settingsRes.rows[0];
+                const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
+
+                if (roleId && !author.roles.cache.has(roleId)) {
+                    const kingMembers = channel.guild.roles.cache.get(roleId)?.members;
+                    if (kingMembers && kingMembers.size > 0) {
+                        const king = kingMembers.first();
+                        casinoTax = Math.floor(finalWinnings * 0.01);
+                        if (casinoTax > 0) {
+                            finalWinnings -= casinoTax;
+                            taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
+                            await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, channel.guild.id]);
+                        }
                     }
                 }
-            }
+            } catch(e) {}
 
             authorData.mora += finalWinnings;
-            setScore.run(authorData);
+            await client.setLevel(authorData);
 
             if (updateGuildStat) {
                 updateGuildStat(client, channel.guild.id, author.id, 'casino_profit', finalWinnings - bet);
@@ -323,7 +338,7 @@ async function playSolo(channel, author, bet, authorData, getScore, setScore, sq
     });
 }
 
-async function playChallenge(channel, author, opponents, bet, authorData, getScore, setScore, sql, replyFunction, client) {
+async function playChallenge(channel, author, opponents, bet, authorData, db, replyFunction, client) {
     const channelId = channel.id;
     const requiredOpponentsIDs = opponents.map(o => o.id);
 
@@ -344,8 +359,8 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
             return replyFunction({ content: "لا يمكنك تحدي البوت في اللعب الجماعي!", ephemeral: true });
         }
 
-        let opponentData = getScore.get(opponent.id, channel.guild.id);
-        if (!opponentData || opponentData.mora < bet) {
+        let opponentData = await client.getLevel(opponent.id, channel.guild.id);
+        if (!opponentData || Number(opponentData.mora) < bet) {
             client.activeGames.delete(channelId);
             client.activePlayers.delete(author.id);
             return replyFunction({ content: `اللاعب ${opponent.displayName} لا يملك مورا كافية لهذا الرهان!`, ephemeral: true });
@@ -405,20 +420,21 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
             const maxAttemptsMap = new Map();
 
             for (const player of finalPlayers) {
-                let data = getScore.get(player.id, channel.guild.id);
+                let data = await client.getLevel(player.id, channel.guild.id);
                 if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
                 
+                data.mora = Number(data.mora) || 0;
                 data.mora -= bet;
                 if (player.id !== OWNER_ID && player.id !== author.id) data.lastGuess = Date.now();
-                setScore.run(data);
+                await client.setLevel(data);
                 
                 playerAttempts.set(player.id, 0); 
-                maxAttemptsMap.set(player.id, getMaxAttempts(data.level));
+                maxAttemptsMap.set(player.id, getMaxAttempts(Number(data.level) || 1));
             }
             
             if (author.id !== OWNER_ID) {
                 authorData.lastGuess = Date.now();
-                setScore.run(authorData);
+                await client.setLevel(authorData);
             }
 
             const targetNumber = Math.floor(Math.random() * 100) + 1;
@@ -434,7 +450,7 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
             const filter = (m) => finalPlayerIDs.includes(m.author.id) && !isNaN(parseInt(m.content));
             const gameCollector = channel.createMessageCollector({ filter, time: 60000 });
 
-            gameCollector.on('collect', (msg) => {
+            gameCollector.on('collect', async (msg) => {
                 const guess = parseInt(msg.content);
                 if (isNaN(guess)) return;
 
@@ -447,13 +463,14 @@ async function playChallenge(channel, author, opponents, bet, authorData, getSco
                 playerAttempts.set(msg.author.id, currentAttempts + 1);
 
                 if (guess === targetNumber) {
-                    let winnerData = getScore.get(msg.author.id, channel.guild.id);
+                    let winnerData = await client.getLevel(msg.author.id, channel.guild.id);
                     let finalWinnings = totalPot;
 
                     let taxText = "";
 
+                    winnerData.mora = Number(winnerData.mora) || 0;
                     winnerData.mora += finalWinnings;
-                    setScore.run(winnerData);
+                    await client.setLevel(winnerData);
 
                     if (updateGuildStat) {
                         updateGuildStat(client, channel.guild.id, msg.author.id, 'casino_profit', finalWinnings - bet);
