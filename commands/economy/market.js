@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
-const marketConfig = require('../../json/market-items.json'); // استيراد ملف الإعدادات للفلترة
+const marketConfig = require('../../json/market-items.json'); 
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -74,9 +74,9 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
     
     const col1 = [], col2 = [], col3 = [];
     itemsOnPage.forEach((item, index) => {
-        const changeEmoji = getItemChangeEmoji(item.lastChangePercent);
+        const changeEmoji = getItemChangeEmoji(item.lastchangepercent || item.lastChangePercent);
         const assetEmoji = EMOJI_ASSET_LARGE[item.id] || '📈';
-        const price = item.currentPrice.toLocaleString();
+        const price = Number(item.currentprice || item.currentPrice).toLocaleString();
         const cleanName = cleanEmojiFromName(item.name); 
 
         const itemLine = `${assetEmoji} **${cleanName.split(' ').slice(0, 2).join(' ')}**\n${price} ${EMOJI_MORA} ${changeEmoji}`;
@@ -100,7 +100,7 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
 
     const selectOptions = itemsOnPage.map(item => ({
         label: `${cleanEmojiFromName(item.name)}`,
-        description: `السعر الحالي: ${item.currentPrice.toLocaleString()} مورا`,
+        description: `السعر الحالي: ${Number(item.currentprice || item.currentPrice).toLocaleString()} مورا`,
         value: item.id,
         emoji: EMOJI_ASSET_SMALL[item.id] || '📈'
     }));
@@ -115,20 +115,25 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
     return { embed, components: [selectMenuRow] };
 }
 
-function buildDetailView(item, userId, guildId, allItems, timeRemaining, sql) {
-    const userPortfolio = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
-    const userQuantity = userPortfolio ? userPortfolio.quantity : 0;
-    const changeEmoji = getItemChangeEmoji(item.lastChangePercent);
-    const price = item.currentPrice.toLocaleString();
+async function buildDetailView(item, userId, guildId, allItems, timeRemaining, db) {
+    let userQuantity = 0;
+    try {
+        const res = await db.query("SELECT quantity FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [userId, guildId, item.id]);
+        if (res.rows.length > 0) userQuantity = Number(res.rows[0].quantity);
+    } catch(e) {}
+
+    const changePercent = Number(item.lastchangepercent || item.lastChangePercent);
+    const changeEmoji = getItemChangeEmoji(changePercent);
+    const price = Number(item.currentprice || item.currentPrice).toLocaleString();
     const cleanName = cleanEmojiFromName(item.name);
 
     const detailEmbed = new EmbedBuilder()
         .setTitle(`📈 تفاصيل: ${cleanName} (${item.id})`)
-        .setColor(item.lastChangePercent > 0.01 ? Colors.Green : (item.lastChangePercent < -0.01 ? Colors.Red : Colors.Grey))
+        .setColor(changePercent > 0.01 ? Colors.Green : (changePercent < -0.01 ? Colors.Red : Colors.Grey))
         .setDescription(item.description || 'لا يوجد وصف')
         .addFields(
             { name: 'السعر الحالي', value: `${price} ${EMOJI_MORA}`, inline: true },
-            { name: 'تغير الفترة الأخيرة', value: `${changeEmoji} ${(item.lastChangePercent * 100).toFixed(1)}%`, inline: true },
+            { name: 'تغير الفترة الأخيرة', value: `${changeEmoji} ${(changePercent * 100).toFixed(1)}%`, inline: true },
             { name: 'في محفظتك', value: `**${userQuantity.toLocaleString()}**`, inline: true }
         )
         .setTimestamp();
@@ -162,19 +167,19 @@ module.exports = {
     async execute(interactionOrMessage, args) {
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, sql, user, guild;
+        let interaction, message, client, db, user, guild;
 
         if (isSlash) {
             interaction = interactionOrMessage;
             client = interaction.client;
-            sql = client.sql;
+            db = client.sql;
             user = interaction.user;
             guild = interaction.guild;
             await interaction.deferReply();
         } else {
             message = interactionOrMessage;
             client = message.client;
-            sql = client.sql;
+            db = client.sql;
             user = message.author;
             guild = message.guild;
         }
@@ -187,10 +192,12 @@ module.exports = {
             }
         };
 
-        // 🔥 1. جلب العناصر من قاعدة البيانات
-        const dbItems = sql.prepare("SELECT * FROM market_items").all();
+        let dbItems = [];
+        try {
+            const res = await db.query("SELECT * FROM market_items");
+            dbItems = res.rows;
+        } catch(e) {}
 
-        // 🔥 2. تصفية العناصر: نعرض فقط العناصر الموجودة في ملف JSON (الأسهم والعقارات)
         const validItemIds = new Set(marketConfig.map(i => i.id));
         const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
@@ -239,7 +246,7 @@ module.exports = {
                             }
 
                             const item = allItems[currentItemIndex];
-                            const { embed: detailEmbed, components: detailComponents } = buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
+                            const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, db); 
                             await i.editReply({ embeds: [detailEmbed], components: detailComponents });
                         }
 
@@ -265,7 +272,7 @@ module.exports = {
                             .setCustomId('quantity_input')
                             .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
                             .setStyle(TextInputStyle.Short)
-                            .setPlaceholder(`السعر الحالي: ${item.currentPrice.toLocaleString()}`)
+                            .setPlaceholder(`السعر الحالي: ${Number(item.currentprice || item.currentPrice).toLocaleString()}`)
                             .setRequired(true);
 
                         modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
@@ -279,7 +286,7 @@ module.exports = {
                     const selectedID = i.values[0];
                     currentItemIndex = allItems.findIndex(it => it.id === selectedID);
                     const item = allItems[currentItemIndex];
-                    const { embed: detailEmbed, components: detailComponents } = buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
+                    const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, db); 
                     await i.editReply({ embeds: [detailEmbed], components: detailComponents });
                 }
             } catch (error) {
