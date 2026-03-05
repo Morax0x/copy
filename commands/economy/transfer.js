@@ -29,14 +29,14 @@ module.exports = {
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, guild, client, sender, sql, senderMember;
+        let interaction, message, guild, client, sender, db, senderMember;
         let receiver, amount;
 
         if (isSlash) {
             interaction = interactionOrMessage;
             guild = interaction.guild;
             client = interaction.client;
-            sql = client.sql; 
+            db = client.sql; 
             sender = interaction.user;
             senderMember = interaction.member;
             receiver = interaction.options.getMember('المستلم');
@@ -46,7 +46,7 @@ module.exports = {
             message = interactionOrMessage;
             guild = message.guild;
             client = message.client;
-            sql = client.sql; 
+            db = client.sql; 
             sender = message.author;
             senderMember = message.member;
             receiver = message.mentions.members.first();
@@ -86,40 +86,44 @@ module.exports = {
         if (receiver.user.bot) return replyError("لا يمكنك التحويل للبوتات!");
 
         try {
-            sql.prepare("ALTER TABLE levels ADD COLUMN lastTransferDate TEXT DEFAULT ''").run();
-            sql.prepare("ALTER TABLE levels ADD COLUMN dailyTransferCount INTEGER DEFAULT 0").run();
+            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS lastTransferDate TEXT DEFAULT ''");
+            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS dailyTransferCount BIGINT DEFAULT 0");
         } catch (e) {}
 
-        const getScore = client.getLevel;
-        let senderData = getScore.get(sender.id, guild.id);
+        let senderData = await client.getLevel(sender.id, guild.id);
         if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id };
 
-        const loanData = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(sender.id, guild.id);
-        if (loanData && loanData.remainingAmount > 0) {
-            return replyError(`❌ **عذراً!** عليك قرض بقيمة **${loanData.remainingAmount.toLocaleString()}** مورا.`);
-        }
+        try {
+            const loanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [sender.id, guild.id]);
+            const loanData = loanRes.rows[0];
+            if (loanData && Number(loanData.remainingamount || loanData.remainingAmount) > 0) {
+                return replyError(`❌ **عذراً!** عليك قرض بقيمة **${Number(loanData.remainingamount || loanData.remainingAmount).toLocaleString()}** مورا.`);
+            }
+        } catch (e) {}
 
         const now = Date.now();
-        const timeLeft = (senderData.lastTransfer || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(senderData.lastTransfer) || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
             const minutes = Math.floor(timeLeft / 60000);
             const seconds = Math.floor((timeLeft % 60000) / 1000);
             return replyError(`🕐 يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية**.`);
         }
 
-        if (senderData.mora < amount) return replyError(`ليس لديك مورا كافية! (رصيدك: ${senderData.mora.toLocaleString()})`);
+        if (Number(senderData.mora) < amount) return replyError(`ليس لديك مورا كافية! (رصيدك: ${Number(senderData.mora).toLocaleString()})`);
 
-        const settings = sql.prepare("SELECT rolePhilanthropist FROM settings WHERE guild = ?").get(guild.id);
         let isPhilanthropistKing = false;
         try {
-            if (settings && settings.rolePhilanthropist && senderMember.roles.cache.has(settings.rolePhilanthropist)) {
+            const settingsRes = await db.query("SELECT rolePhilanthropist FROM settings WHERE guild = $1", [guild.id]);
+            const settings = settingsRes.rows[0];
+            const roleId = settings?.rolephilanthropist || settings?.rolePhilanthropist;
+            if (roleId && senderMember.roles.cache.has(roleId)) {
                 isPhilanthropistKing = true;
             }
         } catch(e) {}
 
         const saudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
-        let tempDailyCount = senderData.dailyTransferCount || 0;
-        if (senderData.lastTransferDate !== saudiDate) tempDailyCount = 0;
+        let tempDailyCount = Number(senderData.dailyTransferCount || senderData.dailytransfercount) || 0;
+        if (senderData.lastTransferDate !== saudiDate && senderData.lasttransferdate !== saudiDate) tempDailyCount = 0;
         
         let displayTaxRate = (tempDailyCount === 0 || isPhilanthropistKing) ? 0 : BASE_TAX_RATE;
         const displayTaxAmount = Math.floor(amount * displayTaxRate);
@@ -167,23 +171,23 @@ module.exports = {
             }
 
             if (i.customId === 'confirm_transfer') {
-                const freshSenderData = client.getLevel.get(sender.id, guild.id);
+                let freshSenderData = await client.getLevel(sender.id, guild.id);
                 
-                if (!freshSenderData || freshSenderData.mora < amount) {
+                if (!freshSenderData || Number(freshSenderData.mora) < amount) {
                     unlockPlayer(); 
                     await i.update({ content: "❌ **فشلت العملية:** لم يعد لديك رصيد كافي.", embeds: [], components: [] });
                     return collector.stop('no_money');
                 }
 
                 const currentSaudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
-                if (freshSenderData.lastTransferDate !== currentSaudiDate) {
+                if (freshSenderData.lastTransferDate !== currentSaudiDate && freshSenderData.lasttransferdate !== currentSaudiDate) {
                     freshSenderData.dailyTransferCount = 0;
                     freshSenderData.lastTransferDate = currentSaudiDate;
                 }
 
                 let realTaxRate = BASE_TAX_RATE;
                 let isFree = false;
-                if ((freshSenderData.dailyTransferCount || 0) === 0 || isPhilanthropistKing) {
+                if ((Number(freshSenderData.dailyTransferCount || freshSenderData.dailytransfercount) || 0) === 0 || isPhilanthropistKing) {
                     realTaxRate = 0;
                     isFree = true;
                 }
@@ -191,15 +195,25 @@ module.exports = {
                 const realTaxAmount = Math.floor(amount * realTaxRate);
                 const realAmountReceived = amount - realTaxAmount;
 
-                freshSenderData.mora -= amount;
-                freshSenderData.dailyTransferCount = (freshSenderData.dailyTransferCount || 0) + 1;
+                freshSenderData.mora = Number(freshSenderData.mora) - amount;
+                freshSenderData.dailyTransferCount = (Number(freshSenderData.dailyTransferCount || freshSenderData.dailytransfercount) || 0) + 1;
                 freshSenderData.lastTransfer = Date.now();
-                client.setLevel.run(freshSenderData); 
 
-                let receiverData = client.getLevel.get(receiver.id, guild.id);
-                if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
-                receiverData.mora = (receiverData.mora || 0) + realAmountReceived;
-                client.setLevel.run(receiverData);
+                try {
+                    await db.query('BEGIN');
+                    await client.setLevel(freshSenderData); 
+
+                    let receiverData = await client.getLevel(receiver.id, guild.id);
+                    if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
+                    receiverData.mora = (Number(receiverData.mora) || 0) + realAmountReceived;
+                    await client.setLevel(receiverData);
+                    await db.query('COMMIT');
+                } catch (e) {
+                    await db.query('ROLLBACK');
+                    unlockPlayer();
+                    await i.update({ content: "❌ **فشلت العملية:** خطأ في قاعدة البيانات.", embeds: [], components: [] });
+                    return collector.stop('error');
+                }
 
                 if (updateGuildStat) {
                     updateGuildStat(client, guild.id, sender.id, 'mora_donated', amount);
