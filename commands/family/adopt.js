@@ -1,12 +1,9 @@
-// commands/family/adopt.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
 const MORA_EMOJI = '<:mora:1435647151349698621>';
 const MAX_CHILDREN = 10;
 const BASE_ADOPT_FEE = 2000;
 
-// 1. Success Images List (قائمة صور النجاح العشوائية)
 const SUCCESS_IMAGES = [
     "https://i.postimg.cc/NFjJ9WGf/09888ef8ca948e79af1de55c4133ba56.gif",
     "https://i.postimg.cc/rmK7wjp0/9b69370e7a44d135d98fa1c5c3cdd14f.gif",
@@ -14,9 +11,8 @@ const SUCCESS_IMAGES = [
     "https://i.postimg.cc/htnF1VCW/dd75d02bb40ac5721b7357b33d735489.gif"
 ];
 
-// صورة الرفض الخاصة (لك وللبوت)
 const BOT_REJECT_IMAGE = "https://i.postimg.cc/qvDt3BLj/106a40ccbff92cbaf02fd54ba9de5ebc.gif";
-const OWNER_ID = "1145327691772481577"; // الآيدي الخاص بك
+const OWNER_ID = "1145327691772481577"; 
 
 module.exports = {
     name: 'adopt',
@@ -25,89 +21,94 @@ module.exports = {
 
     async execute(message, args) {
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 8000); 
         };
 
-        // 1. التحقق من المدخلات
         const childMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
 
         if (!childMember) {
             return replyTemp(`❌ **خطأ في الاستخدام!**\nالطريقة الصحيحة: \`${message.content.split(' ')[0]} @الطفل\`\nمثال: \`!adopt @user\``);
         }
 
-        // --- 🛡️ حماية خاصة (لك وللبوت) 🛡️ ---
         if (childMember.id === client.user.id || childMember.id === OWNER_ID) {
             await message.reply({ files: [BOT_REJECT_IMAGE] });
             if (message.member.moderatable) {
                 try {
                     await message.member.timeout(60 * 1000, "محاولة تبني غير قانونية (تطاول على المقامات)");
-                } catch (e) {
-                    console.log(`[Anti-Adopt] Could not timeout user: ${e.message}`);
-                }
+                } catch (e) {}
             }
             return;
         }
-        // ---------------------------------------
 
         if (childMember.id === userId) return replyTemp("❌ لا يمكنك تبني نفسك!");
         if (childMember.user.bot) return replyTemp("🤖 لا يمكنك تبني الروبوتات!");
 
-        // 2. تجهيز الجداول
-        sql.prepare(`CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate INTEGER, guildID TEXT)`).run();
+        try {
+            await db.query(`CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate BIGINT, guildID TEXT)`);
+        } catch (e) {}
         
-        // 3. فحوصات الحدود والمال
-        const currentChildrenCount = sql.prepare("SELECT count(*) as count FROM children WHERE parentID = ? AND guildID = ?").get(userId, guildId).count;
+        let currentChildrenCount = 0;
+        try {
+            const countRes = await db.query("SELECT count(*) as count FROM children WHERE parentID = $1 AND guildID = $2", [userId, guildId]);
+            currentChildrenCount = Number(countRes.rows[0].count);
+        } catch(e) {}
 
         if (currentChildrenCount >= MAX_CHILDREN) {
             return replyTemp(`🚫 **لقد وصلت للحد الأقصى من الأطفال (${MAX_CHILDREN})!**`);
         }
 
         const fee = BASE_ADOPT_FEE + (currentChildrenCount * 2000);
-        let authorData = client.getLevel.get(userId, guildId);
+        let authorData = await client.getLevel(userId, guildId);
         if (!authorData) authorData = { id: `${guildId}-${userId}`, user: userId, guild: guildId, xp: 0, level: 1, mora: 0 };
+        authorData.mora = Number(authorData.mora) || 0;
 
         if (authorData.mora < fee) {
             return replyTemp(`💸 **ليس لديك مورا كافية!**\nالرسوم: **${fee.toLocaleString()}** ${MORA_EMOJI}`);
         }
-
-        // ==========================================================
-        // 🧬 فحوصات شجرة العائلة الصارمة (Incest Check) 🧬
-        // ==========================================================
         
-        // أ. هل أنت متزوج؟
-        const marriageData = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(userId, guildId);
-        const partnerId = marriageData ? marriageData.partnerID : null;
+        let partnerId = null;
+        try {
+            const marriageData = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            if (marriageData.rows.length > 0) partnerId = marriageData.rows[0].partnerid || marriageData.rows[0].partnerID;
+        } catch(e) {}
 
-        // ب. منع تبني الزوج/الزوجة
         if (partnerId === childMember.id) return replyTemp("🚫 **لا يمكنك تبني شريك حياتك!**");
 
-        // ج. فحص الآباء الحاليين للطفل (هل هو يتيم؟)
-        const currentParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(childMember.id, guildId);
+        let currentParents = [];
+        try {
+            const cpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [childMember.id, guildId]);
+            currentParents = cpRes.rows;
+        } catch(e) {}
         
         if (currentParents.length > 0) {
-            // نسمح فقط بتبني "أبناء الزوج" (Step-Parent Adoption)
-            const isStepParent = currentParents.some(row => {
-                const parentSpouse = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(row.parentID, guildId);
-                return parentSpouse && parentSpouse.partnerID === userId;
-            });
+            let isStepParent = false;
+            for (const row of currentParents) {
+                const pId = row.parentid || row.parentID;
+                try {
+                    const parentSpouseRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [pId, guildId]);
+                    const pSpouse = parentSpouseRes.rows[0];
+                    if (pSpouse && (pSpouse.partnerid === userId || pSpouse.partnerID === userId)) {
+                        isStepParent = true;
+                        break;
+                    }
+                } catch(e) {}
+            }
 
             if (!isStepParent) {
                 return replyTemp(`🚫 **لا يمكن إتمام العملية!**\n**${childMember.displayName}** لديه عائلة بالفعل (أب/أم).\nلا يمكنك تبنيه إلا إذا كنت متزوجاً من والده/والدته الحاليين لإكمال العائلة.`);
             }
             
-            if (currentParents.some(row => row.parentID === userId)) {
+            if (currentParents.some(row => (row.parentid || row.parentID) === userId)) {
                 return replyTemp(`❌ **${childMember.displayName}** هو ابنك بالفعل!`);
             }
         }
 
-        // 🔥 د. فحص الأصول (Ancestors Check) - هل الطفل هو أبوك/جدك؟
         let queue = [userId]; 
         let checked = new Set();
         
@@ -116,17 +117,19 @@ module.exports = {
             if (checked.has(current)) continue;
             checked.add(current);
 
-            const parents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(current, guildId);
-            for (const p of parents) {
-                if (p.parentID === childMember.id) {
-                    return replyTemp(`🚫 **لا يعقل!** كيف تتبنى **${childMember.displayName}** وهو (أبوك/جدك)؟ احترم المقامات.`);
+            try {
+                const parentsRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [current, guildId]);
+                for (const p of parentsRes.rows) {
+                    const pId = p.parentid || p.parentID;
+                    if (pId === childMember.id) {
+                        return replyTemp(`🚫 **لا يعقل!** كيف تتبنى **${childMember.displayName}** وهو (أبوك/جدك)؟ احترم المقامات.`);
+                    }
+                    if (!checked.has(pId)) queue.push(pId);
                 }
-                if (!checked.has(p.parentID)) queue.push(p.parentID);
-            }
+            } catch(e) {}
             if (checked.size > 20) break; 
         }
 
-        // 🔥 هـ. فحص الفروع (Descendants Check) - هل الطفل هو حفيدك أصلاً؟
         queue = [userId];
         checked = new Set();
         let myDescendants = new Set();
@@ -136,37 +139,41 @@ module.exports = {
             if (checked.has(current)) continue;
             checked.add(current);
 
-            const children = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(current, guildId);
-            for (const c of children) {
-                myDescendants.add(c.childID);
-                if (c.childID === childMember.id) {
-                    return replyTemp(`🚫 **هذا من نسلك!**\n**${childMember.displayName}** موجود بالفعل في شجرة عائلتك (حفيد أو حفيد حفيد..).\nهو مربوط بك بالدم ولا يحتاج لتبني.`);
+            try {
+                const childrenRes = await db.query("SELECT childID FROM children WHERE parentID = $1 AND guildID = $2", [current, guildId]);
+                for (const c of childrenRes.rows) {
+                    const cId = c.childid || c.childID;
+                    myDescendants.add(cId);
+                    if (cId === childMember.id) {
+                        return replyTemp(`🚫 **هذا من نسلك!**\n**${childMember.displayName}** موجود بالفعل في شجرة عائلتك (حفيد أو حفيد حفيد..).\nهو مربوط بك بالدم ولا يحتاج لتبني.`);
+                    }
+                    if (!checked.has(cId)) queue.push(cId);
                 }
-                if (!checked.has(c.childID)) queue.push(c.childID);
-            }
+            } catch(e) {}
             if (checked.size > 50) break;
         }
 
-        // 🔥 و. فحص الإخوة (Siblings Check) - هل هو أخوك؟
-        // (إذا كان لديكم أب واحد مشترك على الأقل)
-        const myParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(userId, guildId).map(r => r.parentID);
-        const childParents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(childMember.id, guildId).map(r => r.parentID);
+        let myParents = [];
+        let childParents = [];
+        try {
+            const mpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
+            myParents = mpRes.rows.map(r => r.parentid || r.parentID);
+            
+            const cpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [childMember.id, guildId]);
+            childParents = cpRes.rows.map(r => r.parentid || r.parentID);
+        } catch(e) {}
         
         if (myParents.some(p => childParents.includes(p))) {
             return replyTemp(`🚫 **لا يعقل!** كيف تتبنى أخاك/أختك؟`);
         }
 
-        // ز. فحص المصاهرة (In-laws Check)
-        const targetSpouse = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(childMember.id, guildId);
-        
-        if (targetSpouse && myDescendants.has(targetSpouse.partnerID)) {
-            return replyTemp(`🚫 **هذه زوجة ابنك / زوج ابنتك!**\nلا يمكن تبني أصهارك الموجودين في شجرة العائلة.`);
-        }
-
-
-        // ==========================================================
-        // 🚦 مرحلة الموافقات
-        // ==========================================================
+        try {
+            const targetSpouseRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [childMember.id, guildId]);
+            const targetSpouse = targetSpouseRes.rows[0];
+            if (targetSpouse && myDescendants.has(targetSpouse.partnerid || targetSpouse.partnerID)) {
+                return replyTemp(`🚫 **هذه زوجة ابنك / زوج ابنتك!**\nلا يمكن تبني أصهارك الموجودين في شجرة العائلة.`);
+            }
+        } catch(e) {}
 
         if (partnerId) {
             const partnerMember = await message.guild.members.fetch(partnerId).catch(() => null);
@@ -206,7 +213,6 @@ module.exports = {
             }
         }
 
-        // موافقة الطفل
         const rowChild = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('child_accept').setLabel('أقبل التبني').setStyle(ButtonStyle.Primary).setEmoji('👶'),
             new ButtonBuilder().setCustomId('child_reject').setLabel('أرفض').setStyle(ButtonStyle.Secondary)
@@ -237,42 +243,39 @@ module.exports = {
                 await childConfirm.update({ content: `💔 رفض **${childMember.displayName}** العرض.`, embeds: [], components: [] });
                 return;
             }
-
-            // ==========================================================
-            // ✅ التنفيذ النهائي
-            // ==========================================================
             
-            authorData = client.getLevel.get(userId, guildId);
+            authorData = await client.getLevel(userId, guildId);
+            authorData.mora = Number(authorData.mora) || 0;
+
             if (authorData.mora < fee) {
                 return childConfirm.update({ content: `❌ **فشلت العملية:** الأب مفلس!`, components: [], embeds: [] });
             }
 
-            // الخصم والتحويل
             authorData.mora -= fee;
-            client.setLevel.run(authorData);
+            await client.setLevel(authorData);
 
-            let childData = client.getLevel.get(childMember.id, guildId);
+            let childData = await client.getLevel(childMember.id, guildId);
             if (!childData) childData = { id: `${guildId}-${childMember.id}`, user: childMember.id, guild: guildId, xp: 0, level: 1, mora: 0 };
+            childData.mora = Number(childData.mora) || 0;
             childData.mora += fee;
-            client.setLevel.run(childData);
+            await client.setLevel(childData);
 
-            // التسجيل
             const now = Date.now();
-            const stmt = sql.prepare("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES (?, ?, ?, ?)");
-            stmt.run(userId, childMember.id, now, guildId);
+            await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [userId, childMember.id, now, guildId]);
 
             if (partnerId) {
-                const checkPartner = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ?").get(partnerId, childMember.id);
-                if (!checkPartner) {
-                    stmt.run(partnerId, childMember.id, now, guildId);
-                }
+                try {
+                    const checkPartnerRes = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2", [partnerId, childMember.id]);
+                    if (checkPartnerRes.rows.length === 0) {
+                        await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [partnerId, childMember.id, now, guildId]);
+                    }
+                } catch(e) {}
             }
 
-            // اختيار صورة ولون عشوائي
             const randomImage = SUCCESS_IMAGES[Math.floor(Math.random() * SUCCESS_IMAGES.length)];
 
             const successEmbed = new EmbedBuilder()
-                .setColor('Random') // لون عشوائي
+                .setColor('Random') 
                 .setTitle(`🎉 تهانينا للعائلة الجديدة!`)
                 .setDescription(
                     `أصبح **${childMember.displayName}** رسمياً ابن **${message.member.displayName}** ${partnerId ? `وشريكه` : ``}!\n` +
