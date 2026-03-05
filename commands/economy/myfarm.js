@@ -52,7 +52,7 @@ module.exports = {
             return message.channel.send(payload).catch(() => {});
         };
 
-        const sql = client.sql;
+        const db = client.sql;
         const targetUser = targetMember.user;
         const userId = targetUser.id; 
         const guildId = guild.id;
@@ -62,33 +62,52 @@ module.exports = {
         const now = Date.now();
         const deadAnimals = [];
         
-        const allUserAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
+        let allUserAnimals = [];
+        try {
+            const res = await db.query("SELECT * FROM user_farm WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            allUserAnimals = res.rows;
+        } catch(e) {}
         
-        const stmtLogDeath = sql.prepare("INSERT INTO farm_daily_log (userID, guildID, actionType, itemName, count, timestamp) VALUES (?, ?, ?, ?, ?, ?)");
+        const updateDeadAnimals = async () => {
+            try {
+                await db.query(`CREATE TABLE IF NOT EXISTS farm_daily_log (
+                    id BIGSERIAL PRIMARY KEY, userID TEXT, guildID TEXT, actionType TEXT, itemName TEXT, count BIGINT, timestamp BIGINT
+                )`);
+            } catch(e) {}
 
-        for (const row of allUserAnimals) {
-            const animalDef = farmAnimals.find(a => String(a.id) === String(row.animalID));
-            const maxHunger = animalDef ? (animalDef.max_hunger_days || 7) : 7;
+            for (const row of allUserAnimals) {
+                const rowAnimalId = row.animalid || row.animalID;
+                const rowLastFed = Number(row.lastfedtimestamp || row.lastFedTimestamp);
+                const rowQty = Number(row.quantity);
 
-            if (!row.lastFedTimestamp) {
-                sql.prepare("UPDATE user_farm SET lastFedTimestamp = ? WHERE id = ?").run(now, row.id);
-                continue;
+                const animalDef = farmAnimals.find(a => String(a.id) === String(rowAnimalId));
+                const maxHunger = animalDef ? (animalDef.max_hunger_days || 7) : 7;
+
+                if (!rowLastFed) {
+                    await db.query("UPDATE user_farm SET lastFedTimestamp = $1 WHERE id = $2", [now, row.id]);
+                    continue;
+                }
+
+                const diff = now - rowLastFed;
+                const daysHungry = Math.floor(diff / DAY_MS);
+
+                if (daysHungry >= maxHunger) {
+                    const animalName = animalDef ? animalDef.name : 'حيوان مجهول';
+                    const qty = rowQty || 1;
+
+                    deadAnimals.push(`${qty}x ${animalName}`);
+                    
+                    await db.query("DELETE FROM user_farm WHERE id = $1", [row.id]);
+
+                    try {
+                        await db.query("INSERT INTO farm_daily_log (userID, guildID, actionType, itemName, count, timestamp) VALUES ($1, $2, $3, $4, $5, $6)", 
+                        [userId, guildId, 'death_starve', animalName, qty, now]);
+                    } catch(e) {}
+                }
             }
+        };
 
-            const diff = now - row.lastFedTimestamp;
-            const daysHungry = Math.floor(diff / DAY_MS);
-
-            if (daysHungry >= maxHunger) {
-                const animalName = animalDef ? animalDef.name : 'حيوان مجهول';
-                const qty = row.quantity || 1;
-
-                deadAnimals.push(`${qty}x ${animalName}`);
-                
-                sql.prepare("DELETE FROM user_farm WHERE id = ?").run(row.id);
-
-                stmtLogDeath.run(userId, guildId, 'death_starve', animalName, qty, now);
-            }
-        }
+        await updateDeadAnimals();
 
         if (deadAnimals.length > 0 && isOwner) {
             const deathEmbed = new EmbedBuilder()
@@ -101,9 +120,13 @@ module.exports = {
             else message.reply(msgPayload).catch(() => {});
         }
 
-        const renderFarmAnimals = (page = 0) => {
+        const renderFarmAnimals = async (page = 0) => {
             const maxCapacity = getPlayerCapacity(client, userId, guildId);
-            const userAnimals = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ? ORDER BY quantity DESC").all(userId, guildId);
+            let userAnimals = [];
+            try {
+                const res = await db.query("SELECT * FROM user_farm WHERE userID = $1 AND guildID = $2 ORDER BY quantity DESC", [userId, guildId]);
+                userAnimals = res.rows;
+            } catch(e) {}
 
             const baseEmbed = new EmbedBuilder()
                 .setColor("Random")
@@ -120,20 +143,22 @@ module.exports = {
             const animalsMap = new Map();
 
             for (const row of userAnimals) {
-                const animalData = farmAnimals.find(a => String(a.id) === String(row.animalID));
+                const rowAnimalId = row.animalid || row.animalID;
+                const rowQty = Number(row.quantity) || 1;
+                const rowPurchase = Number(row.purchasetimestamp || row.purchaseTimestamp) || now;
+                const rowLastFed = Number(row.lastfedtimestamp || row.lastFedTimestamp) || now;
+
+                const animalData = farmAnimals.find(a => String(a.id) === String(rowAnimalId));
                 if (!animalData) continue; 
                 
-                const qty = row.quantity || 1;
-                currentCapacityUsed += (qty * (animalData.size || 1));
-                totalFarmIncome += (animalData.income_per_day * qty);
+                currentCapacityUsed += (rowQty * (animalData.size || 1));
+                totalFarmIncome += (animalData.income_per_day * rowQty);
 
-                const purchaseTime = row.purchaseTimestamp || now;
-                const ageMS = now - purchaseTime;
+                const ageMS = now - rowPurchase;
                 const ageDays = Math.floor(ageMS / DAY_MS);
                 const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
-                const lastFed = row.lastFedTimestamp || now;
-                const hungerTimeMs = now - lastFed;
+                const hungerTimeMs = now - rowLastFed;
                 const hungerDays = Math.floor(hungerTimeMs / DAY_MS);
                 const maxHunger = animalData.max_hunger_days || 7;
                 const daysUntilDeath = Math.max(0, maxHunger - hungerDays);
@@ -141,7 +166,6 @@ module.exports = {
                 let hungerStatusText = "";
                 const cooldownMs = 12 * HOUR_MS; 
 
-                // 🔥 التعديل المطلوب: حساب الساعات إذا كان أقل من 12 ساعة، والأيام إذا تجاوزها 🔥
                 if (hungerTimeMs < cooldownMs) {
                     const remainingHours = Math.ceil((cooldownMs - hungerTimeMs) / HOUR_MS);
                     hungerStatusText = `🟢 شبعان - متبقي ${remainingHours} ساعات للإطعام 🥄`;
@@ -152,13 +176,13 @@ module.exports = {
 
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
-                    existing.quantity += qty;
-                    existing.income += (animalData.income_per_day * qty);
+                    existing.quantity += rowQty;
+                    existing.income += (animalData.income_per_day * rowQty);
                     if (daysUntilDeath < existing.minDays) { existing.minDays = daysUntilDeath; existing.hungerText = hungerStatusText; }
                     if (ageDays > existing.age) { existing.age = ageDays; existing.lifeRemaining = lifeRemaining; }
                 } else {
                     animalsMap.set(animalData.id, {
-                        ...animalData, quantity: qty, income: animalData.income_per_day * qty,
+                        ...animalData, quantity: rowQty, income: animalData.income_per_day * rowQty,
                         minDays: daysUntilDeath, hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
                     });
                 }
@@ -192,16 +216,21 @@ module.exports = {
             return { embed: baseEmbed, rows: getAnimalsButtons(page, totalPages), files: [] };
         };
 
-        const renderFeedStore = () => {
-            const inventory = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId);
+        const renderFeedStore = async () => {
+            let inventory = [];
+            try {
+                const res = await db.query("SELECT * FROM user_inventory WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+                inventory = res.rows;
+            } catch(e) {}
+
             const feedInventory = [];
 
             feedItems.forEach(feed => {
-                const itemInInv = inventory.find(i => i.itemID === feed.id);
-                if (itemInInv && itemInInv.quantity > 0) {
+                const itemInInv = inventory.find(i => (i.itemid || i.itemID) === feed.id);
+                if (itemInInv && Number(itemInInv.quantity) > 0) {
                     const targetAnimal = farmAnimals.find(a => a.feed_id === feed.id);
                     feedInventory.push({ 
-                        ...feed, qty: itemInInv.quantity,
+                        ...feed, qty: Number(itemInInv.quantity),
                         animalName: targetAnimal ? targetAnimal.name : 'مجهول',
                         animalEmoji: targetAnimal ? targetAnimal.emoji : '❓'
                     });
@@ -255,7 +284,7 @@ module.exports = {
             id: message ? message.id : interaction.id 
         };
 
-        const landData = await renderLand(mockInteraction, client, sql);
+        const landData = await renderLand(mockInteraction, client, db);
 
         const navigationRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
@@ -285,7 +314,7 @@ module.exports = {
                 if (i.customId === 'btn_back_home') {
                     await i.deferUpdate().catch(() => {});
                     currentView = 'land';
-                    const landData = await renderLand(mockInteraction, client, sql);
+                    const landData = await renderLand(mockInteraction, client, db);
                     
                     const navRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('open_animals_view').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'),
@@ -304,32 +333,37 @@ module.exports = {
                     await i.deferUpdate().catch(() => {});
                     currentView = 'animals';
                     currentPage = 0;
-                    const data = renderFarmAnimals(0);
+                    const data = await renderFarmAnimals(0);
                     await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' }).catch(() => {});
                 }
                 else if (i.customId === 'farm_prev') {
                     await i.deferUpdate().catch(() => {});
                     currentPage--;
-                    const data = renderFarmAnimals(currentPage);
+                    const data = await renderFarmAnimals(currentPage);
                     await i.editReply({ embeds: [data.embed], components: data.rows }).catch(() => {});
                 } 
                 else if (i.customId === 'farm_next') {
                     await i.deferUpdate().catch(() => {});
                     currentPage++;
-                    const data = renderFarmAnimals(currentPage);
+                    const data = await renderFarmAnimals(currentPage);
                     await i.editReply({ embeds: [data.embed], components: data.rows }).catch(() => {});
                 }
                 else if (i.customId === 'open_feed_store') {
                     await i.deferUpdate().catch(() => {});
                     currentView = 'feed_store';
-                    const data = renderFeedStore();
+                    const data = await renderFeedStore();
                     await i.editReply({ embeds: [data.embed], components: data.rows, files: [], attachments: [], content: '' }).catch(() => {});
                 }
                 else if (i.customId === 'btn_feed_animal') {
                     if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
 
-                    const userAnimalsRows = sql.prepare("SELECT animalID FROM user_farm WHERE userID = ? AND guildID = ?").all(userId, guildId);
-                    const distinctAnimalIds = [...new Set(userAnimalsRows.map(r => r.animalID))];
+                    let userAnimalsRows = [];
+                    try {
+                        const res = await db.query("SELECT animalID FROM user_farm WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+                        userAnimalsRows = res.rows;
+                    } catch(e) {}
+                    
+                    const distinctAnimalIds = [...new Set(userAnimalsRows.map(r => r.animalid || r.animalID))];
                     
                     const options = [];
                     for (const animId of distinctAnimalIds) {
@@ -343,7 +377,7 @@ module.exports = {
                     const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('menu_feed_animal').setPlaceholder('اختر الحيوان...').addOptions(options));
                     const response = await i.reply({ content: '🥄 **الإطعام:**', components: [row], flags: [MessageFlags.Ephemeral], fetchReply: true }).catch(() => {});
                     
-                    if (!response) return; // توقف هنا إذا لم تنجح الاستجابة
+                    if (!response) return; 
 
                     const subCollector = response.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 60000, max: 1 });
                     
@@ -353,26 +387,46 @@ module.exports = {
                             const animal = farmAnimals.find(a => String(a.id) === String(animalId));
                             const feedId = animal.feed_id;
                             
-                            const sample = sql.prepare("SELECT lastFedTimestamp FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ? LIMIT 1").get(userId, guildId, animalId);
-                            if (sample && sample.lastFedTimestamp && (Date.now() - sample.lastFedTimestamp) < 12*3600*1000) {
+                            let sample = null;
+                            try {
+                                const sRes = await db.query("SELECT lastFedTimestamp FROM user_farm WHERE userID = $1 AND guildID = $2 AND animalID = $3 LIMIT 1", [userId, guildId, animalId]);
+                                sample = sRes.rows[0];
+                            } catch(e) {}
+                            
+                            const lastFedTime = sample ? Number(sample.lastfedtimestamp || sample.lastFedTimestamp) : 0;
+                            if (lastFedTime && (Date.now() - lastFedTime) < 12*3600*1000) {
                                 return subI.reply({ content: `✋ **${animal.name}** شبعان!\nيمكنك إطعامه مرة كل 12 ساعة.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
 
-                            const countRow = sql.prepare("SELECT SUM(quantity) as total FROM user_farm WHERE userID = ? AND guildID = ? AND animalID = ?").get(userId, guildId, animalId);
-                            const totalAnimals = countRow ? countRow.total : 0;
-                            const invRow = sql.prepare("SELECT quantity FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, feedId);
+                            let totalAnimals = 0;
+                            let invRow = null;
+                            try {
+                                const countRes = await db.query("SELECT SUM(quantity) as total FROM user_farm WHERE userID = $1 AND guildID = $2 AND animalID = $3", [userId, guildId, animalId]);
+                                totalAnimals = countRes.rows[0] && countRes.rows[0].total ? Number(countRes.rows[0].total) : 0;
+                                
+                                const invRes = await db.query("SELECT quantity FROM user_inventory WHERE userID = $1 AND guildID = $2 AND itemID = $3", [userId, guildId, feedId]);
+                                invRow = invRes.rows[0];
+                            } catch(e) {}
                             
-                            if (!invRow || invRow.quantity < totalAnimals) {
+                            const feedQty = invRow ? Number(invRow.quantity) : 0;
+
+                            if (!invRow || feedQty < totalAnimals) {
                                 return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
                             
-                            sql.prepare("UPDATE user_inventory SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(totalAnimals, userId, guildId, feedId);
-                            sql.prepare("UPDATE user_farm SET lastFedTimestamp = ? WHERE userID = ? AND guildID = ? AND animalID = ?").run(Date.now(), userId, guildId, animalId);
+                            try {
+                                await db.query('BEGIN');
+                                await db.query("UPDATE user_inventory SET quantity = quantity - $1 WHERE userID = $2 AND guildID = $3 AND itemID = $4", [totalAnimals, userId, guildId, feedId]);
+                                await db.query("UPDATE user_farm SET lastFedTimestamp = $1 WHERE userID = $2 AND guildID = $3 AND animalID = $4", [Date.now(), userId, guildId, animalId]);
+                                await db.query('COMMIT');
+                            } catch(e) {
+                                await db.query('ROLLBACK');
+                            }
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             
                             if (currentView === 'feed_store') {
-                                const data = renderFeedStore();
+                                const data = await renderFeedStore();
                                 await msg.edit({ embeds: [data.embed], components: data.rows, files: [], attachments: [] }).catch(() => {});
                             }
                         }
