@@ -1,11 +1,8 @@
-// commands/family/divorce.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ComponentType } = require("discord.js");
 
-const ALIMONY_AMOUNT = 2500; // مبلغ النفقة
+const ALIMONY_AMOUNT = 2500; 
 const MORA_EMOJI = '<:mora:1435647151349698621>';
 
-// 💔 قائمة صور الانفصال
 const DIVORCE_GIFS = [
     "https://media.tenor.com/B7y-Y8qX3pkAAAAC/break-up.gif",
     "https://media.tenor.com/uP_kX8vM8Q0AAAAC/sad-anime.gif",
@@ -21,18 +18,20 @@ module.exports = {
 
     async execute(message, args) {
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const user = message.member;
         const guildId = message.guild.id;
 
         try {
-            // 1. تحديد الزوجة المستهدفة (الذكاء في الاختيار) 🧠
             const targetMember = message.mentions.members.first();
             let partnerId;
             let partner;
 
-            // جلب كل الزيجات للمستخدم
-            const allMarriages = sql.prepare("SELECT * FROM marriages WHERE userID = ? AND guildID = ?").all(user.id, guildId);
+            let allMarriages = [];
+            try {
+                const res = await db.query("SELECT * FROM marriages WHERE userID = $1 AND guildID = $2", [user.id, guildId]);
+                allMarriages = res.rows;
+            } catch(e) {}
 
             if (allMarriages.length === 0) {
                 const msg = await message.reply("🚫 **أنت لست متزوجاً أصلاً!**");
@@ -41,7 +40,7 @@ module.exports = {
             }
 
             if (targetMember) {
-                const specificMarriage = allMarriages.find(m => m.partnerID === targetMember.id);
+                const specificMarriage = allMarriages.find(m => (m.partnerid || m.partnerID) === targetMember.id);
                 if (!specificMarriage) {
                     const msg = await message.reply(`🚫 **أنت لست متزوجاً من ${targetMember.displayName}!**`);
                     setTimeout(() => msg.delete().catch(() => {}), 5000);
@@ -51,15 +50,15 @@ module.exports = {
                 partner = targetMember;
             } else {
                 if (allMarriages.length === 1) {
-                    partnerId = allMarriages[0].partnerID;
+                    partnerId = allMarriages[0].partnerid || allMarriages[0].partnerID;
                     partner = await message.guild.members.fetch(partnerId).catch(() => null);
                 } else {
-                    // قائمة اختيار إذا كان لديه أكثر من زوجة ولم يحدد
                     const options = await Promise.all(allMarriages.map(async (m) => {
-                        const p = await message.guild.members.fetch(m.partnerID).catch(() => null);
+                        const pid = m.partnerid || m.partnerID;
+                        const p = await message.guild.members.fetch(pid).catch(() => null);
                         return {
-                            label: p ? p.displayName : `Unknown User (${m.partnerID})`,
-                            value: m.partnerID,
+                            label: p ? p.displayName : `Unknown User (${pid})`,
+                            value: pid,
                             description: `الزوجة رقم ${m.id}`,
                             emoji: '💍'
                         };
@@ -87,13 +86,15 @@ module.exports = {
                 }
             }
 
-            // 🔥🔥 التحقق من وجود الشريك في السيرفر (Auto-Divorce Logic) 🔥🔥
             if (!partner) {
-                const stmt = sql.prepare("DELETE FROM marriages WHERE userID = ? AND partnerID = ? AND guildID = ?");
-                stmt.run(user.id, partnerId, guildId); 
-
-                // نقل الأطفال للأب المتبقي
-                sql.prepare("UPDATE children SET parentID = ? WHERE parentID = ? AND guildID = ?").run(user.id, partnerId, guildId);
+                try {
+                    await db.query('BEGIN');
+                    await db.query("DELETE FROM marriages WHERE userID = $1 AND partnerID = $2 AND guildID = $3", [user.id, partnerId, guildId]); 
+                    await db.query("UPDATE children SET parentID = $1 WHERE parentID = $2 AND guildID = $3", [user.id, partnerId, guildId]);
+                    await db.query('COMMIT');
+                } catch(e) {
+                    await db.query('ROLLBACK');
+                }
 
                 const embed = new EmbedBuilder()
                     .setColor("Grey")
@@ -109,11 +110,11 @@ module.exports = {
                 return;
             }
 
-            // ==========================================================
-            // 🔄 إجراءات الطلاق العادية (الشريك موجود)
-            // ==========================================================
-
-            const familyConfig = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(guildId);
+            let familyConfig = null;
+            try {
+                const confRes = await db.query("SELECT * FROM family_config WHERE guildID = $1", [guildId]);
+                familyConfig = confRes.rows[0];
+            } catch(e) {}
             
             const checkRole = (rolesData) => {
                 if (!rolesData) return false;
@@ -126,7 +127,7 @@ module.exports = {
                 return false;
             };
 
-            const isMale = familyConfig && checkRole(familyConfig.maleRole);
+            const isMale = familyConfig && checkRole(familyConfig.malerole || familyConfig.maleRole);
             
             let title, desc, footer;
             let cost = 0;
@@ -149,23 +150,24 @@ module.exports = {
                 footer = "المدعية: الزوجة";
             }
 
-            const children = sql.prepare("SELECT * FROM children WHERE (parentID = ? OR parentID = ?) AND guildID = ?").all(user.id, partner.id, guildId);
+            let children = [];
+            try {
+                const childRes = await db.query("SELECT * FROM children WHERE (parentID = $1 OR parentID = $2) AND guildID = $3", [user.id, partner.id, guildId]);
+                children = childRes.rows;
+            } catch(e) {}
+            
             const hasChildren = children.length > 0;
 
             if (hasChildren) {
                 desc += `\n✶ حضـانـة اطفالـكم ستكـون بالتراضـي قـرروا من يحتفظ بالاطفـال`;
             }
 
-            let userData = client.getLevel.get(user.id, guildId);
-            if (!userData || userData.mora < cost) {
+            let userData = await client.getLevel(user.id, guildId);
+            if (!userData || Number(userData.mora) < cost) {
                 const msg = await message.reply(`💸 **لا تملك قيمة النفقة/التعويض!** المطلوب: ${cost.toLocaleString()} ${MORA_EMOJI}`);
                 setTimeout(() => msg.delete().catch(() => {}), 5000);
                 return;
             }
-
-            // ==========================================================
-            // ⚖️ إرسال "جلسة المحكمة"
-            // ==========================================================
 
             const row = new ActionRowBuilder();
             
@@ -189,19 +191,16 @@ module.exports = {
                 .setDescription(desc)
                 .setFooter({ text: footer });
 
-            // نرسل الرسالة ونحفظها في متغير
             const courtMsg = await message.channel.send({ content: `${partner}`, embeds: [embed], components: [row] });
 
             let custodyVotes = { [user.id]: null, [partner.id]: null };
 
-            // 🔥🔥 تحسين الفلتر ليقبل الزوج والزوجة فقط 🔥🔥
             const collector = courtMsg.createMessageComponentCollector({ 
                 filter: i => (i.user.id === user.id || i.user.id === partner.id),
                 time: 300000 
             });
 
             collector.on('collect', async i => {
-                // إلغاء الطلاق
                 if (i.customId === 'cancel_divorce') {
                     await i.deferUpdate(); 
                     await courtMsg.delete().catch(() => {}); 
@@ -210,16 +209,13 @@ module.exports = {
                     return;
                 }
 
-                // تأكيد الطلاق المباشر (بدون أطفال)
                 if (i.customId === 'confirm_divorce_direct') {
                     if (i.user.id !== user.id) return i.reply({ content: `⚠️ **هذا القرار بيد صاحب الطلب (${user.displayName}) فقط!**`, ephemeral: true });
                     
-                    // نمرر courtMsg للتعديل المباشر
                     await performDivorce(i, user, partner, cost, null, true); 
                     return;
                 }
 
-                // بدء جلسة الحضانة (مراقب فرعي للردود السرية)
                 if (i.customId === 'custody_session') {
                     const custodyRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('keep_kids').setLabel('الاحتفـاظ بحضانـة الاطفال').setStyle(ButtonStyle.Success),
@@ -230,12 +226,11 @@ module.exports = {
                         content: `🔒 **جلسة سرية:** ماذا تريد أن تفعل بالأطفال؟\n(اختر بحكمة، إذا تخلى أحدكما سيتم الطلاق فوراً للحاضن)`, 
                         components: [custodyRow], 
                         ephemeral: true,
-                        fetchReply: true // لجلب الرسالة وإنشاء كوليكتور عليها
+                        fetchReply: true 
                     });
 
-                    // 🔥🔥 كوليكتور فرعي للأزرار السرية فقط 🔥🔥
                     const secretCollector = secretMsg.createMessageComponentCollector({ 
-                        filter: btn => btn.user.id === i.user.id, // فقط الشخص الذي فتح الجلسة
+                        filter: btn => btn.user.id === i.user.id, 
                         time: 60000, 
                         max: 1 
                     });
@@ -244,20 +239,14 @@ module.exports = {
                         const choice = btn.customId === 'keep_kids' ? 'keep' : 'leave';
                         custodyVotes[btn.user.id] = choice;
 
-                        // تحديث الرد السري
                         await btn.update({ content: `✅ تم تسجيل رغبتك: **${choice === 'keep' ? 'الاحتفاظ' : 'التخلي'}**`, components: [] });
-
-                        // الآن نفحص النتائج ونطبقها على الرسالة العامة (courtMsg)
                         
-                        // سيناريو 1: تخلي فوري
                         if (choice === 'leave') {
                             const keeper = btn.user.id === user.id ? partner : user;
-                            // نستخدم null كـ interaction لأننا نريد تعديل courtMsg وليس الرد السري
                             await performDivorce(null, user, partner, cost, keeper, false); 
                             return;
                         }
 
-                        // سيناريو 2: احتفاظ (ننتظر الطرف الآخر)
                         if (custodyVotes[user.id] === 'keep' && custodyVotes[partner.id] === 'keep') {
                             await courtMsg.edit({ 
                                 content: `❌ **فشل الطلاق!**\nكلاكما يتمسك بالحضانة. يجب أن يتنازل أحدكما.\nحاولوا مرة أخرى بتفاهم أكبر.`, 
@@ -270,71 +259,73 @@ module.exports = {
                 }
             });
 
-            // ==========================================================
-            // 🛠️ دالة تنفيذ الطلاق
-            // ==========================================================
             async function performDivorce(interaction, payer, receiver, amount, kidsKeeper, isDirectUpdate) {
-                const payerDB = client.getLevel.get(payer.id, guildId);
-                
-                // إعادة التحقق من الرصيد
-                if (payerDB.mora < amount) {
-                    const msg = `❌ **فشلت العملية:** ${payer.displayName} أفلس أثناء المحكمة!`;
+                try {
+                    await db.query('BEGIN');
+                    
+                    const payerDB = await client.getLevel(payer.id, guildId);
+                    if (Number(payerDB.mora) < amount) {
+                        await db.query('ROLLBACK');
+                        const msg = `❌ **فشلت العملية:** ${payer.displayName} أفلس أثناء المحكمة!`;
+                        if (isDirectUpdate && interaction) await interaction.update({ content: msg, components: [], embeds: [] });
+                        else await courtMsg.edit({ content: msg, components: [], embeds: [] });
+                        return;
+                    }
+
+                    payerDB.mora = Number(payerDB.mora) - amount;
+                    await client.setLevel(payerDB);
+
+                    let receiverDB = await client.getLevel(receiver.id, guildId);
+                    if (!receiverDB) receiverDB = { id: `${guildId}-${receiver.id}`, user: receiver.id, guild: guildId, xp: 0, level: 1, mora: 0 };
+                    receiverDB.mora = Number(receiverDB.mora) + amount;
+                    await client.setLevel(receiverDB);
+
+                    await db.query("DELETE FROM marriages WHERE ((userID = $1 AND partnerID = $2) OR (userID = $2 AND partnerID = $1)) AND guildID = $3", [payer.id, receiver.id, guildId]);
+
+                    let kidsMsg = "";
+                    if (kidsKeeper && children.length > 0) {
+                        await db.query("UPDATE children SET parentID = $1 WHERE (parentID = $2 OR parentID = $3) AND guildID = $4", [kidsKeeper.id, payer.id, receiver.id, guildId]);
+                        kidsMsg = `\n👶 **الحضانة:** انتقلت جميع الأطفال إلى كفالة **${kidsKeeper.displayName}**.`;
+                    }
+
+                    await db.query('COMMIT');
+
+                    const finalGif = DIVORCE_GIFS[Math.floor(Math.random() * DIVORCE_GIFS.length)];
+
+                    const finalEmbed = new EmbedBuilder()
+                        .setColor("Grey")
+                        .setTitle(`⚖️ حكمت المحكمة`)
+                        .setDescription(
+                            `تم التفريق بين **${payer.displayName}** و **${receiver.displayName}** رسمياً.\n` +
+                            `💸 **النفقة المدفوعة:** ${amount.toLocaleString()} ${MORA_EMOJI}\n` +
+                            kidsMsg
+                        )
+                        .setImage(finalGif)
+                        .setTimestamp();
+
+                    try {
+                        if (isDirectUpdate && interaction) {
+                            await interaction.update({ content: ``, embeds: [finalEmbed], components: [] });
+                        } else {
+                            await courtMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
+                        }
+                        
+                        setTimeout(() => {
+                            if (isDirectUpdate && interaction) interaction.deleteReply().catch(() => {});
+                            else courtMsg.delete().catch(() => {});
+                        }, 15000);
+
+                    } catch (err) {
+                        const msg = await message.channel.send({ embeds: [finalEmbed] });
+                        setTimeout(() => msg.delete().catch(() => {}), 15000);
+                    }
+
+                } catch (error) {
+                    await db.query('ROLLBACK');
+                    console.error("Divorce Transaction Error:", error);
+                    const msg = `❌ حدث خطأ داخلي أثناء تنفيذ الطلاق.`;
                     if (isDirectUpdate && interaction) await interaction.update({ content: msg, components: [], embeds: [] });
                     else await courtMsg.edit({ content: msg, components: [], embeds: [] });
-                    return;
-                }
-
-                // 1. تحويل الأموال
-                payerDB.mora -= amount;
-                client.setLevel.run(payerDB);
-
-                let receiverDB = client.getLevel.get(receiver.id, guildId);
-                if (!receiverDB) receiverDB = { id: `${guildId}-${receiver.id}`, user: receiver.id, guild: guildId, xp: 0, level: 1, mora: 0 };
-                receiverDB.mora += amount;
-                client.setLevel.run(receiverDB);
-
-                // 2. حذف الزواج
-                const stmt = sql.prepare("DELETE FROM marriages WHERE ((userID = ? AND partnerID = ?) OR (userID = ? AND partnerID = ?)) AND guildID = ?");
-                stmt.run(payer.id, receiver.id, receiver.id, payer.id, guildId);
-
-                // 3. نقل الأطفال
-                let kidsMsg = "";
-                if (kidsKeeper && children.length > 0) {
-                    const moveStmt = sql.prepare("UPDATE children SET parentID = ? WHERE (parentID = ? OR parentID = ?) AND guildID = ?");
-                    moveStmt.run(kidsKeeper.id, payer.id, receiver.id, guildId);
-                    kidsMsg = `\n👶 **الحضانة:** انتقلت جميع الأطفال إلى كفالة **${kidsKeeper.displayName}**.`;
-                }
-
-                // 4. الرسالة النهائية
-                const finalGif = DIVORCE_GIFS[Math.floor(Math.random() * DIVORCE_GIFS.length)];
-
-                const finalEmbed = new EmbedBuilder()
-                    .setColor("Grey")
-                    .setTitle(`⚖️ حكمت المحكمة`)
-                    .setDescription(
-                        `تم التفريق بين **${payer.displayName}** و **${receiver.displayName}** رسمياً.\n` +
-                        `💸 **النفقة المدفوعة:** ${amount.toLocaleString()} ${MORA_EMOJI}\n` +
-                        kidsMsg
-                    )
-                    .setImage(finalGif)
-                    .setTimestamp();
-
-                try {
-                    if (isDirectUpdate && interaction) {
-                        await interaction.update({ content: ``, embeds: [finalEmbed], components: [] });
-                    } else {
-                        await courtMsg.edit({ content: ``, embeds: [finalEmbed], components: [] });
-                    }
-                    
-                    // حذف الرسالة بعد 15 ثانية
-                    setTimeout(() => {
-                        if (isDirectUpdate && interaction) interaction.deleteReply().catch(() => {});
-                        else courtMsg.delete().catch(() => {});
-                    }, 15000);
-
-                } catch (err) {
-                    const msg = await message.channel.send({ embeds: [finalEmbed] });
-                    setTimeout(() => msg.delete().catch(() => {}), 15000);
                 }
             }
 
