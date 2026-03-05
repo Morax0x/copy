@@ -1,5 +1,3 @@
-// commands/economy/gametime.js
-
 const { 
     EmbedBuilder, 
     SlashCommandBuilder, 
@@ -11,7 +9,6 @@ const {
 } = require("discord.js");
 const path = require('path');
 
-// استدعاء ملف إعدادات الصيد
 const rootDir = process.cwd();
 let fishingConfig = { rods: [], boats: [] };
 try {
@@ -96,18 +93,15 @@ module.exports = {
                 originalUser = message.author;
             }
 
-            // دالة لحساب البيانات لأي مستخدم
-            const calculateUserData = (userToCheck) => {
-                const getScore = client.getLevel;
-                let data = getScore.get(userToCheck.id, guild.id);
+            const calculateUserData = async (userToCheck) => {
+                let data = await client.getLevel(userToCheck.id, guild.id);
                 if (!data) data = { ...client.defaultData, user: userToCheck.id, guild: guild.id };
 
                 const now = Date.now();
                 const readyGames = [];
                 const waitGames = [];
 
-                // 1. الراتب
-                const lastDaily = data.lastDaily || 0;
+                const lastDaily = Number(data.lastDaily) || 0;
                 const todayKSA = getKSADateString(now);
                 const lastDailyKSA = getKSADateString(lastDaily);
 
@@ -118,9 +112,8 @@ module.exports = {
                     readyGames.push(`${EMOJI_READY} **راتب**`);
                 }
 
-                // 2. الأوامر الثابتة
                 for (const cmd of COMMANDS_TO_CHECK) {
-                    const lastUsed = data[cmd.db_column] || 0;
+                    const lastUsed = Number(data[cmd.db_column]) || 0;
                     const cooldownAmount = cmd.cooldown;
                     const timeLeft = lastUsed + cooldownAmount - now;
 
@@ -131,14 +124,13 @@ module.exports = {
                     }
                 }
 
-                // 3. الصيد
-                const userRodLevel = data.rodLevel || 1;
-                const userBoatLevel = data.boatLevel || 1;
+                const userRodLevel = Number(data.rodLevel) || 1;
+                const userBoatLevel = Number(data.boatLevel) || 1;
                 const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
                 const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
                 let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
                 if (fishCooldown < 10000) fishCooldown = 10000;
-                const lastFish = data.lastFish || 0;
+                const lastFish = Number(data.lastFish) || 0;
                 const fishTimeLeft = lastFish + fishCooldown - now;
 
                 if (fishTimeLeft > 0) {
@@ -150,10 +142,6 @@ module.exports = {
                 return { readyGames, waitGames };
             };
 
-            // حساب البيانات الأساسية للرسالة الأولى
-            const initialData = calculateUserData(targetUser);
-
-            // بناء الإيمبد الرئيسي
             const embed = new EmbedBuilder()
                 .setTitle('✥ وقـت الالعـاب')
                 .setColor("Random")
@@ -186,14 +174,10 @@ module.exports = {
             });
 
             collector.on('collect', async (i) => {
-                // 🔥 التعديل هنا: تحديد من هو المستخدم المستهدف بناءً على من ضغط الزر
-                // إذا الضغط من صاحب الأمر -> نعرض بيانات التارجت الأصلي
-                // إذا الضغط من شخص غريب -> نعرض بياناته هو شخصياً
                 const clickerIsOwner = i.user.id === originalUser.id;
                 const subjectUser = clickerIsOwner ? targetUser : i.user;
 
-                // إعادة حساب البيانات للشخص المحدد
-                const { readyGames, waitGames } = calculateUserData(subjectUser);
+                const { readyGames, waitGames } = await calculateUserData(subjectUser);
 
                 let finalDesc = "";
                 let finalColor = "Random";
