@@ -3,7 +3,6 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 
 let updateGuildStat;
 try {
-    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
@@ -94,13 +93,13 @@ module.exports = {
             return message.reply(msg); 
         }
 
-        const sql = client.sql;
-        let userData = client.getLevel.get(user.id, guild.id);
+        const db = client.sql;
+        let userData = await client.getLevel(user.id, guild.id);
         if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
         const now = Date.now();
         if (user.id !== OWNER_ID) {
-            const timeLeft = (userData.lastRPS || 0) + COOLDOWN_MS - now;
+            const timeLeft = (Number(userData.lastRPS) || 0) + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
@@ -110,7 +109,7 @@ module.exports = {
 
         if (!betInput) {
             let proposedBet = 100;
-            const userBalance = userData.mora;
+            const userBalance = Number(userData.mora) || 0;
 
             if (userBalance < MIN_BET) {
                 client.activePlayers.delete(user.id); 
@@ -118,14 +117,14 @@ module.exports = {
             }
             if (userBalance < 100) proposedBet = userBalance;
 
-            return startGame(channel, user, member, opponentInput, proposedBet, client, guild, sql, isSlash ? interaction : null);
+            return startGame(channel, user, member, opponentInput, proposedBet, client, guild, db, isSlash ? interaction : null);
         } else {
-            return startGame(channel, user, member, opponentInput, betInput, client, guild, sql, isSlash ? interaction : null);
+            return startGame(channel, user, member, opponentInput, betInput, client, guild, db, isSlash ? interaction : null);
         }
     }
 };
 
-async function startGame(channel, user, member, opponent, bet, client, guild, sql, interaction) {
+async function startGame(channel, user, member, opponent, bet, client, guild, db, interaction) {
     if (client.activeGames.has(channel.id)) {
         client.activePlayers.delete(user.id); 
         const msg = "🚫 هناك لعبة جارية في هذه القناة.";
@@ -134,35 +133,38 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
         return;
     }
     
-    let userData = client.getLevel.get(user.id, guild.id);
-    if (!userData || userData.mora < bet) {
+    let userData = await client.getLevel(user.id, guild.id);
+    if (!userData || Number(userData.mora) < bet) {
         client.activePlayers.delete(user.id); 
-        const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData ? userData.mora : 0})`;
+        const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData ? Number(userData.mora) : 0})`;
         if (interaction && !interaction.replied) await interaction.followUp({ content: msg, ephemeral: true });
         else channel.send(msg);
         return;
     }
 
     if (opponent && opponent.id !== user.id && !opponent.bot) {
-        
         if (bet > MAX_LOAN_BET) {
-            const myLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(user.id, guild.id);
-            if (myLoan && myLoan.remainingAmount > 0) {
-                client.activePlayers.delete(user.id);
-                const msg = `❌ **عذراً!** عليك قرض. حدك الأقصى في التحديات هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`;
-                if (interaction && !interaction.replied) await interaction.followUp({ content: msg, ephemeral: true }); else channel.send(msg);
-                return;
-            }
+            try {
+                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [user.id, guild.id]);
+                if (res.rows.length > 0 && Number(res.rows[0].remainingamount || res.rows[0].remainingAmount) > 0) {
+                    client.activePlayers.delete(user.id);
+                    const msg = `❌ **عذراً!** عليك قرض. حدك الأقصى في التحديات هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`;
+                    if (interaction && !interaction.replied) await interaction.followUp({ content: msg, ephemeral: true }); else channel.send(msg);
+                    return;
+                }
+            } catch(e) {}
         }
 
         if (bet > MAX_LOAN_BET) {
-            const oppLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(opponent.id, guild.id);
-            if (oppLoan && oppLoan.remainingAmount > 0) {
-                client.activePlayers.delete(user.id);
-                const msg = `❌ الخصم ${opponent} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`;
-                if (interaction && !interaction.replied) await interaction.followUp(msg); else channel.send(msg);
-                return;
-            }
+            try {
+                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
+                if (res.rows.length > 0 && Number(res.rows[0].remainingamount || res.rows[0].remainingAmount) > 0) {
+                    client.activePlayers.delete(user.id);
+                    const msg = `❌ الخصم ${opponent} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`;
+                    if (interaction && !interaction.replied) await interaction.followUp(msg); else channel.send(msg);
+                    return;
+                }
+            } catch(e) {}
         }
 
         if (client.activePlayers.has(opponent.id)) {
@@ -172,8 +174,8 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
             return;
         }
 
-        let opponentData = client.getLevel.get(opponent.id, guild.id);
-        if (!opponentData || opponentData.mora < bet) {
+        let opponentData = await client.getLevel(opponent.id, guild.id);
+        if (!opponentData || Number(opponentData.mora) < bet) {
             client.activePlayers.delete(user.id); 
             const msg = `❌ الخصم ${opponent} لا يملك مورا كافية!`;
             if (interaction && !interaction.replied) await interaction.followUp(msg);
@@ -216,23 +218,23 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
 
             await response.deferUpdate();
             
-            userData = client.getLevel.get(user.id, guild.id);
-            opponentData = client.getLevel.get(opponent.id, guild.id);
+            userData = await client.getLevel(user.id, guild.id);
+            opponentData = await client.getLevel(opponent.id, guild.id);
             
-            if (userData.mora < bet || opponentData.mora < bet) {
+            if (Number(userData.mora) < bet || Number(opponentData.mora) < bet) {
                 client.activeGames.delete(channel.id);
                 client.activePlayers.delete(user.id);
                 client.activePlayers.delete(opponent.id);
                 return inviteMsg.edit({ content: "❌ أحد اللاعبين صرف أمواله قبل بدء اللعبة!", embeds: [], components: [] });
             }
 
-            userData.mora -= bet;
-            opponentData.mora -= bet;
+            userData.mora = Number(userData.mora) - bet;
+            opponentData.mora = Number(opponentData.mora) - bet;
             if (user.id !== OWNER_ID) userData.lastRPS = Date.now();
-            client.setLevel.run(userData);
-            client.setLevel.run(opponentData);
+            await client.setLevel(userData);
+            await client.setLevel(opponentData);
 
-            await runRPSRound(inviteMsg, user, member, opponent, bet, true, client, guild, sql);
+            await runRPSRound(inviteMsg, user, member, opponent, bet, true, client, guild, db);
 
         } catch (e) {
             client.activeGames.delete(channel.id);
@@ -257,9 +259,9 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
 
         client.activeGames.add(channel.id);
         
-        userData.mora -= bet;
+        userData.mora = Number(userData.mora) - bet;
         if (user.id !== OWNER_ID) userData.lastRPS = Date.now();
-        client.setLevel.run(userData);
+        await client.setLevel(userData);
         
         const initialEmbed = new EmbedBuilder()
             .setTitle('حجرة ورقة مقص!')
@@ -283,11 +285,11 @@ async function startGame(channel, user, member, opponent, bet, client, guild, sq
              msg = await channel.send({ content: " ", embeds: [initialEmbed], components: [initialRow] });
         }
         
-        await runRPSRound(msg, user, member, null, bet, false, client, guild, sql);
+        await runRPSRound(msg, user, member, null, bet, false, client, guild, db);
     }
 }
 
-async function runRPSRound(message, player1, member1, player2, bet, isPvP, client, guild, sql) {
+async function runRPSRound(message, player1, member1, player2, bet, isPvP, client, guild, db) {
     if (isPvP) {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('rps_rock').setEmoji(ROCK).setStyle(ButtonStyle.Secondary),
@@ -339,17 +341,17 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
 
         if (reason !== 'finished') {
             if (isPvP) {
-                let p1Data = client.getLevel.get(player1.id, guild.id);
-                let p2Data = client.getLevel.get(player2.id, guild.id);
-                p1Data.mora += bet;
-                p2Data.mora += bet;
-                client.setLevel.run(p1Data);
-                client.setLevel.run(p2Data);
+                let p1Data = await client.getLevel(player1.id, guild.id);
+                let p2Data = await client.getLevel(player2.id, guild.id);
+                p1Data.mora = Number(p1Data.mora) + bet;
+                p2Data.mora = Number(p2Data.mora) + bet;
+                await client.setLevel(p1Data);
+                await client.setLevel(p2Data);
             } else {
-                let p1Data = client.getLevel.get(player1.id, guild.id);
-                p1Data.mora += bet;
+                let p1Data = await client.getLevel(player1.id, guild.id);
+                p1Data.mora = Number(p1Data.mora) + bet;
                 p1Data.lastRPS = 0; 
-                client.setLevel.run(p1Data);
+                await client.setLevel(p1Data);
             }
             return message.edit({ content: "⏰ انتهى الوقت! تم إلغاء اللعبة وإعادة المورا.", embeds: [], components: [] }).catch(() => {});
         }
@@ -381,18 +383,18 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
         let p2Name = isPvP ? player2.displayName : "البوت";
 
         if (result === 0) {
-            let p1Data = client.getLevel.get(player1.id, guild.id);
-            p1Data.mora += bet;
+            let p1Data = await client.getLevel(player1.id, guild.id);
+            p1Data.mora = Number(p1Data.mora) + bet;
 
             if (!isPvP) {
                 p1Data.lastRPS = 0; 
             }
-            client.setLevel.run(p1Data);
+            await client.setLevel(p1Data);
             
             if (isPvP) {
-                let p2Data = client.getLevel.get(player2.id, guild.id);
-                p2Data.mora += bet;
-                client.setLevel.run(p2Data);
+                let p2Data = await client.getLevel(player2.id, guild.id);
+                p2Data.mora = Number(p2Data.mora) + bet;
+                await client.setLevel(p2Data);
             }
 
             resultEmbed.setTitle("🤝 تـعــادل!")
@@ -403,7 +405,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                 );
         
         } else if (result === 1) {
-            let p1Data = client.getLevel.get(player1.id, guild.id);
+            let p1Data = await client.getLevel(player1.id, guild.id);
             
             let winnings = 0;
             let buffString = "";
@@ -413,8 +415,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
             if (isPvP) {
                 winnings = bet * 2; 
 
-                // 🔥 في اللعب الجماعي: المكسب يروح للاعب مباشرة بدون ضرائب ولا يحسب لملك الكازينو 🔥
-                p1Data.mora += winnings;
+                p1Data.mora = Number(p1Data.mora) + winnings;
                 
                 resultEmbed.setTitle(`🏆 الفائز: ${player1.displayName}!`)
                     .setColor("Green")
@@ -426,28 +427,32 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                     .setThumbnail(player1.displayAvatarURL({ dynamic: true }));
 
             } else {
-                // 🔥 في اللعب الفردي: يطبق نظام الضرائب ويحسب لملك الكازينو 🔥
-                const multiplier = calculateMoraBuff(member1, sql); 
+                const multiplier = await calculateMoraBuff(member1, db); 
                 winnings = Math.floor((bet * 2) * multiplier); 
                 
-                const settings = sql.prepare("SELECT roleCasinoKing FROM settings WHERE guild = ?").get(guild.id);
-                if (settings && settings.roleCasinoKing && !member1.roles.cache.has(settings.roleCasinoKing)) {
-                    const kingMembers = guild.roles.cache.get(settings.roleCasinoKing)?.members;
-                    if (kingMembers && kingMembers.size > 0) {
-                        const king = kingMembers.first();
-                        casinoTax = Math.floor(winnings * 0.01);
-                        if (casinoTax > 0) {
-                            winnings -= casinoTax;
-                            taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                            sql.prepare('UPDATE levels SET bank = bank + ? WHERE user = ? AND guild = ?').run(casinoTax, king.id, guild.id);
+                try {
+                    const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guild.id]);
+                    const settings = settingsRes.rows[0];
+                    const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
+
+                    if (roleId && !member1.roles.cache.has(roleId)) {
+                        const kingMembers = guild.roles.cache.get(roleId)?.members;
+                        if (kingMembers && kingMembers.size > 0) {
+                            const king = kingMembers.first();
+                            casinoTax = Math.floor(winnings * 0.01);
+                            if (casinoTax > 0) {
+                                winnings -= casinoTax;
+                                taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
+                                await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guild.id]);
+                            }
                         }
                     }
-                }
+                } catch(e) {}
 
                 const buffPercent = Math.round((multiplier - 1) * 100);
                 if (buffPercent > 0) buffString = ` (+${buffPercent}%)`;
                 
-                p1Data.mora += winnings;
+                p1Data.mora = Number(p1Data.mora) + winnings;
 
                 if (updateGuildStat) {
                     updateGuildStat(client, guild.id, player1.id, 'casino_profit', winnings - bet);
@@ -462,16 +467,15 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                     )
                     .setThumbnail(player1.displayAvatarURL({ dynamic: true }));
             }
-            client.setLevel.run(p1Data);
+            await client.setLevel(p1Data);
 
         } else {
             if (isPvP) {
-                let p2Data = client.getLevel.get(player2.id, guild.id);
+                let p2Data = await client.getLevel(player2.id, guild.id);
                 let winnings = bet * 2; 
 
-                // 🔥 في اللعب الجماعي: المكسب يروح للاعب مباشرة بدون ضرائب ولا يحسب لملك الكازينو 🔥
-                p2Data.mora += winnings;
-                client.setLevel.run(p2Data);
+                p2Data.mora = Number(p2Data.mora) + winnings;
+                await client.setLevel(p2Data);
 
                 resultEmbed.setTitle(`🏆 الفائز: ${player2.displayName}!`)
                     .setColor("Green")
