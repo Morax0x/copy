@@ -11,57 +11,104 @@ module.exports = {
 
     async execute(message, args) {
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة (تحذف بعد 5 ثواني)
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         };
 
-        // 1. التحقق من المدخلات
         const childMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
 
         if (!childMember) {
             return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك تحديد الابن الذي تريد طرده.\nمثال: \`${message.content.split(' ')[0]} @الابن\``);
         }
 
-        // 2. هل هو ابنك فعلاً؟
-        const isMyChild = sql.prepare("SELECT 1 FROM children WHERE parentID = ? AND childID = ? AND guildID = ?").get(userId, childMember.id, guildId);
-
-        if (!isMyChild) {
-            return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك! تأكد من الشخص.`);
+        try {
+            const isMyChildRes = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2 AND guildID = $3", [userId, childMember.id, guildId]);
+            if (isMyChildRes.rows.length === 0) {
+                return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك! تأكد من الشخص.`);
+            }
+        } catch(e) {
+            console.error(e);
+            return replyTemp(`❌ حدث خطأ في قاعدة البيانات.`);
         }
 
-        // 3. التحقق من وجود شريك (زوج/زوجة)
-        const marriageData = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").get(userId, guildId);
-        const partnerId = marriageData ? marriageData.partnerID : null;
+        let partnerId = null;
+        try {
+            const marriageDataRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            if (marriageDataRes.rows.length > 0) {
+                partnerId = marriageDataRes.rows[0].partnerid || marriageDataRes.rows[0].partnerID;
+            }
+        } catch(e) {}
         
         let partnerMember = null;
         if (partnerId) {
             partnerMember = await message.guild.members.fetch(partnerId).catch(() => null);
         }
 
-        // تحديد التكلفة لكل طرف
         const feePerPerson = partnerId ? (TOTAL_DISOWN_FEE / 2) : TOTAL_DISOWN_FEE;
 
-        // 4. التحقق من رصيد الأب (صاحب الطلب)
-        let userData = client.getLevel.get(userId, guildId);
+        let userData = await client.getLevel(userId, guildId);
         if (!userData) userData = { id: `${guildId}-${userId}`, user: userId, guild: guildId, xp: 0, level: 1, mora: 0 };
+        userData.mora = Number(userData.mora) || 0;
 
         if (userData.mora < feePerPerson) {
             return replyTemp(`💸 **ليس لديك حصتك من التعويض!**\nالمطلوب منك: **${feePerPerson.toLocaleString()}** ${MORA_EMOJI}`);
         }
 
-        // ==========================================================
-        // 🚨 الحالة أ: يوجد شريك (يجب موافقته ودفع حصته)
-        // ==========================================================
+        async function performDisown(interaction, parentIds, childId, amountPerPerson, originalMsg) {
+            try {
+                await db.query('BEGIN');
+
+                for (const pid of parentIds) {
+                    const pData = await client.getLevel(pid, guildId);
+                    const currentMora = Number(pData.mora) || 0;
+                    if (currentMora < amountPerPerson) {
+                        await db.query('ROLLBACK');
+                        return interaction.update({ content: `❌ **فشلت العملية:** أحد الأطراف لم يعد يملك المال الكافي!`, embeds: [], components: [] });
+                    }
+                    pData.mora = currentMora - amountPerPerson;
+                    await client.setLevel(pData);
+                }
+
+                let childData = await client.getLevel(childId, guildId);
+                if (!childData) childData = { id: `${guildId}-${childId}`, user: childId, guild: guildId, xp: 0, level: 1, mora: 0 };
+                
+                const totalCompensation = amountPerPerson * parentIds.length; 
+                childData.mora = (Number(childData.mora) || 0) + totalCompensation;
+                await client.setLevel(childData);
+
+                for (const pid of parentIds) {
+                    await db.query("DELETE FROM children WHERE parentID = $1 AND childID = $2 AND guildID = $3", [pid, childId, guildId]);
+                }
+
+                await db.query('COMMIT');
+
+                const successEmbed = new EmbedBuilder()
+                    .setColor(Colors.Red)
+                    .setTitle(`🚷 تم التبرؤ رسمياً`)
+                    .setDescription(
+                        `تم طرد **${childMember.displayName}** من العائلة بلا رجعة!\n` +
+                        `💸 **التعويض:** تم تحويل **${totalCompensation.toLocaleString()}** ${MORA_EMOJI} لرصيد الابن المطرود.`
+                    )
+                    .setImage(DISOWN_GIF);
+
+                await interaction.update({ content: `||${originalMsg.author} ${childMember}||`, embeds: [successEmbed], components: [] });
+
+            } catch (error) {
+                await db.query('ROLLBACK');
+                console.error("Disown Transaction Error:", error);
+                return interaction.update({ content: `❌ حدث خطأ داخلي أثناء تنفيذ عملية الطرد.`, embeds: [], components: [] });
+            }
+        }
+
         if (partnerId && partnerMember) {
-            // التحقق من رصيد الشريك مبدئياً
-            let partnerData = client.getLevel.get(partnerId, guildId);
+            let partnerData = await client.getLevel(partnerId, guildId);
             if (!partnerData) partnerData = { id: `${guildId}-${partnerId}`, user: partnerId, guild: guildId, xp: 0, level: 1, mora: 0 };
+            partnerData.mora = Number(partnerData.mora) || 0;
 
             if (partnerData.mora < feePerPerson) {
                 return replyTemp(`🚫 **لا يمكن إتمام العملية!** شريكك **${partnerMember.displayName}** لا يملك حصته من التعويض (${feePerPerson}).`);
@@ -73,7 +120,7 @@ module.exports = {
             );
 
             const confirmMsg = await message.channel.send({
-                content: `${partnerMember}`, // منشن للشريك
+                content: `${partnerMember}`, 
                 embeds: [new EmbedBuilder()
                     .setColor(Colors.Orange)
                     .setTitle('🚷 قرار عائلي مصيري')
@@ -98,7 +145,6 @@ module.exports = {
                     return;
                 }
 
-                // تنفيذ الخصم والتحويل (للشريكين)
                 await performDisown(confirmation, [userId, partnerId], childMember.id, feePerPerson, message);
 
             } catch (e) {
@@ -106,9 +152,6 @@ module.exports = {
             }
         } 
         
-        // ==========================================================
-        // 👤 الحالة ب: الأب وحيد (يدفع المبلغ كاملاً)
-        // ==========================================================
         else {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('solo_confirm').setLabel(`نعم، ادفع ${feePerPerson} واطرده`).setStyle(ButtonStyle.Danger).setEmoji('🚷'),
@@ -139,59 +182,11 @@ module.exports = {
                     return;
                 }
 
-                // تنفيذ الخصم والتحويل (للأب فقط)
                 await performDisown(confirmation, [userId], childMember.id, feePerPerson, message);
 
             } catch (e) {
                 confirmMsg.edit({ content: `⏳ **انتهى الوقت.**`, components: [], embeds: [] });
             }
-        }
-
-        // ==========================================================
-        // 🛠️ دالة التنفيذ (الخصم، التحويل، الحذف)
-        // ==========================================================
-        async function performDisown(interaction, parentIds, childId, amountPerPerson, originalMsg) {
-            // 1. إعادة فحص الأرصدة (للاحتياط)
-            for (const pid of parentIds) {
-                const pData = client.getLevel.get(pid, guildId);
-                if (pData.mora < amountPerPerson) {
-                    return interaction.update({ content: `❌ **فشلت العملية:** أحد الأطراف لم يعد يملك المال الكافي!`, embeds: [], components: [] });
-                }
-            }
-
-            // 2. الخصم من الآباء
-            for (const pid of parentIds) {
-                const pData = client.getLevel.get(pid, guildId);
-                pData.mora -= amountPerPerson;
-                client.setLevel.run(pData);
-            }
-
-            // 3. التحويل للابن (التعويض)
-            let childData = client.getLevel.get(childId, guildId);
-            if (!childData) childData = { id: `${guildId}-${childId}`, user: childId, guild: guildId, xp: 0, level: 1, mora: 0 };
-            
-            const totalCompensation = amountPerPerson * parentIds.length; // 2000
-            childData.mora += totalCompensation;
-            client.setLevel.run(childData);
-
-            // 4. الحذف من السجلات (فك الرابط مع جميع الآباء المذكورين)
-            // ملاحظة: نحذف سجل الابن المرتبط بأي من الوالدين
-            const stmt = sql.prepare("DELETE FROM children WHERE parentID = ? AND childID = ? AND guildID = ?");
-            for (const pid of parentIds) {
-                stmt.run(pid, childId, guildId);
-            }
-
-            // 5. الرسالة النهائية
-            const successEmbed = new EmbedBuilder()
-                .setColor(Colors.Red)
-                .setTitle(`🚷 تم التبرؤ رسمياً`)
-                .setDescription(
-                    `تم طرد **${childMember.displayName}** من العائلة بلا رجعة!\n` +
-                    `💸 **التعويض:** تم تحويل **${totalCompensation.toLocaleString()}** ${MORA_EMOJI} لرصيد الابن المطرود.`
-                )
-                .setImage(DISOWN_GIF);
-
-            await interaction.update({ content: `||${originalMsg.author} ${childMember}||`, embeds: [successEmbed], components: [] });
         }
     }
 };
