@@ -1,29 +1,25 @@
-const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js"); // ( 1 ) تم إضافة SlashCommandBuilder
+const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const TOTAL_INTEREST_RATE = 0.10;
 const EARLY_PAYOFF_DISCOUNT_RATE = 0.50;
 
 module.exports = {
-    // --- ( 2 ) إضافة بيانات أمر السلاش ---
     data: new SlashCommandBuilder()
-        .setName('تسديد') // اسم الأمر بالعربي
+        .setName('تسديد') 
         .setDescription('سداد القرض الخاص بك (بشكل جزئي أو كامل).')
         .addStringOption(option =>
             option.setName('المبلغ')
             .setDescription('المبلغ الذي تريد دفعه، أو "all" / "كامل" للسداد الكامل')
-            .setRequired(false)), // اختياري لعرض الحالة
-    // ------------------------------------
+            .setRequired(false)), 
 
     name: 'payloan',
     aliases: ['تسديد', 'سداد-القرض','سداد'],
     category: "Economy",
-    description: 'سداد القرض الخاص بك (بشكل جزئي أو كامل).',
+    description: 'سداد القرض الخاص بك - بشكل جزئي أو كامل',
 
-    // --- ( 3 ) تعديل دالة التنفيذ ---
     async execute(interactionOrMessage, args) {
 
-        // --- ( 4 ) إضافة معالج الأوامر الهجينة ---
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, guild, client, user;
         let amountArg;
@@ -34,8 +30,7 @@ module.exports = {
             client = interaction.client;
             user = interaction.user;
             amountArg = interaction.options.getString('المبلغ');
-            // سنستخدم deferReply() ولكن سنجعل بعض الردود خاصة (ephemeral)
-            await interaction.deferReply({ ephemeral: true }); // البدء برد خاص
+            await interaction.deferReply({ ephemeral: true }); 
         } else {
             message = interactionOrMessage;
             guild = message.guild;
@@ -44,16 +39,13 @@ module.exports = {
             amountArg = args[0];
         }
 
-        // توحيد المدخلات
         if (amountArg) {
             amountArg = amountArg.toLowerCase();
         }
 
-        // --- ( 5 ) توحيد دوال الرد ---
         const replySuccess = async (payload) => {
-            // ردود النجاح (العامة)
             if (typeof payload === 'string') payload = { content: payload, ephemeral: false };
-            payload.ephemeral = false; // التأكيد على أنه رد عام
+            payload.ephemeral = false; 
 
             if (isSlash) {
                 return interaction.editReply(payload);
@@ -63,131 +55,154 @@ module.exports = {
         };
 
         const replyInfo = async (payload) => {
-            // ردود المعلومات والأخطاء (خاصة في السلاش)
             if (typeof payload === 'string') payload = { content: payload, ephemeral: true };
-            payload.ephemeral = true; // التأكيد على أنه رد خاص
+            payload.ephemeral = true; 
 
             if (isSlash) {
                 return interaction.editReply(payload);
             } else {
-                return message.reply(payload); // الرد في البريفكس عام
+                return message.reply(payload); 
             }
         };
-        // ------------------------------------
 
-        const sql = client.sql; // ( 6 ) التعديل هنا
+        const db = client.sql; 
 
-        const getLoan = sql.prepare("SELECT * FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0");
-        const loan = getLoan.get(user.id, guild.id); // ( 7 ) التعديل هنا
+        const getLoanRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [user.id, guild.id]);
+        const loan = getLoanRes.rows[0]; 
 
         if (!loan) {
-            return replyInfo(`✅ ليس لديك أي قروض مستحقة حالياً.`); // ( 8 ) التعديل هنا
+            return replyInfo(`✅ ليس لديك أي قروض مستحقة حالياً.`); 
         }
 
-        const getScore = client.getLevel; // ( 9 ) التعديل هنا
-        const setScore = client.setLevel;
-        let data = getScore.get(user.id, guild.id);
-        if (!data) data = { ...client.defaultData, user: user.id, guild: guild.id }; // ( 10 ) التعديل هنا
+        let data = await client.getLevel(user.id, guild.id);
+        if (!data) data = { ...client.defaultData, user: user.id, guild: guild.id }; 
 
-        const userMora = data.mora || 0;
-        const userBank = data.bank || 0;
+        const userMora = Number(data.mora) || 0;
+        const userBank = Number(data.bank) || 0;
         const totalBalance = userMora + userBank;
-        // amountArg تم تعريفه في البداية
+        
+        const loanAmount = Number(loan.loanamount || loan.loanAmount);
+        let remainingAmount = Number(loan.remainingamount || loan.remainingAmount);
 
         if (!amountArg) {
-            const totalToRepay = loan.loanAmount * (1 + TOTAL_INTEREST_RATE);
-            const amountPaid = totalToRepay - loan.remainingAmount;
-            const principalPaid = Math.min(amountPaid, loan.loanAmount);
-            const interestPaid = Math.max(0, amountPaid - loan.loanAmount);
-            const principalRemaining = loan.loanAmount - principalPaid;
-            const totalInterest = loan.loanAmount * TOTAL_INTEREST_RATE;
+            const totalToRepay = loanAmount * (1 + TOTAL_INTEREST_RATE);
+            const amountPaid = totalToRepay - remainingAmount;
+            const principalPaid = Math.min(amountPaid, loanAmount);
+            const interestPaid = Math.max(0, amountPaid - loanAmount);
+            const principalRemaining = loanAmount - principalPaid;
+            const totalInterest = loanAmount * TOTAL_INTEREST_RATE;
             const interestRemaining = totalInterest - interestPaid;
             const finalPayoffAmount = Math.ceil(principalRemaining + (interestRemaining * EARLY_PAYOFF_DISCOUNT_RATE));
 
             const description = [
-                `لديك قرض متبقي بقيمة: **${loan.remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`,
+                `لديك قرض متبقي بقيمة: **${remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`,
                 `\n**للسداد الجزئي:** \`/تسديد <مبلغ>\``,
                 `**للسداد الكامل (مع خصم):** \`/تسديد كامل\``,
-                `*إذا سددت الآن كاملاً، ستدفع: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA} (بدلاً من ${loan.remainingAmount.toLocaleString()})*`
+                `*إذا سددت الآن كاملاً، ستدفع: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA} (بدلاً من ${remainingAmount.toLocaleString()})*`
             ].join('\n');
 
-            return replyInfo(description); // ( 11 ) التعديل هنا
+            return replyInfo(description); 
         }
 
-        const deleteLoan = sql.prepare("DELETE FROM user_loans WHERE id = ?");
-
-        if (amountArg === 'all' || amountArg === 'كامل') {
-            const totalToRepay = loan.loanAmount * (1 + TOTAL_INTEREST_RATE);
-            const amountPaid = totalToRepay - loan.remainingAmount;
-            const principalPaid = Math.min(amountPaid, loan.loanAmount);
-            const interestPaid = Math.max(0, amountPaid - loan.loanAmount);
-            const principalRemaining = loan.loanAmount - principalPaid;
-            const totalInterest = loan.loanAmount * TOTAL_INTEREST_RATE;
+        if (['all', 'كامل', 'الكل', 'full'].includes(amountArg)) {
+            const totalToRepay = loanAmount * (1 + TOTAL_INTEREST_RATE);
+            const amountPaid = totalToRepay - remainingAmount;
+            const principalPaid = Math.min(amountPaid, loanAmount);
+            const interestPaid = Math.max(0, amountPaid - loanAmount);
+            const principalRemaining = loanAmount - principalPaid;
+            const totalInterest = loanAmount * TOTAL_INTEREST_RATE;
             const interestRemaining = Math.max(0, totalInterest - interestPaid);
             const finalPayoffAmount = Math.ceil(principalRemaining + (interestRemaining * EARLY_PAYOFF_DISCOUNT_RATE));
-            const discountAmount = loan.remainingAmount - finalPayoffAmount;
+            const discountAmount = remainingAmount - finalPayoffAmount;
 
             if (totalBalance < finalPayoffAmount) {
-                return replyInfo(`❌ لا تملك ما يكفي للسداد الكامل! (تحتاج: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA} في الكاش أو البنك).`); // ( 12 ) التعديل هنا
+                return replyInfo(`❌ لا تملك ما يكفي للسداد الكامل! (تحتاج: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA} في الكاش أو البنك).`); 
             }
 
             let amountLeftToPay = finalPayoffAmount;
-            if (userMora >= amountLeftToPay) {
+            data.mora = userMora;
+            data.bank = userBank;
+
+            if (data.mora >= amountLeftToPay) {
                 data.mora -= amountLeftToPay;
             } else {
-                amountLeftToPay -= userMora;
+                amountLeftToPay -= data.mora;
                 data.mora = 0;
                 data.bank -= amountLeftToPay;
             }
 
-            setScore.run(data);
-            deleteLoan.run(loan.id);
-
-            return replySuccess(`🎉 **تم سداد القرض بالكامل!**\nلقد قمت بسداد مبكر وحصلت على خصم **${discountAmount.toLocaleString()}** ${EMOJI_MORA} (50% من الفائدة المتبقية).\nدفعت: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA}.`); // ( 13 ) التعديل هنا
+            try {
+                await db.query('BEGIN');
+                await client.setLevel(data);
+                await db.query("DELETE FROM user_loans WHERE id = $1", [loan.id]);
+                await db.query('COMMIT');
+                
+                return replySuccess(`🎉 **تم سداد القرض بالكامل!**\nلقد قمت بسداد مبكر وحصلت على خصم **${discountAmount.toLocaleString()}** ${EMOJI_MORA} (50% من الفائدة المتبقية).\nدفعت: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
+            } catch (e) {
+                await db.query('ROLLBACK');
+                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+            }
         }
 
         const amountToPay = parseInt(amountArg.replace(/,/g, ''));
         if (isNaN(amountToPay) || amountToPay <= 0) {
-            return replyInfo(`❌ الرجاء إدخال مبلغ صحيح للسداد.`); // ( 14 ) التعديل هنا
+            return replyInfo(`❌ الرجاء إدخال مبلغ صحيح للسداد.`); 
         }
 
         if (totalBalance < amountToPay) {
-            return replyInfo(`❌ لا تملك هذا المبلغ في الكاش أو البنك. (إجمالي رصيدك: **${totalBalance.toLocaleString()}** ${EMOJI_MORA})`); // ( 15 ) التعديل هنا
+            return replyInfo(`❌ لا تملك هذا المبلغ في الكاش أو البنك. (إجمالي رصيدك: **${totalBalance.toLocaleString()}** ${EMOJI_MORA})`); 
         }
 
-        if (amountToPay >= loan.remainingAmount) {
-            const amountToDeduct = loan.remainingAmount;
-            const change = amountToPay - loan.remainingAmount;
+        data.mora = userMora;
+        data.bank = userBank;
+
+        if (amountToPay >= remainingAmount) {
+            const amountToDeduct = remainingAmount;
+            const change = amountToPay - remainingAmount;
 
             let amountLeftToDeduct = amountToDeduct;
-            if (userMora >= amountLeftToDeduct) {
+            if (data.mora >= amountLeftToDeduct) {
                 data.mora -= amountLeftToDeduct;
             } else {
-                amountLeftToDeduct -= userMora;
+                amountLeftToDeduct -= data.mora;
                 data.mora = 0;
                 data.bank -= amountLeftToDeduct;
             }
 
             data.mora += change;
-            setScore.run(data);
-            deleteLoan.run(loan.id);
-            return replySuccess(`✅ تم سداد القرض بالكامل. تم إرجاع الباقي (**${change.toLocaleString()}** ${EMOJI_MORA}) إلى رصيدك.`); // ( 16 ) التعديل هنا
+
+            try {
+                await db.query('BEGIN');
+                await client.setLevel(data);
+                await db.query("DELETE FROM user_loans WHERE id = $1", [loan.id]);
+                await db.query('COMMIT');
+                return replySuccess(`✅ تم سداد القرض بالكامل. تم إرجاع الباقي (**${change.toLocaleString()}** ${EMOJI_MORA}) إلى رصيدك.`); 
+            } catch(e) {
+                await db.query('ROLLBACK');
+                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+            }
         }
 
         let amountLeftToDeduct = amountToPay;
-        if (userMora >= amountLeftToDeduct) {
+        if (data.mora >= amountLeftToDeduct) {
             data.mora -= amountLeftToDeduct;
         } else {
-            amountLeftToDeduct -= userMora;
+            amountLeftToDeduct -= data.mora;
             data.mora = 0;
             data.bank -= amountLeftToDeduct;
         }
 
-        loan.remainingAmount -= amountToPay;
+        remainingAmount -= amountToPay;
 
-        sql.prepare("UPDATE user_loans SET remainingAmount = ? WHERE id = ?").run(loan.remainingAmount, loan.id);
-        setScore.run(data);
-
-        replySuccess(`✅ تم دفع **${amountToPay.toLocaleString()}** ${EMOJI_MORA}.\nالمبلغ المتبقي للقرض: **${loan.remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`); // ( 17 ) التعديل هنا
+        try {
+            await db.query('BEGIN');
+            await db.query("UPDATE user_loans SET remainingAmount = $1 WHERE id = $2", [remainingAmount, loan.id]);
+            await client.setLevel(data);
+            await db.query('COMMIT');
+            replySuccess(`✅ تم دفع **${amountToPay.toLocaleString()}** ${EMOJI_MORA}.\nالمبلغ المتبقي للقرض: **${remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
+        } catch(e) {
+            await db.query('ROLLBACK');
+            return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+        }
     }
 };
