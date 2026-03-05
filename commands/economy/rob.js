@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -44,6 +44,9 @@ function formatTime(ms) {
 }
 
 function deductFromRobber(data, amount) {
+    data.mora = Number(data.mora) || 0;
+    data.bank = Number(data.bank) || 0;
+    
     if (data.mora >= amount) {
         data.mora -= amount;
     } else {
@@ -106,7 +109,7 @@ module.exports = {
 
         if (victim.id === REAL_OWNER_ID) {
             if (!isSlash && message) await message.delete().catch(() => {});
-            if (isSlash) await interaction.reply({ content: `🏰`, ephemeral: true });
+            if (isSlash) await interaction.reply({ content: `🏰`, flags: [MessageFlags.Ephemeral] });
 
             const redirectMsg = await interactionOrMessage.channel.send({
                 content: `🏰 **تـم نـقـل قـصـر الامبراطـور الى حسـاب الامبراطورة!**\nحاول مجـددا ولكن منشن البوت <@${EMPRESS_BOT_ID}> ..`
@@ -117,12 +120,12 @@ module.exports = {
 
         if (isSlash && !interaction.deferred && !interaction.replied) await interaction.deferReply();
 
-        const sql = client.sql;
+        const db = client.sql;
 
         if (victim.id === robber.id) {
             if (robber.id === REAL_OWNER_ID) {
                 const context = isSlash ? interaction : message;
-                return await startGuardBattle(context, client, sql, robber, 5000);
+                return await startGuardBattle(context, client, db, robber, 5000);
             }
             return reply("تـسـرق نـفـسـك؟ غـبـي انـت؟؟ <:mirkk:1435648219488190525>");
         }
@@ -131,25 +134,25 @@ module.exports = {
             return reply("🚫 **لديك عملية سطو جارية بالفعل!** أنهِها أولاً.");
         }
 
-        const getScore = client.getLevel;
-        const setScore = client.setLevel;
+        let robberData = await client.getLevel(robber.id, guild.id);
+        if (!robberData) robberData = { ...client.defaultData, user: robber.id, guild: guild.id };
+        
+        let victimData = await client.getLevel(victim.id, guild.id);
+        if (!victimData) victimData = { ...client.defaultData, user: victim.id, guild: guild.id };
 
-        let robberData = getScore.get(robber.id, guild.id) || { ...client.defaultData, user: robber.id, guild: guild.id };
-        let victimData = getScore.get(victim.id, guild.id) || { ...client.defaultData, user: victim.id, guild: guild.id };
-
-        const robberTotalWealth = (robberData.mora || 0) + (robberData.bank || 0);
+        const robberTotalWealth = (Number(robberData.mora) || 0) + (Number(robberData.bank) || 0);
         if (robberTotalWealth < MIN_REQUIRED_CASH) {
              return reply(`❌ **لا يمكنك السرقة!**\nتحتاج إلى رصيد إجمالي لا يقل عن **${MIN_REQUIRED_CASH.toLocaleString()}** ${EMOJI_MORA} لتتمكن من دفع الغرامة.`);
         }
 
         const now = Date.now();
-        const timeLeft = (robberData.lastRob || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(robberData.lastRob) || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
             return reply(`🕐 حـرامـي مـجتـهد انـت <:stop:1436337453098340442> انتـظـر **\`${formatTime(timeLeft)}\`** عشان تسـوي عمـليـة سـطو ثـانيـة.`);
         }
 
         if (victim.id !== EMPRESS_BOT_ID) {
-            const victimTotalWealth = (victimData.mora || 0) + (victimData.bank || 0);
+            const victimTotalWealth = (Number(victimData.mora) || 0) + (Number(victimData.bank) || 0);
             if (victimTotalWealth < MIN_REQUIRED_CASH) {
                 return reply(`❌ الضحية **${victim.displayName}** فقير جداً!`);
             }
@@ -157,7 +160,7 @@ module.exports = {
 
         activeRobberies.add(robber.id);
         robberData.lastRob = now;
-        setScore.run(robberData);
+        await client.setLevel(robberData);
 
         if (victim.id === EMPRESS_BOT_ID) {
             const minEmperor = 100;
@@ -196,8 +199,8 @@ module.exports = {
                 const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
 
                 if (clickedIndex === correctIndex) {
-                    robberData.mora += amountToSteal;
-                    setScore.run(robberData);
+                    robberData.mora = (Number(robberData.mora) || 0) + amountToSteal;
+                    await client.setLevel(robberData);
 
                     const winEmbed = new EmbedBuilder()
                         .setTitle('❖ سـطـو نـاجـح !')
@@ -214,8 +217,8 @@ module.exports = {
                     const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
-                        robberData.mora += 100;
-                        setScore.run(robberData);
+                        robberData.mora = (Number(robberData.mora) || 0) + 100;
+                        await client.setLevel(robberData);
                         robberyPardons.set(robber.id, todayDate);
 
                         const nextMidnightTimestamp = getNextMidnightTimestamp();
@@ -235,16 +238,16 @@ module.exports = {
                         activeRobberies.delete(robber.id);
                         
                         const context = isSlash ? interaction : message;
-                        return await startGuardBattle(context, client, sql, robber, amountToSteal);
+                        return await startGuardBattle(context, client, db, robber, amountToSteal);
                     }
                 }
             });
 
-            collector.on('end', (collected, reason) => {
+            collector.on('end', async (collected, reason) => {
                 activeRobberies.delete(robber.id);
                 if (reason === 'time') {
                     deductFromRobber(robberData, amountToSteal);
-                    setScore.run(robberData);
+                    await client.setLevel(robberData);
                     
                     const timeEmbed = new EmbedBuilder()
                         .setTitle('⏰ فات الأوان!')
@@ -258,8 +261,8 @@ module.exports = {
             return; 
         }
 
-        const victimMora = victimData.mora || 0;
-        const victimBank = victimData.bank || 0;
+        const victimMora = Number(victimData.mora) || 0;
+        const victimBank = Number(victimData.bank) || 0;
         let amountToSteal = 0;
         let targetPool, poolName, victimPoolAmount;
         
@@ -329,15 +332,16 @@ module.exports = {
         collector.on('collect', async i => {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
-            if (victimData.hasGuard > 0) {
+            const vGuard = Number(victimData.hasGuard) || 0;
+            if (vGuard > 0) {
                 deductFromRobber(robberData, amountToSteal);
-                victimData.mora += amountToSteal;
+                victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
                 
-                victimData.hasGuard -= 1; 
+                victimData.hasGuard = vGuard - 1; 
                 const guardLeft = victimData.hasGuard;
                 if (guardLeft === 0) victimData.guardExpires = 0;
-                setScore.run(victimData);
-                setScore.run(robberData);
+                await client.setLevel(victimData);
+                await client.setLevel(robberData);
 
                 let guardStatusMsg = guardLeft === 0 
                     ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
@@ -354,21 +358,21 @@ module.exports = {
 
             } else {
                 if (clickedIndex === correctButtonIndex) {
-                    robberData.mora += amountToSteal;
+                    robberData.mora = (Number(robberData.mora) || 0) + amountToSteal;
                     
                     if (targetPool === 'bank') {
-                        if (victimData.bank >= amountToSteal) victimData.bank -= amountToSteal;
+                        if (Number(victimData.bank) >= amountToSteal) victimData.bank -= amountToSteal;
                         else {
-                            const remainder = amountToSteal - victimData.bank;
+                            const remainder = amountToSteal - Number(victimData.bank);
                             victimData.bank = 0;
-                            victimData.mora = Math.max(0, victimData.mora - remainder);
+                            victimData.mora = Math.max(0, Number(victimData.mora) - remainder);
                         }
                     } else {
-                        if (victimData.mora >= amountToSteal) victimData.mora -= amountToSteal;
+                        if (Number(victimData.mora) >= amountToSteal) victimData.mora -= amountToSteal;
                         else {
-                            const remainder = amountToSteal - victimData.mora;
+                            const remainder = amountToSteal - Number(victimData.mora);
                             victimData.mora = 0;
-                            victimData.bank = Math.max(0, victimData.bank - remainder);
+                            victimData.bank = Math.max(0, Number(victimData.bank) - remainder);
                         }
                     }
 
@@ -383,7 +387,7 @@ module.exports = {
 
                 } else {
                     deductFromRobber(robberData, amountToSteal);
-                    victimData.mora += amountToSteal;
+                    victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
 
                     const loseEmbed = new EmbedBuilder()
                         .setTitle('💥 بــــووم !')
@@ -394,18 +398,18 @@ module.exports = {
                     sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
                 }
             }
-            setScore.run(robberData);
-            setScore.run(victimData);
+            await client.setLevel(robberData);
+            await client.setLevel(victimData);
             activeRobberies.delete(robber.id);
         });
 
-        collector.on('end', (collected, reason) => {
+        collector.on('end', async (collected, reason) => {
             activeRobberies.delete(robber.id);
             if (reason === 'time') {
                 deductFromRobber(robberData, amountToSteal);
-                victimData.mora += amountToSteal;
-                setScore.run(robberData);
-                setScore.run(victimData);
+                victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
+                await client.setLevel(robberData);
+                await client.setLevel(victimData);
 
                 const timeEmbed = new EmbedBuilder()
                     .setTitle('⏰ انتهى الوقت!')
