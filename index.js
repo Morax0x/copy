@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, Collection, EmbedBuilder, PermissionsBitField, Events, Colors, MessageFlags, ChannelType, REST, Routes, Partials, AttachmentBuilder } = require("discord.js");
-const SQLite = require("better-sqlite3");
+const db = require('./database.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -10,9 +10,6 @@ const aiConfig = require('./utils/aiConfig');
 
 const MAIN_GUILD_ID = "952732360074494003"; 
 
-const sql = new SQLite('./mainDB.sqlite');
-sql.pragma('journal_mode = WAL');
-
 try {
     const dbSetupModule = require("./database-setup.js");
     const setupDatabase = dbSetupModule.setupDatabase || dbSetupModule;
@@ -21,7 +18,7 @@ try {
         throw new Error("Missing setupDatabase function in database-setup.js");
     }
 
-    setupDatabase(sql);
+    setupDatabase(db);
 
     if (aiConfig && typeof aiConfig.init === 'function') {
         aiConfig.init();
@@ -53,56 +50,6 @@ try {
 } catch (e) {
 }
 
-const dbColumns = [
-    'nextBumpTime', 'lastBumperID', 'casinoChannelID', 'casinoChannelID2', 'shopLogChannelID', 
-    'boostChannelID', 'voiceChannelID', 'savedStatusType', 'savedStatusText', 'transactionLogChannelID',
-    'guildBoardChannelID', 'kingsBoardMessageID', 'guildBoardMessageID', 'guildAnnounceChannelID', 'questChannelID', 
-    'chatterChannelID', 'countingChannelID', 'treeChannelID', 'treeBotID', 'treeMessageID',
-    'roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 
-    'roleFisherKing', 'rolePvPKing', 'roleFarmKing',
-    'roleChatterBadge', 'roleKnightSlayer', 'roleDailyBadge', 'roleWeeklyBadge',
-    'roleRankSS', 'roleRankS', 'roleRankA', 'roleRankB', 'roleRankC', 'roleRankD'
-];
-for (const col of dbColumns) {
-    try { if(sql.open) sql.prepare(`ALTER TABLE settings ADD COLUMN ${col} TEXT`).run(); } catch(e){}
-}
-
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastFish INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN rodLevel INTEGER DEFAULT 1").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN boatLevel INTEGER DEFAULT 1").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN currentLocation TEXT DEFAULT 'beach'").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastMemory INTEGER DEFAULT 0").run(); } catch (e) {} 
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastArrange INTEGER DEFAULT 0").run(); } catch (e) {} 
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_gate_level INTEGER DEFAULT 1").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN max_dungeon_floor INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_wins INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastRace INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_disboard_bumps INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN emojis_sent INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN boost_channel_reactions INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN lastTransferDate TEXT DEFAULT ''").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE levels ADD COLUMN dailyTransferCount INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN topgg_votes INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN topgg_votes INTEGER DEFAULT 0").run(); } catch (e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE user_total_stats ADD COLUMN total_topgg_votes INTEGER DEFAULT 0").run(); } catch (e) {}
-
-// 🔥 تحديثات قاعدة بيانات الإشعارات 🔥
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS quest_notifications (id TEXT PRIMARY KEY, userID TEXT, guildID TEXT, dailyNotif INTEGER DEFAULT 1, weeklyNotif INTEGER DEFAULT 1, achievementsNotif INTEGER DEFAULT 1, levelNotif INTEGER DEFAULT 1, kingsNotif INTEGER DEFAULT 1, badgesNotif INTEGER DEFAULT 1)").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE quest_notifications ADD COLUMN kingsNotif INTEGER DEFAULT 1").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("ALTER TABLE quest_notifications ADD COLUMN badgesNotif INTEGER DEFAULT 1").run(); } catch(e) {}
-
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS user_lands (id INTEGER PRIMARY KEY AUTOINCREMENT, userID TEXT, guildID TEXT, plotID INTEGER, status TEXT DEFAULT 'empty', seedID TEXT, plantTime INTEGER)").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS auto_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, guildID TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, images TEXT, matchType TEXT DEFAULT 'exact', cooldown INTEGER DEFAULT 0, allowedChannels TEXT, ignoredChannels TEXT, createdBy TEXT, expiresAt INTEGER, UNIQUE(guildID, trigger))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS jailed_members (guildID TEXT, userID TEXT, unjailTime INTEGER, PRIMARY KEY (guildID, userID))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_giveaways (messageID TEXT PRIMARY KEY, guildID TEXT, channelID TEXT, prize TEXT, endsAt INTEGER, winnerCount INTEGER, xpReward INTEGER, moraReward INTEGER, isFinished INTEGER DEFAULT 0)").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS giveaway_entries (giveawayID TEXT, userID TEXT, weight INTEGER, PRIMARY KEY (giveawayID, userID))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS active_reports (guildID TEXT, targetID TEXT, reporterID TEXT, timestamp INTEGER, PRIMARY KEY (guildID, targetID, reporterID))").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS report_settings (guildID TEXT PRIMARY KEY, logChannelID TEXT, jailRoleID TEXT, arenaRoleID TEXT, reportChannelID TEXT, unlimitedRoleID TEXT, testRoleID TEXT)").run(); } catch(e) {}
-try { if(sql.open) sql.prepare("CREATE TABLE IF NOT EXISTS xp_ignore (guildID TEXT, id TEXT, type TEXT, PRIMARY KEY (guildID, id))").run(); } catch(e) {}
-
 const { handleStreakMessage, calculateBuffMultiplier, checkDailyStreaks, updateNickname, calculateMoraBuff, checkDailyMediaStreaks, sendMediaStreakReminders, sendDailyMediaUpdate, sendStreakWarnings } = require("./streak-handler.js");
 const { checkPermissions, checkCooldown } = require("./permission-handler.js");
 const { checkLoanPayments } = require('./handlers/loan-handler.js'); 
@@ -124,7 +71,6 @@ const handleMarketCrash = require('./handlers/market-crash-handler.js');
 const { startAuctionSystem } = require('./handlers/auction-handler.js');
 const { autoUpdateKingsBoard, rewardDailyKings } = require('./handlers/guild-board-handler.js'); 
 
-// 🔥 السوالف التلقائية للذكاء الاصطناعي
 const { startAutoChat } = require('./handlers/ai/auto-chat.js');
 
 const announcementsTexts = require('./json/announcements-texts.js');
@@ -159,58 +105,151 @@ client.EMOJI_PRAY = '<:0Pray:1437067281493524502>';
 client.EMOJI_COOL = '<a:NekoCool:1435572459276337245>';
 const EMOJI_XP_ANIM = '<a:levelup:1437805366048985290>';
 
-client.sql = sql;
+client.sql = db;
 client.generateQuestAlert = generateQuestAlert;
 client.generateAchievementCard = generateAchievementCard; 
 
-if (sql.open) {
-    client.getLevel = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?");
-      
-    client.setLevel = sql.prepare(`
-        INSERT OR REPLACE INTO levels (
-            user, guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank, 
-            lastInterest, totalInterestEarned, hasGuard, guardExpires, totalVCTime, lastCollected, 
-            lastRob, lastGuess, lastRPS, lastRoulette, lastTransfer, lastDeposit, shop_purchases, 
-            total_meow_count, boost_count, lastPVP, lastFarmYield, lastFish, rodLevel, boatLevel, 
-            currentLocation, lastMemory, lastArrange, last_dungeon, dungeon_gate_level, max_dungeon_floor, dungeon_wins,
-            lastRace, lastTransferDate, dailyTransferCount 
-        ) VALUES (
-            @user, @guild, @xp, @level, @totalXP, @mora, @lastWork, @lastDaily, @dailyStreak, @bank, 
-            @lastInterest, @totalInterestEarned, @hasGuard, @guardExpires, @totalVCTime, @lastCollected, 
-            @lastRob, @lastGuess, @lastRPS, @lastRoulette, @lastTransfer, @lastDeposit, @shop_purchases, 
-            @total_meow_count, @boost_count, @lastPVP, @lastFarmYield, @lastFish, @rodLevel, @boatLevel, 
-            @currentLocation, @lastMemory, @lastArrange, @last_dungeon, @dungeon_gate_level, @max_dungeon_floor, @dungeon_wins,
-            @lastRace, @lastTransferDate, @dailyTransferCount
-        );
-    `);
-      
-    client.defaultData = { 
-        user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
-        lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, 
-        lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, 
-        total_meow_count: 0, boost_count: 0, lastPVP: 0, lastFarmYield: 0,
-        lastFish: 0, rodLevel: 1, boatLevel: 1, currentLocation: 'beach',
-        lastMemory: 0, lastArrange: 0,
-        last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0,
-        lastRace: 0,
-        lastTransferDate: '',
-        dailyTransferCount: 0 
-    };
+client.getLevel = async function(userId, guildId) {
+    try {
+        const res = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
+        return res.rows[0];
+    } catch(e) { return null; }
+};
 
-    client.getDailyStats = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?");
-    client.setDailyStats = sql.prepare("INSERT OR REPLACE INTO user_daily_stats (id, userID, guildID, date, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps, boost_channel_reactions, topgg_votes) VALUES (@id, @userID, @guildID, @date, @messages, @images, @stickers, @emojis_sent, @reactions_added, @replies_sent, @mentions_received, @vc_minutes, @water_tree, @counting_channel, @meow_count, @streaming_minutes, @disboard_bumps, @boost_channel_reactions, @topgg_votes);");
-      
-    client.getWeeklyStats = sql.prepare("SELECT * FROM user_weekly_stats WHERE id = ?");
-    client.setWeeklyStats = sql.prepare("INSERT OR REPLACE INTO user_weekly_stats (id, userID, guildID, weekStartDate, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps, topgg_votes) VALUES (@id, @userID, @guildID, @weekStartDate, @messages, @images, @stickers, @emojis_sent, @reactions_added, @replies_sent, @mentions_received, @vc_minutes, @water_tree, @counting_channel, @meow_count, @streaming_minutes, @disboard_bumps, @topgg_votes);");
-      
-    client.getTotalStats = sql.prepare("SELECT * FROM user_total_stats WHERE id = ?");
-    client.setTotalStats = sql.prepare("INSERT OR REPLACE INTO user_total_stats (id, userID, guildID, total_messages, total_images, total_stickers, total_emojis_sent, total_reactions_added, total_replies_sent, total_mentions_received, total_vc_minutes, total_disboard_bumps, total_topgg_votes) VALUES (@id, @userID, @guildID, @total_messages, @total_images, @total_stickers, @total_emojis_sent, @total_reactions_added, @total_replies_sent, @total_mentions_received, @total_vc_minutes, @total_disboard_bumps, @total_topgg_votes);");
-      
-    client.getQuestNotif = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?");
-    client.setQuestNotif = sql.prepare("INSERT OR REPLACE INTO quest_notifications (id, userID, guildID, dailyNotif, weeklyNotif, achievementsNotif, levelNotif, kingsNotif, badgesNotif) VALUES (@id, @userID, @guildID, @dailyNotif, @weeklyNotif, @achievementsNotif, @levelNotif, @kingsNotif, @badgesNotif);");
-}
+client.setLevel = async function(data) {
+    try {
+        const query = `
+            INSERT INTO levels (
+                "user", guild, xp, level, totalXP, mora, lastWork, lastDaily, dailyStreak, bank,
+                lastInterest, totalInterestEarned, hasGuard, guardExpires, totalVCTime, lastCollected,
+                lastRob, lastGuess, lastRPS, lastRoulette, lastTransfer, lastDeposit, shop_purchases,
+                total_meow_count, boost_count, lastPVP, lastFarmYield, lastFish, rodLevel, boatLevel,
+                currentLocation, lastMemory, lastArrange, last_dungeon, dungeon_gate_level, max_dungeon_floor, dungeon_wins,
+                lastRace, lastTransferDate, dailyTransferCount
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16,
+                $17, $18, $19, $20, $21, $22, $23,
+                $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37,
+                $38, $39, $40
+            ) ON CONFLICT ("user", guild) DO UPDATE SET
+                xp = EXCLUDED.xp, level = EXCLUDED.level, totalXP = EXCLUDED.totalXP, mora = EXCLUDED.mora, lastWork = EXCLUDED.lastWork, lastDaily = EXCLUDED.lastDaily, dailyStreak = EXCLUDED.dailyStreak, bank = EXCLUDED.bank,
+                lastInterest = EXCLUDED.lastInterest, totalInterestEarned = EXCLUDED.totalInterestEarned, hasGuard = EXCLUDED.hasGuard, guardExpires = EXCLUDED.guardExpires, totalVCTime = EXCLUDED.totalVCTime, lastCollected = EXCLUDED.lastCollected,
+                lastRob = EXCLUDED.lastRob, lastGuess = EXCLUDED.lastGuess, lastRPS = EXCLUDED.lastRPS, lastRoulette = EXCLUDED.lastRoulette, lastTransfer = EXCLUDED.lastTransfer, lastDeposit = EXCLUDED.lastDeposit, shop_purchases = EXCLUDED.shop_purchases,
+                total_meow_count = EXCLUDED.total_meow_count, boost_count = EXCLUDED.boost_count, lastPVP = EXCLUDED.lastPVP, lastFarmYield = EXCLUDED.lastFarmYield, lastFish = EXCLUDED.lastFish, rodLevel = EXCLUDED.rodLevel, boatLevel = EXCLUDED.boatLevel,
+                currentLocation = EXCLUDED.currentLocation, lastMemory = EXCLUDED.lastMemory, lastArrange = EXCLUDED.lastArrange, last_dungeon = EXCLUDED.last_dungeon, dungeon_gate_level = EXCLUDED.dungeon_gate_level, max_dungeon_floor = EXCLUDED.max_dungeon_floor, dungeon_wins = EXCLUDED.dungeon_wins,
+                lastRace = EXCLUDED.lastRace, lastTransferDate = EXCLUDED.lastTransferDate, dailyTransferCount = EXCLUDED.dailyTransferCount;
+        `;
+        await db.query(query, [
+            data.user, data.guild, data.xp, data.level, data.totalXP, data.mora, data.lastWork, data.lastDaily, data.dailyStreak, data.bank,
+            data.lastInterest, data.totalInterestEarned, data.hasGuard, data.guardExpires, data.totalVCTime, data.lastCollected,
+            data.lastRob, data.lastGuess, data.lastRPS, data.lastRoulette, data.lastTransfer, data.lastDeposit, data.shop_purchases,
+            data.total_meow_count, data.boost_count, data.lastPVP, data.lastFarmYield, data.lastFish, data.rodLevel, data.boatLevel,
+            data.currentLocation, data.lastMemory, data.lastArrange, data.last_dungeon, data.dungeon_gate_level, data.max_dungeon_floor, data.dungeon_wins,
+            data.lastRace, data.lastTransferDate, data.dailyTransferCount
+        ]);
+    } catch(e) {}
+};
 
-try { require('./handlers/backup-scheduler.js')(client, sql); } catch(e) {}
+client.defaultData = { 
+    user: null, guild: null, xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, 
+    lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, 
+    lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, 
+    total_meow_count: 0, boost_count: 0, lastPVP: 0, lastFarmYield: 0,
+    lastFish: 0, rodLevel: 1, boatLevel: 1, currentLocation: 'beach',
+    lastMemory: 0, lastArrange: 0,
+    last_dungeon: 0, dungeon_gate_level: 1, max_dungeon_floor: 0, dungeon_wins: 0,
+    lastRace: 0,
+    lastTransferDate: '',
+    dailyTransferCount: 0 
+};
+
+client.getDailyStats = async function(id) {
+    try {
+        const res = await db.query('SELECT * FROM user_daily_stats WHERE id = $1', [id]);
+        return res.rows[0];
+    } catch(e) { return null; }
+};
+
+client.setDailyStats = async function(data) {
+    try {
+        const query = `
+            INSERT INTO user_daily_stats (id, userID, guildID, date, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps, boost_channel_reactions, topgg_votes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            ON CONFLICT (id) DO UPDATE SET
+            userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, date=EXCLUDED.date, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, boost_channel_reactions=EXCLUDED.boost_channel_reactions, topgg_votes=EXCLUDED.topgg_votes;
+        `;
+        await db.query(query, [
+            data.id, data.userID, data.guildID, data.date, data.messages, data.images, data.stickers, data.emojis_sent, data.reactions_added, data.replies_sent, data.mentions_received, data.vc_minutes, data.water_tree, data.counting_channel, data.meow_count, data.streaming_minutes, data.disboard_bumps, data.boost_channel_reactions, data.topgg_votes
+        ]);
+    } catch(e) {}
+};
+
+client.getWeeklyStats = async function(id) {
+    try {
+        const res = await db.query('SELECT * FROM user_weekly_stats WHERE id = $1', [id]);
+        return res.rows[0];
+    } catch(e) { return null; }
+};
+
+client.setWeeklyStats = async function(data) {
+    try {
+        const query = `
+            INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, messages, images, stickers, emojis_sent, reactions_added, replies_sent, mentions_received, vc_minutes, water_tree, counting_channel, meow_count, streaming_minutes, disboard_bumps, topgg_votes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            ON CONFLICT (id) DO UPDATE SET
+            userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, weekStartDate=EXCLUDED.weekStartDate, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, topgg_votes=EXCLUDED.topgg_votes;
+        `;
+        await db.query(query, [
+            data.id, data.userID, data.guildID, data.weekStartDate, data.messages, data.images, data.stickers, data.emojis_sent, data.reactions_added, data.replies_sent, data.mentions_received, data.vc_minutes, data.water_tree, data.counting_channel, data.meow_count, data.streaming_minutes, data.disboard_bumps, data.topgg_votes
+        ]);
+    } catch(e) {}
+};
+
+client.getTotalStats = async function(id) {
+    try {
+        const res = await db.query('SELECT * FROM user_total_stats WHERE id = $1', [id]);
+        return res.rows[0];
+    } catch(e) { return null; }
+};
+
+client.setTotalStats = async function(data) {
+    try {
+        const query = `
+            INSERT INTO user_total_stats (id, userID, guildID, total_messages, total_images, total_stickers, total_emojis_sent, total_reactions_added, total_replies_sent, total_mentions_received, total_vc_minutes, total_disboard_bumps, total_topgg_votes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (id) DO UPDATE SET
+            userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, total_messages=EXCLUDED.total_messages, total_images=EXCLUDED.total_images, total_stickers=EXCLUDED.total_stickers, total_emojis_sent=EXCLUDED.total_emojis_sent, total_reactions_added=EXCLUDED.total_reactions_added, total_replies_sent=EXCLUDED.total_replies_sent, total_mentions_received=EXCLUDED.total_mentions_received, total_vc_minutes=EXCLUDED.total_vc_minutes, total_disboard_bumps=EXCLUDED.total_disboard_bumps, total_topgg_votes=EXCLUDED.total_topgg_votes;
+        `;
+        await db.query(query, [
+            data.id, data.userID, data.guildID, data.total_messages, data.total_images, data.total_stickers, data.total_emojis_sent, data.total_reactions_added, data.total_replies_sent, data.total_mentions_received, data.total_vc_minutes, data.total_disboard_bumps, data.total_topgg_votes
+        ]);
+    } catch(e) {}
+};
+
+client.getQuestNotif = async function(id) {
+    try {
+        const res = await db.query('SELECT * FROM quest_notifications WHERE id = $1', [id]);
+        return res.rows[0];
+    } catch(e) { return null; }
+};
+
+client.setQuestNotif = async function(data) {
+    try {
+        const query = `
+            INSERT INTO quest_notifications (id, userID, guildID, dailyNotif, weeklyNotif, achievementsNotif, levelNotif, kingsNotif, badgesNotif)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+            userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, dailyNotif=EXCLUDED.dailyNotif, weeklyNotif=EXCLUDED.weeklyNotif, achievementsNotif=EXCLUDED.achievementsNotif, levelNotif=EXCLUDED.levelNotif, kingsNotif=EXCLUDED.kingsNotif, badgesNotif=EXCLUDED.badgesNotif;
+        `;
+        await db.query(query, [
+            data.id, data.userID, data.guildID, data.dailyNotif, data.weeklyNotif, data.achievementsNotif, data.levelNotif, data.kingsNotif, data.badgesNotif
+        ]);
+    } catch(e) {}
+};
+
+try { require('./handlers/backup-scheduler.js')(client, db); } catch(e) {}
 
 const defaultDailyStats = { messages: 0, images: 0, stickers: 0, emojis_sent: 0, reactions_added: 0, replies_sent: 0, mentions_received: 0, vc_minutes: 0, water_tree: 0, counting_channel: 0, meow_count: 0, streaming_minutes: 0, disboard_bumps: 0, boost_channel_reactions: 0, topgg_votes: 0 };
 const defaultTotalStats = { total_messages: 0, total_images: 0, total_stickers: 0, total_emojis_sent: 0, total_reactions_added: 0, total_replies_sent: 0, total_mentions_received: 0, total_vc_minutes: 0, total_disboard_bumps: 0, total_topgg_votes: 0 };
@@ -232,68 +271,61 @@ function getWeekStartDateString() {
     return friday.toISOString().split('T')[0];
 }
 
-function updateMarketPrices() {
-    if (!sql.open) return;
+async function updateMarketPrices() {
     try {
         if (!client.marketLocks) client.marketLocks = new Set();
-        const allItems = sql.prepare("SELECT * FROM market_items").all();
+        const res = await db.query("SELECT * FROM market_items");
+        const allItems = res.rows;
         if (allItems.length === 0) return;
 
-        const updatePricesTransaction = sql.transaction((items) => {
-            const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
-            const getOwnedStmt = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?");
-            const CRASH_PRICE = 10; 
+        await db.query('BEGIN');
+        const CRASH_PRICE = 10; 
 
-            for (const item of items) {
-                if (client.marketLocks.has(item.id)) continue;
+        for (const item of allItems) {
+            if (client.marketLocks.has(item.id)) continue;
 
-                const result = getOwnedStmt.get(item.id);
-                const totalOwned = result.total || 0;
+            const resOwned = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = $1", [item.id]);
+            const totalOwned = resOwned.rows[0].total || 0;
 
-                let randomPercent = (Math.random() * 0.20) - 0.10;
-                const saturationPenalty = (totalOwned / 2000) * 0.02;
-                let finalChangePercent = randomPercent - saturationPenalty;
+            let randomPercent = (Math.random() * 0.20) - 0.10;
+            const saturationPenalty = (totalOwned / 2000) * 0.02;
+            let finalChangePercent = randomPercent - saturationPenalty;
 
-                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
-                if (finalChangePercent < -0.30) finalChangePercent = -0.30;
+            if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
+            if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
-                const oldPrice = item.currentPrice;
-                let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
+            const oldPrice = item.currentPrice;
+            let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
-                if (newPrice <= CRASH_PRICE) {
-                    setTimeout(() => handleMarketCrash(client, sql, item), 0); 
-                    continue; 
-                }
-                
-                if (newPrice > 50000) newPrice = 50000;
-
-                const changeAmount = newPrice - oldPrice;
-                const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
-                
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+            if (newPrice <= CRASH_PRICE) {
+                setTimeout(() => handleMarketCrash(client, db, item), 0); 
+                continue; 
             }
-        });
+            
+            if (newPrice > 50000) newPrice = 50000;
 
-        updatePricesTransaction(allItems);
+            const changeAmount = newPrice - oldPrice;
+            const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
+            
+            await db.query(`UPDATE market_items SET currentPrice = $1, lastChangePercent = $2, lastChange = $3 WHERE id = $4`, [newPrice, displayPercent, changeAmount, item.id]);
+        }
+        await db.query('COMMIT');
     } catch (err) {
-        console.error("Error in updateMarketPrices:", err);
+        await db.query('ROLLBACK');
     }
 }
 
 async function checkTemporaryRoles(client) {
-    if (!sql.open) return;
     const now = Date.now();
     try {
-        const expiredRoles = sql.prepare("SELECT * FROM temporary_roles WHERE expiresAt <= ?").all(now);
+        const expiredRoles = (await db.query("SELECT * FROM temporary_roles WHERE expiresAt <= $1", [now])).rows;
         if (expiredRoles.length === 0) return;
 
-        const deleteRolesTransaction = sql.transaction((roles) => {
-            const deleteStmt = sql.prepare("DELETE FROM temporary_roles WHERE userID = ? AND guildID = ? AND roleID = ?");
-            for (const record of roles) {
-                deleteStmt.run(record.userID, record.guildID, record.roleID);
-            }
-        });
-        deleteRolesTransaction(expiredRoles);
+        await db.query('BEGIN');
+        for (const record of expiredRoles) {
+            await db.query("DELETE FROM temporary_roles WHERE userID = $1 AND guildID = $2 AND roleID = $3", [record.userID, record.guildID, record.roleID]);
+        }
+        await db.query('COMMIT');
 
         for (const record of expiredRoles) {
             const guild = client.guilds.cache.get(record.guildID);
@@ -305,51 +337,44 @@ async function checkTemporaryRoles(client) {
             }
         }
     } catch (err) {
-        console.error("Error in checkTemporaryRoles:", err);
+        await db.query('ROLLBACK');
     }
 }
 
-const calculateInterest = () => {
-    if (!sql.open) return;
+const calculateInterest = async () => {
     const now = Date.now();
     const INTEREST_RATE = 0.0005; 
     const COOLDOWN = 24 * 60 * 60 * 1000; 
     const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
     
     try {
-        const allUsers = sql.prepare("SELECT * FROM levels WHERE bank > 0").all();
+        const allUsers = (await db.query("SELECT * FROM levels WHERE bank > 0")).rows;
         
-        const processInterest = sql.transaction((users) => {
-            const updateInactive = sql.prepare("UPDATE levels SET lastInterest = ? WHERE user = ? AND guild = ?");
-            const updateActive = sql.prepare("UPDATE levels SET bank = bank + ?, lastInterest = ?, totalInterestEarned = totalInterestEarned + ? WHERE user = ? AND guild = ?");
-            
-            for (const user of users) {
-                if ((now - user.lastInterest) >= COOLDOWN) {
-                    const timeSinceDaily = now - (user.lastDaily || 0);
-                    const timeSinceWork = now - (user.lastWork || 0);
-                    
-                    if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                        updateInactive.run(now, user.user, user.guild);
+        await db.query('BEGIN');
+        for (const user of allUsers) {
+            if ((now - user.lastInterest) >= COOLDOWN) {
+                const timeSinceDaily = now - (user.lastDaily || 0);
+                const timeSinceWork = now - (user.lastWork || 0);
+                
+                if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
+                    await db.query("UPDATE levels SET lastInterest = $1 WHERE \"user\" = $2 AND guild = $3", [now, user.user, user.guild]);
+                } else {
+                    const interestAmount = Math.floor(user.bank * INTEREST_RATE);
+                    if (interestAmount > 0) {
+                        await db.query("UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE \"user\" = $4 AND guild = $5", [interestAmount, now, interestAmount, user.user, user.guild]);
                     } else {
-                        const interestAmount = Math.floor(user.bank * INTEREST_RATE);
-                        if (interestAmount > 0) {
-                            updateActive.run(interestAmount, now, interestAmount, user.user, user.guild);
-                        } else {
-                            updateInactive.run(now, user.user, user.guild);
-                        }
+                        await db.query("UPDATE levels SET lastInterest = $1 WHERE \"user\" = $2 AND guild = $3", [now, user.user, user.guild]);
                     }
                 }
             }
-        });
-        
-        processInterest(allUsers);
+        }
+        await db.query('COMMIT');
     } catch (err) {
-        console.error("Error in calculateInterest:", err);
+        await db.query('ROLLBACK');
     }
 };
 
 client.checkAndAwardLevelRoles = async function(member, newLevel) {
-    if (!client.sql.open) return;
     try {
         const guild = member.guild;
         const botMember = guild.members.me;
@@ -358,7 +383,7 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
             return;
         }
 
-        const allLevelRolesConfig = sql.prepare("SELECT level, roleID FROM level_roles WHERE guildID = ? ORDER BY level DESC").all(guild.id);
+        const allLevelRolesConfig = (await db.query("SELECT level, roleID FROM level_roles WHERE guildID = $1 ORDER BY level DESC", [guild.id])).rows;
         
         if (allLevelRolesConfig.length === 0) return;
 
@@ -408,17 +433,16 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
 }
 
 client.sendLevelUpMessage = async function(messageOrInteraction, member, newLevel, oldLevel, xpData) {
-    if (!client.sql.open) return;
     try {
         await client.checkAndAwardLevelRoles(member, newLevel);
         const guild = member.guild;
           
-        let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(guild.id);
+        let customSettings = (await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]))?.rows[0];
           
         let channelToSend = null;
           
         try {
-            let channelData = sql.prepare("SELECT channel FROM channel WHERE guild = ?").get(guild.id);
+            let channelData = (await db.query("SELECT channel FROM channel WHERE guild = $1", [guild.id]))?.rows[0];
             if (channelData && channelData.channel && channelData.channel !== 'Default') {
                 const fetchedChannel = guild.channels.cache.get(channelData.channel);
                 if (fetchedChannel) channelToSend = fetchedChannel;
@@ -446,7 +470,7 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
         let embed;
         
         const id = `${member.id}-${guild.id}`; 
-        let notifSettings = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?").get(id);
+        let notifSettings = await client.getQuestNotif(id);
         if (notifSettings && notifSettings.levelNotif === 0) return; 
 
         if (customSettings && customSettings.lvlUpTitle) {
@@ -466,13 +490,12 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
 }
 
 client.sendQuestAnnouncement = async function(guild, member, quest, questType = 'achievement') { 
-    if (!client.sql.open) return; 
     try { 
         const id = `${member.id}-${guild.id}`; 
-        let notifSettings = sql.prepare("SELECT * FROM quest_notifications WHERE id = ?").get(id); 
+        let notifSettings = await client.getQuestNotif(id); 
         if (!notifSettings) { 
             notifSettings = { id: id, userID: member.id, guildID: guild.id, dailyNotif: 1, weeklyNotif: 1, achievementsNotif: 1, levelNotif: 1, kingsNotif: 1, badgesNotif: 1 }; 
-            client.setQuestNotif.run(notifSettings); 
+            await client.setQuestNotif(notifSettings); 
         } 
         
         let sendMention = false; 
@@ -491,7 +514,7 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
         
         const userIdentifier = sendMention ? `${member}` : `**${member.displayName}**`; 
         
-        const settings = sql.prepare("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = ?").get(guild.id); 
+        const settings = (await db.query("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = $1", [guild.id]))?.rows[0]; 
         if (!settings || !settings.questChannelID) return; 
         const channel = guild.channels.cache.get(settings.questChannelID); 
         if (!channel) return; 
@@ -519,7 +542,7 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
                     attachment = await client.generateQuestAlert(member, quest, typeForAlert); 
                 } 
                 if(attachment) files.push(attachment); 
-            } catch (imgErr) { console.error("Error generating quest image:", imgErr); } 
+            } catch (imgErr) {} 
         } 
         
         message = announcementsTexts.getQuestMessage(questType, userIdentifier, questName, rewardDetails, panelChannelLink, client);
@@ -529,9 +552,6 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
 }
 
 client.checkQuests = async function(client, member, stats, questType, dateKey) {
-    const sql = client.sql;
-    if (!sql || !sql.open) return;
-    
     const questsToCheck = questsConfig[questType] || [];
     let newlyCompleted = 0;
 
@@ -539,10 +559,10 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
         const currentProgress = stats[quest.stat] || 0;
         if (currentProgress >= quest.goal) {
             const claimID = `${member.id}-${member.guild.id}-${quest.id}-${dateKey}`;
-            const existingClaim = sql.prepare("SELECT * FROM user_quest_claims WHERE claimID = ?").get(claimID);
+            const existingClaim = (await db.query("SELECT * FROM user_quest_claims WHERE claimID = $1", [claimID]))?.rows[0];
             if (!existingClaim) {
-                sql.prepare("INSERT INTO user_quest_claims (claimID, userID, guildID, questID, dateStr) VALUES (?, ?, ?, ?, ?)").run(claimID, member.id, member.guild.id, quest.id, dateKey);
-                let levelData = client.getLevel.get(member.id, member.guild.id);
+                await db.query("INSERT INTO user_quest_claims (claimID, userID, guildID, questID, dateStr) VALUES ($1, $2, $3, $4, $5)", [claimID, member.id, member.guild.id, quest.id, dateKey]);
+                let levelData = await client.getLevel(member.id, member.guild.id);
                 if (!levelData) levelData = { ...client.defaultData, user: member.id, guild: member.guild.id };
                 levelData.mora = (levelData.mora || 0) + quest.reward.mora;
                 levelData.xp += quest.reward.xp;
@@ -552,7 +572,7 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
                     levelData.xp -= nextXP;
                     levelData.level += 1;
                 }
-                client.setLevel.run(levelData);
+                await client.setLevel(levelData);
                 await client.sendQuestAnnouncement(member.guild, member, quest, questType);
                 newlyCompleted++;
             }
@@ -560,23 +580,23 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
     }
 
     if (newlyCompleted > 0 && questsToCheck.length > 0) {
-        const countData = sql.prepare("SELECT COUNT(*) as cnt FROM user_quest_claims WHERE userID = ? AND guildID = ? AND dateStr = ?").get(member.id, member.guild.id, dateKey);
+        const countData = (await db.query("SELECT COUNT(*) as cnt FROM user_quest_claims WHERE userID = $1 AND guildID = $2 AND dateStr = $3", [member.id, member.guild.id, dateKey]))?.rows[0];
         const completedCount = countData ? countData.cnt : 0;
         const threshold = Math.max(1, questsToCheck.length - 1); 
 
         if (completedCount >= threshold) {
-            const settings = sql.prepare("SELECT questChannelID, roleDailyBadge, roleWeeklyBadge, lastQuestPanelChannelID FROM settings WHERE guild = ?").get(member.guild.id);
+            const settings = (await db.query("SELECT questChannelID, roleDailyBadge, roleWeeklyBadge, lastQuestPanelChannelID FROM settings WHERE guild = $1", [member.guild.id]))?.rows[0];
             const announceChannel = settings && settings.questChannelID ? member.guild.channels.cache.get(settings.questChannelID) : null;
-            const notifSettings = sql.prepare("SELECT badgesNotif FROM quest_notifications WHERE id = ?").get(`${member.id}-${member.guild.id}`);
+            const notifSettings = (await db.query("SELECT badgesNotif FROM quest_notifications WHERE id = $1", [`${member.id}-${member.guild.id}`]))?.rows[0];
             const panelChannelLink = settings && settings.lastQuestPanelChannelID ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${settings.lastQuestPanelChannelID}>` : "";
 
             if (questType === 'daily') {
-                try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN daily_badge_given INTEGER DEFAULT 0").run(); } catch(e){}
+                try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS daily_badge_given BIGINT DEFAULT 0"); } catch(e){}
                 const dailyId = `${member.id}-${member.guild.id}-${dateKey}`;
-                let dailyData = sql.prepare("SELECT daily_badge_given FROM user_daily_stats WHERE id = ?").get(dailyId);
+                let dailyData = (await db.query("SELECT daily_badge_given FROM user_daily_stats WHERE id = $1", [dailyId]))?.rows[0];
 
                 if (dailyData && dailyData.daily_badge_given === 0) {
-                    sql.prepare("UPDATE user_daily_stats SET daily_badge_given = 1 WHERE id = ?").run(dailyId);
+                    await db.query("UPDATE user_daily_stats SET daily_badge_given = 1 WHERE id = $1", [dailyId]);
                     if (settings && settings.roleDailyBadge) member.roles.add(settings.roleDailyBadge).catch(()=>{});
 
                     if (announceChannel && (!notifSettings || notifSettings.badgesNotif === 1)) {
@@ -594,12 +614,12 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
                 }
             } 
             else if (questType === 'weekly') {
-                try { sql.prepare("ALTER TABLE user_weekly_stats ADD COLUMN weekly_badge_given INTEGER DEFAULT 0").run(); } catch(e){}
+                try { await db.query("ALTER TABLE user_weekly_stats ADD COLUMN IF NOT EXISTS weekly_badge_given BIGINT DEFAULT 0"); } catch(e){}
                 const weeklyId = `${member.id}-${member.guild.id}-${dateKey}`;
-                let weeklyData = sql.prepare("SELECT weekly_badge_given FROM user_weekly_stats WHERE id = ?").get(weeklyId);
+                let weeklyData = (await db.query("SELECT weekly_badge_given FROM user_weekly_stats WHERE id = $1", [weeklyId]))?.rows[0];
 
                 if (weeklyData && weeklyData.weekly_badge_given === 0) {
-                    sql.prepare("UPDATE user_weekly_stats SET weekly_badge_given = 1 WHERE id = ?").run(weeklyId);
+                    await db.query("UPDATE user_weekly_stats SET weekly_badge_given = 1 WHERE id = $1", [weeklyId]);
                     if (settings && settings.roleWeeklyBadge) member.roles.add(settings.roleWeeklyBadge).catch(()=>{});
 
                     if (announceChannel && (!notifSettings || notifSettings.badgesNotif === 1)) {
@@ -621,13 +641,12 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
 }
 
 client.checkAchievements = async function(client, member, levelData, totalStatsData) {
-    if (!client.sql.open) return;
     for (const ach of questsConfig.achievements) {
         let currentProgress = 0;
-        const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.id, member.guild.id);
-        const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
+        const streakData = (await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [member.guild.id, member.id]))?.rows[0];
+        const mediaStreakData = (await db.query("SELECT * FROM media_streaks WHERE guildID = $1 AND userID = $2", [member.guild.id, member.id]))?.rows[0];
           
-        if (!totalStatsData) totalStatsData = client.getTotalStats.get(`${member.id}-${member.guild.id}`) || {};
+        if (!totalStatsData) totalStatsData = await client.getTotalStats(`${member.id}-${member.guild.id}`) || {};
         totalStatsData = client.safeMerge(totalStatsData, defaultTotalStats); 
 
         if (ach.stat === 'messages') currentProgress = totalStatsData.total_messages || 0;
@@ -643,11 +662,11 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
         else if (ach.stat === 'disboard_bumps') currentProgress = totalStatsData.total_disboard_bumps || 0;
         else if (ach.stat === 'topgg_votes') currentProgress = totalStatsData.total_topgg_votes || 0;
         else if (ach.stat === 'meow_count' || ach.stat === 'total_meow_count') {
-             let ld = levelData || client.getLevel.get(member.id, member.guild.id);
+             let ld = levelData || await client.getLevel(member.id, member.guild.id);
              currentProgress = ld ? (ld.total_meow_count || 0) : 0;
         }
         else if (ach.stat === 'boost_count') {
-             let ld = levelData || client.getLevel.get(member.id, member.guild.id);
+             let ld = levelData || await client.getLevel(member.id, member.guild.id);
              currentProgress = ld ? (ld.boost_count || 0) : 0;
         }
         else if (levelData && levelData.hasOwnProperty(ach.stat)) currentProgress = levelData[ach.stat];
@@ -661,15 +680,15 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
         }
 
         if (currentProgress >= ach.goal) {
-            const existingAch = sql.prepare("SELECT * FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").get(member.id, member.guild.id, ach.id);
+            const existingAch = (await db.query("SELECT * FROM user_achievements WHERE userID = $1 AND guildID = $2 AND achievementID = $3", [member.id, member.guild.id, ach.id]))?.rows[0];
             if (!existingAch) {
-                sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES (?, ?, ?, ?)").run(member.id, member.guild.id, ach.id, Date.now());
-                let ld = levelData || client.getLevel.get(member.id, member.guild.id);
+                await db.query("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES ($1, $2, $3, $4)", [member.id, member.guild.id, ach.id, Date.now()]);
+                let ld = levelData || await client.getLevel(member.id, member.guild.id);
                 if (!ld) ld = { ...client.defaultData, user: member.id, guild: member.guild.id };
                 ld.mora = (ld.mora || 0) + ach.reward.mora;
                 ld.xp += ach.reward.xp;
                 ld.totalXP += ach.reward.xp;
-                client.setLevel.run(ld);
+                await client.setLevel(ld);
                 await client.sendQuestAnnouncement(member.guild, member, ach, 'achievement');
             }
         }
@@ -677,8 +696,6 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
 }
 
 client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
-    if (!client.sql.open) return;
-
     if (stat === 'messages') {
         if (!client.recentMessageTimestamps.has(guildID)) client.recentMessageTimestamps.set(guildID, []);
         const guildTimestamps = client.recentMessageTimestamps.get(guildID);
@@ -693,9 +710,9 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         const weeklyStatsId = `${userID}-${guildID}-${weekStartDateStr}`;
         const totalStatsId = `${userID}-${guildID}`;
 
-        let dailyStats = client.getDailyStats.get(dailyStatsId) || { id: dailyStatsId, userID, guildID, date: dateStr };
-        let weeklyStats = client.getWeeklyStats.get(weeklyStatsId) || { id: weeklyStatsId, userID, guildID, weekStartDate: weekStartDateStr };
-        let totalStats = client.getTotalStats.get(totalStatsId) || { id: totalStatsId, userID, guildID };
+        let dailyStats = await client.getDailyStats(dailyStatsId) || { id: dailyStatsId, userID, guildID, date: dateStr };
+        let weeklyStats = await client.getWeeklyStats(weeklyStatsId) || { id: weeklyStatsId, userID, guildID, weekStartDate: weekStartDateStr };
+        let totalStats = await client.getTotalStats(totalStatsId) || { id: totalStatsId, userID, guildID };
 
         dailyStats = client.safeMerge(dailyStats, defaultDailyStats);
         weeklyStats = client.safeMerge(weeklyStats, defaultDailyStats);
@@ -716,10 +733,10 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
         
         if (stat === 'topgg_votes') totalStats.total_topgg_votes = (totalStats.total_topgg_votes || 0) + amount;
                   
-        client.setDailyStats.run(dailyStats);
-        client.setWeeklyStats.run(weeklyStats);
+        await client.setDailyStats(dailyStats);
+        await client.setWeeklyStats(weeklyStats);
         
-        client.setTotalStats.run({
+        await client.setTotalStats({
             id: totalStatsId, userID, guildID,
             total_messages: totalStats.total_messages, total_images: totalStats.total_images, total_stickers: totalStats.total_stickers,
             total_emojis_sent: totalStats.total_emojis_sent,
@@ -735,11 +752,11 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
             await client.checkAchievements(client, member, null, totalStats);
             
              if (stat === 'meow_count') {
-                 let levelData = client.getLevel.get(userID, guildID);
+                 let levelData = await client.getLevel(userID, guildID);
                  if (levelData) await client.checkAchievements(client, member, levelData, totalStats);
             }
             if (stat === 'water_tree') {
-                 let levelData = client.getLevel.get(userID, guildID);
+                 let levelData = await client.getLevel(userID, guildID);
                  if (levelData) await client.checkAchievements(client, member, levelData, totalStats);
             }
         }
@@ -747,41 +764,39 @@ client.incrementQuestStats = async function(userID, guildID, stat, amount = 1) {
 }
 
 client.checkRoleAchievement = async function(member, roleId, achievementId) {
-    if (!client.sql.open) return;
     try {
         const guildID = member.guild.id;
         const userID = member.id;
-        const existingAch = sql.prepare("SELECT * FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").get(userID, guildID, achievementId);
+        const existingAch = (await db.query("SELECT * FROM user_achievements WHERE userID = $1 AND guildID = $2 AND achievementID = $3", [userID, guildID, achievementId]))?.rows[0];
         const ach = questsConfig.achievements.find(a => a.id === achievementId);
         if (!ach) return;
         
         let hasRole = false;
         if (achievementId === 'ach_race_role') {
-            const raceRoles = sql.prepare("SELECT roleID FROM race_roles WHERE guildID = ?").all(guildID);
+            const raceRoles = (await db.query("SELECT roleID FROM race_roles WHERE guildID = $1", [guildID])).rows;
             const raceRoleIDs = raceRoles.map(r => r.roleID);
             hasRole = member.roles.cache.some(role => raceRoleIDs.includes(role.id));
         } else { hasRole = member.roles.cache.has(roleId); }
         
         if (hasRole) {
             if (existingAch) return; 
-            sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES (?, ?, ?, ?)").run(userID, guildID, ach.id, Date.now());
-            let ld = client.getLevel.get(userID, guildID);
+            await db.query("INSERT INTO user_achievements (userID, guildID, achievementID, timestamp) VALUES ($1, $2, $3, $4)", [userID, guildID, ach.id, Date.now()]);
+            let ld = await client.getLevel(userID, guildID);
             if (!ld) ld = { ...client.defaultData, user: userID, guild: guildID };
             ld.mora = (ld.mora || 0) + ach.reward.mora;
             ld.xp += ach.reward.xp;
             ld.totalXP += ach.reward.xp;
-            client.setLevel.run(ld);
+            await client.setLevel(ld);
             await client.sendQuestAnnouncement(member.guild, member, ach, 'achievement');
         } 
     } catch (err) {}
 }
 
 async function updateTimerChannels(client) {
-    if (!sql.open) return;
     const guilds = client.guilds.cache.values();
     const KSA_OFFSET = 3 * 60 * 60 * 1000; 
     for (const guild of guilds) {
-        const settings = sql.prepare("SELECT streakTimerChannelID, dailyTimerChannelID, weeklyTimerChannelID FROM settings WHERE guild = ?").get(guild.id);
+        const settings = (await db.query("SELECT streakTimerChannelID, dailyTimerChannelID, weeklyTimerChannelID FROM settings WHERE guild = $1", [guild.id]))?.rows[0];
         if (!settings) continue;
         const now = new Date();
         const nowKSA = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + KSA_OFFSET);
@@ -819,9 +834,8 @@ async function updateTimerChannels(client) {
 }
 
 async function updateRainbowRoles(client) {
-    if (!sql.open) return;
     try {
-        const rainbowRoles = sql.prepare("SELECT roleID, guildID FROM rainbow_roles").all();
+        const rainbowRoles = (await db.query("SELECT roleID, guildID FROM rainbow_roles")).rows;
         if (rainbowRoles.length === 0) return;
         const randomColor = Math.floor(Math.random() * 16777215);
         for (const record of rainbowRoles) {
@@ -829,7 +843,7 @@ async function updateRainbowRoles(client) {
             if (!guild) continue;
             const role = guild.roles.cache.get(record.roleID);
             if (role) await role.edit({ color: randomColor }).catch(() => {});
-            else sql.prepare("DELETE FROM rainbow_roles WHERE roleID = ?").run(record.roleID);
+            else await db.query("DELETE FROM rainbow_roles WHERE roleID = $1", [record.roleID]);
         }
     } catch (e) {}
 }
@@ -843,15 +857,14 @@ client.on(Events.ClientReady, async () => {
     require('./handlers/voice-timer.js')(client);
     
     startAuctionSystem(client); 
-    setTimeout(() => { autoUpdateKingsBoard(client, sql).catch(() => {}); }, 5000);
+    setTimeout(() => { autoUpdateKingsBoard(client, db).catch(() => {}); }, 5000);
 
-    // 🔥 تشغيل نظام السوالف التلقائية للذكاء الاصطناعي 🔥
     startAutoChat(client);
 
     require('./handlers/weekly-role.js')(client);
 
     client.antiRolesCache = new Map();
-    await loadRoleSettings(sql, client.antiRolesCache);
+    await loadRoleSettings(db, client.antiRolesCache);
 
     const rest = new REST({ version: '10' }).setToken(botToken);
     const commands = [];
@@ -892,15 +905,15 @@ client.on(Events.ClientReady, async () => {
     setInterval(updateMarketPrices, 60 * 60 * 1000); 
     updateMarketPrices(); 
       
-    setInterval(() => checkLoanPayments(client, sql), 60 * 60 * 1000); 
-    setInterval(() => checkFarmIncome(client, sql), 60 * 60 * 1000); 
-    checkFarmIncome(client, sql); 
+    setInterval(() => checkLoanPayments(client, db), 60 * 60 * 1000); 
+    setInterval(() => checkFarmIncome(client, db), 60 * 60 * 1000); 
+    checkFarmIncome(client, db); 
 
-    setInterval(() => checkDailyStreaks(client, sql), 3600000); 
-    checkDailyStreaks(client, sql);
+    setInterval(() => checkDailyStreaks(client, db), 3600000); 
+    checkDailyStreaks(client, db);
 
-    setInterval(() => checkDailyMediaStreaks(client, sql), 3600000); 
-    checkDailyMediaStreaks(client, sql);
+    setInterval(() => checkDailyMediaStreaks(client, db), 3600000); 
+    checkDailyMediaStreaks(client, db);
 
     setInterval(() => checkUnjailTask(client), 5 * 60 * 1000); 
     checkUnjailTask(client);
@@ -913,41 +926,41 @@ client.on(Events.ClientReady, async () => {
 
     setInterval(() => updateRainbowRoles(client), 180000); 
 
-    setInterval(() => {
-        if (!sql.open) return;
-        const now = Date.now();
-        const guildsToNotify = sql.prepare("SELECT guild, bumpChannelID, bumpNotifyRoleID, lastBumperID FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= ?").all(now);
-
-        for (const row of guildsToNotify) {
-            try {
-                const guild = client.guilds.cache.get(row.guild);
-                if (guild && row.bumpChannelID) {
-                    const channel = guild.channels.cache.get(row.bumpChannelID);
-                    if (channel) {
-                        const roleMention = row.bumpNotifyRoleID ? `<@&${row.bumpNotifyRoleID}>` : "";
-                        const userMention = row.lastBumperID ? `<@${row.lastBumperID}>` : " "; 
-
-                        channel.send({
-                            content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
-                            files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
-                        }).catch(() => {});
-
-                        channel.setName('˖✶⁺〢🔥・انشر・الان').catch(()=>{});
-                    }
-                }
-            } catch (err) {}
-              
-            sql.prepare("UPDATE settings SET nextBumpTime = 0 WHERE guild = ?").run(row.guild);
-        }
-    }, 60 * 1000); 
-
-    setInterval(() => {
-        if (!sql.open) return;
+    setInterval(async () => {
         const now = Date.now();
         try {
-            const expired = sql.prepare("SELECT * FROM auto_responses WHERE expiresAt IS NOT NULL AND expiresAt < ?").all(now);
+            const guildsToNotify = (await db.query("SELECT guild, bumpChannelID, bumpNotifyRoleID, lastBumperID FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= $1", [now])).rows;
+
+            for (const row of guildsToNotify) {
+                try {
+                    const guild = client.guilds.cache.get(row.guild);
+                    if (guild && row.bumpChannelID) {
+                        const channel = guild.channels.cache.get(row.bumpChannelID);
+                        if (channel) {
+                            const roleMention = row.bumpNotifyRoleID ? `<@&${row.bumpNotifyRoleID}>` : "";
+                            const userMention = row.lastBumperID ? `<@${row.lastBumperID}>` : " "; 
+
+                            channel.send({
+                                content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
+                                files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
+                            }).catch(() => {});
+
+                            channel.setName('˖✶⁺〢🔥・انشر・الان').catch(()=>{});
+                        }
+                    }
+                } catch (err) {}
+                
+                await db.query("UPDATE settings SET nextBumpTime = 0 WHERE guild = $1", [row.guild]);
+            }
+        } catch(e) {}
+    }, 60 * 1000); 
+
+    setInterval(async () => {
+        const now = Date.now();
+        try {
+            const expired = (await db.query("SELECT * FROM auto_responses WHERE expiresAt IS NOT NULL AND expiresAt < $1", [now])).rows;
             for (const reply of expired) {
-                sql.prepare("DELETE FROM auto_responses WHERE id = ?").run(reply.id);
+                await db.query("DELETE FROM auto_responses WHERE id = $1", [reply.id]);
             }
         } catch (err) {}
     }, 60 * 60 * 1000);
@@ -960,19 +973,18 @@ client.on(Events.ClientReady, async () => {
         const ksaHour = ksaDate.getHours(); 
         
         if (ksaHour === 0 && lastUpdateSentHour !== ksaHour) { 
-            sendDailyMediaUpdate(client, sql); 
-            // 🔥 توزيع الجوائز على الملوك عند منتصف الليل 🔥
-            rewardDailyKings(client, sql);
+            sendDailyMediaUpdate(client, db); 
+            rewardDailyKings(client, db);
             lastUpdateSentHour = ksaHour; 
         } else if (ksaHour !== 0) lastUpdateSentHour = -1; 
         
         if (ksaHour === 12 && lastWarningSentHour !== ksaHour) { 
-            sendStreakWarnings(client, sql); 
+            sendStreakWarnings(client, db); 
             lastWarningSentHour = ksaHour; 
         } else if (ksaHour !== 12) lastWarningSentHour = -1; 
         
         if (ksaHour === 15 && lastReminderSentHour !== ksaHour) { 
-            sendMediaStreakReminders(client, sql); 
+            sendMediaStreakReminders(client, db); 
             lastReminderSentHour = ksaHour; 
         } else if (ksaHour !== 15) lastReminderSentHour = -1; 
     }, 60000); 
@@ -988,47 +1000,38 @@ client.on(Events.ClientReady, async () => {
         } catch (e) {}
     }, 30 * 60 * 1000); 
 
-    // 🔥 التحديث كل 60 ثانية للوحة الملوك 🔥
     setInterval(() => {
-        autoUpdateKingsBoard(client, sql).catch(() => {});
+        autoUpdateKingsBoard(client, db).catch(() => {});
     }, 60 * 1000);
 
-    sendDailyMediaUpdate(client, sql);
+    sendDailyMediaUpdate(client, db);
 }); 
 
-require('./interaction-handler.js')(client, sql, client.antiRolesCache);
+require('./interaction-handler.js')(client, db, client.antiRolesCache);
 
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 for (const file of eventFiles) { const filePath = path.join(eventsPath, file); const event = require(filePath); if (event.once) { client.once(event.name, (...args) => event.execute(...args)); } else { client.on(event.name, (...args) => event.execute(...args)); } }
 
 try {
-    require('./handlers/topgg-handler.js')(client, sql);
-} catch (err) {
-    console.error("Top.gg Handler Error:", err);
-}
+    require('./handlers/topgg-handler.js')(client, db);
+} catch (err) {}
 
 client.login(botToken);
 
-// --- 🛡️ نظام الإغلاق الآمن (Graceful Shutdown) لمنع النسخ الشبحية وقفل البيانات ---
-function shutdownGracefully(signal) {
-    console.log(`\n⚠️ Received ${signal}. Starting graceful shutdown...`);
+async function shutdownGracefully(signal) {
     try {
         if (client) {
-            console.log("🔌 Disconnecting Discord Bot...");
             client.destroy();
         }
-        if (sql && sql.open) {
-            console.log("💾 Closing SQLite database safely...");
-            sql.close(); // هذا السطر يدمج ملفات WAL ويمنع تعليق الداتابيس
+        if (db) {
+            await db.end(); 
         }
-        console.log("✅ Shutdown complete.");
         process.exit(0);
     } catch (err) {
-        console.error("❌ Error during shutdown:", err);
         process.exit(1);
     }
 }
 
-process.on('SIGINT', () => shutdownGracefully('SIGINT'));   // Ctrl+C أو PM2 stop
-process.on('SIGTERM', () => shutdownGracefully('SIGTERM')); // PM2 restart/delete
+process.on('SIGINT', () => shutdownGracefully('SIGINT'));
+process.on('SIGTERM', () => shutdownGracefully('SIGTERM'));
