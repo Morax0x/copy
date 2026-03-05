@@ -1,12 +1,8 @@
-// commands/economy/balance.js
-
 const { AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
 const Canvas = require('canvas');
 const path = require('path');
 
-// 👑 معرف الإمبراطور (أنت)
 const EMPEROR_ID = '1145327691772481577';
-// 🖼️ رابط بطاقة الإمبراطور الخاصة
 const EMPEROR_CARD_URL = 'https://i.postimg.cc/8CK5jbWN/card-(2).jpg';
 
 module.exports = {
@@ -27,7 +23,7 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, member, client, guild;
         let user; 
-        let commandAuthor; // الشخص الذي كتب الأمر
+        let commandAuthor; 
 
         try {
             if (isSlash) {
@@ -52,8 +48,6 @@ module.exports = {
                 user = member.user;
             }
 
-            const sql = client.sql;
-
             const reply = async (payload) => {
                 if (isSlash) {
                     return interaction.editReply(payload);
@@ -62,24 +56,18 @@ module.exports = {
                 }
             };
 
-            // 🔥🔥🔥 المميزة الخاصة للإمبراطور 🔥🔥🔥
-            // إذا كان الشخص المستهدف هو الإمبراطور (أنت) والشخص الذي طلب الأمر ليس أنت
             if (user.id === EMPEROR_ID && commandAuthor.id !== EMPEROR_ID) {
-                // إرسال الصورة الخاصة مباشرة دون كشف الرصيد
                 return await reply({ files: [EMPEROR_CARD_URL] });
             }
-            // 🔥🔥🔥 انتهى التعديل 🔥🔥🔥
 
-            const getScore = client.getLevel;
-            let data = getScore.get(user.id, guild.id);
+            let data = await client.getLevel(user.id, guild.id);
 
-            // تأمين البيانات
             if (!data) {
                 data = { mora: 0, bank: 0 };
             }
 
-            const safeMora = data.mora || 0;
-            const safeBank = data.bank || 0;
+            const safeMora = Number(data.mora) || 0;
+            const safeBank = Number(data.bank) || 0;
 
             const canvas = Canvas.createCanvas(1000, 400); 
             const context = canvas.getContext('2d');
@@ -101,7 +89,6 @@ module.exports = {
             context.textAlign = 'left';
             context.fillStyle = '#E0B04A'; 
 
-            // استخدام خط Cairo (الذي تم تحميله في index.js)
             context.font = 'bold 48px "Cairo"'; 
 
             context.fillText(safeMora.toLocaleString(), 335, 235); 
