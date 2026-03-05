@@ -129,14 +129,14 @@ module.exports = {
             }
         };
 
-        const sql = client.sql;
+        const db = client.sql;
 
         if (targetMember) {
             const user = targetMember.user;
             const cleanName = cleanDisplayName(user.displayName);
 
-            const userRace = getUserRace(targetMember, sql);
-            const weaponData = getWeaponData(sql, targetMember);
+            const userRace = await getUserRace(targetMember, db);
+            const weaponData = await getWeaponData(db, targetMember);
 
             if (!userRace) {
                 return replyError(`❌ **${cleanName}** لا يمتلك عرقاً حالياً.`);
@@ -155,7 +155,6 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setTitle(`${weaponData.emoji} سلاح ${cleanName}`)
                 .setColor(Colors.Green)
-                .setThumbnail(weaponData.image || null)
                 .addFields(
                     { name: "✶ مواصفات السلاح الحالي", value: description }
                 );
@@ -193,7 +192,6 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setTitle(`${weapon.emoji} ${weapon.name}`)
                 .setColor(Colors.Blue)
-                .setThumbnail(weapon.image || null)
                 .addFields(
                     { name: "✶ المواصفات الأساسية", value: description },
                     { name: "✥ نصيحة للحصول عليه", value: `هذا السلاح مخصص لعرق **${weapon.race}** فقط. يمكنك شراؤه وتطويره من المتجر.` }
