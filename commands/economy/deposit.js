@@ -1,6 +1,6 @@
 const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const COOLDOWN_MS = 1 * 60 * 1000; // ✅ تم التعديل إلى 1 دقيقة
+const COOLDOWN_MS = 1 * 60 * 1000;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -46,21 +46,17 @@ module.exports = {
                 }
             };
 
-            const getScore = client.getLevel;
-            const setScore = client.setLevel;
-
-            let data = getScore.get(user.id, guild.id);
+            let data = await client.getLevel(user.id, guild.id);
             if (!data) {
                 data = { ...client.defaultData, user: user.id, guild: guild.id };
             }
 
             const now = Date.now();
-            const timeLeft = (data.lastDeposit || 0) + COOLDOWN_MS - now;
+            const lastDeposit = Number(data.lastDeposit) || 0;
+            const timeLeft = lastDeposit + COOLDOWN_MS - now;
 
             if (timeLeft > 0) {
-                const minutes = Math.floor(timeLeft / 60000);
                 const seconds = Math.floor((timeLeft % 60000) / 1000);
-                // ✅ تم تعديل النص ليقول "دقيقة واحدة"
                 const replyContent = `🕐 يمكنك الإيداع مرة واحدة كل دقيقة. يرجى الانتظار **${seconds} ثانية**.`;
 
                 if (isSlash) {
@@ -71,7 +67,9 @@ module.exports = {
             }
 
             let amountToDeposit;
-            const userMora = data.mora || 0;
+            data.mora = Number(data.mora) || 0;
+            data.bank = Number(data.bank) || 0;
+            const userMora = data.mora;
 
             if (!amountArg || amountArg.toLowerCase() === 'all' || amountArg.toLowerCase() === 'الكل') {
                 amountToDeposit = userMora;
@@ -94,12 +92,11 @@ module.exports = {
                 return isSlash ? interaction.editReply({ content: replyContent, ephemeral: true }) : message.reply(replyContent);
             }
 
-            // تنفيذ العملية
             data.mora -= amountToDeposit;
-            data.bank = (data.bank || 0) + amountToDeposit;
+            data.bank += amountToDeposit;
             data.lastDeposit = now; 
 
-            setScore.run(data);
+            await client.setLevel(data);
 
             const interestAmount = Math.floor(data.bank * 0.0005);
 
@@ -111,7 +108,7 @@ module.exports = {
                     `❖ تـم ايـداع: **${amountToDeposit.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيد البـنك: **${data.bank.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيـدك الكـاش: **${data.mora.toLocaleString()}** ${EMOJI_MORA}\n\n` +
-                    `◇ ستحصل على فائدة يومية 0.05% : **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                    `◇ ستحصل على فائدة يومية: **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `◇ وسنحمي اموالك بنسبة اكبر من السرقـة`
                 );
 
