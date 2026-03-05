@@ -44,45 +44,49 @@ module.exports = {
         }
 
         const { client, user, guild } = interaction;
+        const db = client.sql;
 
         if (!guild) {
             return interaction.reply({ content: "🚫 **عذراً، هذا الأمر يعمل فقط داخل السيرفرات!**", flags: [MessageFlags.Ephemeral] });
         }
 
         try {
-            client.sql.prepare("ALTER TABLE levels ADD COLUMN last_dungeon INTEGER DEFAULT 0").run();
-            client.sql.prepare("ALTER TABLE levels ADD COLUMN dungeon_tickets INTEGER DEFAULT 0").run();
-            client.sql.prepare("ALTER TABLE levels ADD COLUMN last_ticket_reset TEXT DEFAULT ''").run();
-            client.sql.prepare("CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT PRIMARY KEY, guildID TEXT, floor INTEGER, timestamp INTEGER)").run();
+            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS last_dungeon BIGINT DEFAULT 0");
+            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS dungeon_tickets BIGINT DEFAULT 0");
+            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS last_ticket_reset TEXT DEFAULT ''");
+            await db.query("CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT PRIMARY KEY, guildID TEXT, floor BIGINT, timestamp BIGINT)");
         } catch (ignored) {}
 
         let isAbyssKing = false;
         try {
-            const settings = client.sql.prepare("SELECT roleAbyss FROM settings WHERE guild = ?").get(guild.id);
-            if (settings && settings.roleAbyss && interaction.member.roles.cache.has(settings.roleAbyss)) {
+            const settingsRes = await db.query("SELECT roleAbyss FROM settings WHERE guild = $1", [guild.id]);
+            const settings = settingsRes.rows[0];
+            const roleId = settings?.roleabyss || settings?.roleAbyss;
+            
+            if (roleId && interaction.member.roles.cache.has(roleId)) {
                 isAbyssKing = true;
             }
         } catch (e) {}
 
         if (user.id !== OWNER_ID && !isAbyssKing) { 
-            let userData = client.getLevel.get(user.id, guild.id);
+            let userData = await client.getLevel(user.id, guild.id);
             
             if (!userData) {
-                client.setLevel.run({
+                await client.setLevel({
                     id: `${guild.id}-${user.id}`,
                     user: user.id,
                     guild: guild.id,
                     xp: 0, level: 1, mora: 0
                 });
-                userData = client.getLevel.get(user.id, guild.id);
+                userData = await client.getLevel(user.id, guild.id);
             }
 
-            const lastRun = userData.last_dungeon || 0;
+            const lastRun = Number(userData.last_dungeon) || 0;
             const now = Date.now();
             const diff = now - lastRun;
 
             if (diff < COOLDOWN_MS) {
-                const limitInfo = manageTickets(user.id, guild.id, client.sql, 'check', interaction.member);
+                const limitInfo = await manageTickets(user.id, guild.id, db, 'check', interaction.member);
                 const readyTimestamp = Math.floor((lastRun + COOLDOWN_MS) / 1000);
 
                 const cooldownEmbed = new EmbedBuilder()
@@ -117,7 +121,7 @@ module.exports = {
         }
 
         try {
-            await startDungeon(interaction, client.sql);
+            await startDungeon(interaction, db);
         } catch (err) {
             console.error("[Dungeon Command Error]", err);
             const errMsg = { content: "❌ حدث خطأ تقني أثناء بدء الدانجون.", flags: [MessageFlags.Ephemeral] };
