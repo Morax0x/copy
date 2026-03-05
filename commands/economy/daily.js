@@ -3,7 +3,7 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 
 let updateGuildStat;
 try {
-    ({ updateGuildStat } = require('../../handlers/guild-tracker.js'));
+    ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
 const REWARDS = {
@@ -73,17 +73,15 @@ module.exports = {
             }
         };
 
-        const sql = client.sql;
-        const getScore = client.getLevel;
-        const setScore = client.setLevel;
+        const db = client.sql;
 
-        let data = getScore.get(user.id, guild.id);
+        let data = await client.getLevel(user.id, guild.id);
         if (!data) {
             data = { ...client.defaultData, user: user.id, guild: guild.id };
         }
 
         const now = Date.now();
-        const lastDaily = data.lastDaily || 0;
+        const lastDaily = Number(data.lastDaily) || 0;
 
         const todayKSA = getKSADateString(now);
         const lastDailyKSA = getKSADateString(lastDaily);
@@ -105,7 +103,7 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        let newStreak = data.dailyStreak || 0;
+        let newStreak = Number(data.dailyStreak) || 0;
         
         const date1 = new Date(todayKSA);
         const date2 = new Date(lastDailyKSA);
@@ -123,14 +121,18 @@ module.exports = {
         const rewardRange = REWARDS[currentRewardKey];
         const baseAmount = getRandomAmount(rewardRange.min, rewardRange.max);
 
-        const moraMultiplier = calculateMoraBuff(member, sql);
+        let moraMultiplier = 1.0;
+        try {
+            moraMultiplier = await calculateMoraBuff(member, db);
+        } catch (e) {}
+
         const finalAmount = Math.floor(baseAmount * moraMultiplier);
 
-        data.mora = (data.mora || 0) + finalAmount;
+        data.mora = (Number(data.mora) || 0) + finalAmount;
         data.lastDaily = now;
         data.dailyStreak = newStreak;
 
-        setScore.run(data);
+        await client.setLevel(data);
 
         if (updateGuildStat) {
             updateGuildStat(client, guild.id, user.id, 'mora_earned', finalAmount);
