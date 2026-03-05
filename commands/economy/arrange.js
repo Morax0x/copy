@@ -8,7 +8,6 @@ try {
 
 let updateGuildStat;
 try {
-    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
@@ -96,7 +95,8 @@ module.exports = {
 
         const startGame = async (finalBetAmount) => {
             try {
-                const userCheck = db.prepare('SELECT mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
+                const userCheckRes = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
+                const userCheck = userCheckRes.rows[0];
                 
                 if (userCheck && userCheck.mora < finalBetAmount && !betArg) {
                      finalBetAmount = userCheck.mora;
@@ -112,12 +112,12 @@ module.exports = {
                     return replyError(`❌ **الحد الأدنى للرهان هو ${MIN_BET} ${MORA_EMOJI}**`);
                 }
 
-                db.prepare('UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?').run(finalBetAmount, userId, guildId);
+                await db.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [finalBetAmount, userId, guildId]);
 
                 if (userId !== OWNER_ID) cooldowns.set(userId, Date.now());
                 
                 try {
-                    db.prepare("UPDATE levels SET lastArrange = ? WHERE user = ? AND guild = ?").run(Date.now(), userId, guildId);
+                    await db.query('UPDATE levels SET lastArrange = $1 WHERE "user" = $2 AND guild = $3', [Date.now(), userId, guildId]);
                 } catch (e) {}
 
                 const numbersCount = 9;
@@ -173,7 +173,7 @@ module.exports = {
                             const memberObj = isSlash ? interaction.member : message.member;
                             
                             if (streakHandler && streakHandler.calculateMoraBuff) {
-                                moraMultiplier = streakHandler.calculateMoraBuff(memberObj, db);
+                                moraMultiplier = await streakHandler.calculateMoraBuff(memberObj, db);
                             }
                             
                             let profit = Math.floor(finalBetAmount * 3.0 * moraMultiplier); 
@@ -181,7 +181,8 @@ module.exports = {
                             let casinoTax = 0;
                             let taxText = "";
 
-                            const settings = db.prepare("SELECT roleCasinoKing FROM settings WHERE guild = ?").get(guildId);
+                            const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guildId]);
+                            const settings = settingsRes.rows[0];
                             if (settings && settings.roleCasinoKing && !memberObj.roles.cache.has(settings.roleCasinoKing)) {
                                 const kingMembers = guild.roles.cache.get(settings.roleCasinoKing)?.members;
                                 if (kingMembers && kingMembers.size > 0) {
@@ -190,7 +191,7 @@ module.exports = {
                                     if (casinoTax > 0) {
                                         profit -= casinoTax;
                                         taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                        db.prepare('UPDATE levels SET bank = bank + ? WHERE user = ? AND guild = ?').run(casinoTax, king.id, guildId);
+                                        await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guildId]);
                                     }
                                 }
                             }
@@ -201,7 +202,7 @@ module.exports = {
                             let buffText = "";
                             if (buffOnlyPercent > 0) buffText = ` (+${buffOnlyPercent}%)`; 
 
-                            db.prepare('UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?').run(totalPrize, userId, guildId);
+                            await db.query('UPDATE levels SET mora = mora + $1 WHERE "user" = $2 AND guild = $3', [totalPrize, userId, guildId]);
 
                             if (updateGuildStat) {
                                 updateGuildStat(client, guildId, userId, 'casino_profit', profit);
@@ -311,7 +312,8 @@ module.exports = {
             return startGame(finalBetAmount);
         }
 
-        let userData = db.prepare('SELECT mora FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
+        let userDataRes = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
+        let userData = userDataRes.rows[0];
         
         if (!userData || userData.mora < MIN_BET) {
             clearActive();
@@ -319,7 +321,7 @@ module.exports = {
         }
 
         let proposedBet = 100;
-        if (userData.mora < 100) proposedBet = userData.mora;
+        if (userData.mora < 100) proposedBet = Number(userData.mora);
 
         return startGame(proposedBet);
     }
