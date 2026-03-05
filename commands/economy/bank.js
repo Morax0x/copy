@@ -3,9 +3,8 @@ const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const OWNER_ID = "1145327691772481577"; // 👑 آيدي الإمبراطور
+const OWNER_ID = "1145327691772481577"; 
 
-// 🔥 تم تعديل النسبة هنا للعرض فقط لتطابق النظام (0.0005 = 0.05%) 🔥
 const INTEREST_RATE = 0.0005; 
 const INTEREST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -43,7 +42,7 @@ module.exports = {
     async execute(interactionOrMessage, args) {
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, guild, sql;
+        let interaction, message, client, guild, db;
         let targetUser, targetMember;
 
         try {
@@ -51,14 +50,12 @@ module.exports = {
                 interaction = interactionOrMessage;
                 guild = interaction.guild;
                 client = interaction.client;
-                sql = client.sql;
+                db = client.sql;
 
                 const target = interaction.options.getUser('المستخدم') || interaction.user;
                 
-                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Slash) 🔥🔥🔥
-                // إذا كان الهدف هو الأونر، والشخص الذي يستخدم الأمر ليس الأونر -> تجاهل تام
                 if (target.id === OWNER_ID && interaction.user.id !== OWNER_ID) {
-                    return; // البوت لن يرد ولن يفعل شيئاً
+                    return; 
                 }
 
                 targetUser = target;
@@ -73,15 +70,13 @@ module.exports = {
                 message = interactionOrMessage;
                 guild = message.guild;
                 client = message.client;
-                sql = client.sql;
+                db = client.sql;
 
                 targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
                 targetUser = targetMember.user;
 
-                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Prefix) 🔥🔥🔥
-                // إذا كان الهدف هو الأونر، والشخص الذي يستخدم الأمر ليس الأونر -> تجاهل تام
                 if (targetUser.id === OWNER_ID && message.author.id !== OWNER_ID) {
-                    return; // البوت لن يرد ولن يفعل شيئاً
+                    return; 
                 }
             }
 
@@ -93,24 +88,20 @@ module.exports = {
                 }
             };
 
-            const getScore = client.getLevel;
-
-            let data = getScore.get(targetUser.id, guild.id);
+            let data = await client.getLevel(targetUser.id, guild.id);
             if (!data) {
                 data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
             }
 
-            // تأمين البيانات
-            data.mora = data.mora || 0;
-            data.bank = data.bank || 0;
-            data.lastInterest = data.lastInterest || 0;
-            data.totalInterestEarned = data.totalInterestEarned || 0;
+            data.mora = Number(data.mora) || 0;
+            data.bank = Number(data.bank) || 0;
+            data.lastInterest = Number(data.lastInterest) || 0;
+            data.totalInterestEarned = Number(data.totalInterestEarned) || 0;
 
             const now = Date.now();
-            const timeLeft = (data.lastInterest || 0) + INTEREST_COOLDOWN_MS - now;
+            const timeLeft = data.lastInterest + INTEREST_COOLDOWN_MS - now;
 
             let interestMessage;
-            // 🔥 تم تعديل النص ليطابق النسبة (0.05%) 🔥
             const currentInterestRate = "0.05%";
 
             const baseInterest = Math.floor(data.bank * INTEREST_RATE);
@@ -131,23 +122,24 @@ module.exports = {
 
             description.push('\n');
 
-            const getLoan = sql.prepare("SELECT * FROM user_loans WHERE userID = ? AND guildID = ? AND remainingAmount > 0");
-            const loan = getLoan.get(targetUser.id, guild.id);
+            const loanRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [targetUser.id, guild.id]);
+            const loan = loanRes.rows[0];
 
             if (!loan) {
                 description.push(`🏦 **حالة القرض:** (غير مدين)`);
                 description.push(`للحصول على قرض، قدم طلبك من خلال: \`/قرض\``);
             } else {
-                const loanConfig = LOANS.find(l => l.amount === loan.loanAmount);
-                const totalToRepay = loanConfig ? loanConfig.totalToRepay : (loan.loanAmount * 1.10);
-                
-                const remaining = loan.remainingAmount || 0;
-                const daily = loan.dailyPayment || 1;
+                const loanAmount = Number(loan.loanAmount) || 0;
+                const remaining = Number(loan.remainingAmount) || 0;
+                const daily = Number(loan.dailyPayment) || 1;
+
+                const loanConfig = LOANS.find(l => l.amount === loanAmount);
+                const totalToRepay = loanConfig ? loanConfig.totalToRepay : (loanAmount * 1.10);
                 
                 const daysLeft = Math.ceil(remaining / daily);
 
                 description.push(`✥ **حـالــة القــرض 🏦:**`);
-                description.push(`✬ قيـمـة القـرض: **${(loan.loanAmount || 0).toLocaleString()}** ${EMOJI_MORA}`);
+                description.push(`✬ قيـمـة القـرض: **${loanAmount.toLocaleString()}** ${EMOJI_MORA}`);
                 description.push(`✬ اجمـالـي القـرض: **${totalToRepay.toLocaleString()}** ${EMOJI_MORA}`);
                 description.push(`✬ متبقي للسداد: **${remaining.toLocaleString()}** ${EMOJI_MORA}`);
                 description.push(`✬ القسط اليومي: **${daily.toLocaleString()}** ${EMOJI_MORA}`);
