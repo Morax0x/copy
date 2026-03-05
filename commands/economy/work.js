@@ -5,7 +5,6 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 
 let updateGuildStat;
 try {
-    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
@@ -58,18 +57,15 @@ module.exports = {
         };
 
         const guildId = guild.id;
-        const sql = client.sql;
+        const db = client.sql;
 
-        const getScore = client.getLevel;
-        const setScore = client.setLevel;
-
-        let data = getScore.get(user.id, guildId);
+        let data = await client.getLevel(user.id, guildId);
         if (!data) {
             data = { ...client.defaultData, user: user.id, guild: guildId };
         }
 
         const now = Date.now();
-        const timeLeft = (data.lastWork || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(data.lastWork) || 0) + COOLDOWN_MS - now;
 
         if (timeLeft > 0 && user.id !== ownerID) {
             const minutes = Math.floor(timeLeft / 60000);
@@ -80,30 +76,35 @@ module.exports = {
         const baseAmount = Math.floor(Math.random() * (200 - 50 + 1)) + 50;
         const randomJob = jobs[Math.floor(Math.random() * jobs.length)];
 
-        const moraMultiplier = calculateMoraBuff(member, sql);
+        const moraMultiplier = await calculateMoraBuff(member, db);
         let finalAmount = Math.floor(baseAmount * moraMultiplier);
 
         let casinoTax = 0;
         let taxText = "";
 
-        const settings = sql.prepare("SELECT roleCasinoKing FROM settings WHERE guild = ?").get(guildId);
-        if (settings && settings.roleCasinoKing && !member.roles.cache.has(settings.roleCasinoKing)) {
-            const kingMembers = guild.roles.cache.get(settings.roleCasinoKing)?.members;
-            if (kingMembers && kingMembers.size > 0) {
-                const king = kingMembers.first();
-                casinoTax = Math.floor(finalAmount * 0.01);
-                if (casinoTax > 0) {
-                    finalAmount -= casinoTax;
-                    taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                    sql.prepare('UPDATE levels SET bank = bank + ? WHERE user = ? AND guild = ?').run(casinoTax, king.id, guildId);
+        try {
+            const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guildId]);
+            const settings = settingsRes.rows[0];
+            const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
+
+            if (roleId && !member.roles.cache.has(roleId)) {
+                const kingMembers = guild.roles.cache.get(roleId)?.members;
+                if (kingMembers && kingMembers.size > 0) {
+                    const king = kingMembers.first();
+                    casinoTax = Math.floor(finalAmount * 0.01);
+                    if (casinoTax > 0) {
+                        finalAmount -= casinoTax;
+                        taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
+                        await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guildId]);
+                    }
                 }
             }
-        }
+        } catch(e) {}
 
-        data.mora = (data.mora || 0) + finalAmount;
+        data.mora = (Number(data.mora) || 0) + finalAmount;
         data.lastWork = now;
 
-        setScore.run(data);
+        await client.setLevel(data);
 
         if (updateGuildStat) {
             updateGuildStat(client, guildId, user.id, 'mora_earned', finalAmount);
