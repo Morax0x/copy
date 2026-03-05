@@ -59,7 +59,7 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guild = isSlash ? interactionOrMessage.guild : interactionOrMessage.guild;
         const client = interactionOrMessage.client;
-        const sql = client.sql;
+        const db = client.sql;
 
         const reply = async (payload) => {
             if (payload.ephemeral) { delete payload.ephemeral; payload.flags = [MessageFlags.Ephemeral]; }
@@ -74,19 +74,19 @@ module.exports = {
             return reply({ content: "⚠️ **لديك رحلة صيد جارية!**", ephemeral: true });
         }
 
-        let userData = client.getLevel.get(user.id, guild.id);
+        let userData = await client.getLevel(user.id, guild.id);
         if (!userData) {
             userData = { ...client.defaultData, user: user.id, guild: guild.id, rodLevel: 1, boatLevel: 1, currentLocation: 'beach', lastFish: 0 };
-            client.setLevel.run(userData);
+            await client.setLevel(userData);
         }
 
         const now = Date.now();
-        const currentRod = rodsConfig.find(r => r.level === (userData.rodLevel || 1)) || rodsConfig[0];
-        const currentBoat = boatsConfig.find(b => b.level === (userData.boatLevel || 1)) || boatsConfig[0];
+        const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel) || 1)) || rodsConfig[0];
+        const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel) || 1)) || boatsConfig[0];
         let cooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
         if (cooldown < 10000) cooldown = 10000;
 
-        const lastFish = userData.lastFish || 0;
+        const lastFish = Number(userData.lastFish) || 0;
         if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
             const remaining = lastFish + cooldown - now;
             const minutes = Math.floor((remaining % 3600000) / 60000);
@@ -94,9 +94,14 @@ module.exports = {
             return reply({ content: `قمـت بالصيـد مؤخـرا انتـظـر **${minutes}:${seconds}** لتـذهب للصيـد مجددا` });
         }
 
-        const woundedDebuff = sql.prepare("SELECT expiresAt FROM user_buffs WHERE userID = ? AND guildID = ? AND buffType = 'pvp_wounded' AND expiresAt > ?").get(user.id, guild.id, now);
+        let woundedDebuff = null;
+        try {
+            const res = await db.query("SELECT expiresAt FROM user_buffs WHERE userID = $1 AND guildID = $2 AND buffType = 'pvp_wounded' AND expiresAt > $3", [user.id, guild.id, now]);
+            woundedDebuff = res.rows[0];
+        } catch(e) {}
+
         if (woundedDebuff) {
-            const minutesLeft = Math.ceil((woundedDebuff.expiresAt - now) / 60000);
+            const minutesLeft = Math.ceil((Number(woundedDebuff.expiresat) - now) / 60000);
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
@@ -105,20 +110,29 @@ module.exports = {
 
         let usedBaitName = null;
         let baitLuckBonus = 0;
-        const userBaits = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(user.id, guild.id);
-        const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === invItem.itemID && invItem.quantity > 0));
+        let userBaits = [];
+
+        try {
+            const res = await db.query("SELECT * FROM user_inventory WHERE userID = $1 AND guildID = $2", [user.id, guild.id]);
+            userBaits = res.rows;
+        } catch(e) {}
+
+        const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === invItem.itemid && Number(invItem.quantity) > 0));
 
         if (availableBaits.length > 0) {
             const richBaits = availableBaits.map(invItem => {
-                const config = fishingConfig.baits.find(b => b.id === invItem.itemID);
+                const config = fishingConfig.baits.find(b => b.id === invItem.itemid);
                 return { ...invItem, luck: config.luck, name: config.name };
             });
             richBaits.sort((a, b) => b.luck - a.luck);
             const bestBait = richBaits[0];
             usedBaitName = bestBait.name;
             baitLuckBonus = bestBait.luck;
-            if (bestBait.quantity > 1) sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE id = ?").run(bestBait.id);
-            else sql.prepare("DELETE FROM user_inventory WHERE id = ?").run(bestBait.id);
+
+            try {
+                if (Number(bestBait.quantity) > 1) await db.query("UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1", [bestBait.id]);
+                else await db.query("DELETE FROM user_inventory WHERE id = $1", [bestBait.id]);
+            } catch(e) {}
         }
 
         activeFishingSessions.add(user.id);
@@ -235,7 +249,10 @@ module.exports = {
                         .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
                         .setColor(Colors.Red);
                     
-                    sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
+                    try {
+                        await db.query('UPDATE levels SET lastFish = $1 WHERE "user" = $2 AND guild = $3', [Date.now(), user.id, guild.id]);
+                    } catch(e) {}
+
                     activeFishingSessions.delete(user.id);
                     
                     await j.editReply({ content: '', embeds: [failEmbed], components: [] });
@@ -255,21 +272,23 @@ module.exports = {
                     
                     if (possibleMonsters.length > 0 && monsterTriggered) {
                         const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        let playerWeapon = pvpCore.getWeaponData(sql, j.member);
+                        let playerWeapon = pvpCore.getWeaponData(db, j.member);
                         if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
                             await j.editReply({ content: '' }); 
-                            await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
+                            await pvpCore.startPveBattle(j, client, db, j.member, monster, playerWeapon);
                             return; 
                         }
                     }
 
                     let isFisherKing = false;
                     try {
-                        const settings = sql.prepare("SELECT roleFisherKing FROM settings WHERE guild = ?").get(guild.id);
-                        if (settings && settings.roleFisherKing && j.member.roles.cache.has(settings.roleFisherKing)) {
+                        const settingsRes = await db.query("SELECT roleFisherKing FROM settings WHERE guild = $1", [guild.id]);
+                        const settings = settingsRes.rows[0];
+                        const roleId = settings?.rolefisherking || settings?.roleFisherKing;
+                        if (roleId && j.member.roles.cache.has(roleId)) {
                             isFisherKing = true;
                         }
                     } catch (e) {}
@@ -288,9 +307,8 @@ module.exports = {
                     const allowedRarities = currentLocation.fish_types;
                     const maxRarity = currentRod.max_rarity || 2;
 
-                    const transaction = sql.transaction(() => {
-                        const addFishStmt = sql.prepare(`INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = quantity + ?`);
-                        
+                    try {
+                        await db.query('BEGIN');
                         for (let k = 0; k < fishCount; k++) {
                             const rerolls = 1 + Math.floor(totalLuck / 20);
                             let bestFish = null;
@@ -308,19 +326,20 @@ module.exports = {
                             if (bestFish) {
                                 caughtFish.push(bestFish);
                                 totalValue += bestFish.price;
-                                addFishStmt.run(guild.id, user.id, bestFish.id, 1, 1);
+                                await db.query("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = user_inventory.quantity + $5", [guild.id, user.id, bestFish.id, 1, 1]);
                             }
                         }
                         
-                        sql.prepare("UPDATE levels SET mora = mora + ?, lastFish = ? WHERE user = ? AND guild = ?").run(totalValue, Date.now(), user.id, guild.id);
+                        await db.query('UPDATE levels SET mora = mora + $1, lastFish = $2 WHERE "user" = $3 AND guild = $4', [totalValue, Date.now(), user.id, guild.id]);
                         
-                        if (updateGuildStat) {
-                            updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
-                        }
+                        await db.query('COMMIT');
+                    } catch (e) {
+                        await db.query('ROLLBACK');
+                    }
 
-                    });
-                    
-                    transaction(); 
+                    if (updateGuildStat) {
+                        updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
+                    }
 
                     const summary = {};
                     caughtFish.forEach(f => {
@@ -355,7 +374,9 @@ module.exports = {
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
-                        sql.prepare("UPDATE levels SET lastFish = ? WHERE user = ? AND guild = ?").run(Date.now(), user.id, guild.id);
+                        try {
+                            await db.query('UPDATE levels SET lastFish = $1 WHERE "user" = $2 AND guild = $3', [Date.now(), user.id, guild.id]);
+                        } catch(e) {}
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
