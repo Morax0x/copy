@@ -13,7 +13,6 @@ const { handleLandInteractions } = require('./handlers/farm-land.js');
 const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
 
-// 🔥 استدعاء مولد الإشعارات عشان يشتغل وما يعطي خطأ 🔥
 const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
 const marketConfig = require('./json/market-items.json');
@@ -70,16 +69,9 @@ async function updateBuilderEmbed(interaction, data) {
     } catch (error) {}
 }
 
-module.exports = (client, sql, antiRolesCache) => {
+module.exports = (client, db, antiRolesCache) => {
 
     client.on(Events.InteractionCreate, async i => {
-
-        if (!sql.open && !i.isAutocomplete()) {
-            if (!i.replied && !i.deferred) {
-                return i.reply({ content: "⚠️ قاعدة البيانات يتم تحديثها حالياً...", flags: [MessageFlags.Ephemeral] }).catch(() => {});
-            }
-            return;
-        }
 
         if (processingInteractions.has(i.user.id)) {
             if (!i.isModalSubmit()) {
@@ -98,23 +90,24 @@ module.exports = (client, sql, antiRolesCache) => {
                 if (!command) return;
 
                 try {
-                    const isBlacklisted = sql.prepare("SELECT 1 FROM blacklistTable WHERE id = ?").get(i.user.id);
+                    const isBlacklisted = (await db.query("SELECT 1 FROM blacklistTable WHERE id = $1", [i.user.id])).rows.length > 0;
                     if (isBlacklisted) return i.reply({ content: "🚫 **أنت في القائمة السوداء.**", flags: [MessageFlags.Ephemeral] });
                 } catch (e) {}
 
                 let isAllowed = false;
                 if (i.member.permissions.has(PermissionsBitField.Flags.Administrator)) isAllowed = true;
                 else {
-                    const settings = sql.prepare("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = ?").get(i.guild.id);
+                    const settingsResult = await db.query("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = $1", [i.guild.id]);
+                    const settings = settingsResult.rows[0];
                     if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     } else {
                         try {
-                            const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.id);
-                            const categoryPerm = i.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(i.guild.id, command.name, i.channel.parentId) : null;
+                            const channelPerm = (await db.query("SELECT 1 FROM command_permissions WHERE guildID = $1 AND commandName = $2 AND channelID = $3", [i.guild.id, command.name, i.channel.id])).rows.length > 0;
+                            const categoryPerm = i.channel.parentId ? (await db.query("SELECT 1 FROM command_permissions WHERE guildID = $1 AND commandName = $2 AND channelID = $3", [i.guild.id, command.name, i.channel.parentId])).rows.length > 0 : false;
                             if (channelPerm || categoryPerm) isAllowed = true;
                             else {
-                                const hasRestrictions = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ?").get(i.guild.id, command.name);
+                                const hasRestrictions = (await db.query("SELECT 1 FROM command_permissions WHERE guildID = $1 AND commandName = $2", [i.guild.id, command.name])).rows.length > 0;
                                 if (!hasRestrictions) isAllowed = true;
                             }
                         } catch (e) { isAllowed = true; }
@@ -144,12 +137,9 @@ module.exports = (client, sql, antiRolesCache) => {
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
-                // ====================================================
-                // 💤 معالجة أزرار نظام الـ AFK (جديد) 🔥
-                // ====================================================
                 if (id.startsWith('notify_afk_')) {
                     const targetID = id.split('_')[2];
-                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+                    const afkData = (await db.query("SELECT * FROM afk WHERE userID = $1 AND guildID = $2", [targetID, i.guild.id])).rows[0];
 
                     if (!afkData) return i.reply({ content: "❌ هذا الشخص عاد بالفعل!", flags: [MessageFlags.Ephemeral] });
 
@@ -157,13 +147,13 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (subscribers.includes(i.user.id)) return i.reply({ content: "✅ أنت مسجل بالفعل في قائمة التنبيه.", flags: [MessageFlags.Ephemeral] });
 
                     subscribers.push(i.user.id);
-                    sql.prepare("UPDATE afk SET subscribers = ? WHERE userID = ? AND guildID = ?").run(JSON.stringify(subscribers), targetID, i.guild.id);
+                    await db.query("UPDATE afk SET subscribers = $1 WHERE userID = $2 AND guildID = $3", [JSON.stringify(subscribers), targetID, i.guild.id]);
                     await i.reply({ content: "🔔 **تم!** سأقوم بمنشنتك فور عودة العضو.", flags: [MessageFlags.Ephemeral] });
                     return;
 
                 } else if (id.startsWith('leave_msg_afk_')) {
                     const targetID = id.split('_')[3];
-                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+                    const afkData = (await db.query("SELECT * FROM afk WHERE userID = $1 AND guildID = $2", [targetID, i.guild.id])).rows[0];
                     if (!afkData) return i.reply({ content: "❌ هذا الشخص عاد للتو!", flags: [MessageFlags.Ephemeral] });
 
                     const modal = new ModalBuilder()
@@ -203,11 +193,9 @@ module.exports = (client, sql, antiRolesCache) => {
                     await i.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
                     return;
                 }
-                // ====================================================
 
-                // 👑 معالجة أزرار لوحة نقابة المغامرين
                 if (id.startsWith('guild_board_')) {
-                    await handleGuildBoard(i, client, sql);
+                    await handleGuildBoard(i, client, db);
                     return;
                 }
 
@@ -216,28 +204,27 @@ module.exports = (client, sql, antiRolesCache) => {
                 } else if (id.startsWith('giveaway_')) {
                     if (handleGiveawayInteraction) await handleGiveawayInteraction(client, i);
                 } else if (id.startsWith('customrole_')) {
-                    await handleCustomRoleInteraction(i, client, sql);
+                    await handleCustomRoleInteraction(i, client, db);
                 } else if (id.startsWith('boss_')) {
-                    await handleBossInteraction(i, client, sql);
+                    await handleBossInteraction(i, client, db);
                 } else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
-                    await handleFarmInteractions(i, client, sql);
+                    await handleFarmInteractions(i, client, db);
                 } else if (id.startsWith('land_')) {
-                    await handleLandInteractions(i, client, sql);
+                    await handleLandInteractions(i, client, db);
                 } else if (id.startsWith('farm_') || id.startsWith('shop_cat_')) {
                     return;
                 } else if (id.startsWith('streak_panel_')) {
-                    await handleStreakPanel(i, client, sql);
+                    await handleStreakPanel(i, client, db);
                 } else if (id.startsWith('rr_')) {
-                    await handleReactionRole(i, client, sql, antiRolesCache);
+                    await handleReactionRole(i, client, db, antiRolesCache);
                 } else if (id === 'g_reroll_select') {
-                    await handleReroll(i, client, sql);
+                    await handleReroll(i, client, db);
                 } 
-                // 🔥 تحديث شامل للقط جميع أوامر الدليل والمهام بدقة 🔥
                 else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
-                    await handleQuestPanel(i, client, sql);
+                    await handleQuestPanel(i, client, db);
                 } 
                 else if (id.startsWith('pvp_')) {
-                    await handlePvpInteraction(i, client, sql);
+                    await handlePvpInteraction(i, client, db);
                 } else if (
                     id === 'shop_open_menu' ||
                     (id.startsWith('buy_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_')) ||
@@ -256,25 +243,22 @@ module.exports = (client, sql, antiRolesCache) => {
                     if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
 
                     } else {
-                        if (id === 'shop_select_item') await handleShopSelectMenu(i, client, sql);
-                        else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, sql);
-                        else await handleShopInteractions(i, client, sql);
+                        if (id === 'shop_select_item') await handleShopSelectMenu(i, client, db);
+                        else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, db);
+                        else await handleShopInteractions(i, client, db);
                     }
                 } else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
-                    await handleGiveawayBuilderButtons(i, client, sql);
+                    await handleGiveawayBuilderButtons(i, client, db);
                 }
                 return;
             }
 
             if (i.isModalSubmit()) {
-                // ====================================================
-                // 💤 معالجة مودال الـ AFK (جديد) 🔥
-                // ====================================================
                 if (i.customId.startsWith('modal_afk_msg_')) {
                     const targetID = i.customId.split('_')[3];
                     const content = i.fields.getTextInputValue('msg_content');
 
-                    const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
+                    const afkData = (await db.query("SELECT * FROM afk WHERE userID = $1 AND guildID = $2", [targetID, i.guild.id])).rows[0];
                     
                     if (afkData) {
                         let messages = JSON.parse(afkData.messages || '[]');
@@ -285,14 +269,13 @@ module.exports = (client, sql, antiRolesCache) => {
                             timestamp: Math.floor(Date.now() / 1000)
                         });
 
-                        sql.prepare("UPDATE afk SET messages = ? WHERE userID = ? AND guildID = ?").run(JSON.stringify(messages), targetID, i.guild.id);
+                        await db.query("UPDATE afk SET messages = $1 WHERE userID = $2 AND guildID = $3", [JSON.stringify(messages), targetID, i.guild.id]);
                         await i.reply({ content: "✅ **تم إرسال رسالتك!** سيراها فور عودته.", flags: [MessageFlags.Ephemeral] });
                     } else {
                         await i.reply({ content: "❌ عاد الشخص قبل أن ترسل الرسالة.", flags: [MessageFlags.Ephemeral] });
                     }
                     return;
                 }
-                // ====================================================
 
                 if (i.customId.startsWith('bid_')) {
                     await handleAuctionSystem(i);
@@ -319,13 +302,13 @@ module.exports = (client, sql, antiRolesCache) => {
                     giveawayBuilders.set(i.user.id, data);
                     await updateBuilderEmbed(i, data);
                 } else if (i.customId.startsWith('farm_plant_modal_')) {
-                    await handleLandInteractions(i, client, sql);
+                    await handleLandInteractions(i, client, db);
                 } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
-                    await handleMarketInteraction(i, client, sql);
-                } else if (await handleShopModal(i, client, sql)) {
+                    await handleMarketInteraction(i, client, db);
+                } else if (await handleShopModal(i, client, db)) {
 
                 } else if (i.customId.startsWith('customrole_modal_')) {
-                    await handleCustomRoleInteraction(i, client, sql);
+                    await handleCustomRoleInteraction(i, client, db);
                 }
                 return;
             }
@@ -341,7 +324,7 @@ module.exports = (client, sql, antiRolesCache) => {
     });
 };
 
-async function handleMarketInteraction(interaction, client, sql) {
+async function handleMarketInteraction(interaction, client, db) {
     const user = interaction.user;
     const guild = interaction.guild;
 
@@ -354,7 +337,7 @@ async function handleMarketInteraction(interaction, client, sql) {
 
         if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.', ephemeral: true });
 
-        const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
+        const marketItem = (await db.query("SELECT * FROM market_items WHERE id = $1", [assetId])).rows[0];
 
         let currentPrice = 0;
         let itemName = assetId;
@@ -369,13 +352,13 @@ async function handleMarketInteraction(interaction, client, sql) {
             itemName = configItem.name;
         }
 
-        const userData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(user.id, guild.id);
+        const userData = (await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [user.id, guild.id])).rows[0];
         const userMora = userData ? userData.mora : 0;
         const totalCost = currentPrice * quantity;
 
         if (userMora < totalCost) return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**` });
 
-        const portfolioItem = sql.prepare("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
+        const portfolioItem = (await db.query("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId])).rows[0];
         let newPurchasePrice = currentPrice;
 
         if (portfolioItem) {
@@ -383,22 +366,19 @@ async function handleMarketInteraction(interaction, client, sql) {
             const oldPrice = portfolioItem.purchasePrice || 0;
             const oldTotalCost = oldQty * oldPrice;
             const newTotalCost = quantity * currentPrice;
-            const totalQty = oldQty + quantity;
+            const totalQty = parseInt(oldQty) + quantity;
             newPurchasePrice = Math.floor((oldTotalCost + newTotalCost) / totalQty);
         }
 
         try {
-            const transaction = sql.transaction(() => {
-                sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(totalCost, user.id, guild.id);
-                if (portfolioItem) {
-                    sql.prepare("UPDATE user_portfolio SET quantity = quantity + ?, purchasePrice = ? WHERE userID = ? AND guildID = ? AND itemID = ?")
-                        .run(quantity, newPurchasePrice, user.id, guild.id, assetId);
-                } else {
-                    sql.prepare("INSERT INTO user_portfolio (userID, guildID, itemID, quantity, purchasePrice) VALUES (?, ?, ?, ?, ?)")
-                        .run(user.id, guild.id, assetId, quantity, newPurchasePrice);
-                }
-            });
-            transaction();
+            await db.query('BEGIN');
+            await db.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [totalCost, user.id, guild.id]);
+            if (portfolioItem) {
+                await db.query("UPDATE user_portfolio SET quantity = quantity + $1, purchasePrice = $2 WHERE userID = $3 AND guildID = $4 AND itemID = $5", [quantity, newPurchasePrice, user.id, guild.id, assetId]);
+            } else {
+                await db.query("INSERT INTO user_portfolio (userID, guildID, itemID, quantity, purchasePrice) VALUES ($1, $2, $3, $4, $5)", [user.id, guild.id, assetId, quantity, newPurchasePrice]);
+            }
+            await db.query('COMMIT');
 
             const embed = new EmbedBuilder()
                 .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
@@ -409,6 +389,7 @@ async function handleMarketInteraction(interaction, client, sql) {
 
             await interaction.editReply({ embeds: [embed] });
         } catch (err) {
+            await db.query('ROLLBACK');
             console.error(err);
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
@@ -421,13 +402,13 @@ async function handleMarketInteraction(interaction, client, sql) {
 
         if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
 
-        const portfolioItem = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(user.id, guild.id, assetId);
+        const portfolioItem = (await db.query("SELECT quantity FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId])).rows[0];
 
-        if (!portfolioItem || portfolioItem.quantity < quantity) {
+        if (!portfolioItem || parseInt(portfolioItem.quantity) < quantity) {
             return interaction.editReply({ content: `🚫 لا تملك هذه الكمية للبيع! لديك: **${portfolioItem ? portfolioItem.quantity : 0}**` });
         }
 
-        const marketItem = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
+        const marketItem = (await db.query("SELECT * FROM market_items WHERE id = $1", [assetId])).rows[0];
         let currentPrice = marketItem ? marketItem.currentPrice : 0;
         if (currentPrice === 0) {
             const configItem = marketConfig.find(i => i.id === assetId);
@@ -437,15 +418,14 @@ async function handleMarketInteraction(interaction, client, sql) {
         const totalEarned = Math.floor(currentPrice * quantity);
 
         try {
-            const transaction = sql.transaction(() => {
-                sql.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(totalEarned, user.id, guild.id);
-                if (portfolioItem.quantity === quantity) {
-                    sql.prepare("DELETE FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").run(user.id, guild.id, assetId);
-                } else {
-                    sql.prepare("UPDATE user_portfolio SET quantity = quantity - ? WHERE userID = ? AND guildID = ? AND itemID = ?").run(quantity, user.id, guild.id, assetId);
-                }
-            });
-            transaction();
+            await db.query('BEGIN');
+            await db.query('UPDATE levels SET mora = mora + $1 WHERE "user" = $2 AND guild = $3', [totalEarned, user.id, guild.id]);
+            if (parseInt(portfolioItem.quantity) === quantity) {
+                await db.query("DELETE FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId]);
+            } else {
+                await db.query("UPDATE user_portfolio SET quantity = quantity - $1 WHERE userID = $2 AND guildID = $3 AND itemID = $4", [quantity, user.id, guild.id, assetId]);
+            }
+            await db.query('COMMIT');
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ تمت عملية البيع بنجاح')
@@ -454,13 +434,14 @@ async function handleMarketInteraction(interaction, client, sql) {
 
             await interaction.editReply({ embeds: [embed] });
         } catch (err) {
+            await db.query('ROLLBACK');
             console.error(err);
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
     }
 }
 
-async function handleGiveawayBuilderButtons(i, client, sql) {
+async function handleGiveawayBuilderButtons(i, client, db) {
     const id = i.customId;
 
     if (id === 'g_builder_content') {
@@ -519,8 +500,7 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
         }
 
         const gMessage = await targetChannel.send({ embeds: [embed], components: [row] });
-        sql.prepare("INSERT INTO active_giveaways (messageID, guildID, channelID, prize, endsAt, winnerCount, xpReward, moraReward, isFinished) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)")
-            .run(gMessage.id, i.guild.id, targetChannel.id, data.prize, endsAt, winnerCount, data.xpReward || 0, data.moraReward || 0);
+        await db.query("INSERT INTO active_giveaways (messageID, guildID, channelID, prize, endsAt, winnerCount, xpReward, moraReward, isFinished) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0)", [gMessage.id, i.guild.id, targetChannel.id, data.prize, endsAt, winnerCount, data.xpReward || 0, data.moraReward || 0]);
 
         setTimeout(() => endGiveaway(client, gMessage.id), durationMs);
         giveawayBuilders.delete(i.user.id);
@@ -531,14 +511,14 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
         if (!i.replied && !i.deferred) await i.deferUpdate().catch(() => {});
         const giveawayID = i.message.id;
         const userID = i.user.id;
-        const existingEntry = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(giveawayID, userID);
+        const existingEntry = (await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [giveawayID, userID])).rows[0];
         let replyMessage = "";
         if (existingEntry) {
-            sql.prepare("DELETE FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").run(giveawayID, userID);
+            await db.query("DELETE FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [giveawayID, userID]);
             replyMessage = "✅ تـم الـغـاء الـمـشاركـة";
         } else {
-            const weight = await getUserWeight(i.member, sql).catch(() => 1);
-            sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(giveawayID, userID, weight);
+            const weight = await getUserWeight(i.member, db).catch(() => 1);
+            await db.query("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES ($1, $2, $3)", [giveawayID, userID, weight]);
             replyMessage = `✅ تـمـت الـمـشاركـة بنـجـاح دخـلت بـ: ${weight} تذكـرة`;
         }
         await i.followUp({ content: replyMessage, flags: [MessageFlags.Ephemeral] });
@@ -547,15 +527,15 @@ async function handleGiveawayBuilderButtons(i, client, sql) {
         const messageID = i.message.id;
         const userID = i.user.id;
         try {
-            const giveaway = sql.prepare("SELECT * FROM active_giveaways WHERE messageID = ? AND isFinished = 0").get(messageID);
+            const giveaway = (await db.query("SELECT * FROM active_giveaways WHERE messageID = $1 AND isFinished = 0", [messageID])).rows[0];
             if (!giveaway || (giveaway.endsAt && giveaway.endsAt < Date.now())) return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
-            const existing = sql.prepare("SELECT 1 FROM giveaway_entries WHERE giveawayID = ? AND userID = ?").get(messageID, userID);
+            const existing = (await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [messageID, userID])).rows[0];
             if (existing) return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
 
             let weight = 1;
-            try { weight = await getUserWeight(i.member, sql); } catch (err) {}
+            try { weight = await getUserWeight(i.member, db); } catch (err) {}
 
-            sql.prepare("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES (?, ?, ?)").run(messageID, userID, weight);
+            await db.query("INSERT INTO giveaway_entries (giveawayID, userID, weight) VALUES ($1, $2, $3)", [messageID, userID, weight]);
             return i.followUp({ content: `✅ تم التسجيل بنجاح (تذاكر: ${weight})!`, flags: [MessageFlags.Ephemeral] });
         } catch (error) {
             return i.followUp({ content: "❌ حدث خطأ.", flags: [MessageFlags.Ephemeral] });
