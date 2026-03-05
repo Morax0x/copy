@@ -1,5 +1,5 @@
 const { EmbedBuilder, SlashCommandBuilder } = require("discord.js");
-const marketConfig = require('../../json/market-items.json'); // 🔥 استيراد ملف عناصر السوق فقط
+const marketConfig = require('../../json/market-items.json'); 
 
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 
@@ -44,13 +44,14 @@ module.exports = {
             }
         };
 
-        const sql = client.sql;
+        const db = client.sql;
 
-        // جلب ممتلكات المستخدم من القاعدة
-        // 🔥 ملاحظة: يجب التأكد أن عمود purchasePrice تمت إضافته للقاعدة ليعمل الكود بدقة
-        const portfolio = sql.prepare("SELECT * FROM user_portfolio WHERE guildID = ? AND userID = ?").all(guild.id, user.id);
+        let portfolio = [];
+        try {
+            const res = await db.query("SELECT * FROM user_portfolio WHERE guildID = $1 AND userID = $2", [guild.id, user.id]);
+            portfolio = res.rows;
+        } catch(e) {}
         
-        // استخدام ملف JSON لتحديد ما هي عناصر السوق المسموح عرضها فقط
         const market = new Map(marketConfig.map(item => [item.id, item]));
 
         const embed = new EmbedBuilder()
@@ -59,41 +60,42 @@ module.exports = {
             .setThumbnail(user.displayAvatarURL())
             .setImage('https://media.discordapp.net/attachments/1394280285289320550/1432409477272965190/line.png?ex=690eca88&is=690d7908&hm=b21b91d8e7b66da4c28a29dd513bd1104c76ab6c875f23cd9405daf3ce48c050&=&format=webp&quality=lossless');
 
-        // مصفوفة لتخزين العناصر الصالحة للعرض فقط
         let validItems = [];
         let totalValue = 0;
 
         for (const item of portfolio) {
-            // التحقق مما إذا كان العنصر موجوداً في قائمة السوق (JSON)
-            const marketItem = market.get(item.itemID);
+            const itemID = item.itemid || item.itemID;
+            const itemQty = Number(item.quantity) || 0;
+            const itemPurchasePrice = Number(item.purchaseprice || item.purchasePrice) || 0;
+
+            const marketItem = market.get(itemID);
             
-            // إذا لم يكن موجوداً في ملف السوق (مثل الطعوم)، يتم تجاهله
             if (!marketItem) continue;
 
-            // محاولة جلب السعر المحدث (الحالي) من الداتابيس
             let currentPrice = marketItem.price;
             try {
-                const dbItem = sql.prepare("SELECT currentPrice FROM market_items WHERE id = ?").get(item.itemID);
-                if (dbItem && dbItem.currentPrice) currentPrice = dbItem.currentPrice;
+                const dbItemRes = await db.query("SELECT currentPrice FROM market_items WHERE id = $1", [itemID]);
+                const dbItem = dbItemRes.rows[0];
+                if (dbItem && dbItem.currentprice) currentPrice = Number(dbItem.currentprice);
+                else if (dbItem && dbItem.currentPrice) currentPrice = Number(dbItem.currentPrice);
             } catch (e) {}
 
-            const itemTotalValue = currentPrice * item.quantity;
+            const itemTotalValue = currentPrice * itemQty;
             totalValue += itemTotalValue;
 
-            // 🔥 جلب سعر الشراء المخزن (إذا وجد)
-            let purchasePrice = item.purchasePrice || 0;
+            let purchasePrice = itemPurchasePrice;
 
             validItems.push({
                 name: marketItem.name,
-                quantity: item.quantity,
+                quantity: itemQty,
                 value: itemTotalValue,
                 price: currentPrice,
-                buyPrice: purchasePrice // السعر الذي اشترى به
+                buyPrice: purchasePrice 
             });
         }
 
         if (validItems.length === 0) {
-            embed.setDescription("✥ محفظتك الاستثمارية فارغة حالياً. استخدم `/market` لشراء الأصول.");
+            embed.setDescription("✥ محفظتك الاستثمارية فارغة حالياً. استخدم `/سوق` لشراء الأصول.");
         } else {
             let descriptionLines = []; 
             
@@ -102,12 +104,11 @@ module.exports = {
                 descriptionLines.push(`✬ قيمـة الاصـل: ${vItem.value.toLocaleString()} ${EMOJI_MORA}`);
                 descriptionLines.push(`✦ سعـر الاصـل الحالي: ${vItem.price.toLocaleString()} ${EMOJI_MORA}`);
                 
-                // 🔥 إضافة سطر سعر الشراء 🔥
                 if (vItem.buyPrice > 0) {
                     descriptionLines.push(`✦ سعـر الشـراء : ${vItem.buyPrice.toLocaleString()} ${EMOJI_MORA}`);
                 }
                 
-                descriptionLines.push(`\u200B`); // سطر فاصل
+                descriptionLines.push(`\u200B`); 
             }
 
             embed.setDescription(
