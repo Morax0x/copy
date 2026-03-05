@@ -1,5 +1,3 @@
-// streak-handler.js
-
 const { PermissionsBitField, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -8,10 +6,8 @@ const KSA_TIMEZONE = 'Asia/Riyadh';
 const EMOJI_MEDIA_STREAK = '<a:Streak:1438932297519730808>';
 const EMOJI_SHIELD = '<:Shield:1437804676224516146>';
 
-// 🔥🔥 قائمة المعالجة الحالية لمنع التضارب (Race Conditions) 🔥🔥
 const processingUsers = new Set();
 
-// ( 🌟 القائمة الحصر.ية للفواصل المسموحة فقط 🌟 )
 const SEPARATORS_CLEAN_LIST = ['»', '•', '✦', '★', '❖', '✧', '✬', '〢', '┇', '\\|'];
 const DEFAULT_SEPARATOR = '»';
 
@@ -33,12 +29,10 @@ function getDayDifference(dateStr1, dateStr2) {
     return Math.round(diffTime / DAY_MS);
 }
 
-// 🌟 دالة حساب معزز الخبرة (XP) 🌟
-function calculateBuffMultiplier(member, sql) {
-    if (!sql || typeof sql.prepare !== 'function') return 1.0;
+async function calculateBuffMultiplier(member, db) {
+    if (!db) return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
     
-    const getUserBuffs = sql.prepare("SELECT * FROM user_buffs WHERE userID = ? AND guildID = ? AND expiresAt > ? AND buffType = 'xp'");
     let totalPercent = 0.0;
     
     const day = new Date().getUTCDay();
@@ -46,12 +40,12 @@ function calculateBuffMultiplier(member, sql) {
     
     const userRoles = member.roles.cache.map(r => r.id);
     if (userRoles.length > 0) {
-        const placeholders = userRoles.map(() => '?').join(',');
         try {
-            const roleBuffs = sql.prepare(`SELECT * FROM role_buffs WHERE roleID IN (${placeholders})`).all(...userRoles);
+            const placeholders = userRoles.map((_, i) => `$${i + 1}`).join(',');
+            const roleBuffsRes = await db.query(`SELECT * FROM role_buffs WHERE roleID IN (${placeholders})`, userRoles);
             let rolesTotalBuff = 0;
-            for (const buff of roleBuffs) {
-                rolesTotalBuff += buff.buffPercent;
+            for (const buff of roleBuffsRes.rows) {
+                rolesTotalBuff += Number(buff.buffPercent);
             }
             totalPercent += (rolesTotalBuff / 100);
         } catch (e) {
@@ -60,19 +54,20 @@ function calculateBuffMultiplier(member, sql) {
     }
     
     let itemBuffTotal = 0;
-    const userBuffs = getUserBuffs.all(member.id, member.guild.id, Date.now());
-    for (const buff of userBuffs) {
-        itemBuffTotal += buff.multiplier;
-    }
+    try {
+        const userBuffsRes = await db.query("SELECT * FROM user_buffs WHERE userID = $1 AND guildID = $2 AND expiresAt > $3 AND buffType = 'xp'", [member.id, member.guild.id, Date.now()]);
+        for (const buff of userBuffsRes.rows) {
+            itemBuffTotal += Number(buff.multiplier);
+        }
+    } catch (e) {}
     totalPercent += itemBuffTotal;
 
     if (totalPercent < -1.0) totalPercent = -1.0;
     return 1.0 + totalPercent;
 }
 
-// 🌟 دالة حساب معزز المورا (الأموال) 🌟
-function calculateMoraBuff(member, sql) {
-    if (!sql || typeof sql.prepare !== 'function') return 1.0;
+async function calculateMoraBuff(member, db) {
+    if (!db) return 1.0;
     if (!member || !member.roles || !member.roles.cache) return 1.0;
 
     let totalBuffPercent = 0;
@@ -85,23 +80,24 @@ function calculateMoraBuff(member, sql) {
     const userRoles = member.roles.cache.map(r => r.id);
     const guildID = member.guild.id;
     try {
-        const allBuffRoles = sql.prepare("SELECT * FROM role_mora_buffs WHERE guildID = ?").all(guildID);
+        const allBuffRolesRes = await db.query("SELECT * FROM role_mora_buffs WHERE guildID = $1", [guildID]);
+        const allBuffRoles = allBuffRolesRes.rows;
         let roleBuffSum = 0;
         for (const roleId of userRoles) {
             const buffRole = allBuffRoles.find(r => r.roleID === roleId);
-            if (buffRole) roleBuffSum += buffRole.buffPercent;
+            if (buffRole) roleBuffSum += Number(buffRole.buffPercent);
         }
         totalBuffPercent += roleBuffSum;
     } catch (e) {
         console.error("Error calculating Mora Role Buff:", e);
     }
 
-    const tempBuffs = sql.prepare("SELECT * FROM user_buffs WHERE guildID = ? AND userID = ? AND buffType = 'mora' AND expiresAt > ?")
-        .all(guildID, member.id, Date.now());
-
-    tempBuffs.forEach(buff => {
-        totalBuffPercent += buff.buffPercent;
-    });
+    try {
+        const tempBuffsRes = await db.query("SELECT * FROM user_buffs WHERE guildID = $1 AND userID = $2 AND buffType = 'mora' AND expiresAt > $3", [guildID, member.id, Date.now()]);
+        tempBuffsRes.rows.forEach(buff => {
+            totalBuffPercent += Number(buff.buffPercent);
+        });
+    } catch (e) {}
 
     let finalMultiplier = 1 + (totalBuffPercent / 100);
     if (finalMultiplier < 0) finalMultiplier = 0;
@@ -109,17 +105,23 @@ function calculateMoraBuff(member, sql) {
     return finalMultiplier;
 }
 
-// 🌟 دالة تحديث الاسم (تم إضافة حماية اللفل من الحذف) 🌟
-async function updateNickname(member, sql) {
+async function updateNickname(member, db) {
     if (!member) return;
-    if (!sql || typeof sql.prepare !== 'function') return;
+    if (!db) return;
     
     if (member.id === member.guild.ownerId) return;
     if (!member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageNicknames)) return;
     if (!member.manageable) return;
 
-    const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-    const settings = sql.prepare("SELECT streakEmoji FROM settings WHERE guild = ?").get(member.guild.id);
+    let streakData = null;
+    let settings = null;
+    try {
+        const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [member.guild.id, member.id]);
+        streakData = streakRes.rows[0];
+        const settingsRes = await db.query("SELECT streakEmoji FROM settings WHERE guild = $1", [member.guild.id]);
+        settings = settingsRes.rows[0];
+    } catch (e) {}
+
     const streakEmoji = settings?.streakEmoji || '🔥';
 
     let separator = streakData?.separator;
@@ -128,12 +130,11 @@ async function updateNickname(member, sql) {
         separator = DEFAULT_SEPARATOR;
     }
 
-    const streakCount = streakData?.streakCount || 0;
-    const nicknameActive = streakData?.nicknameActive ?? 1;
+    const streakCount = streakData?.streakCount ? Number(streakData.streakCount) : 0;
+    const nicknameActive = streakData?.nicknameActive ? Number(streakData.nicknameActive) : 1;
 
     let baseName = member.displayName;
 
-    // 🔥🔥 حفظ بادئة اللفل (عشان ما يتهاوش البوت مع نفسه) 🔥🔥
     let prefix = "";
     const prefixMatch = baseName.match(/^(\[.*?\]|【.*?】)\s*/);
     if (prefixMatch) {
@@ -141,13 +142,12 @@ async function updateNickname(member, sql) {
         baseName = baseName.replace(/^(\[.*?\]|【.*?】)\s*/, '').trim();
     }
 
-    // تنظيف الستريك القديم فقط
     const cleanRegex = new RegExp(`\\s*(${SEPARATORS_CLEAN_LIST.join('|')})\\s*\\d+.*$`, 'i');
     baseName = baseName.replace(cleanRegex, '').trim();
     baseName = baseName.replace(cleanRegex, '').trim();
 
     let newName;
-    if (streakCount > 0 && nicknameActive) {
+    if (streakCount > 0 && nicknameActive === 1) {
         newName = `${prefix}${baseName} ${separator} ${streakCount} ${streakEmoji}`;
     } else {
         newName = `${prefix}${baseName}`;
@@ -159,7 +159,6 @@ async function updateNickname(member, sql) {
         newName = `${prefix}${baseName}${suffix}`;
     }
 
-    // 🔥 الحماية من السبام: فقط عدل إذا كان الاسم مختلفاً 🔥
     if (member.displayName !== newName) {
         try {
             await member.setNickname(newName);
@@ -167,16 +166,21 @@ async function updateNickname(member, sql) {
     }
 }
 
-async function checkDailyStreaks(client, sql) {
+async function checkDailyStreaks(client, db) {
     console.log("[Streak] 🔄 بدء الفحص اليومي للستريك...");
-    const allStreaks = sql.prepare("SELECT * FROM streaks WHERE streakCount > 0").all();
+    let allStreaks = [];
+    try {
+        const res = await db.query("SELECT * FROM streaks WHERE streakCount > 0");
+        allStreaks = res.rows;
+    } catch (e) {
+        console.error(e);
+        return;
+    }
+
     const todayKSA = getKSADateString(Date.now());
 
-    const updateStreak = sql.prepare("UPDATE streaks SET streakCount = @streakCount, hasGracePeriod = @hasGracePeriod, hasItemShield = @hasItemShield, lastMessageTimestamp = @lastMessageTimestamp WHERE id = @id");
-    const settings = sql.prepare("SELECT streakEmoji FROM settings WHERE guild = ?");
-
     for (const streakData of allStreaks) {
-        const lastDateKSA = getKSADateString(streakData.lastMessageTimestamp);
+        const lastDateKSA = getKSADateString(Number(streakData.lastMessageTimestamp));
         const diffDays = getDayDifference(todayKSA, lastDateKSA);
 
         if (diffDays <= 1) continue;
@@ -187,8 +191,14 @@ async function checkDailyStreaks(client, sql) {
             member = await guild.members.fetch(streakData.userID);
         } catch (err) { continue; }
 
-        const streakEmoji = settings.get(streakData.guildID)?.streakEmoji || '🔥';
-        const sendDM = streakData.dmNotify === 1;
+        let settings = {};
+        try {
+            const sRes = await db.query("SELECT streakEmoji FROM settings WHERE guild = $1", [streakData.guildID]);
+            if (sRes.rows.length > 0) settings = sRes.rows[0];
+        } catch (e) {}
+
+        const streakEmoji = settings.streakEmoji || '🔥';
+        const sendDM = Number(streakData.dmNotify) === 1;
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -198,20 +208,20 @@ async function checkDailyStreaks(client, sql) {
         );
 
         if (diffDays === 2) {
-            if (streakData.hasItemShield === 1) {
+            if (Number(streakData.hasItemShield) === 1) {
                 streakData.hasItemShield = 0;
                 streakData.lastMessageTimestamp = Date.now(); 
-                updateStreak.run(streakData);
+                await db.query("UPDATE streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMessageTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMessageTimestamp, streakData.id]);
                 if (sendDM) {
                     const embed = new EmbedBuilder().setTitle('✶ اشـعـارات الـستريـك').setColor(Colors.Green)
                         .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
                         .setDescription(`- 🛡️ **تم تفعيل درع المتجر!**\n- تم حماية الستريك الخاص بك (${streakData.streakCount} ${streakEmoji}) من الضياع.\n- لا تنسَ التفاعل اليوم!`);
                     member.send({ embeds: [embed], components: [row] }).catch(() => {});
                 }
-            } else if (streakData.hasGracePeriod === 1) {
+            } else if (Number(streakData.hasGracePeriod) === 1) {
                 streakData.hasGracePeriod = 0;
                 streakData.lastMessageTimestamp = Date.now(); 
-                updateStreak.run(streakData);
+                await db.query("UPDATE streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMessageTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMessageTimestamp, streakData.id]);
                 if (sendDM) {
                     const embed = new EmbedBuilder().setTitle('✶ اشـعـارات الـستريـك').setColor(Colors.Green)
                         .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
@@ -222,52 +232,44 @@ async function checkDailyStreaks(client, sql) {
                 const oldStreak = streakData.streakCount;
                 streakData.streakCount = 0;
                 streakData.hasGracePeriod = 0;
-                updateStreak.run(streakData);
+                await db.query("UPDATE streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMessageTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMessageTimestamp, streakData.id]);
                 if (sendDM) {
                     const embed = new EmbedBuilder().setTitle('✶ اشـعـارات الـستريـك').setColor(Colors.Red)
                         .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
                         .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت الـستريـك 💔\n- لم تكن تملك اي درع للحماية.\n- كـان ستريـكك: ${oldStreak}`);
                     member.send({ embeds: [embed], components: [row] }).catch(() => {});
                 }
-                if (streakData.nicknameActive === 1) await updateNickname(member, sql);
+                if (Number(streakData.nicknameActive) === 1) await updateNickname(member, db);
             }
 
         } else if (diffDays > 2) {
             const oldStreak = streakData.streakCount;
             streakData.streakCount = 0;
             streakData.hasGracePeriod = 0;
-            updateStreak.run(streakData);
+            await db.query("UPDATE streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMessageTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMessageTimestamp, streakData.id]);
             if (sendDM) {
                 const embed = new EmbedBuilder().setTitle('✶ اشـعـارات الـستريـك').setColor(Colors.Red)
                     .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
                     .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت الـستريـك 💔\n- لقد انقطعت عن السيرفر مدة طويلة.\n- كـان ستريـكك: ${oldStreak}`);
                 member.send({ embeds: [embed], components: [row] }).catch(() => {});
             }
-            if (streakData.nicknameActive === 1) await updateNickname(member, sql);
+            if (Number(streakData.nicknameActive) === 1) await updateNickname(member, db);
         }
     }
     console.log(`[Streak] ✅ اكتمل الفحص اليومي للستريك. (تم فحص ${allStreaks.length} عضو)`);
 }
 
 async function handleStreakMessage(message) {
-    const sql = message.client.sql;
+    const db = message.client.sql;
     
-    // 🔥🔥 منع التضارب: إذا كان العضو قيد المعالجة، تجاهل الرسالة 🔥🔥
     const processId = `${message.guild.id}-${message.author.id}`;
     if (processingUsers.has(processId)) return;
     processingUsers.add(processId);
 
     try {
         try {
-             sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
+            await db.query("ALTER TABLE streaks ADD COLUMN IF NOT EXISTS has12hWarning BIGINT DEFAULT 0");
         } catch (e) {}
-
-        const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
-        const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
-        const updateStreakData = sql.prepare("UPDATE streaks SET lastMessageTimestamp = @lastMessageTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, has12hWarning = 0 WHERE id = @id");
-
-        const getLevel = message.client.getLevel;
-        const setLevel = message.client.setLevel;
 
         const now = Date.now();
         const todayKSA = getKSADateString(now);
@@ -276,7 +278,8 @@ async function handleStreakMessage(message) {
         const userID = message.author.id;
         const id = `${guildID}-${userID}`;
 
-        let streakData = getStreak.get(guildID, userID);
+        const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [guildID, userID]);
+        let streakData = streakRes.rows[0];
 
         if (!streakData) {
             streakData = {
@@ -292,86 +295,92 @@ async function handleStreakMessage(message) {
                 highestStreak: 1,
                 has12hWarning: 0
             };
-            setStreak.run(streakData);
-            await updateNickname(message.member, sql);
+            
+            await db.query(`
+                INSERT INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                ON CONFLICT (id) DO UPDATE SET
+                guildID=EXCLUDED.guildID, userID=EXCLUDED.userID, streakCount=EXCLUDED.streakCount, lastMessageTimestamp=EXCLUDED.lastMessageTimestamp, hasGracePeriod=EXCLUDED.hasGracePeriod, hasItemShield=EXCLUDED.hasItemShield, nicknameActive=EXCLUDED.nicknameActive, hasReceivedFreeShield=EXCLUDED.hasReceivedFreeShield, separator=EXCLUDED.separator, dmNotify=EXCLUDED.dmNotify, highestStreak=EXCLUDED.highestStreak, has12hWarning=EXCLUDED.has12hWarning;
+            `, [streakData.id, streakData.guildID, streakData.userID, streakData.streakCount, streakData.lastMessageTimestamp, streakData.hasGracePeriod, streakData.hasItemShield, streakData.nicknameActive, streakData.hasReceivedFreeShield, streakData.separator, streakData.dmNotify, streakData.highestStreak, streakData.has12hWarning]);
+            
+            await updateNickname(message.member, db);
 
         } else {
             const cleanCheckList = SEPARATORS_CLEAN_LIST.map(s => s.replace('\\', ''));
             if (!cleanCheckList.includes(streakData.separator)) {
                 streakData.separator = DEFAULT_SEPARATOR;
-                sql.prepare("UPDATE streaks SET separator = ? WHERE id = ?").run(DEFAULT_SEPARATOR, id);
+                await db.query("UPDATE streaks SET separator = $1 WHERE id = $2", [DEFAULT_SEPARATOR, id]);
             }
 
-            // فحص وتعديل الاسم (مع الحماية الموجودة في الدالة)
-            if (streakData.nicknameActive === 1) {
-                await updateNickname(message.member, sql);
+            if (Number(streakData.nicknameActive) === 1) {
+                await updateNickname(message.member, db);
             }
 
-            const lastDateKSA = getKSADateString(streakData.lastMessageTimestamp);
+            const lastDateKSA = getKSADateString(Number(streakData.lastMessageTimestamp));
             
-            // إذا كان في نفس اليوم، نحدث التوقيت فقط لتجنب التحذيرات
             if (todayKSA === lastDateKSA) {
-                sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
-                return; // 🛑 خروج مبكر لمنع التضارب
+                await db.query("UPDATE streaks SET lastMessageTimestamp = $1, has12hWarning = 0 WHERE id = $2", [now, id]);
+                return; 
             }
 
-            if (typeof streakData.dmNotify === 'undefined' || typeof streakData.highestStreak === 'undefined') {
+            if (streakData.dmNotify === null || streakData.dmNotify === undefined || streakData.highestStreak === null || streakData.highestStreak === undefined) {
                 streakData.dmNotify = streakData.dmNotify ?? 1;
                 streakData.highestStreak = streakData.highestStreak ?? streakData.streakCount;
-                sql.prepare("UPDATE streaks SET dmNotify = ?, highestStreak = ? WHERE id = ?").run(streakData.dmNotify, streakData.highestStreak, id);
+                await db.query("UPDATE streaks SET dmNotify = $1, highestStreak = $2 WHERE id = $3", [streakData.dmNotify, streakData.highestStreak, id]);
             }
 
-            if (streakData.streakCount === 0) {
+            if (Number(streakData.streakCount) === 0) {
                 streakData.streakCount = 1;
                 streakData.lastMessageTimestamp = now;
                 streakData.hasGracePeriod = 0;
                 streakData.hasItemShield = 0;
-                if (streakData.highestStreak < 1) streakData.highestStreak = 1;
+                if (Number(streakData.highestStreak) < 1) streakData.highestStreak = 1;
                 streakData.has12hWarning = 0;
-                setStreak.run(streakData);
-                await updateNickname(message.member, sql);
+                
+                await db.query(`
+                    INSERT INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    ON CONFLICT (id) DO UPDATE SET
+                    guildID=EXCLUDED.guildID, userID=EXCLUDED.userID, streakCount=EXCLUDED.streakCount, lastMessageTimestamp=EXCLUDED.lastMessageTimestamp, hasGracePeriod=EXCLUDED.hasGracePeriod, hasItemShield=EXCLUDED.hasItemShield, nicknameActive=EXCLUDED.nicknameActive, hasReceivedFreeShield=EXCLUDED.hasReceivedFreeShield, separator=EXCLUDED.separator, dmNotify=EXCLUDED.dmNotify, highestStreak=EXCLUDED.highestStreak, has12hWarning=EXCLUDED.has12hWarning;
+                `, [streakData.id, streakData.guildID, streakData.userID, streakData.streakCount, streakData.lastMessageTimestamp, streakData.hasGracePeriod, streakData.hasItemShield, streakData.nicknameActive, streakData.hasReceivedFreeShield, streakData.separator, streakData.dmNotify, streakData.highestStreak, streakData.has12hWarning]);
+                
+                await updateNickname(message.member, db);
             } else {
                 const diffDays = getDayDifference(todayKSA, lastDateKSA);
                 if (diffDays === 1) {
-                    streakData.streakCount += 1;
+                    streakData.streakCount = Number(streakData.streakCount) + 1;
                     streakData.lastMessageTimestamp = now;
-                    if (streakData.streakCount > streakData.highestStreak) {
+                    if (Number(streakData.streakCount) > Number(streakData.highestStreak)) {
                         streakData.highestStreak = streakData.streakCount;
                     }
-                    updateStreakData.run(streakData);
+                    await db.query("UPDATE streaks SET lastMessageTimestamp = $1, streakCount = $2, highestStreak = $3, has12hWarning = 0 WHERE id = $4", [streakData.lastMessageTimestamp, streakData.streakCount, streakData.highestStreak, streakData.id]);
                     
-                    if (streakData.streakCount > 10) {
-                        let levelData = getLevel.get(userID, guildID);
+                    if (Number(streakData.streakCount) > 10) {
+                        let levelData = await message.client.getLevel(userID, guildID);
                         if (!levelData) levelData = { ...message.client.defaultData, user: userID, guild: guildID };
-                        levelData.mora = (levelData.mora || 0) + 100;
-                        levelData.xp = (levelData.xp || 0) + 100;
-                        levelData.totalXP = (levelData.totalXP || 0) + 100;
-                        setLevel.run(levelData);
+                        levelData.mora = (Number(levelData.mora) || 0) + 100;
+                        levelData.xp = (Number(levelData.xp) || 0) + 100;
+                        levelData.totalXP = (Number(levelData.totalXP) || 0) + 100;
+                        await message.client.setLevel(levelData);
                     }
-                    await updateNickname(message.member, sql);
+                    await updateNickname(message.member, db);
                 } else {
-                    // تحديث الوقت فقط وتصفير التحذير (حالة احتياطية)
-                    sql.prepare("UPDATE streaks SET lastMessageTimestamp = ?, has12hWarning = 0 WHERE id = ?").run(now, id);
+                    await db.query("UPDATE streaks SET lastMessageTimestamp = $1, has12hWarning = 0 WHERE id = $2", [now, id]);
                 }
             }
         }
     } catch (err) {
         console.error("Streak Error:", err);
     } finally {
-        // 🔥🔥 فك القفل بعد 2 ثانية (لضمان انتهاء التحديثات) 🔥🔥
         setTimeout(() => processingUsers.delete(processId), 2000);
     }
 }
 
 async function handleMediaStreakMessage(message) {
-    const sql = message.client.sql;
+    const db = message.client.sql;
     try {
-        sql.prepare("ALTER TABLE media_streaks ADD COLUMN lastChannelID TEXT").run();
+        await db.query("ALTER TABLE media_streaks ADD COLUMN IF NOT EXISTS lastChannelID TEXT");
     } catch (e) {}
-
-    const getStreak = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?");
-    const setStreak = sql.prepare("INSERT OR REPLACE INTO media_streaks (id, guildID, userID, streakCount, lastMediaTimestamp, hasGracePeriod, hasItemShield, hasReceivedFreeShield, dmNotify, highestStreak, lastChannelID) VALUES (@id, @guildID, @userID, @streakCount, @lastMediaTimestamp, @hasGracePeriod, @hasItemShield, @hasReceivedFreeShield, @dmNotify, @highestStreak, @lastChannelID);");
-    const updateStreakData = sql.prepare("UPDATE media_streaks SET lastMediaTimestamp = @lastMediaTimestamp, streakCount = @streakCount, highestStreak = @highestStreak, lastChannelID = @lastChannelID WHERE id = @id");
 
     const now = Date.now();
     const todayKSA = getKSADateString(now);
@@ -380,7 +389,12 @@ async function handleMediaStreakMessage(message) {
     const channelID = message.channel.id;
     const id = `${guildID}-${userID}`;
 
-    let streakData = getStreak.get(guildID, userID);
+    let streakData = null;
+    try {
+        const res = await db.query("SELECT * FROM media_streaks WHERE guildID = $1 AND userID = $2", [guildID, userID]);
+        streakData = res.rows[0];
+    } catch (e) {}
+
     let isNewStreakToday = false; 
 
     if (!streakData) {
@@ -395,41 +409,56 @@ async function handleMediaStreakMessage(message) {
             highestStreak: 1,
             lastChannelID: channelID
         };
-        setStreak.run(streakData);
+        
+        await db.query(`
+            INSERT INTO media_streaks (id, guildID, userID, streakCount, lastMediaTimestamp, hasGracePeriod, hasItemShield, hasReceivedFreeShield, dmNotify, highestStreak, lastChannelID) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (id) DO UPDATE SET
+            guildID=EXCLUDED.guildID, userID=EXCLUDED.userID, streakCount=EXCLUDED.streakCount, lastMediaTimestamp=EXCLUDED.lastMediaTimestamp, hasGracePeriod=EXCLUDED.hasGracePeriod, hasItemShield=EXCLUDED.hasItemShield, hasReceivedFreeShield=EXCLUDED.hasReceivedFreeShield, dmNotify=EXCLUDED.dmNotify, highestStreak=EXCLUDED.highestStreak, lastChannelID=EXCLUDED.lastChannelID;
+        `, [streakData.id, streakData.guildID, streakData.userID, streakData.streakCount, streakData.lastMediaTimestamp, streakData.hasGracePeriod, streakData.hasItemShield, streakData.hasReceivedFreeShield, streakData.dmNotify, streakData.highestStreak, streakData.lastChannelID]);
+        
         isNewStreakToday = true;
     } else {
-        const lastDateKSA = getKSADateString(streakData.lastMediaTimestamp);
+        const lastDateKSA = getKSADateString(Number(streakData.lastMediaTimestamp));
         
         if (streakData.lastChannelID !== channelID) {
-            sql.prepare("UPDATE media_streaks SET lastChannelID = ? WHERE id = ?").run(channelID, id);
+            await db.query("UPDATE media_streaks SET lastChannelID = $1 WHERE id = $2", [channelID, id]);
             streakData.lastChannelID = channelID;
         }
 
         if (todayKSA === lastDateKSA) return;
 
-        if (typeof streakData.dmNotify === 'undefined' || typeof streakData.highestStreak === 'undefined') {
+        if (streakData.dmNotify === null || streakData.dmNotify === undefined || streakData.highestStreak === null || streakData.highestStreak === undefined) {
             streakData.dmNotify = streakData.dmNotify ?? 1;
             streakData.highestStreak = streakData.highestStreak ?? streakData.streakCount;
-            sql.prepare("UPDATE media_streaks SET dmNotify = ?, highestStreak = ? WHERE id = ?").run(streakData.dmNotify, streakData.highestStreak, id);
+            await db.query("UPDATE media_streaks SET dmNotify = $1, highestStreak = $2 WHERE id = $3", [streakData.dmNotify, streakData.highestStreak, id]);
         }
 
-        if (streakData.streakCount === 0) {
+        if (Number(streakData.streakCount) === 0) {
             streakData.streakCount = 1;
             streakData.lastMediaTimestamp = now;
             streakData.hasGracePeriod = 0;
             streakData.hasItemShield = 0;
             streakData.lastChannelID = channelID;
-            if (streakData.highestStreak < 1) streakData.highestStreak = 1;
-            setStreak.run(streakData);
+            if (Number(streakData.highestStreak) < 1) streakData.highestStreak = 1;
+            
+            await db.query(`
+                INSERT INTO media_streaks (id, guildID, userID, streakCount, lastMediaTimestamp, hasGracePeriod, hasItemShield, hasReceivedFreeShield, dmNotify, highestStreak, lastChannelID) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ON CONFLICT (id) DO UPDATE SET
+                guildID=EXCLUDED.guildID, userID=EXCLUDED.userID, streakCount=EXCLUDED.streakCount, lastMediaTimestamp=EXCLUDED.lastMediaTimestamp, hasGracePeriod=EXCLUDED.hasGracePeriod, hasItemShield=EXCLUDED.hasItemShield, hasReceivedFreeShield=EXCLUDED.hasReceivedFreeShield, dmNotify=EXCLUDED.dmNotify, highestStreak=EXCLUDED.highestStreak, lastChannelID=EXCLUDED.lastChannelID;
+            `, [streakData.id, streakData.guildID, streakData.userID, streakData.streakCount, streakData.lastMediaTimestamp, streakData.hasGracePeriod, streakData.hasItemShield, streakData.hasReceivedFreeShield, streakData.dmNotify, streakData.highestStreak, streakData.lastChannelID]);
+            
             isNewStreakToday = true;
         } else {
             const diffDays = getDayDifference(todayKSA, lastDateKSA);
             if (diffDays === 1) {
-                streakData.streakCount += 1;
+                streakData.streakCount = Number(streakData.streakCount) + 1;
                 streakData.lastMediaTimestamp = now;
                 streakData.lastChannelID = channelID;
-                if (streakData.streakCount > streakData.highestStreak) streakData.highestStreak = streakData.streakCount;
-                updateStreakData.run(streakData);
+                if (Number(streakData.streakCount) > Number(streakData.highestStreak)) streakData.highestStreak = streakData.streakCount;
+                
+                await db.query("UPDATE media_streaks SET lastMediaTimestamp = $1, streakCount = $2, highestStreak = $3, lastChannelID = $4 WHERE id = $5", [streakData.lastMediaTimestamp, streakData.streakCount, streakData.highestStreak, streakData.lastChannelID, streakData.id]);
                 isNewStreakToday = true;
             } else {
                 streakData.streakCount = 1;
@@ -437,21 +466,28 @@ async function handleMediaStreakMessage(message) {
                 streakData.hasGracePeriod = 0;
                 streakData.hasItemShield = 0;
                 streakData.lastChannelID = channelID;
-                setStreak.run(streakData);
+                
+                await db.query(`
+                    INSERT INTO media_streaks (id, guildID, userID, streakCount, lastMediaTimestamp, hasGracePeriod, hasItemShield, hasReceivedFreeShield, dmNotify, highestStreak, lastChannelID) 
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    ON CONFLICT (id) DO UPDATE SET
+                    guildID=EXCLUDED.guildID, userID=EXCLUDED.userID, streakCount=EXCLUDED.streakCount, lastMediaTimestamp=EXCLUDED.lastMediaTimestamp, hasGracePeriod=EXCLUDED.hasGracePeriod, hasItemShield=EXCLUDED.hasItemShield, hasReceivedFreeShield=EXCLUDED.hasReceivedFreeShield, dmNotify=EXCLUDED.dmNotify, highestStreak=EXCLUDED.highestStreak, lastChannelID=EXCLUDED.lastChannelID;
+                `, [streakData.id, streakData.guildID, streakData.userID, streakData.streakCount, streakData.lastMediaTimestamp, streakData.hasGracePeriod, streakData.hasItemShield, streakData.hasReceivedFreeShield, streakData.dmNotify, streakData.highestStreak, streakData.lastChannelID]);
+                
                 isNewStreakToday = true;
             }
         }
     }
 
     if (isNewStreakToday) {
-        if (streakData.streakCount > 10) {
+        if (Number(streakData.streakCount) > 10) {
             try {
-                let levelData = message.client.getLevel.get(userID, guildID);
+                let levelData = await message.client.getLevel(userID, guildID);
                 if (!levelData) levelData = { ...message.client.defaultData, user: userID, guild: guildID };
-                levelData.mora = (levelData.mora || 0) + 100;
-                levelData.xp = (levelData.xp || 0) + 100;
-                levelData.totalXP = (levelData.totalXP || 0) + 100;
-                message.client.setLevel.run(levelData);
+                levelData.mora = (Number(levelData.mora) || 0) + 100;
+                levelData.xp = (Number(levelData.xp) || 0) + 100;
+                levelData.totalXP = (Number(levelData.totalXP) || 0) + 100;
+                await message.client.setLevel(levelData);
             } catch (err) { console.error("[Media Streak] Failed to give rewards:", err); }
         }
         
@@ -461,7 +497,7 @@ async function handleMediaStreakMessage(message) {
         } catch (e) {}
 
         try {
-            const totalShields = (streakData.hasGracePeriod || 0) + (streakData.hasItemShield || 0);
+            const totalShields = (Number(streakData.hasGracePeriod) || 0) + (Number(streakData.hasItemShield) || 0);
             const shieldText = totalShields > 0 ? ` | ${totalShields} ${EMOJI_SHIELD}` : '';
             const replyMsg = await message.reply({
                 content: `✥ تـم تـحديـث ستـريـك الميـديـا: ${streakData.streakCount} ${EMOJI_MEDIA_STREAK}${shieldText}`,
@@ -472,18 +508,22 @@ async function handleMediaStreakMessage(message) {
     }
 }
 
-async function checkDailyMediaStreaks(client, sql) {
+async function checkDailyMediaStreaks(client, db) {
     console.log("[Media Streak] 🔄 بدء الفحص اليومي لستريك الميديا...");
     try {
-        sql.prepare("ALTER TABLE media_streaks ADD COLUMN lastChannelID TEXT").run();
+        await db.query("ALTER TABLE media_streaks ADD COLUMN IF NOT EXISTS lastChannelID TEXT");
     } catch (e) {}
 
-    const allStreaks = sql.prepare("SELECT * FROM media_streaks WHERE streakCount > 0").all();
+    let allStreaks = [];
+    try {
+        const res = await db.query("SELECT * FROM media_streaks WHERE streakCount > 0");
+        allStreaks = res.rows;
+    } catch(e) {}
+
     const todayKSA = getKSADateString(Date.now());
-    const updateStreak = sql.prepare("UPDATE media_streaks SET streakCount = @streakCount, hasGracePeriod = @hasGracePeriod, hasItemShield = @hasItemShield, lastMediaTimestamp = @lastMediaTimestamp WHERE id = @id");
 
     for (const streakData of allStreaks) {
-        const lastDateKSA = getKSADateString(streakData.lastMediaTimestamp);
+        const lastDateKSA = getKSADateString(Number(streakData.lastMediaTimestamp));
         const diffDays = getDayDifference(todayKSA, lastDateKSA);
         if (diffDays <= 1) continue; 
 
@@ -493,7 +533,7 @@ async function checkDailyMediaStreaks(client, sql) {
             member = await guild.members.fetch(streakData.userID);
         } catch (err) { continue; }
 
-        const sendDM = streakData.dmNotify === 1;
+        const sendDM = Number(streakData.dmNotify) === 1;
         const emoji = EMOJI_MEDIA_STREAK;
 
         const row = new ActionRowBuilder().addComponents(
@@ -504,19 +544,19 @@ async function checkDailyMediaStreaks(client, sql) {
         );
 
         if (diffDays === 2) {
-            if (streakData.hasItemShield === 1) {
+            if (Number(streakData.hasItemShield) === 1) {
                 streakData.hasItemShield = 0;
                 streakData.lastMediaTimestamp = Date.now(); 
-                updateStreak.run(streakData);
+                await db.query("UPDATE media_streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMediaTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMediaTimestamp, streakData.id]);
                 if (sendDM) {
                     const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Green)
                         .setDescription(`- 🛡️ **تم تفعيل درع المتجر!**\n- تم حماية ستريك الميديا (${streakData.streakCount} ${emoji}).\n- لا تنسَ الإرسال اليوم!`);
                     member.send({ embeds: [embed], components: [row] }).catch(() => {});
                 }
-            } else if (streakData.hasGracePeriod === 1) {
+            } else if (Number(streakData.hasGracePeriod) === 1) {
                 streakData.hasGracePeriod = 0;
                 streakData.lastMediaTimestamp = Date.now(); 
-                updateStreak.run(streakData);
+                await db.query("UPDATE media_streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMediaTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMediaTimestamp, streakData.id]);
                 if (sendDM) {
                       const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Green)
                         .setDescription(`- 🛡️ **تم تفعيل فترة السماح!**\n- تم حماية ستريك الميديا (${streakData.streakCount} ${emoji}).\n- لا تنسَ الإرسال اليوم!`);
@@ -525,7 +565,7 @@ async function checkDailyMediaStreaks(client, sql) {
             } else {
                 streakData.streakCount = 0;
                 streakData.hasGracePeriod = 0;
-                updateStreak.run(streakData);
+                await db.query("UPDATE media_streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMediaTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMediaTimestamp, streakData.id]);
                 if(sendDM) {
                       const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Red)
                         .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت ستريك الميديا 💔\n- لم تكن تملك أي درع.\n- حاول مرة أخرى!`);
@@ -535,7 +575,7 @@ async function checkDailyMediaStreaks(client, sql) {
         } else if (diffDays > 2) {
             streakData.streakCount = 0;
             streakData.hasGracePeriod = 0;
-            updateStreak.run(streakData);
+            await db.query("UPDATE media_streaks SET streakCount = $1, hasGracePeriod = $2, hasItemShield = $3, lastMediaTimestamp = $4 WHERE id = $5", [streakData.streakCount, streakData.hasGracePeriod, streakData.hasItemShield, streakData.lastMediaTimestamp, streakData.id]);
             if(sendDM) {
                 const embed = new EmbedBuilder().setTitle(`✶ اشـعـارات ستريك الميديا ${emoji}`).setColor(Colors.Red)
                    .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت ستريك الميديا 💔\n- انقطعت لفترة طويلة.\n- حاول مرة أخرى!`);
@@ -546,19 +586,25 @@ async function checkDailyMediaStreaks(client, sql) {
     console.log(`[Media Streak] ✅ اكتمل الفحص اليومي لستريك الميديا.`);
 }
 
-async function sendMediaStreakReminders(client, sql) {
+async function sendMediaStreakReminders(client, db) {
     console.log("[Media Streak] ⏰ إرسال تذكيرات الستريك (3 العصر)...");
     try {
-        sql.prepare("ALTER TABLE media_streaks ADD COLUMN lastChannelID TEXT").run();
+        await db.query("ALTER TABLE media_streaks ADD COLUMN IF NOT EXISTS lastChannelID TEXT");
     } catch (e) {}
 
     const todayKSA = getKSADateString(Date.now());
-    const allMediaChannels = sql.prepare("SELECT * FROM media_streak_channels").all();
-    const activeStreaks = sql.prepare("SELECT * FROM media_streaks WHERE streakCount > 0").all();
+    let allMediaChannels = [];
+    let activeStreaks = [];
+    
+    try {
+        allMediaChannels = (await db.query("SELECT * FROM media_streak_channels")).rows;
+        activeStreaks = (await db.query("SELECT * FROM media_streaks WHERE streakCount > 0")).rows;
+    } catch(e) { return; }
+
     const usersToRemind = [];
 
     for (const streak of activeStreaks) {
-        const lastDateKSA = getKSADateString(streak.lastMediaTimestamp);
+        const lastDateKSA = getKSADateString(Number(streak.lastMediaTimestamp));
         if (lastDateKSA !== todayKSA) {
             usersToRemind.push(streak);
         }
@@ -595,9 +641,9 @@ async function sendMediaStreakReminders(client, sql) {
 
                 const sentMessage = await channel.send({ content: mentions, embeds: [embed] });
                 
-                sql.prepare("UPDATE media_streak_channels SET lastReminderMessageID = ? WHERE guildID = ? AND channelID = ?").run(sentMessage.id, guildID, channelID);
+                await db.query("UPDATE media_streak_channels SET lastReminderMessageID = $1 WHERE guildID = $2 AND channelID = $3", [sentMessage.id, guildID, channelID]);
             } else {
-                sql.prepare("UPDATE media_streak_channels SET lastReminderMessageID = NULL WHERE guildID = ? AND channelID = ?").run(guildID, channelID);
+                await db.query("UPDATE media_streak_channels SET lastReminderMessageID = NULL WHERE guildID = $1 AND channelID = $2", [guildID, channelID]);
             }
 
         } catch (err) {
@@ -606,20 +652,28 @@ async function sendMediaStreakReminders(client, sql) {
     }
 }
 
-async function sendDailyMediaUpdate(client, sql) {
+async function sendDailyMediaUpdate(client, db) {
     console.log("[Media Streak] 📰 إرسال التقرير اليومي...");
     try {
-        sql.prepare("ALTER TABLE media_streak_channels ADD COLUMN lastDailyMsgID TEXT").run();
+        await db.query("ALTER TABLE media_streak_channels ADD COLUMN IF NOT EXISTS lastDailyMsgID TEXT");
     } catch (e) {}
 
-    const allMediaChannels = sql.prepare("SELECT * FROM media_streak_channels").all();
+    let allMediaChannels = [];
+    try {
+        allMediaChannels = (await db.query("SELECT * FROM media_streak_channels")).rows;
+    } catch(e) { return; }
+
     const guildsStats = {};
 
     for (const channelData of allMediaChannels) {
         const guildID = channelData.guildID;
         
         if (!guildsStats[guildID]) {
-            const topStreaks = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND streakCount > 0 ORDER BY streakCount DESC LIMIT 3").all(guildID);
+            let topStreaks = [];
+            try {
+                topStreaks = (await db.query("SELECT * FROM media_streaks WHERE guildID = $1 AND streakCount > 0 ORDER BY streakCount DESC LIMIT 3", [guildID])).rows;
+            } catch(e) {}
+
             let description = `**${EMOJI_MEDIA_STREAK} بـدأ يـوم جـديـد لستريـك الميـديـا! ${EMOJI_MEDIA_STREAK}**\n\n- لا تنسـوا إرسـال المـيـديـا الخـاصـة بكـم لهـذا اليـوم.\n\n`;
             
             const embed = new EmbedBuilder().setTitle("☀️ تـحـديـث ستـريـك المـيـديـا").setColor(Colors.Aqua);
@@ -669,11 +723,11 @@ async function sendDailyMediaUpdate(client, sql) {
                     const oldRemind = await channel.messages.fetch(channelData.lastReminderMessageID);
                     if (oldRemind) await oldRemind.delete();
                 } catch (e) {}
-                sql.prepare("UPDATE media_streak_channels SET lastReminderMessageID = NULL WHERE guildID = ? AND channelID = ?").run(guildID, channelData.channelID);
+                await db.query("UPDATE media_streak_channels SET lastReminderMessageID = NULL WHERE guildID = $1 AND channelID = $2", [guildID, channelData.channelID]);
             }
 
             const sentMsg = await channel.send({ embeds: [guildsStats[guildID]] });
-            sql.prepare("UPDATE media_streak_channels SET lastDailyMsgID = ? WHERE guildID = ? AND channelID = ?").run(sentMsg.id, guildID, channelData.channelID);
+            await db.query("UPDATE media_streak_channels SET lastDailyMsgID = $1 WHERE guildID = $2 AND channelID = $3", [sentMsg.id, guildID, channelData.channelID]);
 
         } catch (err) {
             console.error(`[Media Streak Update] Failed for channel ${channelData.channelID}:`, err.message);
@@ -681,20 +735,21 @@ async function sendDailyMediaUpdate(client, sql) {
     }
 }
 
-async function sendStreakWarnings(client, sql) {
+async function sendStreakWarnings(client, db) {
     console.log("[Streak Warning] ⏰ بدء فحص تحذيرات الـ 12 ساعة...");
     try {
-         sql.prepare("ALTER TABLE streaks ADD COLUMN has12hWarning INTEGER DEFAULT 0").run();
+         await db.query("ALTER TABLE streaks ADD COLUMN IF NOT EXISTS has12hWarning BIGINT DEFAULT 0");
     } catch (e) {}
 
     const now = Date.now();
     const twelveHoursAgo = now - (12 * 60 * 60 * 1000);
     const thirtySixHoursAgo = now - (36 * 60 * 60 * 1000);
 
-    const updateWarning = sql.prepare("UPDATE streaks SET has12hWarning = 1 WHERE id = ?");
-    const settings = sql.prepare("SELECT streakEmoji FROM settings WHERE guild = ?");
-
-    const usersToWarn = sql.prepare(`SELECT * FROM streaks WHERE streakCount > 0 AND has12hWarning = 0 AND dmNotify = 1 AND lastMessageTimestamp < ? AND lastMessageTimestamp > ?`).all(twelveHoursAgo, thirtySixHoursAgo);
+    let usersToWarn = [];
+    try {
+        const res = await db.query(`SELECT * FROM streaks WHERE streakCount > 0 AND has12hWarning = 0 AND dmNotify = 1 AND lastMessageTimestamp < $1 AND lastMessageTimestamp > $2`, [twelveHoursAgo, thirtySixHoursAgo]);
+        usersToWarn = res.rows;
+    } catch(e) { return; }
 
     let warnedCount = 0;
     for (const streakData of usersToWarn) {
@@ -704,7 +759,13 @@ async function sendStreakWarnings(client, sql) {
             member = await guild.members.fetch(streakData.userID);
         } catch (err) { continue; }
 
-        const streakEmoji = settings.get(streakData.guildID)?.streakEmoji || '🔥';
+        let settings = {};
+        try {
+            const sRes = await db.query("SELECT streakEmoji FROM settings WHERE guild = $1", [streakData.guildID]);
+            if (sRes.rows.length > 0) settings = sRes.rows[0];
+        } catch (e) {}
+
+        const streakEmoji = settings.streakEmoji || '🔥';
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -717,8 +778,8 @@ async function sendStreakWarnings(client, sql) {
             .setImage('https://i.postimg.cc/8z0Xw04N/attention.png') 
             .setDescription(`- لـقـد مـضـى أكـثـر مـن 12 سـاعـة عـلـى آخـر رسـالـة لـك\n- سـتريـكك الـحـالي: ${streakData.streakCount} ${streakEmoji}\n- سارع بإرسال رسالة قبل أن يضيع الستريك!`);
 
-        await member.send({ embeds: [embed], components: [row] }).then(() => {
-            updateWarning.run(streakData.id);
+        await member.send({ embeds: [embed], components: [row] }).then(async () => {
+            await db.query("UPDATE streaks SET has12hWarning = 1 WHERE id = $1", [streakData.id]);
             warnedCount++;
         }).catch(() => {});
     }
