@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
 const { activePvpChallenges, getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js');
 
 let updateGuildStat;
@@ -73,7 +73,7 @@ module.exports = {
 
         const replyError = async (content) => {
             if (isSlash) {
-                return interaction.editReply({ content, ephemeral: true });
+                return interaction.editReply({ content, flags: [MessageFlags.Ephemeral] });
             } else {
                 return message.reply({ content });
             }
@@ -88,7 +88,7 @@ module.exports = {
         };
 
         const channel = interactionOrMessage.channel;
-        const sql = client.sql; 
+        const db = client.sql; 
         
         if (bet <= 0) {
             return replyError("مبلغ الرهان يجب أن يكون رقماً موجباً.");
@@ -103,42 +103,53 @@ module.exports = {
         }
 
         if (bet > MAX_LOAN_BET) {
-            const challengerLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(challenger.id, guild.id);
-            if (challengerLoan && challengerLoan.remainingAmount > 0) {
+            let challengerLoan = null;
+            try {
+                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [challenger.id, guild.id]);
+                challengerLoan = res.rows[0];
+            } catch(e) {}
+            
+            if (challengerLoan && Number(challengerLoan.remainingamount || challengerLoan.remainingAmount) > 0) {
                 return replyError(`❌ **عذراً!** عليك قرض لم يتم سداده.\nلا يمكنك المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA} في التحديات حتى تسدد قرضك.`);
             }
         }
 
         if (bet > MAX_LOAN_BET) {
-            const opponentLoan = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(opponent.id, guild.id);
-            if (opponentLoan && opponentLoan.remainingAmount > 0) {
+            let opponentLoan = null;
+            try {
+                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
+                opponentLoan = res.rows[0];
+            } catch(e) {}
+
+            if (opponentLoan && Number(opponentLoan.remainingamount || opponentLoan.remainingAmount) > 0) {
                 return replyError(`❌ الخصم ${opponent.displayName} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`);
             }
         }
 
-        const getScore = client.getLevel;
-        const setScore = client.setLevel;
-
-        let challengerData = getScore.get(challenger.id, guild.id);
+        let challengerData = await client.getLevel(challenger.id, guild.id);
         if (!challengerData) {
             challengerData = { ...client.defaultData, user: challenger.id, guild: guild.id };
         }
 
-        let opponentData = getScore.get(opponent.id, guild.id);
+        let opponentData = await client.getLevel(opponent.id, guild.id);
         if (!opponentData) {
             opponentData = { ...client.defaultData, user: opponent.id, guild: guild.id };
         }
 
         const now = Date.now();
 
-        const woundedDebuff = sql.prepare("SELECT * FROM user_buffs WHERE userID = ? AND guildID = ? AND buffType = 'pvp_wounded' AND expiresAt > ?").get(challenger.id, guild.id, now);
+        let woundedDebuff = null;
+        try {
+            const res = await db.query("SELECT * FROM user_buffs WHERE userID = $1 AND guildID = $2 AND buffType = 'pvp_wounded' AND expiresAt > $3", [challenger.id, guild.id, now]);
+            woundedDebuff = res.rows[0];
+        } catch(e) {}
 
         if (woundedDebuff) {
-            const woundTimeLeft = Math.ceil((woundedDebuff.expiresAt - now) / 60000);
+            const woundTimeLeft = Math.ceil((Number(woundedDebuff.expiresat || woundedDebuff.expiresAt) - now) / 60000);
             return replyError(`❌ | أنت جريح حالياً! 🤕\nيمـكنـك تلقـي التحديـات ولكن لا يمـكـنـك ارسالـهـا ستشفـى بالكـامل بعـد **${woundTimeLeft}**دقيقـة`);
         }
 
-        const timeLeft = (challengerData.lastPVP || 0) + PVP_COOLDOWN_MS - now;
+        const timeLeft = (Number(challengerData.lastPVP) || 0) + PVP_COOLDOWN_MS - now;
         const executorId = isSlash ? interaction.user.id : message.author.id;
 
         if (timeLeft > 0 && executorId !== "1145327691772481577") {
@@ -147,22 +158,22 @@ module.exports = {
             return replyError(`🕐 لقد قمت بقتال مؤخراً. يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية**.`);
         }
 
-        if (challengerData.mora < bet) {
+        if (Number(challengerData.mora) < bet) {
             return replyError(`ليس لديك **${bet.toLocaleString()}** ${EMOJI_MORA} في رصيدك (الكاش) لهذا الرهان!`);
         }
-        if (opponentData.mora < bet) {
+        if (Number(opponentData.mora) < bet) {
             return replyError(`خصمك ${opponent.displayName} لا يملك **${bet.toLocaleString()}** ${EMOJI_MORA} في رصيده (الكاش).`);
         }
 
-        const challengerRace = getUserRace(challenger, sql);
-        const challengerWeapon = getWeaponData(sql, challenger);
+        const challengerRace = await getUserRace(challenger, db);
+        const challengerWeapon = await getWeaponData(db, challenger);
 
         if (!challengerRace || !challengerWeapon || challengerWeapon.currentLevel === 0) {
             return replyError(`❌ | لا يمكنك بدء تحدٍ وأنت لست جاهزاً! (تحتاج إلى عرق + سلاح مستوى 1 على الأقل).`);
         }
 
         challengerData.lastPVP = Date.now();
-        setScore.run(challengerData);
+        await client.setLevel(challengerData);
 
         activePvpChallenges.add(channel.id);
 
@@ -200,7 +211,7 @@ module.exports = {
 
         const challengeMsg = await sendChallenge({ content: `${opponent}`, embeds: [embed], components: [row] });
 
-        setTimeout(() => {
+        setTimeout(async () => {
             if (activePvpChallenges.has(channel.id)) {
                 activePvpChallenges.delete(channel.id);
 
@@ -217,7 +228,7 @@ module.exports = {
                 }
 
                 challengerData.lastPVP = 0;
-                setScore.run(challengerData);
+                await client.setLevel(challengerData);
             }
         }, 60000);
     }
