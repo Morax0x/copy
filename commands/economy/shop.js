@@ -51,28 +51,30 @@ module.exports = {
             }
         };
 
-        const sql = client.sql;
+        const db = client.sql;
 
-        // التحقق من صلاحيات الأدمن للنشر
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             const guildId = guild.id;
-            sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(guildId);
-            const settings = sql.prepare("SELECT shopChannelID FROM settings WHERE guild = ?").get(guildId);
+            try {
+                await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guildId]);
+                const settingsRes = await db.query("SELECT shopChannelID FROM settings WHERE guild = $1", [guildId]);
+                const settings = settingsRes.rows[0];
+                const shopId = settings?.shopchannelid || settings?.shopChannelID;
 
-            if (!settings || !settings.shopChannelID) {
+                if (!settings || !shopId) {
+                    return replyEphemeral({
+                        content: `❌ لم يقم أي إداري بإعداد المتجر في هذا السيرفر بعد.`
+                    });
+                }
+
                 return replyEphemeral({
-                    content: `❌ لم يقم أي إداري بإعداد المتجر في هذا السيرفر بعد.`
+                    content: `✥ تـوجـه الى قنـاة المـتجـر: <#${shopId}>`
                 });
+            } catch(e) {
+                console.error(e);
+                return replyEphemeral({ content: `❌ حدث خطأ أثناء التحقق من المتجر.` });
             }
-
-            return replyEphemeral({
-                content: `✥ تـوجـه الى قنـاة المـتجـر: <#${settings.shopChannelID}>`
-            });
         }
-
-        // ==========================================================
-        // 🔥 زر المتجر 🔥
-        // ==========================================================
 
         const buttonRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -96,7 +98,7 @@ module.exports = {
             .setTitle('متجر الامبراطورية <:mora:1435647151349698621>')
             .setURL('https://top.gg/discord/servers/732581242885705728/vote')
             .setDescription(descriptionText)
-            .setColor('#9A6AAD') // ✅ تم تعديل اللون هنا
+            .setColor('#9A6AAD') 
             .setImage('https://i.postimg.cc/kMwWDMM0/shop.jpg');
 
         await channel.send({ embeds: [mainEmbed], components: [buttonRow] });
@@ -105,18 +107,18 @@ module.exports = {
             const guildId = guild.id;
             const channelId = channel.id;
 
-            sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(guildId);
-            sql.prepare("UPDATE settings SET shopChannelID = ? WHERE guild = ?").run(channelId, guildId);
+            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guildId]);
+            await db.query("UPDATE settings SET shopChannelID = $1 WHERE guild = $2", [channelId, guildId]);
 
             if (isSlash) {
-                await interaction.editReply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.', ephemeral: true });
+                await interaction.editReply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.' });
             } else {
                 await message.reply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.'});
             }
 
         } catch (err) {
             console.error("خطأ في حفظ قناة المتجر:", err);
-             await replyEphemeral({ content: '⚠️ تم نشر المتجر، ولكن حدث خطأ أثناء حفظه كمتجر رسمي للسيرفر.' });
+            await replyEphemeral({ content: '⚠️ تم نشر المتجر، ولكن حدث خطأ أثناء حفظه كمتجر رسمي للسيرفر.' });
         }
     }
 };
