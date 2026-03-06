@@ -1,59 +1,65 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 
-// =========================================================
-// 🌟 دالة حساب الرصيد الحر (للتحقق الخلفي فقط) 🌟
-// المعادلة: (الكاش + البنك) - قيمة القرض المتبقي
-// تستخدم في ملفات التحويل والرهان فقط، ولا تظهر للاعب
-// =========================================================
-function getFreeBalance(member, sql) {
-    if (!sql || typeof sql.prepare !== 'function') return 0;
+async function getFreeBalance(member, db) {
+    if (!db) return 0;
     
-    // جلب الكاش والبنك
-    const levelData = sql.prepare("SELECT mora, bank FROM levels WHERE user = ? AND guild = ?").get(member.id, member.guild.id);
+    const levelDataRes = await db.query("SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2", [member.id, member.guild.id]);
+    const levelData = levelDataRes.rows[0];
     const currentMora = levelData ? (levelData.mora || 0) : 0;
     const currentBank = levelData ? (levelData.bank || 0) : 0;
     
-    // حساب الثروة الكلية (كاش + بنك)
     const totalWealth = currentMora + currentBank;
 
-    // جلب الدين المتبقي
-    const loanData = sql.prepare("SELECT remainingAmount FROM user_loans WHERE userID = ? AND guildID = ?").get(member.id, member.guild.id);
-    const debt = loanData ? loanData.remainingAmount : 0;
+    const loanDataRes = await db.query("SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2", [member.id, member.guild.id]);
+    const loanData = loanDataRes.rows[0];
+    const debt = loanData ? loanData.remainingamount : 0;
 
-    // الرصيد الحر = الثروة الكلية - الدين
     const freeBalance = totalWealth - debt;
     
-    // لا يمكن أن يكون السالب رصيداً متاحاً
     return Math.max(0, freeBalance);
 }
 
-// =========================================================
-// 🌟 دالة رسالة الترقية (للعرض) 🌟
-// تعرض الرصيد الكلي دائماً
-// =========================================================
-async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpData, sql) {
+async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpData, db) {
      try {
-         let customSettings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(interaction.guild.id);
-         let channelLevel = sql.prepare("SELECT * FROM channel WHERE guild = ?").get(interaction.guild.id);
+         const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [interaction.guild.id]);
+         let customSettings = settingsRes.rows[0];
+         
+         const channelRes = await db.query("SELECT * FROM channel WHERE guild = $1", [interaction.guild.id]);
+         let channelLevel = channelRes.rows[0];
+         
          let levelUpContent = null;
          let embed;
 
-         if (customSettings && customSettings.lvlUpTitle) {
+         if (customSettings && (customSettings.lvluptitle || customSettings.lvlUpTitle)) {
+             const title = customSettings.lvluptitle || customSettings.lvlUpTitle;
+             const desc = customSettings.lvlupdesc || customSettings.lvlUpDesc;
+             const color = customSettings.lvlupcolor || customSettings.lvlUpColor || "Random";
+             const image = customSettings.lvlupimage || customSettings.lvlUpImage;
+             const mention = customSettings.lvlupmention !== undefined ? customSettings.lvlupmention : customSettings.lvlUpMention;
+
              function antonymsLevelUp(string) {
                  return string
                     .replace(/{member}/gi, `${member}`)
                     .replace(/{level}/gi, `${newLevel}`)
                     .replace(/{level_old}/gi, `${oldLevel}`)
-                    .replace(/{xp}/gi, `${xpData.xp}`)
-                    .replace(/{totalXP}/gi, `${xpData.totalXP}`)
-                    // 🔥 إضافة: عرض المورا الكلية (القرض + الحر) بدون تفصيل
+                    .replace(/{xp}/gi, `${xpData.xp || 0}`)
+                    .replace(/{totalXP}/gi, `${xpData.totalxp || xpData.totalXP || 0}`)
                     .replace(/{mora}/gi, `${(xpData.mora || 0).toLocaleString()}`); 
              }
-             embed = new EmbedBuilder().setTitle(antonymsLevelUp(customSettings.lvlUpTitle)).setDescription(antonymsLevelUp(customSettings.lvlUpDesc.replace(/\\n/g, '\n'))).setColor(customSettings.lvlUpColor || "Random").setTimestamp();
-             if (customSettings.lvlUpImage) { embed.setImage(antonymsLevelUp(customSettings.lvlUpImage)); }
-             if (customSettings.lvlUpMention == 1) { levelUpContent = `${member}`; }
+             
+             embed = new EmbedBuilder()
+                 .setTitle(antonymsLevelUp(title))
+                 .setDescription(antonymsLevelUp(desc.replace(/\\n/g, '\n')))
+                 .setColor(color)
+                 .setTimestamp();
+                 
+             if (image) { embed.setImage(antonymsLevelUp(image)); }
+             if (mention == 1) { levelUpContent = `${member}`; }
          } else {
-             embed = new EmbedBuilder().setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) }).setColor("Random").setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`);
+             embed = new EmbedBuilder()
+                 .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
+                 .setColor("Random")
+                 .setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`);
          }
 
          let channelToSend = interaction.channel;
