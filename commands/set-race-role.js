@@ -1,11 +1,9 @@
-const { PermissionsBitField, EmbedBuilder, Colors, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require("discord.js");
+const { PermissionsBitField, EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 const weaponsConfig = require('../json/weapons-config.json');
-// ( 1 ) تم حذف السطرين الخاصين بـ new SQLite
 
 const validRaces = weaponsConfig.map(w => w.race);
 
 module.exports = {
-    // --- ( 2 ) إضافة بيانات أمر السلاش ---
     data: new SlashCommandBuilder()
         .setName('ربط-عرق')
         .setDescription('إدارة الرتب المرتبطة بالأعراق لنظام الأسلحة.')
@@ -25,9 +23,7 @@ module.exports = {
             .setName('عرض')
             .setDescription('عرض جميع الرتب المرتبطة بالأعراق.')
         ),
-    // ---------------------------------
 
-    // --- ( 3 ) إضافة دالة الإكمال التلقائي ---
     async autocomplete(interaction) {
         try {
             const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -39,16 +35,14 @@ module.exports = {
             console.error('Autocomplete error in set-race-role:', e);
         }
     },
-    // ---------------------------------
 
     name: 'set-race-role',
     aliases: ['setrace', 'srr'],
-    category: "Admin", // ( 4 ) تم التغيير إلى فئة الادمن
+    category: "Admin",
     description: 'إدارة الرتب المرتبطة بالأعراق لنظام الأسلحة.',
 
     async execute(interactionOrMessage, args) {
 
-        // --- ( 5 ) إضافة معالج الأوامر الهجينة ---
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, guild, client, member;
 
@@ -65,13 +59,11 @@ module.exports = {
             member = message.member;
         }
 
-        // --- ( 6 ) إصلاح اتصال قاعدة البيانات ---
-        const sql = client.sql;
+        const db = client.sql;
 
-        // --- ( 7 ) توحيد دوال الرد ---
         const reply = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
-            payload.ephemeral = false; // جعل الرد عام
+            payload.ephemeral = false; 
             if (isSlash) return interaction.editReply(payload);
             return message.reply(payload);
         };
@@ -80,23 +72,25 @@ module.exports = {
             if (isSlash) return interaction.editReply(payload);
             return message.reply(payload);
         };
-        // ------------------------------------
 
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return replyError("❌ هذا الأمر للمشرفين فقط.");
         }
 
-        // --- ( 8 ) توحيد المدخلات ---
+        try {
+            await db.query(`CREATE TABLE IF NOT EXISTS race_roles (guildID TEXT, roleID TEXT PRIMARY KEY, raceName TEXT)`);
+        } catch(e) {}
+
         let subcommand, targetRole, raceName;
 
         if (isSlash) {
-            subcommand = interaction.options.getSubcommand(); // 'إضافة', 'إزالة', 'عرض'
+            subcommand = interaction.options.getSubcommand();
             targetRole = interaction.options.getRole('الرتبة');
             raceName = interaction.options.getString('اسم-العرق');
         } else {
-            const method = args[0] ? args[0].toLowerCase() : null; // 'add', 'remove', 'list'
+            const method = args[0] ? args[0].toLowerCase() : null;
             const roleArg = args[1];
-            raceName = args.slice(2).join(' '); // (الكود الأصلي كان صحيحاً هنا)
+            raceName = args.slice(2).join(' ');
 
             if (method === 'add') subcommand = 'إضافة';
             else if (method === 'remove') subcommand = 'إزالة';
@@ -106,9 +100,7 @@ module.exports = {
                 targetRole = message.mentions.roles.first() || guild.roles.cache.get(roleArg);
             }
         }
-        // ------------------------------------
 
-        // (عرض رسالة المساعدة لأمر البريفكس فقط)
         if (!isSlash && !subcommand) {
             const usageEmbed = new EmbedBuilder()
                 .setTitle("🛠️ المساعدة: أمر ربط الأعراق")
@@ -125,11 +117,10 @@ module.exports = {
 
         const guildID = guild.id;
 
-        // --- ( 9 ) استخدام 'subcommand' الموحد ---
         switch (subcommand) {
             case 'إضافة': {
                 if (!targetRole) return replyError("❌ لم أتمكن من العثور على هذا الرول.");
-                if (!raceName) return replyError("❌ يجب تحديد اسم العرق."); // (احتياط لأمر البريفكس)
+                if (!raceName) return replyError("❌ يجب تحديد اسم العرق.");
 
                 const validRaceName = validRaces.find(r => r.toLowerCase() === raceName.toLowerCase());
                 if (!validRaceName) {
@@ -137,8 +128,11 @@ module.exports = {
                 }
 
                 try {
-                    sql.prepare("INSERT OR REPLACE INTO race_roles (guildID, roleID, raceName) VALUES (?, ?, ?)")
-                       .run(guildID, targetRole.id, validRaceName);
+                    await db.query(`
+                        INSERT INTO race_roles (guildID, roleID, raceName) 
+                        VALUES ($1, $2, $3) 
+                        ON CONFLICT (roleID) DO UPDATE SET raceName = EXCLUDED.raceName
+                    `, [guildID, targetRole.id, validRaceName]);
                     return reply(`✅ تم ربط العرق **${validRaceName}** بالرول ${targetRole}.`);
                 } catch (e) {
                     console.error(e);
@@ -149,8 +143,8 @@ module.exports = {
             case 'إزالة': {
                 if (!targetRole) return replyError("❌ لم أتمكن من العثور على هذا الرول.");
                 try {
-                    const result = sql.prepare("DELETE FROM race_roles WHERE guildID = ? AND roleID = ?").run(guildID, targetRole.id);
-                    if (result.changes > 0) {
+                    const result = await db.query("DELETE FROM race_roles WHERE guildID = $1 AND roleID = $2", [guildID, targetRole.id]);
+                    if (result.rowCount > 0) {
                         return reply(`✅ تم حذف الرول ${targetRole} من قائمة الأعراق.`);
                     } else {
                         return replyError("❌ هذا الرول غير موجود في القائمة أصلاً.");
@@ -163,11 +157,13 @@ module.exports = {
 
             case 'عرض': {
                 try {
-                    const roles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(guildID);
+                    const res = await db.query("SELECT roleID, raceName FROM race_roles WHERE guildID = $1", [guildID]);
+                    const roles = res.rows;
+                    
                     if (roles.length === 0) {
                         return reply("لا توجد رتب أعراق محددة حالياً.");
                     }
-                    const roleList = roles.map(r => `**${r.raceName}**: <@&${r.roleID}>`).join('\n');
+                    const roleList = roles.map(r => `**${r.racename || r.raceName}**: <@&${r.roleid || r.roleID}>`).join('\n');
                     const embed = new EmbedBuilder()
                         .setTitle("📜 قائمة رتب الأعراق المسجلة")
                         .setColor(Colors.Green)
