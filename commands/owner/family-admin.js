@@ -1,5 +1,3 @@
-// commands/owner/family-admin.js
-
 const { 
     ActionRowBuilder, 
     StringSelectMenuBuilder, 
@@ -11,7 +9,7 @@ const {
     EmbedBuilder
 } = require("discord.js");
 
-const OWNER_ID = "1145327691772481577"; // 👑 الآيدي الخاص بك
+const OWNER_ID = "1145327691772481577"; 
 
 module.exports = {
     name: 'family-admin',
@@ -21,25 +19,20 @@ module.exports = {
 
     async execute(message, args) {
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
 
-        // 🔒 حماية الإمبراطور
         if (message.author.id !== OWNER_ID) return; 
 
-        // دالة مساعدة لتحليل المدخلات (ID أو Mention أو Username)
         const resolveUser = async (input) => {
             if (!input) return null;
-            // تنظيف المدخلات من الأقواس <@! >
             let cleanId = input.replace(/[<@!>]/g, '');
             
-            // 1. محاولة كآيدي مباشر
             try {
                 const user = await client.users.fetch(cleanId);
                 return user.id;
             } catch (e) {}
 
-            // 2. محاولة البحث بالاسم داخل السيرفر
             const member = message.guild.members.cache.find(m => 
                 m.user.username.toLowerCase() === input.toLowerCase() || 
                 m.displayName.toLowerCase() === input.toLowerCase()
@@ -49,7 +42,6 @@ module.exports = {
             return null;
         };
 
-        // القائمة الرئيسية
         const menuRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('family_admin_menu')
@@ -71,7 +63,6 @@ module.exports = {
 
         const response = await message.reply({ embeds: [embed], components: [menuRow] });
 
-        // التعامل مع القائمة
         const filter = i => i.user.id === OWNER_ID && i.customId === 'family_admin_menu';
         const collector = response.createMessageComponentCollector({ filter, componentType: ComponentType.StringSelect, time: 60000 });
 
@@ -104,11 +95,9 @@ module.exports = {
 
             await i.showModal(modal);
 
-            // انتظار الـ Modal Submit في نفس السياق
             try {
                 const submitted = await i.awaitModalSubmit({ time: 60000, filter: sub => sub.user.id === OWNER_ID });
                 
-                // --- معالجة التزويج ---
                 if (submitted.customId === 'modal_force_marry') {
                     const rawU1 = submitted.fields.getTextInputValue('user1');
                     const rawU2 = submitted.fields.getTextInputValue('user2');
@@ -119,25 +108,23 @@ module.exports = {
                     if (!u1 || !u2) return submitted.reply({ content: `❌ لم يتم العثور على الأعضاء: ${rawU1} أو ${rawU2}`, ephemeral: true });
                     if (u1 === u2) return submitted.reply({ content: "❌ نفس الشخص!", ephemeral: true });
 
-                    sql.prepare("DELETE FROM marriages WHERE userID = ? OR partnerID = ?").run(u1, u1);
-                    sql.prepare("DELETE FROM marriages WHERE userID = ? OR partnerID = ?").run(u2, u2);
+                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [u1, u1]);
+                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [u2, u2]);
                     const now = Date.now();
-                    sql.prepare("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES (?, ?, ?, ?)").run(u1, u2, guildId, now);
-                    sql.prepare("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES (?, ?, ?, ?)").run(u2, u1, guildId, now);
+                    await db.query("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES ($1, $2, $3, $4)", [u1, u2, guildId, now]);
+                    await db.query("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES ($1, $2, $3, $4)", [u2, u1, guildId, now]);
                     await submitted.reply({ content: `✅ **تم تزويج <@${u1}> و <@${u2}> بنجاح!**` });
                 }
                 
-                // --- معالجة الطلاق ---
                 else if (submitted.customId === 'modal_force_divorce') {
                     const rawT = submitted.fields.getTextInputValue('target');
                     const t = await resolveUser(rawT);
                     if (!t) return submitted.reply({ content: `❌ لم يتم العثور على: ${rawT}`, ephemeral: true });
 
-                    sql.prepare("DELETE FROM marriages WHERE userID = ? OR partnerID = ?").run(t, t);
+                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [t, t]);
                     await submitted.reply({ content: `✅ **تم تطليق <@${t}> من أي شريك.**` });
                 }
                 
-                // --- معالجة التبني ---
                 else if (submitted.customId === 'modal_force_adopt') {
                     const rawP = submitted.fields.getTextInputValue('parent');
                     const rawC = submitted.fields.getTextInputValue('child');
@@ -147,34 +134,31 @@ module.exports = {
                     if (!p || !c) return submitted.reply({ content: `❌ خطأ في الأعضاء.`, ephemeral: true });
                     if (p === c) return submitted.reply({ content: "❌ نفس الشخص!", ephemeral: true });
 
-                    sql.prepare("DELETE FROM children WHERE childID = ? AND guildID = ?").run(c, guildId);
-                    sql.prepare("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES (?, ?, ?, ?)").run(p, c, Date.now(), guildId);
+                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [c, guildId]);
+                    await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [p, c, Date.now(), guildId]);
                     await submitted.reply({ content: `✅ **<@${c}> أصبح ابن <@${p}>!**` });
                 }
                 
-                // --- معالجة التحرير ---
                 else if (submitted.customId === 'modal_force_disown') {
                     const rawC = submitted.fields.getTextInputValue('child');
                     const c = await resolveUser(rawC);
                     if (!c) return submitted.reply({ content: `❌ لم يتم العثور على العضو.`, ephemeral: true });
 
-                    sql.prepare("DELETE FROM children WHERE childID = ? AND guildID = ?").run(c, guildId);
+                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [c, guildId]);
                     await submitted.reply({ content: `✅ **تم تحرير <@${c}>!**` });
                 }
                 
-                // --- معالجة التصفير ---
                 else if (submitted.customId === 'modal_reset_user') {
                     const rawT = submitted.fields.getTextInputValue('target');
                     const t = await resolveUser(rawT);
                     if (!t) return submitted.reply({ content: `❌ لم يتم العثور على العضو.`, ephemeral: true });
 
-                    sql.prepare("DELETE FROM marriages WHERE userID = ? OR partnerID = ?").run(t, t);
-                    sql.prepare("DELETE FROM children WHERE childID = ?").run(t);
-                    sql.prepare("DELETE FROM children WHERE parentID = ?").run(t);
+                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [t, t]);
+                    await db.query("DELETE FROM children WHERE childID = $1", [t]);
+                    await db.query("DELETE FROM children WHERE parentID = $1", [t]);
                     await submitted.reply({ content: `✅ **تم تصفير <@${t}> بالكامل!**` });
                 }
 
-                // حذف القائمة بعد الانتهاء
                 await response.delete().catch(()=>{});
 
             } catch (err) {
