@@ -1,5 +1,3 @@
-// generators/kings-reward-generator.js
-
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
@@ -30,26 +28,22 @@ async function generateKingsAnnouncementImage(kingsData, dateStr) {
     const boxHeight = 90;
     const spacing = 20;
     
-    // حساب الطول بناءً على عدد الملوك الفعليين
     const totalHeight = 250 + (kingsData.length * (boxHeight + spacing)) + 50;
 
     const canvas = createCanvas(width, totalHeight);
     const ctx = canvas.getContext('2d');
     ctx.direction = 'rtl';
 
-    // الخلفية الإمبراطورية
     const bgGrad = ctx.createLinearGradient(0, 0, 0, totalHeight);
     bgGrad.addColorStop(0, '#0a0a0f');
     bgGrad.addColorStop(1, '#1a1a24');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, totalHeight);
 
-    // الإطار الذهبي الخارجي
     ctx.lineWidth = 6;
     ctx.strokeStyle = '#D4AF37';
     ctx.strokeRect(15, 15, width - 30, totalHeight - 30);
 
-    // العنوان الرئيسي
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 55px "Bein", sans-serif';
@@ -58,7 +52,6 @@ async function generateKingsAnnouncementImage(kingsData, dateStr) {
     ctx.fillText(fixAr('👑 مـلـوك الإمـبـراطـوريـة 👑'), width / 2, 90);
     ctx.shadowBlur = 0;
 
-    // التاريخ
     ctx.fillStyle = '#CCCCCC';
     ctx.font = '30px "Bein", sans-serif';
     ctx.fillText(dateStr, width / 2, 140);
@@ -72,9 +65,7 @@ async function generateKingsAnnouncementImage(kingsData, dateStr) {
 
     let startY = 210;
 
-    // رسم صناديق الملوك
     for (const king of kingsData) {
-        // رسم الصندوق
         ctx.fillStyle = 'rgba(255, 215, 0, 0.05)';
         ctx.beginPath();
         ctx.roundRect(padding, startY, width - (padding * 2), boxHeight, 15);
@@ -85,27 +76,25 @@ async function generateKingsAnnouncementImage(kingsData, dateStr) {
         ctx.stroke();
 
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#FFD700'; // لون اللقب ذهبي
+        ctx.fillStyle = '#FFD700'; 
         ctx.font = 'bold 35px "Bein", sans-serif';
         ctx.fillText(fixAr(king.title), width - padding - 20, startY + 55);
 
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#FFFFFF'; // اسم اللاعب أبيض
+        ctx.fillStyle = '#FFFFFF'; 
         ctx.font = 'bold 35px "Bein", sans-serif';
-        // تقصير الاسم إذا كان طويل
         let displayName = king.name;
         if (displayName.length > 15) displayName = displayName.substring(0, 15) + '...';
         ctx.fillText(fixAr(displayName), width / 2, startY + 55);
 
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#00BFFF'; // لون السمعة سماوي
+        ctx.fillStyle = '#00BFFF'; 
         ctx.font = 'bold 30px "Bein", sans-serif';
         ctx.fillText(fixAr(`🌟 +${king.rep} سمعة`), padding + 20, startY + 55);
 
         startY += boxHeight + spacing;
     }
 
-    // تذييل الصورة
     ctx.textAlign = 'center';
     ctx.fillStyle = '#888888';
     ctx.font = '25px "Bein", sans-serif';
