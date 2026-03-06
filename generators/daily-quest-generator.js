@@ -1,7 +1,6 @@
 const { createCanvas, loadImage } = require('canvas'); 
 const { AttachmentBuilder } = require('discord.js');
 
-// --- ( 1. تعريف الخطوط ) ---
 const FONT_MAIN = '"Cairo", "NotoEmoji"'; 
 const FONT_EMOJI = '"NotoEmoji"'; 
 
@@ -12,12 +11,11 @@ const FONT_COUNTDOWN = FONT_MAIN;
 const FONT_REWARDS = FONT_MAIN;
 const FONT_PROGRESS_TEXT = FONT_MAIN;
 
-// (اللون الأخضر للمهام اليومية)
 const DAILY_COLOR = { base: '#1a4b2a', frame: '#2d8649', highlight: '#34eb6e', glow: '#69ff9c' };
 
 const COLOR_XP = '#349eeb'; 
 const COLOR_MORA = '#ebc934'; 
-const COLOR_REP = '#FFD700'; // لون السمعة الذهبي 👑
+const COLOR_REP = '#FFD700'; 
 
 const BASE_COLORS = {
     background: '#1a1827', 
@@ -121,7 +119,6 @@ function drawWavyBackground(ctx, x, y, width, height, color1, color2) {
     ctx.restore();
 }
 
-// --- (دالة رسم البطاقة - ASYNC) ---
 async function drawQuestCard(ctx, x, y, questData) {
     const { quest, progress } = questData;
     const isDone = progress >= quest.goal;
@@ -131,10 +128,8 @@ async function drawQuestCard(ctx, x, y, questData) {
 
     ctx.save();
 
-    // 1. الخلفية
     drawWavyBackground(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, BASE_COLORS.background, '#11101a');
 
-    // 2. الإطار
     ctx.strokeStyle = rarityColors.highlight;
     ctx.shadowColor = rarityColors.highlight;
     ctx.shadowBlur = isDone ? 20 : 10;
@@ -151,7 +146,6 @@ async function drawQuestCard(ctx, x, y, questData) {
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
 
-    // 3. الشكل السداسي
     const hexRadius = 55;
     const hexX = x + PADDING + hexRadius;
     const hexY = y + CARD_HEIGHT / 2;
@@ -166,7 +160,6 @@ async function drawQuestCard(ctx, x, y, questData) {
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // 4. رسم الإيموجي
     try {
         const emojiStr = quest.emoji || '🎯'; 
         const emojiUrl = getEmojiUrl(emojiStr);
@@ -187,7 +180,6 @@ async function drawQuestCard(ctx, x, y, questData) {
     const textRightX = x + CARD_WIDTH - PADDING;
     const barWidth = (x + CARD_WIDTH - PADDING) - textX;
 
-    // 5. النصوص
     ctx.fillStyle = isDone ? rarityColors.glow : BASE_COLORS.text;
     ctx.font = `bold 32px ${FONT_QUEST_TITLE}`;
     ctx.textAlign = 'left';
@@ -201,34 +193,28 @@ async function drawQuestCard(ctx, x, y, questData) {
         ctx.fillText(quest.description, textX, y + PADDING + 45); 
     }
 
-    // 6. المكافآت
     ctx.textAlign = 'right'; 
     const rewardY = y + 65; 
-    let currentRewardX = textRightX; // يبدأ من أقصى اليمين ويمشي لليسار
+    let currentRewardX = textRightX;
 
     ctx.font = `bold 20px ${FONT_REWARDS}`; 
 
-    // رسم XP
     ctx.fillStyle = COLOR_XP; 
     const xpText = `${quest.reward.xp.toLocaleString()}`;
     const xpTextWidth = ctx.measureText(xpText).width;
     ctx.fillText(xpText, currentRewardX - 25, rewardY); 
     ctx.fillText(EMOJI_STAR, currentRewardX, rewardY); 
 
-    // تحريك المؤشر لليسار
     currentRewardX -= (xpTextWidth + 40);
 
-    // رسم Mora
     ctx.fillStyle = COLOR_MORA; 
     const moraText = `${quest.reward.mora.toLocaleString()}`;
     const moraTextWidth = ctx.measureText(moraText).width;
     ctx.fillText(moraText, currentRewardX - 25, rewardY); 
     ctx.fillText(EMOJI_MORA, currentRewardX, rewardY);
 
-    // تحريك المؤشر لليسار
     currentRewardX -= (moraTextWidth + 40);
 
-    // 🔥 رسم السمعة (REP) إذا كانت موجودة في المهمة
     if (quest.repReward && quest.repReward > 0) {
         ctx.fillStyle = COLOR_REP; 
         const repText = `${quest.repReward.toLocaleString()}`;
@@ -236,7 +222,6 @@ async function drawQuestCard(ctx, x, y, questData) {
         ctx.fillText(EMOJI_REP, currentRewardX, rewardY);
     }
 
-    // 7. التقدم
     const barY = y + 103; 
     drawProgressBar(ctx, textX, barY, barWidth, 15, percent, rarityColors.highlight, rarityColors.glow);
 
