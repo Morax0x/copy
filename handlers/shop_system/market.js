@@ -1,100 +1,74 @@
 const { EmbedBuilder, Colors } = require("discord.js");
-// تأكد من المسار الصحيح لملف utils (قد يحتاج ../../ إذا كان في مجلد shop_system)
 const { EMOJI_MORA } = require('../shop_system/utils.js'); 
 
-// ------------------------------------------------------------------
-// 🛠️ دوال مساعدة خاصة بنظام السوق
-// ------------------------------------------------------------------
-
-/**
- * دالة لحساب السعر مع "الانزلاق السعري" (Slippage)
- * كلما زادت الكمية، زاد السعر عند الشراء أو قل عند البيع
- */
 function calculateSlippage(basePrice, quantity, isBuy) {
     const slippageFactor = 0.0001; 
     const impact = quantity * slippageFactor;
     let avgPrice;
     
     if (isBuy) {
-        // عند الشراء: السعر يزيد
         avgPrice = basePrice * (1 + (impact / 2));
     } else {
-        // عند البيع: السعر يقل
         avgPrice = basePrice * (1 - (impact / 2));
     }
     
     return Math.max(Math.floor(avgPrice), 1);
 }
 
-// ------------------------------------------------------------------
-// 🔄 دالة التحديث الدوري للأسعار (Market Update Logic)
-// ------------------------------------------------------------------
-function updateMarketPrices() {
-    // ⚠️ ملاحظة: تأكد من مسار الداتابيس الصحيح بالنسبة لمكان هذا الملف
-    // بما أن الملف في handlers/shop_system/، والداتابيس في الجذر، نستخدم ../../
-    const sql = require('better-sqlite3')('../../mainDB.sqlite'); 
-    
-    if (!sql.open) return;
+async function updateMarketPrices(db) {
+    if (!db) return;
     
     try {
-        const allItems = sql.prepare("SELECT * FROM market_items").all();
+        const allItemsRes = await db.query("SELECT * FROM market_items");
+        const allItems = allItemsRes.rows;
         if (allItems.length === 0) return;
-        
-        const updateStmt = sql.prepare(`UPDATE market_items SET currentPrice = ?, lastChangePercent = ?, lastChange = ? WHERE id = ?`);
         
         const SATURATION_POINT = 2000; 
         const MIN_PRICE = 10; 
-        const MAX_PRICE = 50000;            
+        const MAX_PRICE = 50000;             
         
-        const transaction = sql.transaction(() => {
+        try {
+            await db.query("BEGIN");
             for (const item of allItems) {
-                // حساب عدد الأسهم المملوكة من اللاعبين
-                const result = sql.prepare("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = ?").get(item.id);
-                const totalOwned = result.total || 0;
+                const resultRes = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemid = $1", [item.id]);
+                const totalOwned = parseInt(resultRes.rows[0].total) || 0;
                 
-                // معادلة التغيير العشوائي
-                let randomPercent = (Math.random() * 0.20) - 0.10; // من -10% إلى +10%
+                let randomPercent = (Math.random() * 0.20) - 0.10; 
                 
-                // عقوبة التشبع: كلما زاد عدد الأسهم المملوكة، قل احتمال الارتفاع
                 const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
                 let finalChangePercent = randomPercent - saturationPenalty;
                 
-                // كبح جماح الأسهم الغالية
-                if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2; 
+                if (parseInt(item.currentprice) > 5000 && finalChangePercent > 0) finalChangePercent /= 2; 
                 
-                // الحد الأقصى للخسارة في جولة واحدة (-30%)
                 if (finalChangePercent < -0.30) finalChangePercent = -0.30;
                 
-                const oldPrice = item.currentPrice;
+                const oldPrice = parseInt(item.currentprice);
                 let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
                 
-                // الحدود السعرية
                 if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
                 if (newPrice > MAX_PRICE) newPrice = MAX_PRICE;
                 
                 const changeAmount = newPrice - oldPrice;
                 const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
                 
-                updateStmt.run(newPrice, displayPercent, changeAmount, item.id);
+                await db.query("UPDATE market_items SET currentprice = $1, lastchangepercent = $2, lastchange = $3 WHERE id = $4", [newPrice, displayPercent, changeAmount, item.id]);
             }
-        });
-        
-        transaction();
-        console.log(`[Market System] Prices updated successfully.`);
+            await db.query("COMMIT");
+            console.log(`[Market System] Prices updated successfully.`);
+        } catch (txErr) {
+            await db.query("ROLLBACK");
+            throw txErr;
+        }
         
     } catch (err) { 
         console.error("[Market System] Error updating prices:", err.message); 
     }
 }
 
-// ------------------------------------------------------------------
-// 🛒 معالج عمليات الشراء والبيع (Transaction Handler)
-// ------------------------------------------------------------------
-async function _handleMarketTransaction(i, client, sql, isBuy) {
+async function _handleMarketTransaction(i, client, db, isBuy) {
     await i.deferReply({ ephemeral: false }); 
     
     try {
-        // 1. استلام وتدقيق الكمية
         const quantityString = i.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         
@@ -104,53 +78,55 @@ async function _handleMarketTransaction(i, client, sql, isBuy) {
 
         const assetId = i.customId.replace(isBuy ? 'buy_modal_' : 'sell_modal_', '');
         
-        // 2. التحقق من القفل (Market Crash Lock)
         if (isBuy && client.marketLocks && client.marketLocks.has(assetId)) {
             return await i.editReply({ content: `🚫 **السهم في حالة انهيار وإعادة هيكلة!**\nيرجى الانتظار قليلاً حتى يتم طرحه بالسعر الجديد.` });
         }
 
-        // 3. التحقق من وجود الأصل
-        const item = sql.prepare("SELECT * FROM market_items WHERE id = ?").get(assetId);
+        const itemRes = await db.query("SELECT * FROM market_items WHERE id = $1", [assetId]);
+        const item = itemRes.rows[0];
         if (!item) return await i.editReply({ content: '❌ الأصل (السهم) غير موجود في النظام.' });
 
-        // 4. تجهيز بيانات اللاعب
-        let userData = client.getLevel.get(i.user.id, i.guild.id); 
-        if (!userData) userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
-        let userMora = userData.mora || 0; 
-        const userBank = userData.bank || 0;
+        let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, i.guild.id]);
+        let userData = userDataRes.rows[0];
 
-        const getPortfolio = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?");
+        if (!userData) {
+            userData = { userid: i.user.id, guildid: i.guild.id, mora: 0, bank: 0 };
+            await db.query("INSERT INTO levels (userid, guildid, mora, bank, xp, level, totalxp) VALUES ($1, $2, 0, 0, 0, 1, 0)", [i.user.id, i.guild.id]);
+        }
+
+        let userMora = parseInt(userData.mora) || 0; 
+        const userBank = parseInt(userData.bank) || 0;
+
+        const pfItemRes = await db.query("SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3", [i.user.id, i.guild.id, item.id]);
+        let pfItem = pfItemRes.rows[0];
         
-        // ==========================================================
-        // 🟢 عملية الشراء (BUY)
-        // ==========================================================
         if (isBuy) {
-            const avgPrice = calculateSlippage(item.currentPrice, quantity, true);
+            const avgPrice = calculateSlippage(parseInt(item.currentprice), quantity, true);
             const totalCost = Math.floor(avgPrice * quantity);
             
-            // التحقق من الرصيد
             if (userMora < totalCost) {
                 let msg = `❌ **رصيدك غير كافي!**`;
                 if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، يمكنك السحب منه.`;
                 
-                // تنبيه الانزلاق السعري
-                if (totalCost > (item.currentPrice * quantity)) {
+                if (totalCost > (parseInt(item.currentprice) * quantity)) {
                     msg += `\n⚠️ **تنبيه:** السعر ارتفع قليلاً بسبب الانزلاق السعري للكميات الكبيرة.\nالتكلفة الحالية: **${totalCost.toLocaleString()}**`;
                 }
                 return await i.editReply({ content: msg });
             }
             
-            // الخصم والتسجيل
-            userData.mora -= totalCost; 
-            userData.shop_purchases = (userData.shop_purchases || 0) + 1;
-            client.setLevel.run(userData);
-            
-            // تحديث المحفظة (Portfolio Upsert)
-            let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
-            if (pfItem) {
-                sql.prepare("UPDATE user_portfolio SET quantity = quantity + ? WHERE id = ?").run(quantity, pfItem.id);
-            } else {
-                sql.prepare("INSERT INTO user_portfolio (guildID, userID, itemID, quantity) VALUES (?, ?, ?, ?)").run(i.guild.id, i.user.id, item.id, quantity);
+            try {
+                await db.query("BEGIN");
+                await db.query("UPDATE levels SET mora = mora - $1, shop_purchases = COALESCE(shop_purchases, 0) + 1 WHERE userid = $2 AND guildid = $3", [totalCost, i.user.id, i.guild.id]);
+                
+                if (pfItem) {
+                    await db.query("UPDATE user_portfolio SET quantity = quantity + $1 WHERE id = $2", [quantity, pfItem.id]);
+                } else {
+                    await db.query("INSERT INTO user_portfolio (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4)", [i.guild.id, i.user.id, item.id, quantity]);
+                }
+                await db.query("COMMIT");
+            } catch (txErr) {
+                await db.query("ROLLBACK");
+                throw txErr;
             }
             
             const embed = new EmbedBuilder()
@@ -161,29 +137,29 @@ async function _handleMarketTransaction(i, client, sql, isBuy) {
             
             await i.editReply({ embeds: [embed] });
 
-        } 
-        // ==========================================================
-        // 🔴 عملية البيع (SELL)
-        // ==========================================================
-        else {
-            let pfItem = getPortfolio.get(i.user.id, i.guild.id, item.id);
-            const userQty = pfItem ? pfItem.quantity : 0;
+        } else {
+            const userQty = pfItem ? parseInt(pfItem.quantity) : 0;
             
             if (userQty < quantity) {
                 return await i.editReply({ content: `❌ لا تملك هذه الكمية للبيع (لديك: **${userQty}**).` });
             }
             
-            const avgPrice = calculateSlippage(item.currentPrice, quantity, false);
+            const avgPrice = calculateSlippage(parseInt(item.currentprice), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
             
-            userData.mora += totalGain;
-            client.setLevel.run(userData);
-            
-            // تحديث المحفظة (إنقاص أو حذف)
-            if (userQty - quantity > 0) {
-                sql.prepare("UPDATE user_portfolio SET quantity = ? WHERE id = ?").run(userQty - quantity, pfItem.id);
-            } else {
-                sql.prepare("DELETE FROM user_portfolio WHERE id = ?").run(pfItem.id);
+            try {
+                await db.query("BEGIN");
+                await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3", [totalGain, i.user.id, i.guild.id]);
+                
+                if (userQty - quantity > 0) {
+                    await db.query("UPDATE user_portfolio SET quantity = $1 WHERE id = $2", [userQty - quantity, pfItem.id]);
+                } else {
+                    await db.query("DELETE FROM user_portfolio WHERE id = $1", [pfItem.id]);
+                }
+                await db.query("COMMIT");
+            } catch (txErr) {
+                await db.query("ROLLBACK");
+                throw txErr;
             }
             
             const embed = new EmbedBuilder()
