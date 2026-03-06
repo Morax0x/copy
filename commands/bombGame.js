@@ -1,12 +1,4 @@
-const { 
-    SlashCommandBuilder, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ComponentType, 
-    PermissionsBitField 
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 
 const EXPLOSION_GIFS = [
     'https://i.postimg.cc/0yKcSPb4/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f776174747061642d6d656469612d736572766963652f53746f.gif',
@@ -95,7 +87,6 @@ module.exports = {
                 lobbyCollector.stop('game_started');
                 await i.update({ content: '✅ **تم إغلاق التسجيل! جاري تحضير القنبلة...**', components: [], embeds: [] });
                 
-                // بدء حلقة اللعبة
                 await startGameLoop(interaction.channel, players);
             }
         });
@@ -103,7 +94,6 @@ module.exports = {
 };
 
 async function startGameLoop(channel, players) {
-    // شرط الفوز
     if (players.length === 1) {
         const winEmbed = new EmbedBuilder()
             .setTitle('🏆 انتــهـت اللعبة!')
@@ -113,7 +103,6 @@ async function startGameLoop(channel, players) {
         return channel.send({ content: `👑 الفائــز: <@${players[0]}>`, embeds: [winEmbed] });
     }
 
-    // تجهيز وقت الانفجار
     const minTime = 8000;
     const maxTime = 25000;
     const explodeTime = Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime; 
@@ -125,7 +114,6 @@ async function startGameLoop(channel, players) {
     let activeCollector = null;
     let activeMessage = null;
 
-    // مؤقت الانفجار
     const explosionTimer = setTimeout(async () => {
         roundEnded = true;
         if (activeCollector) activeCollector.stop('exploded');
@@ -137,7 +125,6 @@ async function startGameLoop(channel, players) {
             await activeMessage.edit({ components: [disabledRow] }).catch(() => {});
         }
 
-        // إرسال رسالة الانفجار
         const explodedEmbed = new EmbedBuilder()
             .setTitle('💥 بـــووم!')
             .setDescription(`انفجرت القنبلة في يد <@${currentHolderId}>!\n\n**تم إقصاؤه من اللعبة!** 💀`)
@@ -145,7 +132,6 @@ async function startGameLoop(channel, players) {
             .setImage(EXPLOSION_GIFS[Math.floor(Math.random() * EXPLOSION_GIFS.length)]) 
             .setFooter({ text: `عدد اللاعبين المتبقين: ${players.length - 1}` });
 
-        // 🔥🔥 التعديل هنا: استخدام currentHolderId لضمان المنشن الصحيح 🔥🔥
         await channel.send({ content: `💀 **مات <@${currentHolderId}>**`, embeds: [explodedEmbed] });
 
         const loserIndex = players.indexOf(currentHolderId);
@@ -159,7 +145,6 @@ async function startGameLoop(channel, players) {
 
     }, explodeTime);
 
-    // دالة إرسال الرسالة المتتالية
     async function sendTurnMessage(holderId) {
         if (roundEnded) return;
 
@@ -191,7 +176,10 @@ async function startGameLoop(channel, players) {
         activeCollector = collector;
 
         collector.on('collect', async i => {
-            if (roundEnded) return;
+            if (roundEnded) {
+                if (!i.replied && !i.deferred) await i.deferUpdate().catch(()=>{});
+                return;
+            }
 
             if (i.user.id !== holderId) {
                 return i.reply({ content: 'القنبلة مو عندك يا سبـك <:stop:1436337453098340442>', ephemeral: true });
