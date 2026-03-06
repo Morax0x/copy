@@ -2,53 +2,50 @@ const { joinVoiceChannel } = require('@discordjs/voice');
 const { ActivityType } = require('discord.js');
 
 module.exports = async (client) => {
-    const sql = client.sql;
+    const db = client.db;
 
     console.log("🔄 [Auto-Join] Checking saved voice channels and status...");
 
-    // 1. استعادة الحالة (Status)
     try {
-        const savedStatus = sql.prepare("SELECT savedStatusType, savedStatusText FROM settings WHERE savedStatusText IS NOT NULL LIMIT 1").get();
+        const savedStatusRes = await db.query("SELECT savedstatustype, savedstatustext FROM settings WHERE savedstatustext IS NOT NULL LIMIT 1");
+        const savedStatus = savedStatusRes.rows[0];
         
         if (savedStatus) {
             let type = ActivityType.Playing;
-            if (savedStatus.savedStatusType === 'Watching') type = ActivityType.Watching;
-            else if (savedStatus.savedStatusType === 'Listening') type = ActivityType.Listening;
-            else if (savedStatus.savedStatusType === 'Streaming') type = ActivityType.Streaming;
-            else if (savedStatus.savedStatusType === 'Competing') type = ActivityType.Competing;
-            else if (savedStatus.savedStatusType === 'Custom') type = ActivityType.Custom;
+            if (savedStatus.savedstatustype === 'Watching') type = ActivityType.Watching;
+            else if (savedStatus.savedstatustype === 'Listening') type = ActivityType.Listening;
+            else if (savedStatus.savedstatustype === 'Streaming') type = ActivityType.Streaming;
+            else if (savedStatus.savedstatustype === 'Competing') type = ActivityType.Competing;
+            else if (savedStatus.savedstatustype === 'Custom') type = ActivityType.Custom;
 
-            // إذا كانت الحالة Custom
             if (type === ActivityType.Custom) {
                 client.user.setPresence({
-                    activities: [{ name: savedStatus.savedStatusText, type: type, state: savedStatus.savedStatusText }],
+                    activities: [{ name: savedStatus.savedstatustext, type: type, state: savedStatus.savedstatustext }],
                     status: 'online'
                 });
             } else {
-                // الحالات الأخرى
                 client.user.setPresence({
-                    activities: [{ name: savedStatus.savedStatusText, type: type }],
+                    activities: [{ name: savedStatus.savedstatustext, type: type }],
                     status: 'online'
                 });
             }
-            console.log(`✅ [Status] Restored: ${savedStatus.savedStatusType} ${savedStatus.savedStatusText}`);
+            console.log(`✅ [Status] Restored: ${savedStatus.savedstatustype} ${savedStatus.savedstatustext}`);
         }
     } catch (e) {
         console.error("[Auto-Join] Error restoring status:", e.message);
     }
 
-    // 2. استعادة القنوات الصوتية
     try {
-        const settings = sql.prepare("SELECT guild, voiceChannelID FROM settings WHERE voiceChannelID IS NOT NULL").all();
+        const settingsRes = await db.query("SELECT guild, voicechannelid FROM settings WHERE voicechannelid IS NOT NULL");
+        const settings = settingsRes.rows;
 
         for (const data of settings) {
             const guild = client.guilds.cache.get(data.guild);
             if (!guild) continue;
 
-            const channel = guild.channels.cache.get(data.voiceChannelID);
+            const channel = guild.channels.cache.get(data.voicechannelid);
             if (!channel || !channel.isVoiceBased()) {
-                // القناة حذفت؟ نحذفها من الداتابيس
-                sql.prepare("UPDATE settings SET voiceChannelID = NULL WHERE guild = ?").run(data.guild);
+                await db.query("UPDATE settings SET voicechannelid = NULL WHERE guild = $1", [data.guild]);
                 continue;
             }
 
