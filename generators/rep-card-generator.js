@@ -35,7 +35,6 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
     ctx.closePath();
 }
 
-// 🔥 تم إضافة senderName لاستقبال اسم المزكي
 async function generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, currentPoints, rankData, isRankUp) {
     const width = 1000;
     const height = 450;
@@ -43,7 +42,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     const ctx = canvas.getContext('2d');
     ctx.direction = 'rtl';
 
-    // 1️⃣ الخلفية
     ctx.fillStyle = '#08080c';
     ctx.fillRect(0, 0, width, height);
 
@@ -77,7 +75,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
 
-    // 2️⃣ الإطار الملكي
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.strokeRect(15, 15, width - 30, height - 30);
@@ -86,7 +83,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     ctx.strokeStyle = isRankUp ? '#00FF88' : rankData.color;
     ctx.strokeRect(25, 25, width - 50, height - 50);
 
-    // 3️⃣ العنوان
     ctx.fillStyle = isRankUp ? '#00FF88' : '#FFD700';
     ctx.font = 'bold 50px "Bein", sans-serif';
     ctx.textAlign = 'center';
@@ -102,7 +98,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     ctx.fillStyle = lineGrad;
     ctx.fillRect(width / 2 - 300, 110, 600, 2);
 
-    // 4️⃣ رسم الأفاتارات
     const drawCirc = async (url, x, y, size, border, glow) => {
         try {
             if (glow) {
@@ -135,7 +130,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     await drawCirc(receiverAvatar, width - 260, 140, 180, isRankUp ? '#00FF88' : rankData.color, isRankUp ? '#00FF8844' : `${rankData.color}44`);
     await drawCirc(senderAvatar, 50, 40, 80, 'rgba(255,255,255,0.4)', null);
     
-    // 🎨 معلومات المزكي (على اليسار فوق)
     ctx.fillStyle = '#888888';
     ctx.font = '18px "Bein", sans-serif';
     ctx.textAlign = 'left';
@@ -146,7 +140,6 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     let sName = senderName.length > 12 ? senderName.substring(0, 12) + '..' : senderName;
     ctx.fillText(fixAr(sName), 140, 100);
 
-    // 5️⃣ معلومات المستلم
     ctx.textAlign = 'right';
     
     ctx.fillStyle = '#FFFFFF';
@@ -162,9 +155,8 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
     ctx.font = '32px "Bein", sans-serif';
     ctx.fillText(fixAr(`مجموع السمعة: ${currentPoints.toLocaleString()} 🌟`), width - 300, 315);
 
-    // 6️⃣ شريط التقدم 
     const barW = 600;
-    const barH = 35; // زيادة سمك الشريط ليتسع للنص
+    const barH = 35; 
     const barX = width - 300 - barW;
     const barY = 360;
 
@@ -196,17 +188,14 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // 🔥 النص داخل الشريط 🔥
         ctx.textAlign = 'center';
         ctx.font = 'bold 20px "Bein", sans-serif';
         
         if (isRankUp) {
-            ctx.fillStyle = '#000000'; // نص أسود عشان يوضح على الأخضر الفاتح
+            ctx.fillStyle = '#000000'; 
             ctx.fillText(fixAr("🎉 تـم الارتـقـاء للـرتـبـة الجـديـدة! 🎉"), barX + barW / 2, barY + 25);
         } else {
-            // رسم الرقم كنسبة 15/25
             const progressText = `${currentPoints} / ${rankData.next}`;
-            // كتابة النص بلون أبيض مع ظل أسود قوي عشان يوضح في الجهتين
             ctx.fillStyle = '#FFFFFF';
             ctx.shadowColor = '#000000';
             ctx.shadowBlur = 5;
