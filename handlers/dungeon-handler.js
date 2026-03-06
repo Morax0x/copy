@@ -1,32 +1,27 @@
-// handlers/dungeon-handler.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, ComponentType, MessageFlags, Colors } = require('discord.js');
 const { runDungeon } = require('./dungeon-battle.js'); 
 const { dungeonConfig, EMOJI_MORA, OWNER_ID } = require('./dungeon/constants.js');
 const { manageTickets } = require('./dungeon/utils.js');
 
 const activeDungeonRequests = new Map();
-const COOLDOWN_TIME = 1 * 60 * 60 * 1000; // 🔥 ساعة واحدة فقط 🔥
+const COOLDOWN_TIME = 1 * 60 * 60 * 1000; 
 
-async function startDungeon(interaction, sql) {
+async function startDungeon(interaction, db) {
     const user = interaction.user;
 
-    // 🔥🔥 معالجة زر نصب المخيم (Campfire) القادم من داخل اللعبة 🔥🔥
     const isButtonInteraction = interaction.isButton && typeof interaction.isButton === 'function' && interaction.isButton();
 
     if (isButtonInteraction && interaction.customId === 'dungeon_campfire') {
         return; 
     }
 
-    // --- بداية الدانجون (من الأمر الرئيسي) ---
-
     if (activeDungeonRequests.has(user.id)) {
         return interaction.reply({ content: "🚫 لديك طلب دانجون نشط بالفعل!", flags: [MessageFlags.Ephemeral] });
     }
 
-    const leaderData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
+    const leaderDataRes = await db.query("SELECT level FROM levels WHERE userid = $1 AND guildid = $2", [user.id, interaction.guild.id]);
+    const leaderData = leaderDataRes.rows[0];
     
-    // شرط القائد لفل 10
     if (!leaderData || leaderData.level < 10) {
         const denyEmbed = new EmbedBuilder()
             .setTitle("✶ لا تستوفي الشروط")
@@ -37,18 +32,19 @@ async function startDungeon(interaction, sql) {
         return interaction.reply({ embeds: [denyEmbed], flags: [MessageFlags.Ephemeral] });
     }
 
-    // 👑 التحقق مما إذا كان اللاعب هو "ملك الهاوية"
     let abyssKing = false;
     try {
-        const settings = sql.prepare("SELECT roleAbyss FROM settings WHERE guild = ?").get(interaction.guild.id);
-        if (settings && settings.roleAbyss && interaction.member.roles.cache.has(settings.roleAbyss)) {
+        const settingsRes = await db.query("SELECT roleabyss FROM settings WHERE guild = $1", [interaction.guild.id]);
+        const settings = settingsRes.rows[0];
+        if (settings && settings.roleabyss && interaction.member.roles.cache.has(settings.roleabyss)) {
             abyssKing = true;
         }
     } catch (e) {}
 
-    if (user.id !== OWNER_ID && !abyssKing) { // 👑 استثناء ملك الهاوية من الفحص المبدئي هنا أيضاً للاحتياط
-        const lastRun = sql.prepare("SELECT last_dungeon FROM levels WHERE user = ? AND guild = ?").get(user.id, interaction.guild.id);
-        const lastDungeon = lastRun?.last_dungeon || 0;
+    if (user.id !== OWNER_ID && !abyssKing) { 
+        const lastRunRes = await db.query("SELECT last_dungeon FROM levels WHERE userid = $1 AND guildid = $2", [user.id, interaction.guild.id]);
+        const lastRun = lastRunRes.rows[0];
+        const lastDungeon = lastRun ? (parseInt(lastRun.last_dungeon) || 0) : 0;
         const now = Date.now();
         if (now - lastDungeon < COOLDOWN_TIME) {
              const remaining = lastDungeon + COOLDOWN_TIME;
@@ -64,12 +60,11 @@ async function startDungeon(interaction, sql) {
     const randomKey = themeKeys[Math.floor(Math.random() * themeKeys.length)];
     const selectedTheme = { ...dungeonConfig.themes[randomKey], key: randomKey };
       
-    // 🔥🔥 فحص الاستكمال التلقائي (بدون رسالة سؤال) 🔥🔥
     let startFloor = 1;
-    const save = sql.prepare("SELECT * FROM dungeon_saves WHERE hostID = ?").get(user.id);
+    const saveRes = await db.query("SELECT * FROM dungeon_saves WHERE hostid = $1", [user.id]);
+    const save = saveRes.rows[0];
 
     if (save) {
-        // التحقق من صلاحية الحفظ
         let expiryTime = 24 * 60 * 60 * 1000;
         const member = interaction.member || (interaction.guild ? interaction.guild.members.cache.get(user.id) : null);
         
@@ -78,20 +73,19 @@ async function startDungeon(interaction, sql) {
             else if (member.roles.cache.has('1395674235002945636')) expiryTime = 35 * 60 * 60 * 1000;
         }
 
-        const timeLeft = expiryTime - (Date.now() - save.timestamp);
+        const timeLeft = expiryTime - (Date.now() - parseInt(save.timestamp));
 
         if (timeLeft > 0) {
             startFloor = save.floor; 
         } else {
-            sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(user.id);
+            await db.query("DELETE FROM dungeon_saves WHERE hostid = $1", [user.id]);
         }
     }
 
-    // 💡 حفظ الطابق في الجلسة ليتمكن ملف end-game من حسابه بشكل صحيح
     activeDungeonRequests.set(user.id, { status: 'lobby', startFloor: startFloor });
 
     try {
-        await lobbyPhase(interaction, null, selectedTheme, sql, startFloor);
+        await lobbyPhase(interaction, null, selectedTheme, db, startFloor);
     } catch (err) {
         console.error(err);
         activeDungeonRequests.delete(user.id);
@@ -100,8 +94,7 @@ async function startDungeon(interaction, sql) {
     }
 }
 
-// ✅ اللوبي (يظهر ملاحظة الاستكمال إن وجد)
-async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
+async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
     const host = interaction.user;
     const guildId = interaction.guild.id;
       
@@ -109,13 +102,13 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
     partyClasses.set(host.id, 'Leader');
     let party = [host.id];
 
-    // دالة مساعدة سريعة لفحص ميزة ملك الهاوية لعضو معين
     const isUserAbyssKing = async (userId) => {
         try {
-            const settings = sql.prepare("SELECT roleAbyss FROM settings WHERE guild = ?").get(guildId);
-            if (!settings || !settings.roleAbyss) return false;
+            const settingsRes = await db.query("SELECT roleabyss FROM settings WHERE guild = $1", [guildId]);
+            const settings = settingsRes.rows[0];
+            if (!settings || !settings.roleabyss) return false;
             const member = await interaction.guild.members.fetch(userId).catch(() => null);
-            if (member && member.roles.cache.has(settings.roleAbyss)) return true;
+            if (member && member.roles.cache.has(settings.roleabyss)) return true;
         } catch (e) {}
         return false;
     };
@@ -182,11 +175,12 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                 const targetIsKing = await isUserAbyssKing(i.user.id);
 
                 if (!party.includes(i.user.id) && i.user.id !== OWNER_ID && !targetIsKing) {
-                    const jData = sql.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
+                    const jDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, guildId]);
+                    const jData = jDataRes.rows[0];
                     
                     if (!jData || jData.level < 5 || jData.mora < 100) return i.reply({ content: "🚫 لا تستوفي الشروط (لفل 5+ ومورا 100).", flags: [MessageFlags.Ephemeral] });
                     
-                    const limitCheck = manageTickets(i.user.id, guildId, sql, 'check', i.member);
+                    const limitCheck = await manageTickets(i.user.id, guildId, db, 'check', i.member);
                     
                     if (limitCheck.tickets <= 0) {
                         const now = new Date();
@@ -264,7 +258,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
             const now = Date.now();
             
             if (startFloor > 1) {
-                sql.prepare("DELETE FROM dungeon_saves WHERE hostID = ?").run(host.id);
+                await db.query("DELETE FROM dungeon_saves WHERE hostid = $1", [host.id]);
             }
 
             let validParty = [];
@@ -276,25 +270,29 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                 if (id === host.id || id === OWNER_ID || targetIsKing) {
                     validParty.push(id);
                     
-                    // 👑 إعفاء الملوك من رسوم الدخول 100 مورا والكولداون
                     if (id !== OWNER_ID && !targetIsKing) {
-                        sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
+                        await db.query("UPDATE levels SET mora = mora - 100 WHERE userid = $1 AND guildid = $2", [id, guildId]);
                     }
                     
                     if (id === host.id && id !== OWNER_ID && !targetIsKing) {
-                        sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(now, id, guildId);
+                        await db.query("UPDATE levels SET last_dungeon = $1 WHERE userid = $2 AND guildid = $3", [now, id, guildId]);
                     }
                 } else {
                     const memberObj = await msg.guild.members.fetch(id).catch(() => null);
-                    const consumeResult = manageTickets(id, guildId, sql, 'consume', memberObj);
+                    const consumeResult = await manageTickets(id, guildId, db, 'consume', memberObj);
                     
                     if (consumeResult.success) {
                         validParty.push(id);
-                        sql.prepare("UPDATE levels SET mora = mora - 100 WHERE user = ? AND guild = ?").run(id, guildId);
+                        await db.query("UPDATE levels SET mora = mora - 100 WHERE userid = $1 AND guildid = $2", [id, guildId]);
                         
-                        const d = sql.prepare("SELECT last_join_reset FROM levels WHERE user = ? AND guild = ?").get(id, guildId);
-                        if (now - (d?.last_join_reset||0) > COOLDOWN_TIME) sql.prepare("UPDATE levels SET last_join_reset = ?, dungeon_join_count = 1 WHERE user = ? AND guild = ?").run(now, id, guildId);
-                        else sql.prepare("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE user = ? AND guild = ?").run(id, guildId);
+                        const dRes = await db.query("SELECT last_join_reset FROM levels WHERE userid = $1 AND guildid = $2", [id, guildId]);
+                        const d = dRes.rows[0];
+                        const lastJoin = d ? (parseInt(d.last_join_reset) || 0) : 0;
+                        if (now - lastJoin > COOLDOWN_TIME) {
+                            await db.query("UPDATE levels SET last_join_reset = $1, dungeon_join_count = 1 WHERE userid = $2 AND guildid = $3", [now, id, guildId]);
+                        } else {
+                            await db.query("UPDATE levels SET dungeon_join_count = dungeon_join_count + 1 WHERE userid = $1 AND guildid = $2", [id, guildId]);
+                        }
                     } else {
                         kickedMembers.push(id);
                     }
@@ -321,7 +319,7 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                 
                 if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
 
-                await runDungeon(thread, msg.channel, validParty, theme, sql, host.id, partyClasses, activeDungeonRequests, startFloor);
+                await runDungeon(thread, msg.channel, validParty, theme, db, host.id, partyClasses, activeDungeonRequests, startFloor);
 
             } catch (e) {
                 console.error(e);
@@ -341,12 +339,12 @@ async function lobbyPhase(interaction, oldMsg, theme, sql, startFloor = 1) {
                         
                         if (reason === 'user_cancel') {
                              const hostIsKing = await isUserAbyssKing(host.id);
-                             const penaltyMs = hostIsKing ? 0 : 3 * 60 * 1000; // 👑 إعفاء من عقوبة الإلغاء
+                             const penaltyMs = hostIsKing ? 0 : 3 * 60 * 1000; 
                              
                              if (!hostIsKing) {
                                  const fullCooldown = 1 * 60 * 60 * 1000; 
                                  const newLastDungeon = Date.now() - (fullCooldown - penaltyMs);
-                                 sql.prepare("UPDATE levels SET last_dungeon = ? WHERE user = ? AND guild = ?").run(newLastDungeon, host.id, guildId);
+                                 await db.query("UPDATE levels SET last_dungeon = $1 WHERE userid = $2 AND guildid = $3", [newLastDungeon, host.id, guildId]);
                                  const readyTimestamp = Math.floor((Date.now() + penaltyMs) / 1000);
                                  cancelledEmbed.setDescription(`**قمـت بـ الغـاء الغـارة الاخيـرة .. انتـظر <t:${readyTimestamp}:R> لتفتح غـارة جديدة**`);
                              } else {
