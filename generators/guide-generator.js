@@ -1,5 +1,3 @@
-// generators/guide-generator.js
-
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
@@ -94,7 +92,6 @@ async function generateGuideImage(type) {
     else if (type === 'kings_1' || type === 'kings_2') {
         mainTitle = "ألقاب الملوك";
         themeColor = '#FFD700'; 
-        // 🔥 تم إضافة قيمة السمعة (rep) لكل ملك هنا 🔥
         const allKings = [
             { title: 'ملك الكازينو', desc: 'سيد الثروة والمال الذي يطوع الحظ لخدمة خزائنه', req: 'تحقيق أعلى مجموع أرباح من ألعاب الكازينو خلال اليوم الحالي.', buff: 'يقتطع ضريبة لصالحه من أرباح جميع اللاعبين الآخرين.', rep: '🌟 +5 سمعة يومياً' },
             { title: 'ملك الهاوية', desc: 'المحارب الذي لم تهزه أهوال الظلام وقهر أعماق الدانجون', req: 'الوصول إلى أعمق طابق في الدانجون من بين جميع اللاعبين.', buff: 'يحصل على إعفاء كامل من تذاكر الدانجون ووقت الانتظار.', rep: '🌟 +4 سمعة يومياً' },
@@ -133,7 +130,6 @@ async function generateGuideImage(type) {
     const padding = 30;
     const textMaxWidth = width - 160;
 
-    // --- حساب الطول الكلي للوحة ---
     for (const item of content) {
         let itemHeight = padding * 2; 
         itemHeight += 45; 
@@ -151,7 +147,6 @@ async function generateGuideImage(type) {
             tCtx.font = 'bold 28px "Bein", sans-serif';
             itemHeight += measureWrappedText(tCtx, "الميزة الملكية: " + item.buff, textMaxWidth) * 45;
         }
-        // إضافة مساحة للسمعة إذا وجدت
         if (item.rep) {
             itemHeight += 10;
             tCtx.font = 'bold 28px "Bein", sans-serif';
@@ -200,7 +195,6 @@ async function generateGuideImage(type) {
     ctx.textAlign = 'right';
     let currentY = 170;
 
-    // --- رسم المحتوى ---
     for (const item of content) {
         drawPremiumPanel(ctx, 50, currentY, width - 100, item.calculatedHeight, 'rgba(255, 255, 255, 0.15)');
 
@@ -239,14 +233,13 @@ async function generateGuideImage(type) {
             textY = drawWrappedText(ctx, item.buff, width - 80 - buffLabelWidth, textY, textMaxWidth - buffLabelWidth, 45);
         }
 
-        // رسم سطر جائزة السمعة
         if (item.rep) {
             ctx.font = 'bold 28px "Bein", sans-serif';
-            ctx.fillStyle = '#00BFFF'; // لون سماوي مميز
+            ctx.fillStyle = '#00BFFF'; 
             ctx.fillText(fixAr("الجائزة: "), width - 80, textY);
             
             const repLabelWidth = ctx.measureText(fixAr("الجائزة: ")).width;
-            ctx.fillStyle = '#FFD700'; // لون ذهبي لقيمة السمعة
+            ctx.fillStyle = '#FFD700'; 
             ctx.font = 'bold 28px "Bein", sans-serif';
             textY = drawWrappedText(ctx, item.rep, width - 80 - repLabelWidth, textY, textMaxWidth - repLabelWidth, 45);
         }
