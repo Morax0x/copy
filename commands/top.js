@@ -1,5 +1,3 @@
-// commands/top.js
-
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const path = require('path');
 
@@ -9,7 +7,6 @@ const { OWNER_ID } = require('../handlers/dungeon/constants.js');
 
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
-// 🔥 تم التعديل لتصبح 10 لاعبين في الصفحة 🔥
 const ROWS_PER_PAGE = 10; 
 
 function getWeekStartDateString() {
@@ -26,52 +23,59 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
     
     try {
         if (type === 'level') {
-            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT * FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY totalXP DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'rep') {
-            // 🔥 تم الإصلاح هنا: إخفاء الإمبراطور من توب السمعة 🔥
-            allUsers = sql.prepare("SELECT userID as user, CAST(rep_points AS INTEGER) as rp FROM user_reputation WHERE guildID = ? AND userID != ? AND CAST(rep_points AS INTEGER) > 0 ORDER BY rp DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT userID as "user", CAST(rep_points AS INTEGER) as rp FROM user_reputation WHERE guildID = $1 AND userID != $2 AND CAST(rep_points AS INTEGER) > 0 ORDER BY rp DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'weekly_xp') {
             const weekStart = getWeekStartDateString();
-            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildID = ? AND userID != ? AND weekStartDate = ? AND score > 0 ORDER BY score DESC`).all(guild.id, OWNER_ID, weekStart);
+            const res = await sql.query('SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildID = $1 AND userID != $2 AND weekStartDate = $3 AND (messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC', [guild.id, OWNER_ID, weekStart]);
+            allUsers = res.rows;
         } else if (type === 'daily_xp') {
             const today = getTodayDateString();
-            allUsers = sql.prepare(`SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildID = ? AND userID != ? AND date = ? AND score > 0 ORDER BY score DESC`).all(guild.id, OWNER_ID, today);
+            const res = await sql.query('SELECT *, (messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildID = $1 AND userID != $2 AND date = $3 AND (messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC', [guild.id, OWNER_ID, today]);
+            allUsers = res.rows;
         } else if (type === 'monthly_xp') {
             const monthStart = getMonthStartDateString();
-            allUsers = sql.prepare(`
-                SELECT userID as user, SUM(messages) as total_messages, SUM(vc_minutes) as total_vc, SUM(messages * 15 + vc_minutes * 10) as score 
-                FROM user_daily_stats WHERE guildID = ? AND userID != ? AND date >= ? GROUP BY userID HAVING score > 0 ORDER BY score DESC
-            `).all(guild.id, OWNER_ID, monthStart);
+            const res = await sql.query('SELECT userID as "user", SUM(messages) as total_messages, SUM(vc_minutes) as total_vc, SUM(messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildID = $1 AND userID != $2 AND date >= $3 GROUP BY userID HAVING SUM(messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC', [guild.id, OWNER_ID, monthStart]);
+            allUsers = res.rows;
         } else if (type === 'mora') {
-            allUsers = sql.prepare("SELECT * FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT * FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY (mora + bank) DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'streak') {
-            allUsers = sql.prepare("SELECT userID as user, streakCount FROM streaks WHERE guildID = ? AND userID != ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT userID as "user", streakCount FROM streaks WHERE guildID = $1 AND userID != $2 AND streakCount > 0 ORDER BY streakCount DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'media_streak') {
-            allUsers = sql.prepare("SELECT userID as user, streakCount FROM media_streaks WHERE guildID = ? AND userID != ? AND streakCount > 0 ORDER BY streakCount DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT userID as "user", streakCount FROM media_streaks WHERE guildID = $1 AND userID != $2 AND streakCount > 0 ORDER BY streakCount DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'achievements') {
-            allUsers = sql.prepare("SELECT userID as user, COUNT(*) as count FROM user_achievements WHERE guildID = ? AND userID != ? GROUP BY userID ORDER BY count DESC").all(guild.id, OWNER_ID);
+            const res = await sql.query('SELECT userID as "user", COUNT(*) as count FROM user_achievements WHERE guildID = $1 AND userID != $2 GROUP BY userID ORDER BY count DESC', [guild.id, OWNER_ID]);
+            allUsers = res.rows;
         } else if (type === 'strongest') {
-            const weapons = sql.prepare("SELECT * FROM user_weapons WHERE guildID = ? AND userID != ?").all(guild.id, OWNER_ID);
-            const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
-            const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
+            const weaponsRes = await sql.query("SELECT * FROM user_weapons WHERE guildID = $1 AND userID != $2", [guild.id, OWNER_ID]);
+            const weapons = weaponsRes.rows;
+            const lvlRes = await sql.query('SELECT "user", level FROM levels WHERE guild = $1', [guild.id]);
+            const levelsMap = new Map(lvlRes.rows.map(r => [r.user, r.level]));
+            const skillsRes = await sql.query("SELECT userID, SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = $1 GROUP BY userID", [guild.id]);
+            const skillsMap = new Map(skillsRes.rows.map(r => [r.userid, parseInt(r.totallevels) || 0]));
             let stats = [];
             for (const w of weapons) {
-                const conf = weaponsConfig.find(c => c.race === w.raceName);
+                const conf = weaponsConfig.find(c => c.race === (w.racename || w.raceName));
                 if(!conf) continue;
-                const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
-                const lvlData = getLvl.get(guild.id, w.userID);
-                const playerLevel = lvlData?.level || 1;
+                const dmg = conf.base_damage + (conf.damage_increment * ((w.weaponlevel || w.weaponLevel) - 1));
+                const uid = w.userid || w.userID;
+                const playerLevel = levelsMap.get(uid) || 1;
                 const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
-                const skillData = getSkills.get(guild.id, w.userID);
-                const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
+                const skillLevelsTotal = skillsMap.get(uid) || 0;
                 const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
-                stats.push({ user: w.userID, damage: dmg, hp, level: playerLevel, skillLevels: skillLevelsTotal, powerScore });
+                stats.push({ user: uid, damage: dmg, hp, level: playerLevel, skillLevels: skillLevelsTotal, powerScore });
             }
             allUsers = stats.sort((a, b) => b.powerScore - a.powerScore);
         }
 
         if (targetUserId && targetUserId !== OWNER_ID) {
-            const index = allUsers.findIndex(u => (u.user || u.userID) === targetUserId);
+            const index = allUsers.findIndex(u => (u.user || u.userid || u.userID) === targetUserId);
             if (index !== -1) page = Math.ceil((index + 1) / ROWS_PER_PAGE);
         } else if (targetUserId === OWNER_ID) {
             page = 1;
@@ -82,13 +86,14 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            totalMora = sql.prepare("SELECT SUM(mora + bank) as t FROM levels WHERE guild = ? AND user != ?").get(guild.id, OWNER_ID).t || 0;
+            const tmRes = await sql.query('SELECT SUM(mora + bank) as t FROM levels WHERE guild = $1 AND "user" != $2', [guild.id, OWNER_ID]);
+            totalMora = parseInt(tmRes.rows[0]?.t || 0);
         }
 
         const pageDataRaw = allUsers.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
         
         const enrichedData = await Promise.all(pageDataRaw.map(async (u) => {
-            const uid = u.user || u.userID;
+            const uid = u.user || u.userid || u.userID;
             let dUser = client.users.cache.get(uid);
             if (!dUser) { 
                 try { dUser = await client.users.fetch(uid); } catch(e){} 
@@ -170,8 +175,9 @@ module.exports = {
             user = message.author;
             channelId = message.channel.id;
             
-            const settings = client.sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guild.id);
-            if (settings && settings.casinoChannelID === channelId) argType = 'mora'; 
+            const settingsRes = await client.sql.query("SELECT casinoChannelID FROM settings WHERE guild = $1", [guild.id]);
+            const settings = settingsRes.rows[0];
+            if (settings && (settings.casinochannelid || settings.casinoChannelID) === channelId) argType = 'mora'; 
 
             const cmd = message.content.split(' ')[0].slice(1).toLowerCase(); 
             if (cmd.includes('mora') || cmd.includes('اغنى')) argType = 'mora';
@@ -274,6 +280,5 @@ module.exports = {
 
         collector.on('end', () => msg.edit({ components: [] }).catch(() => {}));
     },
-    // 🔥 هذا هو السطر اللي كان ناقص وحل المشكلة 🔥
     fetchLeaderboardData
 };
