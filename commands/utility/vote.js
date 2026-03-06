@@ -1,8 +1,5 @@
-// commands/utility/vote.js
-
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
-// 🖼️ قائمة الصور العشوائية
 const THUMBNAILS = [
     "https://i.postimg.cc/85ML0fm9/download.jpg",
     "https://i.postimg.cc/B6H2VPBR/download_(1).jpg",
@@ -16,7 +13,6 @@ const THUMBNAILS = [
     "https://i.postimg.cc/pL3hMXrm/download_(6).jpg"
 ];
 
-// 🔗 رابط التصويت
 const VOTE_LINK = "https://top.gg/discord/servers/732581242885705728/vote";
 
 module.exports = {
@@ -27,8 +23,11 @@ module.exports = {
         .setName('vote')
         .setDescription('Vote for the Empire and get rewards'),
 
-    async execute(message, args) {
-        // دالة مساعدة لإنشاء الايمبد والأزرار (عشان نستخدمها في الشات وفي الخاص)
+    async execute(interactionOrMessage, args) {
+
+        const isSlash = !!interactionOrMessage.isChatInputCommand;
+        if (isSlash) await interactionOrMessage.deferReply();
+
         const createVotePayload = () => {
             const randomImage = THUMBNAILS[Math.floor(Math.random() * THUMBNAILS.length)];
             
@@ -55,29 +54,24 @@ module.exports = {
             return { embeds: [embed], components: [row] };
         };
 
-        // دالة لمعالجة التذكير (التايمر)
         const handleReminder = async (interaction, timeMs, label) => {
             await interaction.reply({ content: `✅ **تم!** سأقوم بتذكيرك في الخاص بعد **${label}** لتقوم بالتصويت مجدداً.`, ephemeral: true });
 
             setTimeout(async () => {
                 try {
-                    // محاولة إرسال رسالة للمستخدم في الخاص
                     const user = interaction.user;
                     const dmPayload = createVotePayload();
                     
-                    // تعديل بسيط لرسالة الخاص عشان يعرف انه تذكير
                     dmPayload.content = `🔔 **تنبيه:** حان موعد التصويت يا بطل!`;
                     
                     const dmMessage = await user.send(dmPayload);
 
-                    // 🔥 تفعيل الأزرار داخل الخاص (عشان يقدر يجدد التذكير) 🔥
-                    const collector = dmMessage.createMessageComponentCollector({ componentType: ComponentType.Button, time: 24 * 60 * 60 * 1000 }); // زر الخاص شغال 24 ساعة
+                    const collector = dmMessage.createMessageComponentCollector({ componentType: ComponentType.Button, time: 24 * 60 * 60 * 1000 }); 
                     
                     collector.on('collect', async i => {
                         const newTime = i.customId === 'remind_12h' ? 12 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
                         const newLabel = i.customId === 'remind_12h' ? '12 ساعة' : '24 ساعة';
                         
-                        // تكرار العملية (Recursion)
                         handleReminder(i, newTime, newLabel);
                     });
 
@@ -87,13 +81,16 @@ module.exports = {
             }, timeMs);
         };
 
-        // 1. إرسال الرسالة الأساسية في الشات
         const initialPayload = createVotePayload();
-        const sentMsg = await message.reply(initialPayload);
+        
+        let sentMsg;
+        if (isSlash) {
+            sentMsg = await interactionOrMessage.editReply(initialPayload);
+        } else {
+            sentMsg = await interactionOrMessage.reply(initialPayload);
+        }
 
-        // 2. استقبال الضغطات على الأزرار في الشات
-        // نسمح لأي شخص بالضغط لعمل تذكير خاص به
-        const collector = sentMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600000 }); // الزر شغال 10 دقايق
+        const collector = sentMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 600000 }); 
 
         collector.on('collect', async i => {
             const timeMs = i.customId === 'remind_12h' ? 12 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
