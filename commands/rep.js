@@ -36,12 +36,13 @@ module.exports = {
     aliases: ['سمعة', 'reputation', 'سمعه', 'تزكية', 'تزكيه', 'شهادة'],
 
     async execute(message, args) {
-        const sql = message.client.sql;
+        const db = message.client.sql;
         const senderId = message.author.id;
         const guildId = message.guild.id;
 
         try {
-            sql.prepare("ALTER TABLE user_reputation ADD COLUMN daily_reps_given INTEGER DEFAULT 0").run();
+            await db.query(`CREATE TABLE IF NOT EXISTS user_reputation (userID TEXT, guildID TEXT, rep_points INTEGER DEFAULT 0, last_rep_given TEXT, daily_reps_given INTEGER DEFAULT 0, weekly_reps_given INTEGER DEFAULT 0, PRIMARY KEY (userID, guildID))`);
+            await db.query("ALTER TABLE user_reputation ADD COLUMN IF NOT EXISTS daily_reps_given INTEGER DEFAULT 0");
         } catch (e) {}
 
         let maxVotes = 1;
@@ -53,10 +54,13 @@ module.exports = {
             }
         }
 
-        let senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
+        const senderRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [senderId, guildId]);
+        let senderRep = senderRepRes.rows[0];
+        
         if (!senderRep) {
-            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(senderId, guildId);
-            senderRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(senderId, guildId);
+            await db.query("INSERT INTO user_reputation (userID, guildID) VALUES ($1, $2)", [senderId, guildId]);
+            const newSenderRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [senderId, guildId]);
+            senderRep = newSenderRepRes.rows[0];
         }
 
         const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
@@ -90,8 +94,8 @@ module.exports = {
             return message.reply({ embeds: [selfEmbed] });
         }
 
-        const senderLevelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(senderId, guildId);
-        const senderLevel = senderLevelData ? senderLevelData.level : 1;
+        const senderLevelRes = await db.query('SELECT level FROM levels WHERE "user" = $1 AND guild = $2', [senderId, guildId]);
+        const senderLevel = senderLevelRes.rows.length > 0 ? senderLevelRes.rows[0].level : 1;
 
         if (senderId !== OWNER_ID && senderLevel < 10) {
             const lvlEmbed = new EmbedBuilder()
@@ -106,8 +110,8 @@ module.exports = {
         
         if (senderId !== OWNER_ID) {
             const dailyStatId = `${senderId}-${guildId}-${dbDateStr}`;
-            const dailyStats = sql.prepare("SELECT messages FROM user_daily_stats WHERE id = ?").get(dailyStatId);
-            const todayMessages = dailyStats ? (parseInt(dailyStats.messages) || 0) : 0;
+            const dailyStatsRes = await db.query("SELECT messages FROM user_daily_stats WHERE id = $1", [dailyStatId]);
+            const todayMessages = dailyStatsRes.rows.length > 0 ? (parseInt(dailyStatsRes.rows[0].messages) || 0) : 0;
 
             if (todayMessages < 20) {
                 const msgEmbed = new EmbedBuilder()
@@ -129,34 +133,40 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        let targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
+        const targetRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
+        let targetRep = targetRepRes.rows[0];
+        
         if (!targetRep) {
-            sql.prepare("INSERT INTO user_reputation (userID, guildID) VALUES (?, ?)").run(targetId, guildId);
-            targetRep = sql.prepare("SELECT * FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetId, guildId);
+            await db.query("INSERT INTO user_reputation (userID, guildID) VALUES ($1, $2)", [targetId, guildId]);
+            const newTargetRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
+            targetRep = newTargetRepRes.rows[0];
         }
 
-        const newTargetPoints = targetRep.rep_points + 1;
+        const newTargetPoints = (targetRep.rep_points || 0) + 1;
         const newDailyRepsGiven = currentDailyReps + 1;
         
-        sql.transaction(() => {
-            sql.prepare("UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userID = ? AND guildID = ?").run(targetId, guildId);
-            sql.prepare("UPDATE user_reputation SET last_rep_given = ?, daily_reps_given = ?, weekly_reps_given = weekly_reps_given + 1 WHERE userID = ? AND guildID = ?").run(todayDateStr, newDailyRepsGiven, senderId, guildId);
-        })();
+        try {
+            await db.query("BEGIN");
+            await db.query("UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
+            await db.query("UPDATE user_reputation SET last_rep_given = $1, daily_reps_given = $2, weekly_reps_given = weekly_reps_given + 1 WHERE userID = $3 AND guildID = $4", [todayDateStr, newDailyRepsGiven, senderId, guildId]);
+            await db.query("COMMIT");
+        } catch (e) {
+            await db.query("ROLLBACK");
+            throw e;
+        }
 
         const targetRankData = getRepRank(newTargetPoints);
-        const oldRankData = getRepRank(targetRep.rep_points);
+        const oldRankData = getRepRank(targetRep.rep_points || 0);
         const isRankUp = targetRankData.rank !== oldRankData.rank;
 
         message.channel.sendTyping();
 
         try {
             const senderAvatar = message.author.displayAvatarURL({ extension: 'png', size: 128 });
-            // 🔥 التعديل هنا: جلب اسم المزكي وتمريره للدالة
             const senderName = message.member ? message.member.displayName : message.author.username;
             const receiverAvatar = targetMember.user.displayAvatarURL({ extension: 'png', size: 256 });
             const receiverName = targetMember.displayName || targetMember.user.username;
 
-            // 🔥 تم إضافة senderName في سطر الاستدعاء
             const imageBuffer = await generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'reputation.png' });
 
