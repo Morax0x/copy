@@ -1,5 +1,3 @@
-// generators/announcement-generator.js
-
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas'); 
 const path = require('path');
 
@@ -34,24 +32,18 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-/**
- * دالة توليد بانر الإعلانات (يدعم نظام المواجهة للملوك)
- */
 async function generateEpicAnnouncement(user, mainTitle, subTitle, description, value, themeColor = '#FFD700', oldUser = null, isTakeover = false) {
-    // 🎨 مقاس 3:1 سينمائي عريض
     const width = 1200;
     const height = 400; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // 1. الخلفية
     const bgBase = ctx.createLinearGradient(0, 0, width, height);
     bgBase.addColorStop(0, '#050508'); 
     bgBase.addColorStop(1, '#151520');
     ctx.fillStyle = bgBase;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. شظايا الزجاج المتطاير
     ctx.save();
     for (let i = 0; i < 200; i++) {
         const x = Math.random() * width;
@@ -74,7 +66,6 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
     }
     ctx.restore();
 
-    // التظليل السينمائي
     const vignette = ctx.createRadialGradient(width/2, height/2, 150, width/2, height/2, 700);
     vignette.addColorStop(0, 'rgba(0,0,0,0)');
     vignette.addColorStop(1, 'rgba(0,0,0,0.95)'); 
@@ -85,21 +76,17 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
     ctx.strokeStyle = themeColor;
     ctx.strokeRect(3, 3, width - 6, height - 6);
 
-    // ==========================================
-    // رسم الشخصيات (إذا كان انتزاع عرش VS)
-    // ==========================================
     let textRightLimit = width - 50;
 
     if (isTakeover) {
-        textRightLimit = 1150; // النص يندف يمين شوي عشان يعطي مساحة للأفاتار
+        textRightLimit = 1150; 
 
-        // 1. رسم الملك القديم (اليسار - أوضح من قبل)
         const oldX = 170;
         const oldY = 200;
         const oldRadius = 65;
         
         ctx.save();
-        ctx.globalAlpha = 0.7; // تم الرفع من 0.4 إلى 0.7 ليكون أوضح
+        ctx.globalAlpha = 0.7; 
         ctx.beginPath();
         ctx.arc(oldX, oldY, oldRadius, 0, Math.PI * 2);
         ctx.closePath();
@@ -108,7 +95,6 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
             if (oldUser && oldUser !== 'EMPTY') {
                 const oldAvatarUrl = oldUser.displayAvatarURL({ extension: 'png', size: 256 });
                 const oldImg = await loadImage(oldAvatarUrl);
-                // فلتر رمادي خفيف مع سطوع أعلى عشان تبان الملامح
                 ctx.filter = 'grayscale(60%) brightness(75%)'; 
                 ctx.drawImage(oldImg, oldX - oldRadius, oldY - oldRadius, oldRadius * 2, oldRadius * 2);
                 ctx.filter = 'none';
@@ -118,31 +104,25 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
         } catch (e) { ctx.fillStyle = '#222'; ctx.fill(); }
         ctx.restore();
 
-        // إطار الملك القديم
         ctx.beginPath();
         ctx.arc(oldX, oldY, oldRadius, 0, Math.PI * 2);
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.stroke();
 
-        // ==========================================
-        // ⚡ رسم سهم الطاقة الاحترافي بدلاً من ">>>"
-        // ==========================================
         ctx.save();
         const startArrowX = 250;
         const endArrowX = 400;
         const arrowY = 200;
 
-        // تدرج لوني للسهم (يبدأ شفاف وينتهي بلون العرش المشع)
         const arrowGradient = ctx.createLinearGradient(startArrowX, arrowY, endArrowX, arrowY);
         arrowGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
         arrowGradient.addColorStop(0.5, themeColor);
         arrowGradient.addColorStop(1, '#ffffff');
         
         ctx.shadowColor = themeColor;
-        ctx.shadowBlur = 20; // توهج عالي
+        ctx.shadowBlur = 20; 
         
-        // خط السهم الرئيسي
         ctx.beginPath();
         ctx.moveTo(startArrowX, arrowY);
         ctx.lineTo(endArrowX, arrowY);
@@ -151,7 +131,6 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
         ctx.lineCap = 'round';
         ctx.stroke();
 
-        // رأس السهم المزدوج المفرغ
         ctx.beginPath();
         ctx.moveTo(endArrowX - 25, arrowY - 20);
         ctx.lineTo(endArrowX + 5, arrowY);
@@ -166,9 +145,7 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
         ctx.strokeStyle = themeColor;
         ctx.stroke();
         ctx.restore();
-        // ==========================================
 
-        // 2. رسم الملك الجديد (الوسط يسار - متوهج وكبير ومسيطر)
         const newX = 520;
         const newY = 200;
         const newRadius = 100;
@@ -204,7 +181,6 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
         ctx.stroke();
 
     } else {
-        // إذا كان إنجاز عادي (تظهر صورة واحدة فقط يمين)
         const avatarSize = 220;
         const avatarX = width - avatarSize - 50; 
         const avatarY = (height - avatarSize) / 2; 
@@ -235,10 +211,6 @@ async function generateEpicAnnouncement(user, mainTitle, subTitle, description, 
         ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
         ctx.lineWidth = 6; ctx.strokeStyle = '#ffffff'; ctx.stroke();
     }
-
-    // ==========================================
-    // النصوص والتفاصيل
-    // ==========================================
     
     ctx.fillStyle = themeColor;
     ctx.font = 'bold 45px "Bein", sans-serif';
