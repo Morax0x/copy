@@ -6,18 +6,15 @@ module.exports = {
     aliases: ['sfr', 'set-role'],
     
     async execute(message, args) {
-        // 1. التحقق من الصلاحيات
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("🚫 **عذراً، هذا الأمر للمسؤولين (Admins) فقط!**");
         }
 
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
 
-        // 2. التحقق من المدخلات
         const type = args[0] ? args[0].toLowerCase() : null;
-        // جلب جميع الرتب المذكورة في الرسالة
         const roles = message.mentions.roles;
 
         if (!type || roles.size === 0) {
@@ -31,21 +28,22 @@ module.exports = {
             `);
         }
 
-        // 3. تجهيز الداتابيس
-        sql.prepare(`
-            CREATE TABLE IF NOT EXISTS family_config (
-                guildID TEXT PRIMARY KEY,
-                maleRole TEXT,
-                femaleRole TEXT,
-                divorceFee INTEGER DEFAULT 5000,
-                adoptFee INTEGER DEFAULT 2000
-            )
-        `).run();
+        try {
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS family_config (
+                    guildID TEXT PRIMARY KEY,
+                    maleRole TEXT,
+                    femaleRole TEXT,
+                    divorceFee BIGINT DEFAULT 5000,
+                    adoptFee BIGINT DEFAULT 2000
+                )
+            `);
 
-        // ضمان وجود سجل للسيرفر
-        sql.prepare("INSERT OR IGNORE INTO family_config (guildID) VALUES (?)").run(guildId);
+            await db.query("INSERT INTO family_config (guildID) VALUES ($1) ON CONFLICT (guildID) DO NOTHING", [guildId]);
+        } catch (e) {
+            console.error("Family Config DB Error:", e);
+        }
 
-        // 4. تحديد العمود والنص
         let column = "";
         let typeText = "";
         let color = 0x000000;
@@ -62,17 +60,13 @@ module.exports = {
             return message.reply("❌ **النوع غير معروف!** اكتب (ولد) أو (بنت).");
         }
 
-        // 5. حفظ الرتب كقائمة (JSON Array)
-        // نحول مجموعة الرتب إلى مصفوفة من الآيديات فقط
-        const roleIds = roles.map(r => r.id);
-        const rolesJson = JSON.stringify(roleIds); // يحولها لنص مثل "['123','456']"
+        const roleIds = Array.from(roles.values()).map(r => r.id);
+        const rolesJson = JSON.stringify(roleIds); 
 
         try {
-            const stmt = sql.prepare(`UPDATE family_config SET ${column} = ? WHERE guildID = ?`);
-            stmt.run(rolesJson, guildId);
+            await db.query(`UPDATE family_config SET "${column}" = $1 WHERE guildID = $2`, [rolesJson, guildId]);
 
-            // تجهيز قائمة الأسماء للإيمبد
-            const roleMentions = roles.map(r => `${r}`).join(' , ');
+            const roleMentions = Array.from(roles.values()).map(r => `<@&${r.id}>`).join(' , ');
 
             const embed = new EmbedBuilder()
                 .setColor(color)
@@ -81,7 +75,7 @@ module.exports = {
                 .setFooter({ text: `عدد الرتب: ${roles.size}` })
                 .setTimestamp();
 
-            message.channel.send({ embeds: [embed] });
+            await message.channel.send({ embeds: [embed] });
 
         } catch (error) {
             console.error(error);
