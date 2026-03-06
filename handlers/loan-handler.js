@@ -1,54 +1,35 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 const farmAnimals = require('../json/farm-animals.json');
 
-async function checkLoanPayments(client, sql) {
-    if (!sql.open) return;
+async function checkLoanPayments(client, db) {
+    if (!db) return;
 
     const now = Date.now();
     const ONE_DAY = 24 * 60 * 60 * 1000;
 
-    // جلب القروض المستحقة (التي مر عليها يوم منذ آخر دفع)
-    const activeLoans = sql.prepare("SELECT * FROM user_loans WHERE remainingAmount > 0 AND (lastPaymentDate + ?) <= ?").all(ONE_DAY, now);
+    const activeLoansRes = await db.query("SELECT * FROM user_loans WHERE remainingamount > 0 AND (lastpaymentdate + $1) <= $2", [ONE_DAY, now]);
+    const activeLoans = activeLoansRes.rows;
 
     if (activeLoans.length === 0) return;
 
-    // --- تجهيز الأوامر خارج الـ Loop لتحسين الأداء (مهم جداً) ---
-    const stmtGetPortfolio = sql.prepare("SELECT * FROM user_portfolio WHERE userID = ? AND guildID = ?");
-    const stmtGetMarketItem = sql.prepare("SELECT currentPrice, name FROM market_items WHERE id = ?");
-    const stmtDeletePortfolio = sql.prepare("DELETE FROM user_portfolio WHERE id = ?");
-    const stmtUpdatePortfolio = sql.prepare("UPDATE user_portfolio SET quantity = quantity - ? WHERE id = ?");
-    
-    const stmtGetFarm = sql.prepare("SELECT * FROM user_farm WHERE userID = ? AND guildID = ?");
-    const stmtDeleteFarm = sql.prepare("DELETE FROM user_farm WHERE id = ?");
-    
-    const stmtDeleteLoan = sql.prepare("DELETE FROM user_loans WHERE userID = ? AND guildID = ?");
-    const stmtUpdateLoan = sql.prepare("UPDATE user_loans SET remainingAmount = ?, lastPaymentDate = ? WHERE userID = ? AND guildID = ?");
-    const stmtGetSettings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?");
-
-    // -----------------------------------------------------------
-
     for (const loan of activeLoans) {
         try {
-            const guild = client.guilds.cache.get(loan.guildID);
+            const guild = client.guilds.cache.get(loan.guildid);
             if (!guild) continue;
 
-            // جلب بيانات المستخدم
-            let userData = client.getLevel.get(loan.userID, loan.guildID);
-            if (!userData) continue; // تخطي إذا لم يكن لديه ملف
+            let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+            let userData = userDataRes.rows[0];
+            
+            if (!userData) continue; 
 
-            // جلب العضو (قد يفشل إذا خرج من السيرفر، لذلك نكمل الكود حتى لو لم نجد العضو لخصم الديون)
-            const member = await guild.members.fetch(loan.userID).catch(() => null);
+            const member = await guild.members.fetch(loan.userid).catch(() => null);
 
-            // المبلغ المطلوب سداده اليوم (القسط أو المتبقي أيهما أقل)
-            const paymentAmount = Math.min(loan.dailyPayment, loan.remainingAmount);
-            let remainingToPay = paymentAmount; // هذا المتغير سينقص كلما خصمنا شيئاً
+            const paymentAmount = Math.min(loan.dailypayment, loan.remainingamount);
+            let remainingToPay = paymentAmount; 
             let deductionDetails = ""; 
             
             const EMOJI_MORA = client.EMOJI_MORA || '🪙'; 
 
-            // =================================================
-            // 1. الخصم من الكاش (Mora)
-            // =================================================
             if (userData.mora > 0) {
                 const takeMora = Math.min(userData.mora, remainingToPay);
                 userData.mora -= takeMora;
@@ -59,9 +40,6 @@ async function checkLoanPayments(client, sql) {
                 }
             }
 
-            // =================================================
-            // 2. الخصم من البنك (Bank) - (تمت الإضافة هنا)
-            // =================================================
             if (remainingToPay > 0 && userData.bank > 0) {
                 const takeBank = Math.min(userData.bank, remainingToPay);
                 userData.bank -= takeBank;
@@ -72,35 +50,31 @@ async function checkLoanPayments(client, sql) {
                 }
             }
 
-            // =================================================
-            // 3. تسييل أصول السوق (Stocks)
-            // =================================================
             if (remainingToPay > 0) {
-                 const portfolio = stmtGetPortfolio.all(loan.userID, loan.guildID);
+                 const portfolioRes = await db.query("SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+                 const portfolio = portfolioRes.rows;
                  
                  for (const item of portfolio) {
-                     if (remainingToPay <= 0) break; // توقف فوراً إذا تم السداد
+                     if (remainingToPay <= 0) break; 
 
-                     const marketData = stmtGetMarketItem.get(item.itemID);
-                     if (!marketData) continue; // السهم محذوف من السوق
+                     const marketDataRes = await db.query("SELECT currentprice, name FROM market_items WHERE id = $1", [item.itemid]);
+                     const marketData = marketDataRes.rows[0];
+                     if (!marketData) continue; 
 
-                     const price = marketData.currentPrice;
-                     // كم نحتاج نبيع؟ (سقف المبلغ المتبقي / السعر)
+                     const price = marketData.currentprice;
                      const neededQty = Math.ceil(remainingToPay / price);
                      const sellQty = Math.min(item.quantity, neededQty);
                      const value = sellQty * price;
                      
-                     // تحديث المحفظة
                      if (sellQty >= item.quantity) {
-                         stmtDeletePortfolio.run(item.id);
+                         await db.query("DELETE FROM user_portfolio WHERE id = $1", [item.id]);
                      } else {
-                         stmtUpdatePortfolio.run(sellQty, item.id);
+                         await db.query("UPDATE user_portfolio SET quantity = quantity - $1 WHERE id = $2", [sellQty, item.id]);
                      }
                      
-                     // خصم المبلغ وحساب الفائض
                      if (value > remainingToPay) {
                          const change = value - remainingToPay;
-                         userData.mora += change; // إرجاع الباقي للمستخدم كاش
+                         userData.mora += change; 
                          remainingToPay = 0;
                      } else {
                          remainingToPay -= value;
@@ -110,23 +84,19 @@ async function checkLoanPayments(client, sql) {
                  }
             }
 
-            // =================================================
-            // 4. بيع حيوانات المزرعة (Farm)
-            // =================================================
             if (remainingToPay > 0) {
-                 const farm = stmtGetFarm.all(loan.userID, loan.guildID);
+                 const farmRes = await db.query("SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+                 const farm = farmRes.rows;
                  
                  for (const animalRow of farm) {
                      if (remainingToPay <= 0) break;
 
-                     const animalData = farmAnimals.find(a => a.id === animalRow.animalID);
+                     const animalData = farmAnimals.find(a => a.id === animalRow.animalid);
                      if (!animalData) continue;
 
-                     // سعر البيع (عادة يكون نصف السعر الأصلي أو السعر كاملاً حسب رغبتك، هنا وضعت السعر الأصلي)
                      const price = animalData.price; 
                      
-                     // حذف الحيوان
-                     stmtDeleteFarm.run(animalRow.id);
+                     await db.query("DELETE FROM user_farm WHERE id = $1", [animalRow.id]);
 
                      if (price > remainingToPay) {
                          const change = price - remainingToPay;
@@ -140,78 +110,67 @@ async function checkLoanPayments(client, sql) {
                  }
             }
 
-            // =================================================
-            // 5. عقوبة الخبرة (XP Penalty) - الملاذ الأخير
-            // =================================================
             if (remainingToPay > 0) {
-                // العقوبة: ضعف المبلغ المتبقي يخصم من الـ XP
                 const xpPenalty = Math.floor(remainingToPay * 2);
                 
                 if (userData.xp >= xpPenalty) {
                     userData.xp -= xpPenalty; 
                 } else { 
                     userData.xp = 0; 
-                    if (userData.level > 1) userData.level -= 1; // تخفيض لفل
+                    if (userData.level > 1) userData.level -= 1; 
                 }
                 
                 deductionDetails += `⚠️ **عقوبة تعثر:** تم خصم **${xpPenalty.toLocaleString()}** XP لعدم كفاية الأصول\n`;
-                // نعتبر أنه تم "السداد" عبر العقوبة لكي ينقص القرض ولا يتراكم
                 remainingToPay = 0; 
             }
 
-            // حفظ التغييرات على المستخدم
-            client.setLevel.run(userData);
+            await db.query("UPDATE levels SET mora = $1, bank = $2, xp = $3, level = $4 WHERE userid = $5 AND guildid = $6", [userData.mora, userData.bank, userData.xp, userData.level, loan.userid, loan.guildid]);
             
-            // تحديث القرض في الداتابيس
-            // ملاحظة: نقوم بخصم القسط كاملاً لأننا إما أخذنا مالاً أو أصولاً أو فرضنا عقوبة بديلة
-            loan.remainingAmount -= paymentAmount; 
+            loan.remainingamount -= paymentAmount; 
             
-            // التأكد من عدم نزول القرض تحت الصفر (حالة نادرة جداً)
-            if (loan.remainingAmount < 0) loan.remainingAmount = 0;
+            if (loan.remainingamount < 0) loan.remainingamount = 0;
 
-            if (loan.remainingAmount <= 0) {
-                stmtDeleteLoan.run(loan.userID, loan.guildID);
+            if (loan.remainingamount <= 0) {
+                await db.query("DELETE FROM user_loans WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
                 deductionDetails += `\n🎉 **تم سداد القرض بالكامل!**`;
             } else {
-                stmtUpdateLoan.run(loan.remainingAmount, now, loan.userID, loan.guildID);
+                await db.query("UPDATE user_loans SET remainingamount = $1, lastpaymentdate = $2 WHERE userid = $3 AND guildid = $4", [loan.remainingamount, now, loan.userid, loan.guildid]);
             }
 
-            // =================================================
-            // إرسال الإشعار
-            // =================================================
-            if (!member) continue; // إذا العضو غير موجود بالسيرفر لا نرسل رسالة
+            if (!member) continue; 
 
-            const settings = stmtGetSettings.get(guild.id);
-            if (settings && settings.casinoChannelID) {
-                const channel = guild.channels.cache.get(settings.casinoChannelID);
+            const settingsRes = await db.query("SELECT casinochannelid FROM settings WHERE guild = $1", [guild.id]);
+            const settings = settingsRes.rows[0];
+            
+            if (settings && settings.casinochannelid) {
+                const channel = guild.channels.cache.get(settings.casinochannelid);
                 if (channel && deductionDetails) {
                     
-                    const daysLeft = Math.ceil(loan.remainingAmount / loan.dailyPayment);
+                    const daysLeft = Math.ceil(loan.remainingamount / loan.dailypayment);
 
                     const embed = new EmbedBuilder()
                         .setTitle(`❖ إشـعـار سـداد القـرض`)
-                        .setColor(remainingToPay > 0 ? Colors.Red : Colors.Gold) // أحمر لو فيه مشكلة، ذهبي لو تمام
+                        .setColor(remainingToPay > 0 ? Colors.Red : Colors.Gold) 
                         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
                         .setImage('https://i.postimg.cc/vmrBxCqF/download-(1).gif')
                         .setDescription(
                             `**📊 موقف القرض:**\n` +
                             `• المبلغ المستقطع: **${paymentAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
-                            `• المتبقي من الدين: **${loan.remainingAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                            `• المتبقي من الدين: **${loan.remainingamount.toLocaleString()}** ${EMOJI_MORA}\n` +
                             `• الأقساط المتبقية: **${daysLeft}** يوم تقريباً\n\n` +
                             `**🧾 تفاصيل العملية:**\n${deductionDetails}`
                         )
                         .setFooter({ text: "يتم الخصم تلقائياً كل 24 ساعة" })
                         .setTimestamp();
 
-                    await channel.send({ content: `<@${loan.userID}>`, embeds: [embed] }).catch(() => {});
+                    await channel.send({ content: `<@${loan.userid}>`, embeds: [embed] }).catch(() => {});
                     
-                    // تأخير بسيط 1 ثانية لتجنب الباند من ديسكورد اذا العدد كبير
                     await new Promise(r => setTimeout(r, 1000));
                 }
             }
 
         } catch (err) {
-            console.error(`[Loan Error] User: ${loan.userID}`, err);
+            console.error(`[Loan Error] User: ${loan.userid}`, err);
         }
     }
 }
