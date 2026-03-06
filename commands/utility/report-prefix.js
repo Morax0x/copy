@@ -1,31 +1,29 @@
-const { SlashCommandBuilder } = require("discord.js"); // (نحتاج هذا فقط لتعريف أنه هجين)
+const { SlashCommandBuilder } = require("discord.js");
 const { getReportSettings, hasReportPermission, processReportLogic, sendReportError } = require("../../handlers/report-handler.js");
 
 module.exports = {
-    // (هذا أمر بريفكس فقط، لذلك لا نحتاج data)
     name: 'بلاغ',
     aliases: ['report'],
     category: "Utility",
     description: "التبليغ عن عضو باستخدام أمر نصي.",
 
     async execute(interactionOrMessage, args) {
-
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        if (isSlash) return; // هذا الأمر للبريفكس فقط
+        if (isSlash) return;
 
         const message = interactionOrMessage;
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
 
-        const settings = getReportSettings(sql, message.guild.id);
+        const settings = await getReportSettings(db, message.guild.id);
+        const reportChannel = settings ? (settings.reportchannelid || settings.reportChannelID) : null;
 
-        // (التحقق إذا كان الأمر في القناة الصحيحة)
-        if (!settings.reportChannelID || message.channel.id !== settings.reportChannelID) {
-            return; // تجاهل الأمر إذا لم يكن في القناة المخصصة
+        if (!reportChannel || message.channel.id !== reportChannel) {
+            return;
         }
 
-        // (التحقق من الصلاحيات)
-        if (!hasReportPermission(sql, message.member)) {
+        const hasPerm = await hasReportPermission(db, message.member);
+        if (!hasPerm) {
             await message.delete().catch(() => {});
             return sendReportError(message.author, "❖ ليس لـديـك صلاحيـات التـبليـغ", "ليس لديك صلاحيات التبليغ. يرجى رفع مستواك في السيرفر لتقديم البلاغات.", true);
         }
@@ -38,7 +36,6 @@ module.exports = {
             return sendReportError(message, "✶ تـم تقـديـم الـبلاغ بطـريقـة غـير صحـيحـة !", description);
         }
 
-        // (استدعاء المنطق الرئيسي)
         await processReportLogic(client, message, targetMember, reason, null);
     }
 };
