@@ -1,12 +1,13 @@
 const { EmbedBuilder, Colors, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
 const { updateNickname } = require('../streak-handler.js');
 
-async function buildTopStreaksEmbed(interaction, sql, page = 1) {
+async function buildTopStreaksEmbed(interaction, db, page = 1) {
     try {
-        const settings = sql.prepare("SELECT streakEmoji FROM settings WHERE guild = ?").get(interaction.guild.id);
-        const streakEmoji = settings?.streakEmoji || '🔥';
+        const settingsRes = await db.query("SELECT streakemoji FROM settings WHERE guild = $1", [interaction.guild.id]);
+        const streakEmoji = settingsRes.rows[0]?.streakemoji || '🔥';
 
-        const allUsers = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND streakCount > 0 ORDER BY streakCount DESC;").all(interaction.guild.id);
+        const allUsersRes = await db.query("SELECT * FROM streaks WHERE guildid = $1 AND streakcount > 0 ORDER BY streakcount DESC;", [interaction.guild.id]);
+        const allUsers = allUsersRes.rows;
 
         if (allUsers.length === 0) {
             const embed = new EmbedBuilder()
@@ -39,10 +40,10 @@ async function buildTopStreaksEmbed(interaction, sql, page = 1) {
 
             let memberName;
             try {
-                const userObj = await interaction.guild.members.fetch(streakData.userID);
-                memberName = `<@${streakData.userID}>`;
+                const userObj = await interaction.guild.members.fetch(streakData.userid);
+                memberName = `<@${streakData.userid}>`;
             } catch (error) {
-                memberName = `User Left (${streakData.userID})`;
+                memberName = `User Left (${streakData.userid})`;
             }
 
             let rankEmoji = '';
@@ -51,7 +52,7 @@ async function buildTopStreaksEmbed(interaction, sql, page = 1) {
             else if (rank === 3) rankEmoji = '🥉';
             else rankEmoji = `#${rank}`;
 
-            descriptionText += `${rankEmoji} ${memberName}\n> **Streak**: \`${streakData.streakCount}\` ${streakEmoji}\n\n`;
+            descriptionText += `${rankEmoji} ${memberName}\n> **Streak**: \`${streakData.streakcount}\` ${streakEmoji}\n\n`;
         }
 
         embed.setDescription(descriptionText);
@@ -82,10 +83,7 @@ async function buildTopStreaksEmbed(interaction, sql, page = 1) {
     }
 }
 
-async function handleStreakPanel(i, client, sql) {
-    const getStreak = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?");
-    const setStreak = sql.prepare("INSERT OR REPLACE INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield, nicknameActive, hasReceivedFreeShield, separator, dmNotify, highestStreak, has12hWarning) VALUES (@id, @guildID, @userID, @streakCount, @lastMessageTimestamp, @hasGracePeriod, @hasItemShield, @nicknameActive, @hasReceivedFreeShield, @separator, @dmNotify, @highestStreak, @has12hWarning);");
-
+async function handleStreakPanel(i, client, db) {
     let currentPage = 1;
     const selection = i.isStringSelectMenu() ? i.values[0] : i.customId;
 
@@ -105,36 +103,56 @@ async function handleStreakPanel(i, client, sql) {
 
     const guildID = i.guild.id;
     const userID = i.user.id;
-    let streakData = getStreak.get(guildID, userID);
+    
+    const streakRes = await db.query("SELECT * FROM streaks WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+    let streakData = streakRes.rows[0];
+
+    const saveStreak = async (data) => {
+        await db.query(`
+            INSERT INTO streaks (id, guildid, userid, streakcount, lastmessagetimestamp, hasgraceperiod, hasitemshield, nicknameactive, hasreceivedfreeshield, separator, dmnotify, higheststreak, has12hwarning) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (id) DO UPDATE SET 
+                streakcount = EXCLUDED.streakcount, 
+                lastmessagetimestamp = EXCLUDED.lastmessagetimestamp, 
+                hasgraceperiod = EXCLUDED.hasgraceperiod, 
+                hasitemshield = EXCLUDED.hasitemshield, 
+                nicknameactive = EXCLUDED.nicknameactive, 
+                hasreceivedfreeshield = EXCLUDED.hasreceivedfreeshield, 
+                separator = EXCLUDED.separator, 
+                dmnotify = EXCLUDED.dmnotify, 
+                higheststreak = EXCLUDED.higheststreak, 
+                has12hwarning = EXCLUDED.has12hwarning
+        `, [data.id, data.guildid, data.userid, data.streakcount, data.lastmessagetimestamp, data.hasgraceperiod, data.hasitemshield, data.nicknameactive, data.hasreceivedfreeshield, data.separator, data.dmnotify, data.higheststreak, data.has12hwarning]);
+    };
 
     if (!streakData) {
         streakData = {
             id: `${guildID}-${userID}`,
-            guildID,
-            userID,
-            streakCount: 0,
-            lastMessageTimestamp: 0,
-            hasGracePeriod: 0,
-            hasItemShield: 0,
-            nicknameActive: 1,
-            hasReceivedFreeShield: 0,
+            guildid: guildID,
+            userid: userID,
+            streakcount: 0,
+            lastmessagetimestamp: 0,
+            hasgraceperiod: 0,
+            hasitemshield: 0,
+            nicknameactive: 1,
+            hasreceivedfreeshield: 0,
             separator: '|',
-            dmNotify: 1,
-            highestStreak: 0,
-            has12hWarning: 0
+            dmnotify: 1,
+            higheststreak: 0,
+            has12hwarning: 0
         };
-        setStreak.run(streakData);
+        await saveStreak(streakData);
     }
 
     if (selection === 'streak_panel_toggle') {
-        const newState = streakData.nicknameActive === 1 ? 0 : 1;
-        streakData.nicknameActive = newState;
-        setStreak.run(streakData);
-        await updateNickname(i.member, sql);
+        const newState = streakData.nicknameactive === 1 ? 0 : 1;
+        streakData.nicknameactive = newState;
+        await saveStreak(streakData);
+        await updateNickname(i.member, db);
         await i.editReply({ content: newState === 0 ? "✅ تم **إخفاء** الستريك." : "✅ تم **إظهار** الستريك.", components: [] });
 
     } else if (selection === 'streak_panel_change_sep') {
-        const currentSep = streakData?.separator || '|';
+        const currentSep = streakData.separator || '|';
 
         const separatorOptions = [
             { label: '|', value: '|' },
@@ -168,20 +186,20 @@ async function handleStreakPanel(i, client, sql) {
         const newSeparator = i.values[0];
 
         streakData.separator = newSeparator;
-        setStreak.run(streakData);
+        await saveStreak(streakData);
 
-        await updateNickname(i.member, sql);
+        await updateNickname(i.member, db);
 
         await i.editReply({ content: `✅ تم تغيير فاصل الستريك الخاص بك إلى: \`${newSeparator}\``, components: [] });
 
     } else if (selection.startsWith('streak_panel_top')) {
-        const topData = await buildTopStreaksEmbed(i, sql, currentPage);
+        const topData = await buildTopStreaksEmbed(i, db, currentPage);
         await i.editReply(topData);
 
     } else if (selection === 'streak_panel_notifications') {
-        const newState = streakData.dmNotify === 1 ? 0 : 1;
-        streakData.dmNotify = newState;
-        setStreak.run(streakData);
+        const newState = streakData.dmnotify === 1 ? 0 : 1;
+        streakData.dmnotify = newState;
+        await saveStreak(streakData);
 
         const status = newState === 1 ? "مفعلة" : "معطلة";
         await i.editReply({ content: `✅ تم ضبط إشعارات الستريك الخاصة بك إلى: **${status}**.` });
