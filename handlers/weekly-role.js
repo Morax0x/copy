@@ -1,23 +1,20 @@
-// handlers/weekly-role.js
-
 const path = require('path');
-const rootDir = process.cwd(); // ضمان المسار الصحيح دائماً
+const rootDir = process.cwd();
 
-// استدعاء الثوابت بشكل آمن
 let OWNER_ID = "1145327691772481577"; 
 try {
     const constants = require(path.join(rootDir, 'handlers', 'dungeon', 'constants.js'));
     OWNER_ID = constants.OWNER_ID;
-} catch (e) { console.log("[WeeklyRole] Warning: Constants file not found, using default ID."); }
+} catch (e) { 
+    console.log("[WeeklyRole] Warning: Constants file not found, using default ID."); 
+}
 
-// ⚙️ الإعدادات
 const CONFIG = {
     GUILD_ID: "848921014141845544", 
     ROLE_ID: "1408766278570872934", 
     UPDATE_INTERVAL: 10 * 60 * 1000 
 };
 
-// دالة حساب بداية الأسبوع (الجمعة) بدقة UTC لتطابق الداتابيس
 function getWeekStartDateString() {
     const now = new Date();
     const diff = now.getUTCDate() - (now.getUTCDay() + 2) % 7;
@@ -34,55 +31,45 @@ async function updateWeeklyRole(client) {
         const role = guild.roles.cache.get(CONFIG.ROLE_ID);
         if (!role) return console.log("[WeeklyRole] ❌ Role not found!");
 
-        const sql = client.sql;
+        const db = client.db;
+        if (!db) return;
+
         const weekStart = getWeekStartDateString();
 
-        // 1. 🔥 الاستعلام المحسن (الدقيق) 🔥
-        // - COALESCE: تحول القيم الفارغة (NULL) إلى 0 عشان الحساب ما يخرب
-        // - الترتيب: بالنقاط أولاً، ثم بعدد الرسائل ككسر تعادل
-        const topUser = sql.prepare(`
-            SELECT userID, 
+        const queryResult = await db.query(`
+            SELECT userid, 
                    (COALESCE(messages, 0) * 15 + COALESCE(vc_minutes, 0) * 10) as score 
             FROM user_weekly_stats 
-            WHERE guildID = ? AND userID != ? AND weekStartDate = ? 
-            ORDER BY score DESC, messages DESC
+            WHERE guildid = $1 AND userid != $2 AND weekstartdate = $3 
+            ORDER BY score DESC, messages DESC 
             LIMIT 1
-        `).get(CONFIG.GUILD_ID, OWNER_ID, weekStart);
+        `, [CONFIG.GUILD_ID, OWNER_ID, weekStart]);
+
+        const topUser = queryResult.rows[0];
 
         if (!topUser || topUser.score <= 0) {
-            // console.log("[WeeklyRole] No active users this week yet.");
             return; 
         }
 
-        // جلب العضو من الديسكورد للتأكد أنه موجود بالسيرفر
-        const winnerMember = await guild.members.fetch(topUser.userID).catch(() => null);
-        if (!winnerMember) return; // العضو غادر السيرفر
+        const winnerMember = await guild.members.fetch(topUser.userid).catch(() => null);
+        if (!winnerMember) return;
 
-        // 2. التحقق من أصحاب الرتبة الحاليين
         const currentHolders = role.members;
 
-        // هل الفائز الحالي هو نفسه اللي معه الرتبة؟
-        if (currentHolders.has(topUser.userID) && currentHolders.size === 1) {
-            // نعم هو نفسه، ولا يوجد أحد غيره معه الرتبة -> لا تفعل شيئاً
+        if (currentHolders.has(topUser.userid) && currentHolders.size === 1) {
             return;
         }
 
         console.log(`👑 [WeeklyRole] New King Detected: ${winnerMember.user.tag} (Score: ${topUser.score})`);
 
-        // 3. سحب الرتبة من القدامى
         for (const [memberID, member] of currentHolders) {
-            if (memberID !== topUser.userID) {
+            if (memberID !== topUser.userid) {
                 await member.roles.remove(role).catch(e => console.error(`[WeeklyRole] Failed to remove role from ${memberID}:`, e.message));
             }
         }
 
-        // 4. إعطاء الرتبة للفائز الجديد
-        if (!currentHolders.has(topUser.userID)) {
-            await winnerMember.roles.add(role).catch(e => console.error(`[WeeklyRole] Failed to add role to ${topUser.userID}:`, e.message));
-            
-            // (اختياري) إرسال رسالة في شات عام تبارك له
-            // const chat = guild.channels.cache.get("آيدي_شات_عام");
-            // if(chat) chat.send(`👑 **تغير الحكم!**\nالآن <@${topUser.userID}> هو **ولي العهد** الجديد بتفاعل الأسبوع!`);
+        if (!currentHolders.has(topUser.userid)) {
+            await winnerMember.roles.add(role).catch(e => console.error(`[WeeklyRole] Failed to add role to ${topUser.userid}:`, e.message));
         }
 
     } catch (error) {
