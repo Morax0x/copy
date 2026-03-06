@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } = require('discord.js');
-// 🔥 تم تصحيح المسار هنا ليصبح صحيحاً ويقرأه البوت 🔥
 const aiConfig = require('../../utils/aiConfig.js'); 
+const aiLimitHandler = require('../../utils/aiLimitHandler.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -8,7 +8,6 @@ module.exports = {
         .setDescription('🤖 لوحة تحكم الذكاء الاصطناعي (الإمبراطورة)')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         
-        // 1. إضافة قناة (دائمة)
         .addSubcommand(sub => 
             sub.setName('setup')
                .setDescription('✅ تفعيل الذكاء في قناة معينة بشكل دائم')
@@ -24,20 +23,17 @@ module.exports = {
                )
         )
         
-        // 2. إزالة قناة
         .addSubcommand(sub => 
             sub.setName('remove')
                .setDescription('❌ إيقاف الذكاء في قناة معينة')
                .addChannelOption(option => option.setName('channel').setDescription('اختر القناة').setRequired(true))
         )
         
-        // 3. القائمة
         .addSubcommand(sub => 
             sub.setName('list')
                .setDescription('📜 عرض قائمة القنوات المفعلة')
         )
         
-        // 4. 🔥 إدارة الكتاغوري (الجديد) 🔥
         .addSubcommand(sub =>
             sub.setName('category')
                .setDescription('🔒 قفل كتاغوري كامل بنظام الدفع (Pay to Chat)')
@@ -53,29 +49,169 @@ module.exports = {
                .addChannelOption(opt => 
                    opt.setName('target')
                       .setDescription('اختر الكتاغوري')
-                      .addChannelTypes(ChannelType.GuildCategory) // يجبره يختار كتاغوري فقط
+                      .addChannelTypes(ChannelType.GuildCategory)
                       .setRequired(true)
                )
         )
 
-        // 5. حظر مستخدم
         .addSubcommand(sub => 
             sub.setName('block')
                .setDescription('🚫 منع عضو من التحدث مع البوت')
                .addUserOption(option => option.setName('user').setDescription('العضو').setRequired(true))
         )
         
-        // 6. فك حظر
         .addSubcommand(sub => 
             sub.setName('unblock')
                .setDescription('🟢 السماح لعضو بالتحدث مع البوت مجدداً')
                .addUserOption(option => option.setName('user').setDescription('العضو').setRequired(true))
+        )
+
+        .addSubcommandGroup(group => group
+            .setName('limit')
+            .setDescription('إدارة حدود رسائل الذكاء الاصطناعي للرتب')
+            .addSubcommand(sub => sub
+                .setName('set')
+                .setDescription('🤖 تحديد حد الرسائل اليومي لرتبة معينة')
+                .addRoleOption(opt => opt.setName('role').setDescription('الرتبة المستهدفة').setRequired(true))
+                .addIntegerOption(opt => opt.setName('amount').setDescription('عدد الرسائل اليومي المسموح').setRequired(true))
+            )
+            .addSubcommand(sub => sub
+                .setName('show')
+                .setDescription('📜 عرض قائمة حدود الذكاء الاصطناعي')
+            )
         ),
 
-    async execute(interaction) {
+    name: 'ai-admin',
+    aliases: ['set-ai-limit', 'ailimit', 'setlimit', 'حد-الذكاء'],
+    category: 'Admin',
+
+    async execute(interactionOrMessage, args) {
+        
+        const isSlash = !!interactionOrMessage.isChatInputCommand;
+        
+        if (!isSlash) {
+            const message = interactionOrMessage;
+            if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return message.reply('❌ ليس لديك صلاحية استخدام هذا الأمر.');
+            }
+
+            if (args[0] && ['list', 'قائمة', 'info'].includes(args[0].toLowerCase())) {
+                const db = message.client.sql;
+                const limitsRes = await db.query("SELECT * FROM ai_role_limits WHERE guildID = $1 ORDER BY limitCount ASC", [message.guild.id]);
+                const limits = limitsRes.rows;
+
+                if (limits.length === 0) {
+                    return message.reply('ℹ️ **لم يتم تحديد أي حدود للرتب حتى الآن.**');
+                }
+
+                const description = limits.map((row, index) => {
+                    const role = message.guild.roles.cache.get(row.roleid || row.roleID);
+                    const roleName = role ? role.toString() : `\`Deleted Role (${row.roleid || row.roleID})\``;
+                    return `**${index + 1}.** ${roleName} ➔ **${row.limitcount || row.limitCount}** رسالة/يومياً`;
+                }).join('\n');
+
+                const listEmbed = new EmbedBuilder()
+                    .setColor(0xD4AF37)
+                    .setTitle('📜 قائمة حدود الذكاء الاصطناعي (AI Limits)')
+                    .setDescription(description)
+                    .setFooter({ text: `عدد الرتب المحددة: ${limits.length}`, iconURL: message.guild.iconURL() })
+                    .setTimestamp();
+
+                return message.reply({ embeds: [listEmbed] });
+            }
+
+            if (!args[0] || !args[1]) {
+                return message.reply(`💡 **طريقة الاستخدام:**\n1️⃣ للتعيين: \`${args.prefix}ailimit [الرتبة] [العدد]\`\n2️⃣ للقائمة: \`${args.prefix}ailimit list\``);
+            }
+
+            const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[0]);
+            const limit = parseInt(args[1]);
+
+            if (!role) {
+                return message.reply('❌ لم أتمكن من العثور على هذه الرتبة.');
+            }
+
+            if (isNaN(limit) || limit < 0) {
+                return message.reply('❌ يرجى إدخال عدد صحيح للحد اليومي.');
+            }
+
+            try {
+                await aiLimitHandler.setRoleLimit(message.guild.id, role.id, limit);
+
+                const embed = new EmbedBuilder()
+                    .setColor(0x00FF00)
+                    .setTitle('✅ تم تحديث الحدود بنجاح')
+                    .setDescription(`تم تعيين الحد اليومي لرتبة **${role.name}** ليكون **${limit}** رسالة.`)
+                    .addFields(
+                        { name: '🎭 الرتبة', value: `${role}`, inline: true },
+                        { name: '🔢 الحد اليومي', value: `${limit} رسالة`, inline: true }
+                    )
+                    .setFooter({ text: 'نظام اقتصاد الإمبراطورية', iconURL: message.guild.iconURL() })
+                    .setTimestamp();
+
+                return await message.reply({ embeds: [embed] });
+
+            } catch (error) {
+                console.error("[Set AI Limit Error]:", error);
+                return await message.reply('❌ حدث خطأ أثناء حفظ البيانات.');
+            }
+        }
+
+        const interaction = interactionOrMessage;
+        const subcommandGroup = interaction.options.getSubcommandGroup();
         const subcommand = interaction.options.getSubcommand();
 
-        // --- 1. تفعيل قناة (Setup/Add) ---
+        if (subcommandGroup === 'limit') {
+            const db = interaction.client.sql;
+            
+            if (subcommand === 'set') {
+                const role = interaction.options.getRole('role');
+                const limit = interaction.options.getInteger('amount');
+                
+                try {
+                    await aiLimitHandler.setRoleLimit(interaction.guild.id, role.id, limit);
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00FF00)
+                        .setTitle('✅ تم تحديث الحدود بنجاح')
+                        .setDescription(`تم تعيين الحد اليومي لرتبة **${role.name}** ليكون **${limit}** رسالة.`)
+                        .addFields(
+                            { name: '🎭 الرتبة', value: `${role}`, inline: true },
+                            { name: '🔢 الحد اليومي', value: `${limit} رسالة`, inline: true }
+                        )
+                        .setFooter({ text: 'نظام اقتصاد الإمبراطورية', iconURL: interaction.guild.iconURL() })
+                        .setTimestamp();
+                    return interaction.reply({ embeds: [embed], ephemeral: true });
+                } catch (e) {
+                    console.error("[Slash Set AI Limit Error]:", e);
+                    return interaction.reply({ content: '❌ حدث خطأ أثناء حفظ البيانات.', ephemeral: true });
+                }
+            }
+            
+            if (subcommand === 'show') {
+                const limitsRes = await db.query("SELECT * FROM ai_role_limits WHERE guildID = $1 ORDER BY limitCount ASC", [interaction.guild.id]);
+                const limits = limitsRes.rows;
+
+                if (limits.length === 0) {
+                    return interaction.reply({ content: 'ℹ️ **لم يتم تحديد أي حدود للرتب حتى الآن.**', ephemeral: true });
+                }
+
+                const description = limits.map((row, index) => {
+                    const role = interaction.guild.roles.cache.get(row.roleid || row.roleID);
+                    const roleName = role ? role.toString() : `\`Deleted Role (${row.roleid || row.roleID})\``;
+                    return `**${index + 1}.** ${roleName} ➔ **${row.limitcount || row.limitCount}** رسالة/يومياً`;
+                }).join('\n');
+
+                const listEmbed = new EmbedBuilder()
+                    .setColor(0xD4AF37)
+                    .setTitle('📜 قائمة حدود الذكاء الاصطناعي (AI Limits)')
+                    .setDescription(description)
+                    .setFooter({ text: `عدد الرتب المحددة: ${limits.length}`, iconURL: interaction.guild.iconURL() })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [listEmbed], ephemeral: true });
+            }
+        }
+
         if (subcommand === 'setup') {
             const channel = interaction.options.getChannel('channel');
             const mode = interaction.options.getString('mode');
@@ -87,19 +223,17 @@ module.exports = {
                 .setColor(isNsfw ? 0xFF0000 : 0x00FF00)
                 .setTitle('✅ تم تفعيل النظام بنجاح')
                 .setDescription(`**القناة:** ${channel}\n**الوضع:** ${isNsfw ? '🔞 خاص (NSFW)' : '🛡️ عام (SFW)'}`)
-                .setFooter({ text: 'الإمبراطورة موراكس جاهزة للعمل' });
+                .setFooter({ text: 'الإمبراطورة جاهزة للعمل' });
             
             return interaction.reply({ embeds: [embed], ephemeral: true });
         }
 
-        // --- 2. إزالة قناة ---
         if (subcommand === 'remove') {
             const channel = interaction.options.getChannel('channel');
             aiConfig.removeChannel(channel.id);
             return interaction.reply({ content: `✅ **تم إيقاف** خدمات الذكاء الاصطناعي في قناة ${channel}.`, ephemeral: true });
         }
 
-        // --- 3. القائمة ---
         if (subcommand === 'list') {
             const channels = aiConfig.getAllChannels();
             const channelList = Object.entries(channels).map(([id, settings]) => {
@@ -114,7 +248,6 @@ module.exports = {
             return interaction.reply({ embeds: [embed], ephemeral: true });
         }
 
-        // --- 4. 🔥 إدارة الكتاغوري (Category) 🔥 ---
         if (subcommand === 'category') {
             const action = interaction.options.getString('action');
             const category = interaction.options.getChannel('target');
@@ -134,14 +267,12 @@ module.exports = {
             }
         }
 
-        // --- 5. حظر مستخدم ---
         if (subcommand === 'block') {
             const user = interaction.options.getUser('user');
             aiConfig.blockUser(user.id);
             return interaction.reply({ content: `🚫 **تم حظر** العضو ${user} من استخدام البوت.`, ephemeral: true });
         }
 
-        // --- 6. فك حظر ---
         if (subcommand === 'unblock') {
             const user = interaction.options.getUser('user');
             aiConfig.unblockUser(user.id);
