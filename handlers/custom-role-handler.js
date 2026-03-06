@@ -11,41 +11,44 @@ const forbiddenNames = [
     'إدارة','اداري','ادارة','أدارة','إداري','Management','Managerial','Adminstration','Administratif'
 ];
 
-function checkPermissions(member, sql) {
+async function checkPermissions(member, db) {
     const guildID = member.guild.id;
-    const allowedRoles = sql.prepare("SELECT roleID FROM custom_role_permissions WHERE guildID = ?").all(guildID);
+    const allowedRolesRes = await db.query("SELECT roleid FROM custom_role_permissions WHERE guildid = $1", [guildID]);
+    const allowedRoles = allowedRolesRes.rows;
     if (allowedRoles.length === 0) return false; 
     
-    const allowedRoleIDs = allowedRoles.map(r => r.roleID);
+    const allowedRoleIDs = allowedRoles.map(r => r.roleid);
     return member.roles.cache.some(r => allowedRoleIDs.includes(r.id));
 }
 
-function getAnchorRole(guild, sql) {
-    const settings = sql.prepare("SELECT customRoleAnchorID FROM settings WHERE guild = ?").get(guild.id);
-    if (!settings || !settings.customRoleAnchorID) return null;
-    return guild.roles.cache.get(settings.customRoleAnchorID);
+async function getAnchorRole(guild, db) {
+    const settingsRes = await db.query("SELECT customroleanchorid FROM settings WHERE guild = $1", [guild.id]);
+    const settings = settingsRes.rows[0];
+    if (!settings || !settings.customroleanchorid) return null;
+    return guild.roles.cache.get(settings.customroleanchorid);
 }
 
-function getMemberRole(userID, guildID, guild, sql) {
-    const data = sql.prepare("SELECT roleID FROM custom_roles WHERE guildID = ? AND userID = ?").get(guildID, userID);
+async function getMemberRole(userID, guildID, guild, db) {
+    const dataRes = await db.query("SELECT roleid FROM custom_roles WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+    const data = dataRes.rows[0];
     if (!data) return null;
-    return guild.roles.cache.get(data.roleID);
+    return guild.roles.cache.get(data.roleid);
 }
 
-async function handleCustomRoleInteraction(i, client, sql) {
+async function handleCustomRoleInteraction(i, client, db) {
     const memberId = i.user.id;
     const guild = i.guild;
 
-    if (!checkPermissions(i.member, sql)) {
+    if (!(await checkPermissions(i.member, db))) {
         return i.reply({ content: 'روح اشتري عضويـة الرتـب يــا فقـير <:2wt:1415691127608180847>', ephemeral: true });
     }
 
-    const anchorRole = getAnchorRole(guild, sql);
+    const anchorRole = await getAnchorRole(guild, db);
     if (!anchorRole) {
         return i.reply({ content: "خطأ إداري: لم يتم تحديد 'الرتبة الثابتة' (Anchor Role).", ephemeral: true });
     }
 
-    const role = getMemberRole(memberId, guild.id, guild, sql);
+    const role = await getMemberRole(memberId, guild.id, guild, db);
 
     if (i.isButton()) {
         const customId = i.customId;
@@ -110,28 +113,22 @@ async function handleCustomRoleInteraction(i, client, sql) {
             }
 
             try {
-                // --- ( 🌟 تنظيف البيانات القديمة ) ---
-                sql.prepare("DELETE FROM custom_roles WHERE guildID = ? AND userID = ?").run(guild.id, memberId);
-                // -------------------------------------
+                await db.query("DELETE FROM custom_roles WHERE guildid = $1 AND userid = $2", [guild.id, memberId]);
 
-                // --- ( 🌟 إنشاء الرتبة أولاً ) ---
                 const newRole = await guild.roles.create({
                     name: roleName,
                     color: Math.floor(Math.random() * 16777215),
                     mentionable: true
                 });
                 
-                // (محاولة النقل بعد الإنشاء)
                 try {
                     await newRole.setPosition(anchorRole.position - 1);
                 } catch (posErr) {
                     console.warn("فشل تحديد موقع الرتبة المخصصة:", posErr.message);
                 }
-                // ---------------------------------
 
-                sql.prepare("INSERT INTO custom_roles (id, guildID, userID, roleID) VALUES (?, ?, ?, ?)")
-                   .run(`${guild.id}-${memberId}`, guild.id, memberId, newRole.id);
-                   
+                await db.query("INSERT INTO custom_roles (id, guildid, userid, roleid) VALUES ($1, $2, $3, $4)", [`${guild.id}-${memberId}`, guild.id, memberId, newRole.id]);
+                    
                 await i.member.roles.add(newRole).catch(() => {});
                 return i.editReply({ content: `❖ تـم تـم سويـت رتـبتـك يالامـيـر <:2Piola:1414568762212089917>: ${roleName}`, ephemeral: true });
             } catch (err) {
@@ -196,41 +193,41 @@ async function handleCustomRoleInteraction(i, client, sql) {
     }
 }
 
-// --- ( 🌟 دالة الفحص الدوري للتنظيف 🌟 ) ---
-async function checkDailyCustomRoleExpiration(client, sql) {
+async function checkDailyCustomRoleExpiration(client, db) {
     console.log("[Custom Roles] بدء فحص صلاحيات الرتب الخاصة...");
     
-    const allCustomRoles = sql.prepare("SELECT * FROM custom_roles").all();
+    const allCustomRolesRes = await db.query("SELECT * FROM custom_roles");
+    const allCustomRoles = allCustomRolesRes.rows;
     if (allCustomRoles.length === 0) return;
 
     for (const record of allCustomRoles) {
         try {
-            const guild = client.guilds.cache.get(record.guildID);
+            const guild = client.guilds.cache.get(record.guildid);
             if (!guild) continue;
 
-            const allowedRolesDB = sql.prepare("SELECT roleID FROM custom_role_permissions WHERE guildID = ?").all(record.guildID);
+            const allowedRolesDBRes = await db.query("SELECT roleid FROM custom_role_permissions WHERE guildid = $1", [record.guildid]);
+            const allowedRolesDB = allowedRolesDBRes.rows;
             
-            // إذا لم يحدد الإدارة أي رتب مسموحة، فهذا يعني أن الميزة متاحة للجميع
             if (allowedRolesDB.length === 0) continue;
 
-            const allowedRoleIDs = allowedRolesDB.map(r => r.roleID);
-            const member = await guild.members.fetch(record.userID).catch(() => null);
+            const allowedRoleIDs = allowedRolesDB.map(r => r.roleid);
+            const member = await guild.members.fetch(record.userid).catch(() => null);
             
             if (!member) {
-                const role = guild.roles.cache.get(record.roleID);
+                const role = guild.roles.cache.get(record.roleid);
                 if (role) await role.delete("غادر العضو المالك").catch(() => {});
-                sql.prepare("DELETE FROM custom_roles WHERE id = ?").run(record.id);
+                await db.query("DELETE FROM custom_roles WHERE id = $1", [record.id]);
                 continue;
             }
 
             const hasPermission = member.roles.cache.some(r => allowedRoleIDs.includes(r.id));
 
             if (!hasPermission) {
-                const role = guild.roles.cache.get(record.roleID);
+                const role = guild.roles.cache.get(record.roleid);
                 if (role) {
                     await role.delete("فقدان العضو لرتبة الصلاحية (VIP/Booster)").catch(e => console.error(`[Custom Roles] فشل حذف رتبة ${role.id}:`, e.message));
                 }
-                sql.prepare("DELETE FROM custom_roles WHERE id = ?").run(record.id);
+                await db.query("DELETE FROM custom_roles WHERE id = $1", [record.id]);
                 console.log(`[Custom Roles] تم حذف رتبة العضو ${member.user.tag} لانتهاء الصلاحية.`);
             }
         } catch (err) {
@@ -242,5 +239,5 @@ async function checkDailyCustomRoleExpiration(client, sql) {
 
 module.exports = {
     handleCustomRoleInteraction,
-    checkDailyCustomRoleExpiration // <-- ( 🌟 تأكد من وجود هذا السطر )
+    checkDailyCustomRoleExpiration 
 };
