@@ -1,8 +1,6 @@
-// commands/family/runaway.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors } = require("discord.js");
 
-const RUNAWAY_FEE = 1000; // تكلفة الهروب الثابتة (يمكن جعلها ديناميكية إذا أردت)
+const RUNAWAY_FEE = 1000; 
 const MORA_EMOJI = '<:mora:1435647151349698621>'; 
 const RUNAWAY_GIF = "https://media.tenor.com/ScoBC7-a5QkAAAAC/anime-run.gif"; 
 
@@ -13,34 +11,32 @@ module.exports = {
 
     async execute(message, args) {
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // دالة مساعدة للردود المؤقتة
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         };
 
-        // 1. هل أنت ابن أصلاً؟
-        const parents = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(userId, guildId);
+        let parents = [];
+        try {
+            const res = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
+            parents = res.rows;
+        } catch (e) {}
 
         if (parents.length === 0) {
             return replyTemp("🚫 **أنت لست ابناً لأحد!** أنت حر طليق بالفعل 🦅.");
         }
 
-        // 2. التحقق من الرصيد
-        let userData = client.getLevel.get(userId, guildId);
+        let userData = await client.getLevel(userId, guildId);
         if (!userData) userData = { id: `${guildId}-${userId}`, user: userId, guild: guildId, xp: 0, level: 1, mora: 0 };
+        userData.mora = Number(userData.mora) || 0;
 
         if (userData.mora < RUNAWAY_FEE) {
             return replyTemp(`💸 **لا تملك تكلفة الاستقلال!**\nتحتاج إلى **${RUNAWAY_FEE.toLocaleString()}** ${MORA_EMOJI} لتعويض والديك.`);
         }
-
-        // ==========================================================
-        // 🏃‍♂️ لوحة التأكيد
-        // ==========================================================
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('confirm_run').setLabel('نعم، سأهرب!').setStyle(ButtonStyle.Danger).setEmoji('🏃‍♂️'),
@@ -70,44 +66,50 @@ module.exports = {
             }
 
             if (i.customId === 'confirm_run') {
-                // إعادة فحص المال (للاحتياط)
-                userData = client.getLevel.get(userId, guildId);
+                userData = await client.getLevel(userId, guildId);
+                userData.mora = Number(userData.mora) || 0;
+
                 if (userData.mora < RUNAWAY_FEE) {
                     return i.update({ content: `❌ **فشلت الخطة:** ليس لديك مال كافٍ للتعويض!`, embeds: [], components: [] });
                 }
 
-                // 1. خصم الرسوم من الابن
-                userData.mora -= RUNAWAY_FEE;
-                client.setLevel.run(userData);
+                try {
+                    await db.query('BEGIN');
 
-                // 2. توزيع المبلغ على الآباء (الموجودين)
-                // إذا كان هناك أب واحد يأخذ المبلغ كاملاً، إذا اثنين يتقاسمونه
-                const amountPerParent = Math.floor(RUNAWAY_FEE / parents.length);
+                    userData.mora -= RUNAWAY_FEE;
+                    await client.setLevel(userData);
 
-                for (const p of parents) {
-                    let parentData = client.getLevel.get(p.parentID, guildId);
-                    // إذا لم يكن للأب حساب، ننشئ له واحداً لاستلام التعويض
-                    if (!parentData) parentData = { id: `${guildId}-${p.parentID}`, user: p.parentID, guild: guildId, xp: 0, level: 1, mora: 0 };
-                    
-                    parentData.mora += amountPerParent;
-                    client.setLevel.run(parentData);
+                    const amountPerParent = Math.floor(RUNAWAY_FEE / parents.length);
+
+                    for (const p of parents) {
+                        const pid = p.parentid || p.parentID;
+                        let parentData = await client.getLevel(pid, guildId);
+                        if (!parentData) parentData = { id: `${guildId}-${pid}`, user: pid, guild: guildId, xp: 0, level: 1, mora: 0 };
+                        
+                        parentData.mora = (Number(parentData.mora) || 0) + amountPerParent;
+                        await client.setLevel(parentData);
+                    }
+
+                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
+
+                    await db.query('COMMIT');
+
+                    const successEmbed = new EmbedBuilder()
+                        .setColor(Colors.Red)
+                        .setTitle(`🦅 تم الهروب بنجاح!`)
+                        .setDescription(
+                            `قام **${message.member.displayName}** بالهروب من عائلته وأصبح مستقلاً!\n` +
+                            `💸 **التعويض:** تم تحويل **${amountPerParent.toLocaleString()}** ${MORA_EMOJI} لكل والد.`
+                        )
+                        .setImage(RUNAWAY_GIF);
+
+                    await i.update({ content: `💔 **انقطعت صلة الرحم..**`, embeds: [successEmbed], components: [] });
+
+                } catch (error) {
+                    await db.query('ROLLBACK');
+                    console.error("Runaway Error:", error);
+                    return i.update({ content: `❌ حدث خطأ داخلي أثناء عملية الهروب.`, embeds: [], components: [] });
                 }
-
-                // 3. الحذف من السجلات
-                const stmt = sql.prepare("DELETE FROM children WHERE childID = ? AND guildID = ?");
-                stmt.run(userId, guildId);
-
-                // 4. رسالة النجاح
-                const successEmbed = new EmbedBuilder()
-                    .setColor(Colors.Red)
-                    .setTitle(`🦅 تم الهروب بنجاح!`)
-                    .setDescription(
-                        `قام **${message.member.displayName}** بالهروب من عائلته وأصبح مستقلاً!\n` +
-                        `💸 **التعويض:** تم تحويل **${amountPerParent.toLocaleString()}** ${MORA_EMOJI} لكل والد.`
-                    )
-                    .setImage(RUNAWAY_GIF);
-
-                await i.update({ content: `💔 **انقطعت صلة الرحم..**`, embeds: [successEmbed], components: [] });
             }
         });
 
