@@ -1,9 +1,7 @@
-// commands/colors.js
 const { PermissionsBitField, EmbedBuilder, AttachmentBuilder, Colors } = require("discord.js");
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// تسجيل الخط
 try {
     const fontPath = path.join(process.cwd(), 'fonts', 'bein-ar-normal.ttf');
     GlobalFonts.registerFromPath(fontPath, 'Bein');
@@ -22,9 +20,6 @@ module.exports = {
             return str.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
         }
 
-        // =================================================================
-        // 1️⃣ إعداد وفلترة الرتب
-        // =================================================================
         let colorRoles = guild.roles.cache.filter(role => {
             const num = parseInt(role.name);
             return !isNaN(num) && /^\d+$/.test(role.name) && num >= 1 && num <= 150 && !role.managed && role.id !== guild.id;
@@ -42,12 +37,8 @@ module.exports = {
             return message.reply("❌ **لا توجد رتب ألوان (1-150) معدة في السيرفر.**");
         }
 
-        // =================================================================
-        // 2️⃣ الوضع الأول: رسم اللوحة (التصميم الجديد)
-        // =================================================================
         if (!args[0]) {
             try {
-                // --- الإعدادات ---
                 const total = sortedRoles.length;
                 const columns = 10;
                 const rows = Math.ceil(total / columns);
@@ -64,11 +55,9 @@ module.exports = {
                 const canvas = createCanvas(width, height);
                 const ctx = canvas.getContext('2d');
 
-                // 1. الخلفية والنمط
-                ctx.fillStyle = '#1e2124'; // لون ديسكورد الغامق
+                ctx.fillStyle = '#1e2124'; 
                 ctx.fillRect(0, 0, width, height);
 
-                // رسم نمط نقاط خفيفة (Dot Pattern)
                 ctx.fillStyle = '#282b30';
                 const dotGap = 20;
                 for (let dx = 0; dx < width; dx += dotGap) {
@@ -79,7 +68,6 @@ module.exports = {
                     }
                 }
 
-                // 2. شريط العنوان
                 ctx.fillStyle = '#2c2f33'; 
                 ctx.fillRect(0, 0, width, headerHeight);
                 
@@ -101,7 +89,6 @@ module.exports = {
                 ctx.fillStyle = '#bbbbbb';
                 ctx.fillText(`${total} الالـوان المتـاحـة`, width - paddingSide, headerHeight / 2);
 
-                // دالة رسم مربع بحواف دائرية
                 function drawRoundedRect(ctx, x, y, w, h, r) {
                     ctx.beginPath();
                     ctx.moveTo(x + r, y);
@@ -116,7 +103,6 @@ module.exports = {
                     ctx.closePath();
                 }
 
-                // 3. رسم الألوان
                 sortedRoles.forEach((role, i) => {
                     const col = i % columns;
                     const row = Math.floor(i / columns);
@@ -124,12 +110,10 @@ module.exports = {
                     const x = paddingSide + (col * (boxSize + gap));
                     const y = headerHeight + paddingSide + (row * (boxSize + gap)) - 20;
 
-                    // أ) رسم المربع الملون (بدون ظل خلفي)
                     drawRoundedRect(ctx, x, y, boxSize, boxSize, 10);
                     ctx.fillStyle = role.hexColor;
                     ctx.fill();
 
-                    // ب) تأثير اللمعة الزجاجية (اختياري - يعطي فخامة)
                     ctx.save();
                     drawRoundedRect(ctx, x, y, boxSize, boxSize / 2, 10);
                     ctx.clip();
@@ -140,7 +124,6 @@ module.exports = {
                     ctx.fill();
                     ctx.restore();
 
-                    // ج) إطار داخلي خفيف
                     ctx.save();
                     drawRoundedRect(ctx, x, y, boxSize, boxSize, 10);
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -148,7 +131,6 @@ module.exports = {
                     ctx.stroke();
                     ctx.restore();
 
-                    // د) رسم الرقم
                     ctx.font = 'bold 22px "Bein", sans-serif'; 
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
@@ -156,14 +138,12 @@ module.exports = {
                     const textX = x + (boxSize / 2);
                     const textY = y + (boxSize / 2) + 2;
 
-                    // 1. الإطار الأسود (رفيع كما طلبت)
                     ctx.lineJoin = 'round';
                     ctx.miterLimit = 2;
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; // أسود شبه شفاف ليكون انعم
-                    ctx.lineWidth = 2.5; // سمك رفيع ومناسب
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; 
+                    ctx.lineWidth = 2.5; 
                     ctx.strokeText(role.name, textX, textY);
 
-                    // 2. النص الأبيض
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillText(role.name, textX, textY);
                 });
@@ -182,9 +162,6 @@ module.exports = {
             }
         }
 
-        // =================================================================
-        // 3️⃣ الوضع الثاني: معالجة الطلب (إضافة/إزالة)
-        // =================================================================
         let input = args[0].toLowerCase();
         input = parseArabicNumbers(input);
 
