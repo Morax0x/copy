@@ -1,14 +1,9 @@
-// commands/family/tree.js
-
 const { SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require("discord.js");
 const Canvas = require('canvas');
-const path = require('path');
 
-// ✅✅ إعدادات النظام ✅✅
 const TEST_MODE = false;
-const CHILDREN_PER_PAGE = 10; // 10 أبناء في الصفحة الواحدة
+const CHILDREN_PER_PAGE = 10; 
 
-// الألوان
 const THEME = {
     BG_TOP: "#14161f",
     BG_BOT: "#0a0b10",
@@ -22,29 +17,27 @@ const THEME = {
     NAME_BG: "rgba(0, 0, 0, 0.85)"
 };
 
-// الأبعاد
 const DIMS = {
-    NODE: 80, PARTNER: 65, KID: 60, GRAND: 45, PARENT: 70, SIBLING: 60,
+    NODE: 80, PARTNER: 65, KID: 60, GRAND: 45, GREAT_GRAND: 35, PARENT: 70, SIBLING: 60,
     LEVEL_GAP: 250, SIB_GAP: 30,
 };
 
-// الإحداثيات
 const Y_PARENTS = 120;
 const Y_MAIN = Y_PARENTS + DIMS.LEVEL_GAP;
 const Y_KIDS = Y_MAIN + DIMS.LEVEL_GAP;
 const Y_GRAND = Y_KIDS + DIMS.LEVEL_GAP;
-const CANVAS_HEIGHT = Y_GRAND + DIMS.GRAND + 80;
+const Y_GREAT_GRAND = Y_GRAND + DIMS.LEVEL_GAP; // 🔥 طبقة أحفاد الأحفاد الجديدة
+const CANVAS_HEIGHT = Y_GREAT_GRAND + DIMS.GREAT_GRAND + 80;
 
 // ==========================================
-// 🛠️ الدوال المساعدة (يجب أن تكون هنا بالأعلى)
+// 🛠️ الدوال المساعدة 
 // ==========================================
 
-// دالة جلب لون العضو
-async function getUserColor(client, userId, guild) {
+async function getUserColor(client, userId, guild, db) {
     if (TEST_MODE) return THEME.DEFAULT;
     try {
-        const sql = client.sql;
-        const config = sql.prepare("SELECT * FROM family_config WHERE guildID = ?").get(guild.id);
+        const configRes = await db.query("SELECT maleRole, femaleRole FROM family_config WHERE guildID = $1", [guild.id]);
+        const config = configRes.rows[0];
         if (!config) return THEME.DEFAULT;
         
         let member = guild.members.cache.get(userId);
@@ -62,14 +55,14 @@ async function getUserColor(client, userId, guild) {
             return false;
         };
 
-        if (checkRole(config.maleRole)) return THEME.MALE;
-        if (checkRole(config.femaleRole)) return THEME.FEMALE;
+        if (checkRole(config.malerole || config.maleRole)) return THEME.MALE;
+        if (checkRole(config.femalerole || config.femaleRole)) return THEME.FEMALE;
         return THEME.DEFAULT;
     } catch { return THEME.DEFAULT; }
 }
 
 // ==========================================
-// 🎨 المحرك الرسومي
+// 🎨 المحرك الرسومي المطور
 // ==========================================
 async function drawTreePage(treeData, pageIndex) {
     const start = pageIndex * CHILDREN_PER_PAGE;
@@ -82,10 +75,15 @@ async function drawTreePage(treeData, pageIndex) {
     for (let child of currentChildren) {
         const spouseW = (child.partners.length * (DIMS.PARTNER * 2 + 10));
         const topW = (DIMS.KID * 2) + spouseW;
-        const grandCount = child.offspring.length;
-        const botW = grandCount * (DIMS.GRAND * 2 + 5);
-        const blockW = Math.max(topW, botW, DIMS.KID * 2.5);
         
+        let botW = 0;
+        for (const grand of child.offspring) {
+            const greatCount = grand.offspring ? grand.offspring.length : 0;
+            const grandBlockW = Math.max(DIMS.GRAND * 2 + 10, greatCount * (DIMS.GREAT_GRAND * 2 + 5));
+            botW += grandBlockW;
+        }
+        
+        const blockW = Math.max(topW, botW, DIMS.KID * 2.5);
         childBlocks.push({ data: child, width: blockW, spouseW: spouseW });
         childrenTotalWidth += blockW + DIMS.SIB_GAP;
     }
@@ -102,14 +100,12 @@ async function drawTreePage(treeData, pageIndex) {
     const canvas = Canvas.createCanvas(canvasWidth, CANVAS_HEIGHT);
     const ctx = canvas.getContext('2d');
 
-    // الخلفية
     const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     grad.addColorStop(0, THEME.BG_TOP);
     grad.addColorStop(1, THEME.BG_BOT);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
-    // الشبكة
     ctx.lineWidth = 1;
     ctx.strokeStyle = THEME.GRID;
     const gridSize = 50;
@@ -122,7 +118,6 @@ async function drawTreePage(treeData, pageIndex) {
     ctx.fillStyle = radGrad;
     ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
-    // --- دوال الرسم الداخلية ---
     function drawNameLabel(name, x, y, color) {
         const fontSize = 18;
         ctx.font = `bold ${fontSize}px "Sans", "Arial"`;
@@ -194,7 +189,7 @@ async function drawTreePage(treeData, pageIndex) {
         drawLine(x2, midY, x2, y2, color);
     }
 
-    // --- الطبقة 1: الخطوط ---
+    // --- رسم الخطوط ---
     if (treeData.parents.length > 0) {
         const pTotalW = treeData.parents.length * (DIMS.PARENT * 2 + 40);
         let currentPX = centerX - (pTotalW / 2) + DIMS.PARENT + 20;
@@ -247,18 +242,29 @@ async function drawTreePage(treeData, pageIndex) {
 
             let parentsCenterX = (kidRealX + lastSpouseX) / 2;
             if (block.data.offspring.length > 0) {
-                const grandCount = block.data.offspring.length;
-                let grandX = blockCenter - ((grandCount * (DIMS.GRAND * 2 + 5)) / 2) + DIMS.GRAND;
+                let grandStartX = currentX; 
                 for (const grand of block.data.offspring) {
-                    drawElbow(parentsCenterX, Y_KIDS + DIMS.KID, grandX, Y_GRAND - DIMS.GRAND);
-                    grandX += DIMS.GRAND * 2 + 5;
+                    const greatCount = grand.offspring ? grand.offspring.length : 0;
+                    const grandBlockW = Math.max(DIMS.GRAND * 2 + 10, greatCount * (DIMS.GREAT_GRAND * 2 + 5));
+                    const grandCenterX = grandStartX + (grandBlockW / 2);
+
+                    drawElbow(parentsCenterX, Y_KIDS + DIMS.KID, grandCenterX, Y_GRAND - DIMS.GRAND);
+
+                    if (greatCount > 0) {
+                        let greatX = grandStartX + DIMS.GREAT_GRAND + 5;
+                        for (const great of grand.offspring) {
+                            drawElbow(grandCenterX, Y_GRAND + DIMS.GRAND, greatX, Y_GREAT_GRAND - DIMS.GREAT_GRAND);
+                            greatX += DIMS.GREAT_GRAND * 2 + 5;
+                        }
+                    }
+                    grandStartX += grandBlockW;
                 }
             }
             currentX += block.width + DIMS.SIB_GAP;
         }
     }
 
-    // --- الطبقة 2: الصور ---
+    // --- رسم الصور ---
     if (treeData.parents.length > 0) {
         const pTotalW = treeData.parents.length * (DIMS.PARENT * 2 + 40);
         let currentPX = centerX - (pTotalW / 2) + DIMS.PARENT + 20;
@@ -304,11 +310,22 @@ async function drawTreePage(treeData, pageIndex) {
         }
 
         if (block.data.offspring.length > 0) {
-            const grandCount = block.data.offspring.length;
-            let grandX = blockCenter - ((grandCount * (DIMS.GRAND * 2 + 5)) / 2) + DIMS.GRAND;
+            let grandStartX = currentX;
             for (const grand of block.data.offspring) {
-                await drawCircleImg(grand, grandX, Y_GRAND, DIMS.GRAND);
-                grandX += DIMS.GRAND * 2 + 5;
+                const greatCount = grand.offspring ? grand.offspring.length : 0;
+                const grandBlockW = Math.max(DIMS.GRAND * 2 + 10, greatCount * (DIMS.GREAT_GRAND * 2 + 5));
+                const grandCenterX = grandStartX + (grandBlockW / 2);
+
+                await drawCircleImg(grand, grandCenterX, Y_GRAND, DIMS.GRAND);
+
+                if (greatCount > 0) {
+                    let greatX = grandStartX + DIMS.GREAT_GRAND + 5;
+                    for (const great of grand.offspring) {
+                        await drawCircleImg(great, greatX, Y_GREAT_GRAND, DIMS.GREAT_GRAND);
+                        greatX += DIMS.GREAT_GRAND * 2 + 5;
+                    }
+                }
+                grandStartX += grandBlockW;
             }
         }
         currentX += block.width + DIMS.SIB_GAP;
@@ -323,85 +340,99 @@ async function drawTreePage(treeData, pageIndex) {
 
 module.exports = {
     name: 'tree',
-    description: 'عرض شجرة العائلة (سريع وشامل)',
+    description: 'عرض شجرة العائلة الشاملة والموسعة',
     aliases: ['شجرة', 'family'],
     
     async execute(message, args) {
         const client = message.client;
         const guild = message.guild;
-        const sql = client.sql;
+        const db = client.sql;
 
         const targetMember = message.mentions.members.first() || 
                              message.guild.members.cache.get(args[0]) || 
                              message.member;
                              
         const targetUser = targetMember.user;
+        const guildId = guild.id;
 
-        // 🔥🔥 1. تجميع كل الآيديات المطلوبة (Bulk ID Collection) 🔥🔥
         const allInvolvedUserIds = new Set();
-        allInvolvedUserIds.add(targetUser.id);
+        const addId = (id) => { if (id) allInvolvedUserIds.add(id); };
+        addId(targetUser.id);
 
-        // -- الآباء --
-        const parentRows = sql.prepare("SELECT parentID FROM children WHERE childID = ? AND guildID = ?").all(targetUser.id, guild.id);
-        const parentIDs = parentRows.map(r => r.parentID);
-        parentIDs.forEach(id => allInvolvedUserIds.add(id));
+        const getParents = async (id) => {
+            const res = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [id, guildId]);
+            return res.rows.map(r => r.parentid || r.parentID);
+        };
+        const getChildren = async (id) => {
+            const res = await db.query("SELECT childID FROM children WHERE parentID = $1 AND guildID = $2", [id, guildId]);
+            return res.rows.map(r => r.childid || r.childID);
+        };
+        const getPartners = async (id) => {
+            const res = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [id, guildId]);
+            return res.rows.map(r => r.partnerid || r.partnerID);
+        };
 
-        // -- الأخوة (أبناء الآباء) --
-        let siblingIDs = [];
-        if (parentIDs.length > 0) {
-            const placeholders = parentIDs.map(() => '?').join(',');
-            const sibRows = sql.prepare(`
-                SELECT DISTINCT childID FROM children 
-                WHERE parentID IN (${placeholders}) 
-                AND childID != ? AND guildID = ?
-            `).all(...parentIDs, targetUser.id, guild.id);
-            siblingIDs = sibRows.map(r => r.childID);
-            siblingIDs.forEach(id => allInvolvedUserIds.add(id));
+        // 🔥 1. جلب الآباء وزوجاتهم/أزواجهم (Step-parents)
+        const directParents = await getParents(targetUser.id);
+        directParents.forEach(addId);
+        let allParentFigures = new Set(directParents);
+
+        for (const pid of directParents) {
+            const pPartners = await getPartners(pid);
+            pPartners.forEach(id => { addId(id); allParentFigures.add(id); });
         }
 
-        // -- الزوجات --
-        const partnersRows = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").all(targetUser.id, guild.id);
-        const partnerIDs = partnersRows.map(r => r.partnerID);
-        partnerIDs.forEach(id => allInvolvedUserIds.add(id));
+        // 🔥 2. جلب الإخوة (أبناء جميع شخصيات الآباء)
+        let siblingsSet = new Set();
+        for (const pid of allParentFigures) {
+            const kids = await getChildren(pid);
+            kids.forEach(k => { if(k !== targetUser.id) { addId(k); siblingsSet.add(k); } });
+        }
 
-        // -- الأبناء (مباشرين + من الزوجات) --
-        const myKidsRows = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(targetUser.id, guild.id);
-        const stepKidsRows = [];
-        partnerIDs.forEach(pid => {
-            const rows = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(pid, guild.id);
-            stepKidsRows.push(...rows);
-        });
+        // 🔥 3. جلب أزواج الهدف
+        const targetPartners = await getPartners(targetUser.id);
+        targetPartners.forEach(addId);
+
+        // 🔥 4. جلب الأبناء (أبنائي + أبناء أزواجي)
+        let allChildren = new Set(await getChildren(targetUser.id));
+        for (const pid of targetPartners) {
+            const pKids = await getChildren(pid);
+            pKids.forEach(k => allChildren.add(k));
+        }
+        allChildren.forEach(addId);
+
+        // 🔥 5. التفرع العميق (الأحفاد وأحفاد الأحفاد وأزواجهم)
+        const childDataMap = new Map();
         
-        const childrenIDs = new Set([...myKidsRows.map(r => r.childID), ...stepKidsRows.map(r => r.childID)]);
-        childrenIDs.forEach(id => allInvolvedUserIds.add(id));
+        for (const cid of allChildren) {
+            const cPartners = await getPartners(cid);
+            cPartners.forEach(addId);
 
-        // -- زوجات الأبناء + الأحفاد --
-        const childArr = Array.from(childrenIDs);
-        const childPartnerMap = new Map(); // childID -> [partnerID, ...]
-        const grandchildMap = new Map(); // childID -> [grandchildID, ...]
-
-        if (childArr.length > 0) {
-            for (const cid of childArr) {
-                const cMarriages = sql.prepare("SELECT partnerID FROM marriages WHERE userID = ? AND guildID = ?").all(cid, guild.id);
-                const cPids = cMarriages.map(r => r.partnerID);
-                childPartnerMap.set(cid, cPids);
-                cPids.forEach(id => allInvolvedUserIds.add(id));
-
-                // الأحفاد
-                const g1 = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(cid, guild.id);
-                let gIds = g1.map(r => r.childID);
-                
-                for (const cpid of cPids) {
-                    const g2 = sql.prepare("SELECT childID FROM children WHERE parentID = ? AND guildID = ?").all(cpid, guild.id);
-                    gIds.push(...g2.map(r => r.childID));
-                }
-                gIds = [...new Set(gIds)];
-                grandchildMap.set(cid, gIds);
-                gIds.forEach(id => allInvolvedUserIds.add(id));
+            let cKids = new Set(await getChildren(cid));
+            for (const cpid of cPartners) {
+                const cpKids = await getChildren(cpid);
+                cpKids.forEach(k => cKids.add(k));
             }
+            cKids.forEach(addId);
+
+            const grandMap = new Map();
+            for (const gid of cKids) {
+                const gPartners = await getPartners(gid);
+                gPartners.forEach(addId);
+
+                let gKids = new Set(await getChildren(gid));
+                for(const gpid of gPartners) {
+                     const gpKids = await getChildren(gpid);
+                     gpKids.forEach(k => gKids.add(k));
+                }
+                gKids.forEach(addId);
+
+                grandMap.set(gid, { partners: gPartners, offspring: Array.from(gKids) });
+            }
+
+            childDataMap.set(cid, { partners: cPartners, offspring: Array.from(cKids), grandMap: grandMap });
         }
 
-        // 🔥🔥 2. جلب بيانات المستخدمين من ديسكورد دفعة واحدة 🔥🔥
         const allIDsArray = Array.from(allInvolvedUserIds);
         let membersMap = new Map(); 
 
@@ -409,18 +440,16 @@ module.exports = {
             const fetchedMembers = await guild.members.fetch({ user: allIDsArray });
             fetchedMembers.forEach(m => membersMap.set(m.id, m));
         } catch (e) {
-            console.error("Bulk Fetch Error (Fallback to cache):", e);
             allIDsArray.forEach(id => {
                 const m = guild.members.cache.get(id);
                 if (m) membersMap.set(id, m);
             });
         }
 
-        // دالة لتجهيز كائن العضو (تستخدم getUserColor المعرفة بالأعلى)
         const prepareUserObj = async (id) => {
             const m = membersMap.get(id);
             if (!m) return null;
-            const color = await getUserColor(client, id, guild);
+            const color = await getUserColor(client, id, guild, db);
             return {
                 username: m.user.username,
                 id: id,
@@ -429,7 +458,6 @@ module.exports = {
             };
         };
 
-        // 🔥🔥 3. بناء هيكل الشجرة النهائي 🔥🔥
         const mainUserObj = await prepareUserObj(targetUser.id);
         if (!mainUserObj) return message.reply("❌ تعذر العثور على بيانات المستخدم.");
 
@@ -441,40 +469,50 @@ module.exports = {
             siblings: { left: [], right: [] }
         };
 
-        for (const pid of parentIDs) {
+        for (const pid of allParentFigures) {
             const u = await prepareUserObj(pid);
             if (u) treeData.parents.push(u);
         }
 
-        for (let i = 0; i < siblingIDs.length; i++) {
-            const u = await prepareUserObj(siblingIDs[i]);
+        const siblingsArray = Array.from(siblingsSet);
+        for (let i = 0; i < siblingsArray.length; i++) {
+            const u = await prepareUserObj(siblingsArray[i]);
             if (u) {
                 if (i % 2 === 0) treeData.siblings.left.push(u);
                 else treeData.siblings.right.push(u);
             }
         }
 
-        for (const pid of partnerIDs) {
+        for (const pid of targetPartners) {
             const u = await prepareUserObj(pid);
             if (u) treeData.partners.push(u);
         }
 
-        for (const cid of childArr) {
+        for (const cid of allChildren) {
             const childObj = await prepareUserObj(cid);
             if (!childObj) continue;
 
-            const cPartnerIDs = childPartnerMap.get(cid) || [];
+            const cData = childDataMap.get(cid);
+            
             let cPartnersObjs = [];
-            for (const cpid of cPartnerIDs) {
+            for (const cpid of cData.partners) {
                 const u = await prepareUserObj(cpid);
                 if (u) cPartnersObjs.push(u);
             }
 
-            const gIDs = grandchildMap.get(cid) || [];
             let grandObjs = [];
-            for (const gid of gIDs) {
+            for (const gid of cData.offspring) {
                 const u = await prepareUserObj(gid);
-                if (u) grandObjs.push(u);
+                if (!u) continue;
+
+                const gData = cData.grandMap.get(gid);
+                let greatObjs = [];
+                for (const greatId of gData.offspring) {
+                    const gu = await prepareUserObj(greatId);
+                    if (gu) greatObjs.push(gu);
+                }
+
+                grandObjs.push({ ...u, offspring: greatObjs });
             }
 
             treeData.children.push({
@@ -484,14 +522,12 @@ module.exports = {
             });
         }
 
-        // التحقق من خلو الشجرة
         if (treeData.parents.length === 0 && treeData.partners.length === 0 && treeData.children.length === 0 && treeData.siblings.left.length === 0 && treeData.siblings.right.length === 0) {
             const msg = await message.reply({ content: `🍂 **شجرة ${targetUser.username} فارغة تماماً!**` });
             setTimeout(() => msg.delete().catch(() => {}), 5000);
             return; 
         }
 
-        // 🔥🔥 4. الرسم والعرض 🔥🔥
         let currentPage = 0;
         const totalPages = Math.ceil(treeData.children.length / CHILDREN_PER_PAGE) || 1;
 
@@ -504,6 +540,7 @@ module.exports = {
             return row;
         };
 
+        message.channel.sendTyping();
         const img = await drawTreePage(treeData, currentPage);
         const msg = await message.reply({ 
             files: [img],
