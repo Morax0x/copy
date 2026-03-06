@@ -1,5 +1,3 @@
-// generators/guild-boards-generator.js
-
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
@@ -124,7 +122,6 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     }
 }
 
-// --- 1. اللوحة الرئيسية ---
 async function generateMainQuestBoardImage() {
     const width = 1200; 
     const height = 850; 
@@ -211,7 +208,6 @@ async function generateMainQuestBoardImage() {
     return canvas.toBuffer('image/png');
 }
 
-// --- 2. لوحة الملوك (8 ملوك في عمودين) ---
 async function generateKingsBoardImage(kingsArray) {
     const width = 1200; 
     const height = 850; 
@@ -249,7 +245,6 @@ async function generateKingsBoardImage(kingsArray) {
     for (let i = 0; i < kingsArray.length; i++) {
         const king = kingsArray[i];
         
-        // توزيع الملوك على عمودين: 0,2,4,6 يمين | 1,3,5,7 يسار
         const isRightCol = i % 2 === 0; 
         const rowIdx = Math.floor(i / 2); 
         
@@ -287,13 +282,11 @@ async function generateKingsBoardImage(kingsArray) {
         }
         ctx.restore();
 
-        // اللقب
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 30px "Bein", sans-serif';
         ctx.textAlign = 'right';
         ctx.fillText(fixAr(`${king.emoji} ${king.title}`), avatarX - 70, y + 55);
 
-        // الاسم
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 26px "Bein", sans-serif';
         ctx.textAlign = 'right';
@@ -301,7 +294,6 @@ async function generateKingsBoardImage(kingsArray) {
         if (dName.length > 18) dName = dName.substring(0, 18) + '..';
         ctx.fillText(fixAr(dName), avatarX - 70, y + 100);
 
-        // القيمة (الرقم)
         ctx.fillStyle = '#00FF88'; 
         ctx.textAlign = 'left';
         ctx.font = 'bold 30px "Bein", sans-serif';
