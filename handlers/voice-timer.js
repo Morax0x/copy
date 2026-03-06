@@ -1,56 +1,63 @@
-// handlers/voice-timer.js
-
 module.exports = (client) => {
-    // تشغيل المؤقت كل 60 ثانية (دقيقة واحدة)
     setInterval(async () => {
         try {
-            // المرور على جميع السيرفرات التي يتواجد بها البوت
             client.guilds.cache.forEach(async (guild) => {
-                // المرور على جميع الأعضاء المتواجدين في الرومات الصوتية حالياً
-                // استخدام voiceStates أسرع وأفضل من المرور على القنوات
                 guild.voiceStates.cache.forEach(async (voiceState) => {
                     const member = voiceState.member;
 
-                    // 1. شروط الأهلية (نفس شروطك القديمة: ليس بوت + داخل روم)
                     if (!member || member.user.bot || !voiceState.channelId) return;
-
-                    // إذا كنت تريد منع المحسب للميوت، فعل الأسطر التالية (اختياري حسب رغبتك)
-                    // if (voiceState.selfMute || voiceState.serverMute) return;
 
                     const userID = member.id;
                     const guildID = guild.id;
+                    const db = client.db;
+
+                    if (!db) return;
 
                     try {
-                        // 2. جلب بيانات العضو
-                        let userData = client.getLevel.get(userID, guildID);
+                        let userDataResult = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                        let userData = userDataResult.rows[0];
+
                         if (!userData) {
-                            userData = { ...client.defaultData, user: userID, guild: guildID };
+                            userData = { 
+                                userid: userID, 
+                                guildid: guildID, 
+                                xp: 0, 
+                                totalxp: 0, 
+                                level: 0, 
+                                mora: 0, 
+                                totalvctime: 0 
+                            };
+                            
+                            await db.query(`
+                                INSERT INTO levels (userid, guildid, xp, totalxp, level, mora, totalvctime)
+                                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            `, [userID, guildID, userData.xp, userData.totalxp, userData.level, userData.mora, userData.totalvctime]);
                         }
 
-                        // 3. إضافة الجوائز (لكل دقيقة تمر)
-                        // في الكود القديم: دقيقة واحدة = 5 XP و 2 Mora
-                        userData.totalVCTime = (userData.totalVCTime || 0) + 1;
+                        userData.totalvctime = (userData.totalvctime || 0) + 1;
                         userData.xp += 5;
-                        userData.totalXP += 5;
+                        userData.totalxp += 5;
                         userData.mora += 2;
 
-                        // 4. نظام اللفل أب (نفس المعادلة القديمة)
-                        const nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
-                        if (userData.xp >= nextXP) {
+                        let nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
+                        
+                        let leveledUp = false;
+                        while (userData.xp >= nextXP) {
                             userData.xp -= nextXP;
                             userData.level++;
-                            // يمكنك إضافة رسالة تهنئة هنا إذا أردت
+                            leveledUp = true;
+                            nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
                         }
 
-                        // حفظ البيانات
-                        client.setLevel.run(userData);
+                        await db.query(`
+                            UPDATE levels 
+                            SET xp = $1, totalxp = $2, level = $3, mora = $4, totalvctime = $5
+                            WHERE userid = $6 AND guildid = $7
+                        `, [userData.xp, userData.totalxp, userData.level, userData.mora, userData.totalvctime, userID, guildID]);
 
-                        // 5. تحديث المهام (Quests)
                         if (client.incrementQuestStats) {
-                            // إضافة دقيقة واحدة لمهمة الصوت
                             await client.incrementQuestStats(userID, guildID, 'vc_minutes', 1);
 
-                            // إذا كان فاتح بث، نضيف دقيقة لمهمة البث
                             if (voiceState.streaming) {
                                 await client.incrementQuestStats(userID, guildID, 'streaming_minutes', 1);
                             }
@@ -64,5 +71,5 @@ module.exports = (client) => {
         } catch (error) {
             console.error("[Global Voice Timer Error]", error);
         }
-    }, 60 * 1000); // 60000 ميلي ثانية = 1 دقيقة
+    }, 60 * 1000); 
 };
