@@ -1,21 +1,17 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 const path = require('path');
 
-// الثوابت الأساسية
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 const OWNER_ID = "1145327691772481577"; 
 const XP_EXCHANGE_RATE = 3;
 const BANNER_URL = 'https://i.postimg.cc/NMkWVyLV/line.png';
 
-// استيراد ملفات البيانات (JSON)
-// ملاحظة: تم تعديل المسار النسبي ليتوافق مع وجود الملف داخل مجلد فرعي (../..)
 const shopItems = require('../../json/shop-items.json'); 
 const potionItems = require('../../json/potions.json'); 
 const farmAnimals = require('../../json/farm-animals.json');
 const weaponsConfig = require('../../json/weapons-config.json');
 const skillsConfig = require('../../json/skills-config.json');
 
-// استيراد ملف الصيد الشامل
 const rootDir = process.cwd();
 let rodsConfig = [], boatsConfig = [], baitsConfig = [];
 try {
@@ -25,7 +21,6 @@ try {
     baitsConfig = fishingConfig.baits || [];
 } catch (e) { console.error("Error loading fishing config:", e); }
 
-// خريطة الصور المصغرة
 const THUMBNAILS = new Map([
     ['upgrade_weapon', 'https://i.postimg.cc/CMXxsXT1/tsmym-bdwn-ʿnwan-7.png'],
     ['upgrade_skill', 'https://i.postimg.cc/CMkxJJF4/tsmym-bdwn-ʿnwan-8.png'],
@@ -48,27 +43,26 @@ const THUMBNAILS = new Map([
     ['potions_menu', 'https://cdn-icons-png.flaticon.com/512/867/867927.png']
 ]);
 
-// 🌟 دالة للتأكد من وجود جدول المخزون (Inventory) 🌟
-function ensureInventoryTable(sql) {
-    if(!sql.open) return;
-    sql.prepare(`
+async function ensureInventoryTable(db) {
+    if(!db) return;
+    await db.query(`
         CREATE TABLE IF NOT EXISTS user_inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guildID TEXT,
-            userID TEXT,
-            itemID TEXT,
+            id SERIAL PRIMARY KEY,
+            guildid TEXT,
+            userid TEXT,
+            itemid TEXT,
             quantity INTEGER DEFAULT 0,
-            UNIQUE(guildID, userID, itemID)
+            UNIQUE(guildid, userid, itemid)
         );
-    `).run();
+    `);
 }
 
-// 🌟 دالة اللوج (تسجيل العمليات) 🌟
 async function sendShopLog(client, guildId, member, item, price, type = "شراء") {
     try {
-        const settings = client.sql.prepare("SELECT shopLogChannelID FROM settings WHERE guild = ?").get(guildId);
-        if (!settings || !settings.shopLogChannelID) return;
-        const channel = await client.channels.fetch(settings.shopLogChannelID).catch(() => null);
+        const settingsRes = await client.db.query("SELECT shoplogchannelid FROM settings WHERE guild = $1", [guildId]);
+        const settings = settingsRes.rows[0];
+        if (!settings || !settings.shoplogchannelid) return;
+        const channel = await client.channels.fetch(settings.shoplogchannelid).catch(() => null);
         if (!channel) return;
         const embed = new EmbedBuilder()
             .setTitle(`🛒 سجل عمليات المتجر`)
