@@ -1,6 +1,5 @@
 const { EmbedBuilder, Colors } = require("discord.js");
 
-// خريطة لتخزين الكولداون (خارج الدالة لضمان الحفظ المؤقت)
 const cooldowns = new Map();
 
 module.exports = {
@@ -11,65 +10,62 @@ module.exports = {
     async execute(message, args) {
         const userId = message.author.id;
         const now = Date.now();
-        const cooldownAmount = 10 * 60 * 1000; // 10 دقائق بالمللي ثانية
+        const cooldownAmount = 10 * 60 * 1000; 
 
-        // 1. التحقق من الكولداون
         if (cooldowns.has(userId)) {
             const expirationTime = cooldowns.get(userId);
             
             if (now < expirationTime) {
-                const expiredTimestamp = Math.floor(expirationTime / 1000); // تحويل لثواني عشان ديسكورد
+                const expiredTimestamp = Math.floor(expirationTime / 1000); 
                 
                 const cooldownEmbed = new EmbedBuilder()
                     .setColor(Colors.Red)
                     .setDescription(`✶ غـبـت منـذ قليل .. انتظـر <t:${expiredTimestamp}:R> للتـأفيـك مجـددًا <:stop:1436337453098340442>`);
 
-                // إرسال الرد وحذفه بعد 5 ثواني
                 return message.reply({ embeds: [cooldownEmbed] }).then(msg => {
                     setTimeout(() => msg.delete().catch(() => {}), 5000);
                 });
             }
         }
 
-        // تسجيل الكولداون الجديد للمستخدم
         cooldowns.set(userId, now + cooldownAmount);
-        // حذف الكولداون من الذاكرة بعد انتهاء الوقت لتخفيف الحمل
         setTimeout(() => cooldowns.delete(userId), cooldownAmount);
 
-        // --- باقي الكود الأصلي ---
         const client = message.client;
-        const sql = client.sql;
+        const db = client.sql;
         const guildId = message.guild.id;
 
-        // 1. إنشاء الجدول إذا لم يوجد
-        sql.prepare(`
-            CREATE TABLE IF NOT EXISTS afk (
-                userID TEXT,
-                guildID TEXT,
-                reason TEXT,
-                timestamp INTEGER,
-                mentionsCount INTEGER DEFAULT 0,
-                subscribers TEXT DEFAULT '[]',
-                messages TEXT DEFAULT '[]',
-                PRIMARY KEY (userID, guildID)
-            )
-        `).run();
-
-        // ⚠️ خطوة احترازية: إضافة الأعمدة الناقصة إن وجدت
         try {
-            sql.prepare("ALTER TABLE afk ADD COLUMN messages TEXT DEFAULT '[]'").run();
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS afk (
+                    userID TEXT,
+                    guildID TEXT,
+                    reason TEXT,
+                    timestamp BIGINT,
+                    mentionsCount INTEGER DEFAULT 0,
+                    subscribers TEXT DEFAULT '[]',
+                    messages TEXT DEFAULT '[]',
+                    PRIMARY KEY (userID, guildID)
+                )
+            `);
+            
+            await db.query("ALTER TABLE afk ADD COLUMN IF NOT EXISTS messages TEXT DEFAULT '[]'");
         } catch (e) {}
 
-        // 2. السبب الافتراضي
         const reason = args.join(" ") || "مشغـول حالياً";
-        // const now = Math.floor(Date.now() / 1000); // (تم تعريف now بالأعلى)
         const timestamp = Math.floor(now / 1000);
 
-        // 3. الحفظ في الداتابيس
-        const stmt = sql.prepare("INSERT OR REPLACE INTO afk (userID, guildID, reason, timestamp, mentionsCount, subscribers, messages) VALUES (?, ?, ?, ?, 0, '[]', '[]')");
-        stmt.run(userId, guildId, reason, timestamp);
+        await db.query(`
+            INSERT INTO afk (userID, guildID, reason, timestamp, mentionsCount, subscribers, messages) 
+            VALUES ($1, $2, $3, $4, 0, '[]', '[]')
+            ON CONFLICT (userID, guildID) DO UPDATE SET 
+            reason = EXCLUDED.reason,
+            timestamp = EXCLUDED.timestamp,
+            mentionsCount = 0,
+            subscribers = '[]',
+            messages = '[]'
+        `, [userId, guildId, reason, timestamp]);
 
-        // 4. تغيير الاسم (إضافة [AFK])
         try {
             const oldName = message.member.displayName;
             if (!oldName.includes("[AFK]")) {
@@ -78,14 +74,12 @@ module.exports = {
             }
         } catch (e) {}
 
-        // 5. رسالة التأكيد (بالتنسيق الجديد)
         const embed = new EmbedBuilder()
             .setColor("Random")
             .setTitle('✶ غـيـاب مؤقـت')
             .setThumbnail(message.author.displayAvatarURL())
             .setDescription(`💤 **تم تفعيل وضع الغيـاب المؤقـت بنجاح**\n\n📝 **السبب:** ${reason}`);
 
-        // إرسال الرسالة وحذفها بعد 20 ثانية (حسب كودك الأصلي)
         message.reply({ embeds: [embed] }).then(msg => {
             setTimeout(() => msg.delete().catch(() => {}), 20000);
         });
