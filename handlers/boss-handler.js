@@ -6,9 +6,6 @@ const HIT_COOLDOWN = 1 * 60 * 60 * 1000;
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_XP = '<a:levelup:1437805366048985290>';
 
-// ==========================================
-// 🎲 دالة حساب الضربة الحرجة (1%)
-// ==========================================
 function calculateHit(baseDamage) {
     const isCritical = Math.random() * 100 < 5;
     let finalDamage = baseDamage;
@@ -27,7 +24,7 @@ function createProgressBar(current, max, length = 12) {
 
 function updateBossLog(boss, username, toolName, damage) {
     let logs = [];
-    try { logs = JSON.parse(boss.lastLog || '[]'); } catch (e) {}
+    try { logs = JSON.parse(boss.lastlog || '[]'); } catch (e) {}
     const logEntry = `╰ **${username}**: هـاجـم بـ **${toolName}** وتسبب بضرر \`${damage.toLocaleString()}\``;
     logs.unshift(logEntry);
     if (logs.length > 3) logs = logs.slice(0, 3); 
@@ -65,11 +62,10 @@ async function safeReply(interaction, data) {
     } catch (e) { console.error("[SafeReply Error]", e); }
 }
 
-async function handleBossInteraction(interaction, client, sql) {
+async function handleBossInteraction(interaction, client, db) {
     if (!interaction.isButton()) return;
 
-    // [FIX] التحقق من أن قاعدة البيانات مفتوحة
-    if (!sql || !sql.open) {
+    if (!db) {
         return safeReply(interaction, { 
             content: "⚠️ **النظام في حالة صيانة مؤقتة (نسخ احتياطي)، يرجى المحاولة بعد دقيقة.**", 
             flags: [MessageFlags.Ephemeral] 
@@ -77,10 +73,10 @@ async function handleBossInteraction(interaction, client, sql) {
     }
 
     try {
-        sql.prepare("SELECT totalHits FROM world_boss LIMIT 1").get();
+        await db.query("SELECT totalhits FROM world_boss LIMIT 1");
     } catch (err) {
-        if (err.message.includes("no such column: totalHits")) {
-            sql.prepare("ALTER TABLE world_boss ADD COLUMN totalHits INTEGER DEFAULT 0").run();
+        if (err.message.includes("does not exist") || err.message.includes("undefined column")) {
+            await db.query("ALTER TABLE world_boss ADD COLUMN totalhits INTEGER DEFAULT 0");
         }
     }
     
@@ -88,17 +84,18 @@ async function handleBossInteraction(interaction, client, sql) {
     const guildID = guild.id;
     const userID = user.id;
 
-    const boss = sql.prepare("SELECT * FROM world_boss WHERE guildID = ? AND active = 1").get(guildID);
+    const bossRes = await db.query("SELECT * FROM world_boss WHERE guildid = $1 AND active = 1", [guildID]);
+    const boss = bossRes.rows[0];
     if (!boss) return safeReply(interaction, { content: "❌ **الوحش مات!**", flags: [MessageFlags.Ephemeral] });
 
-    // 1. زر الحالة
     if (customId === 'boss_status') {
-        const leaderboard = sql.prepare("SELECT userID, totalDamage FROM boss_leaderboard WHERE guildID = ? ORDER BY totalDamage DESC LIMIT 3").all(guildID);
+        const leaderboardRes = await db.query("SELECT userid, totaldamage FROM boss_leaderboard WHERE guildid = $1 ORDER BY totaldamage DESC LIMIT 3", [guildID]);
+        const leaderboard = leaderboardRes.rows;
         let lbText = leaderboard.length > 0 
-            ? leaderboard.map((entry, index) => `${index + 1}# <@${entry.userID}> : **${entry.totalDamage.toLocaleString()}**`).join('\n') 
+            ? leaderboard.map((entry, index) => `${index + 1}# <@${entry.userid}> : **${entry.totaldamage.toLocaleString()}**`).join('\n') 
             : "لا يوجد سجلات.";
 
-        const totalHits = boss.totalHits || 0;
+        const totalHits = boss.totalhits || 0;
 
         const statusEmbed = new EmbedBuilder()
             .setTitle(`✥ تـقـريـر المعـركـة`)
@@ -107,20 +104,19 @@ async function handleBossInteraction(interaction, client, sql) {
                 `✶ **معـلومـات الزعـيـم:**\n` +
                 `- الاسـم: **${boss.name}**\n` +
                 `- هجمات متلـقـية: **${totalHits}**\n` +
-                `- نقـاط الصحـة: **${boss.currentHP.toLocaleString()} / ${boss.maxHP.toLocaleString()}**\n\n` +
+                `- نقـاط الصحـة: **${boss.currenthp.toLocaleString()} / ${boss.maxhp.toLocaleString()}**\n\n` +
                 `✶ **اعـلـى ضـرر:**\n${lbText}`
             );
         if (boss.image) statusEmbed.setThumbnail(boss.image);
         return safeReply(interaction, { embeds: [statusEmbed], flags: [MessageFlags.Ephemeral] });
     }
 
-    // 2. التحقق من الزر والمهارة
     let isSkill = false;
     let skillData = null;
 
     if (customId === 'boss_skill_menu') { 
         isSkill = true;
-        const userSkills = getAllSkillData(sql, member);
+        const userSkills = await getAllSkillData(db, member);
         skillData = Object.values(userSkills).find(s => s.id.startsWith('race_'));
         
         if (!skillData) {
@@ -131,14 +127,14 @@ async function handleBossInteraction(interaction, client, sql) {
         }
     } else if (customId !== 'boss_attack') return;
 
-    // 3. الكولداون
     const isOwner = (userID === OWNER_ID); 
     const now = Date.now();
     if (!isOwner) {
-        const cooldownData = sql.prepare("SELECT lastHit FROM boss_cooldowns WHERE guildID = ? AND userID = ?").get(guildID, userID);
+        const cooldownDataRes = await db.query("SELECT lasthit FROM boss_cooldowns WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+        const cooldownData = cooldownDataRes.rows[0];
         
-        if (cooldownData && (now - cooldownData.lastHit) < HIT_COOLDOWN) {
-            const expiryTime = Math.floor((cooldownData.lastHit + HIT_COOLDOWN) / 1000);
+        if (cooldownData && (now - parseInt(cooldownData.lasthit)) < HIT_COOLDOWN) {
+            const expiryTime = Math.floor((parseInt(cooldownData.lasthit) + HIT_COOLDOWN) / 1000);
             return safeReply(interaction, { 
                 content: `⏳ **اسـترح قليلا ايهـا المحـارب <a:MugiStronk:1438795606872166462>!**\nيمكنك الهجوم مجدداً بعـد <t:${expiryTime}:R>`, 
                 flags: [MessageFlags.Ephemeral] 
@@ -146,22 +142,17 @@ async function handleBossInteraction(interaction, client, sql) {
         }
     }
 
-    // =========================================================
-    // 🔥 حساب الضرر (إما سلاح أو مهارة) - مفصول تماماً
-    // =========================================================
     let baseCalcDamage = 0;
     let toolName = "خنجر";
     let isDefaultWeapon = false;
 
     if (isSkill && skillData) {
-        // ✅ هجوم المهارة فقط
         toolName = skillData.name;
         baseCalcDamage = skillData.effectValue;
     } else {
-        // ✅ هجوم السلاح فقط
-        const userRace = getUserRace(member, sql);
+        const userRace = await getUserRace(member, db);
         if (userRace) {
-            const weapon = getWeaponData(sql, member);
+            const weapon = await getWeaponData(db, member);
             if (weapon && weapon.currentLevel > 0) {
                 baseCalcDamage = weapon.currentDamage;
                 toolName = weapon.name;
@@ -177,105 +168,91 @@ async function handleBossInteraction(interaction, client, sql) {
         }
     }
 
-    // 🔥 تطبيق نسبة الحظ (1% كريتيكال)
     const hitResult = calculateHit(baseCalcDamage);
     let finalDamage = hitResult.damage;
     let isCrit = hitResult.isCritical;
 
-    // تحديث الداتابيس
-    let newHP = boss.currentHP - finalDamage;
+    let newHP = boss.currenthp - finalDamage;
     if (newHP < 0) newHP = 0;
 
     const newLogStr = updateBossLog(boss, member.user.displayName, toolName, finalDamage);
-    sql.prepare("UPDATE world_boss SET currentHP = ?, lastLog = ?, totalHits = COALESCE(totalHits, 0) + 1 WHERE guildID = ?").run(newHP, newLogStr, guildID);
+    await db.query("UPDATE world_boss SET currenthp = $1, lastlog = $2, totalhits = COALESCE(totalhits, 0) + 1 WHERE guildid = $3", [newHP, newLogStr, guildID]);
     
     if (!isOwner) {
-        sql.prepare("INSERT OR REPLACE INTO boss_cooldowns (guildID, userID, lastHit) VALUES (?, ?, ?)").run(guildID, userID, now);
+        await db.query("INSERT INTO boss_cooldowns (guildid, userid, lasthit) VALUES ($1, $2, $3) ON CONFLICT(guildid, userid) DO UPDATE SET lasthit = EXCLUDED.lasthit", [guildID, userID, now]);
     }
 
-    const userDmgRecord = sql.prepare("SELECT totalDamage FROM boss_leaderboard WHERE guildID = ? AND userID = ?").get(guildID, userID);
-    sql.prepare("INSERT OR REPLACE INTO boss_leaderboard (guildID, userID, totalDamage) VALUES (?, ?, ?)").run(guildID, userID, (userDmgRecord ? userDmgRecord.totalDamage : 0) + finalDamage);
+    const userDmgRecordRes = await db.query("SELECT totaldamage FROM boss_leaderboard WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+    const userDmgRecord = userDmgRecordRes.rows[0];
+    const updatedDamage = (userDmgRecord ? parseInt(userDmgRecord.totaldamage) : 0) + finalDamage;
+    
+    await db.query("INSERT INTO boss_leaderboard (guildid, userid, totaldamage) VALUES ($1, $2, $3) ON CONFLICT(guildid, userid) DO UPDATE SET totaldamage = EXCLUDED.totaldamage", [guildID, userID, updatedDamage]);
 
-    // =========================================================
-    // 🔥🔥 نظام الجوائز (موزون ومعدل حسب المستوى) 🔥🔥
-    // =========================================================
     let rewardString = "";
-    // رقم عشوائي من 0 إلى 100
     const roll = Math.random() * 100;
     
-    let userData = client.getLevel.get(userID, guildID) || { ...client.defaultData, user: userID, guild: guildID };
+    const userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    let userData = userDataRes.rows[0] || { userid: userID, guildid: guildID, level: 1, xp: 0, mora: 0, totalxp: 0 };
+    
     userData.level = parseInt(userData.level) || 1;
     userData.xp = parseInt(userData.xp) || 0;
-    userData.mora = parseInt(userData.mora) || 0; // تأكد أن المورا رقم
+    userData.mora = parseInt(userData.mora) || 0; 
+    userData.totalxp = parseInt(userData.totalxp) || 0; 
     
     let xpToAdd = 0;
 
-    // ✅ تحديد الحدود الدنيا والعليا للجوائز بناءً على المستوى
     let minReward = 20;
     let maxReward = 150;
 
-    // إذا اللفل فوق 10، تزيد الجوائز
     if (userData.level > 10) {
         minReward = 50;
         maxReward = 500;
     }
 
-    // التوزيع الجديد:
-    // > 98: كوبون (2%)
-    // > 90: بف XP (8%)
-    // > 80: بف مورا (10%)
-    // > 40: مورا كاش (40%)
-    // والباقي: XP (40%)
-
-    if (roll > 98) { // كوبون
-        const existingCoupon = sql.prepare("SELECT 1 FROM user_coupons WHERE userID = ? AND guildID = ?").get(userID, guildID);
-        if (!existingCoupon) {
+    if (roll > 98) { 
+        const existingCouponRes = await db.query("SELECT 1 FROM user_coupons WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+        if (existingCouponRes.rows.length === 0) {
             const discount = Math.floor(Math.random() * 10) + 1;
-            sql.prepare("INSERT INTO user_coupons (guildID, userID, discountPercent) VALUES (?, ?, ?)").run(guildID, userID, discount);
+            await db.query("INSERT INTO user_coupons (guildid, userid, discountpercent) VALUES ($1, $2, $3)", [guildID, userID, discount]);
             rewardString = `${discount}% كـوبـون خـصـم للمتجـر`;
         } else {
-            // تعويض بف
             const duration = getRandomDuration(10, 180); 
             const percent = Math.floor(Math.random() * 46) + 5; 
             const expiresAt = Date.now() + duration;
-            sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildID, userID, percent, expiresAt, 'xp', percent / 100);
+            await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
             
-            // 🔥🔥 تم إضافة المدة هنا 🔥🔥
             rewardString = `${percent}% تعـزيـز خبرة ${EMOJI_XP} (لمدة ${formatDuration(duration)})`;
         }
 
-    } else if (roll > 90) { // بف XP
+    } else if (roll > 90) { 
         const duration = getRandomDuration(10, 180);
         const percent = Math.floor(Math.random() * 46) + 5; 
         const expiresAt = Date.now() + duration;
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildID, userID, percent, expiresAt, 'xp', percent / 100);
+        await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
         
-        // 🔥🔥 تم إضافة المدة هنا 🔥🔥
         rewardString = `${percent}% تعـزيـز خبرة${EMOJI_XP} (لمدة ${formatDuration(duration)})`;
 
-    } else if (roll > 80) { // بف مورا
+    } else if (roll > 80) { 
         const duration = getRandomDuration(10, 180);
         const percent = Math.floor(Math.random() * 8) + 1; 
         const expiresAt = Date.now() + duration;
-        sql.prepare("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES (?, ?, ?, ?, ?, ?)").run(guildID, userID, percent, expiresAt, 'mora', percent / 100);
+        await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'mora', percent / 100]);
         
-        // 🔥🔥 تم إضافة المدة هنا 🔥🔥
         rewardString = `${percent}% تعـزيـز مورا${EMOJI_MORA} (لمدة ${formatDuration(duration)})`;
 
-    } else if (roll > 40) { // ✅ مورا (تعتمد على الرينج المحدد)
+    } else if (roll > 40) { 
         const amount = Math.floor(Math.random() * (maxReward - minReward + 1)) + minReward;
         userData.mora += amount; 
         rewardString = `${amount} ${EMOJI_MORA}`;
 
-    } else { // ✅ اكس بي (تعتمد على الرينج المحدد)
+    } else { 
         xpToAdd = Math.floor(Math.random() * (maxReward - minReward + 1)) + minReward;
         rewardString = `${xpToAdd} ${EMOJI_XP}`;
     }
 
-    // حفظ البيانات
     if (xpToAdd > 0) {
         userData.xp += xpToAdd;
-        userData.totalXP += xpToAdd;
+        userData.totalxp += xpToAdd;
         let requiredXP = getRequiredXP(userData.level);
         let leveledUp = false;
         while (userData.xp >= requiredXP) {
@@ -287,10 +264,12 @@ async function handleBossInteraction(interaction, client, sql) {
         if (leveledUp) rewardString += `\n🆙 **Level Up!** -> ${userData.level}`;
     }
     
-    // حفظ التعديلات (بما فيها المورا)
-    client.setLevel.run(userData);
+    if (userDataRes.rows.length > 0) {
+        await db.query("UPDATE levels SET mora = $1, xp = $2, totalxp = $3, level = $4 WHERE userid = $5 AND guildid = $6", [userData.mora, userData.xp, userData.totalxp, userData.level, userID, guildID]);
+    } else {
+        await db.query("INSERT INTO levels (userid, guildid, mora, xp, totalxp, level) VALUES ($1, $2, $3, $4, $5, $6)", [userID, guildID, userData.mora, userData.xp, userData.totalxp, userData.level]);
+    }
 
-    // ✅ رسالة التنبيه للسلاح
     let weakWeaponWarning = "";
     if (isDefaultWeapon) {
         weakWeaponWarning = "\n✬ استعـمـلت سلاح ضعيف في هجومك هذا حدد عرقك واشتري سلاح من المتجر لتحصل على جوائز قيمة اكثر <a:MugiStronk:1438795606872166462>";
@@ -298,11 +277,10 @@ async function handleBossInteraction(interaction, client, sql) {
 
     let critText = isCrit ? " 🔥 **ضربة حرجة!**" : "";
 
-    // تحديث رسالة البوس
-    const bossMsg = await interaction.channel.messages.fetch(boss.messageID).catch(() => null);
+    const bossMsg = await interaction.channel.messages.fetch(boss.messageid).catch(() => null);
     if (bossMsg) {
-        const hpPercent = Math.floor((newHP / boss.maxHP) * 100);
-        const progressBar = createProgressBar(newHP, boss.maxHP, 12); 
+        const hpPercent = Math.floor((newHP / boss.maxhp) * 100);
+        const progressBar = createProgressBar(newHP, boss.maxhp, 12); 
         let logsArr = [];
         try { logsArr = JSON.parse(newLogStr); } catch(e){}
         const logDisplay = logsArr.length > 0 ? logsArr.join('\n') : "╰ بانتظار الهجوم الأول...";
@@ -313,22 +291,24 @@ async function handleBossInteraction(interaction, client, sql) {
                 `✬ ظـهـر زعـيـم في السـاحـة تـعاونـوا عـلـى قتاله واكسبوا الجوائـز <:trophy:1438797232458432602>!\n\n` +
                 `✬ **نـقـاط صـحـة الزعـيـم <a:Nerf:1438795685280612423>:**\n` +
                 `${progressBar} **${hpPercent}%**\n` +
-                `╰ **${newHP.toLocaleString()}** / ${boss.maxHP.toLocaleString()} HP\n\n` +
+                `╰ **${newHP.toLocaleString()}** / ${boss.maxhp.toLocaleString()} HP\n\n` +
                 `✬ **سـجـل الـمـعـركـة ⚔️:**\n` +
                 `${logDisplay}`
             ).setFields([]); 
 
         if (newHP <= 0) {
-            const leaderboard = sql.prepare("SELECT userID, totalDamage FROM boss_leaderboard WHERE guildID = ? ORDER BY totalDamage DESC LIMIT 3").all(guildID);
+            const leaderboardResFinal = await db.query("SELECT userid, totaldamage FROM boss_leaderboard WHERE guildid = $1 ORDER BY totaldamage DESC LIMIT 3", [guildID]);
+            const leaderboardFinal = leaderboardResFinal.rows;
             let lbText = "لا يوجد.";
-            if (leaderboard.length > 0) {
-                lbText = leaderboard.map((entry, index) => `${index + 1}. <@${entry.userID}>: **${entry.totalDamage.toLocaleString()}**`).join('\n');
+            if (leaderboardFinal.length > 0) {
+                lbText = leaderboardFinal.map((entry, index) => `${index + 1}. <@${entry.userid}>: **${parseInt(entry.totaldamage).toLocaleString()}**`).join('\n');
             }
             
             let finalHits = 0;
             try {
-                const finalBossData = sql.prepare("SELECT totalHits FROM world_boss WHERE guildID = ?").get(guildID);
-                finalHits = finalBossData ? (finalBossData.totalHits + 1) : 1; 
+                const finalBossDataRes = await db.query("SELECT totalhits FROM world_boss WHERE guildid = $1", [guildID]);
+                const finalBossData = finalBossDataRes.rows[0];
+                finalHits = finalBossData ? (parseInt(finalBossData.totalhits) + 1) : 1; 
             } catch (e) { finalHits = 1; }
 
             newEmbed.setTitle(`✥ تـمـت هزيـمـة الزعـيـم ${boss.name}`)
@@ -336,7 +316,7 @@ async function handleBossInteraction(interaction, client, sql) {
                     `✶ **معـلومـات الزعـيـم:**\n` +
                     `- الاسـم: **${boss.name}**\n` +
                     `- هجمات متلـقـية ⚔️: **${finalHits}**\n` +
-                    `- نقـاط الصحـة <a:Nerf:1438795685280612423>: **${boss.maxHP.toLocaleString()}**\n\n` +
+                    `- نقـاط الصحـة <a:Nerf:1438795685280612423>: **${boss.maxhp.toLocaleString()}**\n\n` +
                     `✶ **اعـلـى ضـرر <a:buff:1438796257522094081>:**\n` +
                     `${lbText}\n\n` +
                     `**صـاحـب الضربـة القاضيـة 🗡️:**\n` +
@@ -345,8 +325,8 @@ async function handleBossInteraction(interaction, client, sql) {
                 .setColor(Colors.Gold);
 
             await bossMsg.edit({ embeds: [newEmbed], components: [] });
-            sql.prepare("UPDATE world_boss SET active = 0 WHERE guildID = ?").run(guildID);
-            sql.prepare("DELETE FROM boss_leaderboard WHERE guildID = ?").run(guildID);
+            await db.query("UPDATE world_boss SET active = 0 WHERE guildid = $1", [guildID]);
+            await db.query("DELETE FROM boss_leaderboard WHERE guildid = $1", [guildID]);
             
             return safeReply(interaction, { 
                 content: `✬ هـاجـمـت الزعـيـم وتسببـت بـ **${finalDamage.toLocaleString()}** ضرر (قاضية!)${critText}\n✶ حـصـلت عـلـى: ${rewardString}${weakWeaponWarning}`, 
