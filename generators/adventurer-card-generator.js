@@ -51,7 +51,6 @@ async function generateAdventurerCard(data) {
 
     const primaryColor = data.rankInfo.color || '#555555';
 
-    // 1. الخلفية والمؤثرات
     const bgBase = ctx.createLinearGradient(0, 0, width, height);
     bgBase.addColorStop(0, '#050508'); 
     bgBase.addColorStop(1, '#11111a');
@@ -98,7 +97,6 @@ async function generateAdventurerCard(data) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.strokeRect(12, 12, width - 24, height - 24);
 
-    // 2. التصميم العلوي (الأفاتار، الدرع، الاسم)
     const avatarSize = 180;
     const avatarX = 160; 
     const avatarY = 130; 
@@ -175,25 +173,23 @@ async function generateAdventurerCard(data) {
     ctx.fillText(dName, textRightX, 85);
     ctx.shadowBlur = 0;
 
-    // 🔥 التعديل هنا: تكبير خط العرق والسلاح وزيادة حجم الإطار 🔥
     const drawTag = (text, y) => {
-        ctx.font = 'bold 24px "Bein", sans-serif'; // تم تكبير الخط من 18 إلى 24
-        const tagW = ctx.measureText(text).width + 60; // تم زيادة عرض المربع ليتناسب مع الخط الكبير
+        ctx.font = 'bold 24px "Bein", sans-serif'; 
+        const tagW = ctx.measureText(text).width + 60; 
         ctx.fillStyle = 'rgba(20, 20, 25, 0.85)';
         ctx.beginPath(); 
-        roundRect(ctx, textRightX - tagW, y, tagW, 45, 10); // تم تكبير ارتفاع المربع من 35 إلى 45
+        roundRect(ctx, textRightX - tagW, y, tagW, 45, 10); 
         ctx.fill();
-        ctx.lineWidth = 2; // تم تعريض الإطار قليلاً ليتناسب مع الحجم الجديد
+        ctx.lineWidth = 2; 
         ctx.strokeStyle = primaryColor; 
         ctx.stroke();
         ctx.fillStyle = '#e0e0e0';
         ctx.textAlign = 'center';
-        ctx.fillText(text, textRightX - (tagW / 2), y + 31); // تم ضبط موقع النص داخل المربع الجديد
+        ctx.fillText(text, textRightX - (tagW / 2), y + 31); 
     };
 
-    drawTag(`🩸 ${data.raceName}   |   ⚔️ ${data.weaponName}`, 115); // تم رفع المربع قليلاً ليتناسق مع الاسم
+    drawTag(`🩸 ${data.raceName}   |   ⚔️ ${data.weaponName}`, 115); 
 
-    // 3. الشبكة الهندسية (الإحصائيات)
     const col4X = 830;
     const col3X = 590;
     const col2X = 350;
@@ -224,7 +220,6 @@ async function generateAdventurerCard(data) {
         ctx.textAlign = 'center';
         ctx.fillText(title, x + (boxW / 2), y + 35);
 
-        // اللون دائماً أبيض للأرقام
         ctx.fillStyle = '#ffffff';
         let fontSize = 32;
         ctx.font = `bold ${fontSize}px "Bein", sans-serif`;
@@ -248,9 +243,8 @@ async function generateAdventurerCard(data) {
 
     drawStatBox('🛡️ الدروع', data.shields.toString(), col4X, row3Y);
     drawStatBox('✨ تعزيز خبرة', `+${data.xpBuff}%`, col3X, row3Y);
-    drawStatBox('🪙 تعزيز مورا', `+${data.moraBuff}%`, col2X, row3Y);
+    drawStatBox('🪙 تعزيز المورا', `+${data.moraBuff}%`, col2X, row3Y);
 
-    // 4. لوحة التصنيف (اليسار)
     ctx.fillStyle = 'rgba(15, 15, 20, 0.8)';
     ctx.beginPath(); roundRect(ctx, col1X, row1Y, boxW, 325, 15); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = primaryColor; ctx.stroke();
@@ -269,15 +263,12 @@ async function generateAdventurerCard(data) {
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.stroke();
 
-    // عكس الاتجاهات هنا
     const drawRankRow = (label, value, yOffset) => {
-        // النص على اليسار
         ctx.fillStyle = '#ffffff';
         ctx.font = '20px "Bein", sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(label, col1X + 20, row1Y + yOffset);
         
-        // الرقم على اليمين
         ctx.fillStyle = '#FFAA40';
         ctx.textAlign = 'right';
         ctx.font = 'bold 22px "Bein", sans-serif';
@@ -289,7 +280,6 @@ async function generateAdventurerCard(data) {
     drawRankRow('القوة:', data.ranks.power, 235);
     drawRankRow('الستريك:', data.ranks.streak, 295);
 
-    // 5. شريط الـ XP المتكيف (الأسفل)
     const barW = 1000;
     const barH = 30;
     const barX = 50;
