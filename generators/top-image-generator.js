@@ -1,11 +1,8 @@
-// generators/top-image-generator.js
-
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
 const ROWS_PER_PAGE = 10; 
 
-// --- إعدادات الخطوط واللغة العربية ---
 let arabicReshaper;
 try { arabicReshaper = require('arabic-reshaper'); } catch (e) {}
 
@@ -21,9 +18,6 @@ try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts', 'bein-ar-normal.ttf'), 'Bein'); 
 } catch (e) { console.error("Canvas Font Error:", e); }
 
-// ==========================================
-// 🏅 دالة حساب حرف الرتبة للسمعة
-// ==========================================
 function getRankInfo(points) {
     if (points >= 1000) return { letter: 'SS', color: '#FF0055' };
     if (points >= 500)  return { letter: 'S',  color: '#00FFFF' };
@@ -35,13 +29,10 @@ function getRankInfo(points) {
     return { letter: 'F', color: '#A0522D' };
 }
 
-// ==========================================
-// 🎨 إعدادات الثيمات لكل تصنيف
-// ==========================================
 const THEMES = {
     rep: { title: "قـاعـة الـمـغـامـريـن", color: "#FFD700", icon: "🌟", unit: "رتبة" }, 
     mora: { title: "أثـريـاء الإمـبـراطـوريـة", color: "#F1C40F", icon: "💰", unit: "مورا" },
-    level: { title: "أعـلـى الـمـسـتـويـات", color: "#C266FF", icon: "🏆", unit: "Lv." }, // تم تفتيح البنفسجي ليكون مريح
+    level: { title: "أعـلـى الـمـسـتـويـات", color: "#C266FF", icon: "🏆", unit: "Lv." },
     strongest: { title: "الأقـوى فـي الـسـيـرفـر", color: "#FF3366", icon: "⚔️", unit: "⚡" },
     achievements: { title: "قـاعـة الإنـجـازات والأوسـمـة", color: "#FF8C00", icon: "🎖️", unit: "وسام" },
     streak: { title: "مـلـوك الـسـتـريـك الـيـومـي", color: "#FF5500", icon: "🔥", unit: "يوم" },
@@ -51,21 +42,15 @@ const THEMES = {
     monthly_xp: { title: "نـجـوم الـتـفـاعـل (الـشـهـر)", color: "#9932CC", icon: "🌙", unit: "نقطة" }
 };
 
-// ==========================================
-// 💠 دالة رسم الدرع الفخم لحرف الرتبة
-// ==========================================
 function drawRankShield(ctx, x, y, width, height, color) {
     ctx.save();
     
-    // الظل الخارجي
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
     
-    // الإطار الخارجي
     ctx.lineWidth = 2;
     ctx.strokeStyle = color;
     
-    // التعبئة الداخلية (تدرج خفيف)
     const shieldGrad = ctx.createLinearGradient(x, y, x, y + height);
     shieldGrad.addColorStop(0, 'rgba(30, 30, 35, 0.9)');
     shieldGrad.addColorStop(1, 'rgba(10, 10, 15, 0.9)');
@@ -83,7 +68,6 @@ function drawRankShield(ctx, x, y, width, height, color) {
     ctx.fill();
     ctx.stroke();
     
-    // إطار داخلي رفيع لمزيد من الفخامة
     ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.lineWidth = 1;
@@ -102,9 +86,6 @@ function drawRankShield(ctx, x, y, width, height, color) {
 }
 
 
-// ==========================================
-// 💠 تأثير الزجاج المعشق (من قاعة الأساطير)
-// ==========================================
 function drawRandomPolygon(ctx, cx, cy, radius, sides) {
     ctx.beginPath();
     for (let i = 0; i < sides; i++) {
@@ -118,9 +99,6 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
     ctx.closePath();
 }
 
-// ==========================================
-// 🛠️ دالة الرسم الرئيسية
-// ==========================================
 async function generateTopImage(pageData, type, page, totalPages, targetUserId, extraData = {}) {
     const width = 950;
     const height = 1150; 
@@ -131,11 +109,9 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
 
     const theme = THEMES[type] || { title: "لـوحـة الـصـدارة", color: "#FFFFFF", icon: "📜", unit: "" };
 
-    // 1️⃣ الخلفية الأساسية (داكنة ومريحة للعين)
     ctx.fillStyle = '#0a0a10';
     ctx.fillRect(0, 0, width, height);
 
-    // 2️⃣ خلفية الزجاج المعشق المريحة
     ctx.save();
     for (let i = 0; i < 200; i++) {
         const x = Math.random() * width;
@@ -160,19 +136,16 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
     }
     ctx.restore();
 
-    // 3️⃣ تظليل سينمائي (Vignette) لتركيز الإضاءة على القائمة
     const vignette = ctx.createRadialGradient(width/2, height/2, 200, width/2, height/2, 900);
     vignette.addColorStop(0, 'rgba(0,0,0,0.2)'); 
     vignette.addColorStop(1, 'rgba(0,0,0,0.98)'); 
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
 
-    // 4️⃣ الإطار الخارجي النحيف
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.strokeRect(15, 15, width - 30, height - 30);
 
-    // 5️⃣ العنوان
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 50px "Bein", sans-serif';
     ctx.textAlign = 'center';
@@ -189,7 +162,6 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
     ctx.fillStyle = lineGrad;
     ctx.fillRect(width / 2 - 250, 115, 500, 2);
 
-    // 6️⃣ رسم كروت اللاعبين
     if (pageData.length === 0) {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.font = 'bold 35px "Bein", sans-serif';
@@ -258,9 +230,6 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         const displayName = item.name.length > 15 ? item.name.substring(0, 15) + '..' : item.name;
         ctx.fillText(fixAr(displayName), avatarX - 20, startY + 40);
 
-        // ==========================================
-        // 📊 التعديل الجذري: فصل الرقم عن الكلمة / الرتبة
-        // ==========================================
         let statVal = "";
         let statLabel = "";
         let subStat = "";
@@ -276,7 +245,7 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         } 
         else if (type === 'level') {
             statVal = `${item.db.level}`;
-            statLabel = theme.unit; // Lv.
+            statLabel = theme.unit; 
             subStat = `XP: ${item.db.totalXP.toLocaleString()}`;
         } 
         else if (type === 'strongest') {
@@ -300,17 +269,14 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
             subStat = `💬 ${msgs.toLocaleString()} | 🎙️ ${vc.toLocaleString()} د`;
         }
 
-        // --- رسم القيم على اليسار ---
         if (type === 'rep' && rankInfo) {
-            // 🔥 رسم الدرع الخاص بالرتبة
             const shieldW = 60;
             const shieldH = 65;
-            const shieldX = 260; // ضبط مكان الدرع ليصبح مناسباً
+            const shieldX = 260; 
             const shieldY = startY + cardHeight / 2;
 
             drawRankShield(ctx, shieldX, shieldY, shieldW, shieldH, rankInfo.color);
 
-            // رسم الحرف داخل الدرع
             ctx.fillStyle = rankInfo.color;
             ctx.font = 'bold 24px "Arial", sans-serif'; 
             ctx.textAlign = 'center';
@@ -318,29 +284,24 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
             ctx.fillText(rankInfo.letter, shieldX, shieldY + 5);
             ctx.textBaseline = 'alphabetic'; 
 
-            // رسم الرقم (نقاط السمعة)
             ctx.fillStyle = theme.color;
             ctx.font = 'bold 32px "Arial", sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText(statVal, 140, startY + 52);
 
         } else {
-            // 🔥 رسم الرقم (بلون الثيم)
             ctx.fillStyle = theme.color;
             ctx.font = 'bold 32px "Arial", sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText(statVal, 140, startY + 52);
 
-            // قياس عرض الرقم عشان نحط الكلمة جنبه
             const valWidth = ctx.measureText(statVal).width;
 
-            // 🔥 رسم الكلمة (دائماً بالأبيض المريح للعين)
             ctx.fillStyle = '#FFFFFF';
             ctx.font = 'bold 22px "Bein", sans-serif';
             ctx.fillText(fixAr(statLabel), 140 + valWidth + 8, startY + 50);
         }
 
-        // رسم التفاصيل تحت الاسم (إن وجدت)
         if (subStat) {
             ctx.fillStyle = '#AAAAAA';
             ctx.font = '18px "Arial", sans-serif';
@@ -351,7 +312,6 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
         startY += cardHeight + spacing;
     }
 
-    // 7️⃣ الفوتر
     const footerY = height - 30;
     ctx.fillStyle = '#666677';
     ctx.font = '22px "Bein", sans-serif';
