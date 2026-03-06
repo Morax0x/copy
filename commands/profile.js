@@ -1,12 +1,9 @@
-// commands/economy/profile.js
-
 const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 const weaponsConfig = require('../json/weapons-config.json');
 
-// 🔒 الآيدي الشخصي اللي طلبت حمايته
 const TARGET_OWNER_ID = "1145327691772481577";
 
 const PROFILE_BASE_HP = 100;
@@ -29,25 +26,32 @@ function getRepRankInfo(points) {
     return { name: '🪵 رتبة F', color: '#654321' }; 
 }
 
-function calculateStrongestRank(sql, guildID, targetUserID) {
+async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
-    const weapons = sql.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
-    const getLvl = sql.prepare("SELECT level FROM levels WHERE guild = ? AND user = ?");
-    const getSkills = sql.prepare("SELECT SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? AND userID = ?");
+    
+    const wRes = await db.query("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = $1 AND userID != $2", [guildID, TARGET_OWNER_ID]);
+    const weapons = wRes.rows;
+
+    const lvlRes = await db.query('SELECT "user" as userID, level FROM levels WHERE guild = $1', [guildID]);
+    const levelsMap = new Map(lvlRes.rows.map(r => [r.userid, r.level]));
+
+    const skillRes = await db.query("SELECT userID, SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = $1 GROUP BY userID", [guildID]);
+    const skillsMap = new Map(skillRes.rows.map(r => [r.userid, parseInt(r.totallevels) || 0]));
 
     let stats = [];
     for (const w of weapons) {
-        const conf = weaponsConfig.find(c => c.race === w.raceName);
+        const conf = weaponsConfig.find(c => c.race === (w.racename || w.raceName));
         if(!conf) continue;
-        const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
-        const lvlData = getLvl.get(guildID, w.userID);
-        const playerLevel = lvlData?.level || 1;
+        const wLvl = w.weaponlevel || w.weaponLevel;
+        const dmg = conf.base_damage + (conf.damage_increment * (wLvl - 1));
+        const uid = w.userid || w.userID;
+        const playerLevel = levelsMap.get(uid) || 1;
         const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
-        const skillData = getSkills.get(guildID, w.userID);
-        const skillLevelsTotal = skillData ? (skillData.totalLevels || 0) : 0;
+        const skillLevelsTotal = skillsMap.get(uid) || 0;
         const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
-        stats.push({ userID: w.userID, powerScore });
+        stats.push({ userID: uid, powerScore });
     }
+    
     stats.sort((a, b) => b.powerScore - a.powerScore);
     return stats.findIndex(s => s.userID === targetUserID) + 1; 
 }
@@ -91,56 +95,67 @@ module.exports = {
         };
 
         try {
-            const sql = client.sql;
+            const db = client.sql;
             const targetUser = targetMember.user; 
             const userId = targetUser.id;
             const guildId = guild.id;
 
-            let levelData = client.getLevel ? client.getLevel.get(userId, guildId) : null;
-            if (!levelData) levelData = sql.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
+            let levelData = null;
+            if (client.getLevel) {
+                levelData = await client.getLevel(userId, guildId);
+            }
+            if (!levelData) {
+                const lvlRes = await db.query('SELECT xp, level, mora, bank FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
+                levelData = lvlRes.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
+            }
             
             const totalMora = (levelData.mora || 0) + (levelData.bank || 0);
             const currentXP = levelData.xp || 0;
             const requiredXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
 
-            const repData = sql.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(userId, guildId) || { rep_points: 0 };
-            const rankInfo = getRepRankInfo(repData.rep_points);
+            const repRes = await db.query("SELECT rep_points FROM user_reputation WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            const repData = repRes.rows[0] || { rep_points: 0 };
+            const rankInfo = getRepRankInfo(repData.rep_points || repData.reppoints || 0);
 
-            const userRaceData = getUserRace(targetMember, sql);
-            const raceName = userRaceData ? (RACE_TRANSLATIONS.get(userRaceData.raceName) || userRaceData.raceName) : "مجهول";
-            const weaponData = getWeaponData(sql, targetMember);
+            const userRaceData = await getUserRace(targetMember, db);
+            const raceNameRaw = userRaceData ? (userRaceData.racename || userRaceData.raceName) : null;
+            const raceName = raceNameRaw ? (RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw) : "مجهول";
+            
+            const weaponData = await getWeaponData(db, targetMember);
             const weaponName = weaponData ? weaponData.name : "بدون سلاح";
             const weaponDmg = weaponData ? weaponData.currentDamage : 0;
             const maxHp = PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL);
 
-            const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildId, userId);
-            const streakCount = streakData ? streakData.streakCount : 0;
-            let hasItemShields = streakData ? (streakData.hasItemShield || 0) : 0;
-            let hasGraceShield = (streakData && streakData.hasGracePeriod === 1) ? 1 : 0;
+            const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [guildId, userId]);
+            const streakData = streakRes.rows[0];
+            const streakCount = streakData ? (streakData.streakcount || streakData.streakCount || 0) : 0;
+            let hasItemShields = streakData ? (streakData.hasitemshield || streakData.hasItemShield || 0) : 0;
+            let hasGraceShield = (streakData && (streakData.hasgraceperiod === 1 || streakData.hasGracePeriod === 1)) ? 1 : 0;
             const totalShields = hasItemShields + hasGraceShield;
 
-            const xpBuffPercent = Math.floor((calculateBuffMultiplier(targetMember, sql) - 1) * 100);
-            const moraBuffPercent = Math.floor((calculateMoraBuff(targetMember, sql) - 1) * 100);
+            const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
+            const moraBuffMultiplier = await calculateMoraBuff(targetMember, db);
+            const xpBuffPercent = Math.floor((xpBuffMultiplier - 1) * 100);
+            const moraBuffPercent = Math.floor((moraBuffMultiplier - 1) * 100);
 
             let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
             if (userId !== TARGET_OWNER_ID) {
-                const allScores = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guildId, TARGET_OWNER_ID);
-                let rLvl = allScores.findIndex(s => s.user === userId) + 1;
+                const allScores = await db.query('SELECT "user" FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY totalXP DESC', [guildId, TARGET_OWNER_ID]);
+                let rLvl = allScores.rows.findIndex(s => s.user === userId) + 1;
                 ranks.level = rLvl > 0 ? rLvl.toString() : "0";
 
-                const allMora = sql.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (mora + bank) DESC").all(guildId, TARGET_OWNER_ID);
-                let rMora = allMora.findIndex(s => s.user === userId) + 1;
+                const allMora = await db.query('SELECT "user" FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY (mora + bank) DESC', [guildId, TARGET_OWNER_ID]);
+                let rMora = allMora.rows.findIndex(s => s.user === userId) + 1;
                 ranks.mora = rMora > 0 ? rMora.toString() : "0";
 
-                const allStreaks = sql.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(guildId, TARGET_OWNER_ID);
-                let rStreak = allStreaks.findIndex(s => s.userID === userId) + 1;
+                const allStreaks = await db.query('SELECT userID FROM streaks WHERE guildID = $1 AND userID != $2 ORDER BY streakCount DESC', [guildId, TARGET_OWNER_ID]);
+                let rStreak = allStreaks.rows.findIndex(s => (s.userid || s.userID) === userId) + 1;
                 ranks.streak = rStreak > 0 ? rStreak.toString() : "0";
 
-                let rPower = calculateStrongestRank(sql, guildId, userId);
+                let rPower = await calculateStrongestRank(db, guildId, userId);
                 ranks.power = rPower > 0 ? rPower.toString() : "0";
             }
 
-            // 🛡️ نظام الخصوصية للأونر 🛡️
             let displayMora = totalMora.toLocaleString();
             if (userId === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) {
                 displayMora = "???";
@@ -150,7 +165,7 @@ module.exports = {
                 user: targetUser,
                 displayName: targetMember.displayName || targetUser.username,
                 rankInfo: rankInfo,
-                repPoints: repData.rep_points,
+                repPoints: repData.rep_points || repData.reppoints || 0,
                 level: levelData.level,
                 currentXP: currentXP,
                 requiredXP: requiredXP,
@@ -172,7 +187,7 @@ module.exports = {
             await reply({ files: [attachment] });
 
         } catch (error) {
-            console.error("خطأ في أمر البروفايل:", error);
+            console.error("Error in profile command:", error);
             if (isSlash) await interaction.editReply({ content: "حدث خطأ أثناء تحميل البطاقة." });
             else message.reply("حدث خطأ أثناء تحميل البطاقة.");
         }
