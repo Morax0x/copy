@@ -2,7 +2,6 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { AttachmentBuilder } = require('discord.js');
 const path = require('path');
 
-// 🔥 تسجيل الخط العربي الفخم (عبر المحرك الجديد) 🔥
 try {
     GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
@@ -47,7 +46,6 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     const canvas = createCanvas(900, 280);
     const ctx = canvas.getContext('2d');
 
-    // 1. الخلفية (ألوان متناسقة)
     const colors = getHarmoniousGradient();
     
     const grd = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
@@ -68,7 +66,6 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.fill();
 
-    // 2. تموجات الخلفية (زينة)
     ctx.save();
     drawRoundedRect(ctx, 0, 0, canvas.width, canvas.height, 20);
     ctx.clip();
@@ -92,7 +89,6 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     }
     ctx.restore();
 
-    // 3. الإطار المتوهج
     const glowColor = colors[1] || '#00d2ff';
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = 20;
@@ -102,7 +98,6 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // 4. صورة العضو
     const avatarX = 50;
     const avatarY = 40;
     const avatarSize = 200;
@@ -129,10 +124,8 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.stroke();
 
-    // 5. النصوص
     const textX = 280;
     
-    // العنوان
     ctx.fillStyle = '#ffffff'; 
     ctx.shadowColor = '#000000';
     ctx.shadowBlur = 5;
@@ -140,9 +133,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.fillText('LEVEL UP!', textX, 70);
     ctx.shadowBlur = 0;
 
-    // رسم اليوزرنيم الأصلي (مكتبة napi-rs تدعم الإيموجي والعربي تلقائياً)
     let displayName = member.user.username;
-    // تقصير الاسم إذا كان طويل جداً عشان ما يطلع برة البطاقة
     if (ctx.measureText(displayName).width > 550) {
         displayName = displayName.substring(0, 15) + '...';
     }
@@ -150,7 +141,6 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     ctx.font = `bold 50px ${FONT_MAIN}`;
     ctx.fillText(displayName, textX, 130);
 
-    // المستوى القديم
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.font = `bold 40px ${FONT_MAIN}`;
     ctx.fillText(`Lvl ${oldLevel}`, textX, 200);
@@ -158,12 +148,10 @@ async function generateLevelUpCard(member, oldLevel, newLevel) {
     const oldLevelWidth = ctx.measureText(`Lvl ${oldLevel}`).width;
     const arrowX = textX + oldLevelWidth + 20;
 
-    // السهم (»)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = `bold 40px ${FONT_MAIN}`; 
     ctx.fillText('»', arrowX, 200);
 
-    // المستوى الجديد
     ctx.save();
     ctx.fillStyle = '#FFD700'; 
     ctx.shadowColor = '#FFD700'; 
