@@ -5,26 +5,55 @@ module.exports = {
     description: 'إسكات عضو (تلقائي 30 دقيقة إذا لم يحدد وقت)',
     aliases: ['اوت', 'تايم', 'اسكات', 'انطم', 'اخرس'],
     category: 'Admin',
-    usage: 'timeout <@user> [time] [reason]',
+    usage: 'timeout <@user> [time] [reason] أو بالرد على رسالته',
     
     async execute(message, args) {
-        const sql = message.client.sql;
+        const db = message.client.sql;
 
-        // 1. التحقق من الصلاحيات (تجاهل تام إذا لم يملك الصلاحية)
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return;
 
-        // 2. جلب العضو
-        const targetArg = args[0];
-        if (!targetArg) return message.reply('❓ **منشن العضو.**');
-        
-        let targetMember;
-        try {
-            targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg);
-        } catch (err) {
-            return message.reply('❌ **لم يتم العثور على العضو.**');
+        if (!message.guild.members.me.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+            return message.reply({ content: '❌ **لا أملك صلاحية "Moderate Members".**', allowedMentions: { repliedUser: false } });
         }
 
-        // 3. التحقق من الرتب
+        let targetMember;
+        let timeArg;
+        let reasonArgs;
+
+        if (message.reference && message.reference.messageId) {
+            try {
+                const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
+                targetMember = await message.guild.members.fetch(repliedMsg.author.id);
+                
+                if (args[0] && /^(\d+)(s|m|h|d|w)$/.test(args[0])) {
+                    timeArg = args[0];
+                    reasonArgs = args.slice(1);
+                } else {
+                    timeArg = '30m';
+                    reasonArgs = args;
+                }
+            } catch (err) {}
+        } 
+        
+        if (!targetMember) {
+            const targetArg = args[0];
+            if (!targetArg) return message.reply('❓ **منشن العضو أو قم بالرد على رسالته.**');
+            
+            try {
+                targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg);
+            } catch (err) {
+                return message.reply('❌ **لم يتم العثور على العضو.**');
+            }
+
+            timeArg = args[1];
+            if (timeArg && /^(\d+)(s|m|h|d|w)$/.test(timeArg)) {
+                reasonArgs = args.slice(2);
+            } else {
+                timeArg = '30m';
+                reasonArgs = args.slice(1);
+            }
+        }
+
         if (targetMember.user.bot) return message.reply('❌ **لا يمكنني إسكات البوتات.**');
         if (targetMember.id === message.author.id) return message.reply('❌ **لا يمكنك إسكات نفسك.**');
         if (targetMember.id === message.guild.ownerId) return message.reply('❌ **لا يمكنك إسكات المالك.**');
@@ -36,58 +65,39 @@ module.exports = {
             return message.reply('❌ **لا يمكنني إسكات هذا العضو (رتبته أعلى مني).**');
         }
 
-        // 4. معالجة الوقت والسبب
-        let timeArg = args[1];
-        let reason;
-        let finalTimeMs;
-        const isTimeFormat = (str) => /^(\d+)(s|m|h|d|w)$/.test(str);
-
-        if (timeArg && isTimeFormat(timeArg)) {
-            finalTimeMs = parseDuration(timeArg);
-            reason = args.slice(2).join(" ") || "مخالفة القوانين";
-        } else {
-            timeArg = '30m'; // افتراضي
-            finalTimeMs = parseDuration(timeArg);
-            reason = args.slice(1).join(" ") || "مخالفة القوانين";
-        }
+        let finalTimeMs = parseDuration(timeArg);
+        let reason = reasonArgs.join(" ") || "مخالفة القوانين";
 
         if (!finalTimeMs || finalTimeMs > 28 * 24 * 60 * 60 * 1000) { 
-            return message.reply('❌ **الوقت غير صحيح أو طويل جداً.**');
+            return message.reply('❌ **الوقت غير صحيح أو يتجاوز الحد الأقصى (28 يوم).**');
         }
 
         let arabicTime = timeArg
             .replace('s', ' ثانية').replace('m', ' دقيقة').replace('h', ' ساعة').replace('d', ' يوم').replace('w', ' اسبوع');
 
-        // 5. تجهيز رقم القضية
-        let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
-        let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
+        const lastCaseRes = await db.query("SELECT caseID FROM mod_cases WHERE guildID = $1 ORDER BY caseID DESC LIMIT 1", [message.guild.id]);
+        let lastCase = lastCaseRes.rows[0];
+        let newCaseID = lastCase ? parseInt(lastCase.caseid || lastCase.caseID) + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
 
-        // 6. إشعار الخاص (التعديل هنا ليكون بسطر واحد)
         try {
             const dmEmbed = new EmbedBuilder()
                 .setTitle('✥ تـم اسـكـاتـك')
                 .setColor('Random')
-                // استخدام Description لدمج العنوان والقيمة في سطر واحد
                 .setDescription(`**✶ السبب:** ${reason}\n**✶ المـدة:** ${arabicTime}\n**✶ السيرفر:** ${message.guild.name}\n**✶ بواسـطـة:** <@${message.author.id}>`)
                 .setImage('https://tenor.com/view/amagami-amagami-sister-tying-the-knot-with-an-amagami-sister-mahiru-anekouji-gif-17869569217293962202');
 
             await targetMember.send({ embeds: [dmEmbed] });
         } catch (e) { }
 
-        // 7. التنفيذ
         try {
             await targetMember.timeout(finalTimeMs, `[Timeout by ${message.author.tag}] Reason: ${reason}`);
         } catch (err) {
             return message.reply('❌ **حدث خطأ غير متوقع.**');
         }
 
-        // 8. الحفظ
-        sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
-                     VALUES (?, ?, ?, 'TIMEOUT', ?, ?, ?, ?)`)
-            .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
+        await db.query(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) VALUES ($1, $2, $3, 'TIMEOUT', $4, $5, $6, $7)`, [uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now()]);
 
-        // 9. الرد
         const chatEmbed = new EmbedBuilder()
             .setDescription('✶ تـم الاسـكـات ...')
             .setColor('Random')
@@ -95,8 +105,7 @@ module.exports = {
         
         message.reply({ embeds: [chatEmbed], allowedMentions: { repliedUser: false } });
 
-        // 10. اللوق
-        sendModLog(message, targetMember, 'TIMEOUT', reason, newCaseID, arabicTime);
+        await sendModLog(message, targetMember, 'TIMEOUT', reason, newCaseID, arabicTime, db);
     }
 };
 
@@ -116,11 +125,12 @@ function parseDuration(str) {
     }
 }
 
-function sendModLog(message, targetMember, type, reason, caseID, duration = null) {
-    const sql = message.client.sql;
-    const settings = sql.prepare("SELECT modLogChannelID FROM settings WHERE guild = ?").get(message.guild.id);
-    if (settings && settings.modLogChannelID) {
-        const logChannel = message.guild.channels.cache.get(settings.modLogChannelID);
+async function sendModLog(message, targetMember, type, reason, caseID, duration, db) {
+    const settingsRes = await db.query("SELECT modLogChannelID FROM settings WHERE guild = $1", [message.guild.id]);
+    const settings = settingsRes.rows[0];
+    
+    if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
+        const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
         if (logChannel) {
             const logEmbed = new EmbedBuilder()
                 .setTitle(`🟡 New Timeout | Case #${caseID}`)
