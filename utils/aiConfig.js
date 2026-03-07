@@ -6,7 +6,13 @@ const paidChannelsCache = new Map();
 let db; 
 
 async function init(databaseClient) {
+    if (!databaseClient) {
+        console.error("[AI Config] ⚠️ Error: databaseClient is undefined. Make sure to pass client.sql when calling init().");
+        return;
+    }
+    
     db = databaseClient;
+    
     try {
         await db.query("CREATE TABLE IF NOT EXISTS ai_channels (channelID TEXT PRIMARY KEY, isNsfw INTEGER)");
         await db.query("CREATE TABLE IF NOT EXISTS ai_blacklist (userID TEXT PRIMARY KEY)");
@@ -48,6 +54,7 @@ module.exports = {
     init, 
 
     addChannel: async (channelId, isNsfw = false) => {
+        if (!db) return console.error("[AI Config] db not initialized.");
         const nsfwInt = isNsfw ? 1 : 0;
         try {
             await db.query("INSERT INTO ai_channels (channelID, isNsfw) VALUES ($1, $2) ON CONFLICT (channelID) DO UPDATE SET isNsfw = EXCLUDED.isNsfw", [channelId, nsfwInt]);
@@ -56,6 +63,7 @@ module.exports = {
     },
 
     removeChannel: async (channelId) => {
+        if (!db) return;
         try {
             await db.query("DELETE FROM ai_channels WHERE channelID = $1", [channelId]);
             channelsCache.delete(channelId);
@@ -87,6 +95,7 @@ module.exports = {
     },
 
     blockUser: async (userId) => {
+        if (!db) return;
         try {
             await db.query("INSERT INTO ai_blacklist (userID) VALUES ($1) ON CONFLICT DO NOTHING", [userId]);
             blacklistCache.add(userId);
@@ -94,6 +103,7 @@ module.exports = {
     },
 
     unblockUser: async (userId) => {
+        if (!db) return;
         try {
             await db.query("DELETE FROM ai_blacklist WHERE userID = $1", [userId]);
             blacklistCache.delete(userId);
@@ -105,6 +115,7 @@ module.exports = {
     },
 
     addRestrictedCategory: async (guildId, categoryId) => {
+        if (!db) return;
         try {
             await db.query("INSERT INTO ai_restricted_categories (guildID, categoryID) VALUES ($1, $2) ON CONFLICT (categoryID) DO UPDATE SET guildID = EXCLUDED.guildID", [guildId, categoryId]);
             restrictedCategoriesCache.add(categoryId);
@@ -112,6 +123,7 @@ module.exports = {
     },
 
     removeRestrictedCategory: async (categoryId) => {
+        if (!db) return;
         try {
             await db.query("DELETE FROM ai_restricted_categories WHERE categoryID = $1", [categoryId]);
             restrictedCategoriesCache.delete(categoryId);
@@ -124,6 +136,7 @@ module.exports = {
     },
 
     setPaidChannel: async (guildId, channelId, mode) => {
+        if (!db) return;
         const expiresAt = Date.now() + (24 * 60 * 60 * 1000); 
         try {
             await db.query("INSERT INTO ai_paid_channels (channelID, guildID, mode, expiresAt) VALUES ($1, $2, $3, $4) ON CONFLICT (channelID) DO UPDATE SET guildID = EXCLUDED.guildID, mode = EXCLUDED.mode, expiresAt = EXCLUDED.expiresAt", [channelId, guildId, mode, expiresAt]);
