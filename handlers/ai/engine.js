@@ -1,23 +1,19 @@
-// handlers/ai/engine.js
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { getEmojiContext } = require('./emojis'); 
-// 👇 استدعاء معالج الأوامر المتطور
 const aiActionHandler = require('../../utils/aiActionHandler'); 
 require('dotenv').config();
 
-// 🔥 قائمة الموديلات (الأقوى فالأضعف)
 const MODELS = [
-    "gemini-2.0-flash",       
-    "gemini-1.5-flash",       
+    "gemini-2.0-flash",        
+    "gemini-1.5-flash",        
     "gemini-1.5-pro"
 ];
 
 const chatSessions = {}; 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// 🔥 دالة لاستخراج الإيموجيات المسموحة فقط
 function getAllowedEmojiIds() {
-    const context = getEmojiContext(true); 
+    const context = getEmojiContext(); 
     const matches = context.match(/:(\d+)>/g); 
     if (!matches) return [];
     return matches.map(m => m.replace(/[:>]/g, '')); 
@@ -25,9 +21,6 @@ function getAllowedEmojiIds() {
 
 const ALLOWED_EMOJI_IDS = getAllowedEmojiIds();
 
-/**
- * 🧹 دالة الفلترة الذكية (Smart Whitelist Filter)
- */
 function enforceSingleEmoji(text) {
     let cleanText = text.replace(/(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu, '');
 
@@ -54,9 +47,6 @@ function enforceSingleEmoji(text) {
     return cleanText;
 }
 
-/**
- * 🖼️ دالة مساعدة لتحميل الصورة
- */
 async function urlToGenerativePart(url, mimeType) {
     try {
         const response = await fetch(url);
@@ -74,43 +64,30 @@ async function urlToGenerativePart(url, mimeType) {
     }
 }
 
-/**
- * 🛠️ دالة مساعدة لاستخراج وتنفيذ الأوامر من الرد
- */
 async function processAiActions(responseText, messageObject) {
-    // نبحث عن أي نمط [ACTION:...]
     const actionRegex = /\[ACTION:([A-Z_]+)(?::(\w+))?\]/g;
     let match;
     let cleanText = responseText;
 
     while ((match = actionRegex.exec(responseText)) !== null) {
-        const fullTag = match[0]; // [ACTION:SET_COLOR:5]
-        // نمرر التاق كامل للمعالج، وهو سيتكفل بالتحليل
+        const fullTag = match[0]; 
         await aiActionHandler.executeActions(messageObject, fullTag);
         
-        // حذف التاق من النص الظاهر للمستخدم
         cleanText = cleanText.replace(fullTag, '');
     }
 
     return cleanText.trim();
 }
 
-/**
- * المحرك الرئيسي (Engine)
- */
 async function generateResponse(apiKey, systemInstruction, userMessage, userData, userId, username, imageAttachment, isNsfw, messageObject, channelId) {
     if (!apiKey) return "⚠️ مفتاح الخزينة (API Key) مفقود!";
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // ✅ التغيير 1: الجلسة مربوطة بالقناة (Channel) لضمان سياق جماعي مشترك
-    const sessionKey = `${channelId}-${isNsfw ? 'NSFW' : 'SFW'}`;
+    const sessionKey = `${channelId}-SFW`; 
 
-    // 💰 حساب مجموع الثروة
     const totalWealth = (userData.balance || 0) + (userData.bank || 0);
 
-    // تحديث المعلومات المرسلة للذكاء
-    // ✅ التغيير 2: تحديد أن هذه بيانات "المتحدث الحالي"
     const contextInfo = `
     [Current Speaker Stats]:
     - User ID: ${userId}
@@ -122,9 +99,6 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
     - Streak: ${userData.streak}
     `;
 
-    // ============================================================
-    // 🖼️ مسار 1: الصور
-    // ============================================================
     if (imageAttachment) {
         for (const modelName of MODELS) {
             try {
@@ -137,14 +111,12 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
                 
                 const result = await model.generateContent([
                     contextInfo,
-                    // ✅ إرسال هوية المستخدم مع الصورة
                     `[User: ${username} | ID: ${userId}]: ${userMessage || "ما رأيك في هذه الصورة؟"}`,
                     imagePart
                 ]);
 
                 let responseText = result.response.text();
                 
-                // 🔥 معالجة وتنفيذ الأوامر (ألوان، مورا، تايم أوت...)
                 responseText = await processAiActions(responseText, messageObject);
 
                 return enforceSingleEmoji(responseText);
@@ -157,9 +129,6 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
         }
     }
 
-    // ============================================================
-    // 💬 مسار 2: النصوص
-    // ============================================================
     for (const modelName of MODELS) {
         try {
             const model = genAI.getGenerativeModel({ 
@@ -168,28 +137,25 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
             });
 
             if (!chatSessions[sessionKey]) {
-                // ✅ تهيئة الشات الجماعي
                 chatSessions[sessionKey] = model.startChat({
                     history: [
                         { 
                             role: "user", 
-                            parts: [{ text: `[SYSTEM: GROUP CHAT STARTED] Mode: ${isNsfw ? 'NSFW' : 'SFW'}. Treat users based on their ID. Multiple users may speak.` }] 
+                            parts: [{ text: `[SYSTEM: GROUP CHAT STARTED] Mode: SFW. Treat users based on their ID. Multiple users may speak.` }] 
                         },
                         { 
                             role: "model", 
-                            parts: [{ text: isNsfw ? "جاهزة للجميع.. 🔥" : "همم.. أنا أستمع لكم جميعاً. 👑" }] 
+                            parts: [{ text: "همم.. أنا أستمع لكم جميعاً. 👑" }] 
                         }
                     ],
                 });
             }
 
-            // ✅ إرسال الرسالة بصيغة: [User: الاسم | ID: الرقم]: الرسالة
             const fullMessage = `${contextInfo}\n\n[User: ${username} | ID: ${userId}]: ${userMessage}`;
             const result = await chatSessions[sessionKey].sendMessage(fullMessage);
             
             let responseText = result.response.text();
 
-            // 🔥🔥🔥 معالجة وتنفيذ الأوامر (الجديد) 🔥🔥🔥
             responseText = await processAiActions(responseText, messageObject);
 
             return enforceSingleEmoji(responseText);
@@ -209,13 +175,12 @@ async function generateResponse(apiKey, systemInstruction, userMessage, userData
             }
 
             if (modelName === MODELS[MODELS.length - 1]) {
-                return "🌑 طاقتي الذهنية نفدت حالياً. حاول لاحقاً.";
+                return "🌑 عـذرًا مـاذا قلـت؟ لم اسمعـك جيـدًا";
             }
         }
     }
 }
 
-// 🧹 تنظيف الذاكرة
 setInterval(() => {
     const keys = Object.keys(chatSessions);
     if (keys.length > 0) {
