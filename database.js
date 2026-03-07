@@ -1,17 +1,28 @@
 const { Pool } = require('pg');
-require('dotenv').config(); // لجلب الرابط السري من ملف .env
+require('dotenv').config();
 
-// نستخدم Pool بدلاً من Client للسماح بتنفيذ أوامر متعددة في نفس الوقت بدون تصادم
+// الرابط الخاص بك
+const connectionString = "postgresql://postgres:Emorax%40123987456@db.uemdmkpsygjnpnoikqrp.supabase.co:5432/postgres";
+
 const db = new Pool({
-    connectionString: process.env.DATABASE_URL, // الرابط محمي هنا
+    connectionString: connectionString,
     ssl: { rejectUnauthorized: false },
-    max: 20, // أقصى عدد من الاتصالات المتزامنة (ممتاز لسيرفر نشط)
+    max: 20, 
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000, // زودنا مهلة الاتصال
 });
+
+// هذا السطر يجبر الـ Pool على استخدام IPv4 فقط لتجنب مشكلة ENETUNREACH
+const pg = require('pg');
+if (pg.defaults) {
+    pg.defaults.family = 4;
+}
 
 db.connect()
     .then(() => console.log("✅ تم الاتصال بالبنك المركزي (Supabase) بنجاح!"))
-    .catch(err => console.error("❌ خطأ في الاتصال بقاعدة البيانات. تأكد من الرابط في ملف .env:", err.message));
+    .catch(err => {
+        console.error("❌ خطأ في الاتصال بقاعدة البيانات:", err.message);
+        // لا ننهي العملية هنا، نترك PM2 يحاول مجدداً
+    });
 
 module.exports = db;
