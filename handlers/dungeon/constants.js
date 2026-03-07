@@ -1,17 +1,11 @@
 const path = require('path');
 
-// --- تحميل الإعدادات ---
 const rootDir = process.cwd();
 const dungeonConfig = require(path.join(rootDir, 'json', 'dungeon-config.json'));
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
-
-// 1. تحميل المهارات العامة (للاعبين)
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
-
-// 2. 🔥 تحميل مهارات الأونر (لك أنت فقط) 🔥
 const ownerSkills = require(path.join(rootDir, 'json', 'owner-skills.json'));
 
-// تحميل ملفات العناصر (الجرعات)
 let potionItems = [];
 try {
     potionItems = require(path.join(rootDir, 'json', 'potions.json'));
@@ -19,10 +13,11 @@ try {
     try {
         const shopItems = require(path.join(rootDir, 'json', 'shop-items.json'));
         potionItems = shopItems.filter(i => i.category === 'potions');
-    } catch (err) { console.error("Error loading potions:", err); }
+    } catch (err) { 
+        console.error("Error loading potions:", err); 
+    }
 }
 
-// --- ثوابت النظام ---
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
 const EMOJI_XP = '<a:levelup:1437805366048985290>'; 
 const EMOJI_BUFF = '<a:buff:1438796257522094081>';
@@ -31,9 +26,7 @@ const OWNER_ID = "1145327691772481577";
 const BASE_HP = 100;
 const HP_PER_LEVEL = 4;
 
-// --- صور النتائج ---
 const WIN_IMAGES = [
-    // الصور الجديدة
     'https://i.postimg.cc/85MLkpTk/download.gif',
     'https://i.postimg.cc/4xHyR8fG/download-(1).gif',
     'https://i.postimg.cc/YqhqQXm6/download-(2).gif',
@@ -49,7 +42,6 @@ const WIN_IMAGES = [
     'https://i.postimg.cc/Y0g4fbvv/download-(6).gif',
     'https://i.postimg.cc/RZbMhw01/Goblin-Slayer.gif',
     'https://i.postimg.cc/2ymYMwHk/𝕲𝖔𝖇𝖑𝖎𝖓-𝕾𝖑𝖆𝖞𝖊𝖗.gif',
-    // الصور القديمة التي طلبت الإبقاء عليها
     'https://i.postimg.cc/JhMrnyLd/download-1.gif',
     'https://i.postimg.cc/FHgv29L0/download.gif',
     'https://i.postimg.cc/9MzjRZNy/haru-midoriya.gif',
