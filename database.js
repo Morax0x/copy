@@ -1,7 +1,7 @@
 const { Pool } = require('pg');
 
-// ⚠️ ضع رابط الـ Connection pooling هنا (الذي ينتهي بـ 6543 وفيه كلمة pooler)
-const connectionString = "postgresql://postgres:AzizEmorax123789456@db.sdboxeafvjsfoiphoulb.supabase.co:5432/postgres";
+// الرابط الصحيح والمضمون للـ Pooler
+const connectionString = "postgresql://postgres.sdboxeafvjsfoiphoulb:AzizEmorax123789456@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres";
 
 const db = new Pool({
     connectionString: connectionString,
@@ -11,7 +11,7 @@ const db = new Pool({
     connectionTimeoutMillis: 10000,
 });
 
-// إجبار الاتصال على IPv4 لحل مشكلة ENETUNREACH
+// هذا السطر السحري يجبر الاستضافة تتصل بشكل صحيح (IPv4)
 const pg = require('pg');
 if (pg.defaults) {
     pg.defaults.family = 4;
