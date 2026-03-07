@@ -6,29 +6,21 @@ module.exports = {
         .setName('streak-admin')
         .setDescription('إدارة نظام الستريك (الرومات، الإيموجي، تحديد الستريك يدوياً)')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        
-        // 1. تحديد ستريك شخص يدوياً
         .addSubcommand(sub => sub
             .setName('set')
             .setDescription('يحدد ستريك مستخدم معين يدوياً ويحدث اسمه.')
             .addUserOption(option => option.setName('user').setDescription('المستخدم الذي تريد تعديل الستريك له').setRequired(true))
             .addIntegerOption(option => option.setName('amount').setDescription('العدد الجديد للستريك').setRequired(true).setMinValue(0))
         )
-        
-        // 2. تغيير إيموجي الستريك في السيرفر
         .addSubcommand(sub => sub
             .setName('emoji')
             .setDescription('يغير الإيموجي المستخدم في ستريك اللقب.')
             .addStringOption(option => option.setName('emoji').setDescription('الإيموجي الجديد').setRequired(true))
         )
-
-        // 3. نشر لوحة تحكم الستريك
         .addSubcommand(sub => sub
             .setName('panel')
             .setDescription('ينشر لوحة التحكم بالستريك (للأعضاء).')
         )
-
-        // 4. إدارة قنوات الميديا الخاصة بالستريك
         .addSubcommandGroup(group => group
             .setName('media')
             .setDescription('إدارة رومات ستريك الميديا')
@@ -102,9 +94,6 @@ module.exports = {
         };
 
         try {
-            // ==========================================
-            // 1. تحديد الستريك (Set Streak)
-            // ==========================================
             if (route === 'set') {
                 if (isSlash) {
                     targetUser = interactionOrMessage.options.getMember('user');
@@ -124,7 +113,6 @@ module.exports = {
                     lastMessageTimestamp = EXCLUDED.lastMessageTimestamp
                 `, [streakId, guild.id, targetUser.id, amount, Date.now()]);
 
-                // تحديث اللقب باستخدام الهاندلر الخارجي
                 try {
                     await updateNickname(targetUser, amount, db);
                 } catch(e) {
@@ -134,9 +122,6 @@ module.exports = {
                 return reply(`✅ | تم تحديد ستريك ${targetUser.toString()} إلى **${amount}🔥** وتم تحديث اسمه.`);
             }
 
-            // ==========================================
-            // 2. تغيير الإيموجي (Set Emoji)
-            // ==========================================
             if (route === 'emoji') {
                 if (isSlash) emojiStr = interactionOrMessage.options.getString('emoji');
                 
@@ -146,9 +131,6 @@ module.exports = {
                 return reply(`✅ | تم تغيير إيموجي الستريك بنجاح إلى ${emojiStr}.`);
             }
 
-            // ==========================================
-            // 3. نشر اللوحة (Send Panel)
-            // ==========================================
             if (route === 'panel') {
                 const channel = interactionOrMessage.channel;
                 if (channel.type !== ChannelType.GuildText) return reply('❌ يجب أن تكون القناة نصية.');
@@ -199,9 +181,6 @@ module.exports = {
                 else return interactionOrMessage.delete().catch(() => {});
             }
 
-            // ==========================================
-            // 4. قنوات الميديا (Media Channels)
-            // ==========================================
             if (route === 'media_add') {
                 if (isSlash) targetChannel = interactionOrMessage.options.getChannel('channel');
                 if (!targetChannel) return reply({ content: `❌ يجب تحديد القناة.` });
