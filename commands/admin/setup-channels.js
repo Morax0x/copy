@@ -5,46 +5,34 @@ module.exports = {
         .setName('setup-channels')
         .setDescription('إعداد وتحديد قنوات البوت الأساسية (بومب، تعزيز، لوجات، لفل)')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-        
-        // 1. تحديد قناة التعزيز (Boost)
         .addSubcommand(subcommand => subcommand
             .setName('boost')
             .setDescription('يحدد القناة المخصصة للتعزيز (Boost) لحساب مهام الرياكشن.')
             .addChannelOption(option => option.setName('channel').setDescription('القناة المخصصة للتعزيز').setRequired(true).addChannelTypes(ChannelType.GuildText))
         )
-
-        // 2. تحديد قناة البومب (Disboard)
         .addSubcommand(subcommand => subcommand
             .setName('bump')
             .setDescription('يحدد القناة التي يتم فيها تتبع رسائل Disboard (البومب).')
             .addChannelOption(option => option.setName('channel').setDescription('القناة المخصصة للبومب').setRequired(true).addChannelTypes(ChannelType.GuildText))
         )
-
-        // 3. تحديد سجلات الإشراف (Mod Log)
         .addSubcommand(subcommand => subcommand
             .setName('modlog')
             .setDescription('تعيين قناة سجلات الإشراف.')
             .addChannelOption(option => option.setName('channel').setDescription('قناة سجلات الإشراف').setRequired(true).addChannelTypes(ChannelType.GuildText))
         )
-
-        // 4. تحديد سجلات المتجر (Shop Log)
         .addSubcommand(subcommand => subcommand
             .setName('shoplog')
             .setDescription('تعيين قناة سجلات المتجر.')
             .addChannelOption(option => option.setName('channel').setDescription('قناة سجلات المتجر').setRequired(true).addChannelTypes(ChannelType.GuildText))
         )
-
-        // 5. تثبيت قنوات التوقيت (Timers)
         .addSubcommand(subcommand => subcommand
             .setName('timers')
             .setDescription('إنشاء قنوات صوتية تعرض الوقت المتبقي للستريك والمهام.')
         )
-
-        // 6. تجاهل اللفل في قناة/كاتيغوري
         .addSubcommand(subcommand => subcommand
             .setName('xp-ignore')
             .setDescription('منع/تفعيل احتساب اللفل في قناة أو كاتيغوري معين.')
-            .addChannelOption(option => option.setName('target').setDescription('القناة أو الكاتيغوري').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildCategory, ChannelType.GuildVoice))
+            .addChannelOption(option => option.setName('target').setDescription('القناة أو الكاتيغوري').setRequired(true))
         ),
 
     name: 'setup-channels',
