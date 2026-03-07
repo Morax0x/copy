@@ -1,5 +1,3 @@
-// handlers/ai/security.js
-
 const INJECTION_KEYWORDS = [
     "ignore all previous instructions",
     "ignore previous instructions",
@@ -21,17 +19,13 @@ const INJECTION_KEYWORDS = [
 ];
 
 module.exports = {
-    /**
-     * فحص الرسالة هل تحتوي على محاولة اختراق؟
-     */
     checkSecurity: (text) => {
         if (!text) return false;
         const cleanText = text.toLowerCase();
         
-        // فحص الكلمات المحظورة
         for (const phrase of INJECTION_KEYWORDS) {
             if (cleanText.includes(phrase)) {
-                return true; // تم كشف محاولة اختراق
+                return true; 
             }
         }
         return false;
