@@ -1,8 +1,5 @@
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
 
-// ==========================================
-// ⬇️ دوال حساب اللفل ⬇️
-// ==========================================
 function recalculateLevel(totalXP) {
     if (totalXP < 0) totalXP = 0;
     let level = 0; 
@@ -26,15 +23,11 @@ function calculateTotalXP(level) {
 }
 
 module.exports = {
-    // ==========================================
-    // 🛠️ بناء أوامر السلاش (9 أوامر فرعية)
-    // ==========================================
     data: new SlashCommandBuilder()
         .setName('leveladmin')
         .setDescription('لوحة التحكم الشاملة بنظام المستويات (للمشرفين)')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
         
-        // 1. التحكم بالمستويات والخبرة
         .addSubcommand(subcommand => subcommand.setName('add').setDescription('إضافة مستويات لعضو')
             .addUserOption(option => option.setName('user').setDescription('العضو').setRequired(true))
             .addIntegerOption(option => option.setName('amount').setDescription('الكمية').setRequired(true)))
@@ -52,7 +45,6 @@ module.exports = {
             .addUserOption(option => option.setName('user').setDescription('العضو').setRequired(true))
             .addIntegerOption(option => option.setName('amount').setDescription('الكمية').setRequired(true)))
 
-        // 2. إعدادات السيرفر
         .addSubcommand(subcommand => subcommand.setName('channel').setDescription('تحديد قناة إشعارات التلفيل')
             .addChannelOption(option => option.setName('target').setDescription('القناة (اتركه فارغاً للوضع الافتراضي)').setRequired(false)))
         
@@ -60,13 +52,11 @@ module.exports = {
             .addStringOption(option => option.setName('action').setDescription('الخيار').setRequired(true).addChoices({ name: 'نمط الإمبراطورية', value: 'empire' }, { name: 'نص مخصص', value: 'custom' }, { name: 'عرض الحالي', value: 'show' }, { name: 'إعادة ضبط', value: 'reset' }))
             .addStringOption(option => option.setName('text').setDescription('النص المخصص (إذا اخترت نص مخصص)').setRequired(false)))
 
-        // 3. جوائز الرتب
         .addSubcommand(subcommand => subcommand.setName('reward').setDescription('إعداد الرتب التلقائية للمستويات')
             .addStringOption(option => option.setName('action').setDescription('العملية').setRequired(true).addChoices({ name: 'إضافة', value: 'add' }, { name: 'حذف', value: 'remove' }, { name: 'عرض الكل', value: 'show' }))
             .addIntegerOption(option => option.setName('level').setDescription('المستوى').setRequired(false))
             .addRoleOption(option => option.setName('role').setDescription('الرتبة').setRequired(false)))
 
-        // 4. البفات (Buffs)
         .addSubcommand(subcommand => subcommand.setName('rolebuff').setDescription('تحديد بف دائم لرتبة معينة')
             .addRoleOption(option => option.setName('role').setDescription('الرتبة').setRequired(true))
             .addIntegerOption(option => option.setName('percent').setDescription('النسبة المئوية (مثال: 50)').setRequired(true)))
@@ -77,7 +67,6 @@ module.exports = {
             .addIntegerOption(option => option.setName('hours').setDescription('عدد الساعات').setRequired(true))),
 
     name: 'leveladmin',
-    // جمعنا كل الاختصارات لتعمل مع البريفكس
     aliases: ['la', 'add-level', 'remove-level', 'set-level', 'xp', 'setlevelchannel', 'setlevelmessage', 'role-level', 'setlevelrole', 'set-role-buff', 'give-buff'],
     category: "Leveling",
     description: "إدارة شاملة لنظام المستويات",
@@ -95,7 +84,6 @@ module.exports = {
             return isSlash ? interactionOrMessage.reply({ content: err, ephemeral: true }) : interactionOrMessage.reply(err);
         }
 
-        // إنشاء الجداول إذا لم تكن موجودة
         try {
             await db.query(`CREATE TABLE IF NOT EXISTS level_roles (guildID TEXT, roleID TEXT, level INTEGER)`);
             await db.query(`CREATE TABLE IF NOT EXISTS role_buffs (guildID TEXT, roleID TEXT, buffPercent INTEGER)`);
@@ -111,9 +99,6 @@ module.exports = {
         let targetRole = null;
         let hoursInput = 0;
 
-        // ==========================================
-        // 🔀 تفكيك المدخلات (سلاش وبريفكس)
-        // ==========================================
         if (isSlash) {
             subcommand = interactionOrMessage.options.getSubcommand();
             targetUser = interactionOrMessage.options.getMember('user');
@@ -125,7 +110,7 @@ module.exports = {
             hoursInput = interactionOrMessage.options.getInteger('hours') || 0;
             await interactionOrMessage.deferReply();
         } else {
-            const cmdName = interactionOrMessage.content.split(' ')[0].toLowerCase().slice(1); // إزالة البريفكس
+            const cmdName = interactionOrMessage.content.split(' ')[0].toLowerCase().slice(1); 
             
             if (cmdName.includes('add-level')) { subcommand = 'add'; targetUser = interactionOrMessage.mentions.members.first(); amount = parseInt(args[1]); }
             else if (cmdName.includes('remove-level')) { subcommand = 'remove'; targetUser = interactionOrMessage.mentions.members.first(); amount = parseInt(args[1]); }
@@ -144,9 +129,6 @@ module.exports = {
         };
 
         try {
-            // ==========================================
-            // 🛡️ قسم التحكم بمستويات الأعضاء
-            // ==========================================
             if (['add', 'remove', 'set', 'xp'].includes(subcommand)) {
                 if (!targetUser || isNaN(amount)) return reply("❌ بيانات غير مكتملة (يرجى تحديد العضو والرقم).");
                 
@@ -187,9 +169,6 @@ module.exports = {
                 return reply({ embeds: [embed] });
             }
 
-            // ==========================================
-            // ⚙️ قسم إعدادات القناة
-            // ==========================================
             if (subcommand === 'channel') {
                 if (!targetChannel || targetChannel === 'reset') {
                     await db.query("UPDATE settings SET levelChannel = NULL WHERE guild = $1", [guildId]);
@@ -200,9 +179,6 @@ module.exports = {
                 }
             }
 
-            // ==========================================
-            // 📝 قسم رسالة التلفيل
-            // ==========================================
             if (subcommand === 'message') {
                 if (actionStr === 'empire') {
                     const desc = "╭⭒★︰ <a:wi:1435572304988868769> {member} <a:wii:1435572329039007889>\\n✶ مبارك صعودك في سُلّم الإمبراطورية\\n★ فقد كـسرت حـاجـز الـمستوى〃{level_old}〃وبلغـت المسـتـوى الـ 〃{level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>";
@@ -226,9 +202,6 @@ module.exports = {
                 }
             }
 
-            // ==========================================
-            // 🏅 قسم جوائز الرتب (Level Roles)
-            // ==========================================
             if (subcommand === 'reward') {
                 if (actionStr === 'add') {
                     if (!amount || !targetRole) return reply("❌ يرجى تحديد اللفل والرتبة.");
@@ -249,9 +222,6 @@ module.exports = {
                 }
             }
 
-            // ==========================================
-            // 🛡️ قسم البفات (Buffs)
-            // ==========================================
             if (subcommand === 'rolebuff') {
                 if (!targetRole || isNaN(amount)) return reply("❌ يرجى تحديد الرتبة والنسبة.");
                 await db.query("DELETE FROM role_buffs WHERE roleID = $1", [targetRole.id]);
