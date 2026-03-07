@@ -101,8 +101,8 @@ async function setupDatabase(db) {
     async function ensureColumn(table, column, typeDef) {
         try {
             let pgTypeDef = typeDef.replace(/INTEGER/g, 'BIGINT');
-            let safeColumn = column === 'user' ? '"user"' : `"${column}"`;
-            await db.query(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS ${safeColumn} ${pgTypeDef}`);
+            let safeColumn = column.toLowerCase() === 'user' ? '"user"' : column;
+            await db.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${safeColumn} ${pgTypeDef}`);
         } catch (e) {}
     }
 
