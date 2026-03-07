@@ -117,11 +117,7 @@ module.exports = {
                     const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
                     if (reward > 0) {
-                        let userLevel = client.getLevel.get(message.author.id, message.guild.id);
-                        if (userLevel) {
-                            userLevel.mora += reward;
-                            client.setLevel.run(userLevel);
-                        }
+                        await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3", [reward, message.author.id, message.guild.id]);
                     }
 
                     const storedMessages = JSON.parse(afkData.messages || '[]');
@@ -412,12 +408,16 @@ module.exports = {
         if (message.author.bot) return;
 
         if (db) {
-            const isChannelIgnoredRes = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [message.guild.id, message.channel.id]);
-            let isCategoryIgnoredRes = {rows: []};
-            if (message.channel.parentId) {
-                isCategoryIgnoredRes = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [message.guild.id, message.channel.parentId]);
+            try {
+                const isChannelIgnoredRes = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [message.guild.id, message.channel.id]);
+                let isCategoryIgnoredRes = {rows: []};
+                if (message.channel.parentId) {
+                    isCategoryIgnoredRes = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [message.guild.id, message.channel.parentId]);
+                }
+                if (isChannelIgnoredRes.rows.length > 0 || isCategoryIgnoredRes.rows.length > 0) return; 
+            } catch (e) {
+                // Ignore missing table exception if xp_ignore wasn't created
             }
-            if (isChannelIgnoredRes.rows.length > 0 || isCategoryIgnoredRes.rows.length > 0) return; 
         }
 
         try {
@@ -430,8 +430,8 @@ module.exports = {
                 const todayDate = getTodayDateString();
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
                 
-                try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS main_chat_messages INTEGER DEFAULT 0"); } catch(e){}
-                try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS chatter_badge_given INTEGER DEFAULT 0"); } catch(e){}
+                try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS main_chat_messages BIGINT DEFAULT 0"); } catch(e){}
+                try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS chatter_badge_given BIGINT DEFAULT 0"); } catch(e){}
                 
                 await db.query(`
                     INSERT INTO user_daily_stats (id, userID, guildID, date, main_chat_messages) 
@@ -442,7 +442,7 @@ module.exports = {
                 const dailyDataCheckRes = await db.query("SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = $1", [dailyIdForBadge]);
                 const dailyDataCheck = dailyDataCheckRes.rows[0];
                 
-                if (dailyDataCheck && dailyDataCheck.main_chat_messages >= 100 && dailyDataCheck.chatter_badge_given === 0) {
+                if (dailyDataCheck && parseInt(dailyDataCheck.main_chat_messages) >= 100 && parseInt(dailyDataCheck.chatter_badge_given) === 0) {
                     await db.query("UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = $1", [dailyIdForBadge]);
                     
                     let roleToGive = settings.rolechatterbadge || settings.roleChatterBadge || settings.rolechatter || settings.roleChatter;
@@ -492,15 +492,18 @@ module.exports = {
                     if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'counting_channel', 1);
                 }
             }
+            
             if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
                 if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'meow_count', 1);
-                let level = client.getLevel.get(userID, guildID);
-                if (level) {
-                    level.total_meow_count = (level.total_meow_count || 0) + 1;
-                    client.setLevel.run(level);
-                    if (client.checkAchievements) await client.checkAchievements(client, message.member, level, null);
+                
+                await db.query("INSERT INTO levels (userid, guildid, total_meow_count) VALUES ($1, $2, 1) ON CONFLICT (userid, guildid) DO UPDATE SET total_meow_count = COALESCE(levels.total_meow_count, 0) + 1", [userID, guildID]);
+                
+                if (client.checkAchievements) {
+                    const updatedLevelRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                    await client.checkAchievements(client, message.member, updatedLevelRes.rows[0], null);
                 }
             }
+            
             const isMediaChannelRes = await db.query("SELECT * FROM media_streak_channels WHERE guildID = $1 AND channelID = $2", [guildID, message.channel.id]);
             if (isMediaChannelRes.rows.length > 0) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
@@ -509,10 +512,6 @@ module.exports = {
             }
             await handleStreakMessage(message);
 
-            let level = client.getLevel.get(message.author.id, message.guild.id);
-            const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
-            if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
-            
             let getXpfromDB = settings?.customxp || settings?.customXP || 25;
             let getCooldownfromDB = settings?.customcooldown || settings?.customCooldown || 60000;
 
@@ -523,18 +522,31 @@ module.exports = {
                     buff += 0.50; 
                 }
 
-                const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
-                level.xp += xp; 
-                level.totalXP += xp;
+                const xpGained = Math.floor((Math.random() * getXpfromDB + 1) * buff);
                 
-                const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
+                const levelDataRes = await db.query("SELECT level, xp, totalxp FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                let currentLevelData = levelDataRes.rows[0];
                 
-                if (level.xp >= nextXP) {
-                    const oldLvl = level.level;
-                    level.xp -= nextXP; level.level++;
-                    client.setLevel.run(level);
+                if (!currentLevelData) {
+                    await db.query("INSERT INTO levels (userid, guildid, level, xp, totalxp) VALUES ($1, $2, 1, $3, $3)", [userID, guildID, xpGained]);
+                    currentLevelData = { level: 1, xp: xpGained, totalxp: xpGained };
+                } else {
+                    currentLevelData.xp = parseInt(currentLevelData.xp) + xpGained;
+                    currentLevelData.totalxp = parseInt(currentLevelData.totalxp) + xpGained;
+                    currentLevelData.level = parseInt(currentLevelData.level);
+                }
+                
+                const nextXP = 5 * (currentLevelData.level ** 2) + (50 * currentLevelData.level) + 100;
+                
+                if (currentLevelData.xp >= nextXP) {
+                    const oldLvl = currentLevelData.level;
+                    currentLevelData.xp -= nextXP; 
+                    currentLevelData.level++;
+                    
+                    await db.query("UPDATE levels SET level = $1, xp = $2, totalxp = $3 WHERE userid = $4 AND guildid = $5", [currentLevelData.level, currentLevelData.xp, currentLevelData.totalxp, userID, guildID]);
+                    
                     try {
-                        const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: 0, hp: 0 });
+                        const card = await generateLevelUpCard(message.member, oldLvl, currentLevelData.level, { mora: 0, hp: 0 });
                         const channelId = settings?.levelchannel || settings?.levelChannel || message.channel.id;
                         const channel = message.guild.channels.cache.get(channelId);
                         if (channel) {
@@ -544,9 +556,9 @@ module.exports = {
                             const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
                             let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                                              `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
+                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${currentLevelData.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
                             const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
-                            if (milestones.includes(level.level)) {
+                            if (milestones.includes(currentLevelData.level)) {
                                 contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
                             }
                             await channel.send({ content: contentMsg, files: [card] });
@@ -554,23 +566,26 @@ module.exports = {
                     } catch (error) {
                         let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
                                         `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
+                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${currentLevelData.level}〃`;
                         message.channel.send(backupMsg);
                     }
                 } else {
-                    client.setLevel.run(level);
+                    await db.query("UPDATE levels SET xp = $1, totalxp = $2 WHERE userid = $3 AND guildid = $4", [currentLevelData.xp, currentLevelData.totalxp, userID, guildID]);
                 }
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
             
             try {
-                let currentLevelRoleRes = await db.query("SELECT * FROM level_roles WHERE guildID = $1 AND level = $2", [message.guild.id, level.level]);
+                const currentLvQuery = await db.query("SELECT level FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                const finalLvl = currentLvQuery.rows[0] ? parseInt(currentLvQuery.rows[0].level) : 1;
+
+                let currentLevelRoleRes = await db.query("SELECT * FROM level_roles WHERE guildID = $1 AND level = $2", [message.guild.id, finalLvl]);
                 let currentLevelRole = currentLevelRoleRes.rows[0];
                 if (currentLevelRole && message.member) {
                     if (!message.member.roles.cache.has(currentLevelRole.roleid || currentLevelRole.roleID)) {
                         await message.member.roles.add(currentLevelRole.roleid || currentLevelRole.roleID).catch(e => {});
-                        const oldRolesRes = await db.query("SELECT roleID FROM level_roles WHERE guildID = $1 AND level < $2", [message.guild.id, level.level]);
+                        const oldRolesRes = await db.query("SELECT roleID FROM level_roles WHERE guildID = $1 AND level < $2", [message.guild.id, finalLvl]);
                         for (const roleData of oldRolesRes.rows) {
                             if (message.member.roles.cache.has(roleData.roleid || roleData.roleID)) {
                                 await message.member.roles.remove(roleData.roleid || roleData.roleID).catch(e => {});
@@ -633,7 +648,7 @@ module.exports = {
                     }
                     if (isAllowed) {
                         try {
-                            const isBlacklistedRes = await db.query("SELECT 1 FROM blacklist WHERE userID = $1", [message.author.id]);
+                            const isBlacklistedRes = await db.query("SELECT 1 FROM blacklistTable WHERE id = $1", [message.author.id]);
                             if (isBlacklistedRes.rows.length > 0) return; 
                         } catch(e) {}
                         if (checkPermissions(message, command)) {
