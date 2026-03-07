@@ -11,21 +11,21 @@ async function ensureAuctionTable(db) {
             channelid TEXT,
             hostid TEXT,
             item_name TEXT,
-            current_bid INTEGER,
-            start_price INTEGER DEFAULT 0,
+            current_bid BIGINT,
+            start_price BIGINT DEFAULT 0,
             highest_bidder TEXT,
-            min_increment INTEGER,
+            min_increment BIGINT,
             end_time BIGINT,
             image_url TEXT,
-            bid_count INTEGER DEFAULT 0
+            bid_count BIGINT DEFAULT 0
         )
     `);
-    try { await db.query("ALTER TABLE active_auctions ADD COLUMN start_price INTEGER DEFAULT 0"); } catch (e) {}
-    try { await db.query("ALTER TABLE active_auctions ADD COLUMN bid_count INTEGER DEFAULT 0"); } catch (e) {}
+    try { await db.query("ALTER TABLE active_auctions ADD COLUMN start_price BIGINT DEFAULT 0"); } catch (e) {}
+    try { await db.query("ALTER TABLE active_auctions ADD COLUMN bid_count BIGINT DEFAULT 0"); } catch (e) {}
 }
 
 async function startAuctionSystem(client) {
-    const db = client.db;
+    const db = client.sql; 
     await ensureAuctionTable(db);
 
     setInterval(async () => {
@@ -46,7 +46,7 @@ async function startAuctionSystem(client) {
 }
 
 async function endAuction(client, auctionData) {
-    const db = client.db;
+    const db = client.sql; 
     
     try {
         await db.query("DELETE FROM active_auctions WHERE messageid = $1", [auctionData.messageid]);
@@ -98,7 +98,7 @@ async function endAuction(client, auctionData) {
 
 async function handleAuctionSystem(interaction) {
     const { customId, user, guild, client } = interaction;
-    const db = client.db;
+    const db = client.sql; 
 
     if (!db) {
         if (!interaction.replied && !interaction.deferred) {
@@ -135,8 +135,8 @@ async function handleAuctionSystem(interaction) {
 💰 **السعر الحالي:** ${parseInt(auction.current_bid).toLocaleString()} ${EMOJI_MORA}
 📈 **اقـل مبلـغ للزيادة:** ${parseInt(auction.min_increment).toLocaleString()} ${EMOJI_MORA}
 
-💸 **رصـيدك الكـاش:** ${parseInt(userData.mora).toLocaleString()} ${EMOJI_MORA}
-🏦 **رصيـد البنـك:** ${parseInt(userData.bank).toLocaleString()} ${EMOJI_MORA}
+💸 **رصـيدك الكـاش:** ${parseInt(userData.mora || 0).toLocaleString()} ${EMOJI_MORA}
+🏦 **رصيـد البنـك:** ${parseInt(userData.bank || 0).toLocaleString()} ${EMOJI_MORA}
             `)
             .setColor(AUCTION_COLOR)
             .setThumbnail(guild.iconURL() || user.displayAvatarURL());
@@ -186,7 +186,7 @@ async function handleAuctionSystem(interaction) {
                     return interaction.editReply(msg);
                 } else {
                     return interaction.followUp({ content: msg, ephemeral: true });
-                }
+            }
             } else {
                 return interaction.reply({ content: msg, ephemeral: true });
             }
