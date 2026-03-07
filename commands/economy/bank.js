@@ -95,8 +95,8 @@ module.exports = {
 
             data.mora = Number(data.mora) || 0;
             data.bank = Number(data.bank) || 0;
-            data.lastInterest = Number(data.lastInterest) || 0;
-            data.totalInterestEarned = Number(data.totalInterestEarned) || 0;
+            data.lastInterest = Number(data.lastinterest || data.lastInterest) || 0;
+            data.totalInterestEarned = Number(data.totalinterestearned || data.totalInterestEarned) || 0;
 
             const now = Date.now();
             const timeLeft = data.lastInterest + INTEREST_COOLDOWN_MS - now;
@@ -129,9 +129,9 @@ module.exports = {
                 description.push(`🏦 **حالة القرض:** (غير مدين)`);
                 description.push(`للحصول على قرض، قدم طلبك من خلال: \`/قرض\``);
             } else {
-                const loanAmount = Number(loan.loanAmount) || 0;
-                const remaining = Number(loan.remainingAmount) || 0;
-                const daily = Number(loan.dailyPayment) || 1;
+                const loanAmount = Number(loan.loanamount || loan.loanAmount) || 0;
+                const remaining = Number(loan.remainingamount || loan.remainingAmount) || 0;
+                const daily = Number(loan.dailypayment || loan.dailyPayment) || 1;
 
                 const loanConfig = LOANS.find(l => l.amount === loanAmount);
                 const totalToRepay = loanConfig ? loanConfig.totalToRepay : (loanAmount * 1.10);
@@ -175,9 +175,7 @@ module.exports = {
 
                 attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'mora-card.png' });
 
-            } catch (err) {
-                console.error("Error creating bank card canvas:", err);
-            }
+            } catch (err) {}
 
             const embed = new EmbedBuilder()
                 .setColor("#F09000")
@@ -195,7 +193,6 @@ module.exports = {
             }
 
         } catch (error) {
-            console.error("Error in bank command:", error);
             const errorPayload = { content: "حدث خطأ أثناء جلب التقرير البنكي.", ephemeral: true };
             if (isSlash) {
                 if (interaction.deferred || interaction.replied) {
