@@ -1,5 +1,3 @@
-// handlers/dungeon/logic/battle-actions.js
-
 const { 
     EmbedBuilder, 
     ActionRowBuilder, 
@@ -36,12 +34,8 @@ const { cleanName } = require('../core/battle-utils');
 const { handleOwnerMenu } = require('../actions/owner-menu');
 const { saveDungeonState } = require('../core/state-manager');
 
-// ✅✅✅ التصحيح هنا: استخدام المسار الصحيح للملف المجاور ✅✅✅
 const { getFloorCaps } = require('./seal-system'); 
 
-/**
- * معالجة تفاعل اللاعب مع أزرار المعركة
- */
 async function handlePlayerBattleInteraction(i, context) {
     const {
         players, monster, floor, theme, log, threadChannel, sql, guild, hostId,
@@ -50,28 +44,22 @@ async function handlePlayerBattleInteraction(i, context) {
         ongoingRef, actedPlayers, processingUsers
     } = context;
 
-    // 🔥 1. تحقق خاص للأونر في البداية
     const isOwnerDefend = (i.customId === 'def' && i.user.id === OWNER_ID);
 
     if (!isOwnerDefend) {
         if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) {
             try {
                 await i.deferUpdate();
-            } catch (e) {
-                // تجاهل الخطأ
-            }
+            } catch (e) {}
         }
     }
 
-    // 🔥 2. منع التكرار
     if (processingUsers.has(i.user.id)) {
         return; 
     }
 
-    // 🔥 3. حساب حدود الطابق الحالي 🔥
     const { damageCap, levelCap } = getFloorCaps(floor);
 
-    // 4. قائمة المالك
     if (isOwnerDefend) {
         try {
             await handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef);
@@ -89,7 +77,6 @@ async function handlePlayerBattleInteraction(i, context) {
         return { ongoing: true };
     }
 
-    // 5. دخول المالك للمعركة
     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
         const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
         if (member) {
@@ -107,7 +94,6 @@ async function handlePlayerBattleInteraction(i, context) {
     
     if (p.isDead || actedPlayers.includes(p.id)) return { ongoing: true };
 
-    // التحقق من الشلل
     if (p.effects.some(e => e.type === 'stun')) {
         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
         actedPlayers.push(p.id); p.skipCount = 0; 
@@ -128,9 +114,6 @@ async function handlePlayerBattleInteraction(i, context) {
     processingUsers.add(i.user.id);
 
     try {
-        // ========================
-        // SKILLS HANDLING
-        // ========================
         if (i.customId === 'skill') {
             const skillRow = buildSkillSelector(p);
             if (!skillRow) {
@@ -164,27 +147,23 @@ async function handlePlayerBattleInteraction(i, context) {
                 const res = handleSkillUsage(p, { ...skillObj, id: skillId }, monster, log, threadChannel, players);
                 const dmgDealt = monsterHpBefore - monster.hp;
 
-                // 🔥🔥🔥 التعديل الجديد: إظهار الدمج لكل المهارات 🔥🔥🔥
                 if (dmgDealt > 0) {
                     let finalDmg = dmgDealt;
                     let isCapped = false;
 
-                    // تطبيق سقف الدمج
                     if (damageCap !== Infinity && finalDmg > damageCap) {
                         finalDmg = damageCap;
                         monster.hp = Math.max(0, monsterHpBefore - finalDmg);
                         isCapped = true;
                     }
 
-                    // إضافة الرقم للسجل إذا لم يكن موجوداً
                     if (log.length > 0) {
                         const lastLogIdx = log.length - 1;
-                        // نتأكد أن الرسالة لا تحتوي بالفعل على الرقم لتجنب التكرار (مثل: 500 (500))
                         if (!log[lastLogIdx].includes(finalDmg.toString())) {
                             if (isCapped) {
                                 log[lastLogIdx] += ` (مختوم: ${finalDmg})`; 
                             } else {
-                                log[lastLogIdx] += ` (**${finalDmg}** 💥)`; // 🔥 هنا يظهر الدمج دائماً
+                                log[lastLogIdx] += ` (**${finalDmg}** 💥)`;
                             }
                         }
                     }
@@ -215,9 +194,6 @@ async function handlePlayerBattleInteraction(i, context) {
 
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
-        // ========================
-        // HEAL / POTIONS / SHOP
-        // ========================
         else if (i.customId === 'heal') {
             const potionRow = buildPotionSelector(p, sql, guild.id);
             if (!potionRow) {
@@ -231,10 +207,9 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 const selectedValue = selection.values[0];
 
-                // --- Shop Logic ---
                 if (selectedValue === 'buy_potions_action') {
-                    const userLevelData = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(p.id, guild.id);
-                    const currentMora = userLevelData ? userLevelData.mora : 0;
+                    const userLevelRes = await sql.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [p.id, guild.id]);
+                    const currentMora = userLevelRes.rows.length > 0 ? userLevelRes.rows[0].mora : 0;
 
                     const shopOptions = potionItems.map(pot => ({
                         label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
@@ -266,13 +241,14 @@ async function handlePlayerBattleInteraction(i, context) {
                         if (currentMora < targetItem.price) {
                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                         } else {
-                            sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(targetItem.price, p.id, guild.id);
-                            const existingItem = sql.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(p.id, guild.id, targetItem.id);
-                            if (existingItem) {
-                                sql.prepare("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = ?").run(existingItem.id);
-                            } else {
-                                sql.prepare("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES (?, ?, ?, 1)").run(guild.id, p.id, targetItem.id);
-                            }
+                            await sql.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [targetItem.price, p.id, guild.id]);
+                            
+                            await sql.query(`
+                                INSERT INTO user_inventory (guildID, userID, itemID, quantity) 
+                                VALUES ($1, $2, $3, 1) 
+                                ON CONFLICT (guildID, userID, itemID) 
+                                DO UPDATE SET quantity = user_inventory.quantity + 1
+                            `, [guild.id, p.id, targetItem.id]);
 
                             await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
                         }
@@ -284,10 +260,8 @@ async function handlePlayerBattleInteraction(i, context) {
                     return { ongoing: true }; 
                 }
 
-                // --- Potion Usage Logic ---
                 const potionId = selectedValue.replace('use_potion_', '');
                 
-                // 🔥 تطبيق حد الاستخدام لجرعة العملاق 🔥
                 if (potionId === 'potion_titan') {
                     const limit = (ITEM_LIMITS && ITEM_LIMITS['titan_potion']) ? ITEM_LIMITS['titan_potion'] : 3;
                     
@@ -300,8 +274,8 @@ async function handlePlayerBattleInteraction(i, context) {
                     p.titanPotionUses++; 
                 }
                 
-                if (sql.open) {
-                    sql.prepare("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = ? AND guildID = ? AND itemID = ?").run(p.id, guild.id, potionId);
+                if (sql) {
+                    await sql.query("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = $1 AND guildID = $2 AND itemID = $3", [p.id, guild.id, potionId]);
                 }
 
                 let actionMsg = "";
@@ -316,7 +290,6 @@ async function handlePlayerBattleInteraction(i, context) {
                     actionMsg = "🌵 جهز درع الأشواك!";
                 
                 } else if (potionId === 'potion_time') {
-                    // ✅✅✅ الإصلاح: تصفير الكولداون بشكل صحيح ✅✅✅
                     p.special_cooldown = 0; 
                     p.skillCooldowns = {};
                     actionMsg = "⏳ شرب جرعة الزمن وأعاد شحن مهاراته!";
@@ -351,7 +324,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
                 }).catch(()=>{});
 
-                saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
+                await saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
                     floor, players, merchantState, retreatedPlayers, isTrapActive,
                     retreatState, 
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
@@ -364,9 +337,6 @@ async function handlePlayerBattleInteraction(i, context) {
 
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
-        // ========================
-        // ATTACK / DEFEND
-        // ========================
         else if (i.customId === 'atk' || i.customId === 'def') {
             actedPlayers.push(p.id); p.skipCount = 0; 
             if (i.customId === 'atk') {
@@ -387,17 +357,14 @@ async function handlePlayerBattleInteraction(i, context) {
                     const isOwner = p.id === OWNER_ID;
                     const monsterHpBefore = monster.hp;
 
-                    // 🔥 إنشاء نسخة مؤقتة من اللاعب لتطبيق حد مستوى السلاح (Level Cap) 🔥
                     const cappedPlayer = { ...p }; 
                     if (cappedPlayer.weaponLevel > levelCap) {
-                        cappedPlayer.weaponLevel = levelCap; // تخفيض اللفل مؤقتاً للحساب
+                        cappedPlayer.weaponLevel = levelCap;
                     }
 
-                    // الحساب باستخدام النسخة المقلدة
                     const result = weaponCalculator.executeWeaponAttack(cappedPlayer, monster, isOwner);
                     const dmgDealt = monsterHpBefore - monster.hp;
 
-                    // 🔥 تطبيق سقف الدمج الثابت (Damage Cap) 🔥
                     if (dmgDealt > 0) {
                         let finalDmg = dmgDealt;
 
@@ -439,7 +406,6 @@ async function handlePlayerBattleInteraction(i, context) {
     return { ongoing: true };
 }
 
-// دالة مساعدة داخلية للتعامل مع الوفيات الفورية
 async function handleImmediateDeaths(players, threadChannel, ongoingRef, collector, monster) {
     const deadThisTurn = players.filter(pl => pl.hp <= 0 && !pl.isDead);
     
@@ -447,7 +413,6 @@ async function handleImmediateDeaths(players, threadChannel, ongoingRef, collect
         for (const deadP of deadThisTurn) {
             deadP.isDead = true;
 
-            // 🔥 التعديل الجديد: إعلان التحلل الفوري 🔥
             if (deadP.reviveCount && deadP.reviveCount >= 1) {
                 deadP.isPermDead = true;
                 await threadChannel.send(`☠️ **${deadP.name}** لفظ أنفاسه الأخيرة وتحللت جثته!`).catch(()=>{});
