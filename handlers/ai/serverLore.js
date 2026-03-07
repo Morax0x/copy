@@ -1,22 +1,17 @@
-// handlers/ai/serverLore.js
-
 const fs = require('fs');
 const path = require('path');
 const OWNER_ID = "1145327691772481577"; 
 
-// 🛠️ دالة مساعدة لتحميل ملفات JSON بأمان
 function loadGameData(fileName) {
     try {
         const filePath = path.join(__dirname, '../../json', fileName);
         if (!fs.existsSync(filePath)) return [];
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (e) {
-        console.error(`[Lore Error] Failed to load ${fileName}:`, e.message);
         return [];
     }
 }
 
-// 🛠️ دالة لتنسيق القوائم للنص (الاسم - الوصف - السعر)
 function formatList(data, type = 'general') {
     if (!Array.isArray(data) || data.length === 0) return "لا توجد بيانات حالياً.";
     
@@ -26,43 +21,40 @@ function formatList(data, type = 'general') {
         if (item.description) text += `: ${item.description}`;
         if (item.effect) text += ` (تأثير: ${item.effect})`;
         return text;
-    }).slice(0, 30).join('\n'); // نأخذ أول 30 عنصر فقط لتجنب ضغط الذاكرة
+    }).slice(0, 30).join('\n'); 
 }
 
-// 🔥 تحميل البيانات مرة واحدة عند تشغيل البوت
 const weaponsData = loadGameData('weapons-config.json');
 const skillsData = loadGameData('skills-config.json');
 const shopData = loadGameData('shop-items.json');
 const seedsData = loadGameData('seeds.json');
 const potionsData = loadGameData('potions.json');
-const feedItems = loadGameData('feed-items.json'); // ✅ تم التحميل
+const feedItems = loadGameData('feed-items.json'); 
 const farmAnimals = loadGameData('farm-animals.json');
 const dungeonData = loadGameData('dungeon-config.json');
 const questsData = loadGameData('quests-config.json');
 
-// تنسيق البيانات للنص
 const weaponsText = formatList(weaponsData);
 const skillsText = formatList(skillsData);
 const shopText = formatList(shopData);
 const seedsText = formatList(seedsData);
 const potionsText = formatList(potionsData);
-const feedText = formatList(feedItems); // ✅ تم التنسيق
+const feedText = formatList(feedItems); 
 const animalsText = formatList(farmAnimals);
 const questsDailyText = questsData.daily ? formatList(questsData.daily) : "لا يوجد";
 const questsWeeklyText = questsData.weekly ? formatList(questsData.weekly) : "لا يوجد";
 
-/**
- * دالة لجلب قائمة المتصدرين (التوب) من الداتابيس
- */
-function getLeaderboardKnowledge(sql, guildID) {
-    if (!sql || !sql.open) return "";
+async function getLeaderboardKnowledge(db, guildID) {
+    if (!db) return "";
 
     try {
-        const topLevels = sql.prepare("SELECT user, level FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC LIMIT 5").all(guildID, OWNER_ID);
+        const topLevelsRes = await db.query("SELECT userid AS user, level FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY totalxp DESC LIMIT 5", [guildID, OWNER_ID]);
+        const topLevels = topLevelsRes.rows;
         const levelText = topLevels.length > 0 ? topLevels.map((u, i) => `${i+1}. <@${u.user}> (Lv.${u.level})`).join('\n') : "لا يوجد بيانات.";
 
-        const topMora = sql.prepare("SELECT user, (mora + bank) as totalWealth FROM levels WHERE guild = ? AND user != ? ORDER BY totalWealth DESC LIMIT 5").all(guildID, OWNER_ID);
-        const moraText = topMora.length > 0 ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${u.totalWealth.toLocaleString()})`).join('\n') : "لا يوجد بيانات.";
+        const topMoraRes = await db.query("SELECT userid AS user, (mora + bank) as totalwealth FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY (mora + bank) DESC LIMIT 5", [guildID, OWNER_ID]);
+        const topMora = topMoraRes.rows;
+        const moraText = topMora.length > 0 ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${parseInt(u.totalwealth).toLocaleString()})`).join('\n') : "لا يوجد بيانات.";
 
         return `
 🏆 **لوحة الشرف (أسياد السيرفر):**
@@ -80,7 +72,6 @@ ${moraText}
 module.exports = {
     getLeaderboardKnowledge,
 
-    // معلومات السيرفر الثابتة + الديناميكية من الملفات
     getServerKnowledge: () => {
         return `
 📚 **قاعدة بيانات الإمبراطورية (الموسوعة الشاملة):**
