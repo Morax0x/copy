@@ -1,44 +1,38 @@
-// handlers/dungeon/utils.js
-
 const { BASE_HP, HP_PER_LEVEL, potionItems, weaponsConfig, skillsConfig, OWNER_ID } = require('./constants');
 
-// آيدي رتبة العضوية المميزة (للتذاكر فقط حالياً)
 const VIP_ROLE_ID = "1395674235002945636";
 
-function ensureInventoryTable(sql) {
-    if (!sql.open) return;
+async function ensureInventoryTable(db) {
+    if (!db) return;
       
-    // 1. جدول الحقيبة
-    sql.prepare(`
+    await db.query(`
         CREATE TABLE IF NOT EXISTS user_inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guildID TEXT,
-            userID TEXT,
-            itemID TEXT,
+            id SERIAL PRIMARY KEY,
+            guildid TEXT,
+            userid TEXT,
+            itemid TEXT,
             quantity INTEGER DEFAULT 0,
-            UNIQUE(guildID, userID, itemID)
+            UNIQUE(guildid, userid, itemid)
         );
-    `).run();
+    `);
 
-    // 2. جدول إحصائيات الدانجون
-    sql.prepare(`
+    await db.query(`
         CREATE TABLE IF NOT EXISTS dungeon_stats (
-            guildID TEXT,
-            userID TEXT,
+            guildid TEXT,
+            userid TEXT,
             tickets INTEGER DEFAULT 0,
             last_reset TEXT DEFAULT '',
             campfires INTEGER DEFAULT 1, 
             last_campfire_reset TEXT DEFAULT '',
-            PRIMARY KEY (guildID, userID)
+            PRIMARY KEY (guildid, userid)
         );
-    `).run();
+    `);
 }
 
 function getRandomImage(list) {
     return list[Math.floor(Math.random() * list.length)];
 }
 
-// 🔥🔥🔥 تعديل قيم المورا (حسب طلبك) 🔥🔥🔥
 function getBaseFloorMora(floor) {
     if (floor <= 10) return 100;
     if (floor <= 20) return 200;
@@ -52,10 +46,8 @@ function getBaseFloorMora(floor) {
     if (floor <= 70) return 2000;
     if (floor <= 80) return 3000;
     
-    // 81 وفوق (قبل الطابق 100)
     if (floor < 100) return 3500;
     
-    // الطابق 100
     return 25000; 
 }
 
@@ -88,7 +80,6 @@ function applyDamageToPlayer(player, damageAmount) {
     if (dmgReduction) remainingDamage = Math.floor(remainingDamage * (1 - dmgReduction.val));
 
     const hadShield = player.shield > 0;
-    // 🔥 نحتفظ بمصدر الدرع قبل كسره للفحص لاحقاً
     const shieldSource = player.effects.shield_source; 
 
     if (player.shield > 0) {
@@ -110,19 +101,14 @@ function applyDamageToPlayer(player, damageAmount) {
         player.isDead = true;
     }
 
-    // 🔥🔥🔥 التعديل هنا: استثناء مهارة البشر من الكولداون عند الكسر 🔥🔥🔥
     if (hadShield && player.shield <= 0) {
-        // إذا كان مصدر الدرع هو مهارة البشر، لا نطبق كولداون إضافي
         if (shieldSource !== 'Cleanse_Buff_Shield') {
             if (!player.skillCooldowns) player.skillCooldowns = {};
-            // نطبق الكولداون فقط للدروع العادية (skill_shielding)
-            // أو أي درع آخر يعتمد على هذا النظام، ما عدا مهارة البشر
             if (shieldSource === 'skill_shielding' || !shieldSource) {
                  player.skillCooldowns['skill_shielding'] = 3; 
             }
         }
         
-        // تنظيف مصدر الدرع بعد الكسر
         player.effects.shield_source = null;
     }
       
@@ -150,47 +136,51 @@ function buildHpBar(currentHp, maxHp, shield = 0) {
     return bar;
 }
 
-function getRealPlayerData(member, sql, assignedClass = 'Adventurer') {
+async function getRealPlayerData(member, db, assignedClass = 'Adventurer') {
     const guildID = member.guild.id;
     const userID = member.id;
-    const userData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
-    const level = userData ? userData.level : 1;
+    const userDataRes = await db.query("SELECT level FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    const userData = userDataRes.rows[0];
+    const level = userData ? parseInt(userData.level) : 1;
       
     const maxHp = Math.floor(BASE_HP + (level * HP_PER_LEVEL));
 
     let damage = 15;
     let weaponName = "قبضة اليد";
       
-    const allRaceRoles = sql.prepare("SELECT roleID, raceName FROM race_roles WHERE guildID = ?").all(member.guild.id);
+    const allRaceRolesRes = await db.query("SELECT roleid, racename FROM race_roles WHERE guildid = $1", [guildID]);
+    const allRaceRoles = allRaceRolesRes.rows;
     const userRoleIDs = member.roles.cache.map(r => r.id);
-    const userRace = allRaceRoles.find(r => userRoleIDs.includes(r.roleID));
+    const userRace = allRaceRoles.find(r => userRoleIDs.includes(r.roleid));
 
     if (userRace) {
-        const weaponConfig = weaponsConfig.find(w => w.race === userRace.raceName);
+        const weaponConfig = weaponsConfig.find(w => w.race === userRace.racename);
         if (weaponConfig) {
-            const userWeapon = sql.prepare("SELECT * FROM user_weapons WHERE userID = ? AND guildID = ? AND raceName = ?").get(userID, guildID, userRace.raceName);
-            if (userWeapon && userWeapon.weaponLevel > 0) {
-                damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponLevel - 1));
-                weaponName = `${weaponConfig.name} (Lv.${userWeapon.weaponLevel})`;
+            const userWeaponRes = await db.query("SELECT * FROM user_weapons WHERE userid = $1 AND guildid = $2 AND racename = $3", [userID, guildID, userRace.racename]);
+            const userWeapon = userWeaponRes.rows[0];
+            if (userWeapon && parseInt(userWeapon.weaponlevel) > 0) {
+                damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (parseInt(userWeapon.weaponlevel) - 1));
+                weaponName = `${weaponConfig.name} (Lv.${userWeapon.weaponlevel})`;
             }
         }
     }
 
     const skillsOutput = {};
-    const userSkillsData = sql.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(member.id, member.guild.id);
+    const userSkillsDataRes = await db.query("SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    const userSkillsData = userSkillsDataRes.rows;
       
     if (userSkillsData) {
         userSkillsData.forEach(userSkill => {
-            const skillConfig = skillsConfig.find(s => s.id === userSkill.skillID);
-            if (skillConfig && userSkill.skillLevel > 0) {
-                const effectValue = skillConfig.base_value + (skillConfig.value_increment * (userSkill.skillLevel - 1));
-                skillsOutput[skillConfig.id] = { ...skillConfig, currentLevel: userSkill.skillLevel, effectValue: effectValue };
+            const skillConfig = skillsConfig.find(s => s.id === userSkill.skillid);
+            if (skillConfig && parseInt(userSkill.skilllevel) > 0) {
+                const effectValue = skillConfig.base_value + (skillConfig.value_increment * (parseInt(userSkill.skilllevel) - 1));
+                skillsOutput[skillConfig.id] = { ...skillConfig, currentLevel: parseInt(userSkill.skilllevel), effectValue: effectValue };
             }
         });
     }
 
     if (userRace) {
-        const raceSkillId = `race_${userRace.raceName.toLowerCase().replace(/\s+/g, '_')}_skill`;
+        const raceSkillId = `race_${userRace.racename.toLowerCase().replace(/\s+/g, '_')}_skill`;
         const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
         if (raceSkillConfig && !skillsOutput[raceSkillId]) {
             skillsOutput[raceSkillId] = { ...raceSkillConfig, currentLevel: 1, effectValue: raceSkillConfig.base_value };
@@ -229,15 +219,14 @@ function getSaudiDateIso() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// 🔥🔥🔥 دالة إدارة التذاكر (تراكمية) 🔥🔥🔥
-function manageTickets(userID, guildID, sql, action = 'check', member = null) {
+async function manageTickets(userID, guildID, db, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
-    const levelData = sql.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
-    const level = levelData ? levelData.level : 1;
+    const levelDataRes = await db.query("SELECT level FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    const levelData = levelDataRes.rows[0];
+    const level = levelData ? parseInt(levelData.level) : 1;
 
-    // 1. التذاكر الأساسية من الليفل
     let baseTickets = 0;
     if (level >= 61) baseTickets = 10;
     else if (level >= 51) baseTickets = 9;
@@ -248,40 +237,34 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     else if (level >= 5) baseTickets = 3;
     else baseTickets = 0;
 
-    // 2. تذاكر إضافية من الرتب (تراكمية)
     let bonusTickets = 0;
     if (member && member.roles.cache.has(VIP_ROLE_ID)) {
-        bonusTickets += 10; // إضافة 10 تذاكر للـ VIP
+        bonusTickets += 10; 
     }
-    // يمكنك إضافة شروط أخرى هنا لزيادة الـ bonusTickets
 
     let maxTickets = baseTickets + bonusTickets;
 
-    let stats = sql.prepare("SELECT tickets, last_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
+    const statsRes = await db.query("SELECT tickets, last_reset FROM dungeon_stats WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    let stats = statsRes.rows[0];
 
     const todayStr = getSaudiDateIso(); 
 
     if (!stats) {
-        sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset) VALUES (?, ?, ?, ?)")
-            .run(guildID, userID, maxTickets, todayStr);
+        await db.query("INSERT INTO dungeon_stats (guildid, userid, tickets, last_reset) VALUES ($1, $2, $3, $4)", [guildID, userID, maxTickets, todayStr]);
         stats = { tickets: maxTickets, last_reset: todayStr };
     }
 
     let dbDate = stats.last_reset;
-    let dbTickets = stats.tickets;
+    let dbTickets = parseInt(stats.tickets);
 
     if (dbDate !== todayStr) {
         console.log(`[DailyLimit] Resetting tickets for ${userID}. New max: ${maxTickets}`);
         
-        sql.prepare("UPDATE dungeon_stats SET tickets = ?, last_reset = ? WHERE userID = ? AND guildID = ?")
-            .run(maxTickets, todayStr, userID, guildID);
+        await db.query("UPDATE dungeon_stats SET tickets = $1, last_reset = $2 WHERE userid = $3 AND guildid = $4", [maxTickets, todayStr, userID, guildID]);
         
         dbTickets = maxTickets;
         dbDate = todayStr;
     } 
-    else if (dbTickets < maxTickets && action === 'check') {
-       // تحديث فوري إذا زاد الحد الأقصى (اختياري)
-    }
 
     if (action === 'check') {
         return { tickets: dbTickets, max: maxTickets };
@@ -292,10 +275,9 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
             const newCount = dbTickets - 1;
             console.log(`[DailyLimit] Consuming ticket for ${userID}. Remaining: ${newCount}`);
 
-            const info = sql.prepare("UPDATE dungeon_stats SET tickets = ? WHERE userID = ? AND guildID = ?")
-                .run(newCount, userID, guildID);
+            const info = await db.query("UPDATE dungeon_stats SET tickets = $1 WHERE userid = $2 AND guildid = $3", [newCount, userID, guildID]);
                 
-            if (info.changes > 0) {
+            if (info.rowCount > 0) {
                 return { success: true, tickets: newCount, max: maxTickets };
             } else {
                 return { success: false, tickets: dbTickets, max: maxTickets };
@@ -308,44 +290,37 @@ function manageTickets(userID, guildID, sql, action = 'check', member = null) {
     return { tickets: dbTickets, max: maxTickets };
 }
 
-// 🔥🔥🔥 دالة إدارة الخيم (تراكمية) 🔥🔥🔥
-function manageCampfires(userID, guildID, sql, action = 'check', member = null) {
+async function manageCampfires(userID, guildID, db, action = 'check', member = null) {
     userID = String(userID);
     guildID = String(guildID);
 
-    // 1. تحديد الحد الأقصى (البداية 1)
     let maxCampfires = 1;
 
     if (member) {
-        // جلب جميع إعدادات الرتب من الداتابيس
-        const roleLimits = sql.prepare("SELECT roleID, limitCount FROM role_campfire_limits WHERE guildID = ?").all(guildID);
+        const roleLimitsRes = await db.query("SELECT roleid, limitcount FROM role_campfire_limits WHERE guildid = $1", [guildID]);
+        const roleLimits = roleLimitsRes.rows;
 
         if (roleLimits.length > 0) {
             const memberRoleIds = member.roles.cache.map(r => r.id);
             
-            // 🔥🔥 التعديل التراكمي هنا 🔥🔥
             roleLimits.forEach(config => {
-                if (memberRoleIds.includes(config.roleID)) {
-                    // بدلاً من أخذ الأعلى، نقوم بجمع الخيم من كل رتبة يمتلكها
-                    maxCampfires += config.limitCount;
+                if (memberRoleIds.includes(config.roleid)) {
+                    maxCampfires += parseInt(config.limitcount);
                 }
             });
         }
     }
 
-    // 2. جلب البيانات من الداتابيس
-    let stats = sql.prepare("SELECT campfires, last_campfire_reset FROM dungeon_stats WHERE userID = ? AND guildID = ?").get(userID, guildID);
+    const statsRes = await db.query("SELECT campfires, last_campfire_reset FROM dungeon_stats WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+    let stats = statsRes.rows[0];
     const todayStr = getSaudiDateIso();
 
-    // إنشاء سجل إذا لم يوجد
     if (!stats) {
         try {
-            const updateInfo = sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
-                .run(maxCampfires, todayStr, userID, guildID);
+            const updateInfo = await db.query("UPDATE dungeon_stats SET campfires = $1, last_campfire_reset = $2 WHERE userid = $3 AND guildid = $4", [maxCampfires, todayStr, userID, guildID]);
             
-            if (updateInfo.changes === 0) {
-                sql.prepare("INSERT INTO dungeon_stats (guildID, userID, tickets, last_reset, campfires, last_campfire_reset) VALUES (?, ?, 0, '', ?, ?)")
-                    .run(guildID, userID, maxCampfires, todayStr);
+            if (updateInfo.rowCount === 0) {
+                await db.query("INSERT INTO dungeon_stats (guildid, userid, tickets, last_reset, campfires, last_campfire_reset) VALUES ($1, $2, 0, '', $3, $4)", [guildID, userID, maxCampfires, todayStr]);
             }
         } catch (e) { console.log(e); }
         
@@ -353,18 +328,15 @@ function manageCampfires(userID, guildID, sql, action = 'check', member = null) 
     }
 
     let dbDate = stats.last_campfire_reset || '';
-    let currentCampfires = (stats.campfires !== null && stats.campfires !== undefined) ? stats.campfires : maxCampfires;
+    let currentCampfires = (stats.campfires !== null && stats.campfires !== undefined) ? parseInt(stats.campfires) : maxCampfires;
 
-    // 3. التحقق من التجديد اليومي (Reset)
     if (dbDate !== todayStr) {
         console.log(`[Campfire] Resetting for ${userID}. New max: ${maxCampfires}`);
-        sql.prepare("UPDATE dungeon_stats SET campfires = ?, last_campfire_reset = ? WHERE userID = ? AND guildID = ?")
-            .run(maxCampfires, todayStr, userID, guildID);
+        await db.query("UPDATE dungeon_stats SET campfires = $1, last_campfire_reset = $2 WHERE userid = $3 AND guildid = $4", [maxCampfires, todayStr, userID, guildID]);
         
         currentCampfires = maxCampfires;
     }
 
-    // 4. تنفيذ الأكشن
     if (action === 'check') {
         return { count: currentCampfires, max: maxCampfires };
     }
@@ -372,8 +344,7 @@ function manageCampfires(userID, guildID, sql, action = 'check', member = null) 
     if (action === 'consume') {
         if (currentCampfires > 0) {
             const newCount = currentCampfires - 1;
-            sql.prepare("UPDATE dungeon_stats SET campfires = ? WHERE userID = ? AND guildID = ?")
-                .run(newCount, userID, guildID);
+            await db.query("UPDATE dungeon_stats SET campfires = $1 WHERE userid = $2 AND guildid = $3", [newCount, userID, guildID]);
             return { success: true, count: newCount, max: maxCampfires };
         } else {
             return { success: false, count: 0, max: maxCampfires };
