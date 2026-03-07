@@ -1,5 +1,3 @@
-// handlers/dungeon/ui.js
-
 const { 
     EmbedBuilder, 
     ActionRowBuilder, 
@@ -13,9 +11,6 @@ const {
 const { OWNER_ID, skillsConfig, potionItems } = require('./constants');
 const { ensureInventoryTable, buildHpBar } = require('./utils');
 
-// =========================================================
-// 1. إنشاء قائمة المهارات (Dropdown)
-// =========================================================
 function buildSkillSelector(player) {
     const options = [];
       
@@ -24,7 +19,6 @@ function buildSkillSelector(player) {
       
     let myClassSkill = null;
     
-    // 🔥 تحديث أسماء ووصف المهارات لتطابق التعديلات الجديدة 🔥
     if (player.class === 'Leader') {
         myClassSkill = { name: "صرخة الحرب", desc: "زيادة ضرر الفريق 30% ونسبة الكريت.", emoji: "👑" };
     } 
@@ -84,16 +78,14 @@ function buildSkillSelector(player) {
     );
 }
 
-// =========================================================
-// 2. إنشاء قائمة الجرعات (Dropdown)
-// =========================================================
-function buildPotionSelector(player, sql, guildID) {
-    ensureInventoryTable(sql); 
-    const userItems = sql.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(player.id, guildID);
+async function buildPotionSelector(player, db, guildID) {
+    await ensureInventoryTable(db); 
+    const userItemsRes = await db.query("SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2", [player.id, guildID]);
+    const userItems = userItemsRes.rows;
       
     const potions = userItems.map(ui => {
-        const itemDef = potionItems.find(si => si.id === ui.itemID);
-        if (itemDef) return { ...itemDef, quantity: ui.quantity };
+        const itemDef = potionItems.find(si => si.id === ui.itemid);
+        if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity) };
         return null;
     }).filter(p => p !== null && p.quantity > 0);
 
@@ -129,19 +121,13 @@ function buildPotionSelector(player, sql, guildID) {
     );
 }
 
-// =========================================================
-// 3. إنشاء تصميم المعركة (Embed)
-// =========================================================
 function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = null) {
-    // 🔥 التعديل هنا: جعلنا الأولوية للمتغير 'color' (الأحمر) إذا تم تمريره
-    // إذا لم نمرر لوناً (في دور اللاعبين)، سيستخدم 'theme.color' بشكل طبيعي
     const embedColor = color || theme.color || '#2F3136'; 
 
     const embed = new EmbedBuilder()
         .setTitle(`${theme.emoji} الطابق ${floor} | ضد ${monster.name}`)
         .setColor(embedColor); 
 
-    // 🔥🔥🔥 التعديل الجديد: إظهار صورة الوحش الخاصة إذا وجدت 🔥🔥🔥
     if (monster.image) {
         embed.setImage(monster.image);
     } else if (theme.image) {
@@ -149,7 +135,6 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     }
 
     let monsterStatus = "";
-    // التأثيرات الأساسية
     if (monster.effects.some(e => e.type === 'poison')) monsterStatus += " ☠️";
     if (monster.effects.some(e => e.type === 'burn')) monsterStatus += " 🔥";
     if (monster.effects.some(e => e.type === 'weakness')) monsterStatus += " 📉";
@@ -157,11 +142,10 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     if (monster.frozen) monsterStatus += " ❄️";
     if (monster.effects.some(e => e.type === 'lightning_weaken')) monsterStatus += " ⚡";
     
-    // ✅ إضافات للوحوش الجديدة (أطلانتس والآلات):
-    if (monster.effects.some(e => e.type === 'reflect')) monsterStatus += " 🔄"; // عكس الضرر
-    if (monster.effects.some(e => e.type === 'blind')) monsterStatus += " 🕶️";   // عمى
-    if (monster.effects.some(e => e.type === 'stun')) monsterStatus += " 💫";    // شلل
-    if (monster.effects.some(e => e.type === 'evasion')) monsterStatus += " 💨"; // مراوغة عالية
+    if (monster.effects.some(e => e.type === 'reflect')) monsterStatus += " 🔄"; 
+    if (monster.effects.some(e => e.type === 'blind')) monsterStatus += " 🕶️";   
+    if (monster.effects.some(e => e.type === 'stun')) monsterStatus += " 💫";    
+    if (monster.effects.some(e => e.type === 'evasion')) monsterStatus += " 💨"; 
 
     const monsterBar = buildHpBar(monster.hp, monster.maxHp);
     embed.addFields({ 
@@ -212,7 +196,6 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
             displayName = `<@${p.id}> [${arabClass}]`; 
         }
 
-        // ✅ عرض تأثيرات اللاعب المهمة (مثل ضغط الماء والعمى)
         let playerDebuffs = "";
         if (p.effects.some(e => e.type === 'water_pressure')) playerDebuffs += " 🌊";
         if (p.effects.some(e => e.type === 'blind')) playerDebuffs += " 🕶️";
@@ -228,49 +211,43 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     return embed;
 }
 
-// =========================================================
-// 4. إنشاء أزرار التحكم (Buttons) - 🔥 الألوان الجديدة 🔥
-// =========================================================
 function generateBattleRows(disabled = false) {
-    // السطر الأول: هجوم (أحمر) - مهارة (أزرق)
     const row1 = new ActionRowBuilder();
 
     const btnAtk = new ButtonBuilder()
         .setCustomId('atk')
         .setLabel('هجوم')
         .setEmoji('⚔️')
-        .setStyle(ButtonStyle.Danger) // 🔥 أحمر
+        .setStyle(ButtonStyle.Danger) 
         .setDisabled(disabled);
 
     const btnSkill = new ButtonBuilder()
         .setCustomId('skill')
         .setLabel('مهارة')
         .setEmoji('✨')
-        .setStyle(ButtonStyle.Primary) // 🔥 أزرق
+        .setStyle(ButtonStyle.Primary) 
         .setDisabled(disabled);
 
     row1.addComponents(btnAtk, btnSkill);
 
-    // السطر الثاني: دفاع (رمادي) - جرعة (أخضر)
     const row2 = new ActionRowBuilder();
 
     const btnDef = new ButtonBuilder()
         .setCustomId('def')
         .setLabel('دفاع')
         .setEmoji('🛡️')
-        .setStyle(ButtonStyle.Secondary) // 🔥 رمادي
+        .setStyle(ButtonStyle.Secondary) 
         .setDisabled(disabled);
 
     const btnHeal = new ButtonBuilder()
         .setCustomId('heal')
         .setLabel('جـرعـة')
         .setEmoji('🧪')
-        .setStyle(ButtonStyle.Success) // 🔥 أخضر
+        .setStyle(ButtonStyle.Success) 
         .setDisabled(disabled);
 
     row2.addComponents(btnDef, btnHeal);
 
-    // إرجاع مصفوفة تحتوي على السطرين
     return [row1, row2];
 }
 
