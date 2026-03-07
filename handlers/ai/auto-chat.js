@@ -12,7 +12,7 @@ async function triggerAutoChat(client) {
         if (!channel) return;
 
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
-        const db = client.db;
+        const db = client.sql;
 
         const leaderboardInfo = await getLeaderboardKnowledge(db, GUILD_ID);
         const systemInstruction = buildSystemPrompt(false, leaderboardInfo, false);
