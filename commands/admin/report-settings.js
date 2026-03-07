@@ -48,13 +48,10 @@ module.exports = {
             await interaction.deferReply({ ephemeral: true });
         } else {
             message = interactionOrMessage;
-            guild = message.guild;
-            client = message.client;
-            member = message.member;
             return message.reply("هذا الأمر متاح كأمر سلاش (/) فقط.");
         }
 
-        const sql = client.sql;
+        const db = client.sql;
 
         const reply = async (payload) => {
             if (isSlash) return interaction.editReply(payload);
@@ -75,12 +72,20 @@ module.exports = {
                 const reportChannel = interaction.options.getChannel('قناة-البلاغات');
                 const jailRole = interaction.options.getRole('رتبة-السجن');
                 const unlimitedRole = interaction.options.getRole('رتبة-المستثنيين');
-                const arenaRole = interaction.options.getRole('رتبة-الساحة'); // (اختياري)
+                const arenaRole = interaction.options.getRole('رتبة-الساحة'); 
 
                 const arenaRoleID = arenaRole ? arenaRole.id : null;
 
-                sql.prepare("INSERT OR REPLACE INTO report_settings (guildID, logChannelID, reportChannelID, jailRoleID, arenaRoleID, unlimitedRoleID) VALUES (?, ?, ?, ?, ?, ?)")
-                   .run(guild.id, logChannel.id, reportChannel.id, jailRole.id, arenaRoleID, unlimitedRole.id);
+                await db.query(`
+                    INSERT INTO report_settings (guildID, logChannelID, reportChannelID, jailRoleID, arenaRoleID, unlimitedRoleID) 
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT(guildID) DO UPDATE SET 
+                    logChannelID = EXCLUDED.logChannelID, 
+                    reportChannelID = EXCLUDED.reportChannelID, 
+                    jailRoleID = EXCLUDED.jailRoleID, 
+                    arenaRoleID = EXCLUDED.arenaRoleID, 
+                    unlimitedRoleID = EXCLUDED.unlimitedRoleID
+                `, [guild.id, logChannel.id, reportChannel.id, jailRole.id, arenaRoleID, unlimitedRole.id]);
 
                 const embed = new EmbedBuilder()
                     .setTitle("✅ تـم حفـظ الإعـدادات بنجاح!")
@@ -96,8 +101,12 @@ module.exports = {
 
             } else if (subcommand === 'رتبة-الاختبار') {
                 const testRole = interaction.options.getRole('الرتبة');
-                sql.prepare("INSERT INTO report_settings (guildID, testRoleID) VALUES (?, ?) ON CONFLICT(guildID) DO UPDATE SET testRoleID = excluded.testRoleID")
-                   .run(guild.id, testRole.id);
+                
+                await db.query(`
+                    INSERT INTO report_settings (guildID, testRoleID) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT(guildID) DO UPDATE SET testRoleID = EXCLUDED.testRoleID
+                `, [guild.id, testRole.id]);
 
                 const embed = new EmbedBuilder()
                     .setTitle("✅ تـم حفـظ رتبـة الاختـبـار بنجاح!")
@@ -108,8 +117,7 @@ module.exports = {
             } else if (subcommand === 'صلاحيات-التبليغ') {
                 const rolesInput = interaction.options.getString('ids-الرتب');
 
-                // (حذف الإعدادات القديمة أولاً)
-                sql.prepare("DELETE FROM report_permissions WHERE guildID = ?").run(guild.id);
+                await db.query("DELETE FROM report_permissions WHERE guildID = $1", [guild.id]);
 
                 if (!rolesInput) {
                     return reply({ content: "✅ **تم مسح** جميع الرتب المسموح لها بالتبليغ. **الجميع يستطيع التبليغ الآن** (إذا تم إعداد البوت)." });
@@ -120,13 +128,11 @@ module.exports = {
                      return replyError("لم أجد أي IDs صالحة في الإدخال.");
                 }
 
-                const insert = sql.prepare("INSERT INTO report_permissions (guildID, roleID) VALUES (?, ?)");
-                const transaction = sql.transaction(() => {
-                    for (const roleID of roleIDs) {
-                        insert.run(guild.id, roleID);
-                    }
-                });
-                transaction();
+                await db.query('BEGIN');
+                for (const roleID of roleIDs) {
+                    await db.query("INSERT INTO report_permissions (guildID, roleID) VALUES ($1, $2)", [guild.id, roleID]);
+                }
+                await db.query('COMMIT');
 
                 const rolesMention = roleIDs.map(id => `<@&${id}>`).join('\n');
                 const embed = new EmbedBuilder()
@@ -136,25 +142,27 @@ module.exports = {
                 return reply({ embeds: [embed] });
 
             } else if (subcommand === 'عرض-الاعدادات') {
-                const settings = getReportSettings(sql, guild.id);
-                const allowedRoles = sql.prepare("SELECT roleID FROM report_permissions WHERE guildID = ?").all(guild.id);
+                const settings = await getReportSettings(db, guild.id);
+                const allowedRolesRes = await db.query("SELECT roleID FROM report_permissions WHERE guildID = $1", [guild.id]);
+                const allowedRoles = allowedRolesRes.rows;
 
                 const embed = new EmbedBuilder()
                     .setTitle("⚙️ الإعدادات الحالية لنظام البلاغات")
                     .setColor(Colors.Greyple)
                     .addFields(
-                        { name: "قناة السجلات (Log)", value: settings.logChannelID ? `<#${settings.logChannelID}>` : "لم تحدد" },
-                        { name: "قناة البلاغات (البريفكس)", value: settings.reportChannelID ? `<#${settings.reportChannelID}>` : "لم تحدد" },
-                        { name: "رتبة السجن", value: settings.jailRoleID ? `<@&${settings.jailRoleID}>` : "لم تحدد" },
-                        { name: "رتبة الساحة (اختياري)", value: settings.arenaRoleID ? `<@&${settings.arenaRoleID}>` : "لم تحدد" },
-                        { name: "رتبة المستثنيين (Cooldown)", value: settings.unlimitedRoleID ? `<@&${settings.unlimitedRoleID}>` : "لم تحدد" },
-                        { name: "رتبة الاختبار (Test)", value: settings.testRoleID ? `<@&${settings.testRoleID}>` : "لم تحدد" },
-                        { name: "الرتب المسموحة بالتبليغ", value: allowedRoles.length > 0 ? allowedRoles.map(r => `<@&${r.roleID}>`).join(', ') : "الجميع مسموح له" }
+                        { name: "قناة السجلات (Log)", value: settings.logchannelid || settings.logChannelID ? `<#${settings.logchannelid || settings.logChannelID}>` : "لم تحدد" },
+                        { name: "قناة البلاغات (البريفكس)", value: settings.reportchannelid || settings.reportChannelID ? `<#${settings.reportchannelid || settings.reportChannelID}>` : "لم تحدد" },
+                        { name: "رتبة السجن", value: settings.jailroleid || settings.jailRoleID ? `<@&${settings.jailroleid || settings.jailRoleID}>` : "لم تحدد" },
+                        { name: "رتبة الساحة (اختياري)", value: settings.arenaroleid || settings.arenaRoleID ? `<@&${settings.arenaroleid || settings.arenaRoleID}>` : "لم تحدد" },
+                        { name: "رتبة المستثنيين (Cooldown)", value: settings.unlimitedroleid || settings.unlimitedRoleID ? `<@&${settings.unlimitedroleid || settings.unlimitedRoleID}>` : "لم تحدد" },
+                        { name: "رتبة الاختبار (Test)", value: settings.testroleid || settings.testRoleID ? `<@&${settings.testroleid || settings.testRoleID}>` : "لم تحدد" },
+                        { name: "الرتب المسموحة بالتبليغ", value: allowedRoles.length > 0 ? allowedRoles.map(r => `<@&${r.roleid || r.roleID}>`).join(', ') : "الجميع مسموح له" }
                     );
                 return reply({ embeds: [embed] });
             }
 
         } catch (e) {
+            await db.query('ROLLBACK').catch(() => {});
             console.error("Report settings error:", e);
             return replyError("حدث خطأ أثناء تنفيذ الأمر.");
         }
