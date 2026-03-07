@@ -1,24 +1,18 @@
-const { EmbedBuilder, PermissionsBitField, SlashCommandBuilder } = require("discord.js");
-const SQLite = require("better-sqlite3");
-const sql = new SQLite('./mainDB.sqlite');
+const { EmbedBuilder, SlashCommandBuilder } = require("discord.js");
 
-// ✅ استدعاء اللوجر (تأكد من المسار)
 let logTransaction;
 try {
     ({ logTransaction } = require('../../handlers/economy-logger.js'));
 } catch (e) {
-    // في حال عدم وجود الملف أو خطأ في المسار
     logTransaction = async () => {}; 
 }
 
-// ✅ The IDs allowed to use this command
 const ALLOWED_IDS = ["1145327691772481577", "288421280368295947"];
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('موراا') // ✅ Changed name to Arabic 'moraa'
+        .setName('موراا') 
         .setDescription('يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين (حتى للمغادرين).')
-        // --- Add Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('اضافة')
@@ -34,7 +28,6 @@ module.exports = {
                         )
                 )
         )
-        // --- Remove Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('ازالة')
@@ -50,7 +43,6 @@ module.exports = {
                         )
                 )
         )
-        // --- Set Subcommand ---
         .addSubcommand(subcommand =>
             subcommand
                 .setName('تحديد')
@@ -67,7 +59,7 @@ module.exports = {
                 )
         ),
 
-    name: 'موراا', // Prefix command name
+    name: 'موراا', 
     aliases: ['gm', 'set-mora'],
     category: "Economy",
     description: "يضيف، يزيل، أو يحدد رصيد المورا لمستخدم معين.",
@@ -77,7 +69,6 @@ module.exports = {
         let interaction, message, user, member, guild, client;
         let method, targetUser, amount, place;
 
-        // --- 🔒 Security Check: Restrict to specific User IDs ---
         if (isSlash) {
             user = interactionOrMessage.user;
         } else {
@@ -89,7 +80,6 @@ module.exports = {
             if (isSlash) return interactionOrMessage.reply({ content, ephemeral: true });
             return interactionOrMessage.reply(content);
         }
-        // -------------------------------------------------------
 
         if (isSlash) {
             interaction = interactionOrMessage;
@@ -143,10 +133,7 @@ module.exports = {
             return replyError("البيانات غير صحيحة أو المستخدم غير موجود (تأكد من الآيدي).");
         }
 
-        const getScore = client.getLevel;
-        const setScore = client.setLevel;
-
-        let data = getScore.get(targetUser.id, guild.id);
+        let data = await client.getLevel(targetUser.id, guild.id);
 
         if (!data) {
             data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
@@ -156,8 +143,6 @@ module.exports = {
         data.bank = data.bank || 0;
 
         let actionWord = "";
-        
-        // --- Calculations ---
 
         if (method === 'add') {
             actionWord = "اضـافـة";
@@ -167,7 +152,6 @@ module.exports = {
                 data.mora += amount;
             }
             
-            // 🔥🔥 تسجيل العملية (للمبالغ الكبيرة) 🔥🔥
             if (logTransaction) {
                 await logTransaction(client, targetUser.id, guild.id, amount, `Admin Add (${user.username})`);
             }
@@ -196,10 +180,9 @@ module.exports = {
             }
         }
 
-        setScore.run(data);
+        await client.setLevel(data);
 
         let totalBalance = data.mora + data.bank;
-        
         let statusText = `تـمـت ${actionWord}`;
 
         const embed = new EmbedBuilder()
