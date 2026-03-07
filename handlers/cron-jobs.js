@@ -194,8 +194,8 @@ module.exports = (client, db) => {
     setInterval(() => checkDailyMediaStreaks(client, db), 3600000); 
     checkDailyMediaStreaks(client, db);
 
-    setInterval(() => checkUnjailTask(client), 5 * 60 * 1000); 
-    checkUnjailTask(client);
+    setInterval(() => checkUnjailTask(client, db), 5 * 60 * 1000); 
+    checkUnjailTask(client, db);
 
     setInterval(() => checkTemporaryRoles(), 60000); 
     checkTemporaryRoles();
