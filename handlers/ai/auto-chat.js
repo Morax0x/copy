@@ -1,12 +1,7 @@
+const config = require('../../config.json');
 const { buildSystemPrompt } = require('./persona');
 const { generateResponse } = require('./engine');
 const { getLeaderboardKnowledge } = require('./serverLore');
-const SQLite = require("better-sqlite3");
-const path = require('path');
-const config = require('../../config.json');
-
-const dbPath = path.join(__dirname, '../..', 'mainDB.sqlite');
-const sql = new SQLite(dbPath);
 
 const CHAT_CHANNEL_ID = '1478254814973395055'; 
 const GUILD_ID = '848921014141845544'; 
@@ -17,7 +12,9 @@ async function triggerAutoChat(client) {
         if (!channel) return;
 
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
-        const leaderboardInfo = getLeaderboardKnowledge(sql, GUILD_ID);
+        const db = client.db;
+
+        const leaderboardInfo = await getLeaderboardKnowledge(db, GUILD_ID);
         const systemInstruction = buildSystemPrompt(false, leaderboardInfo, false);
 
         const hiddenPrompt = `أنتِ الآن تبادرين بالحديث في الدردشة العامة بمناسبة شهر رمضان المبارك.
@@ -63,7 +60,7 @@ async function triggerAutoChat(client) {
 function startAutoChat(client) {
     setInterval(() => {
         triggerAutoChat(client);
-    }, 1000 * 60 * 40); // ⏱️ تم التعديل هنا: 40 دقيقة
+    }, 1000 * 60 * 40); 
 }
 
 module.exports = { startAutoChat, triggerAutoChat };
