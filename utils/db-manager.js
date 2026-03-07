@@ -48,12 +48,12 @@ module.exports = (client, db) => {
                     lastRace = EXCLUDED.lastRace, lastTransferDate = EXCLUDED.lastTransferDate, dailyTransferCount = EXCLUDED.dailyTransferCount;
             `;
             await db.query(query, [
-                data.user, data.guild, data.xp, data.level, data.totalXP, data.mora, data.lastWork, data.lastDaily, data.dailyStreak, data.bank,
-                data.lastInterest, data.totalInterestEarned, data.hasGuard, data.guardExpires, data.totalVCTime, data.lastCollected,
-                data.lastRob, data.lastGuess, data.lastRPS, data.lastRoulette, data.lastTransfer, data.lastDeposit, data.shop_purchases,
-                data.total_meow_count, data.boost_count, data.lastPVP, data.lastFarmYield, data.lastFish, data.rodLevel, data.boatLevel,
-                data.currentLocation, data.lastMemory, data.lastArrange, data.last_dungeon, data.dungeon_gate_level, data.max_dungeon_floor, data.dungeon_wins,
-                data.lastRace, data.lastTransferDate, data.dailyTransferCount
+                data.user || data.userid, data.guild || data.guildid, data.xp || 0, data.level || 1, data.totalXP ?? data.totalxp ?? 0, data.mora || 0, data.lastWork ?? data.lastwork ?? 0, data.lastDaily ?? data.lastdaily ?? 0, data.dailyStreak ?? data.dailystreak ?? 0, data.bank || 0,
+                data.lastInterest ?? data.lastinterest ?? 0, data.totalInterestEarned ?? data.totalinterestearned ?? 0, data.hasGuard ?? data.hasguard ?? 0, data.guardExpires ?? data.guardexpires ?? 0, data.totalVCTime ?? data.totalvctime ?? 0, data.lastCollected ?? data.lastcollected ?? 0,
+                data.lastRob ?? data.lastrob ?? 0, data.lastGuess ?? data.lastguess ?? 0, data.lastRPS ?? data.lastrps ?? 0, data.lastRoulette ?? data.lastroulette ?? 0, data.lastTransfer ?? data.lasttransfer ?? 0, data.lastDeposit ?? data.lastdeposit ?? 0, data.shop_purchases ?? 0,
+                data.total_meow_count ?? 0, data.boost_count ?? 0, data.lastPVP ?? data.lastpvp ?? 0, data.lastFarmYield ?? data.lastfarmyield ?? 0, data.lastFish ?? data.lastfish ?? 0, data.rodLevel ?? data.rodlevel ?? 1, data.boatLevel ?? data.boatlevel ?? 1,
+                data.currentLocation ?? data.currentlocation ?? 'beach', data.lastMemory ?? data.lastmemory ?? 0, data.lastArrange ?? data.lastarrange ?? 0, data.last_dungeon ?? 0, data.dungeon_gate_level ?? 1, data.max_dungeon_floor ?? 0, data.dungeon_wins ?? 0,
+                data.lastRace ?? data.lastrace ?? 0, data.lastTransferDate ?? data.lasttransferdate ?? '', data.dailyTransferCount ?? data.dailytransfercount ?? 0
             ]);
         } catch(e) {}
     };
@@ -74,7 +74,7 @@ module.exports = (client, db) => {
                 userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, date=EXCLUDED.date, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, boost_channel_reactions=EXCLUDED.boost_channel_reactions, topgg_votes=EXCLUDED.topgg_votes;
             `;
             await db.query(query, [
-                data.id, data.userID, data.guildID, data.date, data.messages, data.images, data.stickers, data.emojis_sent, data.reactions_added, data.replies_sent, data.mentions_received, data.vc_minutes, data.water_tree, data.counting_channel, data.meow_count, data.streaming_minutes, data.disboard_bumps, data.boost_channel_reactions, data.topgg_votes
+                data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.date, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.boost_channel_reactions ?? 0, data.topgg_votes ?? 0
             ]);
         } catch(e) {}
     };
@@ -95,7 +95,7 @@ module.exports = (client, db) => {
                 userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, weekStartDate=EXCLUDED.weekStartDate, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, topgg_votes=EXCLUDED.topgg_votes;
             `;
             await db.query(query, [
-                data.id, data.userID, data.guildID, data.weekStartDate, data.messages, data.images, data.stickers, data.emojis_sent, data.reactions_added, data.replies_sent, data.mentions_received, data.vc_minutes, data.water_tree, data.counting_channel, data.meow_count, data.streaming_minutes, data.disboard_bumps, data.topgg_votes
+                data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.weekStartDate ?? data.weekstartdate, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.topgg_votes ?? 0
             ]);
         } catch(e) {}
     };
@@ -116,7 +116,7 @@ module.exports = (client, db) => {
                 userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, total_messages=EXCLUDED.total_messages, total_images=EXCLUDED.total_images, total_stickers=EXCLUDED.total_stickers, total_emojis_sent=EXCLUDED.total_emojis_sent, total_reactions_added=EXCLUDED.total_reactions_added, total_replies_sent=EXCLUDED.total_replies_sent, total_mentions_received=EXCLUDED.total_mentions_received, total_vc_minutes=EXCLUDED.total_vc_minutes, total_disboard_bumps=EXCLUDED.total_disboard_bumps, total_topgg_votes=EXCLUDED.total_topgg_votes;
             `;
             await db.query(query, [
-                data.id, data.userID, data.guildID, data.total_messages, data.total_images, data.total_stickers, data.total_emojis_sent, data.total_reactions_added, data.total_replies_sent, data.total_mentions_received, data.total_vc_minutes, data.total_disboard_bumps, data.total_topgg_votes
+                data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.total_messages ?? 0, data.total_images ?? 0, data.total_stickers ?? 0, data.total_emojis_sent ?? 0, data.total_reactions_added ?? 0, data.total_replies_sent ?? 0, data.total_mentions_received ?? 0, data.total_vc_minutes ?? 0, data.total_disboard_bumps ?? 0, data.total_topgg_votes ?? 0
             ]);
         } catch(e) {}
     };
@@ -137,7 +137,7 @@ module.exports = (client, db) => {
                 userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, dailyNotif=EXCLUDED.dailyNotif, weeklyNotif=EXCLUDED.weeklyNotif, achievementsNotif=EXCLUDED.achievementsNotif, levelNotif=EXCLUDED.levelNotif, kingsNotif=EXCLUDED.kingsNotif, badgesNotif=EXCLUDED.badgesNotif;
             `;
             await db.query(query, [
-                data.id, data.userID, data.guildID, data.dailyNotif, data.weeklyNotif, data.achievementsNotif, data.levelNotif, data.kingsNotif, data.badgesNotif
+                data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.dailyNotif ?? data.dailynotif ?? 1, data.weeklyNotif ?? data.weeklynotif ?? 1, data.achievementsNotif ?? data.achievementsnotif ?? 1, data.levelNotif ?? data.levelnotif ?? 1, data.kingsNotif ?? data.kingsnotif ?? 1, data.badgesNotif ?? data.badgesnotif ?? 1
             ]);
         } catch(e) {}
     };
