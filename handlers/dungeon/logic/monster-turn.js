@@ -1,14 +1,10 @@
-// handlers/dungeon/logic/monster-turn.js
-
 const { EmbedBuilder } = require("discord.js");
 const { getFloorCaps } = require('./seal-system'); 
 const { applyDamageToPlayer } = require('../utils'); 
 const { MONSTER_SKILLS, GENERIC_MONSTER_SKILLS } = require('../monsters');
 const { generateBattleEmbed, generateBattleRows } = require('../ui');
 
-// --- 🧠 دالة تحديد الأهداف ---
 function getTacticalTargets(players, count, monster) {
-    // نستهدف الأحياء فقط (الذين ليسوا موتى نهائياً isPermDead ولا موتى حالياً isDead)
     let alive = players.filter(p => !p.isDead && !p.isPermDead);
     if (alive.length === 0) return [];
 
@@ -48,7 +44,6 @@ function getTacticalTargets(players, count, monster) {
     return prioritized.slice(0, count);
 }
 
-// دالة مساعدة لسقف الضرر
 function applyLocalCap(value, cap) {
     if (cap !== Infinity && value > cap) return cap;
     return value;
@@ -67,11 +62,9 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     const { damageCap } = getFloorCaps(floor);
 
-    // 🔥 حفظ حالة البرق
     const activeLightning = monster.effects.find(e => e.type === 'lightning_weaken');
     const lightningVal = activeLightning ? activeLightning.val : 0;
 
-    // 1. التجميد
     if (monster.frozen) { 
         log.push(`❄️ **${monster.name}** متجمد، خسر دوره!`); 
         monster.frozen = false; 
@@ -82,7 +75,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         return true; 
     }
 
-    // 2. معالجة الأضرار المستمرة (DoT)
     if (monster.effects) {
         monster.effects = monster.effects.filter(e => {
             let dmgVal = 0;
@@ -114,7 +106,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
-    // هجوم المستدعي
     players.forEach(p => {
         if (!p.isDead && !p.isPermDead && p.summon && p.summon.active) {
             const atkRatio = p.summon.atkRatio || 0.7;
@@ -142,7 +133,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
 
     if (monster.hp <= 0) { monster.hp = 0; return false; }
 
-    // الارتباك
     const confusion = monster.effects.find(e => e.type === 'confusion');
     if (confusion && Math.random() < confusion.val) {
         const selfDmg = Math.floor(monster.atk * 0.5) || 1;
@@ -155,13 +145,11 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         return true;
     }
 
-    // --- 🎮 منطق الهجوم (AI) ---
     const alive = players.filter(p => !p.isDead && !p.isPermDead);
     if (alive.length === 0) return false;
 
     let skillUsed = false;
 
-    // مهارات الزعيم
     const cleanName = monster.name.split(' (')[0]; 
     const specialSkill = MONSTER_SKILLS[cleanName];
     if (specialSkill) {
@@ -173,7 +161,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // المهارات العامة
     if (!skillUsed && !specialSkill) {
         let allowSkills = false;
         if (floor < 20) allowSkills = false;
@@ -191,7 +178,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // الكومبو
     if (!skillUsed && monster.memory.comboStep === 1) {
         if (monster.memory.lastMove === 'oil') {
             alive.forEach(p => {
@@ -219,7 +205,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         monster.memory.lastMove = null;
     }
 
-    // العلاج الذاتي
     if (!skillUsed && floor >= 25 && monster.hp < monster.maxHp * 0.25 && monster.memory.healsUsed < 2) {
         if (Math.random() < 0.5) {
             let healPercent = 0.02 + ((floor - 20) * 0.001);
@@ -232,9 +217,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // ============================================================
-    // ⚔️ 5. الهجوم الأساسي (Basic Attack) ⚔️
-    // ============================================================
     if (!skillUsed) {
         let targetCount = 1;
         if (floor >= 30) targetCount = 2;
@@ -299,26 +281,17 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
     if (monster.hp < 0) monster.hp = 0;
     if (isNaN(monster.hp)) monster.hp = 0;
 
-    // ============================================================
-    // 🔥🔥🔥 تعديل سستم الموت (The New Death System) 🔥🔥🔥
-    // ============================================================
-    
-    // نحدد من مات في هذا الدور (وصل دمه للصفر وهو لسا عايش)
     const deadJustNow = players.filter(p => p.hp <= 0 && !p.isDead && !p.isPermDead);
     
     for (const p of deadJustNow) {
-        // 1. زيادة عداد الموتات
         p.deathCount = (p.deathCount || 0) + 1;
         
-        // 2. تحديث الحالة فوراً
         p.isDead = true; 
         p.hp = 0;
 
-        // 3. الفحص: هل هذه الموتة الثالثة؟
         if (p.deathCount >= 3) {
-            // ☠️ حالة التحلل الفوري
-            p.isPermDead = true; // علامة التحلل (مهمة للكاهن)
-            p.status = 'decomposed'; // حالة نصية للتوضيح
+            p.isPermDead = true; 
+            p.status = 'decomposed'; 
 
             const rotEmbed = new EmbedBuilder()
                 .setTitle('💀 تحللت الجثة!')
@@ -329,7 +302,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             await threadChannel.send({ embeds: [rotEmbed] }).catch(()=>{});
 
         } else {
-            // 💀 حالة الموت القابل للإنعاش (الموتة 1 أو 2)
             const remainingLives = 3 - p.deathCount;
             
             const deathEmbed = new EmbedBuilder()
@@ -340,7 +312,6 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
             await threadChannel.send({ embeds: [deathEmbed] }).catch(()=>{});
         }
 
-        // تأثير خاص لموت الكاهن (اختياري)
         if (p.class === 'Priest') {
              players.forEach(ally => {
                 if (!ally.isDead && !ally.isPermDead && ally.id !== p.id) {
@@ -352,9 +323,8 @@ async function processMonsterTurn(monster, players, log, turnCount, battleMsg, f
         }
     }
 
-    // التحقق من خسارة الفريق بالكامل (الكل ميت أو متحلل)
     if (players.every(p => p.isDead || p.isPermDead)) {
-        return false; // ينهي المعركة بخسارة
+        return false; 
     }
 
     if (log.length > 6) log = log.slice(-6);
