@@ -18,9 +18,6 @@ const { sendEndMessage } = require('../core/end-game');
 const { getRealPlayerData, getBaseFloorMora } = require('../utils'); 
 const { cleanName } = require('../core/battle-utils'); 
 
-/**
- * دالة مساعدة لفلترة الخيارات المكررة
- */
 function getUniqueOptions(items, isDamageDesc = false) {
     const seenIds = new Set();
     const options = [];
@@ -45,12 +42,8 @@ function getUniqueOptions(items, isDamageDesc = false) {
     return options;
 }
 
-/**
- * دالة معالجة قائمة الإمبراطور (الأونر)
- */
 async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, mainCollector, ongoingRef, retreatedPlayers = []) {
     
-    // 1. إنشاء القائمة الرئيسية
     const menu = new StringSelectMenuBuilder()
         .setCustomId('owner_god_menu_category')
         .setPlaceholder('👑 اختر قسم القوة المطلقة')
@@ -74,7 +67,6 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
     });
 
     menuCollector.on('collect', async subI => {
-        // 🛠️ معالجة اختيار التصنيف
         if (subI.customId === 'owner_god_menu_category') {
             const category = subI.values[0];
             let options = [];
@@ -114,7 +106,6 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             });
         }
 
-        // 🛠️ معالجة تنفيذ المهارة
         if (subI.customId === 'owner_god_menu_execute') {
             const skillID = subI.values[0];
             let skillObj = skillsConfig.find(s => s.id === skillID) || ownerSkills.find(s => s.id === skillID);
@@ -124,7 +115,6 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
             }
             
             let p = players.find(pl => pl.id === subI.user.id);
-            // إضافة الأونر للقائمة إذا لم يكن موجوداً
             if (!p && subI.user.id === OWNER_ID) {
                  const member = await subI.guild.members.fetch(OWNER_ID).catch(() => null);
                  if(member) {
@@ -140,9 +130,6 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
 
             const result = handleSkillUsage(p, skillObj, monster, log, threadChannel, players);
 
-            // ==========================================
-            // 🌌 بوابة الأبعاد (Dimension Gate Logic) 🌌
-            // ==========================================
             if (result.type === 'dimension_gate_request') {
                 const modal = new ModalBuilder().setCustomId('modal_dimension_gate').setTitle('🌌 بوابة الأبعاد');
                 const floorInput = new TextInputBuilder().setCustomId('gate_floor_number').setLabel("رقم الطابق الذي تريد الانتقال له؟").setStyle(TextInputStyle.Short).setPlaceholder("مثال: 50").setRequired(true);
@@ -199,16 +186,11 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                 } catch (err) { return; }
             }
 
-            // ==========================================
-            // ✋ الرمق الأخير (Last Gasp) - المعدل ✋
-            // ==========================================
             if (skillID === 'skill_last_gasp') {
                 if (subI.user.id !== OWNER_ID) return;
 
-                // 1. جعل دم الوحش 1
                 monster.hp = 1;
 
-                // 2. نقل اللاعب لقائمة المنسحبين (ليغادر المعركة ويحتفظ بالجوائز)
                 const playerIndex = players.findIndex(pl => pl.id === subI.user.id);
                 if (playerIndex > -1) {
                     const leavingPlayer = players[playerIndex];
@@ -228,30 +210,21 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                 return;
             }
 
-            // ==========================================
-            // ⚡ شق الزمكان (Force Leave Logic) - المصحح ⚡
-            // ==========================================
             if (result.type === 'owner_leave' || skillID === 'skill_owner_leave') {
                 if (subI.user.id !== OWNER_ID) return;
 
-                // 1. استخراج الطابق الحالي من اسم الوحش
                 const currentFloorMatch = monster.name.match(/Lv\.(\d+)/);
-                const currentFloor = currentFloorMatch ? parseInt(currentFloorMatch[1]) : 1; // الافتراضي 1 إذا فشل الاستخراج
+                const currentFloor = currentFloorMatch ? parseInt(currentFloorMatch[1]) : 1;
 
-                // 2. رسالة تأكيد فورية
                 await subI.update({ content: `💨 **تم تنفيذ شق الزمكان! جاري الانسحاب القسري من الطابق ${currentFloor}...**`, components: [] });
                 
-                // 3. إيقاف اللعبة فوراً (قبل محاولة الإرسال لتجنب التعليق)
                 ongoingRef.value = false; 
-                monster.hp = 0; // تصفير دم الوحش
+                monster.hp = 0; 
                 mainCollector.stop('owner_force_leave');
 
-                // 4. محاولة إنهاء المعركة باستخدام الطابق الفعلي
                 try {
-                    // تعريف الروم بشكل آمن (يدعم الثريد والروم العادية)
                     const mainChannel = threadChannel.parent || threadChannel; 
 
-                    // ✅ هنا التعديل: إرسال currentFloor بدلاً من 999
                     await sendEndMessage(mainChannel, threadChannel, players, [], currentFloor, "retreat", sql, guild.id, hostId, activeDungeonRequests);
                 } catch (err) {
                     console.error("Error inside Force Leave:", err);
@@ -261,7 +234,6 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                 return;
             }
 
-            // نجاح تنفيذ مهارة عادية
             if (result.success) {
                 await subI.update({ content: "✅ تم التنفيذ!", components: [] });
                 
