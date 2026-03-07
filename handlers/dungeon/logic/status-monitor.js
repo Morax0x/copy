@@ -1,40 +1,29 @@
-// handlers/dungeon/logic/status-monitor.js
-
 const { EmbedBuilder, Colors } = require("discord.js");
 
-/**
- * بدء مراقبة رسائل اللاعبين لمعرفة حالتهم (HP, Shield, Death Count)
- */
 function startStatusMonitor(threadChannel, players) {
     const statusKeywords = ['كشف', 'هيل', 'هيلي', 'دم', 'دمي', 'HP', 'كم دمي', 'وضعي'];
     const statusFilter = m => statusKeywords.includes(m.content.trim()) && !m.author.bot;
      
-    // إنشاء المراقب
     const collector = threadChannel.createMessageCollector({ filter: statusFilter, time: 24 * 60 * 60 * 1000 });
 
     collector.on('collect', async m => {
         const player = players.find(p => p.id === m.author.id);
         if (!player) return; 
 
-        // 🔥🔥 التعديل: تحديث حالة التحلل بناءً على عدد الميتات فوراً 🔥🔥
         const deaths = player.deathCount || 0;
         if (deaths >= 3) {
             player.isPermDead = true;
-            player.isDead = true; // تأكيد أنه ميت
+            player.isDead = true; 
         }
 
-        // 1. فحص التحلل (بعد التحديث)
         if (player.isPermDead) {
              return m.reply({ content: `💀 **${player.name}** جثتك متحللة (3/3).. لقد غادرت عالم الأحياء نهائياً.` }).catch(()=>{});
         }
 
-        // 2. فحص الموت العادي (قابل للإنعاش)
         if (player.isDead) {
              return m.reply({ content: `👻 **${player.name}** أنت ميت (الموتة رقم ${deaths}/3). اطلب من الكاهن إنعاشك قبل أن تتحلل!` }).catch(()=>{});
         }
 
-        // 3. عرض الحالة للأحياء
-        // الحسابات للعرض (شريط الصحة)
         const percent = Math.max(0, Math.min(1, player.hp / player.maxHp));
         const filled = Math.round(percent * 10);
         const empty = 10 - filled;
@@ -50,7 +39,7 @@ function startStatusMonitor(threadChannel, players) {
         };
         const arClass = classMap[player.class] || player.class;
         
-        const livesLeft = 3 - deaths; // عدد الفرص المتبقية قبل التحلل النهائي
+        const livesLeft = 3 - deaths; 
 
         let msgContent = `👤 **${player.name}** [${arClass}]\n[${bar}] ❤️ **${player.hp}/${player.maxHp}**`;
         
@@ -58,7 +47,6 @@ function startStatusMonitor(threadChannel, players) {
             msgContent += `\n🛡️ **الدرع:** ${player.shield}`;
         }
         
-        // عرض حالة الموت والمحاولات
         msgContent += `\n💀 **سجل الموت:** ${deaths}/3 (متبقي ${livesLeft} فرص قبل التحلل)`;
 
         await m.reply({ content: msgContent }).catch(()=>{});
@@ -67,12 +55,8 @@ function startStatusMonitor(threadChannel, players) {
     return collector;
 }
 
-/**
- * 🔥 دالة فارغة (Dummy Function) للحفاظ على توافق الملفات القديمة
- * لم نعد بحاجة لتحديث العدادات لأن الموت أصبح فورياً عند الضربة
- */
 async function updateDownedTimers(players, threadChannel) {
-    return false; // لا تفعل شيئاً
+    return false; 
 }
 
 module.exports = { startStatusMonitor, updateDownedTimers };
