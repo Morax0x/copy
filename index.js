@@ -291,10 +291,10 @@ async function updateMarketPrices() {
             const saturationPenalty = (totalOwned / 2000) * 0.02;
             let finalChangePercent = randomPercent - saturationPenalty;
 
-            if (item.currentPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
+            const oldPrice = item.currentprice || item.currentPrice;
+            if (oldPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
             if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
-            const oldPrice = item.currentPrice;
             let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
 
             if (newPrice <= CRASH_PRICE) {
@@ -323,17 +323,17 @@ async function checkTemporaryRoles(client) {
 
         await db.query('BEGIN');
         for (const record of expiredRoles) {
-            await db.query("DELETE FROM temporary_roles WHERE userID = $1 AND guildID = $2 AND roleID = $3", [record.userID, record.guildID, record.roleID]);
+            await db.query("DELETE FROM temporary_roles WHERE userID = $1 AND guildID = $2 AND roleID = $3", [record.userid || record.userID, record.guildid || record.guildID, record.roleid || record.roleID]);
         }
         await db.query('COMMIT');
 
         for (const record of expiredRoles) {
-            const guild = client.guilds.cache.get(record.guildID);
+            const guild = client.guilds.cache.get(record.guildid || record.guildID);
             if (!guild) continue;
-            const member = await guild.members.fetch(record.userID).catch(() => null);
-            const role = guild.roles.cache.get(record.roleID);
+            const member = await guild.members.fetch(record.userid || record.userID).catch(() => null);
+            const role = guild.roles.cache.get(record.roleid || record.roleID);
             if (member && role) {
-                member.roles.remove(role, "انتهاء مدة الرتبة المؤقتة").catch(() => {});
+                member.roles.remove(role).catch(() => {});
             }
         }
     } catch (err) {
@@ -352,18 +352,22 @@ const calculateInterest = async () => {
         
         await db.query('BEGIN');
         for (const user of allUsers) {
-            if ((now - user.lastInterest) >= COOLDOWN) {
-                const timeSinceDaily = now - (user.lastDaily || 0);
-                const timeSinceWork = now - (user.lastWork || 0);
+            const lastInterest = user.lastinterest || user.lastInterest || 0;
+            const lastDaily = user.lastdaily || user.lastDaily || 0;
+            const lastWork = user.lastwork || user.lastWork || 0;
+
+            if ((now - lastInterest) >= COOLDOWN) {
+                const timeSinceDaily = now - lastDaily;
+                const timeSinceWork = now - lastWork;
                 
                 if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                    await db.query("UPDATE levels SET lastInterest = $1 WHERE \"user\" = $2 AND guild = $3", [now, user.user, user.guild]);
+                    await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, user.user, user.guild]);
                 } else {
                     const interestAmount = Math.floor(user.bank * INTEREST_RATE);
                     if (interestAmount > 0) {
-                        await db.query("UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE \"user\" = $4 AND guild = $5", [interestAmount, now, interestAmount, user.user, user.guild]);
+                        await db.query('UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE "user" = $4 AND guild = $5', [interestAmount, now, interestAmount, user.user, user.guild]);
                     } else {
-                        await db.query("UPDATE levels SET lastInterest = $1 WHERE \"user\" = $2 AND guild = $3", [now, user.user, user.guild]);
+                        await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, user.user, user.guild]);
                     }
                 }
             }
@@ -393,7 +397,7 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
         let targetRoleID = null;
         for (const row of allLevelRolesConfig) {
             if (newLevel >= row.level) {
-                targetRoleID = row.roleID;
+                targetRoleID = row.roleid || row.roleID;
                 break; 
             }
         }
@@ -402,7 +406,8 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
         const rolesToRemove = [];
 
         for (const row of allLevelRolesConfig) {
-            const role = guild.roles.cache.get(row.roleID);
+            const rowRoleID = row.roleid || row.roleID;
+            const role = guild.roles.cache.get(rowRoleID);
             
             if (!role) continue;
 
@@ -410,7 +415,7 @@ client.checkAndAwardLevelRoles = async function(member, newLevel) {
                 continue; 
             }
 
-            if (targetRoleID && row.roleID === targetRoleID) {
+            if (targetRoleID && rowRoleID === targetRoleID) {
                 if (!member.roles.cache.has(role.id)) {
                     roleToAdd = role;
                 }
@@ -437,7 +442,7 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
         await client.checkAndAwardLevelRoles(member, newLevel);
         const guild = member.guild;
           
-        let customSettings = (await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]))?.rows[0];
+        let customSettings = (await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]))?.rows[0] || {};
           
         let channelToSend = null;
           
@@ -449,10 +454,13 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
             }
         } catch(e) {}
 
+        const c1 = customSettings.casinochannelid || customSettings.casinoChannelID;
+        const c2 = customSettings.casinochannelid2 || customSettings.casinoChannelID2;
+
         if (!channelToSend) {
             if (messageOrInteraction && messageOrInteraction.channel) {
-                if (customSettings && customSettings.casinoChannelID2 && customSettings.casinoChannelID && messageOrInteraction.channel.id === customSettings.casinoChannelID2) {
-                      const mainCasino = guild.channels.cache.get(customSettings.casinoChannelID);
+                if (c2 && c1 && messageOrInteraction.channel.id === c2) {
+                      const mainCasino = guild.channels.cache.get(c1);
                       if (mainCasino) {
                           channelToSend = mainCasino;
                       } else {
@@ -471,13 +479,20 @@ client.sendLevelUpMessage = async function(messageOrInteraction, member, newLeve
         
         const id = `${member.id}-${guild.id}`; 
         let notifSettings = await client.getQuestNotif(id);
-        if (notifSettings && notifSettings.levelNotif === 0) return; 
+        const lNotif = notifSettings ? (notifSettings.levelnotif !== undefined ? notifSettings.levelnotif : notifSettings.levelNotif) : 1;
+        if (lNotif === 0) return; 
 
-        if (customSettings && customSettings.lvlUpTitle) {
+        const lvlUpTitle = customSettings.lvluptitle || customSettings.lvlUpTitle;
+        const lvlUpDesc = customSettings.lvlupdesc || customSettings.lvlUpDesc;
+        const lvlUpColor = customSettings.lvlupcolor || customSettings.lvlUpColor;
+        const lvlUpImage = customSettings.lvlupimage || customSettings.lvlUpImage;
+        const lvlUpMention = customSettings.lvlupmention || customSettings.lvlUpMention;
+
+        if (lvlUpTitle) {
             function antonymsLevelUp(string) { return string.replace(/{member}/gi, `${member}`).replace(/{level}/gi, `${newLevel}`).replace(/{level_old}/gi, `${oldLevel}`).replace(/{xp}/gi, `${xpData.xp}`).replace(/{totalXP}/gi, `${xpData.totalXP}`); }
-            embed = new EmbedBuilder().setTitle(antonymsLevelUp(customSettings.lvlUpTitle)).setDescription(antonymsLevelUp(customSettings.lvlUpDesc.replace(/\\n/g, '\n'))).setColor(customSettings.lvlUpColor || "Random").setTimestamp();
-            if (customSettings.lvlUpImage) { embed.setImage(antonymsLevelUp(customSettings.lvlUpImage)); }
-            if (customSettings.lvlUpMention == 1) { levelUpContent = `${member}`; }
+            embed = new EmbedBuilder().setTitle(antonymsLevelUp(lvlUpTitle)).setDescription(antonymsLevelUp(lvlUpDesc.replace(/\\n/g, '\n'))).setColor(lvlUpColor || "Random").setTimestamp();
+            if (lvlUpImage) { embed.setImage(antonymsLevelUp(lvlUpImage)); }
+            if (lvlUpMention == 1) { levelUpContent = `${member}`; }
         } else {
             embed = new EmbedBuilder().setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) }).setColor("Random").setDescription(`**Congratulations** ${member}! You have now leveled up to **level ${newLevel}**`);
         }
@@ -498,25 +513,30 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
             await client.setQuestNotif(notifSettings); 
         } 
         
+        const dNotif = notifSettings.dailynotif !== undefined ? notifSettings.dailynotif : notifSettings.dailyNotif;
+        const wNotif = notifSettings.weeklynotif !== undefined ? notifSettings.weeklynotif : notifSettings.weeklyNotif;
+        const aNotif = notifSettings.achievementsnotif !== undefined ? notifSettings.achievementsnotif : notifSettings.achievementsNotif;
+
         let sendMention = false; 
         if (questType === 'daily') {
-            if (notifSettings.dailyNotif === 0) return; 
+            if (dNotif === 0) return; 
             sendMention = true; 
         }
         if (questType === 'weekly') {
-            if (notifSettings.weeklyNotif === 0) return; 
+            if (wNotif === 0) return; 
             sendMention = true; 
         }
         if (questType === 'achievement') {
-            if (notifSettings.achievementsNotif === 0) return; 
+            if (aNotif === 0) return; 
             sendMention = true; 
         }
         
         const userIdentifier = sendMention ? `${member}` : `**${member.displayName}**`; 
         
         const settings = (await db.query("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = $1", [guild.id]))?.rows[0]; 
-        if (!settings || !settings.questChannelID) return; 
-        const channel = guild.channels.cache.get(settings.questChannelID); 
+        const qChannel = settings ? (settings.questchannelid || settings.questChannelID) : null;
+        if (!qChannel) return; 
+        const channel = guild.channels.cache.get(qChannel); 
         if (!channel) return; 
         const perms = channel.permissionsFor(guild.members.me); 
         if (!perms || !perms.has(PermissionsBitField.Flags.SendMessages)) return; 
@@ -527,7 +547,9 @@ client.sendQuestAnnouncement = async function(guild, member, quest, questType = 
         let message = ''; 
         let files = []; 
         const rewardDetails = `\n- **حصـلـت عـلـى:**\nMora: \`${reward.mora.toLocaleString()}\` ${client.EMOJI_MORA} | XP: \`${reward.xp.toLocaleString()}\` ${EMOJI_XP_ANIM}`; 
-        const panelChannelLink = settings.lastQuestPanelChannelID ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${settings.lastQuestPanelChannelID}>` : ""; 
+        
+        const pChannel = settings ? (settings.lastquestpanelchannelid || settings.lastQuestPanelChannelID) : null;
+        const panelChannelLink = pChannel ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${pChannel}>` : ""; 
         
         if (canAttachFiles) { 
             try { 
@@ -581,25 +603,30 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
 
     if (newlyCompleted > 0 && questsToCheck.length > 0) {
         const countData = (await db.query("SELECT COUNT(*) as cnt FROM user_quest_claims WHERE userID = $1 AND guildID = $2 AND dateStr = $3", [member.id, member.guild.id, dateKey]))?.rows[0];
-        const completedCount = countData ? countData.cnt : 0;
+        const completedCount = countData ? (countData.cnt || countData.count) : 0;
         const threshold = Math.max(1, questsToCheck.length - 1); 
 
         if (completedCount >= threshold) {
             const settings = (await db.query("SELECT questChannelID, roleDailyBadge, roleWeeklyBadge, lastQuestPanelChannelID FROM settings WHERE guild = $1", [member.guild.id]))?.rows[0];
-            const announceChannel = settings && settings.questChannelID ? member.guild.channels.cache.get(settings.questChannelID) : null;
+            const qChannel = settings ? (settings.questchannelid || settings.questChannelID) : null;
+            const announceChannel = qChannel ? member.guild.channels.cache.get(qChannel) : null;
             const notifSettings = (await db.query("SELECT badgesNotif FROM quest_notifications WHERE id = $1", [`${member.id}-${member.guild.id}`]))?.rows[0];
-            const panelChannelLink = settings && settings.lastQuestPanelChannelID ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${settings.lastQuestPanelChannelID}>` : "";
+            const bNotif = notifSettings ? (notifSettings.badgesnotif !== undefined ? notifSettings.badgesnotif : notifSettings.badgesNotif) : 1;
+            const pChannel = settings ? (settings.lastquestpanelchannelid || settings.lastQuestPanelChannelID) : null;
+            const panelChannelLink = pChannel ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${pChannel}>` : "";
 
             if (questType === 'daily') {
                 try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS daily_badge_given BIGINT DEFAULT 0"); } catch(e){}
                 const dailyId = `${member.id}-${member.guild.id}-${dateKey}`;
                 let dailyData = (await db.query("SELECT daily_badge_given FROM user_daily_stats WHERE id = $1", [dailyId]))?.rows[0];
+                const dBadgeGiven = dailyData ? dailyData.daily_badge_given : 0;
 
-                if (dailyData && dailyData.daily_badge_given === 0) {
+                if (dBadgeGiven == 0) {
                     await db.query("UPDATE user_daily_stats SET daily_badge_given = 1 WHERE id = $1", [dailyId]);
-                    if (settings && settings.roleDailyBadge) member.roles.add(settings.roleDailyBadge).catch(()=>{});
+                    const rDailyBadge = settings ? (settings.roledailybadge || settings.roleDailyBadge) : null;
+                    if (rDailyBadge) member.roles.add(rDailyBadge).catch(()=>{});
 
-                    if (announceChannel && (!notifSettings || notifSettings.badgesNotif === 1)) {
+                    if (announceChannel && bNotif === 1) {
                         let files = [];
                         if (announceChannel.permissionsFor(member.guild.members.me)?.has(PermissionsBitField.Flags.AttachFiles)) {
                             try {
@@ -617,12 +644,14 @@ client.checkQuests = async function(client, member, stats, questType, dateKey) {
                 try { await db.query("ALTER TABLE user_weekly_stats ADD COLUMN IF NOT EXISTS weekly_badge_given BIGINT DEFAULT 0"); } catch(e){}
                 const weeklyId = `${member.id}-${member.guild.id}-${dateKey}`;
                 let weeklyData = (await db.query("SELECT weekly_badge_given FROM user_weekly_stats WHERE id = $1", [weeklyId]))?.rows[0];
+                const wBadgeGiven = weeklyData ? weeklyData.weekly_badge_given : 0;
 
-                if (weeklyData && weeklyData.weekly_badge_given === 0) {
+                if (wBadgeGiven == 0) {
                     await db.query("UPDATE user_weekly_stats SET weekly_badge_given = 1 WHERE id = $1", [weeklyId]);
-                    if (settings && settings.roleWeeklyBadge) member.roles.add(settings.roleWeeklyBadge).catch(()=>{});
+                    const rWeeklyBadge = settings ? (settings.roleweeklybadge || settings.roleWeeklyBadge) : null;
+                    if (rWeeklyBadge) member.roles.add(rWeeklyBadge).catch(()=>{});
 
-                    if (announceChannel && (!notifSettings || notifSettings.badgesNotif === 1)) {
+                    if (announceChannel && bNotif === 1) {
                         let files = [];
                         if (announceChannel.permissionsFor(member.guild.members.me)?.has(PermissionsBitField.Flags.AttachFiles)) {
                             try {
@@ -671,8 +700,8 @@ client.checkAchievements = async function(client, member, levelData, totalStatsD
         }
         else if (levelData && levelData.hasOwnProperty(ach.stat)) currentProgress = levelData[ach.stat];
         else if (totalStatsData.hasOwnProperty(ach.stat)) currentProgress = totalStatsData[ach.stat];
-        else if (ach.stat === 'highestStreak' && streakData) currentProgress = streakData.highestStreak || 0;
-        else if (ach.stat === 'highestMediaStreak' && mediaStreakData) currentProgress = mediaStreakData.highestStreak || 0;
+        else if (ach.stat === 'highestStreak' && streakData) currentProgress = streakData.higheststreak || streakData.highestStreak || 0;
+        else if (ach.stat === 'highestMediaStreak' && mediaStreakData) currentProgress = mediaStreakData.higheststreak || mediaStreakData.highestStreak || 0;
         else if (streakData && streakData.hasOwnProperty(ach.stat)) currentProgress = streakData[ach.stat];
         else {
              if (['has_caesar_role', 'has_race_role', 'has_tree_role', 'has_tag_role'].includes(ach.stat)) continue;
@@ -774,7 +803,7 @@ client.checkRoleAchievement = async function(member, roleId, achievementId) {
         let hasRole = false;
         if (achievementId === 'ach_race_role') {
             const raceRoles = (await db.query("SELECT roleID FROM race_roles WHERE guildID = $1", [guildID])).rows;
-            const raceRoleIDs = raceRoles.map(r => r.roleID);
+            const raceRoleIDs = raceRoles.map(r => r.roleid || r.roleID);
             hasRole = member.roles.cache.some(role => raceRoleIDs.includes(role.id));
         } else { hasRole = member.roles.cache.has(roleId); }
         
@@ -827,9 +856,14 @@ async function updateTimerChannels(client) {
                 }
             } catch (e) { }
         };
-        await updateChannel(settings.streakTimerChannelID, '🔥〢الـستـريـك:', dailyText);
-        await updateChannel(settings.dailyTimerChannelID, '🏆〢مهام اليومية:', dailyText);
-        await updateChannel(settings.weeklyTimerChannelID, '🔮〢مهام اسبوعية:', weeklyText);
+
+        const sTimer = settings.streaktimerchannelid || settings.streakTimerChannelID;
+        const dTimer = settings.dailytimerchannelid || settings.dailyTimerChannelID;
+        const wTimer = settings.weeklytimerchannelid || settings.weeklyTimerChannelID;
+
+        await updateChannel(sTimer, '🔥〢الـستـريـك:', dailyText);
+        await updateChannel(dTimer, '🏆〢مهام اليومية:', dailyText);
+        await updateChannel(wTimer, '🔮〢مهام اسبوعية:', weeklyText);
     }
 }
 
@@ -839,11 +873,11 @@ async function updateRainbowRoles(client) {
         if (rainbowRoles.length === 0) return;
         const randomColor = Math.floor(Math.random() * 16777215);
         for (const record of rainbowRoles) {
-            const guild = client.guilds.cache.get(record.guildID);
+            const guild = client.guilds.cache.get(record.guildid || record.guildID);
             if (!guild) continue;
-            const role = guild.roles.cache.get(record.roleID);
+            const role = guild.roles.cache.get(record.roleid || record.roleID);
             if (role) await role.edit({ color: randomColor }).catch(() => {});
-            else await db.query("DELETE FROM rainbow_roles WHERE roleID = $1", [record.roleID]);
+            else await db.query("DELETE FROM rainbow_roles WHERE roleID = $1", [record.roleid || record.roleID]);
         }
     } catch (e) {}
 }
@@ -934,11 +968,14 @@ client.on(Events.ClientReady, async () => {
             for (const row of guildsToNotify) {
                 try {
                     const guild = client.guilds.cache.get(row.guild);
-                    if (guild && row.bumpChannelID) {
-                        const channel = guild.channels.cache.get(row.bumpChannelID);
+                    const bChannel = row.bumpchannelid || row.bumpChannelID;
+                    if (guild && bChannel) {
+                        const channel = guild.channels.cache.get(bChannel);
                         if (channel) {
-                            const roleMention = row.bumpNotifyRoleID ? `<@&${row.bumpNotifyRoleID}>` : "";
-                            const userMention = row.lastBumperID ? `<@${row.lastBumperID}>` : " "; 
+                            const bRole = row.bumpnotifyroleid || row.bumpNotifyRoleID;
+                            const lBumper = row.lastbumperid || row.lastBumperID;
+                            const roleMention = bRole ? `<@&${bRole}>` : "";
+                            const userMention = lBumper ? `<@${lBumper}>` : " "; 
 
                             channel.send({
                                 content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
