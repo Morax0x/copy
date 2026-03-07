@@ -1,104 +1,97 @@
-// achievements-utils.js
-
 const { EmbedBuilder, Colors } = require('discord.js');
 const path = require('path');
 const questsConfig = require(path.join(process.cwd(), 'json', 'quests-config.json'));
 
 const ROWS_PER_PAGE_ACH = 5;
 
-// =====================================================================
-// 1. فحص الإنجازات (المنطق الرئيسي)
-// =====================================================================
 async function checkAchievements(client, member, levelData, totalStats) {
-    const sql = client.sql;
-    if (!sql || !sql.open) return;
+    const db = client.sql;
+    if (!db) return;
 
-    // ✅ إنشاء جدول تتبع التكرار (للإنجازات المتكررة مثل البوستات)
-    sql.prepare("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)").run();
+    await db.query("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)");
 
     const guildID = member.guild.id;
     const userID = member.id;
 
-    // جلب البيانات الضرورية
-    const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildID, userID);
-    const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(guildID, userID);
+    const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [guildID, userID]);
+    const streakData = streakRes.rows[0];
+    
+    const mediaStreakRes = await db.query("SELECT * FROM media_streaks WHERE guildID = $1 AND userID = $2", [guildID, userID]);
+    const mediaStreakData = mediaStreakRes.rows[0];
 
-    // تجهيز القيم الحالية للمقارنة
     const currentStats = {
         level: levelData ? levelData.level : 1,
         mora: levelData ? levelData.mora : 0,
         messages: levelData ? levelData.messages : 0, 
         ...(totalStats || {}),
-        streak: streakData ? streakData.streakCount : 0,
-        highestStreak: streakData ? streakData.highestStreak : 0,
-        highestMediaStreak: mediaStreakData ? mediaStreakData.highestStreak : 0,
+        streak: streakData ? (streakData.streakcount || streakData.streakCount) : 0,
+        highestStreak: streakData ? (streakData.higheststreak || streakData.highestStreak) : 0,
+        highestMediaStreak: mediaStreakData ? (mediaStreakData.higheststreak || mediaStreakData.highestStreak) : 0,
         has_caesar_role: member.roles.cache.has(questsConfig.special_roles?.caesar_role) ? 1 : 0,
         has_race_role: 0, 
         has_tree_role: member.roles.cache.has(questsConfig.special_roles?.tree_role) ? 1 : 0,
-        // 🔥🔥 تأكدنا أن total_topgg_votes موجودة هنا لأنها تأتي من totalStats 🔥🔥
     };
 
-    // حلقة تكرارية على جميع الإنجازات
     for (const achievement of questsConfig.achievements) {
         
         let targetValue = achievement.goal;
         let currentValue = currentStats[achievement.stat] || 0;
 
-        // 🔥 معالجة خاصة لإنجاز تعزيز السيرفر (Server Boosts) ليكون متكرراً 🔥
         if (achievement.stat === 'total_boosts') {
             const trackingId = `${userID}-${guildID}-${achievement.id}`;
             
-            // جلب آخر عدد تم مكافأة اللاعب عليه
-            let tracker = sql.prepare("SELECT count FROM achievement_tracking WHERE id = ?").get(trackingId);
+            const trackerRes = await db.query("SELECT count FROM achievement_tracking WHERE id = $1", [trackingId]);
+            let tracker = trackerRes.rows[0];
             let lastRewardedCount = tracker ? tracker.count : 0;
 
             if (currentValue > lastRewardedCount) {
-                // ✅ منح الجائزة
-                await grantAchievementReward(client, member, achievement, sql, true);
-                
-                // تحديث العداد
-                sql.prepare("INSERT OR REPLACE INTO achievement_tracking (id, count) VALUES (?, ?)").run(trackingId, currentValue);
-                
-                // تسجيل الإنجاز للعرض فقط
-                sql.prepare("INSERT OR IGNORE INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES (?, ?, ?, ?)").run(userID, guildID, achievement.id, Date.now());
+                await grantAchievementReward(client, member, achievement, db, true);
+                await db.query("INSERT INTO achievement_tracking (id, count) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET count = EXCLUDED.count", [trackingId, currentValue]);
+                try {
+                    await db.query("INSERT INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES ($1, $2, $3, $4)", [userID, guildID, achievement.id, Date.now()]);
+                } catch(e) {}
             }
             continue;
         }
 
-        // --- المعالجة العادية لباقي الإنجازات ---
-        const hasAch = sql.prepare("SELECT 1 FROM user_achievements WHERE userID = ? AND guildID = ? AND achievementID = ?").get(userID, guildID, achievement.id);
+        const hasAchRes = await db.query("SELECT 1 FROM user_achievements WHERE userID = $1 AND guildID = $2 AND achievementID = $3", [userID, guildID, achievement.id]);
+        const hasAch = hasAchRes.rows[0];
+        
         if (hasAch) continue; 
 
         if (currentValue >= targetValue) {
-            await grantAchievementReward(client, member, achievement, sql, false);
-            sql.prepare("INSERT INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES (?, ?, ?, ?)").run(userID, guildID, achievement.id, Date.now());
+            await grantAchievementReward(client, member, achievement, db, false);
+            try {
+                await db.query("INSERT INTO user_achievements (userID, guildID, achievementID, obtainedAt) VALUES ($1, $2, $3, $4)", [userID, guildID, achievement.id, Date.now()]);
+            } catch(e) {}
         }
     }
 }
 
-// =====================================================================
-// 2. دالة منح الجائزة وإرسال الرسالة
-// =====================================================================
-async function grantAchievementReward(client, member, achievement, sql, isRepeatable = false) {
-    let xpReward = achievement.reward.xp || 0; // 🔥 تصحيح: الهيكل هو reward.xp وليس reward_xp
+async function grantAchievementReward(client, member, achievement, db, isRepeatable = false) {
+    let xpReward = achievement.reward.xp || 0; 
     let moraReward = achievement.reward.mora || 0;
     let roleReward = achievement.reward.role || null;
 
-    let userData = client.getLevel.get(member.id, member.guild.id);
+    let userData = await client.getLevel(member.id, member.guild.id);
     if (userData) {
         userData.xp += xpReward;
-        userData.totalXP += xpReward;
+        userData.totalxp = (userData.totalxp || userData.totalXP || 0) + xpReward;
+        userData.totalXP = userData.totalxp;
         userData.mora += moraReward;
-        client.setLevel.run(userData);
+        await client.setLevel(userData);
     }
 
     if (roleReward) {
         try { await member.roles.add(roleReward); } catch (e) {}
     }
 
-    const settings = sql.prepare("SELECT achievementChannelID FROM settings WHERE guild = ?").get(member.guild.id);
-    if (settings && settings.achievementChannelID) {
-        const channel = member.guild.channels.cache.get(settings.achievementChannelID);
+    const settingsRes = await db.query("SELECT achievementChannelID FROM settings WHERE guild = $1", [member.guild.id]);
+    const settings = settingsRes.rows[0];
+    
+    if (settings && (settings.achievementchannelid || settings.achievementChannelID)) {
+        const channelId = settings.achievementchannelid || settings.achievementChannelID;
+        const channel = member.guild.channels.cache.get(channelId);
         if (channel) {
             const EMOJI_XP = '<:xp:1435647161730469958>'; 
             const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -129,20 +122,19 @@ async function grantAchievementReward(client, member, achievement, sql, isRepeat
     }
 }
 
-// =====================================================================
-// 3. تجهيز بيانات صفحة الإنجازات (للعرض في الأمر)
-// =====================================================================
-function getAchievementPageData(sql, member, levelData, totalStats, completedAchievements, page = 1) {
-    // ✅✅✅ الإصلاح: التأكد من وجود الجدول هنا أيضاً لمنع الخطأ ✅✅✅
-    sql.prepare("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)").run();
+async function getAchievementPageData(db, member, levelData, totalStats, completedAchievements, page = 1) {
+    await db.query("CREATE TABLE IF NOT EXISTS achievement_tracking (id TEXT PRIMARY KEY, count INTEGER)");
 
     const achievements = questsConfig.achievements;
      
-    const streakData = sql.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-    const mediaStreakData = sql.prepare("SELECT * FROM media_streaks WHERE guildID = ? AND userID = ?").get(member.guild.id, member.id);
-     
-    // الآن هذا السطر لن يسبب خطأ
-    const trackingData = sql.prepare("SELECT id, count FROM achievement_tracking WHERE id LIKE ?").all(`${member.id}-${member.guild.id}-%`);
+    const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [member.guild.id, member.id]);
+    const streakData = streakRes.rows[0];
+    
+    const mediaStreakRes = await db.query("SELECT * FROM media_streaks WHERE guildID = $1 AND userID = $2", [member.guild.id, member.id]);
+    const mediaStreakData = mediaStreakRes.rows[0];
+
+    const trackingRes = await db.query("SELECT id, count FROM achievement_tracking WHERE id LIKE $1", [`${member.id}-${member.guild.id}-%`]);
+    const trackingData = trackingRes.rows;
 
     const perPage = ROWS_PER_PAGE_ACH;
     const totalPages = Math.ceil(achievements.length / perPage);
@@ -153,7 +145,7 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
     const achievementsToShow = achievements.slice(start, end);
 
     const achievementsData = achievementsToShow.map(ach => {
-        const isDone = completedAchievements.some(c => c.achievementID === ach.id);
+        const isDone = completedAchievements.some(c => (c.achievementid || c.achievementID) === ach.id);
         let currentProgress = 0;
 
         if (ach.stat === 'total_boosts') {
@@ -170,15 +162,14 @@ function getAchievementPageData(sql, member, levelData, totalStats, completedAch
             } else if (totalStats && totalStats.hasOwnProperty(ach.stat)) {
                 currentProgress = totalStats[ach.stat];
             } else if (ach.stat === 'highestStreak' && streakData) {
-                currentProgress = streakData.highestStreak || 0;
+                currentProgress = streakData.higheststreak || streakData.highestStreak || 0;
             } else if (ach.stat === 'highestMediaStreak' && mediaStreakData) {
-                currentProgress = mediaStreakData.highestStreak || 0;
+                currentProgress = mediaStreakData.higheststreak || mediaStreakData.highestStreak || 0;
             } else if (streakData && streakData.hasOwnProperty(ach.stat)) {
                 currentProgress = streakData[ach.stat];
             } else if (ach.stat === 'has_caesar_role' || ach.stat === 'has_race_role' || ach.stat === 'has_tree_role') {
                 currentProgress = 0; 
             }
-            // 🔥🔥 إضافة Top.gg هنا للعرض الصحيح 🔥🔥
             else if (ach.stat === 'total_topgg_votes') {
                 currentProgress = totalStats.total_topgg_votes || 0;
             }
