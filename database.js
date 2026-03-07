@@ -1,28 +1,19 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// الرابط الخاص بك
-const connectionString = "postgresql://postgres:Emorax%40123987456@db.uemdmkpsygjnpnoikqrp.supabase.co:5432/postgres";
-
+// نأخذ الرابط الجديد والآمن من ملف .env
 const db = new Pool({
-    connectionString: connectionString,
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
     max: 20, 
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000, // زودنا مهلة الاتصال
+    connectionTimeoutMillis: 10000,
 });
 
-// هذا السطر يجبر الـ Pool على استخدام IPv4 فقط لتجنب مشكلة ENETUNREACH
-const pg = require('pg');
-if (pg.defaults) {
-    pg.defaults.family = 4;
-}
-
 db.connect()
-    .then(() => console.log("✅ تم الاتصال بالبنك المركزي (Supabase) بنجاح!"))
+    .then(() => console.log("✅ تم الاتصال بالبنك المركزي (Supabase) عبر الـ Pooler بنجاح!"))
     .catch(err => {
         console.error("❌ خطأ في الاتصال بقاعدة البيانات:", err.message);
-        // لا ننهي العملية هنا، نترك PM2 يحاول مجدداً
     });
 
 module.exports = db;
