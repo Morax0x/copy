@@ -1,20 +1,22 @@
-// handlers/dungeon/core/state-manager.js
-
-function saveDungeonState(sql, channelID, guildID, hostID, state) {
-    // التأكد من أن قاعدة البيانات متصلة
-    if (!sql || !sql.open) return;
+async function saveDungeonState(db, channelID, guildID, hostID, state) {
+    if (!db) return;
     
     const data = JSON.stringify(state);
-    sql.prepare(`
-        INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data)
-        VALUES (?, ?, ?, ?)
-    `).run(channelID, guildID, hostID, data);
+    
+    await db.query(`
+        INSERT INTO active_dungeons (channelID, guildID, hostID, data)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (channelID) DO UPDATE SET
+        guildID = EXCLUDED.guildID,
+        hostID = EXCLUDED.hostID,
+        data = EXCLUDED.data
+    `, [channelID, guildID, hostID, data]);
 }
 
-function deleteDungeonState(sql, channelID) {
-    if (!sql || !sql.open) return;
+async function deleteDungeonState(db, channelID) {
+    if (!db) return;
     
-    sql.prepare("DELETE FROM active_dungeons WHERE channelID = ?").run(channelID);
+    await db.query("DELETE FROM active_dungeons WHERE channelID = $1", [channelID]);
 }
 
 module.exports = { saveDungeonState, deleteDungeonState };
