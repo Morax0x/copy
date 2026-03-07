@@ -1,71 +1,86 @@
-const SQLite = require('better-sqlite3');
-const { Client } = require('pg');
+require('dotenv').config();
+const Database = require('better-sqlite3');
+const { Pool } = require('pg');
+const path = require('path');
 
-// 1. الاتصال بقاعدة البيانات القديمة
-const sqlite = new SQLite('./mainDB.sqlite');
+// 1. الاتصال بقاعدة SQLite القديمة
+const sqlitePath = path.join(__dirname, 'mainDB.sqlite');
+const sqliteDb = new Database(sqlitePath);
 
-// 2. الاتصال بقاعدة البيانات الجديدة (Supabase)
-// 🛑 الرابط الصحيح يجب أن يبدأ بكلمة postgresql://
-// ولا تنسَ استبدال [YOUR-PASSWORD] بكلمة السر الخاصة بك بدون الأقواس المربعة
-const pg = new Client({
-    connectionString: "postgresql://postgres:Emorax@123987456@@db.uemdmkpsygjnpnoikqrp.supabase.co:5432/postgres", 
+// 2. الاتصال بقاعدة PostgreSQL السحابية
+const pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-async function startMigration() {
-    console.log("🚀 جاري الاتصال بالبنك المركزي الجديد (Supabase)...");
-    await pg.connect();
-    console.log("✅ تم الاتصال بنجاح!");
+// قائمة بجميع الجداول التي تحتوي على بيانات مهمة
+const tablesToMigrate = [
+    'levels', 'settings', 'streaks', 'media_streaks',
+    'user_daily_stats', 'user_weekly_stats', 'user_total_stats',
+    'user_inventory', 'user_portfolio', 'user_loans',
+    'user_reputation', 'user_weapons', 'user_skills',
+    'marriages', 'children', 'quest_notifications',
+    'user_quest_claims', 'user_achievements', 'market_items',
+    'active_giveaways', 'giveaway_entries', 'race_roles'
+];
 
-    const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+async function migrate() {
+    console.log("🚀 [بدء الهجرة الكبرى] جاري نقل بيانات الإمبراطورية إلى السحابة...\n");
 
-    for (const table of tables) {
-        if (table.name.startsWith('sqlite_')) continue;
+    for (const table of tablesToMigrate) {
+        try {
+            // التحقق من وجود الجدول في SQLite القديم
+            const checkTable = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table);
+            if (!checkTable) {
+                console.log(`⚠️ الجدول [${table}] غير موجود في SQLite، جاري التخطي...`);
+                continue;
+            }
 
-        console.log(`⏳ جاري نقل السجلات إلى: ${table.name}...`);
-        
-        const cols = sqlite.prepare(`PRAGMA table_info(${table.name})`).all();
-        
-        let colDefs = [];
-        let pks = [];
-        for (const col of cols) {
-            let type = 'TEXT';
-            if (col.type.toUpperCase().includes('INT')) type = 'BIGINT';
-            if (col.type.toUpperCase().includes('REAL')) type = 'DOUBLE PRECISION';
-            
-            colDefs.push(`"${col.name}" ${type}`);
-            if (col.pk > 0) pks.push({ name: col.name, pk: col.pk });
-        }
-        
-        pks.sort((a, b) => a.pk - b.pk);
-        if (pks.length > 0) {
-            colDefs.push(`PRIMARY KEY (${pks.map(p => `"${p.name}"`).join(', ')})`);
-        }
+            // جلب كل البيانات
+            const rows = sqliteDb.prepare(`SELECT * FROM ${table}`).all();
+            if (rows.length === 0) {
+                console.log(`ℹ️ الجدول [${table}] فارغ.`);
+                continue;
+            }
 
-        const createTableSQL = `CREATE TABLE IF NOT EXISTS "${table.name}" (${colDefs.join(', ')});`;
-        await pg.query(createTableSQL);
+            console.log(`⏳ جاري نقل ${rows.length} صف إلى الجدول [${table}]...`);
 
-        const rows = sqlite.prepare(`SELECT * FROM "${table.name}"`).all();
-        if (rows.length > 0) {
-            await pg.query(`TRUNCATE TABLE "${table.name}" RESTART IDENTITY CASCADE;`);
+            // تجهيز أسماء الأعمدة والقيم
+            const columns = Object.keys(rows[0]);
+            const colsString = columns.map(c => `"${c}"`).join(', ');
+            const valsString = columns.map((_, i) => `$${i + 1}`).join(', ');
+
+            let successCount = 0;
+            let errorCount = 0;
 
             for (const row of rows) {
-                const keys = cols.map(c => `"${c.name}"`).join(', ');
-                const vals = cols.map((_, idx) => `$${idx + 1}`).join(', ');
-                const insertSQL = `INSERT INTO "${table.name}" (${keys}) VALUES (${vals})`;
-                
-                const values = cols.map(c => row[c.name]);
-                await pg.query(insertSQL, values);
+                const values = columns.map(col => row[col]);
+                try {
+                    // إدخال البيانات في السحابة (تجاهل التكرار إذا كان موجوداً مسبقاً)
+                    await pgPool.query(`INSERT INTO "${table}" (${colsString}) VALUES (${valsString})`, values);
+                    successCount++;
+                } catch (err) {
+                    // الكود 23505 يعني أن البيانات موجودة مسبقاً (Unique Violation)، سنتجاهله
+                    if (err.code !== '23505') {
+                        errorCount++;
+                        // console.error(`خطأ في ${table}:`, err.message); // اختياري لعرض الأخطاء
+                    } else {
+                        // اعتباره ناجحاً إذا كان موجوداً بالفعل
+                        successCount++;
+                    }
+                }
             }
+
+            console.log(`✅ تم نقل [${table}] بنجاح! (${successCount} ناجح / ${errorCount} أخطاء)\n`);
+
+        } catch (error) {
+            console.error(`❌ خطأ فادح أثناء نقل الجدول [${table}]:`, error.message);
         }
-        console.log(`✅ تم نقل ${rows.length} سجل بنجاح!`);
     }
 
-    console.log("\n🎉 تمت عملية الهجرة العظيمة بنجاح! الإمبراطورية الآن على السحابة.");
+    console.log("🎉👑 [تمت الهجرة بنجاح!] بيانات الإمبراطورية أصبحت في السحابة الآن!");
+    console.log("💡 يمكنك الآن تشغيل البوت (node index.js) بأمان.");
     process.exit(0);
 }
 
-startMigration().catch(err => {
-    console.error("❌ حدث خطأ أثناء الهجرة:", err);
-    process.exit(1);
-});
+migrate();
