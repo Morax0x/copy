@@ -3,7 +3,7 @@ const { PermissionsBitField } = require('discord.js');
 module.exports = {
     name: 'role',
     description: 'إعطاء أو إزالة رتبة من عضو',
-    aliases: ['ر', 'رول', 'رتبة'], // ✅ تم تصحيح الخطأ هنا
+    aliases: ['ر', 'رول', 'رتبة'], 
     category: 'Admin',
     usage: 'role <@user> <role name/id>',
 
@@ -30,7 +30,6 @@ module.exports = {
         }
 
         // 4. جلب الرتبة (بحث ذكي)
-        // نأخذ باقي النص بعد منشن العضو للبحث عن الرتبة
         const roleQuery = args.slice(1).join(" "); 
         if (!roleQuery) return message.reply('❓ **حدد الرتبة: بالاسم، المنشن، أو الآيدي.**');
 
@@ -45,11 +44,11 @@ module.exports = {
         }
 
         // 5. التحقق من الهرمية (Hierarchy)
-        // 
         // التأكد أن رتبة البوت أعلى من الرتبة المراد إعطاؤها
         if (role.position >= message.guild.members.me.roles.highest.position) {
             return message.reply('❌ **لا يمكنني التحكم بهذه الرتبة لأنها أعلى مني أو مساوية لي.**');
         }
+        
         // التأكد أن رتبة المشرف أعلى من الرتبة المراد إعطاؤها (إلا إذا كان المالك)
         if (message.author.id !== message.guild.ownerId && role.position >= message.member.roles.highest.position) {
             return message.reply('❌ **لا يمكنك التحكم برتبة أعلى من رتبتك.**');
@@ -73,7 +72,7 @@ module.exports = {
                 });
             }
         } catch (error) {
-            console.error(error);
+            console.error("[Role Command Error]:", error);
             message.reply('❌ **حدث خطأ أثناء تعديل الرتب (تأكد من صلاحياتي وترتيب الرتب).**');
         }
     }
