@@ -1,5 +1,4 @@
 const { PermissionsBitField, SlashCommandBuilder } = require('discord.js');
-const SQLite = require("better-sqlite3");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,7 +17,7 @@ module.exports = {
 
     async execute(interactionOrMessage, args) {
 
-        let interaction, message, member, guild, client, sql;
+        let interaction, message, member, guild, client, db;
         let role;
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -28,7 +27,7 @@ module.exports = {
             member = interaction.member;
             guild = interaction.guild;
             client = interaction.client;
-            sql = client.sql;
+            db = client.sql;
 
             role = interaction.options.getRole('الرتبة');
         } else {
@@ -36,7 +35,7 @@ module.exports = {
             member = message.member;
             guild = message.guild;
             client = message.client;
-            sql = client.sql;
+            db = client.sql;
 
             role = message.mentions.roles.first() || message.guild.roles.cache.get(args[0]);
         }
@@ -58,15 +57,12 @@ module.exports = {
         }
 
         try {
-            sql.prepare(`
-                INSERT INTO settings (guild, vipRoleID) 
-                VALUES (@guild, @vipRoleID) 
+            await db.query(`
+                INSERT INTO settings (guild, viproleid) 
+                VALUES ($1, $2) 
                 ON CONFLICT(guild) DO UPDATE SET 
-                vipRoleID = excluded.vipRoleID
-            `).run({
-                guild: guild.id,
-                vipRoleID: role.id
-            });
+                viproleid = EXCLUDED.viproleid
+            `, [guild.id, role.id]);
 
             return reply(`✅ | تم تحديد رتبة الـ VIP بنجاح إلى: ${role.name}`);
 
