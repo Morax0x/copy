@@ -1,7 +1,6 @@
 const { PermissionsBitField, SlashCommandBuilder } = require("discord.js");
 
 module.exports = {
-    // --- إعدادات Slash Command ---
     data: new SlashCommandBuilder()
         .setName('unlock')
         .setDescription('🔓 يفتح القناة للكتابة.')
@@ -12,7 +11,6 @@ module.exports = {
                 .setRequired(false)
         ),
 
-    // --- إعدادات Prefix Command ---
     name: 'unlock',
     aliases: ['فتح', 'open'],
     description: "يفتح القناة المحددة أو الحالية.",
@@ -32,20 +30,16 @@ module.exports = {
             replyFunc = async (msg) => interactionOrMessage.reply(msg);
         }
 
-        // 1. التحقق من الصلاحيات
         if (!member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
             return replyFunc({ content: "⛔️ **لا تملك صلاحية `Manage Channels`!**", ephemeral: true });
         }
 
         try {
-            // 2. تنفيذ الفتح (السماح بالرسائل والثريدات)
-            // نستخدم null لإزالة القفل والعودة للإعدادات الافتراضية، أو true لفرض الفتح
             await targetChannel.permissionOverwrites.edit(interactionOrMessage.guild.roles.everyone, {
-                SendMessages: true,
-                SendMessagesInThreads: true
+                SendMessages: null,
+                SendMessagesInThreads: null
             });
 
-            // 3. الرد البسيط المطلوب
             await replyFunc({ content: `تـم فـتـح ${targetChannel} <:0Pray:1437067281493524502>` });
 
         } catch (error) {
