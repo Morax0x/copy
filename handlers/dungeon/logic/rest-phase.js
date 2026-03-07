@@ -1,5 +1,3 @@
-// handlers/dungeon/logic/rest-phase.js
-
 const { 
     EmbedBuilder, 
     ActionRowBuilder, 
@@ -15,9 +13,6 @@ const { getBaseFloorMora, manageCampfires } = require('../utils');
 const { snapshotLootAtFloor20, handleMemberRetreat } = require('../core/rewards');
 const { handleLeaderSuccession } = require('../core/battle-utils');
 
-/**
- * تطبيق تحديثات ما بعد المعركة (غنائم + علاج)
- */
 async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
     let baseMora = Math.floor(getBaseFloorMora(floor));
     let floorXp = Math.floor(baseMora * 0.03); 
@@ -61,9 +56,6 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
     });
 }
 
-/**
- * حساب السمعة المتراكمة بناءً على طابق البداية
- */
 function calculateAccumulatedRep(startFloor, currentFloor) {
     const repMilestones = {
         20: 1, 30: 1, 35: 1, 40: 1, 45: 1, 50: 1,
@@ -80,19 +72,15 @@ function calculateAccumulatedRep(startFloor, currentFloor) {
     return totalRep;
 }
 
-/**
- * إدارة قائمة الاستراحة (الاستمرار/الانسحاب/المخيم)
- */
 async function handleRestMenu(context) {
     const { 
         floor, players, retreatState, retreatedPlayers, 
         totalAccumulatedCoins, totalAccumulatedXP, 
-        threadChannel, sql, guild, log,
+        threadChannel, db, guild, log,
         theme, 
         restImage 
     } = context;
 
-    // 🔥 حساب طابق البداية للقائد كمرجع أساسي لحساب السمعة الجماعية 🔥
     let sessionStartFloor = 1;
     const leader = players.find(p => p.class === 'Leader');
     if (leader && leader.startFloor) {
@@ -103,7 +91,6 @@ async function handleRestMenu(context) {
 
     const currentRep = calculateAccumulatedRep(sessionStartFloor, floor);
     
-    // بناء النص وعرض السمعة إذا كانت أكبر من صفر
     let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
     
     if (currentRep > 0) {
@@ -161,7 +148,7 @@ async function handleRestMenu(context) {
                 if (!p || p.class !== 'Leader') return i.reply({ content: "⛺ **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
                 
                 const member = guild.members.cache.get(p.id);
-                const campResult = manageCampfires(p.id, guild.id, sql, 'consume', member);
+                const campResult = await manageCampfires(p.id, guild.id, db, 'consume', member);
 
                 if (!campResult.success) {
                     return i.reply({ 
@@ -171,7 +158,7 @@ async function handleRestMenu(context) {
                 }
 
                 const nextFloor = floor + 1;
-                sql.prepare("INSERT OR REPLACE INTO dungeon_saves (hostID, guildID, floor, timestamp) VALUES (?, ?, ?, ?)").run(p.id, guild.id, nextFloor, Date.now());
+                await db.query("INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) VALUES ($1, $2, $3, $4) ON CONFLICT(hostid, guildid) DO UPDATE SET floor = EXCLUDED.floor, timestamp = EXCLUDED.timestamp", [p.id, guild.id, nextFloor, Date.now()]);
                 
                 await i.deferUpdate(); 
                 return decCollector.stop('camp'); 
@@ -189,7 +176,7 @@ async function handleRestMenu(context) {
                     if (pIndex > -1) {
                         const leavingPlayer = players[pIndex];
                         leavingPlayer.retreatFloor = floor;
-                        const rewards = await handleMemberRetreat(leavingPlayer, floor, sql, guild.id, threadChannel);
+                        const rewards = await handleMemberRetreat(leavingPlayer, floor, db, guild.id, threadChannel);
                         retreatedPlayers.push(leavingPlayer);
                         players.splice(pIndex, 1); 
                         
