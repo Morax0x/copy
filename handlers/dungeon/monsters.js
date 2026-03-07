@@ -1,52 +1,37 @@
-// handlers/dungeon/monsters.js
-
 const { dungeonConfig } = require('./constants');
 const { applyDamageToPlayer } = require('./utils');
 
-// --- 🧠 دوال الذكاء الاصطناعي (Smart AI Helpers) ---
-
 function getSmartTarget(players, monster) {
-    // 🔥 استبعاد الموتى واللاعبين الذين لديهم تأثير 'stealth'
     let alive = players.filter(p => !p.isDead && !p.effects.some(e => e.type === 'stealth'));
 
-    // إذا كان الجميع مخفيين (أو ماتوا)، نضطر لمهاجمة أي شخص حي (حتى لو مخفي) لكي لا تتوقف اللعبة
     if (alive.length === 0) {
         alive = players.filter(p => !p.isDead);
     }
 
     if (alive.length === 0) return null;
 
-    // 1. نظام "الآغرو" (Threat System) - الأولوية القصوى
-    // ترتيب اللاعبين حسب التهديد من الأعلى للأقل
     const topThreat = alive.sort((a, b) => (b.threat || 0) - (a.threat || 0))[0];
 
-    // ✅ التعديل: إذا كان التهديد عالياً (>100)، يهاجمه فوراً بدون عشوائية
-    // هذا يضمن أن المدرع (Tank) يقوم بدوره بنسبة 100%
     if (topThreat && topThreat.threat > 100) { 
         return topThreat;
     }
 
-    // 2. منطق التعاون (Synergy) - ضرب المشلولين
     const ccTarget = alive.find(p => p.effects.some(e => ['stun', 'freeze'].includes(e.type)));
     if (ccTarget && Math.random() < 0.6) return ccTarget;
 
-    // 3. الأولوية للكاهن (Priest) إذا لم يكن هناك تهديد عالي
     const priest = alive.find(p => p.class === 'Priest');
     if (priest && Math.random() < 0.6) return priest; 
 
-    // 4. الأولوية للأضعف (Kill Confirm)
     const lowestHp = alive.sort((a, b) => a.hp - b.hp)[0];
     if (lowestHp && lowestHp.hp < lowestHp.maxHp * 0.3 && Math.random() < 0.8) return lowestHp;
 
-    // 5. عشوائي
     return alive[Math.floor(Math.random() * alive.length)];
 }
 
-// --- 🔥 نظام مراحل الزعماء (Boss Phases) 🔥 ---
 function checkBossPhase(monster, log) {
     if ((monster.maxHp > 10000) && !monster.enraged && monster.hp <= monster.maxHp * 0.5) {
         monster.enraged = true;
-        monster.atk = Math.floor(monster.atk * 1.3); // زيادة الهجوم 30%
+        monster.atk = Math.floor(monster.atk * 1.3); 
         
         log.push(`\n🔴🔴 **تحذير: ${monster.name} دخل مرحلة الهيـجان (Enrage)!** 🔴🔴`);
         log.push(`⚠️ **ازداد الهجوم بنسبة 30% وأصبحت المهارات أكثر فتكاً!**\n`);
@@ -60,15 +45,12 @@ function checkBossPhase(monster, log) {
     return false;
 }
 
-// --- ⚔️ مهارات الوحوش العامة (للمينيون والنخبة الذين ليس لهم مهارة خاصة) ---
 const GENERIC_MONSTER_SKILLS = [
     { name: "ضربة قاصمة", emoji: "🔨", chance: 0.3, execute: (m, p, l, currentFloor) => { 
         const target = getSmartTarget(p, m); 
         if(target){ 
-            // 🔥 تعديل: تخفيف الضرر في الطوابق الأولى (1-18)
             let dmg = Math.floor(m.atk * 1.5);
             if (currentFloor <= 18) {
-                // سقف الضرر لا يتجاوز 40% من صحة اللاعب المتوسطة (350)
                 dmg = Math.min(dmg, 140); 
             }
             applyDamageToPlayer(target, dmg); 
@@ -81,7 +63,6 @@ const GENERIC_MONSTER_SKILLS = [
         const target = alive[Math.floor(Math.random()*alive.length)];
         if(target){ 
             let poisonDmg = Math.floor(m.atk*0.2);
-            // تخفيف السم في البداية
             if (m.atk < 50) poisonDmg = Math.max(5, poisonDmg); 
             
             target.effects.push({type:'poison', val: poisonDmg, turns:3}); 
@@ -98,19 +79,15 @@ const GENERIC_MONSTER_SKILLS = [
     { name: "هجوم متوحش", emoji: "🐾", chance: 0.3, execute: (m, p, l, currentFloor) => { 
         p.forEach(pl=>{if(!pl.isDead) {
             let dmg = Math.floor(m.atk*0.8);
-            // 🔥 تعديل: تخفيف الضرر الجماعي في الطوابق الأولى
             if (currentFloor <= 18) {
-                dmg = Math.min(dmg, 60); // لا يتجاوز 60 لكل لاعب
+                dmg = Math.min(dmg, 60); 
             }
             applyDamageToPlayer(pl, dmg);
         }}); 
         l.push(`🐾 **${m.name}** هاجم الجميع بوحشية!`);
     }},
-    // 🔥🔥🔥 تعديل مهارة الشفاء (تصلب) 🔥🔥🔥
     { name: "تصلب", emoji: "🛡️", chance: 0.15, execute: (m, p, l, currentFloor) => { 
-        // ⛔ منع الاستخدام قبل الطابق 21
         if (currentFloor < 21) {
-            // استبدالها بهجوم عادي ضعيف إذا ظهرت بالخطأ
             const target = getSmartTarget(p, m);
             if(target) {
                 applyDamageToPlayer(target, Math.floor(m.atk * 0.8));
@@ -119,10 +96,7 @@ const GENERIC_MONSTER_SKILLS = [
             return;
         }
 
-        // حساب نسبة الشفاء المتصاعدة
-        // تبدأ من 2% وتزيد 0.1% مع كل طابق فوق الـ 20
         let healPercent = 0.02 + ((currentFloor - 20) * 0.001);
-        // سقف للشفاء (لا يتجاوز 10% أبداً)
         healPercent = Math.min(healPercent, 0.10);
 
         const healAmount = Math.floor(m.maxHp * healPercent); 
@@ -131,7 +105,6 @@ const GENERIC_MONSTER_SKILLS = [
     }}
 ];
 
-// --- 👹 قاعدة بيانات مهارات الزعماء والنخبة والحراس ---
 const MONSTER_SKILLS = {
     // ========================
     // 🔥 وحوش النخبة: النار
@@ -397,7 +370,7 @@ const MONSTER_SKILLS = {
     "باعل سيد الدمار": {
         name: "نسخة الظل", emoji: "👥", chance: 0.20,
         execute: (monster, players, log) => {
-            monster.effects.push({ type: 'evasion', val: 0.5, turns: 2 }); // 50% مراوغة
+            monster.effects.push({ type: 'evasion', val: 0.5, turns: 2 }); 
             log.push(`👥 **باعل** استدعى نسخة، مما جعل إصابته صعبة!`);
         }
     },
@@ -466,7 +439,6 @@ function getRandomMonster(type, theme, currentFloor = 1) {
     const randomIndex = Math.floor(Math.random() * list.length);
     const selection = list[randomIndex];
 
-    // 🔥 التحقق مما إذا كان الاختيار نصاً أم كائناً (لدعم الصور) 🔥
     let name = selection;
     let image = null;
 
