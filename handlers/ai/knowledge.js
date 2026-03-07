@@ -1,20 +1,8 @@
-// handlers/ai/knowledge.js
-
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
 
 const rootDir = path.join(__dirname, '../../');
-const dbPath = path.join(rootDir, 'mainDB.sqlite');
 
-let db;
-try {
-    db = new Database(dbPath, { readonly: true });
-} catch (e) {
-    console.error("[AI Knowledge] خطأ في تحميل الداتابيس:", e.message);
-}
-
-// دالة تحميل ملفات JSON
 function loadJsonData(fileName) {
     try {
         const filePath = path.join(rootDir, 'json', fileName);
@@ -23,10 +11,7 @@ function loadJsonData(fileName) {
     } catch (e) { return "{}"; }
 }
 
-// 📜 السجلات الإمبراطورية الثابتة (رتب، قوانين، متجر، وتعليمات)
 const staticKnowledge = {
-    
-    // 🔥 تم إضافة نظام رتب المغامرين (السمعة) 🔥
     adventurer_ranks: `
     [رتب المغامرين بناءً على نقاط السمعة (التزكية)]:
     - 1000 نقطة فما فوق: رتبة SS 👑
@@ -40,7 +25,6 @@ const staticKnowledge = {
     ملاحظة: السمعة هي مقياس لاحترام وثقة الإمبراطورية في المغامر، ويمكن للأعضاء تزكية بعضهم يومياً لرفع هذه النقاط.
     `,
 
-    // الرتب والمكافآت (مستويات الشات)
     ranks: `
     [سلم النبالة والمكافآت - باللفل]:
     - المستوى 5 (رحال Traveler): فتح الوسائط (صور/فيديو)، الدعوات، والخاص.
@@ -60,7 +44,6 @@ const staticKnowledge = {
     - القيصر (EM Ceasar): مشترك العضوية (2.99$)، له كل المميزات.
     `,
       
-    // القوانين الصارمة
     laws: `
     [المرسوم الإمبراطوري]:
     1. الامتثال لقوانين ديسكورد الرسمية.
@@ -70,23 +53,21 @@ const staticKnowledge = {
     (لا توجد قوانين أخرى غير هذه).
     `,
 
-    // بيانات اللعبة
     shop: loadJsonData('shop-items.json').substring(0, 800),
     dungeon: loadJsonData('dungeon-config.json').substring(0, 800),
 };
 
-// 🔥 دالة لجلب البيانات الحية (توب، بوس) مخصصة للسيرفر الحالي فقط
-function getDynamicServerData(guildId) {
+async function getDynamicServerData(guildId, db) {
     if (!db) return null;
     try {
-        // 1. التوب 3 في الليفل (خاص بالسيرفر الحالي فقط)
-        const topLevels = db.prepare("SELECT user, level FROM levels WHERE guild = ? ORDER BY totalXP DESC LIMIT 3").all(guildId);
+        const topLevelsRes = await db.query("SELECT userid AS user, level FROM levels WHERE guildid = $1 ORDER BY totalxp DESC LIMIT 3", [guildId]);
+        const topLevels = topLevelsRes.rows;
         
-        // 2. التوب 3 في الفلوس (مورا + بنك) (خاص بالسيرفر الحالي فقط)
-        const topRich = db.prepare("SELECT user, (mora + bank) as total FROM levels WHERE guild = ? ORDER BY total DESC LIMIT 3").all(guildId);
+        const topRichRes = await db.query("SELECT userid AS user, (mora + bank) as total FROM levels WHERE guildid = $1 ORDER BY total DESC LIMIT 3", [guildId]);
+        const topRich = topRichRes.rows;
 
-        // 3. حالة الزعيم (خاص بالسيرفر الحالي فقط)
-        const boss = db.prepare("SELECT name, currentHP, maxHP, active FROM world_boss WHERE guildID = ?").get(guildId);
+        const bossRes = await db.query("SELECT name, currenthp, maxhp, active FROM world_boss WHERE guildid = $1", [guildId]);
+        const boss = bossRes.rows[0];
 
         return { topLevels, topRich, boss };
     } catch (error) {
@@ -95,33 +76,38 @@ function getDynamicServerData(guildId) {
     }
 }
 
-// دالة جلب بيانات المستخدم الفردي (مخصصة للسيرفر الحالي فقط)
-function getUserData(userId, guildId) {
+async function getUserData(userId, guildId, db) {
     if (!db) return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     try {
-        const levelRow = db.prepare('SELECT level, xp, mora, bank FROM levels WHERE user = ? AND guild = ?').get(userId, guildId);
-        const streakRow = db.prepare('SELECT streakCount FROM streaks WHERE userID = ? AND guildID = ?').get(userId, guildId);
+        const levelRes = await db.query('SELECT level, xp, mora, bank FROM levels WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        const levelRow = levelRes.rows[0];
         
-        // جلب بيانات السمعة والدانجون
-        const repRow = db.prepare('SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?').get(userId, guildId);
-        const dungeonRow = db.prepare('SELECT current_floor FROM dungeon_saves WHERE userID = ? AND guildID = ?').get(userId, guildId);
+        const streakRes = await db.query('SELECT streakcount FROM streaks WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        const streakRow = streakRes.rows[0];
         
-        const cash = levelRow ? (levelRow.mora || 0) : 0;
-        const bank = levelRow ? (levelRow.bank || 0) : 0;
+        const repRes = await db.query('SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        const repRow = repRes.rows[0];
+        
+        const dungeonRes = await db.query('SELECT floor as current_floor FROM dungeon_saves WHERE hostid = $1 AND guildid = $2', [userId, guildId]);
+        const dungeonRow = dungeonRes.rows[0];
+        
+        const cash = levelRow ? (parseInt(levelRow.mora) || 0) : 0;
+        const bank = levelRow ? (parseInt(levelRow.bank) || 0) : 0;
 
         return {
-            level: levelRow ? levelRow.level : 1,
-            xp: levelRow ? levelRow.xp : 0,
+            level: levelRow ? parseInt(levelRow.level) : 1,
+            xp: levelRow ? parseInt(levelRow.xp) : 0,
             
-            wallet_cash: cash,           
+            wallet_cash: cash,            
             bank_balance: bank,          
             total_wealth: cash + bank,   
             
-            streak: streakRow ? streakRow.streakCount : 0,
-            reputation: repRow ? (repRow.rep_points || 0) : 0,           
-            dungeon_floor: dungeonRow ? (dungeonRow.current_floor || 0) : 0 
+            streak: streakRow ? parseInt(streakRow.streakcount) : 0,
+            reputation: repRow ? (parseInt(repRow.rep_points) || 0) : 0,            
+            dungeon_floor: dungeonRow ? (parseInt(dungeonRow.current_floor) || 0) : 0 
         };
     } catch (error) {
+        console.error("[User Data Fetch Error]", error);
         return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     }
 }
