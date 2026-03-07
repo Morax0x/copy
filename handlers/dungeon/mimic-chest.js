@@ -1,7 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require('discord.js');
 const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF } = require('./constants'); 
 
-// دالة توليد لون عشوائي للإيمبد
 function getRandomColor() {
     const colors = [Colors.Red, Colors.Blue, Colors.Green, Colors.Gold, Colors.Purple, Colors.Aqua];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -52,22 +51,17 @@ async function triggerMimicChest(thread, players) {
             const roll = Math.random() * 100;
             let resultMsg = "";
 
-            // --- توزيع الاحتمالات ---
-
             if (roll < 15) { 
-                // 💰 مورا
                 const amount = Math.floor(Math.random() * (1500 - 800 + 1)) + 800;
                 player.loot.mora += amount;
                 resultMsg = `💰 **${player.name}** فتح صندوقاً ووجـد **${amount}** مورا!`;
             
             } else if (roll < 25) { 
-                // ✨ خبرة XP
                 const amount = Math.floor(Math.random() * (500 - 50 + 1)) + 50;
                 player.loot.xp += amount;
                 resultMsg = `✨ **${player.name}** وجـد مخطوطـات قديمة وحصل على **${amount}** XP!`;
 
             } else if (roll < 35) { 
-                // 🛡️ درع مؤقت
                 const shieldVal = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
                 player.shield = (player.shield || 0) + shieldVal;
                 player.shieldPersistent = true;
@@ -75,13 +69,11 @@ async function triggerMimicChest(thread, players) {
                 resultMsg = `🛡️ **${player.name}** عثر على درع سحري متهالك! (+${shieldVal} درع)`;
 
             } else if (roll < 40) { 
-                // ⚡ شحن المهارات
                 player.special_cooldown = 0;
                 player.skillCooldowns = {}; 
                 resultMsg = `⚡ **${player.name}** لمس بلورة طاقة! (تم شحن جميع المهارات)`;
 
             } else if (roll < 48) { 
-                // 💖 شفاء
                 const healAmount = Math.floor(player.maxHp * 0.40);
                 if (player.hp >= player.maxHp * 0.9) {
                     player.shield = (player.shield || 0) + healAmount;
@@ -92,17 +84,14 @@ async function triggerMimicChest(thread, players) {
                 }
 
             } else if (roll < 55) { 
-                // 💪 بوف هجوم
                 player.effects.push({ type: 'atk_buff', val: 0.2, turns: 5 });
                 resultMsg = `💪 **${player.name}** حصل على بركة القوة! (+20% هجوم لـ 5 جولات) ${EMOJI_BUFF}`;
 
             } else if (roll < 60) {
-                // 🎯 بوف كريتيكال
                 player.critRate = (player.critRate || 0.2) + 0.2; 
                 resultMsg = `🎯 **${player.name}** وجد نظارة القناص! (زادت نسبة الضربة الحرجة)`;
 
             } else if (roll < 70) {
-                // 🍷 جرعات
                 const potionRoll = Math.random();
                 if (potionRoll < 0.5) {
                     player.maxHp *= 2;
@@ -115,24 +104,20 @@ async function triggerMimicChest(thread, players) {
                 }
 
             } else if (roll < 78) { 
-                // 👹 ضرر ميميك
                 const dmg = Math.floor(player.maxHp * 0.25);
                 player.hp = Math.max(1, player.hp - dmg); 
                 resultMsg = `👹 **${player.name}** الصنـدوق كـان ميميـك! قام بعضـه وسبب **${dmg}** ضرر!`;
 
             } else if (roll < 83) { 
-                // ❄️ تجميد (تم التصحيح: إضافة val: true)
                 player.effects.push({ type: 'stun', val: true, turns: 1 });
                 resultMsg = `❄️ **${player.name}** فتح فخاً جليدياً! (تجميد للدور القادم)`;
 
             } else if (roll < 88) { 
-                // 🔥 حرق
                 const burnDmg = Math.floor(player.maxHp * 0.05);
                 player.effects.push({ type: 'burn', val: burnDmg, turns: 3 });
                 resultMsg = `🔥 **${player.name}** انفجر في وجهه لهب سحري! (حرق لـ 3 جولات)`;
 
             } else if (roll < 93) { 
-                // 💸 سرقة مورا
                 const stealAmount = Math.floor(Math.random() * (200 - 50 + 1)) + 50;
                 const actualSteal = Math.min(player.loot.mora, stealAmount);
                 player.loot.mora -= actualSteal;
@@ -144,12 +129,10 @@ async function triggerMimicChest(thread, players) {
                 }
 
             } else if (roll < 97) { 
-                // ☠️ سم
                 player.effects.push({ type: 'poison', val: Math.floor(player.maxHp * 0.05), turns: 5 });
                 resultMsg = `☠️ **${player.name}** استنشق غازاً ساماً من الصندوق! (تسمم لـ 5 جولات) ${EMOJI_NERF}`;
 
             } else { 
-                // 💨 فارغ
                 const pityShield = Math.floor(Math.random() * 50) + 10;
                 player.shield = (player.shield || 0) + pityShield;
                 resultMsg = `💨 **${player.name}** الصندوق كان فارغاً... لكنه وجد قطعة خشبية استخدمها كدرع (+${pityShield} درع).`;
