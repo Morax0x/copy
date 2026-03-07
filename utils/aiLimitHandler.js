@@ -1,10 +1,5 @@
-const SQLite = require("better-sqlite3");
-const path = require('path');
+// utils/aiLimitHandler.js
 
-const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
-const sql = new SQLite(dbPath);
-
-// الإعدادات الافتراضية
 const DEFAULT_DAILY_LIMIT = 20; // الحد المجاني للكل
 
 function getTodayDate() {
@@ -15,20 +10,19 @@ module.exports = {
     /**
      * حساب الحد اليومي (أساسي + رتب)
      */
-    getUserDailyLimit: async (member) => {
+    getUserDailyLimit: async (member, db) => {
         const guildID = member.guild.id;
-        const allLimits = sql.prepare("SELECT roleID, limitCount FROM ai_role_limits WHERE guildID = ?").all(guildID);
+        const allLimitsRes = await db.query("SELECT roleid, limitcount FROM ai_role_limits WHERE guildid = $1", [guildID]);
+        const allLimits = allLimitsRes.rows;
         
         let totalLimit = 0;
         let baseLimit = DEFAULT_DAILY_LIMIT; 
 
         if (allLimits.length > 0) {
             member.roles.cache.forEach(role => {
-                const limitData = allLimits.find(l => l.roleID === role.id);
+                const limitData = allLimits.find(l => l.roleid === role.id);
                 if (limitData) {
-                    // نأخذ أعلى ليمت من بين الرتب (أو تخليه جمع += لو تفضل)
-                    // هنا نستخدم الجمع ليكون مكافأة تراكمية
-                    totalLimit += limitData.limitCount;
+                    totalLimit += parseInt(limitData.limitcount);
                 }
             });
         }
@@ -40,32 +34,34 @@ module.exports = {
      * فحص هل يسمح للعضو بالتحدث؟
      */
     checkUserUsage: async (member) => {
+        const db = member.client.sql;
         const userId = member.id;
         const guildId = member.guild.id;
         const today = getTodayDate();
 
-        let userUsage = sql.prepare("SELECT * FROM ai_user_usage WHERE userID = ?").get(userId);
+        let userUsageRes = await db.query("SELECT * FROM ai_user_usage WHERE userid = $1", [userId]);
+        let userUsage = userUsageRes.rows[0];
 
         if (!userUsage) {
-            userUsage = { userID: userId, guildID: guildId, dailyUsage: 0, purchasedBalance: 0, lastResetDate: today };
-            sql.prepare("INSERT INTO ai_user_usage (userID, guildID, dailyUsage, purchasedBalance, lastResetDate) VALUES (?, ?, 0, 0, ?)").run(userId, guildId, today);
+            userUsage = { userid: userId, guildid: guildId, dailyusage: 0, purchasedbalance: 0, lastresetdate: today };
+            await db.query("INSERT INTO ai_user_usage (userid, guildid, dailyusage, purchasedbalance, lastresetdate) VALUES ($1, $2, 0, 0, $3)", [userId, guildId, today]);
         }
 
         // تصفير العداد اليومي
-        if (userUsage.lastResetDate !== today) {
-            sql.prepare("UPDATE ai_user_usage SET dailyUsage = 0, lastResetDate = ? WHERE userID = ?").run(today, userId);
-            userUsage.dailyUsage = 0;
+        if (userUsage.lastresetdate !== today) {
+            await db.query("UPDATE ai_user_usage SET dailyusage = 0, lastresetdate = $1 WHERE userid = $2", [today, userId]);
+            userUsage.dailyusage = 0;
         }
 
-        const maxDailyLimit = await module.exports.getUserDailyLimit(member);
+        const maxDailyLimit = await module.exports.getUserDailyLimit(member, db);
 
         // هل بقي لديه رصيد مجاني؟
-        if (userUsage.dailyUsage < maxDailyLimit) {
+        if (parseInt(userUsage.dailyusage) < maxDailyLimit) {
             return { canChat: true, source: 'free' };
         }
 
         // هل لديه رصيد مدفوع؟
-        if (userUsage.purchasedBalance > 0) {
+        if (parseInt(userUsage.purchasedbalance) > 0) {
             return { canChat: true, source: 'purchased' };
         }
 
@@ -75,61 +71,41 @@ module.exports = {
     /**
      * تسجيل استهلاك رسالة (الخصم الفعلي)
      */
-    incrementUsage: async (userId) => {
-        // نحتاج تمرير الـ member لحساب الليمت بدقة، لكن للسهولة هنا سنعتمد على الليمت الافتراضي
-        // أو يمكنك جلب الليمت المخزن (إذا كنت ترغب بالدقة القصوى يجب تمرير member)
-        // الحل العملي: نزيد dailyUsage دائماً، ثم نخصم من purchasedBalance إذا تجاوزنا الليمت في checkUserUsage
-        
-        // الطريقة الأدق:
-        const userData = sql.prepare("SELECT * FROM ai_user_usage WHERE userID = ?").get(userId);
+    incrementUsage: async (userId, db) => {
+        // البحث عن بيانات المستخدم
+        const userDataRes = await db.query("SELECT * FROM ai_user_usage WHERE userid = $1", [userId]);
+        const userData = userDataRes.rows[0];
         if (!userData) return;
 
-        // هنا نفترض أننا لا نعرف الليمت الخاص بالعضو (لأنه يتطلب كائن member)
-        // لذا سنعتمد استراتيجية: 
-        // 1. زيادة العداد اليومي.
-        // 2. في دالة checkUserUsage، نحن نعرف إذا كان يستخدم المجاني أو المدفوع.
-        // الحل: التعديل يجب أن يكون في checkUserUsage ليعيد نوع الرصيد، وهنا نخصم بناءً عليه.
-        
-        // لكن بما أن هذه الدالة منفصلة، سنقوم بزيادة العداد اليومي فقط إذا لم يكن لديه رصيد مدفوع يُخصم.
-        // انتظر.. الحل الأفضل:
-        
-        // سنزيد العداد اليومي دائماً.
-        sql.prepare("UPDATE ai_user_usage SET dailyUsage = dailyUsage + 1 WHERE userID = ?").run(userId);
+        // زيادة الاستخدام اليومي دائماً
+        await db.query("UPDATE ai_user_usage SET dailyusage = dailyusage + 1 WHERE userid = $1", [userId]);
 
-        // لكن.. إذا كان قد تجاوز حده اليومي (مثلاً 20)، فإن زيادته لـ 21 لا تفيد.
-        // يجب أن نخصم من purchasedBalance في تلك الحالة.
-        
-        // **تصحيح جوهري:** // لكي نخصم بشكل صحيح، يجب أن نعرف هل هو "فائض" عن الحد أم لا.
-        // بما أننا لا نملك `member` هنا، سنعتمد على `DEFAULT_DAILY_LIMIT` كحد أدنى، 
-        // أو نخصم من `purchasedBalance` فقط عندما يتم استدعاء هذه الدالة ونحن نعلم أنه تجاوز الحد.
-        
-        // الحل النهائي والآمن:
-        // نعتمد على أن `checkUserUsage` هي من سمحت له بالمرور.
-        // إذا كان `dailyUsage` >= `DEFAULT_DAILY_LIMIT` (تقريبياً) وعنده رصيد مدفوع، نخصم منه.
-        
-        if (userData.dailyUsage >= DEFAULT_DAILY_LIMIT && userData.purchasedBalance > 0) {
-             sql.prepare("UPDATE ai_user_usage SET purchasedBalance = purchasedBalance - 1 WHERE userID = ?").run(userId);
+        // إذا كان الاستخدام اليومي يتجاوز الحد الافتراضي ولديه رصيد مدفوع، نخصم منه
+        if (parseInt(userData.dailyusage) >= DEFAULT_DAILY_LIMIT && parseInt(userData.purchasedbalance) > 0) {
+             await db.query("UPDATE ai_user_usage SET purchasedbalance = purchasedbalance - 1 WHERE userid = $1", [userId]);
         }
     },
     
-    // تصحيح: هذه الدالة يجب أن تكون مرنة أكثر
-    // لتفادي التعقيد، سنعتمد في incrementUsage على زيادة العداد فقط، 
-    // وفي checkUserUsage نعتبره تجاوز الحد إذا (dailyUsage > Limit) ولم يتبقى رصيد مدفوع.
-    // لكن لكي نكون عادلين (الشخص دفع)، يجب أن ينقص رقمه.
-    
-    // التعديل: سنطلب تمرير member للدالة incrementUsage في المستقبل، أو نكتفي بالخصم التقريبي.
-    // النسخة الحالية في الكود الذي أرسلته لك سابقاً (في الرد الطويل) كانت جيدة وتعتمد على userUsage.
-    
-    addPurchasedBalance: (userId, amount) => {
+    /**
+     * إضافة رصيد مشترى للعضو
+     */
+    addPurchasedBalance: async (userId, amount, db) => {
         const today = getTodayDate();
-        sql.prepare(`
-            INSERT INTO ai_user_usage (userID, guildID, dailyUsage, purchasedBalance, lastResetDate) 
-            VALUES (?, 'Unknown', 0, ?, ?) 
-            ON CONFLICT(userID) DO UPDATE SET purchasedBalance = purchasedBalance + ?
-        `).run(userId, amount, today, amount);
+        await db.query(`
+            INSERT INTO ai_user_usage (userid, guildid, dailyusage, purchasedbalance, lastresetdate) 
+            VALUES ($1, 'Unknown', 0, $2, $3) 
+            ON CONFLICT(userid) DO UPDATE SET purchasedbalance = ai_user_usage.purchasedbalance + $4
+        `, [userId, amount, today, amount]);
     },
 
-    setRoleLimit: (guildID, roleID, limit) => {
-        sql.prepare("INSERT OR REPLACE INTO ai_role_limits (guildID, roleID, limitCount) VALUES (?, ?, ?)").run(guildID, roleID, limit);
+    /**
+     * تحديد حد الاستخدام اليومي لرتبة معينة
+     */
+    setRoleLimit: async (guildID, roleID, limit, db) => {
+        await db.query(`
+            INSERT INTO ai_role_limits (guildid, roleid, limitcount) 
+            VALUES ($1, $2, $3) 
+            ON CONFLICT (guildid, roleid) DO UPDATE SET limitcount = EXCLUDED.limitcount
+        `, [guildID, roleID, limit]);
     }
 };
