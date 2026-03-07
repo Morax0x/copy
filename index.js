@@ -1,8 +1,10 @@
 const { Client, GatewayIntentBits, Collection, REST, Routes, Partials, Events } = require("discord.js");
-const db = require('./database.js');
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+
+// 1. الاتصال بقاعدة البيانات في أول سطر لضمان جاهزيتها للجميع
+const db = require('./database.js');
 
 const aiConfig = require('./utils/aiConfig');
 const { generateQuestAlert } = require('./generators/achievement-generator.js'); 
@@ -39,7 +41,9 @@ client.EMOJI_FASTER = '<a:JaFaster:1435572430042042409>';
 client.EMOJI_PRAY = '<:0Pray:1437067281493524502>';
 client.EMOJI_COOL = '<a:NekoCool:1435572459276337245>';
 
+// 2. ربط قاعدة البيانات بالبوت فوراً
 client.sql = db;
+
 client.generateQuestAlert = generateQuestAlert;
 client.generateAchievementCard = generateAchievementCard; 
 
@@ -60,10 +64,10 @@ async function bootstrap() {
         console.log("⏳ Loading and checking database tables...");
         const dbSetupModule = require("./database-setup.js");
         const setupDatabase = dbSetupModule.setupDatabase || dbSetupModule;
-        await setupDatabase(db); 
+        await setupDatabase(client.sql); 
 
         if (aiConfig && typeof aiConfig.init === 'function') {
-            await aiConfig.init(db); 
+            await aiConfig.init(client.sql); 
         }
         console.log("✅ Database and AI Config initialized successfully!");
     } catch (err) {
@@ -71,33 +75,34 @@ async function bootstrap() {
         process.exit(1);
     }
 
-    require('./utils/db-manager.js')(client, db);
-    require('./handlers/systems-manager.js')(client, db);
-    try { require('./handlers/backup-scheduler.js')(client, db); } catch(e) {}
+    require('./utils/db-manager.js')(client, client.sql);
+    require('./handlers/systems-manager.js')(client, client.sql);
+    try { require('./handlers/backup-scheduler.js')(client, client.sql); } catch(e) {}
 
     const eventsPath = path.join(__dirname, 'events');
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
     for (const file of eventFiles) { 
         const filePath = path.join(eventsPath, file); 
         const event = require(filePath); 
-        if (event.once) client.once(event.name, (...args) => event.execute(...args)); 
-        else client.on(event.name, (...args) => event.execute(...args)); 
+        if (event.once) client.once(event.name, (...args) => event.execute(...args, client)); 
+        else client.on(event.name, (...args) => event.execute(...args, client)); 
     }
 
-    require('./interaction-handler.js')(client, db, client.antiRolesCache);
+    require('./interaction-handler.js')(client, client.sql, client.antiRolesCache);
 
     client.once(Events.ClientReady, async () => { 
         console.log(`✅ Logged in as ${client.user.username}`);
           
-        await autoJoin(client);
-        await initGiveaways(client);
-        require('./handlers/voice-timer.js')(client);
-        startAuctionSystem(client); 
-        startAutoChat(client);
-        require('./handlers/weekly-role.js')(client);
+        // 🛡️ استخدام الدروع (try-catch) لمنع انهيار البوت إذا فشل نظام واحد
+        try { await autoJoin(client); } catch(e) { console.log("⚠️ AutoJoin skipped:", e.message); }
+        try { await initGiveaways(client); } catch(e) { console.log("⚠️ Giveaways skipped:", e.message); }
+        try { require('./handlers/voice-timer.js')(client); } catch(e) { console.log("⚠️ Voice Timer skipped:", e.message); }
+        try { startAuctionSystem(client); } catch(e) { console.log("⚠️ Auction skipped:", e.message); }
+        try { startAutoChat(client); } catch(e) { console.log("⚠️ AutoChat skipped:", e.message); }
+        try { require('./handlers/weekly-role.js')(client); } catch(e) { console.log("⚠️ Weekly Role skipped:", e.message); }
 
-        await loadRoleSettings(db, client.antiRolesCache);
-        require('./handlers/cron-jobs.js')(client, db);
+        try { await loadRoleSettings(client.sql, client.antiRolesCache); } catch(e) { console.log("⚠️ Role Settings skipped:", e.message); }
+        try { require('./handlers/cron-jobs.js')(client, client.sql); } catch(e) { console.log("⚠️ Cron Jobs skipped:", e.message); }
 
         const rest = new REST({ version: '10' }).setToken(botToken);
         const commands = [];
@@ -136,7 +141,7 @@ async function bootstrap() {
         }
     }); 
 
-    try { require('./handlers/topgg-handler.js')(client, db); } catch (err) {}
+    try { require('./handlers/topgg-handler.js')(client, client.sql); } catch (err) {}
 
     client.login(botToken);
 }
