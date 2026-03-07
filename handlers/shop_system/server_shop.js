@@ -102,8 +102,8 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [interaction.user.id, interaction.guild.id]);
     let userData = userDataRes.rows[0];
     if (!userData) {
-        userData = { userid: interaction.user.id, guildid: interaction.guild.id, level: 0, mora: 0, bank: 0, xp: 0 };
-        await db.query("INSERT INTO levels (userid, guildid, mora, bank, xp, level) VALUES ($1, $2, 0, 0, 0, 0)", [interaction.user.id, interaction.guild.id]);
+        userData = { userid: interaction.user.id, guildid: interaction.guild.id, level: 0, mora: 0, bank: 0, xp: 0, totalxp: 0 };
+        await db.query("INSERT INTO levels (userid, guildid, mora, bank, xp, totalxp, level) VALUES ($1, $2, 0, 0, 0, 0, 0)", [interaction.user.id, interaction.guild.id]);
     }
       
     const safeReply = async (payload) => {
@@ -111,7 +111,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         if (interaction.deferred || interaction.replied) return await interaction.followUp(payload); else return await interaction.reply(payload);
     };
 
-    if (userData.mora < finalPrice) {
+    if (parseInt(userData.mora) < finalPrice) {
         const userBank = parseInt(userData.bank) || 0; 
         let errorMsg = `❌ **عذراً، لا تملك مورا كافية!**\nالمطلوب بالكاش: **${finalPrice.toLocaleString()}** ${EMOJI_MORA}`;
         if (userBank >= finalPrice) errorMsg += `\n\n💡 **تلميح:** ليس لديك كاش كافٍ، ولكن لديك **${userBank.toLocaleString()}** في البنك.`;
@@ -125,8 +125,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
 
     if (callbackType === 'item') {
         if (itemData.id === 'personal_guard_1d') { 
-            userData.hasguard = (parseInt(userData.hasguard) || 0) + 3; 
-            userData.guardexpires = 0; 
+            await db.query("UPDATE levels SET hasguard = COALESCE(hasguard, 0) + 3, guardexpires = 0 WHERE userid = $1 AND guildid = $2", [interaction.user.id, interaction.guild.id]);
         }
         else if (itemData.category === 'potions') { 
             await ensureInventoryTable(db); 
@@ -161,7 +160,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             const settings = settingsRes.rows[0];
             if (settings && settings.viproleid) {
                 const member = await interaction.guild.members.fetch(interaction.user.id);
-                await member.roles.add(settings.viproleid);
+                await member.roles.add(settings.viproleid).catch(console.error);
                 const expiresAt = Date.now() + (3 * 24 * 60 * 60 * 1000);
                 await db.query("INSERT INTO temporary_roles (userid, guildid, roleid, expiresat) VALUES ($1, $2, $3, $4) ON CONFLICT (userid, guildid, roleid) DO UPDATE SET expiresat = EXCLUDED.expiresat", [interaction.user.id, interaction.guild.id, settings.viproleid, expiresAt]);
             }
@@ -200,7 +199,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         await _handleSkillUpgrade(interaction, client, db, true); 
     }
 
-    await db.query("UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3", [userData.mora, interaction.user.id, interaction.guild.id]);
+    await db.query("UPDATE levels SET mora = $1, shop_purchases = COALESCE(shop_purchases, 0) + 1 WHERE userid = $2 AND guildid = $3", [userData.mora, interaction.user.id, interaction.guild.id]);
     
     let successMsg = `✅ **تمت العملية بنجاح!**\n📦 **العنصر:** ${itemData.name || itemData.raceName || 'Unknown'}\n💰 **المبلغ المدفوع:** ${finalPrice.toLocaleString()} ${EMOJI_MORA}`;
     if (discountUsed > 0) successMsg += `\n📉 **تم تطبيق خصم:** ${discountUsed}%`;
@@ -252,7 +251,7 @@ async function buildSkillEmbedWithPagination(allUserSkills, pageIndex, db, i) {
     const nextIndex = (pageIndex + 1) % totalSkills;
     const userSkillRes = await db.query("SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skillid = $3", [i.user.id, i.guild.id, skillConfig.id]);
     let userSkill = userSkillRes.rows[0];
-    let currentLevel = userSkill ? userSkill.skilllevel : 0;
+    let currentLevel = userSkill ? parseInt(userSkill.skilllevel) : 0;
     const isRaceSkill = skillConfig.id.startsWith('race_');
     const embedTitle = `${skillConfig.emoji} ${skillConfig.name} ${isRaceSkill ? '(مهارة عرق)' : ''}`;
     const embed = new EmbedBuilder().setTitle(embedTitle).setDescription(skillConfig.description).setColor(isRaceSkill ? Colors.Gold : Colors.Blue).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('upgrade_skill')).setFooter({ text: `المهارة ${pageIndex + 1} / ${totalSkills}` });
@@ -377,7 +376,10 @@ async function _handleRodUpgrade(i, client, db) {
     const userId = i.user.id; 
     let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, i.guild.id]);
     let userData = userDataRes.rows[0];
-    const currentLevel = userData ? (parseInt(userData.rodlevel) || 1) : 1;
+    if (!userData) {
+        return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
+    }
+    const currentLevel = parseInt(userData.rodlevel) || 1;
     const nextLevel = currentLevel + 1; 
     const nextRod = rodsConfig.find(r => r.level === nextLevel);
     
@@ -406,7 +408,11 @@ async function _handleBoatUpgrade(i, client, db) {
     let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, i.guild.id]);
     let userData = userDataRes.rows[0];
     
-    const currentLevel = userData ? (parseInt(userData.boatlevel) || 1) : 1;
+    if (!userData) {
+        return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
+    }
+
+    const currentLevel = parseInt(userData.boatlevel) || 1;
     const nextLevel = currentLevel + 1; 
     const nextBoat = boatsConfig.find(b => b.level === nextLevel);
     
@@ -437,6 +443,10 @@ async function _handleBaitBuy(i, client, db) {
     
     let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, i.guild.id]);
     let userData = userDataRes.rows[0];
+
+    if (!userData) {
+        return i.editReply('❌ لا توجد بيانات مسجلة لك.');
+    }
     
     if (parseInt(userData.mora) < cost) {
         const userBank = parseInt(userData.bank) || 0;
@@ -653,7 +663,7 @@ async function _handleShopButton(i, client, db) {
                 const getActiveBuffRes = await db.query("SELECT * FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'xp' AND expiresat > $3", [userId, guildId, Date.now()]);
                 if (getActiveBuffRes.rows.length > 0) {
                     const replaceButton = new ButtonBuilder().setCustomId(`replace_buff_${item.id}`).setLabel("إلغاء القديم وشراء الجديد").setStyle(ButtonStyle.Danger);
-                    const cancelButton = new ButtonBuilder().setCustomId('cancel_purchase').setLabel("إلغة").setStyle(ButtonStyle.Secondary);
+                    const cancelButton = new ButtonBuilder().setCustomId('cancel_purchase').setLabel("إلغاء").setStyle(ButtonStyle.Secondary);
                     const row = new ActionRowBuilder().addComponents(replaceButton, cancelButton);
                     return await i.editReply({ content: `⚠️ لديك معزز خبرة فعال بالفعل!`, components: [row], embeds: [] });
                 }
