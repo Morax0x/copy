@@ -10,6 +10,7 @@ module.exports = (client, db) => {
 
     const defaultDailyStats = { messages: 0, images: 0, stickers: 0, emojis_sent: 0, reactions_added: 0, replies_sent: 0, mentions_received: 0, vc_minutes: 0, water_tree: 0, counting_channel: 0, meow_count: 0, streaming_minutes: 0, disboard_bumps: 0, boost_channel_reactions: 0, topgg_votes: 0 };
     const defaultTotalStats = { total_messages: 0, total_images: 0, total_stickers: 0, total_emojis_sent: 0, total_reactions_added: 0, total_replies_sent: 0, total_mentions_received: 0, total_vc_minutes: 0, total_disboard_bumps: 0, total_topgg_votes: 0 };
+    const defaultQuestNotif = { userID: null, guildID: null, dailyNotif: 1, weeklyNotif: 1, achievementsNotif: 1, levelNotif: 1, kingsNotif: 1, badgesNotif: 1 };
 
     client.safeMerge = function(base, defaults) {
         const result = { ...base };
@@ -19,10 +20,25 @@ module.exports = (client, db) => {
         return result;
     };
 
+    function fixCase(row, defaultObj) {
+        if (!row) return null;
+        let fixed = {};
+        for (let key in defaultObj) {
+            let lowerKey = key.toLowerCase();
+            if (row[lowerKey] !== undefined && row[lowerKey] !== null) fixed[key] = row[lowerKey];
+            else if (row[key] !== undefined && row[key] !== null) fixed[key] = row[key];
+            else fixed[key] = defaultObj[key];
+        }
+        for (let key in row) {
+            if (fixed[key] === undefined) fixed[key] = row[key];
+        }
+        return fixed;
+    }
+
     client.getLevel = async function(userId, guildId) {
         try {
             const res = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
-            return res.rows[0];
+            return fixCase(res.rows[0], client.defaultData);
         } catch(e) { return null; }
     };
 
@@ -61,7 +77,7 @@ module.exports = (client, db) => {
     client.getDailyStats = async function(id) {
         try {
             const res = await db.query('SELECT * FROM user_daily_stats WHERE id = $1', [id]);
-            return res.rows[0];
+            return fixCase(res.rows[0], defaultDailyStats);
         } catch(e) { return null; }
     };
 
@@ -82,7 +98,7 @@ module.exports = (client, db) => {
     client.getWeeklyStats = async function(id) {
         try {
             const res = await db.query('SELECT * FROM user_weekly_stats WHERE id = $1', [id]);
-            return res.rows[0];
+            return fixCase(res.rows[0], defaultDailyStats);
         } catch(e) { return null; }
     };
 
@@ -103,7 +119,7 @@ module.exports = (client, db) => {
     client.getTotalStats = async function(id) {
         try {
             const res = await db.query('SELECT * FROM user_total_stats WHERE id = $1', [id]);
-            return res.rows[0];
+            return fixCase(res.rows[0], defaultTotalStats);
         } catch(e) { return null; }
     };
 
@@ -124,7 +140,7 @@ module.exports = (client, db) => {
     client.getQuestNotif = async function(id) {
         try {
             const res = await db.query('SELECT * FROM quest_notifications WHERE id = $1', [id]);
-            return res.rows[0];
+            return fixCase(res.rows[0], defaultQuestNotif);
         } catch(e) { return null; }
     };
 
