@@ -1,5 +1,3 @@
-// handlers/dungeon/mystery-merchant.js
-
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, StringSelectMenuBuilder, ButtonStyle, ComponentType, Colors } = require('discord.js');
 const { EMOJI_MORA } = require('./constants');
 
@@ -35,7 +33,7 @@ const SHOP_ITEMS = [
     { id: 'buy_instant_assassin', name: 'سم التخفي', price: 500, desc: 'تأثير فوري: يجعلك خفياً لـ 3 جولات قادمة.', emoji: '🌫️' }
 ];
 
-function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
+function triggerMysteryMerchant(thread, players, db, guildId, merchantState) {
     return new Promise(async (resolve) => {
         const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
         let attackers = new Set();
@@ -68,7 +66,6 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
             const player = players.find(p => p.id === i.user.id);
             if (!player) return i.reply({ content: '🚫 أنت لست في الفريق.', ephemeral: true });
 
-            // 🔥 منطق زر الهجوم 🔥
             if (i.customId === 'merchant_attack') {
                 if (player.isDead) return i.reply({ content: '💀 الموتى لا يمكنهم القتال!', ephemeral: true });
 
@@ -91,8 +88,9 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
 
             if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
 
-            const userBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(i.user.id, guildId);
-            const currentMora = userBalance ? userBalance.mora : 0;
+            const userBalanceRes = await db.query("SELECT mora FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, guildId]);
+            const userBalance = userBalanceRes.rows[0];
+            const currentMora = userBalance ? parseInt(userBalance.mora) : 0;
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId('merchant_select')
@@ -121,9 +119,7 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                 const selectedId = si.values[0];
                 const item = SHOP_ITEMS.find(it => it.id === selectedId);
 
-                // 🔥 التحقق من حد شراء الخريطة ومنع التكديس 🔥
                 if (selectedId === 'buy_map') {
-                    // منع الشراء إذا كان هناك تخطي نشط
                     if (merchantState.skipFloors > 0) {
                         return si.reply({ content: `🚫 **هناك خريطة مفعلة بالفعل! لا يمكن تكديس الخرائط.**`, ephemeral: true });
                     }
@@ -134,21 +130,21 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                     }
                 }
 
-                // 🔥🔥🔥 التحقق من حد شراء درع المرتزقة (مرة واحدة للشخص) 🔥🔥🔥
                 if (selectedId === 'buy_shield') {
                     if (player.hasBoughtMercenaryShield) {
                         return si.reply({ content: `🚫 **لا يمكنك شراء درع المرتزقة أكثر من مرة واحدة في هذه الغارة!**`, ephemeral: true });
                     }
                 }
 
-                const freshBalance = sql.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(si.user.id, guildId);
-                const actualMora = freshBalance ? freshBalance.mora : 0;
+                const freshBalanceRes = await db.query("SELECT mora FROM levels WHERE userid = $1 AND guildid = $2", [si.user.id, guildId]);
+                const freshBalance = freshBalanceRes.rows[0];
+                const actualMora = freshBalance ? parseInt(freshBalance.mora) : 0;
 
                 if (actualMora < item.price) {
                     return si.reply({ content: `❌ **لا تملك مورا كافية!** تحتاج ${item.price} مورا.`, ephemeral: true });
                 }
 
-                sql.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(item.price, si.user.id, guildId);
+                await db.query("UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3", [item.price, si.user.id, guildId]);
 
                 let effectMsg = "";
 
@@ -163,12 +159,11 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                     effectMsg = "وقّع عقد الدم! (انخفضت الصحة للنصف، وزاد هجومه 60% لنهاية الرحلة)";
                 }
                 else if (selectedId === 'buy_shield') {
-                    // تطبيق فوري للدرع + الإعدادات
                     player.shield = (player.shield || 0) + 2500;
                     player.startingShield = 2500; 
                     player.shieldPersistent = true; 
                     player.shieldFloorsCount = 0; 
-                    player.hasBoughtMercenaryShield = true; // منع التكرار
+                    player.hasBoughtMercenaryShield = true; 
                     effectMsg = "تجهز بدرع المرتزقة الصلب! (2500 درع يستمر حتى ينكسر أو لمدة 5 طوابق)";
                 }
                 else if (selectedId === 'buy_map') {
@@ -183,12 +178,10 @@ function triggerMysteryMerchant(thread, players, sql, guildId, merchantState) {
                 else if (selectedId === 'buy_instant_elder') {
                     player.maxHp *= 2; 
                     player.hp = player.maxHp;
-                    // إضافة turns: 99 لضمان عدم اختفاء التأثير قبل انتهاء الطوابق
                     player.effects.push({ type: 'titan', floors: 8, turns: 99 }); 
                     effectMsg = "تجرع شراب العمالقة العتيق! تضاعفت صحته لمدة 8 طوابق!";
                 }
                 else if (selectedId === 'buy_instant_assassin') {
-                    // 🔥 تصحيح: استخدام evasion بدلاً من stealth لأن المحرك يفهم evasion
                     player.effects.push({ type: 'evasion', turns: 3 }); 
                     effectMsg = "شرب سم التخفي! اختفى عن الأنظار لمدة 3 جولات.";
                 }
