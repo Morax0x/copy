@@ -1,16 +1,11 @@
 // utils/aiActionHandler.js
 
-const SQLite = require("better-sqlite3");
 const path = require('path');
 
 // 🎨 استدعاء ملف الألوان لتنفيذه مباشرة
 const colorsCommand = require('../commands/colors.js'); 
 
-const dbPath = path.join(__dirname, '..', 'mainDB.sqlite');
-const sql = new SQLite(dbPath);
-
-// إنشاء جدول الكولداون إذا لم يكن موجوداً
-sql.prepare(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime INTEGER)`).run();
+let tableCreated = false;
 
 module.exports = {
     /**
@@ -24,6 +19,17 @@ module.exports = {
     executeActions: async (message, actionString) => {
         const userID = message.author.id;
         const guildID = message.guild.id;
+        const db = message.client.sql; // استخدام قاعدة بيانات PostgreSQL
+
+        // التأكد من إنشاء الجدول في PostgreSQL مرة واحدة فقط
+        if (!tableCreated && db) {
+            try {
+                await db.query(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime BIGINT)`);
+                tableCreated = true;
+            } catch (err) {
+                console.error("[AI Action] Error creating table:", err);
+            }
+        }
 
         // تنظيف النص واستخراج البيانات
         // مثال: [ACTION:SET_COLOR:5] -> Type: SET_COLOR, Value: 5
@@ -73,19 +79,28 @@ module.exports = {
         // =========================================================
         if (actionCode === 'GIVE_MORA') {
             try {
+                if (!db) return false;
+
                 // أ) فحص الكولداون (ساعة واحدة) 🕒
                 const oneHour = 60 * 60 * 1000;
                 const now = Date.now();
-                const cooldownData = sql.prepare("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = ?").get(userID);
+                
+                const cdRes = await db.query("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = $1", [userID]);
+                const cooldownData = cdRes.rows[0];
+                const lastMoraTime = cooldownData ? (parseInt(cooldownData.lastmoratime || cooldownData.lastMoraTime) || 0) : 0;
 
-                if (cooldownData && (now - cooldownData.lastMoraTime < oneHour)) {
+                if (cooldownData && (now - lastMoraTime < oneHour)) {
                     console.log(`[AI Action] Give Mora Rejected: Cooldown active for ${message.author.tag}`);
                     return false;
                 }
 
                 // ب) فحص الثروة (الحد الأقصى 10,000) 💰
-                const userData = sql.prepare("SELECT mora, bank FROM levels WHERE user = ? AND guild = ?").get(userID, guildID);
-                const totalWealth = (userData?.mora || 0) + (userData?.bank || 0);
+                const udRes = await db.query("SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                const userData = udRes.rows[0];
+                
+                const currentMora = userData ? (parseInt(userData.mora) || 0) : 0;
+                const currentBank = userData ? (parseInt(userData.bank) || 0) : 0;
+                const totalWealth = currentMora + currentBank;
                 
                 if (totalWealth >= 10000) {
                     console.log("[AI Action] Give Mora Rejected: User is too rich (>10k).");
@@ -95,15 +110,22 @@ module.exports = {
                 // 🔥 ج) التنفيذ: إعطاء مبلغ عشوائي بين 100 و 1000 🔥
                 const amount = Math.floor(Math.random() * (1000 - 100 + 1)) + 100;
 
-                sql.prepare("INSERT INTO levels (user, guild, mora) VALUES (?, ?, ?) ON CONFLICT(user, guild) DO UPDATE SET mora = mora + ?").run(userID, guildID, amount, amount);
+                await db.query(`
+                    INSERT INTO levels (userid, guildid, mora, bank, xp, level) 
+                    VALUES ($1, $2, $3, 0, 0, 1) 
+                    ON CONFLICT(userid, guildid) 
+                    DO UPDATE SET mora = COALESCE(levels.mora, 0) + $4
+                `, [userID, guildID, amount, amount]);
                 
                 // د) تسجيل الكولداون
-                sql.prepare("INSERT OR REPLACE INTO ai_cooldowns (userID, lastMoraTime) VALUES (?, ?)").run(userID, now);
+                await db.query(`
+                    INSERT INTO ai_cooldowns (userID, lastMoraTime) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT (userID) 
+                    DO UPDATE SET lastMoraTime = EXCLUDED.lastMoraTime
+                `, [userID, now]);
 
                 await message.react('💸').catch(e => console.error("Failed to react:", e));
-                
-                // إرسال رسالة صغيرة لتأكيد المبلغ
-                // await message.reply(`💰 تفضل، هذي **${amount}** مورا من الإمبراطورة.`).catch(() => {});
 
                 console.log(`[AI Action] Give Mora Success (${amount} added).`);
                 return true;
@@ -126,7 +148,6 @@ module.exports = {
                 // 🛑 فحص الأمان 2: هل البوت يقدر عليه؟
                 if (!message.member.moderatable) {
                     console.log(`[AI Timeout] Failed: Bot cannot punish ${message.author.tag}.`);
-                    // await message.reply("ما أقدر أعاقبك.. رتبتك أعلى مني! 😤").catch(() => {});
                     return false;
                 }
 
