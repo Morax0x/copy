@@ -8,17 +8,14 @@ module.exports = {
     usage: 'ban <@user/ID> [السبب]',
     
     async execute(message, args) {
-        const sql = message.client.sql;
+        const db = message.client.sql;
 
-        // 1. التحقق من صلاحيات المشرف (تجاهل تام إذا لم يملك صلاحية)
         if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return;
 
-        // 2. التحقق من صلاحيات البوت
         if (!message.guild.members.me.permissions.has(PermissionsBitField.Flags.BanMembers)) {
             return message.reply({ content: '❌ **لا أملك صلاحية "Ban Members".**', allowedMentions: { repliedUser: false } });
         }
 
-        // 3. جلب العضو المستهدف
         const targetArg = args[0];
         const reason = args.slice(1).join(" ") || "مخالفة القوانين - طرد نهائي";
 
@@ -30,16 +27,14 @@ module.exports = {
         try {
             targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg);
         } catch (err) {
-            // محاولة الباند حتى لو الشخص مو موجود بالسيرفر (Hackban)
             try {
                 const user = await message.client.users.fetch(targetArg);
-                return hackBan(message, user, reason, sql);
+                return hackBan(message, user, reason, db);
             } catch (e) {
                 return message.reply({ content: '❌ **لم يتم العثور على العضو.**', allowedMentions: { repliedUser: false } });
             }
         }
 
-        // 4. التحقق من الرتب
         if (targetMember.id === message.author.id) return message.reply('❌ **لا يمكنك حظر نفسك.**');
         if (targetMember.id === message.guild.ownerId) return message.reply('❌ **لا يمكنك حظر مالك السيرفر.**');
         if (message.author.id !== message.guild.ownerId && targetMember.roles.highest.position >= message.member.roles.highest.position) {
@@ -49,12 +44,11 @@ module.exports = {
             return message.reply('❌ **لا يمكنني حظر هذا العضو (رتبته أعلى مني).**');
         }
 
-        // 5. تجهيز رقم القضية
-        let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
-        let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
+        const lastCaseRes = await db.query("SELECT caseID FROM mod_cases WHERE guildID = $1 ORDER BY caseID DESC LIMIT 1", [message.guild.id]);
+        let lastCase = lastCaseRes.rows[0];
+        let newCaseID = lastCase ? parseInt(lastCase.caseid || lastCase.caseID) + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
 
-        // 6. إرسال رسالة بالخاص للضحية (التصميم السابق)
         try {
             const dmEmbed = new EmbedBuilder()
                 .setTitle('✥ تـم نفـيـك من الامبراطورية')
@@ -65,7 +59,6 @@ module.exports = {
             await targetMember.send({ embeds: [dmEmbed] });
         } catch (e) { }
 
-        // 7. تنفيذ الباند
         try {
             await targetMember.ban({ reason: `[Banned by ${message.author.tag}] Reason: ${reason}` });
         } catch (err) {
@@ -73,12 +66,10 @@ module.exports = {
             return message.reply('❌ **حدث خطأ أثناء محاولة الحظر.**');
         }
 
-        // 8. حفظ القضية
-        sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
-                     VALUES (?, ?, ?, 'BAN', ?, ?, ?, ?)`)
-            .run(uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now());
+        await db.query(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
+                     VALUES ($1, $2, $3, 'BAN', $4, $5, $6, $7)`, 
+                     [uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now()]);
 
-        // 9. الرد في الشات (التعديل الجديد)
         const chatEmbed = new EmbedBuilder()
             .setDescription('✥ تـم النفـي من الامبراطـوريـة')
             .setColor('Random')
@@ -86,25 +77,23 @@ module.exports = {
 
         message.reply({ embeds: [chatEmbed], allowedMentions: { repliedUser: false } });
 
-        // 10. إرسال اللوق (للمشرفين)
-        sendModLog(message, targetMember.user, reason, newCaseID);
+        await sendModLog(message, targetMember.user, reason, newCaseID, db);
     }
 };
 
-// --- دالة المساعدة للحظر الخارجي (Hackban) ---
-async function hackBan(message, user, reason, sql) {
+async function hackBan(message, user, reason, db) {
     try {
         await message.guild.members.ban(user.id, { reason: `[Hackban by ${message.author.tag}] Reason: ${reason}` });
         
-        let lastCase = sql.prepare("SELECT caseID FROM mod_cases WHERE guildID = ? ORDER BY caseID DESC LIMIT 1").get(message.guild.id);
-        let newCaseID = lastCase ? lastCase.caseID + 1 : 1;
+        const lastCaseRes = await db.query("SELECT caseID FROM mod_cases WHERE guildID = $1 ORDER BY caseID DESC LIMIT 1", [message.guild.id]);
+        let lastCase = lastCaseRes.rows[0];
+        let newCaseID = lastCase ? parseInt(lastCase.caseid || lastCase.caseID) + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
         
-        sql.prepare(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
-                     VALUES (?, ?, ?, 'BAN', ?, ?, ?, ?)`)
-           .run(uniqueID, message.guild.id, newCaseID, user.id, message.author.id, reason, Date.now());
+        await db.query(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) 
+                     VALUES ($1, $2, $3, 'BAN', $4, $5, $6, $7)`,
+           [uniqueID, message.guild.id, newCaseID, user.id, message.author.id, reason, Date.now()]);
 
-        // الرد الجديد للهاك باند أيضاً
         const chatEmbed = new EmbedBuilder()
             .setDescription('✥ تـم النفـي من الامبراطـوريـة')
             .setColor('Random')
@@ -112,18 +101,18 @@ async function hackBan(message, user, reason, sql) {
 
         message.reply({ embeds: [chatEmbed] });
         
-        sendModLog(message, user, reason, newCaseID, true);
+        await sendModLog(message, user, reason, newCaseID, db, true);
     } catch (e) {
         message.reply("❌ حدث خطأ، تأكد أن الآيدي صحيح.");
     }
 }
 
-// --- دالة اللوق ---
-function sendModLog(message, user, reason, caseID, isHackban = false) {
-    const sql = message.client.sql;
-    const settings = sql.prepare("SELECT modLogChannelID FROM settings WHERE guild = ?").get(message.guild.id);
-    if (settings && settings.modLogChannelID) {
-        const logChannel = message.guild.channels.cache.get(settings.modLogChannelID);
+async function sendModLog(message, user, reason, caseID, db, isHackban = false) {
+    const settingsRes = await db.query("SELECT modLogChannelID FROM settings WHERE guild = $1", [message.guild.id]);
+    const settings = settingsRes.rows[0];
+    
+    if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
+        const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
         if (logChannel) {
             const logEmbed = new EmbedBuilder()
                 .setTitle(isHackban ? `🔴 New HackBan | Case #${caseID}` : `🔴 New Ban | Case #${caseID}`)
