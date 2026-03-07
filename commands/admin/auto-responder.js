@@ -42,11 +42,11 @@ module.exports = {
     async execute(interaction) {
         const isSlash = !!interaction.isChatInputCommand;
         
-        let client, sql, guildID, user, sub;
+        let client, db, guildID, user, sub;
         
         if (isSlash) {
             client = interaction.client;
-            sql = interaction.client.sql;
+            db = interaction.client.sql;
             guildID = interaction.guild.id;
             user = interaction.user;
             sub = interaction.options.getSubcommand();
@@ -58,7 +58,6 @@ module.exports = {
             await interaction.deferReply({ ephemeral: true });
 
             if (sub === 'اضافة') {
-                // 🟢 التعديل هنا: جلب الكلمة، ثم حذف الأقواس والمسافات الزائدة
                 let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
                 const trigger = rawTrigger.replace(/[()]/g, '').trim(); 
 
@@ -67,37 +66,35 @@ module.exports = {
                 const matchType = interaction.options.getString('المطابقة') || 'exact';
                 const cooldown = interaction.options.getInteger('كولداون') || 0;
 
-                // التحقق من أن الكلمة لم تصبح فارغة بعد التنظيف
                 if (!trigger) return interaction.editReply("❌ الكلمة تحتوي فقط على رموز غير صالحة.");
 
-                const exists = sql.prepare("SELECT id FROM auto_responses WHERE guildID = ? AND trigger = ?").get(guildID, trigger);
-                if (exists) return interaction.editReply(`❌ الرد على كلمة **"${trigger}"** موجود مسبقاً. قم بحذفه أولاً للتعديل.`);
+                const existsRes = await db.query("SELECT id FROM auto_responses WHERE guildID = $1 AND trigger = $2", [guildID, trigger]);
+                if (existsRes.rows.length > 0) return interaction.editReply(`❌ الرد على كلمة **"${trigger}"** موجود مسبقاً. قم بحذفه أولاً للتعديل.`);
 
-                // معالجة الصور (التأكد من الروابط)
                 const imageList = images.split(/\s+/).filter(url => url.startsWith('http'));
 
-                sql.prepare(`
+                await db.query(`
                     INSERT INTO auto_responses (guildID, trigger, response, images, matchType, cooldown, createdBy) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                `).run(guildID, trigger, response, JSON.stringify(imageList), matchType, cooldown, user.id);
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `, [guildID, trigger, response, JSON.stringify(imageList), matchType, cooldown, user.id]);
 
                 return interaction.editReply(`✅ تم إضافة الرد على: **"${trigger}"** بنجاح.\n(تمت إزالة الأقواس تلقائياً)\nنوع المطابقة: ${matchType}\nالكولداون: ${cooldown} ثانية.`);
             }
 
             if (sub === 'حذف') {
-                // 🟢 التعديل هنا أيضاً: عند الحذف يجب تنظيف المدخل ليطابق المخزن
                 let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
                 const trigger = rawTrigger.replace(/[()]/g, '').trim();
 
-                const result = sql.prepare("DELETE FROM auto_responses WHERE guildID = ? AND trigger = ?").run(guildID, trigger);
+                const result = await db.query("DELETE FROM auto_responses WHERE guildID = $1 AND trigger = $2", [guildID, trigger]);
                 
-                if (result.changes > 0) return interaction.editReply(`✅ تم حذف الرد الخاص بـ **"${trigger}"**.`);
+                if (result.rowCount > 0) return interaction.editReply(`✅ تم حذف الرد الخاص بـ **"${trigger}"**.`);
                 return interaction.editReply(`❌ لم يتم العثور على رد لهذه الكلمة: **"${trigger}"**.`);
             }
 
             if (sub === 'قائمة') {
                 const page = interaction.options.getInteger('صفحة') || 1;
-                const rows = sql.prepare("SELECT trigger, matchType, cooldown, expiresAt, createdBy FROM auto_responses WHERE guildID = ?").all(guildID);
+                const rowsRes = await db.query("SELECT trigger, matchType, cooldown, expiresAt, createdBy FROM auto_responses WHERE guildID = $1", [guildID]);
+                const rows = rowsRes.rows;
                 
                 if (rows.length === 0) return interaction.editReply("📭 لا توجد ردود تلقائية مسجلة.");
 
@@ -108,12 +105,12 @@ module.exports = {
 
                 const desc = currentItems.map((r, i) => {
                     let status = "♾️ دائم";
-                    if (r.expiresAt) {
-                        status = `⏳ ينتهي: <t:${Math.floor(r.expiresAt / 1000)}:R>`;
+                    if (r.expiresat || r.expiresAt) {
+                        status = `⏳ ينتهي: <t:${Math.floor((r.expiresat || r.expiresAt) / 1000)}:R>`;
                     }
-                    let creator = r.createdBy ? `<@${r.createdBy}>` : "إداري";
+                    let creator = (r.createdby || r.createdBy) ? `<@${(r.createdby || r.createdBy)}>` : "إداري";
                     
-                    return `**${start + i + 1}.** \`${r.trigger}\` (${r.matchType === 'exact' ? 'تطابق' : 'يحتوي'}) | ⏳ ${r.cooldown}ث\n   ↳ ${status} | 👤 بواسطة: ${creator}`;
+                    return `**${start + i + 1}.** \`${r.trigger}\` (${(r.matchtype || r.matchType) === 'exact' ? 'تطابق' : 'يحتوي'}) | ⏳ ${r.cooldown}ث\n   ↳ ${status} | 👤 بواسطة: ${creator}`;
                 }).join('\n\n');
 
                 const embed = new EmbedBuilder()
@@ -126,18 +123,19 @@ module.exports = {
             }
 
             if (sub === 'تخصيص-قناة') {
-                // 🟢 التعديل هنا أيضاً لضمان المطابقة
                 let rawTrigger = interaction.options.getString('الكلمة').toLowerCase();
                 const trigger = rawTrigger.replace(/[()]/g, '').trim();
 
                 const channel = interaction.options.getChannel('القناة');
                 const action = interaction.options.getString('الاجراء');
 
-                const row = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ? AND trigger = ?").get(guildID, trigger);
+                const rowRes = await db.query("SELECT * FROM auto_responses WHERE guildID = $1 AND trigger = $2", [guildID, trigger]);
+                const row = rowRes.rows[0];
+                
                 if (!row) return interaction.editReply(`❌ هذا الرد غير موجود: **"${trigger}"**.`);
 
-                let allowed = row.allowedChannels ? JSON.parse(row.allowedChannels) : [];
-                let ignored = row.ignoredChannels ? JSON.parse(row.ignoredChannels) : [];
+                let allowed = (row.allowedchannels || row.allowedChannels) ? JSON.parse(row.allowedchannels || row.allowedChannels) : [];
+                let ignored = (row.ignoredchannels || row.ignoredChannels) ? JSON.parse(row.ignoredchannels || row.ignoredChannels) : [];
 
                 if (action === 'allow') {
                     if (!allowed.includes(channel.id)) allowed.push(channel.id);
@@ -147,8 +145,7 @@ module.exports = {
                     allowed = allowed.filter(id => id !== channel.id);
                 }
 
-                sql.prepare("UPDATE auto_responses SET allowedChannels = ?, ignoredChannels = ? WHERE id = ?")
-                    .run(JSON.stringify(allowed), JSON.stringify(ignored), row.id);
+                await db.query("UPDATE auto_responses SET allowedChannels = $1, ignoredChannels = $2 WHERE id = $3", [JSON.stringify(allowed), JSON.stringify(ignored), row.id]);
 
                 return interaction.editReply(`✅ تم تحديث إعدادات القناة للرد **"${trigger}"**.`);
             }
