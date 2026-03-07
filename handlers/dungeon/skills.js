@@ -1,30 +1,19 @@
-// handlers/dungeon/skills.js
-
 const { OWNER_ID } = require('./constants');
 const { applyDamageToPlayer, calculateThreat } = require('./utils'); 
 const { checkBossPhase } = require('./monsters');
-// ✅ استيراد المحرك الجديد
 const skillCalculator = require('../combat/skill-calculator');
 
-// ✅ دالة مساعدة لتطبيق سقف الضرر
 function applyCap(value, cap) {
     if (cap !== Infinity && value > cap) return cap;
     return value;
 }
 
-// ✅ تم إضافة damageCap كمعامل أخير
 function handleSkillUsage(player, skill, monster, log, threadChannel, players, damageCap = Infinity) {
     let skillDmg = 0;
       
-    // 🔥🔥🔥 فحص الختم (Seal Check) 🔥🔥🔥
     const isSealed = player.effects.some(e => e.type === 'seal' || e.type === 'weakness');
-    // إذا كان مختوماً، القوة تصبح 20% فقط (يخسر 80%) لتأثيرات الحالة
     const sealMultiplier = isSealed ? 0.2 : 1.0; 
 
-    // ====================================================
-    // 1. مهارات الإمبـراطـور (GOD MODE) 👑
-    // ====================================================
-      
     if (skill.id === 'skill_erasure') {
         monster.hp = 0;
         log.push(`💀 **${player.name}** أشار بيده.. ومُحي الوحش من الوجود تماماً!`);
@@ -38,7 +27,7 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
 
     if (skill.id === 'skill_emperor_breath') {
         players.forEach(p => {
-            p.isDead = false; p.isPermDead = false; p.reviveCount = 0; p.deathCount = 0; // تصفير عداد الموت للإمبراطور
+            p.isDead = false; p.isPermDead = false; p.reviveCount = 0; p.deathCount = 0; 
             p.hp = p.maxHp; p.shield = p.maxHp; 
             p.effects.push({ type: 'atk_buff', val: 1.0, turns: 10 });
         });
@@ -76,10 +65,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         return { success: true, name: "دستـور المـوت" };
     }
 
-
-    // ====================================================
-    // 2. منطق مهارات الكلاسات (Class Skills Logic)
-    // ====================================================
     let classType = null;
     if (skill.id === 'class_special_skill') {
         classType = player.class;
@@ -124,20 +109,16 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
                 break;
 
              case 'Priest': 
-                // 🔥🔥 تعديل الكاهن: يعتمد على isPermDead من السستم الجديد 🔥🔥
                 const dead = players.filter(m => m.isDead); 
                 if (dead.length > 0) {
                     const t = dead[0]; 
                     if (t.isPermDead) {
-                        // إذا كان متحلل، نبلغ الكاهن بفشل المحاولة ولا نضيع دوره (أو نضيعه كعقاب، الخيار لك)
                         log.push(`💀 **${player.name}** حاول إنعاش **${t.name}** لكن الجثة تحللت!`);
                         if(threadChannel) threadChannel.send(`⚠️ **${t.name}** جثته متحللة ولا يمكن إنعاشه!`).catch(()=>{});
                     } else {
-                        // إنعاش ناجح
                         t.isDead = false; 
-                        t.status = 'alive'; // إعادة الحالة
+                        t.status = 'alive'; 
                         t.hp = Math.floor(t.maxHp * 0.2);
-                        // لا نصفر deathCount لنعرف كم مرة مات
                         
                         if (t.class === 'Former Leader') {
                              const currentLeader = players.find(p => p.class === 'Leader' && !p.isDead);
@@ -214,9 +195,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
          return { success: true, name: skillName };
     }
 
-    // ====================================================
-    // 3. التحقق من الكولداون للمهارات العادية
-    // ====================================================
     if (!skill.id.startsWith('skill_') || (player.id !== OWNER_ID)) {
         if ((player.skillCooldowns[skill.id] || 0) > 0 && player.id !== OWNER_ID) {
             return { error: `⏳ المهارة "${skill.name}" في وقت انتظار (${player.skillCooldowns[skill.id]} جولات)!` };
@@ -230,28 +208,18 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         }
     }
 
-    // =================================================================
-    // 🔥🔥 استخدام المحرك المركزي للمهارات 🔥🔥
-    // =================================================================
     const isOwner = player.id === OWNER_ID;
     const result = skillCalculator.executeSkill(player, monster, skill, isOwner);
-
-    // =================================================================
-    // 🛡️ تطبيق الختم (CAP) على نتائج الآلة الحاسبة
-    // =================================================================
 
     if (result.effectsApplied && result.effectsApplied.length > 0) {
         const userSkillEntry = player.skills ? player.skills[skill.id] : null;
         const skillLevel = userSkillEntry ? userSkillEntry.currentLevel : 1;
 
         result.effectsApplied.forEach(eff => {
-            // 🔥🔥🔥 إصلاح النزيف: تمت إضافة bleed هنا 🔥🔥🔥
             if (eff.type === 'poison' || eff.type === 'burn' || eff.type === 'bleed') {
                 
-                // التعديل المطلوب: 100 أساسي + 50 عن كل لفل
                 let baseVal = 100 + (skillLevel * 50); 
                 
-                // تطبيق الختم وسقف الضرر لضمان التوازن
                 eff.val = applyCap(Math.floor(baseVal * sealMultiplier), damageCap);
             }
         });
@@ -291,7 +259,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
             } else if (eff.type === 'dispel') {
                 monster.effects = [];
             } else {
-                // هنا يتم إضافة النزيف وغيره
                 monster.effects.push(eff);
             }
         });
@@ -313,7 +280,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
         log.push(result.log);
     }
     
-    // 🔥 استدعاء الروح (من Config)
     if (skill.effect === 'summon') {
          const summonAtk = Math.floor(player.atk * (skill.effect_value || 0.4) * sealMultiplier); 
          player.summon = {
@@ -322,7 +288,6 @@ function handleSkillUsage(player, skill, monster, log, threadChannel, players, d
              turns: 3, 
              active: true 
          };
-         // إضافة لوج للاحتياط إذا لم يكن موجوداً
          if (!result.log) {
              log.push(`👻 **${player.name}** استدعى روحاً لمساعدته!`);
          }
