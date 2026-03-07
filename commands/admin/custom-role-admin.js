@@ -10,10 +10,6 @@ module.exports = {
         .setName('custom-role-admin')
         .setDescription('إدارة وتكوين نظام الرتب المخصصة')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        
-        // ==========================================
-        // 1. إعدادات النظام الأساسية
-        // ==========================================
         .addSubcommandGroup(group => group.setName('setup').setDescription('إعدادات نظام الرتب المخصصة')
             .addSubcommand(sub => sub.setName('anchor').setDescription('تحديد الرتبة التي ستوضع الرتب الجديدة تحتها (عادة رتبة البوت).')
                 .addRoleOption(opt => opt.setName('role').setDescription('الرتبة الثابتة').setRequired(true)))
@@ -23,10 +19,6 @@ module.exports = {
                 .addRoleOption(opt => opt.setName('role').setDescription('الرتبة المراد إزالتها').setRequired(true)))
             .addSubcommand(sub => sub.setName('list_allowed').setDescription('عرض جميع الرتب المسموح لها بإنشاء رتب مخصصة.'))
         )
-
-        // ==========================================
-        // 2. تسجيل الرتب الخاصة للأعضاء
-        // ==========================================
         .addSubcommandGroup(group => group.setName('register').setDescription('إدارة تسجيل الرتب الخاصة للأعضاء')
             .addSubcommand(sub => sub.setName('mass').setDescription('يسجل رتبة معينة لجميع الأعضاء الذين يملكونها حالياً.')
                 .addRoleOption(opt => opt.setName('role').setDescription('الرتبة التي تريد تسجيلها للأعضاء').setRequired(true)))
@@ -37,10 +29,6 @@ module.exports = {
                 .addUserOption(opt => opt.setName('user').setDescription('العضو المراد إلغاء رتبته').setRequired(true)))
             .addSubcommand(sub => sub.setName('list').setDescription('عرض قائمة الرتب الخاصة المسجلة.'))
         )
-
-        // ==========================================
-        // 3. لوحة الرتب المخصصة (Panel)
-        // ==========================================
         .addSubcommandGroup(group => group.setName('panel').setDescription('تخصيص ونشر لوحة الرتب المخصصة')
             .addSubcommand(sub => sub.setName('send').setDescription('ينشر لوحة إنشاء الرتب المخصصة بناءً على الإعدادات المحفوظة.'))
             .addSubcommand(sub => sub.setName('title').setDescription('تحديد عنوان اللوحة.')
@@ -66,7 +54,7 @@ module.exports = {
         const db = client.sql;
         const guild = interactionOrMessage.guild;
 
-        const member = isSlash ? interactionOrMessage.member : interactionOrMessage.member;
+        const member = interactionOrMessage.member;
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
 
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -95,9 +83,6 @@ module.exports = {
         const reply = async (payload) => interactionOrMessage.editReply(payload);
 
         try {
-            // ==========================================
-            // 1. قسم الإعدادات (Setup)
-            // ==========================================
             if (group === 'setup') {
                 if (sub === 'anchor') {
                     const role = interactionOrMessage.options.getRole('role');
@@ -124,9 +109,6 @@ module.exports = {
                 }
             }
 
-            // ==========================================
-            // 2. قسم التسجيل (Register)
-            // ==========================================
             if (group === 'register') {
                 if (sub === 'mass') {
                     const role = interactionOrMessage.options.getRole('role');
@@ -196,9 +178,6 @@ module.exports = {
                 }
             }
 
-            // ==========================================
-            // 3. قسم لوحة التحكم (Panel)
-            // ==========================================
             if (group === 'panel') {
                 if (sub === 'send') {
                     const res = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
