@@ -1,10 +1,9 @@
-// commands/admin/create-auction.js
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const ms = require('ms');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const AUCTION_COLOR = "#D9AD5F";
-const AUCTION_IMAGE = "https://i.postimg.cc/3JxcxWJ0/fc6a5a55-09da-42af-9ae9-6313540a6415-(1).png"; // الصورة الذهبية
+const AUCTION_IMAGE = "https://i.postimg.cc/3JxcxWJ0/fc6a5a55-09da-42af-9ae9-6313540a6415-(1).png"; 
 
 module.exports = {
     name: 'auction',
@@ -18,27 +17,23 @@ module.exports = {
         const msgFilter = m => m.author.id === message.author.id;
         const setupEmbed = new EmbedBuilder().setColor(AUCTION_COLOR).setTitle('🛠️ إعداد المزاد الجديد');
 
-        // 1. الاسم
         await message.channel.send({ embeds: [setupEmbed.setDescription("1️⃣ **ما هو اسم السلعة؟**")] });
         const nameMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!nameMsg) return message.reply("⏰ انتهى الوقت.");
         const itemName = nameMsg.first().content;
 
-        // 2. السعر
         await message.channel.send({ embeds: [setupEmbed.setDescription(`📦 السلعة: **${itemName}**\n\n2️⃣ **سعر فتح المزاد؟**`)] });
         const priceMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!priceMsg) return message.reply("⏰ انتهى الوقت.");
         const startPrice = parseInt(priceMsg.first().content);
         if (isNaN(startPrice)) return message.reply("❌ يجب إدخال رقم صحيح.");
 
-        // 3. الزيادة
         await message.channel.send({ embeds: [setupEmbed.setDescription(`💰 البداية: **${startPrice}**\n\n3️⃣ **أقل مبلغ للزيادة؟**`)] });
         const incMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!incMsg) return message.reply("⏰ انتهى الوقت.");
         const increment = parseInt(incMsg.first().content);
         if (isNaN(increment)) return message.reply("❌ يجب إدخال رقم صحيح.");
 
-        // 4. المدة
         await message.channel.send({ embeds: [setupEmbed.setDescription(`📈 الزيادة: **${increment}**\n\n4️⃣ **كم مدة المزاد؟** (مثلاً: 1h, 1d)`)] });
         const timeMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!timeMsg) return message.reply("⏰ انتهى الوقت.");
@@ -46,7 +41,6 @@ module.exports = {
         const duration = ms(durationStr);
         if (!duration) return message.reply("❌ صيغة الوقت غير صحيحة.");
 
-        // 5. الصورة
         await message.channel.send({ embeds: [setupEmbed.setDescription(`⏳ المدة: **${durationStr}**\n\n5️⃣ **رابط صورة للسلعة** (أو اكتب "لا").`)] });
         const imgMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!imgMsg) return message.reply("⏰ انتهى الوقت.");
@@ -54,7 +48,6 @@ module.exports = {
         if (imgMsg.first().attachments.size > 0) itemImage = imgMsg.first().attachments.first().url;
         if (itemImage.toLowerCase() === 'لا' || itemImage.toLowerCase() === 'no') itemImage = null;
 
-        // 6. القناة
         await message.channel.send({ embeds: [setupEmbed.setDescription(`🖼️ الصورة: ${itemImage ? 'تم' : 'لا يوجد'}\n\n6️⃣ **منشن القناة أو أرسل الآيدي لنشر المزاد فيها**`)] });
         const chMsg = await message.channel.awaitMessages({ filter: msgFilter, max: 1, time: 60000, errors: ['time'] }).catch(() => null);
         if (!chMsg) return message.reply("⏰ انتهى الوقت.");
@@ -62,7 +55,6 @@ module.exports = {
         let targetChannel = chMsg.first().mentions.channels.first() || message.guild.channels.cache.get(chMsg.first().content);
         if (!targetChannel) return message.reply("❌ لم يتم العثور على القناة. تأكد من المنشن أو الآيدي.");
 
-        // المعاينة
         const endTime = Date.now() + duration;
         const confirmEmbed = new EmbedBuilder()
             .setTitle(`📢 معاينة المزاد`)
@@ -104,13 +96,11 @@ module.exports = {
                     `)
                     .setColor(AUCTION_COLOR);
 
-                // 🔥🔥🔥 التصحيح النهائي للصور 🔥🔥🔥
                 if (itemImage) {
-                    auctionEmbed.setImage(itemImage); // صورة السلعة كبيرة
+                    auctionEmbed.setImage(itemImage); 
                 } else {
-                    auctionEmbed.setImage(AUCTION_IMAGE); // صورة ذهبية كبيرة
+                    auctionEmbed.setImage(AUCTION_IMAGE); 
                 }
-                // (تم حذف Thumbnail نهائياً لضمان عدم ظهور الصورة الصغيرة)
 
                 const finalMsg = await targetChannel.send({ embeds: [auctionEmbed] });
 
@@ -124,11 +114,16 @@ module.exports = {
 
                 await finalMsg.edit({ components: [bidRow] });
 
-                const sql = message.client.sql;
-                sql.prepare(`
-                    INSERT INTO active_auctions (messageID, channelID, hostID, item_name, current_bid, start_price, min_increment, end_time, image_url, bid_count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                `).run(finalMsg.id, targetChannel.id, message.author.id, itemName, startPrice, startPrice, increment, endTime, itemImage);
+                const db = message.client.sql;
+                
+                try {
+                    await db.query(`
+                        INSERT INTO active_auctions (messageID, channelID, hostID, item_name, current_bid, start_price, min_increment, end_time, image_url, bid_count)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0)
+                    `, [finalMsg.id, targetChannel.id, message.author.id, itemName, startPrice, startPrice, increment, endTime, itemImage]);
+                } catch(e) {
+                    console.error("[Auction Create Error]:", e);
+                }
             }
         });
     }
