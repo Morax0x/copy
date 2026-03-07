@@ -1,44 +1,34 @@
-// handlers/dungeon/core/setup.js
-
 const { getRealPlayerData } = require('../utils');
 const { cleanName } = require('./battle-utils');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
-/**
- * دالة لقراءة وتطبيق البفات الخاصة بالأعراق من الداتابيس (تراكمي)
- */
-function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
+async function applyDynamicBuffs(member, player, currentThemeKey, guildId, db) {
     if (!currentThemeKey || !member) return "";
     
-    // 1. التأكد من وجود الجدول
     try {
-        const tableCheck = sql.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='race_dungeon_buffs'").get();
-        if (!tableCheck['count(*)']) return "";
+        const tableCheck = await db.query("SELECT count(*) FROM information_schema.tables WHERE table_name = 'race_dungeon_buffs'");
+        if (parseInt(tableCheck.rows[0].count) === 0) return "";
     } catch (e) { return ""; }
 
     let buffMsgArray = [];
 
-    // 2. جلب جميع رتب اللاعب
     const memberRoles = member.roles.cache.map(r => r.id);
     if (memberRoles.length === 0) {
-        // console.log(`[RaceBuff] Player ${member.user.tag} has no roles to check.`);
         return "";
     }
 
-    // 3. البحث عن جميع البفات المتطابقة (Stackable)
-    const placeholders = memberRoles.map(() => '?').join(',');
+    const placeholders = memberRoles.map((_, i) => `$${i + 3}`).join(',');
     
     try {
-        // 🔥 التعديل: إزالة LIMIT 1 لجلب كل البفات
-        const activeBuffs = sql.prepare(`
+        const activeBuffsRes = await db.query(`
             SELECT * FROM race_dungeon_buffs 
-            WHERE guildID = ? AND dungeonKey = ? AND roleID IN (${placeholders})
-        `).all(guildId, currentThemeKey, ...memberRoles);
+            WHERE guildID = $1 AND dungeonKey = $2 AND roleID IN (${placeholders})
+        `, [guildId, currentThemeKey, ...memberRoles]);
+
+        const activeBuffs = activeBuffsRes.rows;
 
         if (activeBuffs && activeBuffs.length > 0) {
-            // console.log(`[RaceBuff] Found ${activeBuffs.length} buffs for ${member.user.tag}`);
 
-            // تجهيز القيم الافتراضية
             player.atk = Number(player.atk) || 0;
             player.maxHp = Number(player.maxHp) || 100;
             player.hp = Number(player.hp) || player.maxHp;
@@ -47,13 +37,12 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
             player.critRate = Number(player.critRate) || 0;
             player.lifesteal = Number(player.lifesteal) || 0;
 
-            // حلقة لتطبيق كل بف على حدة
             for (const buff of activeBuffs) {
-                let val = parseFloat(buff.buffValue); 
+                let val = parseFloat(buff.buffvalue || buff.buffValue); 
                 if (isNaN(val)) continue;
 
                 const multiplier = val / 100; 
-                const statTypeClean = buff.statType.toLowerCase().trim();
+                const statTypeClean = (buff.stattype || buff.statType).toLowerCase().trim();
 
                 switch (statTypeClean) {
                     case 'atk':
@@ -86,7 +75,7 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
                         break;
 
                     case 'lifesteal':
-                        player.lifesteal += multiplier; // تراكمي (مثلا 0.1 + 0.05 = 0.15)
+                        player.lifesteal += multiplier; 
                         buffMsgArray.push(`🩸 +${Math.floor(val)}% شفاء`);
                         break;
 
@@ -95,9 +84,6 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
                         player.critRate += multiplier;
                         buffMsgArray.push(`✨ +${Math.floor(val)}% كريت`);
                         break;
-                    
-                    default:
-                        console.log(`[RaceBuff] Unknown stat: ${statTypeClean}`);
                 }
             }
         }
@@ -108,19 +94,17 @@ function applyDynamicBuffs(member, player, currentThemeKey, guildId, sql) {
     return buffMsgArray.length > 0 ? `🌟 **ميزات العرق:** ${buffMsgArray.join(' | ')}` : "";
 }
 
-// ✅ الدالة الأساسية لتجهيز اللاعبين
 async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeKey) {
     let players = [];
     
     const promises = partyIDs.map(id => guild.members.fetch(id).catch(() => null));
     const members = await Promise.all(promises);
 
-    members.forEach((m, index) => {
+    for (const m of members) {
         if (m) {
             const cls = partyClasses.get(m.id) || 'Adventurer';
-            let playerData = getRealPlayerData(m, sql, cls);
+            let playerData = await getRealPlayerData(m, sql, cls); 
             
-            // تنظيف البيانات
             playerData.atk = Number(playerData.atk);
             playerData.maxHp = Number(playerData.maxHp);
             playerData.hp = playerData.maxHp; 
@@ -133,17 +117,11 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
             playerData.shieldFloorsCount = 0; 
             playerData.summon = null; 
 
-            // ============================================================
-            // 🔥 تطبيق ميزات العرق (تراكمي)
-            // ============================================================
-            const raceBuffMsg = applyDynamicBuffs(m, playerData, themeKey, guild.id, sql);
+            const raceBuffMsg = await applyDynamicBuffs(m, playerData, themeKey, guild.id, sql);
             if (raceBuffMsg) {
                 playerData.raceBuffText = raceBuffMsg;
             }
 
-            // ============================================================
-            // 🔥 فحص الختم
-            // ============================================================
             playerData.isSealed = false;
             playerData.sealMultiplier = 1.0; 
             
@@ -168,20 +146,17 @@ async function setupPlayers(guild, partyIDs, partyClasses, sql, OWNER_ID, themeK
 
             players.push(playerData);
         }
-    });
+    }
 
     return players;
 }
 
-// 🔥🔥 دالة startDungeonLobby المضافة والمصححة 🔥🔥
 async function startDungeonLobby(message, startFloor = 1) {
     const client = message.client;
-    const sql = client.sql;
+    const db = client.sql;
     
-    // ✅ التصحيح: دعم الـ Slash Command والرسائل العادية
     const host = message.author || message.user; 
 
-    // الأزرار
     const activeRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('join_dungeon').setLabel('انضمام').setStyle(ButtonStyle.Success).setEmoji('⚔️'),
         new ButtonBuilder().setCustomId('start_dungeon_game').setLabel('بدء المعركة').setStyle(ButtonStyle.Danger).setEmoji('🔥'),
@@ -189,7 +164,7 @@ async function startDungeonLobby(message, startFloor = 1) {
     );
 
     const lobbyEmbed = new EmbedBuilder()
-        .setTitle(`🏰 بوابة الدانجون (الطابق ${startFloor})`) // تحديث العنوان
+        .setTitle(`🏰 بوابة الدانجون (الطابق ${startFloor})`) 
         .setDescription(
             `القائد **${host.username}** يجمع فريقاً!\n` +
             `اضغط على "انضمام" للمشاركة.\n\n` +
@@ -198,36 +173,37 @@ async function startDungeonLobby(message, startFloor = 1) {
         .setColor('DarkRed')
         .setThumbnail(host.displayAvatarURL());
 
-    // في حالة السلاش، نستخدم reply أو followUp، وفي حالة الرسالة نستخدم channel.send
     let msg;
     if (message.reply && typeof message.reply === 'function') {
-         // إذا كان تفاعلاً (Interaction)
          if (!message.replied && !message.deferred) {
              msg = await message.reply({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
          } else {
              msg = await message.followUp({ embeds: [lobbyEmbed], components: [activeRow], fetchReply: true });
          }
     } else {
-         // إذا كان رسالة عادية
          msg = await message.channel.send({ embeds: [lobbyEmbed], components: [activeRow] });
     }
 
-    // حفظ البيانات في active_dungeons
     const gameData = {
         hostID: host.id,
-        players: [host.id], // القائد دائماً موجود
-        currentFloor: startFloor, // 🔥 هنا التغيير المهم
+        players: [host.id], 
+        currentFloor: startFloor, 
         status: 'lobby',
-        hp: {}, // سيتم ملؤه عند البدء
+        hp: {}, 
         maxHp: {},
         startTime: Date.now()
     };
 
-    // استخدام القناة الصحيحة (سواء كانت من رسالة أو تفاعل)
     const channelId = message.channel ? message.channel.id : message.channelId;
     const guildId = message.guild ? message.guild.id : message.guildId;
 
-    sql.prepare("INSERT OR REPLACE INTO active_dungeons (channelID, guildID, hostID, data) VALUES (?, ?, ?, ?)").run(channelId, guildId, host.id, JSON.stringify(gameData));
+    await db.query(`
+        INSERT INTO active_dungeons (channelID, guildID, hostID, data) 
+        VALUES ($1, $2, $3, $4) 
+        ON CONFLICT (channelID, guildID) DO UPDATE SET 
+        hostID = EXCLUDED.hostID, 
+        data = EXCLUDED.data
+    `, [channelId, guildId, host.id, JSON.stringify(gameData)]);
 }
 
 module.exports = { setupPlayers, startDungeonLobby };
