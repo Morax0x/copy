@@ -81,7 +81,7 @@ module.exports = {
         }
 
         const now = Date.now();
-        const lastDaily = Number(data.lastDaily) || 0;
+        const lastDaily = Number(data.lastdaily ?? data.lastDaily) || 0;
 
         const todayKSA = getKSADateString(now);
         const lastDailyKSA = getKSADateString(lastDaily);
@@ -103,7 +103,7 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        let newStreak = Number(data.dailyStreak) || 0;
+        let newStreak = Number(data.dailystreak ?? data.dailyStreak) || 0;
         
         const date1 = new Date(todayKSA);
         const date2 = new Date(lastDailyKSA);
