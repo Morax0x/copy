@@ -9,10 +9,8 @@ const { handleCustomRoleInteraction } = require('./handlers/custom-role-handler.
 const { handleReactionRole } = require('./handlers/reaction-role-handler.js');
 const { handleBossInteraction } = require('./handlers/boss-handler.js');
 const { handleLandInteractions } = require('./handlers/farm-land.js');
-
 const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
-
 const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
 const marketConfig = require('./json/market-items.json');
@@ -70,9 +68,7 @@ async function updateBuilderEmbed(interaction, data) {
 }
 
 module.exports = (client, db, antiRolesCache) => {
-
     client.on(Events.InteractionCreate, async i => {
-
         if (processingInteractions.has(i.user.id)) {
             if (!i.isModalSubmit()) {
                 return i.reply({ content: '⏳ | يرجى الانتظار قليلاً بين المحاولات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
@@ -90,7 +86,7 @@ module.exports = (client, db, antiRolesCache) => {
                 if (!command) return;
 
                 try {
-                    const isBlacklisted = (await db.query("SELECT 1 FROM blacklistTable WHERE id = $1", [i.user.id])).rows.length > 0;
+                    const isBlacklisted = (await db.query("SELECT 1 FROM blacklist WHERE userID = $1", [i.user.id])).rows.length > 0;
                     if (isBlacklisted) return i.reply({ content: "🚫 **أنت في القائمة السوداء.**", flags: [MessageFlags.Ephemeral] });
                 } catch (e) {}
 
@@ -99,7 +95,7 @@ module.exports = (client, db, antiRolesCache) => {
                 else {
                     const settingsResult = await db.query("SELECT casinoChannelID, casinoChannelID2 FROM settings WHERE guild = $1", [i.guild.id]);
                     const settings = settingsResult.rows[0];
-                    if (settings && (settings.casinoChannelID === i.channel.id || settings.casinoChannelID2 === i.channel.id) && command.category === 'Economy') {
+                    if (settings && ((settings.casinochannelid || settings.casinoChannelID) === i.channel.id || (settings.casinochannelid2 || settings.casinoChannelID2) === i.channel.id) && command.category === 'Economy') {
                         isAllowed = true;
                     } else {
                         try {
@@ -128,6 +124,7 @@ module.exports = (client, db, antiRolesCache) => {
                 if (command?.autocomplete) await command.autocomplete(i);
                 return;
             }
+            
             if (i.isContextMenuCommand()) {
                 const command = i.client.commands.get(i.commandName);
                 if (command) await command.execute(i);
@@ -183,7 +180,7 @@ module.exports = (client, db, antiRolesCache) => {
                         .setTitle("📬 البريد الوارد أثناء غيابك");
 
                     let desc = "";
-                    msgs.forEach((msg, x) => {
+                    msgs.forEach((msg) => {
                         desc += `**✶ من:** <@${msg.authorID}>\n` +
                                 `**✶ الوقت:** <t:${msg.timestamp}:R>\n` +
                                 `**✶ الرسالة:**\n${msg.content}\n\n`; 
@@ -240,9 +237,7 @@ module.exports = (client, db, antiRolesCache) => {
                     id === 'fishing_gear_sub_menu' || id === 'shop_buy_bait_menu' ||
                     id === 'shop_buy_potion_menu'
                 ) {
-                    if (id.startsWith('buy_asset_') || id.startsWith('sell_asset_')) {
-
-                    } else {
+                    if (!id.startsWith('buy_asset_') && !id.startsWith('sell_asset_')) {
                         if (id === 'shop_select_item') await handleShopSelectMenu(i, client, db);
                         else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, db);
                         else await handleShopInteractions(i, client, db);
@@ -315,7 +310,7 @@ module.exports = (client, db, antiRolesCache) => {
 
         } catch (error) {
             if (error.code === 10062 || error.code === 40060) return;
-            console.error("خطأ غير متوقع في المعالج الرئيسي:", error);
+            console.error("Interaction Handler Error:", error);
         } finally {
             if (processingInteractions.has(i.user.id)) {
                 processingInteractions.delete(i.user.id);
@@ -337,13 +332,14 @@ async function handleMarketInteraction(interaction, client, db) {
 
         if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.', ephemeral: true });
 
-        const marketItem = (await db.query("SELECT * FROM market_items WHERE id = $1", [assetId])).rows[0];
+        const marketItemRes = await db.query("SELECT * FROM market_items WHERE id = $1", [assetId]);
+        const marketItem = marketItemRes.rows[0];
 
         let currentPrice = 0;
         let itemName = assetId;
 
         if (marketItem) {
-            currentPrice = marketItem.currentPrice;
+            currentPrice = marketItem.currentprice || marketItem.currentPrice;
             itemName = marketItem.name;
         } else {
             const configItem = marketConfig.find(i => i.id === assetId);
@@ -352,18 +348,20 @@ async function handleMarketInteraction(interaction, client, db) {
             itemName = configItem.name;
         }
 
-        const userData = (await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [user.id, guild.id])).rows[0];
+        const userDataRes = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [user.id, guild.id]);
+        const userData = userDataRes.rows[0];
         const userMora = userData ? userData.mora : 0;
         const totalCost = currentPrice * quantity;
 
         if (userMora < totalCost) return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**` });
 
-        const portfolioItem = (await db.query("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId])).rows[0];
+        const portfolioItemRes = await db.query("SELECT quantity, purchasePrice FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId]);
+        const portfolioItem = portfolioItemRes.rows[0];
         let newPurchasePrice = currentPrice;
 
         if (portfolioItem) {
             const oldQty = portfolioItem.quantity;
-            const oldPrice = portfolioItem.purchasePrice || 0;
+            const oldPrice = portfolioItem.purchaseprice || portfolioItem.purchasePrice || 0;
             const oldTotalCost = oldQty * oldPrice;
             const newTotalCost = quantity * currentPrice;
             const totalQty = parseInt(oldQty) + quantity;
@@ -402,14 +400,17 @@ async function handleMarketInteraction(interaction, client, db) {
 
         if (isNaN(quantity) || quantity <= 0) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح وموجب.' });
 
-        const portfolioItem = (await db.query("SELECT quantity FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId])).rows[0];
+        const portfolioItemRes = await db.query("SELECT quantity FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [user.id, guild.id, assetId]);
+        const portfolioItem = portfolioItemRes.rows[0];
 
         if (!portfolioItem || parseInt(portfolioItem.quantity) < quantity) {
             return interaction.editReply({ content: `🚫 لا تملك هذه الكمية للبيع! لديك: **${portfolioItem ? portfolioItem.quantity : 0}**` });
         }
 
-        const marketItem = (await db.query("SELECT * FROM market_items WHERE id = $1", [assetId])).rows[0];
-        let currentPrice = marketItem ? marketItem.currentPrice : 0;
+        const marketItemRes = await db.query("SELECT * FROM market_items WHERE id = $1", [assetId]);
+        const marketItem = marketItemRes.rows[0];
+        let currentPrice = marketItem ? (marketItem.currentprice || marketItem.currentPrice) : 0;
+        
         if (currentPrice === 0) {
             const configItem = marketConfig.find(i => i.id === assetId);
             currentPrice = configItem ? configItem.price : 0;
@@ -511,9 +512,9 @@ async function handleGiveawayBuilderButtons(i, client, db) {
         if (!i.replied && !i.deferred) await i.deferUpdate().catch(() => {});
         const giveawayID = i.message.id;
         const userID = i.user.id;
-        const existingEntry = (await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [giveawayID, userID])).rows[0];
+        const existingEntryRes = await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [giveawayID, userID]);
         let replyMessage = "";
-        if (existingEntry) {
+        if (existingEntryRes.rows.length > 0) {
             await db.query("DELETE FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [giveawayID, userID]);
             replyMessage = "✅ تـم الـغـاء الـمـشاركـة";
         } else {
@@ -527,10 +528,11 @@ async function handleGiveawayBuilderButtons(i, client, db) {
         const messageID = i.message.id;
         const userID = i.user.id;
         try {
-            const giveaway = (await db.query("SELECT * FROM active_giveaways WHERE messageID = $1 AND isFinished = 0", [messageID])).rows[0];
-            if (!giveaway || (giveaway.endsAt && giveaway.endsAt < Date.now())) return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
-            const existing = (await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [messageID, userID])).rows[0];
-            if (existing) return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
+            const giveawayRes = await db.query("SELECT * FROM active_giveaways WHERE messageID = $1 AND isFinished = 0", [messageID]);
+            const giveaway = giveawayRes.rows[0];
+            if (!giveaway || ((giveaway.endsat || giveaway.endsAt) && (giveaway.endsat || giveaway.endsAt) < Date.now())) return i.followUp({ content: "❌ هذا القيفاواي انتهى.", flags: [MessageFlags.Ephemeral] });
+            const existingRes = await db.query("SELECT 1 FROM giveaway_entries WHERE giveawayID = $1 AND userID = $2", [messageID, userID]);
+            if (existingRes.rows.length > 0) return i.followUp({ content: "⚠️ أنت مسجل بالفعل.", flags: [MessageFlags.Ephemeral] });
 
             let weight = 1;
             try { weight = await getUserWeight(i.member, db); } catch (err) {}
