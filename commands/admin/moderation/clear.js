@@ -26,7 +26,7 @@ module.exports = {
 
     // --- إعدادات Prefix Command ---
     name: 'clear',
-    aliases: ['مسح', 'تنظيف', 'د'], // الاختصارات المقترحة
+    aliases: ['مسح', 'تنظيف', 'د'], 
     description: "نظام مسح الرسائل",
     category: "Moderation",
 
@@ -40,10 +40,8 @@ module.exports = {
                 if (interactionOrMessage.deferred || interactionOrMessage.replied) return interactionOrMessage.editReply(payload);
                 return interactionOrMessage.reply(payload);
             }
-            // في الرسائل العادية، نحذف رسالة الأمر ثم نرسل الرد ثم نحذفه
             try { await interactionOrMessage.delete().catch(() => {}); } catch(e) {}
             const msg = await interactionOrMessage.channel.send(payload);
-            // حذف رسالة البوت بعد 5 ثواني
             setTimeout(() => msg.delete().catch(() => {}), 5000);
             return msg;
         };
@@ -63,46 +61,32 @@ module.exports = {
             targetUser = interactionOrMessage.options.getUser('target');
             amount = interactionOrMessage.options.getInteger('count');
         } else {
-            // منطق الـ Prefix الذكي
-            // الأمثلة:
-            // -clear          => مسح 100
-            // -clear 50       => مسح 50
-            // -clear @user    => مسح 30 للعضو
-            // -clear @user 50 => مسح 50 للعضو
-            // -clear global @user => مسح شامل 30
-            
             const firstArg = args[0];
             const secondArg = args[1];
             const mention = interactionOrMessage.mentions.users.first();
 
             if (!firstArg) {
-                // حالة: -clear (بدون شيء)
                 subcommand = 'amount';
                 amount = 100;
             } else if (!isNaN(firstArg)) {
-                // حالة: -clear 50
                 subcommand = 'amount';
                 amount = parseInt(firstArg);
             } else if (mention && (firstArg.includes(mention.id))) {
-                // حالة: -clear @user [number]
                 subcommand = 'user';
                 targetUser = mention;
                 amount = !isNaN(secondArg) ? parseInt(secondArg) : 30;
             } else if (['global', 'شامل', 'عام'].includes(firstArg.toLowerCase())) {
-                // حالة: -clear global @user
                 subcommand = 'global';
                 targetUser = interactionOrMessage.mentions.users.first();
                 if (!targetUser) return replyFunc({ content: "❌ **يرجى منشن العضو للمسح الشامل.**" });
-                // البحث عن الرقم في الخانة الثالثة
                 amount = args[2] && !isNaN(args[2]) ? parseInt(args[2]) : 30;
             } else {
                 return replyFunc({ content: "❌ **صيغة الأمر غير صحيحة.**" });
             }
         }
 
-        // التأكد من الحدود
-        if (subcommand === 'amount') amount = amount || 100; // الافتراضي 100
-        if (amount > 100) amount = 100; // الحد الأقصى للديسكورد
+        if (subcommand === 'amount') amount = amount || 100; 
+        if (amount > 100) amount = 100; 
 
         // ============================
         // 🔹 1. المسح العادي (الكل)
@@ -120,12 +104,10 @@ module.exports = {
         // 🔹 2. مسح رسائل عضو (قناة)
         // ============================
         else if (subcommand === 'user') {
-            amount = amount || 30; // الافتراضي 30
+            amount = amount || 30; 
             const channel = interactionOrMessage.channel;
             
-            // جلب آخر 100 رسالة (للبحث فيها)
             const messages = await channel.messages.fetch({ limit: 100 });
-            // فلترة رسائل العضو المحدد فقط
             const userMessages = messages.filter(m => m.author.id === targetUser.id).first(amount);
 
             if (userMessages.length === 0) {
@@ -144,10 +126,9 @@ module.exports = {
         // 🔹 3. المسح الشامل (كل القنوات)
         // ============================
         else if (subcommand === 'global') {
-            amount = amount || 30; // الافتراضي 30
+            amount = amount || 30; 
             const guild = interactionOrMessage.guild;
             
-            // رسالة انتظار لأن العملية قد تطول
             let progressMsg;
             if (isSlash) {
                 await interactionOrMessage.editReply({ content: `🔄 **جاري المسح الشامل لرسائل ${targetUser}... يرجى الانتظار.**` });
@@ -157,15 +138,12 @@ module.exports = {
 
             let totalDeleted = 0;
             let channelsChecked = 0;
-            // نأخذ القنوات النصية فقط
             const textChannels = guild.channels.cache.filter(c => c.isTextBased() && !c.isVoiceBased());
 
             for (const [id, channel] of textChannels) {
-                // تخطي القنوات التي لا يملك البوت صلاحية فيها
                 if (!channel.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.ManageMessages)) continue;
 
                 try {
-                    // البحث في آخر 50 رسالة بكل قناة لتسريع العملية
                     const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
                     if (!messages) continue;
 
