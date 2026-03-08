@@ -30,7 +30,6 @@ async function setupDatabase(db) {
         "CREATE TABLE IF NOT EXISTS user_farm (id BIGSERIAL PRIMARY KEY, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, quantity BIGINT DEFAULT 1, purchaseTimestamp BIGINT DEFAULT 0, lastCollected BIGINT DEFAULT 0, lastFedTimestamp BIGINT DEFAULT 0)",
         "CREATE INDEX IF NOT EXISTS idx_user_farm_lookup ON user_farm (guildID, userID)",
         
-        // 🔥 تم إضافة جدول user_lands المفقود لحل المشكلة 🔥
         "CREATE TABLE IF NOT EXISTS user_lands (id BIGSERIAL PRIMARY KEY, guildID TEXT NOT NULL, userID TEXT NOT NULL, landType TEXT NOT NULL, quantity BIGINT DEFAULT 1, purchaseTimestamp BIGINT DEFAULT 0, lastHarvested BIGINT DEFAULT 0, UNIQUE(guildID, userID, landType))",
         
         "CREATE TABLE IF NOT EXISTS user_daily_stats (id TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, date TEXT NOT NULL, messages BIGINT DEFAULT 0, images BIGINT DEFAULT 0, stickers BIGINT DEFAULT 0, emojis_sent BIGINT DEFAULT 0, reactions_added BIGINT DEFAULT 0, replies_sent BIGINT DEFAULT 0, mentions_received BIGINT DEFAULT 0, vc_minutes BIGINT DEFAULT 0, water_tree BIGINT DEFAULT 0, counting_channel BIGINT DEFAULT 0, meow_count BIGINT DEFAULT 0, streaming_minutes BIGINT DEFAULT 0, disboard_bumps BIGINT DEFAULT 0, boost_channel_reactions BIGINT DEFAULT 0, ai_interactions BIGINT DEFAULT 0, casino_profit BIGINT DEFAULT 0, mora_earned BIGINT DEFAULT 0, mora_donated BIGINT DEFAULT 0, knights_defeated BIGINT DEFAULT 0, fish_caught BIGINT DEFAULT 0, pvp_wins BIGINT DEFAULT 0, crops_harvested BIGINT DEFAULT 0)",
@@ -107,7 +106,6 @@ async function setupDatabase(db) {
 
     await db.query("DROP TABLE IF EXISTS command_channels").catch(() => {});
 
-    // 🛠️ دالة مساعدة سحابية لإضافة الأعمدة الناقصة بأمان
     async function ensureColumn(table, column, typeDef) {
         try {
             let pgTypeDef = typeDef.replace(/INTEGER/g, 'BIGINT');
@@ -116,8 +114,7 @@ async function setupDatabase(db) {
         } catch (e) { }
     }
 
-    // --- صيانة الجداول الرئيسية ---
-    await ensureColumn('levels', 'id', 'TEXT UNIQUE'); // 🔥 لحماية بيانات الدانجون وإحصائيات الملوك 🔥
+    await ensureColumn('levels', 'id', 'TEXT UNIQUE'); 
 
     const levelsCols = ['mora', 'lastWork', 'lastDaily', 'dailyStreak', 'bank', 'lastInterest', 'totalInterestEarned', 'hasGuard', 'guardExpires', 'lastCollected', 'totalVCTime', 'lastRob', 'lastGuess', 'lastRPS', 'lastRoulette', 'lastTransfer', 'lastDeposit', 'shop_purchases', 'total_meow_count', 'boost_count', 'lastPVP', 'lastFarmYield', 'lastFish', 'rodLevel', 'boatLevel', 'lastMemory', 'lastArrange', 'last_dungeon', 'lastRace'];
     for (const col of levelsCols) {
@@ -129,7 +126,10 @@ async function setupDatabase(db) {
     await ensureColumn('levels', 'last_rob_pardon', "TEXT DEFAULT ''");
     await ensureColumn('levels', 'currentLocation', "TEXT DEFAULT 'beach'");
 
-    // أعمدة الدانجون
+    // 🔥 حل مشكلة أمر مستويات الأعضاء والتحويل
+    await ensureColumn('levels', 'lastTransferDate', "TEXT DEFAULT ''");
+    await ensureColumn('levels', 'dailyTransferCount', 'BIGINT DEFAULT 0');
+
     await ensureColumn('levels', 'dungeon_gate_level', 'BIGINT DEFAULT 1');
     await ensureColumn('levels', 'max_dungeon_floor', 'BIGINT DEFAULT 0');
     await ensureColumn('levels', 'dungeon_wins', 'BIGINT DEFAULT 0');
@@ -138,17 +138,19 @@ async function setupDatabase(db) {
     await ensureColumn('levels', 'last_dungeon', 'BIGINT DEFAULT 0'); 
     await ensureColumn('levels', 'lastRace', 'BIGINT DEFAULT 0');
 
-    // ✅ إضافة الأعمدة اليومية لنقابة المغامرين (شاملة الملوك الجدد)
-    const dailyCols = ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions', 'casino_profit', 'mora_earned', 'mora_donated', 'knights_defeated', 'fish_caught', 'pvp_wins', 'crops_harvested'];
+    // 🔥 حل مشكلة الإحصائيات والتصويت
+    const dailyCols = ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions', 'casino_profit', 'mora_earned', 'mora_donated', 'knights_defeated', 'fish_caught', 'pvp_wins', 'crops_harvested', 'topgg_votes'];
     for (const col of dailyCols) {
         await ensureColumn('user_daily_stats', col, 'BIGINT DEFAULT 0');
     }
     
     await ensureColumn('user_weekly_stats', 'emojis_sent', 'BIGINT DEFAULT 0');
+    await ensureColumn('user_weekly_stats', 'topgg_votes', 'BIGINT DEFAULT 0'); // 🔥 تمت الإضافة
       
     await ensureColumn('user_total_stats', 'total_vc_minutes', 'BIGINT DEFAULT 0');
     await ensureColumn('user_total_stats', 'total_disboard_bumps', 'BIGINT DEFAULT 0');
     await ensureColumn('user_total_stats', 'total_emojis_sent', 'BIGINT DEFAULT 0');
+    await ensureColumn('user_total_stats', 'total_topgg_votes', 'BIGINT DEFAULT 0'); // 🔥 تمت الإضافة
 
     await ensureColumn('user_daily_stats', 'ai_interactions', 'BIGINT DEFAULT 0');
     await ensureColumn('user_weekly_stats', 'ai_interactions', 'BIGINT DEFAULT 0');
@@ -162,7 +164,6 @@ async function setupDatabase(db) {
     await ensureColumn('streaks', 'highestStreak', 'BIGINT DEFAULT 0');
     await ensureColumn('streaks', 'has12hWarning', 'BIGINT DEFAULT 0');
       
-    // --- صيانة إعدادات السيرفر ---
     const settingsCols = [
         "questChannelID", "treeBotID", "treeChannelID", "treeMessageID", "countingChannelID", "vipRoleID", 
         "casinoChannelID", "casinoChannelID2", "dropGiveawayChannelID", "dropTitle", "dropDescription", 
@@ -185,7 +186,6 @@ async function setupDatabase(db) {
     }
     await ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'");
 
-    // --- 🔥 صيانة جداول العائلة 🔥 ---
     await ensureColumn('marriages', 'partnerID', 'TEXT');
     await ensureColumn('marriages', 'userID', 'TEXT');
     await ensureColumn('marriages', 'guildID', 'TEXT');
@@ -201,16 +201,13 @@ async function setupDatabase(db) {
     await ensureColumn('family_config', 'divorceFee', 'BIGINT DEFAULT 5000');
     await ensureColumn('family_config', 'adoptFee', 'BIGINT DEFAULT 2000');
 
-    // --- 🔥 صيانة جدول الـ AFK 🔥 ---
     await ensureColumn('afk', 'mentionsCount', 'BIGINT DEFAULT 0');
     await ensureColumn('afk', 'subscribers', "TEXT DEFAULT '[]'");
     await ensureColumn('afk', 'messages', "TEXT DEFAULT '[]'");
 
-    // --- 🔥 صيانة أعمدة الدانجون والخيم (Fix) 🔥 ---
     await ensureColumn('dungeon_stats', 'campfires', 'BIGINT DEFAULT 1');
     await ensureColumn('dungeon_stats', 'last_campfire_reset', "TEXT DEFAULT ''");
 
-    // --- إكمال الباقي ---
     await ensureColumn('user_portfolio', 'purchasePrice', 'BIGINT DEFAULT 0');
     await ensureColumn('user_farm', 'quantity', 'BIGINT DEFAULT 1');
     await ensureColumn('user_farm', 'lastFedTimestamp', `BIGINT DEFAULT ${Date.now()}`); 
