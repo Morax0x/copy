@@ -30,6 +30,7 @@ async function setupDatabase(db) {
         "CREATE TABLE IF NOT EXISTS user_farm (id BIGSERIAL PRIMARY KEY, guildID TEXT NOT NULL, userID TEXT NOT NULL, animalID TEXT NOT NULL, quantity BIGINT DEFAULT 1, purchaseTimestamp BIGINT DEFAULT 0, lastCollected BIGINT DEFAULT 0, lastFedTimestamp BIGINT DEFAULT 0)",
         "CREATE INDEX IF NOT EXISTS idx_user_farm_lookup ON user_farm (guildID, userID)",
         
+        // 🔥 تم إضافة جدول user_lands المفقود لحل المشكلة 🔥
         "CREATE TABLE IF NOT EXISTS user_lands (id BIGSERIAL PRIMARY KEY, guildID TEXT NOT NULL, userID TEXT NOT NULL, landType TEXT NOT NULL, quantity BIGINT DEFAULT 1, purchaseTimestamp BIGINT DEFAULT 0, lastHarvested BIGINT DEFAULT 0, UNIQUE(guildID, userID, landType))",
         
         "CREATE TABLE IF NOT EXISTS user_daily_stats (id TEXT PRIMARY KEY, userID TEXT NOT NULL, guildID TEXT NOT NULL, date TEXT NOT NULL, messages BIGINT DEFAULT 0, images BIGINT DEFAULT 0, stickers BIGINT DEFAULT 0, emojis_sent BIGINT DEFAULT 0, reactions_added BIGINT DEFAULT 0, replies_sent BIGINT DEFAULT 0, mentions_received BIGINT DEFAULT 0, vc_minutes BIGINT DEFAULT 0, water_tree BIGINT DEFAULT 0, counting_channel BIGINT DEFAULT 0, meow_count BIGINT DEFAULT 0, streaming_minutes BIGINT DEFAULT 0, disboard_bumps BIGINT DEFAULT 0, boost_channel_reactions BIGINT DEFAULT 0, ai_interactions BIGINT DEFAULT 0, casino_profit BIGINT DEFAULT 0, mora_earned BIGINT DEFAULT 0, mora_donated BIGINT DEFAULT 0, knights_defeated BIGINT DEFAULT 0, fish_caught BIGINT DEFAULT 0, pvp_wins BIGINT DEFAULT 0, crops_harvested BIGINT DEFAULT 0)",
@@ -212,6 +213,8 @@ async function setupDatabase(db) {
     await ensureColumn('user_farm', 'quantity', 'BIGINT DEFAULT 1');
     await ensureColumn('user_farm', 'lastFedTimestamp', `BIGINT DEFAULT ${Date.now()}`); 
     await ensureColumn('quest_notifications', 'levelNotif', 'BIGINT DEFAULT 1');
+    await ensureColumn('quest_notifications', 'kingsnotif', 'BIGINT DEFAULT 1'); // 🔥 تم إضافة هذا السطر
+    await ensureColumn('quest_notifications', 'badgesnotif', 'BIGINT DEFAULT 1'); // 🔥 تم إضافة هذا السطر
     await ensureColumn('active_giveaways', 'xpReward', 'BIGINT DEFAULT 0');
     await ensureColumn('active_giveaways', 'moraReward', 'BIGINT DEFAULT 0');
     await ensureColumn('active_giveaways', 'isFinished', 'BIGINT DEFAULT 0');
