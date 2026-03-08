@@ -423,7 +423,6 @@ module.exports = {
 
         if (db) {
             try {
-                // للسرعة المبدئية، نتخطى الفحص المعقد إذا لم يكن ضرورياً، أو يمكننا إنشاء كاش له مستقبلاً.
                 const isChannelIgnoredRes = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [message.guild.id, message.channel.id]);
                 if (isChannelIgnoredRes.rows.length > 0) return; 
             } catch (e) {}
@@ -433,8 +432,8 @@ module.exports = {
             const userID = message.author.id;
             const guildID = message.guild.id;
 
-            // 🔥 Fire and Forget 
-            updateGuildStat(client, guildID, userID, 'messages', 1).catch(()=>{});
+            // 🔥 استدعاء دالة تحديث بيانات النقابة (Guild Board Handler) بشكل صحيح
+            updateGuildStat(client, guildID, userID, 'messages', 1).catch(e => {});
 
             if (settings && (settings.chatterchannelid || settings.chatterChannelID) && message.channel.id === (settings.chatterchannelid || settings.chatterChannelID)) {
                 const todayDate = getTodayDateString();
@@ -516,10 +515,10 @@ module.exports = {
             const isMediaChannelRes = await db.query("SELECT * FROM media_streak_channels WHERE guildID = $1 AND channelID = $2", [guildID, message.channel.id]);
             if (isMediaChannelRes.rows.length > 0) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
-                    handleMediaStreakMessage(message).catch(()=>{}); // Fire and Forget
+                    handleMediaStreakMessage(message).catch(()=>{}); 
                 }
             }
-            handleStreakMessage(message).catch(()=>{}); // Fire and Forget
+            handleStreakMessage(message).catch(()=>{}); 
 
             let getXpfromDB = settings?.customxp || settings?.customXP || 25;
             let getCooldownfromDB = settings?.customcooldown || settings?.customCooldown || 60000;
@@ -550,7 +549,6 @@ module.exports = {
                     currentLevelData.xp -= nextXP; 
                     currentLevelData.level++;
                     
-                    // تحديث في الذاكرة فوراً والسحابة بالخلفية
                     client.setLevel(currentLevelData).catch(()=>{});
                     
                     try {
@@ -577,7 +575,7 @@ module.exports = {
                         message.channel.send(backupMsg).catch(()=>{});
                     }
                 } else {
-                    client.setLevel(currentLevelData).catch(()=>{}); // تحديث صامت وسريع
+                    client.setLevel(currentLevelData).catch(()=>{}); 
                 }
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
