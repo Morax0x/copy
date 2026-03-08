@@ -99,6 +99,24 @@ module.exports = {
 
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
 
+        // 🚨 خطة الطوارئ: اعتراض أمر الهجرة الكبرى (mc) فوراً! 🚨
+        if (message.content.trim().startsWith('-mc') || message.content.trim().startsWith('-هجرة')) {
+            const OWNER_ID = "1145327691772481577";
+            if (message.author.id === OWNER_ID) {
+                const migrateCmd = client.commands.get('migrate-cloud') || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes('mc'));
+                if (migrateCmd) {
+                    try {
+                        await migrateCmd.execute(message, []);
+                        return; // نوقف باقي الكود لكي لا يتدخل
+                    } catch (e) {
+                        console.error("[Migrate Trigger Error]:", e);
+                    }
+                } else {
+                    return message.reply("⚠️ لم أتمكن من العثور على ملف الأمر `migrate-cloud.js` في مجلد الأوامر!");
+                }
+            }
+        }
+
         // ⚡ جلب الإعدادات من الذاكرة العشوائية (سريع جداً)
         const settings = await getSettings(db, message.guild.id);
         let Prefix = settings?.prefix || "-";
