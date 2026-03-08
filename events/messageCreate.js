@@ -103,16 +103,26 @@ module.exports = {
         if (message.content.trim().startsWith('-mc') || message.content.trim().startsWith('-هجرة')) {
             const OWNER_ID = "1145327691772481577";
             if (message.author.id === OWNER_ID) {
-                const migrateCmd = client.commands.get('migrate-cloud') || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes('mc'));
-                if (migrateCmd) {
+                try {
+                    // استدعاء مباشر للملف لتخطي أي مشاكل في البحث
+                    let migrateCmd;
                     try {
-                        await migrateCmd.execute(message, []);
-                        return; // نوقف باقي الكود لكي لا يتدخل
-                    } catch (e) {
-                        console.error("[Migrate Trigger Error]:", e);
+                        migrateCmd = require('../commands/Owner/migrate-cloud.js');
+                    } catch (err) {
+                        try {
+                            migrateCmd = require('../commands/migrate-cloud.js');
+                        } catch (err2) {
+                            return message.reply("⚠️ لم أتمكن من العثور على مسار ملف `migrate-cloud.js`!");
+                        }
                     }
-                } else {
-                    return message.reply("⚠️ لم أتمكن من العثور على ملف الأمر `migrate-cloud.js` في مجلد الأوامر!");
+                    
+                    if (migrateCmd) {
+                        await migrateCmd.execute(message, []);
+                        return; // نوقف باقي الكود
+                    }
+                } catch (e) {
+                    console.error("[Migrate Trigger Error]:", e);
+                    return message.reply(`⚠️ حدث خطأ أثناء تشغيل أمر الهجرة: ${e.message}`);
                 }
             }
         }
@@ -450,7 +460,6 @@ module.exports = {
             const userID = message.author.id;
             const guildID = message.guild.id;
 
-            // 🔥 استدعاء دالة تحديث بيانات النقابة (Guild Board Handler) بشكل صحيح
             updateGuildStat(client, guildID, userID, 'messages', 1).catch(e => {});
 
             if (settings && (settings.chatterchannelid || settings.chatterChannelID) && message.channel.id === (settings.chatterchannelid || settings.chatterChannelID)) {
