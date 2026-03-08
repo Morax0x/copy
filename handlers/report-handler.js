@@ -48,7 +48,7 @@ async function sendReportError(destination, title, description, ephemeral = fals
 }
 
 async function processReportLogic(client, interactionOrMessage, targetMember, reason, reportedMessageLink = null) {
-    const db = client.db;
+    const db = client.sql;
     const guild = interactionOrMessage.guild;
     const reporter = interactionOrMessage.member;
     const settings = await getReportSettings(db, guild.id);
@@ -164,7 +164,8 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
 }
 
 async function checkUnjailTask(client) {
-    const db = client.db;
+    const db = client.sql;
+    if (!db) return;
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const res = await db.query("SELECT * FROM jailed_members WHERE unjailtime <= $1", [currentTimestamp]);
     const jailedToRelease = res.rows;
