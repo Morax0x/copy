@@ -39,6 +39,16 @@ module.exports = (client, db) => {
         for (let key in row) {
             if (fixed[key] === undefined) fixed[key] = row[key];
         }
+
+        // 🔥 إجبار تحويل الأرقام الفلكية لنوع رقمي حقيقي لمنع الاندماج النصي
+        for (const [k, v] of Object.entries(fixed)) {
+            if (typeof v === 'string' && !isNaN(v) && v.trim() !== '') {
+                // نستثني الآيديات والتواريخ لأنها نصوص أرقام لا تُجمع
+                if (!['user', 'userid', 'guild', 'guildid', 'id', 'lasttransferdate', 'date', 'weekstartdate', 'currentlocation', 'last_rob_pardon', 'last_ticket_reset'].includes(k.toLowerCase())) {
+                    fixed[k] = Number(v);
+                }
+            }
+        }
         return fixed;
     }
 
@@ -80,14 +90,15 @@ module.exports = (client, db) => {
                 currentLocation = EXCLUDED.currentLocation, lastMemory = EXCLUDED.lastMemory, lastArrange = EXCLUDED.lastArrange, last_dungeon = EXCLUDED.last_dungeon, dungeon_gate_level = EXCLUDED.dungeon_gate_level, max_dungeon_floor = EXCLUDED.max_dungeon_floor, dungeon_wins = EXCLUDED.dungeon_wins,
                 lastRace = EXCLUDED.lastRace, lastTransferDate = EXCLUDED.lastTransferDate, dailyTransferCount = EXCLUDED.dailyTransferCount;
         `;
+        // 🔥 تأمين إضافي للمتغيرات قبل الإرسال للسحابة
         db.query(query, [
-            userId, guildId, data.xp || 0, data.level || 1, data.totalXP ?? data.totalxp ?? 0, data.mora || 0, data.lastWork ?? data.lastwork ?? 0, data.lastDaily ?? data.lastdaily ?? 0, data.dailyStreak ?? data.dailystreak ?? 0, data.bank || 0,
-            data.lastInterest ?? data.lastinterest ?? 0, data.totalInterestEarned ?? data.totalinterestearned ?? 0, data.hasGuard ?? data.hasguard ?? 0, data.guardExpires ?? data.guardexpires ?? 0, data.totalVCTime ?? data.totalvctime ?? 0, data.lastCollected ?? data.lastcollected ?? 0,
-            data.lastRob ?? data.lastrob ?? 0, data.lastGuess ?? data.lastguess ?? 0, data.lastRPS ?? data.lastrps ?? 0, data.lastRoulette ?? data.lastroulette ?? 0, data.lastTransfer ?? data.lasttransfer ?? 0, data.lastDeposit ?? data.lastdeposit ?? 0, data.shop_purchases ?? 0,
-            data.total_meow_count ?? 0, data.boost_count ?? 0, data.lastPVP ?? data.lastpvp ?? 0, data.lastFarmYield ?? data.lastfarmyield ?? 0, data.lastFish ?? data.lastfish ?? 0, data.rodLevel ?? data.rodlevel ?? 1, data.boatLevel ?? data.boatlevel ?? 1,
-            data.currentLocation ?? data.currentlocation ?? 'beach', data.lastMemory ?? data.lastmemory ?? 0, data.lastArrange ?? data.lastarrange ?? 0, data.last_dungeon ?? 0, data.dungeon_gate_level ?? 1, data.max_dungeon_floor ?? 0, data.dungeon_wins ?? 0,
-            data.lastRace ?? data.lastrace ?? 0, data.lastTransferDate ?? data.lasttransferdate ?? '', data.dailyTransferCount ?? data.dailytransfercount ?? 0
-        ]).catch((err) => console.error("❌ [Level Save Error]:", err.message)); // 🔴 هنا سيظهر الخطأ
+            userId, guildId, Number(data.xp) || 0, Number(data.level) || 1, Number(data.totalXP ?? data.totalxp) || 0, Number(data.mora) || 0, Number(data.lastWork ?? data.lastwork) || 0, Number(data.lastDaily ?? data.lastdaily) || 0, Number(data.dailyStreak ?? data.dailystreak) || 0, Number(data.bank) || 0,
+            Number(data.lastInterest ?? data.lastinterest) || 0, Number(data.totalInterestEarned ?? data.totalinterestearned) || 0, Number(data.hasGuard ?? data.hasguard) || 0, Number(data.guardExpires ?? data.guardexpires) || 0, Number(data.totalVCTime ?? data.totalvctime) || 0, Number(data.lastCollected ?? data.lastcollected) || 0,
+            Number(data.lastRob ?? data.lastrob) || 0, Number(data.lastGuess ?? data.lastguess) || 0, Number(data.lastRPS ?? data.lastrps) || 0, Number(data.lastRoulette ?? data.lastroulette) || 0, Number(data.lastTransfer ?? data.lasttransfer) || 0, Number(data.lastDeposit ?? data.lastdeposit) || 0, Number(data.shop_purchases) || 0,
+            Number(data.total_meow_count) || 0, Number(data.boost_count) || 0, Number(data.lastPVP ?? data.lastpvp) || 0, Number(data.lastFarmYield ?? data.lastfarmyield) || 0, Number(data.lastFish ?? data.lastfish) || 0, Number(data.rodLevel ?? data.rodlevel) || 1, Number(data.boatLevel ?? data.boatlevel) || 1,
+            data.currentLocation ?? data.currentlocation ?? 'beach', Number(data.lastMemory ?? data.lastmemory) || 0, Number(data.lastArrange ?? data.lastarrange) || 0, Number(data.last_dungeon) || 0, Number(data.dungeon_gate_level) || 1, Number(data.max_dungeon_floor) || 0, Number(data.dungeon_wins) || 0,
+            Number(data.lastRace ?? data.lastrace) || 0, data.lastTransferDate ?? data.lasttransferdate ?? '', Number(data.dailyTransferCount ?? data.dailytransfercount) || 0
+        ]).catch((err) => console.error("❌ [Level Save Error]:", err.message)); 
     };
 
     client.getDailyStats = async function(id) {
@@ -109,7 +120,7 @@ module.exports = (client, db) => {
             userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, date=EXCLUDED.date, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, boost_channel_reactions=EXCLUDED.boost_channel_reactions, topgg_votes=EXCLUDED.topgg_votes;
         `;
         db.query(query, [
-            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.date, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.boost_channel_reactions ?? 0, data.topgg_votes ?? 0
+            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.date, Number(data.messages) || 0, Number(data.images) || 0, Number(data.stickers) || 0, Number(data.emojis_sent) || 0, Number(data.reactions_added) || 0, Number(data.replies_sent) || 0, Number(data.mentions_received) || 0, Number(data.vc_minutes) || 0, Number(data.water_tree) || 0, Number(data.counting_channel) || 0, Number(data.meow_count) || 0, Number(data.streaming_minutes) || 0, Number(data.disboard_bumps) || 0, Number(data.boost_channel_reactions) || 0, Number(data.topgg_votes) || 0
         ]).catch((err) => console.error("❌ [DailyStats Save Error]:", err.message));
     };
 
@@ -132,7 +143,7 @@ module.exports = (client, db) => {
             userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, weekStartDate=EXCLUDED.weekStartDate, messages=EXCLUDED.messages, images=EXCLUDED.images, stickers=EXCLUDED.stickers, emojis_sent=EXCLUDED.emojis_sent, reactions_added=EXCLUDED.reactions_added, replies_sent=EXCLUDED.replies_sent, mentions_received=EXCLUDED.mentions_received, vc_minutes=EXCLUDED.vc_minutes, water_tree=EXCLUDED.water_tree, counting_channel=EXCLUDED.counting_channel, meow_count=EXCLUDED.meow_count, streaming_minutes=EXCLUDED.streaming_minutes, disboard_bumps=EXCLUDED.disboard_bumps, topgg_votes=EXCLUDED.topgg_votes;
         `;
         db.query(query, [
-            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.weekStartDate ?? data.weekstartdate, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.topgg_votes ?? 0
+            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.weekStartDate ?? data.weekstartdate, Number(data.messages) || 0, Number(data.images) || 0, Number(data.stickers) || 0, Number(data.emojis_sent) || 0, Number(data.reactions_added) || 0, Number(data.replies_sent) || 0, Number(data.mentions_received) || 0, Number(data.vc_minutes) || 0, Number(data.water_tree) || 0, Number(data.counting_channel) || 0, Number(data.meow_count) || 0, Number(data.streaming_minutes) || 0, Number(data.disboard_bumps) || 0, Number(data.topgg_votes) || 0
         ]).catch((err) => console.error("❌ [WeeklyStats Save Error]:", err.message));
     };
 
@@ -155,7 +166,7 @@ module.exports = (client, db) => {
             userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, total_messages=EXCLUDED.total_messages, total_images=EXCLUDED.total_images, total_stickers=EXCLUDED.total_stickers, total_emojis_sent=EXCLUDED.total_emojis_sent, total_reactions_added=EXCLUDED.total_reactions_added, total_replies_sent=EXCLUDED.total_replies_sent, total_mentions_received=EXCLUDED.total_mentions_received, total_vc_minutes=EXCLUDED.total_vc_minutes, total_disboard_bumps=EXCLUDED.total_disboard_bumps, total_topgg_votes=EXCLUDED.total_topgg_votes;
         `;
         db.query(query, [
-            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.total_messages ?? 0, data.total_images ?? 0, data.total_stickers ?? 0, data.total_emojis_sent ?? 0, data.total_reactions_added ?? 0, data.total_replies_sent ?? 0, data.total_mentions_received ?? 0, data.total_vc_minutes ?? 0, data.total_disboard_bumps ?? 0, data.total_topgg_votes ?? 0
+            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, Number(data.total_messages) || 0, Number(data.total_images) || 0, Number(data.total_stickers) || 0, Number(data.total_emojis_sent) || 0, Number(data.total_reactions_added) || 0, Number(data.total_replies_sent) || 0, Number(data.total_mentions_received) || 0, Number(data.total_vc_minutes) || 0, Number(data.total_disboard_bumps) || 0, Number(data.total_topgg_votes) || 0
         ]).catch((err) => console.error("❌ [TotalStats Save Error]:", err.message));
     };
 
@@ -178,7 +189,7 @@ module.exports = (client, db) => {
             userID=EXCLUDED.userID, guildID=EXCLUDED.guildID, dailyNotif=EXCLUDED.dailyNotif, weeklyNotif=EXCLUDED.weeklyNotif, achievementsNotif=EXCLUDED.achievementsNotif, levelNotif=EXCLUDED.levelNotif, kingsNotif=EXCLUDED.kingsNotif, badgesNotif=EXCLUDED.badgesNotif;
         `;
         db.query(query, [
-            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.dailyNotif ?? data.dailynotif ?? 1, data.weeklyNotif ?? data.weeklynotif ?? 1, data.achievementsNotif ?? data.achievementsnotif ?? 1, data.levelNotif ?? data.levelnotif ?? 1, data.kingsNotif ?? data.kingsnotif ?? 1, data.badgesNotif ?? data.badgesnotif ?? 1
+            data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, Number(data.dailyNotif ?? data.dailynotif) || 1, Number(data.weeklyNotif ?? data.weeklynotif) || 1, Number(data.achievementsNotif ?? data.achievementsnotif) || 1, Number(data.levelNotif ?? data.levelnotif) || 1, Number(data.kingsNotif ?? data.kingsnotif) || 1, Number(data.badgesNotif ?? data.badgesnotif) || 1
         ]).catch((err) => console.error("❌ [QuestNotif Save Error]:", err.message));
     };
 };
