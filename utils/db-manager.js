@@ -59,7 +59,7 @@ module.exports = (client, db) => {
         const guildId = data.guild || data.guildid;
         const cacheKey = `${userId}-${guildId}`;
         
-        levelsCache.set(cacheKey, data); // تحديث الذاكرة فوراً لسرعة البرق
+        levelsCache.set(cacheKey, data); // حفظ في الرام للسرعة
 
         const query = `
             INSERT INTO levels (
@@ -87,7 +87,7 @@ module.exports = (client, db) => {
             data.total_meow_count ?? 0, data.boost_count ?? 0, data.lastPVP ?? data.lastpvp ?? 0, data.lastFarmYield ?? data.lastfarmyield ?? 0, data.lastFish ?? data.lastfish ?? 0, data.rodLevel ?? data.rodlevel ?? 1, data.boatLevel ?? data.boatlevel ?? 1,
             data.currentLocation ?? data.currentlocation ?? 'beach', data.lastMemory ?? data.lastmemory ?? 0, data.lastArrange ?? data.lastarrange ?? 0, data.last_dungeon ?? 0, data.dungeon_gate_level ?? 1, data.max_dungeon_floor ?? 0, data.dungeon_wins ?? 0,
             data.lastRace ?? data.lastrace ?? 0, data.lastTransferDate ?? data.lasttransferdate ?? '', data.dailyTransferCount ?? data.dailytransfercount ?? 0
-        ]).catch(() => {});
+        ]).catch((err) => console.error("❌ [Level Save Error]:", err.message)); // 🔴 هنا سيظهر الخطأ
     };
 
     client.getDailyStats = async function(id) {
@@ -110,7 +110,7 @@ module.exports = (client, db) => {
         `;
         db.query(query, [
             data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.date, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.boost_channel_reactions ?? 0, data.topgg_votes ?? 0
-        ]).catch(() => {});
+        ]).catch((err) => console.error("❌ [DailyStats Save Error]:", err.message));
     };
 
     client.getWeeklyStats = async function(id) {
@@ -133,7 +133,7 @@ module.exports = (client, db) => {
         `;
         db.query(query, [
             data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.weekStartDate ?? data.weekstartdate, data.messages ?? 0, data.images ?? 0, data.stickers ?? 0, data.emojis_sent ?? 0, data.reactions_added ?? 0, data.replies_sent ?? 0, data.mentions_received ?? 0, data.vc_minutes ?? 0, data.water_tree ?? 0, data.counting_channel ?? 0, data.meow_count ?? 0, data.streaming_minutes ?? 0, data.disboard_bumps ?? 0, data.topgg_votes ?? 0
-        ]).catch(() => {});
+        ]).catch((err) => console.error("❌ [WeeklyStats Save Error]:", err.message));
     };
 
     client.getTotalStats = async function(id) {
@@ -156,7 +156,7 @@ module.exports = (client, db) => {
         `;
         db.query(query, [
             data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.total_messages ?? 0, data.total_images ?? 0, data.total_stickers ?? 0, data.total_emojis_sent ?? 0, data.total_reactions_added ?? 0, data.total_replies_sent ?? 0, data.total_mentions_received ?? 0, data.total_vc_minutes ?? 0, data.total_disboard_bumps ?? 0, data.total_topgg_votes ?? 0
-        ]).catch(() => {});
+        ]).catch((err) => console.error("❌ [TotalStats Save Error]:", err.message));
     };
 
     client.getQuestNotif = async function(id) {
@@ -179,6 +179,6 @@ module.exports = (client, db) => {
         `;
         db.query(query, [
             data.id, data.userID ?? data.userid, data.guildID ?? data.guildid, data.dailyNotif ?? data.dailynotif ?? 1, data.weeklyNotif ?? data.weeklynotif ?? 1, data.achievementsNotif ?? data.achievementsnotif ?? 1, data.levelNotif ?? data.levelnotif ?? 1, data.kingsNotif ?? data.kingsnotif ?? 1, data.badgesNotif ?? data.badgesnotif ?? 1
-        ]).catch(() => {});
+        ]).catch((err) => console.error("❌ [QuestNotif Save Error]:", err.message));
     };
 };
