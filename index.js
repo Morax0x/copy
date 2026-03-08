@@ -43,6 +43,7 @@ client.EMOJI_COOL = '<a:NekoCool:1435572459276337245>';
 
 // 2. ربط قاعدة البيانات بالبوت فوراً
 client.sql = db;
+client.db = db; // 🔥 الرصاصة الفضية: هذا السطر سيجعل كل الملفات القديمة تقرأ السحابة فوراً دون أخطاء!
 
 client.generateQuestAlert = generateQuestAlert;
 client.generateAchievementCard = generateAchievementCard; 
