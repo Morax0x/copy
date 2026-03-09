@@ -138,20 +138,22 @@ async function setupDatabase(db) {
     await ensureColumn('levels', 'last_join_reset', 'BIGINT DEFAULT 0');
     await ensureColumn('levels', 'last_dungeon', 'BIGINT DEFAULT 0'); 
     await ensureColumn('levels', 'lastRace', 'BIGINT DEFAULT 0');
+    await ensureColumn('levels', 'lastdungeon', 'BIGINT DEFAULT 0'); // 🔥 العمود المفقود 1
 
-    // 🔥 حل مشكلة الإحصائيات والتصويت
-    const dailyCols = ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions', 'casino_profit', 'mora_earned', 'mora_donated', 'knights_defeated', 'fish_caught', 'pvp_wins', 'crops_harvested', 'topgg_votes'];
+    // 🔥 حل مشكلة الإحصائيات والتصويت والأوسمة
+    const dailyCols = ['water_tree', 'counting_channel', 'meow_count', 'streaming_minutes', 'disboard_bumps', 'emojis_sent', 'boost_channel_reactions', 'casino_profit', 'mora_earned', 'mora_donated', 'knights_defeated', 'fish_caught', 'pvp_wins', 'crops_harvested', 'topgg_votes', 'main_chat_messages', 'chatter_badge_given', 'daily_badge_given', 'knight_badge_given'];
     for (const col of dailyCols) {
-        await ensureColumn('user_daily_stats', col, 'BIGINT DEFAULT 0');
+        await ensureColumn('user_daily_stats', col, 'BIGINT DEFAULT 0'); // 🔥 تم دمج الأعمدة المفقودة 2-5
     }
     
     await ensureColumn('user_weekly_stats', 'emojis_sent', 'BIGINT DEFAULT 0');
-    await ensureColumn('user_weekly_stats', 'topgg_votes', 'BIGINT DEFAULT 0'); // 🔥 تمت الإضافة
+    await ensureColumn('user_weekly_stats', 'topgg_votes', 'BIGINT DEFAULT 0'); 
+    await ensureColumn('user_weekly_stats', 'weekly_badge_given', 'BIGINT DEFAULT 0'); // 🔥 العمود المفقود 6
       
     await ensureColumn('user_total_stats', 'total_vc_minutes', 'BIGINT DEFAULT 0');
     await ensureColumn('user_total_stats', 'total_disboard_bumps', 'BIGINT DEFAULT 0');
     await ensureColumn('user_total_stats', 'total_emojis_sent', 'BIGINT DEFAULT 0');
-    await ensureColumn('user_total_stats', 'total_topgg_votes', 'BIGINT DEFAULT 0'); // 🔥 تمت الإضافة
+    await ensureColumn('user_total_stats', 'total_topgg_votes', 'BIGINT DEFAULT 0'); 
 
     await ensureColumn('user_daily_stats', 'ai_interactions', 'BIGINT DEFAULT 0');
     await ensureColumn('user_weekly_stats', 'ai_interactions', 'BIGINT DEFAULT 0');
@@ -180,17 +182,20 @@ async function setupDatabase(db) {
         "roleCasinoKing", "roleMerchant", "rolePhilanthropist", "roleAdvisor", "roleAbyss", 
         "roleChatter", "roleKnightSlayer", "roleFisherKing", "rolePvPKing", "roleFarmKing",
         "roleDailyQuester", "roleWeeklyQuester",
-        "roleRankSS", "roleRankS", "roleRankA", "roleRankB", "roleRankC", "roleRankD"
+        "roleRankSS", "roleRankS", "roleRankA", "roleRankB", "roleRankC", "roleRankD",
+        "chatchannelid", "lastbumperid", "chatterchannelid", "rolechatterbadge", "roledailybadge", "roleweeklybadge" // 🔥 الأعمدة المفقودة 7-12
     ]; 
     for (const col of settingsCols) {
         await ensureColumn('settings', col, 'TEXT');
     }
     await ensureColumn('settings', 'prefix', "TEXT DEFAULT '-'");
+    await ensureColumn('settings', 'nextbumptime', 'BIGINT DEFAULT 0'); // 🔥 العمود المفقود 13
 
     await ensureColumn('marriages', 'partnerID', 'TEXT');
     await ensureColumn('marriages', 'userID', 'TEXT');
     await ensureColumn('marriages', 'guildID', 'TEXT');
     await ensureColumn('marriages', 'marriageDate', 'BIGINT');
+    await ensureColumn('marriages', 'dowry', 'BIGINT DEFAULT 0'); // 🔥 العمود المفقود 14
 
     await ensureColumn('children', 'parentID', 'TEXT');
     await ensureColumn('children', 'childID', 'TEXT');
@@ -213,12 +218,13 @@ async function setupDatabase(db) {
     await ensureColumn('user_farm', 'quantity', 'BIGINT DEFAULT 1');
     await ensureColumn('user_farm', 'lastFedTimestamp', `BIGINT DEFAULT ${Date.now()}`); 
     await ensureColumn('quest_notifications', 'levelNotif', 'BIGINT DEFAULT 1');
-    await ensureColumn('quest_notifications', 'kingsnotif', 'BIGINT DEFAULT 1'); // 🔥 تم إضافة هذا السطر
-    await ensureColumn('quest_notifications', 'badgesnotif', 'BIGINT DEFAULT 1'); // 🔥 تم إضافة هذا السطر
+    await ensureColumn('quest_notifications', 'kingsnotif', 'BIGINT DEFAULT 1'); 
+    await ensureColumn('quest_notifications', 'badgesnotif', 'BIGINT DEFAULT 1'); 
     await ensureColumn('active_giveaways', 'xpReward', 'BIGINT DEFAULT 0');
     await ensureColumn('active_giveaways', 'moraReward', 'BIGINT DEFAULT 0');
     await ensureColumn('active_giveaways', 'isFinished', 'BIGINT DEFAULT 0');
     await ensureColumn('media_streak_channels', 'lastReminderMessageID', 'TEXT');
+    await ensureColumn('user_reputation', 'daily_reps_given', 'BIGINT DEFAULT 0'); // 🔥 العمود المفقود 15
 
     try {
         await db.query('BEGIN');
