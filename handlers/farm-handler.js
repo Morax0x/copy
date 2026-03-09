@@ -49,13 +49,15 @@ async function checkFarmIncome(client, db) {
                     if (age >= growthMs) {
                         await db.query("UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3", [userID, guildID, plot.plotid]);
                         
-                        let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                        // 🔥 تم التعديل هنا: استخدام "user" و guild بدلاً من userid و guildid
+                        let userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
                         let userData = userDataRes.rows[0];
                         if (userData) {
                             userData.mora = (parseInt(userData.mora) || 0) + seed.sell_price;
                             userData.xp = (parseInt(userData.xp) || 0) + seed.xp_reward;
                             userData.totalxp = (parseInt(userData.totalxp) || 0) + seed.xp_reward;
-                            await db.query("UPDATE levels SET mora = $1, xp = $2, totalxp = $3 WHERE userid = $4 AND guildid = $5", [userData.mora, userData.xp, userData.totalxp, userID, guildID]);
+                            // 🔥 وتم التعديل هنا أيضاً
+                            await db.query('UPDATE levels SET mora = $1, xp = $2, totalxp = $3 WHERE "user" = $4 AND guild = $5', [userData.mora, userData.xp, userData.totalxp, userID, guildID]);
                         }
 
                         if (updateGuildStat) {
@@ -142,11 +144,13 @@ async function checkFarmIncome(client, db) {
             }
 
             if (dailyAnimalIncome > 0) {
-                let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                // 🔥 تم التعديل هنا
+                let userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
                 let userData = userDataRes.rows[0];
                 if (userData) {
                     userData.mora = (parseInt(userData.mora) || 0) + dailyAnimalIncome;
-                    await db.query("UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3", [userData.mora, userID, guildID]);
+                    // 🔥 وتم التعديل هنا أيضاً
+                    await db.query('UPDATE levels SET mora = $1 WHERE "user" = $2 AND guild = $3', [userData.mora, userID, guildID]);
                 }
             }
 
