@@ -89,7 +89,7 @@ function getRotatedQuests(pool, countNormal, countElite, seedStr) {
 async function getUserStat(userId, guildId, statName, db) {
     let val = 0;
     try {
-        const lvlRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+        const lvlRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
         const lvlData = lvlRes.rows[0];
         if (lvlData && lvlData[statName.toLowerCase()] !== undefined) return parseInt(lvlData[statName.toLowerCase()]) || 0;
         
@@ -127,7 +127,7 @@ async function calculateStrongestRank(db, guildID, targetUserID) {
         if(!conf) continue;
         const dmg = conf.base_damage + (conf.damage_increment * (w.weaponlevel - 1));
         
-        const lvlRes = await db.query("SELECT level FROM levels WHERE guildid = $1 AND userid = $2", [guildID, w.userid]);
+        const lvlRes = await db.query('SELECT level FROM levels WHERE guild = $1 AND "user" = $2', [guildID, w.userid]);
         const lvlData = lvlRes.rows[0];
         const playerLevel = lvlData?.level || 1;
         
@@ -264,11 +264,11 @@ async function handleQuestPanel(i, client, db) {
                         await db.query("INSERT INTO user_reputation (userid, guildid, rep_points) VALUES ($1, $2, $3) ON CONFLICT(userid, guildid) DO UPDATE SET rep_points = user_reputation.rep_points + $4", [userId, guildId, quest.repReward, quest.repReward]);
                     }
                     
-                    const userLevelRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+                    const userLevelRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
                     if (userLevelRes.rows.length > 0) {
                         const currentMora = parseInt(userLevelRes.rows[0].mora) + quest.reward.mora;
                         const currentXP = parseInt(userLevelRes.rows[0].xp) + quest.reward.xp;
-                        await db.query("UPDATE levels SET mora = $1, xp = $2 WHERE userid = $3 AND guildid = $4", [currentMora, currentXP, userId, guildId]);
+                        await db.query('UPDATE levels SET mora = $1, xp = $2 WHERE "user" = $3 AND guild = $4', [currentMora, currentXP, userId, guildId]);
                     }
                     await db.query("COMMIT");
                 } catch (e) {
@@ -300,11 +300,11 @@ async function handleQuestPanel(i, client, db) {
                         await db.query("INSERT INTO user_reputation (userid, guildid, rep_points) VALUES ($1, $2, $3) ON CONFLICT(userid, guildid) DO UPDATE SET rep_points = user_reputation.rep_points + $4", [userId, guildId, ach.repReward, ach.repReward]);
                     }
                     
-                    const userLevelRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+                    const userLevelRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
                     if (userLevelRes.rows.length > 0) {
                         const currentMora = parseInt(userLevelRes.rows[0].mora) + ach.reward.mora;
                         const currentXP = parseInt(userLevelRes.rows[0].xp) + ach.reward.xp;
-                        await db.query("UPDATE levels SET mora = $1, xp = $2 WHERE userid = $3 AND guildid = $4", [currentMora, currentXP, userId, guildId]);
+                        await db.query('UPDATE levels SET mora = $1, xp = $2 WHERE "user" = $3 AND guild = $4', [currentMora, currentXP, userId, guildId]);
                     }
                     await db.query("COMMIT");
                 } catch (e) {
@@ -398,7 +398,7 @@ async function handleQuestPanel(i, client, db) {
         return i.editReply({ embeds: [], components: [notifButtonsRow1, notifButtonsRow2], files: [attachment] }).catch(()=>{});
     }
 
-    const levelDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+    const levelDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
     let levelData = levelDataRes.rows[0] || { userid: userId, guildid: guildId, level: 1, mora: 0, bank: 0, xp: 0 };
 
     const dailyStatsRes = await db.query("SELECT * FROM user_daily_stats WHERE id = $1", [`${userId}-${guildId}-${todayStr}`]);
@@ -484,12 +484,12 @@ async function handleQuestPanel(i, client, db) {
 
             let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
             if (userId !== OWNER_ID) {
-                const allScoresRes = await db.query("SELECT userid FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY totalxp DESC", [guildId, OWNER_ID]);
+                const allScoresRes = await db.query('SELECT "user" as userid FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY totalxp DESC', [guildId, OWNER_ID]);
                 const allScores = allScoresRes.rows;
                 let rLvl = allScores.findIndex(s => s.userid === userId) + 1;
                 ranks.level = rLvl > 0 ? rLvl.toString() : "0";
 
-                const allMoraRes = await db.query("SELECT userid FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY (mora + bank) DESC", [guildId, OWNER_ID]);
+                const allMoraRes = await db.query('SELECT "user" as userid FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY (mora + bank) DESC', [guildId, OWNER_ID]);
                 const allMora = allMoraRes.rows;
                 let rMora = allMora.findIndex(s => s.userid === userId) + 1;
                 ranks.mora = rMora > 0 ? rMora.toString() : "0";
@@ -623,7 +623,8 @@ async function autoUpdateKingsBoard(client, db) {
             const casinoDataRes = await db.query(`SELECT userid, SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) as val FROM kings_board_tracker WHERE guildid = $1 AND date = $2 GROUP BY userid HAVING SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr]);
             const casinoData = casinoDataRes.rows[0];
             
-            const abyssDataRes = await db.query(`SELECT userid, max_dungeon_floor as val FROM levels WHERE guildid = $1 AND max_dungeon_floor > 0 ORDER BY val DESC LIMIT 1`, [guildId]);
+            // 🔥 تصحيح: استخدام "user" و guild
+            const abyssDataRes = await db.query(`SELECT "user" as userid, max_dungeon_floor as val FROM levels WHERE guild = $1 AND max_dungeon_floor > 0 ORDER BY val DESC LIMIT 1`, [guildId]);
             const abyssData = abyssDataRes.rows[0];
             
             const chatterDataRes = await db.query(`SELECT userid, SUM(COALESCE(messages, 0)) as val FROM kings_board_tracker WHERE guildid = $1 AND date = $2 GROUP BY userid HAVING SUM(COALESCE(messages, 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr]);
@@ -788,8 +789,11 @@ async function rewardDailyKings(client, db) {
 
             const casinoDataRes = await db.query(`SELECT userid FROM kings_board_tracker WHERE guildid = $1 AND date = $2 GROUP BY userid HAVING SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) > 0 ORDER BY SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
             const casinoData = casinoDataRes.rows[0];
-            const abyssDataRes = await db.query(`SELECT userid FROM levels WHERE guildid = $1 AND max_dungeon_floor > 0 ORDER BY max_dungeon_floor DESC LIMIT 1`, [guildId]);
+            
+            // 🔥 تصحيح: استخدام "user" و guild
+            const abyssDataRes = await db.query(`SELECT "user" as userid FROM levels WHERE guild = $1 AND max_dungeon_floor > 0 ORDER BY max_dungeon_floor DESC LIMIT 1`, [guildId]);
             const abyssData = abyssDataRes.rows[0];
+            
             const chatterDataRes = await db.query(`SELECT userid FROM kings_board_tracker WHERE guildid = $1 AND date = $2 GROUP BY userid HAVING SUM(COALESCE(messages, 0)) > 0 ORDER BY SUM(COALESCE(messages, 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
             const chatterData = chatterDataRes.rows[0];
             const philanDataRes = await db.query(`SELECT userid FROM kings_board_tracker WHERE guildid = $1 AND date = $2 GROUP BY userid HAVING SUM(COALESCE(mora_donated, 0)) > 0 ORDER BY SUM(COALESCE(mora_donated, 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
@@ -870,7 +874,8 @@ async function rewardDailyKings(client, db) {
 
 async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     try {
-        const db = client.db;
+        const db = client.sql; // 🔥 تصحيح client.db إلى client.sql
+        if (!db) return;
         await ensureKingTrackerTable(db);
 
         const todayStr = getTodayDateString(); 
@@ -879,14 +884,15 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
         if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
 
         if (statName === 'max_dungeon_floor') {
-            const rowRes = await db.query("SELECT max_dungeon_floor FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+            // 🔥 تصحيح: استخدام "user" و guild
+            const rowRes = await db.query('SELECT max_dungeon_floor FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
             const row = rowRes.rows[0];
             if (row) {
                 if (addedVal > (row.max_dungeon_floor || 0)) {
-                    await db.query("UPDATE levels SET max_dungeon_floor = $1 WHERE userid = $2 AND guildid = $3", [addedVal, userId, guildId]);
+                    await db.query('UPDATE levels SET max_dungeon_floor = $1 WHERE "user" = $2 AND guild = $3', [addedVal, userId, guildId]);
                 }
             } else {
-                await db.query("INSERT INTO levels (userid, guildid, xp, level, totalxp, mora, max_dungeon_floor) VALUES ($1, $2, 0, 1, 0, 0, $3)", [userId, guildId, addedVal]);
+                await db.query('INSERT INTO levels ("user", guild, xp, level, totalxp, mora, max_dungeon_floor) VALUES ($1, $2, 0, 1, 0, 0, $3)', [userId, guildId, addedVal]);
             }
         } else {
             const dailyID = `${userId}-${guildId}-${todayStr}`;
