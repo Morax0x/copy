@@ -9,18 +9,19 @@ module.exports = (client) => {
 
                     const userID = member.id;
                     const guildID = guild.id;
-                    const db = client.db;
+                    const db = client.sql; // 🔥 تم التصحيح إلى client.sql
 
                     if (!db) return;
 
                     try {
-                        let userDataResult = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                        // 🔥 تم تصحيح أسماء الأعمدة إلى "user" و guild
+                        let userDataResult = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
                         let userData = userDataResult.rows[0];
 
                         if (!userData) {
                             userData = { 
-                                userid: userID, 
-                                guildid: guildID, 
+                                user: userID, 
+                                guild: guildID, 
                                 xp: 0, 
                                 totalxp: 0, 
                                 level: 0, 
@@ -29,15 +30,17 @@ module.exports = (client) => {
                             };
                             
                             await db.query(`
-                                INSERT INTO levels (userid, guildid, xp, totalxp, level, mora, totalvctime)
+                                INSERT INTO levels ("user", guild, xp, totalxp, level, mora, totalvctime)
                                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                             `, [userID, guildID, userData.xp, userData.totalxp, userData.level, userData.mora, userData.totalvctime]);
                         }
 
-                        userData.totalvctime = (userData.totalvctime || 0) + 1;
-                        userData.xp += 5;
-                        userData.totalxp += 5;
-                        userData.mora += 2;
+                        // 🔥 إضافة parseInt لضمان حساب الأرقام بشكل صحيح وتجنب الأخطاء النصية
+                        userData.totalvctime = (parseInt(userData.totalvctime) || 0) + 1;
+                        userData.xp = (parseInt(userData.xp) || 0) + 5;
+                        userData.totalxp = (parseInt(userData.totalxp) || 0) + 5;
+                        userData.mora = (parseInt(userData.mora) || 0) + 2;
+                        userData.level = parseInt(userData.level) || 0;
 
                         let nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
                         
@@ -49,27 +52,28 @@ module.exports = (client) => {
                             nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
                         }
 
+                        // 🔥 تم تصحيح أسماء الأعمدة في أمر التحديث
                         await db.query(`
                             UPDATE levels 
                             SET xp = $1, totalxp = $2, level = $3, mora = $4, totalvctime = $5
-                            WHERE userid = $6 AND guildid = $7
+                            WHERE "user" = $6 AND guild = $7
                         `, [userData.xp, userData.totalxp, userData.level, userData.mora, userData.totalvctime, userID, guildID]);
 
                         if (client.incrementQuestStats) {
-                            await client.incrementQuestStats(userID, guildID, 'vc_minutes', 1);
+                            await client.incrementQuestStats(userID, guildID, 'vc_minutes', 1).catch(()=>{});
 
                             if (voiceState.streaming) {
-                                await client.incrementQuestStats(userID, guildID, 'streaming_minutes', 1);
+                                await client.incrementQuestStats(userID, guildID, 'streaming_minutes', 1).catch(()=>{});
                             }
                         }
 
                     } catch (err) {
-                        console.error(`[Voice Timer Error] User: ${userID}`, err);
+                        console.error(`[Voice Timer Error] User: ${userID}`, err.message);
                     }
                 });
             });
         } catch (error) {
-            console.error("[Global Voice Timer Error]", error);
+            console.error("[Global Voice Timer Error]", error.message);
         }
     }, 60 * 1000); 
 };
