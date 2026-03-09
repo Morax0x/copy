@@ -104,6 +104,7 @@ async function renderLand(interaction, client, db) {
     let unlockedPlots = await getLandPlots(client, userId, guildId);
     if (unlockedPlots >= 30) unlockedPlots = 36; 
 
+    // جلب بيانات الأراضي
     const userPlotsRes = await db.query("SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2", [userId, guildId]);
     const userPlots = userPlotsRes.rows;
     const now = Date.now();
@@ -119,7 +120,8 @@ async function renderLand(interaction, client, db) {
     let totalPlowCost = 0;
 
     for (let i = 1; i <= unlockedPlots; i++) {
-        const p = userPlots.find(x => x.plotid === i);
+        // التأكد من المساواة بغض النظر عن النوع
+        const p = userPlots.find(x => parseInt(x.plotid) === i);
         
         if (!p || p.status === 'empty') {
             totalPlowCost += PLOW_COST_BULK;
@@ -191,7 +193,7 @@ async function renderLand(interaction, client, db) {
                 ctx.drawImage(images.lock, x, y, TILE_SIZE, TILE_SIZE);
             }
         } else {
-            const plotData = userPlots.find(p => p.plotid === i);
+            const plotData = userPlots.find(p => parseInt(p.plotid) === i);
             
             if (plotData && plotData.status === 'tilled') {
                 if (images.tilled) ctx.drawImage(images.tilled, x, y, TILE_SIZE, TILE_SIZE);
@@ -287,7 +289,7 @@ async function renderLand(interaction, client, db) {
     } catch (e) { console.error("Error fetching worker status:", e); }
 
     return { 
-        content: `**🌱 مزرعة ${interaction.member.displayName}**`, 
+        content: `**🌱 مزرعة ${interaction.member ? interaction.member.displayName : user.username}**`, 
         components: rowActions.components.length > 0 ? [rowActions] : [], 
         files: [attachment]
     };
@@ -332,13 +334,13 @@ async function handleLandInteractions(i, client, db) {
         let targetPlot = null;
         const userPlotsRes = await db.query("SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2", [userId, guildId]);
         const userPlots = userPlotsRes.rows;
-        const recordedIds = userPlots.map(p => p.plotid);
+        const recordedIds = userPlots.map(p => parseInt(p.plotid));
 
         for (let pid = 1; pid <= maxPlots; pid++) {
             if (!recordedIds.includes(pid)) { targetPlot = pid; break; } 
             else {
-                const plot = userPlots.find(p => p.plotid === pid);
-                if (plot.status === 'empty') { targetPlot = pid; break; }
+                const plot = userPlots.find(p => parseInt(p.plotid) === pid);
+                if (plot && plot.status === 'empty') { targetPlot = pid; break; }
             }
         }
 
@@ -359,15 +361,15 @@ async function handleLandInteractions(i, client, db) {
         let maxPlots = await getLandPlots(client, userId, guildId);
         if (maxPlots >= 30) maxPlots = 36;
 
-        const existingPlotsRes = await db.query("SELECT plotid, status FROM user_lands WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+        const existingPlotsRes = await db.query("SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2", [userId, guildId]);
         const existingPlots = existingPlotsRes.rows;
-        const existingIds = existingPlots.map(p => p.plotid);
+        const existingIds = existingPlots.map(p => parseInt(p.plotid));
         let plotsToPlow = [];
 
         for (let pid = 1; pid <= maxPlots; pid++) {
             if (!existingIds.includes(pid)) plotsToPlow.push(pid);
             else {
-                const plot = existingPlots.find(p => p.plotid === pid);
+                const plot = existingPlots.find(p => parseInt(p.plotid) === pid);
                 if (plot && plot.status === 'empty') plotsToPlow.push(pid);
             }
         }
@@ -376,7 +378,8 @@ async function handleLandInteractions(i, client, db) {
 
         const totalCost = plotsToPlow.length * PLOW_COST_BULK;
         
-        const userDataRes = await db.query("SELECT mora FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+        // 🔥 تصحيح: استخدام "user" و guild بدلاً من userid و guildid
+        const userDataRes = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
         let userData = userDataRes.rows[0];
         
         if (!userData) {
@@ -386,7 +389,8 @@ async function handleLandInteractions(i, client, db) {
         if (userData.mora < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
         
         userData.mora -= totalCost;
-        await db.query("UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3", [userData.mora, userId, guildId]);
+        // 🔥 تصحيح: استخدام "user" و guild بدلاً من userid و guildid
+        await db.query('UPDATE levels SET mora = $1 WHERE "user" = $2 AND guild = $3', [userData.mora, userId, guildId]);
 
         try {
             await db.query("BEGIN");
@@ -459,7 +463,7 @@ async function handleLandInteractions(i, client, db) {
 
         if (isNaN(qtyInput) || qtyInput <= 0) return await i.editReply("❌ رقم خطأ.");
 
-        const tilledPlotsRes = await db.query("SELECT plotid FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'tilled'", [userId, guildId]);
+        const tilledPlotsRes = await db.query("SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'tilled'", [userId, guildId]);
         const tilledPlots = tilledPlotsRes.rows;
         
         const invItemRes = await db.query("SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3", [userId, guildId, seedId]);
@@ -545,19 +549,22 @@ async function handleLandInteractions(i, client, db) {
             console.error("Error harvesting crops:", e);
         }
 
-        const userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+        // 🔥 تصحيح: استخدام "user" و guild بدلاً من userid و guildid
+        const userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
         let userData = userDataRes.rows[0];
         
         if (!userData) {
-            userData = { userid: userId, guildid: guildId, xp: 0, level: 1, mora: 0, totalxp: 0 };
-            await db.query("INSERT INTO levels (userid, guildid, xp, level, totalxp, mora) VALUES ($1, $2, $3, $4, $5, $6)", [userId, guildId, 0, 1, 0, 0]);
+            userData = { user: userId, guild: guildId, xp: 0, level: 1, mora: 0, totalxp: 0 };
+            // 🔥 تصحيح
+            await db.query('INSERT INTO levels ("user", guild, xp, level, totalxp, mora) VALUES ($1, $2, $3, $4, $5, $6)', [userId, guildId, 0, 1, 0, 0]);
         }
 
         userData.mora = parseInt(userData.mora) + totalRevenue;
         userData.xp = parseInt(userData.xp) + totalXP;
-        userData.totalxp = parseInt(userData.totalxp) + totalXP;
+        userData.totalxp = parseInt(userData.totalxp || userData.totalXP) + totalXP;
         
-        await db.query("UPDATE levels SET mora = $1, xp = $2, totalxp = $3 WHERE userid = $4 AND guildid = $5", [userData.mora, userData.xp, userData.totalxp, userId, guildId]);
+        // 🔥 تصحيح
+        await db.query('UPDATE levels SET mora = $1, xp = $2, totalxp = $3 WHERE "user" = $4 AND guild = $5', [userData.mora, userData.xp, userData.totalxp, userId, guildId]);
 
         if (updateGuildStat) {
             updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue);
