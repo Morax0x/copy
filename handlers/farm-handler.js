@@ -49,14 +49,14 @@ async function checkFarmIncome(client, db) {
                     if (age >= growthMs) {
                         await db.query("UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3", [userID, guildID, plot.plotid]);
                         
-                        // 🔥 تم التعديل هنا: استخدام "user" و guild بدلاً من userid و guildid
                         let userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
                         let userData = userDataRes.rows[0];
                         if (userData) {
-                            userData.mora = (parseInt(userData.mora) || 0) + seed.sell_price;
-                            userData.xp = (parseInt(userData.xp) || 0) + seed.xp_reward;
-                            userData.totalxp = (parseInt(userData.totalxp) || 0) + seed.xp_reward;
-                            // 🔥 وتم التعديل هنا أيضاً
+                            // 🔥 تأمين العمليات الحسابية للأموال
+                            userData.mora = (Number(userData.mora) || 0) + Number(seed.sell_price);
+                            userData.xp = (Number(userData.xp) || 0) + Number(seed.xp_reward);
+                            userData.totalxp = (Number(userData.totalxp) || 0) + Number(seed.xp_reward);
+                            
                             await db.query('UPDATE levels SET mora = $1, xp = $2, totalxp = $3 WHERE "user" = $4 AND guild = $5', [userData.mora, userData.xp, userData.totalxp, userID, guildID]);
                         }
 
@@ -76,7 +76,8 @@ async function checkFarmIncome(client, db) {
                 const animal = farmAnimals.find(a => String(a.id) === String(row.animalid));
                 if (!animal) continue; 
 
-                const qty = row.quantity || 1;
+                // 🔥 تأمين الكميات كأرقام صحيحة لمنع تداخل النصوص (101010)
+                const qty = Number(row.quantity) || 1;
                 const lastFed = parseInt(row.lastfedtimestamp) || now;
                 const hungerTime = now - lastFed;
                 const maxHungerMs = (animal.max_hunger_days || 7) * ONE_DAY;
@@ -90,7 +91,7 @@ async function checkFarmIncome(client, db) {
                         const invDataRes = await db.query("SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3", [userID, guildID, animal.feed_id]);
                         const invData = invDataRes.rows[0];
                         
-                        if (invData && invData.quantity >= qty) {
+                        if (invData && Number(invData.quantity) >= qty) {
                             await db.query("UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4", [qty, userID, guildID, animal.feed_id]);
                             await db.query("UPDATE user_farm SET lastfedtimestamp = $1 WHERE id = $2", [now, row.id]);
                             
@@ -137,19 +138,18 @@ async function checkFarmIncome(client, db) {
             for (const row of liveAnimals) {
                 const animal = farmAnimals.find(a => String(a.id) === String(row.animalid));
                 if (animal) {
-                    const qty = row.quantity || 1;
-                    dailyAnimalIncome += (animal.income_per_day * qty);
+                    // 🔥 تأمين الكميات للحيوانات المتبقية
+                    const qty = Number(row.quantity) || 1;
+                    dailyAnimalIncome += (Number(animal.income_per_day) * qty);
                     currentAnimalsCount += qty;
                 }
             }
 
             if (dailyAnimalIncome > 0) {
-                // 🔥 تم التعديل هنا
                 let userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
                 let userData = userDataRes.rows[0];
                 if (userData) {
-                    userData.mora = (parseInt(userData.mora) || 0) + dailyAnimalIncome;
-                    // 🔥 وتم التعديل هنا أيضاً
+                    userData.mora = (Number(userData.mora) || 0) + dailyAnimalIncome;
                     await db.query('UPDATE levels SET mora = $1 WHERE "user" = $2 AND guild = $3', [userData.mora, userID, guildID]);
                 }
             }
@@ -164,10 +164,13 @@ async function checkFarmIncome(client, db) {
             let outOfStock = false;
 
             for (const log of dailyLogs) {
+                // 🔥 تأمين كميات السجلات
+                const logCount = Number(log.count) || 1;
+                
                 if (log.actiontype === 'harvest') {
-                    harvestedMap.set(log.itemname, (harvestedMap.get(log.itemname) || 0) + log.count);
+                    harvestedMap.set(log.itemname, (harvestedMap.get(log.itemname) || 0) + logCount);
                 } else if (log.actiontype === 'feed') {
-                    fedMap.set(log.itemname, (fedMap.get(log.itemname) || 0) + log.count);
+                    fedMap.set(log.itemname, (fedMap.get(log.itemname) || 0) + logCount);
                 } else if (log.actiontype === 'death_starve') {
                     if (!starvedDeaths.includes(log.itemname)) starvedDeaths.push(log.itemname);
                 } else if (log.actiontype === 'death_old') {
