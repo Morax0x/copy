@@ -15,12 +15,13 @@ module.exports = {
         if (!newMessage.guild) return;
 
         const client = newMessage.client;
-        const db = client.db;
+        const db = client.sql; // 🔥 تم التصحيح هنا ليتوافق مع قاعدة البيانات السحابية
         
         if (!db) return; 
 
         try {
-            const settingsResult = await db.query("SELECT treechannelid, treebotid, treemessageid FROM settings WHERE guild_id = $1", [newMessage.guild.id]);
+            // 🔥 تم تصحيح guild_id إلى guild
+            const settingsResult = await db.query("SELECT treechannelid, treebotid, treemessageid FROM settings WHERE guild = $1", [newMessage.guild.id]);
             const settings = settingsResult.rows[0];
             
             if (!settings || !settings.treechannelid) return;
@@ -29,7 +30,6 @@ module.exports = {
             if (!newMessage.author.bot) return;
 
             if (settings.treebotid && newMessage.author.id !== settings.treebotid) return;
-
 
             let fullContent = (newMessage.content || "") + " ";
             
@@ -76,7 +76,7 @@ module.exports = {
                     console.log(`[TREE TRACKER] ✅ Water detected for user: ${userID}`);
 
                     if (client.incrementQuestStats) {
-                        await client.incrementQuestStats(userID, guildID, 'water_tree', 1);
+                        await client.incrementQuestStats(userID, guildID, 'water_tree', 1).catch(()=>{});
                     } else {
                         console.error("[TREE ERROR] incrementQuestStats function missing in client!");
                     }
