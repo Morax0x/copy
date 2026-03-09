@@ -16,6 +16,7 @@
     "@google/generative-ai": "^0.21.0",
     "@top-gg/sdk": "^3.1.5",
     "axios": "^1.6.0",
+    "better-sqlite3": "^9.6.0",
     "canvacord": "^6.0.0",
     "canvas": "^2.11.2",
     "discord-card-canvas": "^2.0.1",
