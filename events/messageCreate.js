@@ -49,7 +49,6 @@ async function safeReply(message, options) {
 // ⚡ دالة قراءة الإعدادات بسرعة الضوء
 async function getSettings(db, guildId) {
     const now = Date.now();
-    // نحدث الذاكرة كل 5 دقائق فقط، وباقي الوقت يقرأ من الرام مباشرة
     if (settingsCache.has(guildId) && now - lastSettingsUpdate < 300000) {
         return settingsCache.get(guildId);
     }
@@ -75,7 +74,6 @@ async function recordBump(client, guildID, userID) {
     const totalID = `${userID}-${guildID}`;
     
     try {
-        // 🔥 Fire and Forget - نرسل للسحابة دون انتظار
         db.query(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES ($1,$2,$3,$4,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_daily_stats.disboard_bumps, 0) + 1`, [dailyID, userID, guildID, dateStr]).catch(()=>{});
         db.query(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES ($1,$2,$3,$4,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_weekly_stats.disboard_bumps, 0) + 1`, [weeklyID, userID, guildID, weekStr]).catch(()=>{});
         db.query(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES ($1,$2,$3,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = COALESCE(user_total_stats.total_disboard_bumps, 0) + 1`, [totalID, userID, guildID]).catch(()=>{});
@@ -99,33 +97,39 @@ module.exports = {
 
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
 
-        // 🚨 خطة الطوارئ القصوى: كود الهجرة مدمج مباشرة ومثبت به الرابط! 🚨
+        // 🚨 خطة الطوارئ القصوى بمحرك Axios الجبار! 🚨
         const cleanMsg = message.content.trim();
         if (cleanMsg === '-mc' || cleanMsg === '-هجرة') {
             const OWNER_ID = "1145327691772481577";
             if (message.author.id === OWNER_ID) {
-                // 🔥 الرابط مُثبت هنا داخل الكود 🔥
                 const downloadUrl = "https://files.catbox.moe/hn5ks5.sqlite";
-
-                const msg = await message.reply("⏳ **جاري سحب ملف البيانات الإمبراطوري (45 ميجا) من الخزنة السرية...**");
+                const msg = await message.reply("⏳ **جاري سحب ملف البيانات الإمبراطوري (45 ميجا) باستخدام محرك مضاد للتقطيع...**");
+                
                 const fs = require('fs');
                 const path = require('path');
-                const https = require('https');
-                const http = require('http');
+                const axios = require('axios'); // 🔥 مكتبة التخفي والموثوقية 🔥
                 const Database = require('better-sqlite3');
                 
                 const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
                 const file = fs.createWriteStream(tempPath);
-                const requestModule = downloadUrl.startsWith('https') ? https : http;
 
-                requestModule.get(downloadUrl, function(response) {
-                    if (response.statusCode === 301 || response.statusCode === 302) {
-                         return msg.edit("❌ فشل التحميل: الرابط غير مباشر.");
-                    }
-                    response.pipe(file);
+                try {
+                    // التنكر كمتصفح كروم حقيقي لمنع قطع الاتصال
+                    const response = await axios({
+                        method: 'GET',
+                        url: downloadUrl,
+                        responseType: 'stream',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                        },
+                        timeout: 120000 // إعطاءه دقيقتين للتحميل
+                    });
+
+                    response.data.pipe(file);
+
                     file.on('finish', async function() {
                         file.close();
-                        await msg.edit("✅ **تم سحب الملف بنجاح! جاري بدء الهجرة الكبرى إلى السحابة... (لا تقم بإيقاف البوت 🛑)**");
+                        await msg.edit("✅ **تم سحب الملف بنجاح! جاري بدء الهجرة الكبرى إلى السحابة... (قد تستغرق العملية بضع دقائق 🛑)**");
 
                         try {
                             const sqliteDb = new Database(tempPath);
@@ -178,10 +182,10 @@ module.exports = {
                             await msg.edit(`❌ **حدث خطأ فادح أثناء الهجرة:**\n\`\`\`js\n${err.message}\n\`\`\``);
                         }
                     });
-                }).on('error', function(err) {
+                } catch (err) {
                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-                    msg.edit(`❌ فشل تحميل الملف من الرابط: ${err.message}`);
-                });
+                    await msg.edit(`❌ فشل تحميل الملف من الرابط: ${err.message}`);
+                }
                 return; // إيقاف باقي كود messageCreate
             }
         }
