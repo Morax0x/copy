@@ -16,7 +16,7 @@ module.exports = {
         const db = message.client.sql;
         if (!db) return;
 
-        const downloadUrl = "https://files.catbox.moe/hn5ks5.sqlite";
+        const downloadUrl = "https://files.catbox.moe/o7lgc3.sqlite";
         const msg = await message.reply("⏳ **جاري سحب الملف الإمبراطوري (45 ميجا) والبدء في الهجرة...**");
         
         const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
