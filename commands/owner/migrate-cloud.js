@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const http = require('http');
 const Database = require('better-sqlite3');
 
 const OWNER_ID = "1145327691772481577"; // آيدي الإمبراطور
@@ -9,32 +10,44 @@ const OWNER_ID = "1145327691772481577"; // آيدي الإمبراطور
 module.exports = {
     name: 'migrate-cloud',
     aliases: ['mc', 'هجرة'],
-    description: 'رفع ملف SQLite القديم وضخ بياناته إلى السحابة (PostgreSQL)',
+    description: 'رفع ملف SQLite القديم وضخ بياناته إلى السحابة',
     category: "Owner",
 
     async execute(message, args) {
         if (message.author.id !== OWNER_ID) return;
 
         const client = message.client;
-        const db = client.sql; // اتصال PostgreSQL السحابي
+        const db = client.sql; 
         if (!db) return message.reply("❌ البوت غير متصل بقاعدة البيانات السحابية!");
 
-        const attachment = message.attachments.first();
-        if (!attachment || !attachment.name.endsWith('.sqlite')) {
-            return message.reply("⚠️ **أيها الإمبراطور، يرجى إرفاق ملف `mainDB.sqlite` المليء بالبيانات مع هذا الأمر.**");
+        // ⚡ سحب الرابط من المرفقات أو من النص مباشرة
+        let downloadUrl = "";
+        if (message.attachments.size > 0) {
+            downloadUrl = message.attachments.first().url;
+        } else if (args[0] && args[0].startsWith('http')) {
+            downloadUrl = args[0];
         }
 
-        const msg = await message.reply("⏳ **جاري تحميل ملف البيانات إلى البوت (قد يستغرق بضع ثوانٍ)...**");
-        const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
+        if (!downloadUrl) {
+            return message.reply("⚠️ **أيها الإمبراطور، يرجى إرفاق الملف أو وضع رابط مباشر للملف بعد الأمر.**\nمثال: `-mc https://files.catbox.moe/xyz.sqlite`");
+        }
 
+        const msg = await message.reply("⏳ **جاري تحميل ملف البيانات إلى البوت (الملف كبير، قد يستغرق دقيقة)...**");
+        const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
         const file = fs.createWriteStream(tempPath);
 
-        https.get(attachment.url, function(response) {
+        const requestModule = downloadUrl.startsWith('https') ? https : http;
+
+        requestModule.get(downloadUrl, function(response) {
+            if (response.statusCode === 301 || response.statusCode === 302) {
+                 return msg.edit("❌ فشل التحميل: الرابط غير مباشر. يرجى استخدام موقع مثل catbox.moe للحصول على رابط مباشر.");
+            }
+
             response.pipe(file);
 
             file.on('finish', async function() {
                 file.close();
-                await msg.edit("✅ **تم تحميل الملف! جاري بدء الهجرة الكبرى إلى السحابة... (يرجى الانتظار قد يستغرق دقيقة)**");
+                await msg.edit("✅ **تم سحب الملف بنجاح! جاري بدء الهجرة الكبرى إلى السحابة... (لا تقم بإيقاف البوت 🛑)**");
 
                 try {
                     const sqliteDb = new Database(tempPath);
@@ -59,46 +72,39 @@ module.exports = {
                         const rows = sqliteDb.prepare(`SELECT * FROM ${table}`).all();
                         if (rows.length === 0) continue;
 
-                        // توحيد أسماء الأعمدة لتصبح بأحرف صغيرة لتجنب أخطاء السحابة
                         const columns = Object.keys(rows[0]);
                         const colsString = columns.map(c => `"${c.toLowerCase()}"`).join(', ');
                         
                         let successCount = 0;
                         let errorCount = 0;
 
-                        // نستخدم عملية إدخال متسلسلة (Batch Insert) إن أمكن، ولكن للإمان سنستخدم الإدخال الفردي المحمي
                         for (const row of rows) {
                             const values = columns.map(col => row[col]);
                             const valsString = columns.map((_, i) => `$${i + 1}`).join(', ');
                             
-                            // نصنع جملة الـ ON CONFLICT بشكل ديناميكي لتحديث البيانات إن وجدت
-                            let conflictClause = "DO NOTHING"; 
-                            
                             try {
-                                await db.query(`INSERT INTO "${table}" (${colsString}) VALUES (${valsString}) ON CONFLICT ${conflictClause}`, values);
+                                await db.query(`INSERT INTO "${table}" (${colsString}) VALUES (${valsString}) ON CONFLICT DO NOTHING`, values);
                                 successCount++;
                                 totalSuccess++;
                             } catch (err) {
-                                if (err.code === '23505') { // يعني موجود مسبقاً
+                                if (err.code === '23505') { // موجود مسبقاً
                                     successCount++; 
                                 } else {
                                     errorCount++;
-                                    console.error(`[Migrate Error - ${table}]:`, err.message);
                                 }
                             }
                         }
-                        logDetails.push(`**${table}**: ✅ ${successCount} صف | ❌ ${errorCount} خطأ`);
+                        logDetails.push(`**${table}**: ✅ ${successCount} | ❌ ${errorCount}`);
                     }
 
-                    // إغلاق وحذف الملف المؤقت
                     sqliteDb.close();
                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 
                     const embed = new EmbedBuilder()
                         .setTitle("🎉 تمت الهجرة الكبرى بنجاح!")
-                        .setDescription(`تم فحص ونقل **${totalSuccess}** سجل إلى السحابة (Supabase)!\n\n**التفاصيل:**\n${logDetails.join('\n')}`)
+                        .setDescription(`تم فحص ونقل **${totalSuccess}** سجل إلى السحابة السريعة!\n\n**التفاصيل:**\n${logDetails.join('\n')}`)
                         .setColor("Green")
-                        .setFooter({ text: "بيانات الإمبراطورية الآن آمنة وسريعة!" });
+                        .setFooter({ text: "بيانات الإمبراطورية الآن آمنة وسريعة كالبرق!" });
 
                     await msg.edit({ content: " ", embeds: [embed] });
 
@@ -110,7 +116,7 @@ module.exports = {
             });
         }).on('error', function(err) {
             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            msg.edit(`❌ فشل تحميل الملف: ${err.message}`);
+            msg.edit(`❌ فشل تحميل الملف من الرابط: ${err.message}`);
         });
     }
 };
