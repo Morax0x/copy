@@ -110,14 +110,13 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS world_boss (guildID TEXT PRIMARY KEY, currentHP INTEGER, maxHP INTEGER, name TEXT, image TEXT, active INTEGER, messageID TEXT, channelID TEXT, lastLog TEXT)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS role_mora_buffs (guildID TEXT, roleID TEXT PRIMARY KEY, buffPercent INTEGER)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS race_dungeon_buffs (guildID TEXT, roleID TEXT, dungeonKey TEXT, statType TEXT, buffValue INTEGER, PRIMARY KEY (guildID, roleID, dungeonKey))`);
+            await db.query(`CREATE TABLE IF NOT EXISTS world_boss ("guildID" TEXT PRIMARY KEY, "currentHP" BIGINT, "maxHP" BIGINT, "name" TEXT, "image" TEXT, "active" INTEGER, "messageID" TEXT, "channelID" TEXT, "lastLog" TEXT)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS role_mora_buffs ("guildID" TEXT, "roleID" TEXT PRIMARY KEY, "buffPercent" INTEGER)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS race_dungeon_buffs ("guildID" TEXT, "roleID" TEXT, "dungeonKey" TEXT, "statType" TEXT, "buffValue" INTEGER, PRIMARY KEY ("guildID", "roleID", "dungeonKey"))`);
         } catch(e) {}
 
         let route = '';
-        let opt1, opt2, opt3, opt4, opt5;
-
+        
         if (isSlash) {
             const group = interactionOrMessage.options.getSubcommandGroup();
             const sub = interactionOrMessage.options.getSubcommand();
@@ -147,7 +146,7 @@ module.exports = {
                 const image = isSlash ? interactionOrMessage.options.getString('image') : null;
                 const thumbnail = isSlash ? interactionOrMessage.options.getString('thumbnail') : null;
 
-                const activeRes = await db.query("SELECT * FROM world_boss WHERE guildID = $1 AND active = 1", [guild.id]);
+                const activeRes = await db.query(`SELECT * FROM world_boss WHERE "guildID" = $1 AND "active" = 1`, [guild.id]);
                 if (activeRes.rows.length > 0) return reply('❌ يوجد وحش نشط بالفعل!');
 
                 const progressBar = createProgressBar(hp, hp, 12, '█', '░'); 
@@ -175,9 +174,21 @@ module.exports = {
 
                 const sentMsg = isSlash ? await interactionOrMessage.channel.send({ embeds: [embed], components: [row] }) : await interactionOrMessage.reply({ embeds: [embed], components: [row] });
                 
-                await db.query(`INSERT INTO world_boss (guildID, currentHP, maxHP, name, image, active, messageID, channelID, lastLog) VALUES ($1, $2, $3, $4, $5, 1, $6, $7, '[]') ON CONFLICT (guildID) DO UPDATE SET currentHP=EXCLUDED.currentHP, maxHP=EXCLUDED.maxHP, name=EXCLUDED.name, image=EXCLUDED.image, active=1, messageID=EXCLUDED.messageID, channelID=EXCLUDED.channelID`, [guild.id, hp, hp, name, image || thumbnail, sentMsg.id, sentMsg.channel.id]);
-                await db.query("DELETE FROM boss_cooldowns WHERE guildID = $1", [guild.id]);
-                await db.query("DELETE FROM boss_leaderboard WHERE guildID = $1", [guild.id]);
+                await db.query(`
+                    INSERT INTO world_boss ("guildID", "currentHP", "maxHP", "name", "image", "active", "messageID", "channelID", "lastLog") 
+                    VALUES ($1, $2, $3, $4, $5, 1, $6, $7, '[]') 
+                    ON CONFLICT ("guildID") DO UPDATE SET 
+                        "currentHP"=EXCLUDED."currentHP", 
+                        "maxHP"=EXCLUDED."maxHP", 
+                        "name"=EXCLUDED."name", 
+                        "image"=EXCLUDED."image", 
+                        "active"=1, 
+                        "messageID"=EXCLUDED."messageID", 
+                        "channelID"=EXCLUDED."channelID"
+                `, [guild.id, hp, hp, name, image || thumbnail, sentMsg.id, sentMsg.channel.id]);
+
+                await db.query(`DELETE FROM boss_cooldowns WHERE "guildID" = $1`, [guild.id]);
+                await db.query(`DELETE FROM boss_leaderboard WHERE "guildID" = $1`, [guild.id]);
 
                 if (isSlash) return reply('✅ تم الاستدعاء.');
                 return;
@@ -185,17 +196,17 @@ module.exports = {
 
             if (route === 'boss_control') {
                 const action = isSlash ? interactionOrMessage.options.getString('action') : args[0];
-                const bossRes = await db.query("SELECT * FROM world_boss WHERE guildID = $1 AND active = 1", [guild.id]);
+                const bossRes = await db.query(`SELECT * FROM world_boss WHERE "guildID" = $1 AND "active" = 1`, [guild.id]);
                 if (bossRes.rows.length === 0) return reply("❌ لا يوجد وحش نشط حالياً للتحكم به.");
                 const boss = bossRes.rows[0];
 
                 let bossMsg;
                 try {
-                    const channel = await guild.channels.fetch(boss.channelid || boss.channelID);
-                    bossMsg = await channel.messages.fetch(boss.messageid || boss.messageID);
+                    const channel = await guild.channels.fetch(boss.channelID || boss.channelid);
+                    bossMsg = await channel.messages.fetch(boss.messageID || boss.messageid);
                 } catch (e) {
                     if (action === 'delete' || action === 'kill') {
-                        await db.query("UPDATE world_boss SET active = 0 WHERE guildID = $1", [guild.id]);
+                        await db.query(`UPDATE world_boss SET "active" = 0 WHERE "guildID" = $1`, [guild.id]);
                         return reply("⚠️ لم يتم العثور على رسالة الوحش، ولكن تم إغلاق الحدث في قاعدة البيانات.");
                     }
                     return reply("❌ لا يمكن العثور على رسالة الوحش الأصلية.");
@@ -209,35 +220,36 @@ module.exports = {
                         .setFields([]); 
 
                     await bossMsg.edit({ embeds: [killEmbed], components: [] });
-                    await db.query("UPDATE world_boss SET currentHP = 0, active = 0 WHERE guildID = $1", [guild.id]);
-                    await db.query("DELETE FROM boss_leaderboard WHERE guildID = $1", [guild.id]);
+                    await db.query(`UPDATE world_boss SET "currentHP" = 0, "active" = 0 WHERE "guildID" = $1`, [guild.id]);
+                    await db.query(`DELETE FROM boss_leaderboard WHERE "guildID" = $1`, [guild.id]);
                     return reply("✅ تم قتل الوحش وإنهاء الحدث.");
                 }
 
                 if (action === 'delete') {
                     try { await bossMsg.delete(); } catch(e) {}
-                    await db.query("UPDATE world_boss SET active = 0 WHERE guildID = $1", [guild.id]);
-                    await db.query("DELETE FROM boss_cooldowns WHERE guildID = $1", [guild.id]);
-                    await db.query("DELETE FROM boss_leaderboard WHERE guildID = $1", [guild.id]);
+                    await db.query(`UPDATE world_boss SET "active" = 0 WHERE "guildID" = $1`, [guild.id]);
+                    await db.query(`DELETE FROM boss_cooldowns WHERE "guildID" = $1`, [guild.id]);
+                    await db.query(`DELETE FROM boss_leaderboard WHERE "guildID" = $1`, [guild.id]);
                     return reply("✅ تم حذف الوحش وإلغاء الحدث.");
                 }
 
                 if (action === 'set-hp') {
                     let newHP = isSlash ? interactionOrMessage.options.getInteger('amount') : parseInt(args[1]);
                     if (isNaN(newHP) || newHP < 0) newHP = 0;
-                    if (newHP > boss.maxhp) newHP = boss.maxhp; 
+                    const maxHP = Number(boss.maxHP || boss.maxhp);
+                    if (newHP > maxHP) newHP = maxHP; 
 
-                    await db.query("UPDATE world_boss SET currentHP = $1 WHERE guildID = $2", [newHP, guild.id]);
+                    await db.query(`UPDATE world_boss SET "currentHP" = $1 WHERE "guildID" = $2`, [newHP, guild.id]);
 
-                    const hpPercent = Math.floor((newHP / boss.maxhp) * 100);
-                    const progressBar = createProgressBar(newHP, boss.maxhp, 18, '🟥', '⬛');
+                    const hpPercent = Math.floor((newHP / maxHP) * 100);
+                    const progressBar = createProgressBar(newHP, maxHP, 18, '🟥', '⬛');
                     
                     const newEmbed = EmbedBuilder.from(bossMsg.embeds[0])
                         .setDescription(bossMsg.embeds[0].description.replace(/📊 \*\*الحالة:\*\*.*?\n.*/s, `📊 **الحالة:** ${hpPercent}% متبقي\n${progressBar}`));
                     
                     const fields = newEmbed.data.fields;
                     if (fields && fields[0]) {
-                        fields[0].value = `**${newHP.toLocaleString()}** / ${boss.maxhp.toLocaleString()} HP`;
+                        fields[0].value = `**${newHP.toLocaleString()}** / ${maxHP.toLocaleString()} HP`;
                     }
                     newEmbed.setFields(fields);
 
@@ -249,7 +261,7 @@ module.exports = {
                     const newName = isSlash ? interactionOrMessage.options.getString('name') : args[1] || boss.name;
                     const newImage = isSlash ? interactionOrMessage.options.getString('image') : args[2] || boss.image;
 
-                    await db.query("UPDATE world_boss SET name = $1, image = $2 WHERE guildID = $3", [newName, newImage, guild.id]);
+                    await db.query(`UPDATE world_boss SET "name" = $1, "image" = $2 WHERE "guildID" = $3`, [newName, newImage, guild.id]);
 
                     const newEmbed = EmbedBuilder.from(bossMsg.embeds[0]).setTitle(`👹 **WORLD BOSS: ${newName}**`);
                     if (newImage) newEmbed.setImage(newImage);
@@ -263,7 +275,7 @@ module.exports = {
                 const channel = isSlash ? interactionOrMessage.options.getChannel('channel') : interactionOrMessage.mentions.channels.first();
                 if (!channel || channel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة كتابية صالحة.");
                 
-                await db.query(`INSERT INTO settings (guild, casinoChannelID) VALUES ($1, $2) ON CONFLICT(guild) DO UPDATE SET casinoChannelID = EXCLUDED.casinoChannelID`, [guild.id, channel.id]);
+                await db.query(`INSERT INTO settings ("guild", "casinoChannelID") VALUES ($1, $2) ON CONFLICT("guild") DO UPDATE SET "casinoChannelID" = EXCLUDED."casinoChannelID"`, [guild.id, channel.id]);
                 return reply(`✅ | تم تحديد روم الكازينو بنجاح إلى: ${channel}.`);
             }
 
@@ -271,7 +283,7 @@ module.exports = {
                 const channel = isSlash ? interactionOrMessage.options.getChannel('channel') : interactionOrMessage.mentions.channels.first();
                 if (!channel || channel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة كتابية صالحة.");
                 
-                await db.query(`INSERT INTO settings (guild, casinoChannelID2) VALUES ($1, $2) ON CONFLICT(guild) DO UPDATE SET casinoChannelID2 = EXCLUDED.casinoChannelID2`, [guild.id, channel.id]);
+                await db.query(`INSERT INTO settings ("guild", "casinoChannelID2") VALUES ($1, $2) ON CONFLICT("guild") DO UPDATE SET "casinoChannelID2" = EXCLUDED."casinoChannelID2"`, [guild.id, channel.id]);
                 return reply(`✅ | تم تحديد روم الكازينو **الإضافي** بنجاح: ${channel}\n(ستعمل فيه الأوامر بدون بريفكس، لكن الإشعارات ستبقى في الروم الأساسي).`);
             }
 
@@ -279,7 +291,7 @@ module.exports = {
                 const channel = isSlash ? interactionOrMessage.options.getChannel('channel') : interactionOrMessage.mentions.channels.first();
                 if (!channel || channel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة كتابية صالحة.");
                 
-                await db.query(`INSERT INTO settings (guild, dropGiveawayChannelID) VALUES ($1, $2) ON CONFLICT(guild) DO UPDATE SET dropGiveawayChannelID = EXCLUDED.dropGiveawayChannelID`, [guild.id, channel.id]);
+                await db.query(`INSERT INTO settings ("guild", "dropGiveawayChannelID") VALUES ($1, $2) ON CONFLICT("guild") DO UPDATE SET "dropGiveawayChannelID" = EXCLUDED."dropGiveawayChannelID"`, [guild.id, channel.id]);
                 return reply(`✅ تم تعيين قناة القيفاوايات المفاجئة لتكون ${channel}`);
             }
 
@@ -296,19 +308,19 @@ module.exports = {
                 }
 
                 if (action === 'show' || action === 'عرض') {
-                    const res = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
+                    const res = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guild.id]);
                     const settings = res.rows[0] || {};
                     const displayEmbed = new EmbedBuilder()
                         .setTitle("🎨 إعدادات تصميم القيفاواي المفاجئ")
-                        .setColor(settings.dropcolor || settings.dropColor || DEFAULTS.dropColor)
+                        .setColor(settings.dropColor || settings.dropcolor || DEFAULTS.dropColor)
                         .addFields(
-                            { name: "1. النص العلوي (content)", value: `\`\`\`${settings.dropmessagecontent || settings.dropMessageContent || DEFAULTS.dropMessageContent}\`\`\`` },
-                            { name: "2. عنوان الإمبد (title)", value: `\`\`\`${settings.droptitle || settings.dropTitle || DEFAULTS.dropTitle}\`\`\`` },
-                            { name: "3. الوصف (description)", value: `\`\`\`${settings.dropdescription || settings.dropDescription || DEFAULTS.dropDescription}\`\`\`` },
-                            { name: "4. اللون (color)", value: `\`${settings.dropcolor || settings.dropColor || DEFAULTS.dropColor}\``, inline: true },
-                            { name: "5. الفوتر (footer)", value: `\`${settings.dropfooter || settings.dropFooter || DEFAULTS.dropFooter}\``, inline: true },
-                            { name: "6. نص الزر (button_label)", value: `\`${settings.dropbuttonlabel || settings.dropButtonLabel || DEFAULTS.dropButtonLabel}\``, inline: true },
-                            { name: "7. إيموجي الزر (button_emoji)", value: `\`${settings.dropbuttonemoji || settings.dropButtonEmoji || DEFAULTS.dropButtonEmoji}\``, inline: true }
+                            { name: "1. النص العلوي (content)", value: `\`\`\`${settings.dropMessageContent || settings.dropmessagecontent || DEFAULTS.dropMessageContent}\`\`\`` },
+                            { name: "2. عنوان الإمبد (title)", value: `\`\`\`${settings.dropTitle || settings.droptitle || DEFAULTS.dropTitle}\`\`\`` },
+                            { name: "3. الوصف (description)", value: `\`\`\`${settings.dropDescription || settings.dropdescription || DEFAULTS.dropDescription}\`\`\`` },
+                            { name: "4. اللون (color)", value: `\`${settings.dropColor || settings.dropcolor || DEFAULTS.dropColor}\``, inline: true },
+                            { name: "5. الفوتر (footer)", value: `\`${settings.dropFooter || settings.dropfooter || DEFAULTS.dropFooter}\``, inline: true },
+                            { name: "6. نص الزر (button_label)", value: `\`${settings.dropButtonLabel || settings.dropbuttonlabel || DEFAULTS.dropButtonLabel}\``, inline: true },
+                            { name: "7. إيموجي الزر (button_emoji)", value: `\`${settings.dropButtonEmoji || settings.dropbuttonemoji || DEFAULTS.dropButtonEmoji}\``, inline: true }
                         )
                         .setFooter({ text: "المتغيرات المتاحة: {prize}, {winners}, {time} (فقط للوصف)" });
                     return reply({ embeds: [displayEmbed] });
@@ -317,17 +329,17 @@ module.exports = {
                 if (action === 'reset' || action === 'اعادة-ضبط') {
                     const col = SETTINGS_MAP.get(option);
                     if (col) {
-                        await db.query(`UPDATE settings SET ${col} = NULL WHERE guild = $1`, [guild.id]);
+                        await db.query(`UPDATE settings SET "${col}" = NULL WHERE "guild" = $1`, [guild.id]);
                         return reply(`✅ تم إعادة تعيين \`${option}\` إلى الإعداد الافتراضي.`);
                     }
-                    await db.query(`UPDATE settings SET dropTitle = NULL, dropDescription = NULL, dropColor = NULL, dropFooter = NULL, dropButtonLabel = NULL, dropButtonEmoji = NULL, dropMessageContent = NULL WHERE guild = $1`, [guild.id]);
+                    await db.query(`UPDATE settings SET "dropTitle" = NULL, "dropDescription" = NULL, "dropColor" = NULL, "dropFooter" = NULL, "dropButtonLabel" = NULL, "dropButtonEmoji" = NULL, "dropMessageContent" = NULL WHERE "guild" = $1`, [guild.id]);
                     return reply(`✅ تم إعادة تعيين **جميع** إعدادات تصميم القيفاواي إلى الافتراضي.`);
                 }
 
                 if (action === 'edit' || action === 'تعديل') {
                     const col = SETTINGS_MAP.get(option);
                     if (!col || !value) return reply("❌ خيار غير صالح أو القيمة مفقودة.");
-                    await db.query(`UPDATE settings SET ${col} = $1 WHERE guild = $2`, [value, guild.id]);
+                    await db.query(`UPDATE settings SET "${col}" = $1 WHERE "guild" = $2`, [value, guild.id]);
                     const successEmbed = new EmbedBuilder().setColor(0x57F287).setTitle('✅ تم تحديث التصميم').setDescription(`**تم تغيير \`${option}\` بنجاح إلى:**\n\`\`\`${value}\`\`\``);
                     return reply({ embeds: [successEmbed] });
                 }
@@ -340,10 +352,10 @@ module.exports = {
                 if (!role || isNaN(percent)) return reply("يرجى إدخال الرتبة والنسبة المئوية.");
 
                 if (percent === 0) {
-                    await db.query("DELETE FROM role_mora_buffs WHERE roleID = $1", [role.id]);
+                    await db.query(`DELETE FROM role_mora_buffs WHERE "roleID" = $1`, [role.id]);
                     return reply(`Mora buff/debuff for ${role} has been removed.`);
                 } else {
-                    await db.query("INSERT INTO role_mora_buffs (guildID, roleID, buffPercent) VALUES ($1, $2, $3) ON CONFLICT (roleID) DO UPDATE SET buffPercent = EXCLUDED.buffPercent", [guild.id, role.id, percent]);
+                    await db.query(`INSERT INTO role_mora_buffs ("guildID", "roleID", "buffPercent") VALUES ($1, $2, $3) ON CONFLICT ("roleID") DO UPDATE SET "buffPercent" = EXCLUDED."buffPercent"`, [guild.id, role.id, percent]);
                     const actionWord = percent > 0 ? "buff" : "debuff";
                     return reply(`Mora ${actionWord} for ${role} has been set to **${percent}%**.`);
                 }
@@ -371,21 +383,22 @@ module.exports = {
                 }
 
                 if (action === 'list') {
-                    const res = await db.query("SELECT * FROM information_schema.tables WHERE table_name = 'race_dungeon_buffs'");
+                    const res = await db.query(`SELECT * FROM information_schema.tables WHERE table_name = 'race_dungeon_buffs'`);
                     if (res.rows.length === 0) return reply("ℹ️ **لا توجد أي ميزات مسجلة حتى الآن.**");
 
-                    const allBuffsRes = await db.query("SELECT * FROM race_dungeon_buffs WHERE guildID = $1", [guild.id]);
+                    const allBuffsRes = await db.query(`SELECT * FROM race_dungeon_buffs WHERE "guildID" = $1`, [guild.id]);
                     const allBuffs = allBuffsRes.rows;
                     if (allBuffs.length === 0) return reply("ℹ️ **لا توجد ميزات نشطة حالياً في السيرفر.**");
 
                     const groupedBuffs = {};
                     allBuffs.forEach(buff => {
-                        if (!groupedBuffs[buff.roleid || buff.roleID]) groupedBuffs[buff.roleid || buff.roleID] = [];
-                        const dKey = buff.dungeonkey || buff.dungeonKey;
-                        const sType = buff.stattype || buff.statType;
-                        const bVal = buff.buffvalue || buff.buffValue;
+                        const roleID = buff.roleID || buff.roleid;
+                        if (!groupedBuffs[roleID]) groupedBuffs[roleID] = [];
+                        const dKey = buff.dungeonKey || buff.dungeonkey;
+                        const sType = buff.statType || buff.stattype;
+                        const bVal = buff.buffValue || buff.buffvalue;
                         const dungeonName = dungeonConfig.themes[dKey]?.name || dKey;
-                        groupedBuffs[buff.roleid || buff.roleID].push(`**${dungeonName}:** ${getStatIcon(sType)} ${sType.toUpperCase()} +${bVal}%`);
+                        groupedBuffs[roleID].push(`**${dungeonName}:** ${getStatIcon(sType)} ${sType.toUpperCase()} +${bVal}%`);
                     });
 
                     const embed = new EmbedBuilder().setTitle(`📜 قائمة ميزات الأعراق المفعلة`).setColor(Colors.Blue).setFooter({ text: `عدد الرتب المفعلة: ${Object.keys(groupedBuffs).length}` });
@@ -414,7 +427,7 @@ module.exports = {
                     if (!stat) return reply("❌ **نوع الميزة غير صحيح!** الأنواع: هجوم، صحة، دفاع، درع، شفاء، كريت");
                     if (!percent || isNaN(percent) || percent < 1 || percent > 100) return reply("❌ **النسبة غير صحيحة!**");
 
-                    await db.query(`INSERT INTO race_dungeon_buffs (guildID, roleID, dungeonKey, statType, buffValue) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (guildID, roleID, dungeonKey) DO UPDATE SET statType = EXCLUDED.statType, buffValue = EXCLUDED.buffValue`, [guild.id, role.id, dungeonKey, stat, percent]);
+                    await db.query(`INSERT INTO race_dungeon_buffs ("guildID", "roleID", "dungeonKey", "statType", "buffValue") VALUES ($1, $2, $3, $4, $5) ON CONFLICT ("guildID", "roleID", "dungeonKey") DO UPDATE SET "statType" = EXCLUDED."statType", "buffValue" = EXCLUDED."buffValue"`, [guild.id, role.id, dungeonKey, stat, percent]);
                     
                     const dungeonName = dungeonConfig.themes[dungeonKey]?.name || dungeonKey;
                     const embed = new EmbedBuilder().setTitle("✅ تم تفعيل ميزة العرق").setColor(Colors.Gold).setDescription(`تم تخصيص ميزة خاصة لحاملي رتبة ${role}`)
