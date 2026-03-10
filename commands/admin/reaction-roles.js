@@ -128,9 +128,9 @@ module.exports = {
 
         // بناء الجداول إذا لم تكن موجودة
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS role_settings (role_id TEXT PRIMARY KEY, anti_roles TEXT, is_removable INTEGER DEFAULT 1)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS role_menus_master (message_id TEXT PRIMARY KEY, custom_id TEXT, is_locked INTEGER DEFAULT 0)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS role_menu_items (message_id TEXT, value TEXT, role_id TEXT, description TEXT, emoji TEXT)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS role_settings ("role_id" TEXT PRIMARY KEY, "anti_roles" TEXT, "is_removable" INTEGER DEFAULT 1)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS role_menus_master ("message_id" TEXT PRIMARY KEY, "custom_id" TEXT, "is_locked" INTEGER DEFAULT 0)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS role_menu_items ("message_id" TEXT, "value" TEXT, "role_id" TEXT, "description" TEXT, "emoji" TEXT)`);
         } catch (e) {
             console.error("Database setup error in Reaction Roles:", e);
         }
@@ -150,7 +150,7 @@ module.exports = {
 
                 if (mainRole.id === antiRole.id) return interaction.editReply("❌ لا يمكن أن تكون الرتبة مضادة لنفسها.");
 
-                const currentRes = await db.query("SELECT * FROM role_settings WHERE role_id = $1", [mainRole.id]);
+                const currentRes = await db.query(`SELECT * FROM role_settings WHERE "role_id" = $1`, [mainRole.id]);
                 let currentSettings = currentRes.rows[0];
 
                 let antiRolesList = [];
@@ -173,11 +173,11 @@ module.exports = {
                 const newAntiRolesStr = antiRolesList.join(',');
 
                 await db.query(`
-                    INSERT INTO role_settings (role_id, anti_roles, is_removable) 
+                    INSERT INTO role_settings ("role_id", "anti_roles", "is_removable") 
                     VALUES ($1, $2, $3)
-                    ON CONFLICT(role_id) DO UPDATE SET 
-                    anti_roles = EXCLUDED.anti_roles,
-                    is_removable = EXCLUDED.is_removable
+                    ON CONFLICT("role_id") DO UPDATE SET 
+                    "anti_roles" = EXCLUDED."anti_roles",
+                    "is_removable" = EXCLUDED."is_removable"
                 `, [mainRole.id, newAntiRolesStr, isRemovable]);
 
                 await loadRoleSettings(db, interaction.client.antiRolesCache);
@@ -188,7 +188,7 @@ module.exports = {
                 const mainRole = interaction.options.getRole('main_role');
                 const antiRole = interaction.options.getRole('anti_role');
 
-                const currentRes = await db.query("SELECT * FROM role_settings WHERE role_id = $1", [mainRole.id]);
+                const currentRes = await db.query(`SELECT * FROM role_settings WHERE "role_id" = $1`, [mainRole.id]);
                 let currentSettings = currentRes.rows[0];
 
                 if (!currentSettings || !currentSettings.anti_roles) {
@@ -203,9 +203,9 @@ module.exports = {
                 antiRolesList = antiRolesList.filter(id => id !== antiRole.id);
                 
                 if (antiRolesList.length === 0) {
-                    await db.query("DELETE FROM role_settings WHERE role_id = $1", [mainRole.id]);
+                    await db.query(`DELETE FROM role_settings WHERE "role_id" = $1`, [mainRole.id]);
                 } else {
-                    await db.query("UPDATE role_settings SET anti_roles = $1 WHERE role_id = $2", [antiRolesList.join(','), mainRole.id]);
+                    await db.query(`UPDATE role_settings SET "anti_roles" = $1 WHERE "role_id" = $2`, [antiRolesList.join(','), mainRole.id]);
                 }
 
                 await loadRoleSettings(db, interaction.client.antiRolesCache);
@@ -214,7 +214,7 @@ module.exports = {
 
             else if (subcommand === 'show') {
                 const role = interaction.options.getRole('role');
-                const setRes = await db.query("SELECT * FROM role_settings WHERE role_id = $1", [role.id]);
+                const setRes = await db.query(`SELECT * FROM role_settings WHERE "role_id" = $1`, [role.id]);
                 const settings = setRes.rows[0];
 
                 if (!settings) return interaction.editReply(`ℹ️ لا توجد إعدادات خاصة أو رتب مضادة لـ **${role.name}**.`);
@@ -301,9 +301,9 @@ module.exports = {
 
                 try {
                     await db.query("BEGIN");
-                    await db.query("INSERT INTO role_menus_master (message_id, custom_id, is_locked) VALUES ($1, $2, $3)", [sentMessage.id, menuCustomId, 0]);
+                    await db.query(`INSERT INTO role_menus_master ("message_id", "custom_id", "is_locked") VALUES ($1, $2, $3)`, [sentMessage.id, menuCustomId, 0]);
                     for (const item of rolesToInsert) {
-                        await db.query("INSERT INTO role_menu_items (message_id, value, role_id, description) VALUES ($1, $2, $3, $4)", [sentMessage.id, item.value, item.roleId, item.label]); 
+                        await db.query(`INSERT INTO role_menu_items ("message_id", "value", "role_id", "description") VALUES ($1, $2, $3, $4)`, [sentMessage.id, item.value, item.roleId, item.label]); 
                     }
                     await db.query("COMMIT");
                 } catch (e) {
@@ -323,7 +323,7 @@ module.exports = {
                 const emojiStr = interaction.options.getString('emoji');
                 const descStr = interaction.options.getString('desc'); 
 
-                const mRes = await db.query("SELECT * FROM role_menus_master WHERE message_id = $1", [messageId]);
+                const mRes = await db.query(`SELECT * FROM role_menus_master WHERE "message_id" = $1`, [messageId]);
                 if (mRes.rows.length === 0) return interaction.editReply('❌ الرسالة ليست مسجلة كقائمة رتب.');
 
                 const messageToEdit = await interaction.channel.messages.fetch(messageId).catch(() => null); 
@@ -342,7 +342,7 @@ module.exports = {
                 currentMenu.addOptions(newOption);
                 currentMenu.setMaxValues(currentMenu.options.length);
 
-                await db.query(`INSERT INTO role_menu_items (message_id, value, role_id, description, emoji) VALUES ($1, $2, $3, $4, $5)`, [messageId, value, role.id, descStr, emojiStr]); 
+                await db.query(`INSERT INTO role_menu_items ("message_id", "value", "role_id", "description", "emoji") VALUES ($1, $2, $3, $4, $5)`, [messageId, value, role.id, descStr, emojiStr]); 
                 await messageToEdit.edit({ components: [new ActionRowBuilder().addComponents(currentMenu)] });
 
                 return interaction.editReply(`✅ تم إضافة الرول ${role.name} بنجاح.`);
@@ -353,7 +353,7 @@ module.exports = {
                 const messageId = interaction.options.getString('msg_id');
                 const roleToRemove = interaction.options.getRole('role');
 
-                const itemRes = await db.query("SELECT value FROM role_menu_items WHERE message_id = $1 AND role_id = $2", [messageId, roleToRemove.id]);
+                const itemRes = await db.query(`SELECT "value" FROM role_menu_items WHERE "message_id" = $1 AND "role_id" = $2`, [messageId, roleToRemove.id]);
                 if (itemRes.rows.length === 0) return interaction.editReply(`❌ الرول ${roleToRemove.name} غير موجود في هذه القائمة.`);
                 
                 const valueToRemove = itemRes.rows[0].value;
@@ -363,7 +363,7 @@ module.exports = {
                 currentMenu.options = currentMenu.options.filter(opt => opt.data.value !== valueToRemove);
                 currentMenu.setMaxValues(currentMenu.options.length > 0 ? currentMenu.options.length : 1);
 
-                await db.query("DELETE FROM role_menu_items WHERE message_id = $1 AND value = $2", [messageId, valueToRemove]);
+                await db.query(`DELETE FROM role_menu_items WHERE "message_id" = $1 AND "value" = $2`, [messageId, valueToRemove]);
                 await messageToEdit.edit({ components: [new ActionRowBuilder().addComponents(currentMenu)] });
 
                 return interaction.editReply(`✅ تم إزالة الرول ${roleToRemove.name} بنجاح.`);
@@ -374,7 +374,7 @@ module.exports = {
                 const messageId = interaction.options.getString('msg_id');
                 const roleToEdit = interaction.options.getRole('role');
 
-                const itemRes = await db.query("SELECT value, description, emoji FROM role_menu_items WHERE message_id = $1 AND role_id = $2", [messageId, roleToEdit.id]);
+                const itemRes = await db.query(`SELECT "value", "description", "emoji" FROM role_menu_items WHERE "message_id" = $1 AND "role_id" = $2`, [messageId, roleToEdit.id]);
                 if (itemRes.rows.length === 0) return interaction.editReply(`❌ الرول ${roleToEdit.name} غير موجود لتعديله.`);
                 
                 const dbItem = itemRes.rows[0];
@@ -397,7 +397,7 @@ module.exports = {
 
                 currentMenu.options[optionIndex] = updatedOption;
 
-                await db.query("UPDATE role_menu_items SET emoji = $1, description = $2 WHERE message_id = $3 AND value = $4", [updatedEmoji, updatedDescription, messageId, dbItem.value]);
+                await db.query(`UPDATE role_menu_items SET "emoji" = $1, "description" = $2 WHERE "message_id" = $3 AND "value" = $4`, [updatedEmoji, updatedDescription, messageId, dbItem.value]);
                 await messageToEdit.edit({ components: [new ActionRowBuilder().addComponents(currentMenu)] });
 
                 return interaction.editReply(`✅ تم التحديث بنجاح.`);
@@ -414,7 +414,7 @@ module.exports = {
                 const shouldLock = interaction.options.getBoolean('state');
                 const isLockedInt = shouldLock ? 1 : 0;
 
-                const res = await db.query("UPDATE role_menus_master SET is_locked = $1 WHERE message_id = $2", [isLockedInt, messageId]);
+                const res = await db.query(`UPDATE role_menus_master SET "is_locked" = $1 WHERE "message_id" = $2`, [isLockedInt, messageId]);
                 if (res.rowCount === 0) return interaction.editReply('❌ الرسالة غير مسجلة.');
 
                 return interaction.editReply(`✅ أصبحت القائمة: **${shouldLock ? 'مغلقة' : 'مفتوحة'}**.`);
@@ -426,14 +426,14 @@ module.exports = {
                 if (!msg || !msg.components[0]?.components[0]) return interaction.editReply('❌ رسالة غير صالحة.');
 
                 const selectMenu = msg.components[0].components[0];
-                const existRes = await db.query("SELECT message_id FROM role_menus_master WHERE message_id = $1", [messageId]);
+                const existRes = await db.query(`SELECT "message_id" FROM role_menus_master WHERE "message_id" = $1`, [messageId]);
                 if (existRes.rows.length > 0) return interaction.editReply('ℹ️ مسجلة مسبقاً.');
 
                 const menuCustomId = selectMenu.customId || `rr_manual_${Date.now()}`;
                 
                 try {
                     await db.query("BEGIN");
-                    await db.query("INSERT INTO role_menus_master (message_id, custom_id, is_locked) VALUES ($1, $2, 0)", [messageId, menuCustomId]);
+                    await db.query(`INSERT INTO role_menus_master ("message_id", "custom_id", "is_locked") VALUES ($1, $2, 0)`, [messageId, menuCustomId]);
                     
                     let count = 0;
                     for (const option of selectMenu.options) {
@@ -441,7 +441,7 @@ module.exports = {
                         const roleId = match ? match[0] : (option.value.length >= 17 ? option.value : null);
                         
                         if (roleId && interaction.guild.roles.cache.has(roleId)) {
-                            await db.query("INSERT INTO role_menu_items (message_id, value, role_id, description, emoji) VALUES ($1, $2, $3, $4, $5)", [messageId, option.value, roleId, option.description, option.emoji?.name]);
+                            await db.query(`INSERT INTO role_menu_items ("message_id", "value", "role_id", "description", "emoji") VALUES ($1, $2, $3, $4, $5)`, [messageId, option.value, roleId, option.description, option.emoji?.name]);
                             count++;
                         }
                     }
@@ -465,7 +465,7 @@ module.exports = {
                 const originalMsg = await interaction.channel.messages.fetch(originalMsgId).catch(() => null);
                 if (!originalMsg || originalMsg.embeds.length === 0) return interaction.editReply('❌ رسالة أو إيمبد غير صالح.');
 
-                const masterRes = await db.query("SELECT custom_id, is_locked FROM role_menus_master WHERE message_id = $1", [originalMsgId]);
+                const masterRes = await db.query(`SELECT "custom_id", "is_locked" FROM role_menus_master WHERE "message_id" = $1`, [originalMsgId]);
                 if (masterRes.rows.length === 0) return interaction.editReply('❌ غير مسجلة.');
                 const masterEntry = masterRes.rows[0];
 
@@ -476,11 +476,11 @@ module.exports = {
 
                 try {
                     await db.query("BEGIN");
-                    await db.query("INSERT INTO role_menus_master (message_id, custom_id, is_locked) VALUES ($1, $2, $3)", [sentMessage.id, newCustomId, masterEntry.is_locked]);
+                    await db.query(`INSERT INTO role_menus_master ("message_id", "custom_id", "is_locked") VALUES ($1, $2, $3)`, [sentMessage.id, newCustomId, masterEntry.is_locked]);
                     
-                    const items = await db.query("SELECT * FROM role_menu_items WHERE message_id = $1", [originalMsgId]);
+                    const items = await db.query(`SELECT * FROM role_menu_items WHERE "message_id" = $1`, [originalMsgId]);
                     for (const item of items.rows) {
-                        await db.query("INSERT INTO role_menu_items (message_id, value, role_id, description, emoji) VALUES ($1, $2, $3, $4, $5)", [sentMessage.id, item.value, item.role_id, item.description, item.emoji]);
+                        await db.query(`INSERT INTO role_menu_items ("message_id", "value", "role_id", "description", "emoji") VALUES ($1, $2, $3, $4, $5)`, [sentMessage.id, item.value, item.role_id, item.description, item.emoji]);
                     }
                     await db.query("COMMIT");
                     return interaction.editReply(`✅ نُسخت إلى ${newChannel}. آيدي الجديدة: \`${sentMessage.id}\``);
@@ -500,14 +500,14 @@ module.exports = {
                     if (!Array.isArray(settingsArray)) return interaction.editReply("❌ خطأ بتركيبة الـ JSON.");
 
                     await db.query("BEGIN");
-                    await db.query("DELETE FROM role_settings");
+                    await db.query(`DELETE FROM role_settings`);
 
                     let count = 0;
                     for (const item of settingsArray) {
                         if (item.role_id && Array.isArray(item.anti_roles)) {
                             const validAnti = item.anti_roles.filter(id => interaction.guild.roles.cache.has(id)).join(',');
                             if (interaction.guild.roles.cache.has(item.role_id)) {
-                                await db.query("INSERT INTO role_settings (role_id, anti_roles, is_removable) VALUES ($1, $2, $3)", [item.role_id, validAnti, item.is_removable ? 1 : 0]);
+                                await db.query(`INSERT INTO role_settings ("role_id", "anti_roles", "is_removable") VALUES ($1, $2, $3)`, [item.role_id, validAnti, item.is_removable ? 1 : 0]);
                                 count++;
                             }
                         }
