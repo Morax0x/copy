@@ -6,7 +6,7 @@ const potionItems = require('../../json/potions.json');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const ITEMS_PER_PAGE = 3;
-const OWNER_ID = "1145327691772481577"; 
+const OWNER_ID = "1145327691772481577"; // آيدي الأونر (أنت)
 
 function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsList, potionsList, totalSpent, page = 0) {
     const embed = new EmbedBuilder()
@@ -15,7 +15,9 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
         .setThumbnail(targetUser.displayAvatarURL())
         .setImage("https://i.postimg.cc/nVT4tjm6/123.png");
 
+    // عرض المعلومات الأساسية فقط في الصفحة الأولى
     if (page === 0) {
+        // --- قسم السلاح ---
         let weaponField = "لا يوجد سلاح مجهز.";
         if (userRace && weaponData) {
             weaponField =
@@ -30,6 +32,7 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
         
         embed.addFields({ name: "❖ العـتـاد القتالي", value: weaponField, inline: false });
 
+        // --- قسم الجرعات ---
         if (potionsList.length > 0) {
             const potionsString = potionsList.map(p => `✬ ${p.name}: (${p.qty})`).join('\n');
             embed.addFields({ name: "❖ حقـيبـة الجرعـات", value: potionsString, inline: false });
@@ -38,6 +41,7 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
         }
     }
 
+    // --- قسم المهارات (مع التصفح) ---
     const totalSkills = skillsList.length;
     const totalPages = Math.ceil(totalSkills / ITEMS_PER_PAGE) || 1; 
     
@@ -103,27 +107,27 @@ module.exports = {
             return message.reply(payload);
         };
 
-        const db = client.sql;
+        const sql = client.sql;
         const targetUser = targetMember.user;
-        const cleanName = cleanDisplayName(targetUser.displayName);
+        const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
-        const userRace = await getUserRace(targetMember, db);
-        const weaponData = await getWeaponData(db, targetMember);
+        // 1. جلب البيانات
+        const userRace = await getUserRace(sql, targetMember);
+        const weaponData = await getWeaponData(sql, targetMember);
         
-        let userSkillsDB = [];
-        try {
-            const res = await db.query("SELECT * FROM user_skills WHERE userID = $1 AND guildID = $2 AND skillLevel > 0", [targetUser.id, guild.id]);
-            userSkillsDB = res.rows;
-        } catch(e) {}
+        // جلب المهارات التي مستواها أكبر من 0
+        const userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]);
+        const userSkillsDB = userSkillsRes.rows;
         
+        // جلب الجرعات
         let potionsList = [];
         try {
-            const res = await db.query("SELECT * FROM user_inventory WHERE userID = $1 AND guildID = $2 AND quantity > 0", [targetUser.id, guild.id]);
-            const userInventory = res.rows;
+            const userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]);
+            const userInventory = userInventoryRes.rows;
+
             if (userInventory && userInventory.length > 0) {
                 for (const item of userInventory) {
-                    const itemId = item.itemid || item.itemID;
-                    const potionInfo = potionItems.find(p => p.id === itemId);
+                    const potionInfo = potionItems.find(p => p.id === (item.itemID || item.itemid));
                     if (potionInfo) {
                         potionsList.push({ name: `${potionInfo.emoji} ${potionInfo.name}`, qty: Number(item.quantity) });
                     }
@@ -131,12 +135,14 @@ module.exports = {
             }
         } catch (e) {}
 
+        // --- حساب القيمة وتجهيز قائمة المهارات ---
         let totalSpent = 0;
         let skillsList = [];
         let raceSkillId = null;
 
+        // أ) تكلفة السلاح
         if (userRace && weaponData) {
-            const originalWeaponConfig = weaponsConfig.find(w => w.race === userRace.raceName);
+            const originalWeaponConfig = weaponsConfig.find(w => w.race === (userRace.raceName || userRace.racename));
             if (originalWeaponConfig) {
                 for (let i = 0; i < weaponData.currentLevel; i++) {
                     let levelPrice = originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
@@ -145,36 +151,47 @@ module.exports = {
             }
         }
 
+        // ب) تحديد هوية مهارة العرق (للمقارنة لاحقاً)
         if (userRace) {
-            const cleanRaceName = userRace.raceName.toLowerCase().trim().replace(/\s+/g, '_');
+            const cleanRaceName = (userRace.raceName || userRace.racename).toLowerCase().trim().replace(/\s+/g, '_');
             raceSkillId = `race_${cleanRaceName}_skill`;
         }
 
+        // ج) عرض المهارات وتصفيتها
         let hasRaceSkillInDB = false;
 
         if (userSkillsDB.length > 0) {
             for (const dbSkill of userSkillsDB) {
-                const skillId = dbSkill.skillid || dbSkill.skillID;
-                const skillLvl = Number(dbSkill.skilllevel || dbSkill.skillLevel);
-
-                const skillConfig = skillsConfig.find(s => s.id === skillId);
+                const skillID = dbSkill.skillID || dbSkill.skillid;
+                const skillLevel = Number(dbSkill.skillLevel || dbSkill.skilllevel);
+                const skillConfig = skillsConfig.find(s => s.id === skillID);
                 
                 if (skillConfig) {
+                    // ========================================================
+                    // 🔥 1. فلتر الأونر (يخفي شق زمكان عن أي أحد غيرك)
+                    // ========================================================
                     if (skillConfig.name.includes("شق زمكان") && targetUser.id !== OWNER_ID) {
+                        continue; // تخطي هذه المهارة، لا تعرضها ولا تحسب سعرها
+                    }
+
+                    // ========================================================
+                    // 🔥 2. فلتر العرق (يخفي مهارات العروق السابقة)
+                    // ========================================================
+                    // إذا كانت المهارة تبدأ بـ race_ وليست هي مهارة العرق الحالي -> تخطي
+                    if (skillID.startsWith('race_') && raceSkillId && skillID !== raceSkillId) {
                         continue; 
                     }
 
-                    if (skillId.startsWith('race_') && raceSkillId && skillId !== raceSkillId) {
-                        continue; 
-                    }
-
-                    if (raceSkillId && skillId === raceSkillId) {
+                    // التحقق هل هذه هي مهارة العرق الحالي؟
+                    if (raceSkillId && skillID === raceSkillId) {
                         hasRaceSkillInDB = true;
                     }
 
-                    skillsList.push(`✶ ${skillConfig.emoji} ${skillConfig.name} : (Lv.${skillLvl})\n✶ وصف المهارة: ${skillConfig.description}`);
+                    // إضافة المهارة للقائمة
+                    skillsList.push(`✶ ${skillConfig.emoji} ${skillConfig.name} : (Lv.${skillLevel})\n✶ وصف المهارة: ${skillConfig.description}`);
                     
-                    for (let i = 0; i < skillLvl; i++) {
+                    // حساب تكلفة التطويرات لهذه المهارة
+                    for (let i = 0; i < skillLevel; i++) {
                         let skillLevelPrice = skillConfig.base_price + (skillConfig.price_increment * i);
                         totalSpent += skillLevelPrice;
                     }
@@ -182,15 +199,18 @@ module.exports = {
             }
         }
 
+        // د) إذا كان لديه عرق، ولكن المهارة غير مسجلة في الداتابيس
         if (userRace && raceSkillId && !hasRaceSkillInDB) {
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             if (raceSkillConfig) {
+                // تأكد أيضاً إن مهارة العرق هذي مو "شق زمكان" (ولو إن المفروض لها عرق خاص، بس احتياط)
                 if (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID) {
                      skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1) [غير مفعلة]\n✶ وصف المهارة: ${raceSkillConfig.description}`);
                 }
             }
         }
 
+        // --- بناء وإرسال الإيمبد ---
         let currentPage = 0;
         const { embed, totalPages } = buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsList, potionsList, totalSpent, currentPage);
 
