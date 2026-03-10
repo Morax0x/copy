@@ -97,7 +97,7 @@ module.exports = {
 
             if (args[0] && ['list', 'قائمة', 'info'].includes(args[0].toLowerCase())) {
                 const db = message.client.sql;
-                const limitsRes = await db.query("SELECT * FROM ai_role_limits WHERE guildID = $1 ORDER BY limitCount ASC", [message.guild.id]);
+                const limitsRes = await db.query(`SELECT * FROM ai_role_limits WHERE "guildID" = $1 ORDER BY "limitCount" ASC`, [message.guild.id]);
                 const limits = limitsRes.rows;
 
                 if (limits.length === 0) {
@@ -105,9 +105,11 @@ module.exports = {
                 }
 
                 const description = limits.map((row, index) => {
-                    const role = message.guild.roles.cache.get(row.roleid || row.roleID);
-                    const roleName = role ? role.toString() : `\`Deleted Role (${row.roleid || row.roleID})\``;
-                    return `**${index + 1}.** ${roleName} ➔ **${row.limitcount || row.limitCount}** رسالة/يومياً`;
+                    const roleId = row.roleID || row.roleid;
+                    const limitCount = row.limitCount || row.limitcount;
+                    const role = message.guild.roles.cache.get(roleId);
+                    const roleName = role ? role.toString() : `\`Deleted Role (${roleId})\``;
+                    return `**${index + 1}.** ${roleName} ➔ **${limitCount}** رسالة/يومياً`;
                 }).join('\n');
 
                 const listEmbed = new EmbedBuilder()
@@ -188,7 +190,7 @@ module.exports = {
             }
             
             if (subcommand === 'show') {
-                const limitsRes = await db.query("SELECT * FROM ai_role_limits WHERE guildID = $1 ORDER BY limitCount ASC", [interaction.guild.id]);
+                const limitsRes = await db.query(`SELECT * FROM ai_role_limits WHERE "guildID" = $1 ORDER BY "limitCount" ASC`, [interaction.guild.id]);
                 const limits = limitsRes.rows;
 
                 if (limits.length === 0) {
@@ -196,9 +198,11 @@ module.exports = {
                 }
 
                 const description = limits.map((row, index) => {
-                    const role = interaction.guild.roles.cache.get(row.roleid || row.roleID);
-                    const roleName = role ? role.toString() : `\`Deleted Role (${row.roleid || row.roleID})\``;
-                    return `**${index + 1}.** ${roleName} ➔ **${row.limitcount || row.limitCount}** رسالة/يومياً`;
+                    const roleId = row.roleID || row.roleid;
+                    const limitCount = row.limitCount || row.limitcount;
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    const roleName = role ? role.toString() : `\`Deleted Role (${roleId})\``;
+                    return `**${index + 1}.** ${roleName} ➔ **${limitCount}** رسالة/يومياً`;
                 }).join('\n');
 
                 const listEmbed = new EmbedBuilder()
@@ -217,7 +221,7 @@ module.exports = {
             const mode = interaction.options.getString('mode');
             const isNsfw = mode === 'nsfw';
 
-            aiConfig.addChannel(channel.id, isNsfw);
+            await aiConfig.addChannel(channel.id, isNsfw); // تأكد من تحويل الدوال في aiConfig لـ async لاحقاً
 
             const embed = new EmbedBuilder()
                 .setColor(isNsfw ? 0xFF0000 : 0x00FF00)
@@ -230,12 +234,12 @@ module.exports = {
 
         if (subcommand === 'remove') {
             const channel = interaction.options.getChannel('channel');
-            aiConfig.removeChannel(channel.id);
+            await aiConfig.removeChannel(channel.id);
             return interaction.reply({ content: `✅ **تم إيقاف** خدمات الذكاء الاصطناعي في قناة ${channel}.`, ephemeral: true });
         }
 
         if (subcommand === 'list') {
-            const channels = aiConfig.getAllChannels();
+            const channels = await aiConfig.getAllChannels();
             const channelList = Object.entries(channels).map(([id, settings]) => {
                 return `<#${id}> : ${settings.nsfw ? '🔞 **خاص**' : '🛡️ **عام**'}`;
             }).join('\n');
@@ -253,13 +257,13 @@ module.exports = {
             const category = interaction.options.getChannel('target');
 
             if (action === 'add') {
-                aiConfig.addRestrictedCategory(interaction.guild.id, category.id);
+                await aiConfig.addRestrictedCategory(interaction.guild.id, category.id);
                 return interaction.reply({ 
                     content: `🔒 **تم قفل الكتاغوري بنجاح:** ${category.name}\n\n📌 **كيف يعمل؟**\nأي شخص يحاول التحدث مع البوت في أي قناة داخل هذا الكتاغوري، سيطلب منه البوت دفع **1000 مورا** لفتح القناة لمدة 24 ساعة.`,
                     ephemeral: true 
                 });
             } else {
-                aiConfig.removeRestrictedCategory(category.id);
+                await aiConfig.removeRestrictedCategory(category.id);
                 return interaction.reply({ 
                     content: `🔓 **تم فك القفل عن الكتاغوري:** ${category.name}\nالآن يمكن التحدث بحرية (إذا كانت القنوات مفعلة بـ setup).`, 
                     ephemeral: true 
@@ -269,13 +273,13 @@ module.exports = {
 
         if (subcommand === 'block') {
             const user = interaction.options.getUser('user');
-            aiConfig.blockUser(user.id);
+            await aiConfig.blockUser(user.id);
             return interaction.reply({ content: `🚫 **تم حظر** العضو ${user} من استخدام البوت.`, ephemeral: true });
         }
 
         if (subcommand === 'unblock') {
             const user = interaction.options.getUser('user');
-            aiConfig.unblockUser(user.id);
+            await aiConfig.unblockUser(user.id);
             return interaction.reply({ content: `🟢 **تم فك الحظر** عن العضو ${user}.`, ephemeral: true });
         }
     }
