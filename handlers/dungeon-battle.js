@@ -241,8 +241,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                                 
                                 const debuffDuration = 60 * 60 * 1000; const expiresAt = Date.now() + debuffDuration;
                                 if (db) {
-                                    await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guild.id, afkP.id, -100, expiresAt, 'mora', -1.0]);
-                                    await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guild.id, afkP.id, -100, expiresAt, 'xp', -1.0]);
+                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'mora', -1.0]);
+                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'xp', -1.0]);
                                 }
                                 log.push(`☠️ **${afkP.name}** ابتـلعـه الدانـجون بسبب الخمـول!`);
                                 await threadChannel.send(`✶ <@${afkP.id}> <:emoji_69:1451172248173023263> خـرقـت قوانين الدانجـون بسبب خمولك المستمـر... ابتلعك الدانجون وتم لعنـك بـ -100% اضعاف`).catch(()=>{});
