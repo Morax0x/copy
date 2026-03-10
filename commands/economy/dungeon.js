@@ -51,19 +51,17 @@ module.exports = {
         }
 
         try {
-            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS last_dungeon BIGINT DEFAULT 0");
-            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS dungeon_tickets BIGINT DEFAULT 0");
-            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS last_ticket_reset TEXT DEFAULT ''");
-            await db.query("CREATE TABLE IF NOT EXISTS dungeon_saves (hostID TEXT PRIMARY KEY, guildID TEXT, floor BIGINT, timestamp BIGINT)");
+            await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "last_dungeon" BIGINT DEFAULT 0`);
+            await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "dungeon_tickets" INTEGER DEFAULT 0`);
+            await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "last_ticket_reset" TEXT DEFAULT ''`);
+            await db.query(`CREATE TABLE IF NOT EXISTS dungeon_saves ("hostID" TEXT PRIMARY KEY, "guildID" TEXT, "floor" INTEGER, "timestamp" BIGINT)`);
         } catch (ignored) {}
 
         let isAbyssKing = false;
         try {
-            const settingsRes = await db.query("SELECT roleAbyss FROM settings WHERE guild = $1", [guild.id]);
+            const settingsRes = await db.query(`SELECT "roleAbyss" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
-            const roleId = settings?.roleabyss || settings?.roleAbyss;
-            
-            if (roleId && interaction.member.roles.cache.has(roleId)) {
+            if (settings && (settings.roleAbyss || settings.roleabyss) && interaction.member.roles.cache.has(settings.roleAbyss || settings.roleabyss)) {
                 isAbyssKing = true;
             }
         } catch (e) {}
@@ -72,13 +70,8 @@ module.exports = {
             let userData = await client.getLevel(user.id, guild.id);
             
             if (!userData) {
-                await client.setLevel({
-                    id: `${guild.id}-${user.id}`,
-                    user: user.id,
-                    guild: guild.id,
-                    xp: 0, level: 1, mora: 0
-                });
-                userData = await client.getLevel(user.id, guild.id);
+                userData = { user: user.id, guild: guild.id, xp: 0, level: 1, mora: 0 };
+                await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "mora") VALUES ($1, $2, 0, 1, 0)`, [user.id, guild.id]);
             }
 
             const lastRun = Number(userData.last_dungeon) || 0;
