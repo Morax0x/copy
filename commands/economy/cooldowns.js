@@ -1,3 +1,5 @@
+// commands/economy/gametime.js
+
 const { 
     EmbedBuilder, 
     SlashCommandBuilder, 
@@ -9,6 +11,7 @@ const {
 } = require("discord.js");
 const path = require('path');
 
+// استدعاء ملف إعدادات الصيد
 const rootDir = process.cwd();
 let fishingConfig = { rods: [], boats: [] };
 try {
@@ -46,16 +49,17 @@ function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
+// تم تعديل أسماء خصائص الأعمدة لتطابق الكيس (حالة الأحرف) في PostgreSQL
 const COMMANDS_TO_CHECK = [
-    { name: 'work', db_column: 'lastWork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
-    { name: 'rob', db_column: 'lastRob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
-    { name: 'rps', db_column: 'lastRPS', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
-    { name: 'guess', db_column: 'lastGuess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
-    { name: 'roulette', db_column: 'lastRoulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
-    { name: 'emoji', db_column: 'lastMemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
-    { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
-    { name: 'pvp', db_column: 'lastPVP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
-    { name: 'race', db_column: 'lastRace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
+    { name: 'work', db_column: 'lastwork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
+    { name: 'rob', db_column: 'lastrob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
+    { name: 'rps', db_column: 'lastrps', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
+    { name: 'guess', db_column: 'lastguess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
+    { name: 'roulette', db_column: 'lastroulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
+    { name: 'emoji', db_column: 'lastmemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
+    { name: 'arrange', db_column: 'lastarrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
+    { name: 'pvp', db_column: 'lastpvp', cooldown: 5 * 60 * 1000, label: 'تحدي' },
+    { name: 'race', db_column: 'lastrace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
     { name: 'dungeon', db_column: 'last_dungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
@@ -93,6 +97,7 @@ module.exports = {
                 originalUser = message.author;
             }
 
+            // دالة لحساب البيانات لأي مستخدم
             const calculateUserData = async (userToCheck) => {
                 let data = await client.getLevel(userToCheck.id, guild.id);
                 if (!data) data = { ...client.defaultData, user: userToCheck.id, guild: guild.id };
@@ -101,7 +106,8 @@ module.exports = {
                 const readyGames = [];
                 const waitGames = [];
 
-                const lastDaily = Number(data.lastDaily) || 0;
+                // 1. الراتب
+                const lastDaily = Number(data.lastDaily || data.lastdaily) || 0;
                 const todayKSA = getKSADateString(now);
                 const lastDailyKSA = getKSADateString(lastDaily);
 
@@ -112,8 +118,10 @@ module.exports = {
                     readyGames.push(`${EMOJI_READY} **راتب**`);
                 }
 
+                // 2. الأوامر الثابتة
                 for (const cmd of COMMANDS_TO_CHECK) {
-                    const lastUsed = Number(data[cmd.db_column]) || 0;
+                    // فحص العمود بأحرف كبيرة وصغيرة
+                    const lastUsed = Number(data[cmd.db_column] || data[cmd.db_column.toLowerCase()] || data[cmd.name] || 0);
                     const cooldownAmount = cmd.cooldown;
                     const timeLeft = lastUsed + cooldownAmount - now;
 
@@ -124,13 +132,14 @@ module.exports = {
                     }
                 }
 
-                const userRodLevel = Number(data.rodLevel) || 1;
-                const userBoatLevel = Number(data.boatLevel) || 1;
+                // 3. الصيد
+                const userRodLevel = Number(data.rodLevel || data.rodlevel) || 1;
+                const userBoatLevel = Number(data.boatLevel || data.boatlevel) || 1;
                 const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
                 const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
                 let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
                 if (fishCooldown < 10000) fishCooldown = 10000;
-                const lastFish = Number(data.lastFish) || 0;
+                const lastFish = Number(data.lastFish || data.lastfish) || 0;
                 const fishTimeLeft = lastFish + fishCooldown - now;
 
                 if (fishTimeLeft > 0) {
@@ -142,6 +151,10 @@ module.exports = {
                 return { readyGames, waitGames };
             };
 
+            // حساب البيانات الأساسية للرسالة الأولى
+            const { readyGames, waitGames } = await calculateUserData(targetUser);
+
+            // بناء الإيمبد الرئيسي
             const embed = new EmbedBuilder()
                 .setTitle('✥ وقـت الالعـاب')
                 .setColor("Random")
@@ -174,28 +187,32 @@ module.exports = {
             });
 
             collector.on('collect', async (i) => {
+                // 🔥 التعديل هنا: تحديد من هو المستخدم المستهدف بناءً على من ضغط الزر
+                // إذا الضغط من صاحب الأمر -> نعرض بيانات التارجت الأصلي
+                // إذا الضغط من شخص غريب -> نعرض بياناته هو شخصياً
                 const clickerIsOwner = i.user.id === originalUser.id;
                 const subjectUser = clickerIsOwner ? targetUser : i.user;
 
-                const { readyGames, waitGames } = await calculateUserData(subjectUser);
+                // إعادة حساب البيانات للشخص المحدد
+                const result = await calculateUserData(subjectUser);
 
                 let finalDesc = "";
                 let finalColor = "Random";
 
                 if (i.customId === 'show_ready') {
-                    finalDesc = readyGames.length > 0 
-                        ? `**✅ القائمة المتاحة لـ ${subjectUser.username}:**\n\n${readyGames.join('\n')}` 
+                    finalDesc = result.readyGames.length > 0 
+                        ? `**✅ القائمة المتاحة لـ ${subjectUser.username}:**\n\n${result.readyGames.join('\n')}` 
                         : `❌ لا توجد ألعاب متاحة حالياً لـ ${subjectUser.username}..`;
                     finalColor = "Green";
                 } 
                 else if (i.customId === 'show_wait') {
-                    finalDesc = waitGames.length > 0 
-                        ? `**⏳ قائمة الانتظار لـ ${subjectUser.username}:**\n\n${waitGames.join('\n')}` 
+                    finalDesc = result.waitGames.length > 0 
+                        ? `**⏳ قائمة الانتظار لـ ${subjectUser.username}:**\n\n${result.waitGames.join('\n')}` 
                         : `جـميـع الالعـاب متاحـة لـك الان !`;
                     finalColor = "Red";
                 }
                 else if (i.customId === 'show_all') {
-                    const allGames = [...readyGames, ...waitGames];
+                    const allGames = [...result.readyGames, ...result.waitGames];
                     finalDesc = `**📋 الحالة العامة لـ ${subjectUser.username}:**\n\n${allGames.join('\n')}`;
                     finalColor = "Blue";
                 }
