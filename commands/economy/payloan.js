@@ -7,7 +7,7 @@ const EARLY_PAYOFF_DISCOUNT_RATE = 0.50;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('تسديد') 
-        .setDescription('سداد القرض الخاص بك (بشكل جزئي أو كامل).')
+        .setDescription('سداد القرض الخاص بك - بشكل جزئي أو كامل')
         .addStringOption(option =>
             option.setName('المبلغ')
             .setDescription('المبلغ الذي تريد دفعه، أو "all" / "كامل" للسداد الكامل')
@@ -67,7 +67,7 @@ module.exports = {
 
         const db = client.sql; 
 
-        const getLoanRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [user.id, guild.id]);
+        const getLoanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
         const loan = getLoanRes.rows[0]; 
 
         if (!loan) {
@@ -81,8 +81,8 @@ module.exports = {
         const userBank = Number(data.bank) || 0;
         const totalBalance = userMora + userBank;
         
-        const loanAmount = Number(loan.loanamount || loan.loanAmount);
-        let remainingAmount = Number(loan.remainingamount || loan.remainingAmount);
+        const loanAmount = Number(loan.loanAmount || loan.loanamount);
+        let remainingAmount = Number(loan.remainingAmount || loan.remainingamount);
 
         if (!amountArg) {
             const totalToRepay = loanAmount * (1 + TOTAL_INTEREST_RATE);
@@ -132,14 +132,14 @@ module.exports = {
             }
 
             try {
-                await db.query('BEGIN');
+                await db.query("BEGIN");
                 await client.setLevel(data);
-                await db.query("DELETE FROM user_loans WHERE id = $1", [loan.id]);
-                await db.query('COMMIT');
+                await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                await db.query("COMMIT");
                 
                 return replySuccess(`🎉 **تم سداد القرض بالكامل!**\nلقد قمت بسداد مبكر وحصلت على خصم **${discountAmount.toLocaleString()}** ${EMOJI_MORA} (50% من الفائدة المتبقية).\nدفعت: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
             } catch (e) {
-                await db.query('ROLLBACK');
+                await db.query("ROLLBACK");
                 return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
             }
         }
@@ -172,13 +172,13 @@ module.exports = {
             data.mora += change;
 
             try {
-                await db.query('BEGIN');
+                await db.query("BEGIN");
                 await client.setLevel(data);
-                await db.query("DELETE FROM user_loans WHERE id = $1", [loan.id]);
-                await db.query('COMMIT');
+                await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                await db.query("COMMIT");
                 return replySuccess(`✅ تم سداد القرض بالكامل. تم إرجاع الباقي (**${change.toLocaleString()}** ${EMOJI_MORA}) إلى رصيدك.`); 
             } catch(e) {
-                await db.query('ROLLBACK');
+                await db.query("ROLLBACK");
                 return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
             }
         }
@@ -195,13 +195,13 @@ module.exports = {
         remainingAmount -= amountToPay;
 
         try {
-            await db.query('BEGIN');
-            await db.query("UPDATE user_loans SET remainingAmount = $1 WHERE id = $2", [remainingAmount, loan.id]);
+            await db.query("BEGIN");
+            await db.query(`UPDATE user_loans SET "remainingAmount" = $1 WHERE "id" = $2`, [remainingAmount, loan.id]);
             await client.setLevel(data);
-            await db.query('COMMIT');
+            await db.query("COMMIT");
             replySuccess(`✅ تم دفع **${amountToPay.toLocaleString()}** ${EMOJI_MORA}.\nالمبلغ المتبقي للقرض: **${remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
         } catch(e) {
-            await db.query('ROLLBACK');
+            await db.query("ROLLBACK");
             return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
         }
     }
