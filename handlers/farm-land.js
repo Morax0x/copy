@@ -83,7 +83,7 @@ async function ensureLandTable(db) {
 
 async function getGrowthMultiplier(member, guildId, db) {
     try {
-        const settingsRes = await db.query('SELECT "roleFarmKing" FROM settings WHERE "guild" = $1', [guildId]);
+        const settingsRes = await db.query(`SELECT "roleFarmKing" FROM settings WHERE "guild" = $1`, [guildId]);
         const settings = settingsRes.rows[0];
         if (settings && settings.roleFarmKing && member && member.roles && member.roles.cache.has(settings.roleFarmKing)) {
             return 0.70; 
@@ -104,7 +104,7 @@ async function renderLand(interaction, client, db) {
     let unlockedPlots = await getLandPlots(client, userId, guildId);
     if (unlockedPlots >= 30) unlockedPlots = 36; 
 
-    const userPlotsRes = await db.query('SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
+    const userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
     const userPlots = userPlotsRes.rows;
     const now = Date.now();
 
@@ -467,7 +467,7 @@ async function handleLandInteractions(i, client, db) {
 
         const countToPlant = Math.min(qtyInput, tilledPlots.length, seedStock);
 
-        if (countToPlant === 0) return await i.editReply("❌ لا يمكن الزراعة (نقص بذور أو أرض محروثة).");
+        if (countToPlant === 0) return await i.editReply("❌ لا يمكن الزراعة (نقص بذور أو أرض غير محروثة).");
 
         if (seedStock === countToPlant) {
             await db.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
@@ -480,4 +480,132 @@ async function handleLandInteractions(i, client, db) {
         try {
             await db.query("BEGIN");
             for (let k = 0; k < countToPlant; k++) {
-                await db.query(`UPDATE user_lands SET "status" = 'planted', "seedID" = $1, "plantTime" = $2 WHERE "userID" = $3 AND "guildID" = $4 AND "plotID" = $5`, [seed.id, now, userId, guild
+                await db.query(`UPDATE user_lands SET "status" = 'planted', "seedID" = $1, "plantTime" = $2 WHERE "userID" = $3 AND "guildID" = $4 AND "plotID" = $5`, [seed.id, now, userId, guildId, tilledPlots[k].plotID]);
+            }
+            await db.query("COMMIT");
+        } catch (e) {
+            await db.query("ROLLBACK");
+            console.error("Error planting seeds:", e);
+        }
+
+        await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
+
+        try {
+            const mainMsg = await i.channel.messages.fetch(msgId).catch(() => null);
+            if (mainMsg) {
+                const newData = await renderLand(i, client, db);
+                await mainMsg.edit({
+                    content: newData.content,
+                    embeds: [], 
+                    components: newData.components,
+                    files: newData.files
+                });
+            }
+        } catch (err) {
+            console.error("Failed to update farm image after planting:", err);
+        }
+        
+        return;
+    }
+
+    if (baseAction === 'land_harvest_all') {
+        await i.deferUpdate();
+        const plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]);
+        const plantedPlots = plantedPlotsRes.rows;
+        const now = Date.now();
+        let totalRevenue = 0, totalXP = 0, harvestedCount = 0;
+        const plotsToReset = [];
+
+        for (const plot of plantedPlots) {
+            const seed = seedsData.find(s => s.id === plot.seedID);
+            if (!seed) continue;
+            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+            const witherMs = seed.wither_time_hours * 3600000;
+            const age = now - Number(plot.plantTime);
+
+            if (age >= growthMs && age < (growthMs + witherMs)) {
+                totalRevenue += seed.sell_price;
+                totalXP += seed.xp_reward;
+                harvestedCount++;
+                plotsToReset.push(plot.plotID);
+            }
+        }
+
+        if (harvestedCount === 0) return await i.followUp({ content: "🚫 لا يوجد حصاد جاهز.", flags: [MessageFlags.Ephemeral] });
+
+        try {
+            await db.query("BEGIN");
+            for (const pid of plotsToReset) {
+                await db.query(`UPDATE user_lands SET "status" = 'empty', "seedID" = NULL, "plantTime" = NULL WHERE "userID" = $1 AND "guildID" = $2 AND "plotID" = $3`, [userId, guildId, pid]);
+            }
+            await db.query("COMMIT");
+        } catch (e) {
+            await db.query("ROLLBACK");
+            console.error("Error harvesting crops:", e);
+        }
+
+        let userData = await client.getLevel(userId, guildId);
+        
+        if (!userData) {
+            userData = { user: userId, guild: guildId, xp: 0, level: 1, mora: 0, totalXP: 0 };
+        }
+
+        userData.mora = Number(userData.mora) + totalRevenue;
+        userData.xp = Number(userData.xp) + totalXP;
+        userData.totalXP = Number(userData.totalXP) + totalXP;
+        
+        await client.setLevel(userData);
+
+        if (updateGuildStat) {
+            updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue);
+        }
+
+        await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] });
+        await updateView();
+        return;
+    }
+
+    if (baseAction === 'land_clean_all') {
+        await i.deferUpdate();
+        const plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]);
+        const plantedPlots = plantedPlotsRes.rows;
+        const now = Date.now();
+        const plotsToReset = [];
+
+        for (const plot of plantedPlots) {
+            const seed = seedsData.find(s => s.id === plot.seedID);
+            if (!seed) { plotsToReset.push(plot.plotID); continue; }
+            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+            const witherMs = seed.wither_time_hours * 3600000;
+            const age = now - Number(plot.plantTime);
+            if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID);
+        }
+
+        try {
+            await db.query("BEGIN");
+            for (const pid of plotsToReset) {
+                await db.query(`UPDATE user_lands SET "status" = 'empty', "seedID" = NULL, "plantTime" = NULL WHERE "userID" = $1 AND "guildID" = $2 AND "plotID" = $3`, [userId, guildId, pid]);
+            }
+            await db.query("COMMIT");
+        } catch (e) {
+            await db.query("ROLLBACK");
+            console.error("Error cleaning withered crops:", e);
+        }
+
+        await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: [MessageFlags.Ephemeral] });
+        await updateView();
+        return;
+    }
+}
+
+async function getSeedCount(db, userId, guildId, seedId) {
+    try {
+        const invItemRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
+        const invItem = invItemRes.rows[0];
+        return invItem ? Number(invItem.quantity) : 0;
+    } catch(e) {
+        return 0;
+    }
+}
+
+module.exports = { renderLand, handleLandInteractions };
