@@ -20,13 +20,13 @@ module.exports = {
     async execute(interactionOrMessage, args) {
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, db, user, member, guild;
+        let interaction, message, client, sql, user, member, guild;
 
         try {
             if (isSlash) {
                 interaction = interactionOrMessage;
                 client = interaction.client;
-                db = client.sql;
+                sql = client.sql;
                 user = interaction.user;
                 member = interaction.member;
                 guild = interaction.guild;
@@ -34,7 +34,7 @@ module.exports = {
             } else {
                 message = interactionOrMessage;
                 client = message.client;
-                db = client.sql;
+                sql = client.sql;
                 user = message.author;
                 member = message.member;
                 guild = message.guild;
@@ -57,11 +57,12 @@ module.exports = {
                 }
             };
 
-            const existingLoanRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [user.id, guild.id]);
-            const existingLoan = existingLoanRes.rows[0];
+
+            const getLoanRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
+            const existingLoan = getLoanRes.rows[0];
 
             if (existingLoan) {
-                return sendError(`❌ لديك قرض سابق لم تقم بسداده. المبلغ المتبقي: **${Number(existingLoan.remainingamount || existingLoan.remainingAmount).toLocaleString()}** ${EMOJI_MORA}.`);
+                return sendError(`❌ لديك قرض سابق لم تقم بسداده. المبلغ المتبقي: **${Number(existingLoan.remainingAmount || existingLoan.remainingamount).toLocaleString()}** ${EMOJI_MORA}.`);
             }
 
             const mainEmbed = new EmbedBuilder()
@@ -151,27 +152,34 @@ module.exports = {
                             });
                         }
 
-                        const doubleCheckRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [user.id, guild.id]);
-                        if (doubleCheckRes.rows.length > 0) {
+                        // تحقق مزدوج قبل التنفيذ
+                        const existingLoanCheckRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
+                        const existingLoanCheck = existingLoanCheckRes.rows[0];
+                        
+                        if (existingLoanCheck) {
                              return i.update({
                                 content: `❌ لديك قرض سابق لم تقم بسداده.`,
                                 embeds: [], components: []
                             });
                         }
 
+                        // 🔥 التعديل الجوهري: استخدام Transaction لضمان الأمان عبر PostgreSQL 🔥
                         try {
-                            await db.query('BEGIN');
+                            await sql.query("BEGIN");
                             
+                            // 1. تحديث الرصيد (إضافة المبلغ)
                             data.mora = (Number(data.mora) || 0) + selectedLoan.amount;
                             await client.setLevel(data);
 
-                            await db.query(
-                                "INSERT INTO user_loans (userID, guildID, loanAmount, remainingAmount, dailyPayment, lastPaymentDate, missedPayments) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                                [user.id, guild.id, selectedLoan.amount, selectedLoan.totalToRepay, selectedLoan.dailyPayment, Date.now(), 0]
-                            );
+                            // 2. إنشاء سجل القرض
+                            await sql.query(`
+                                INSERT INTO user_loans ("userID", "guildID", "loanAmount", "remainingAmount", "dailyPayment", "lastPaymentDate", "missedPayments") 
+                                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            `, [user.id, guild.id, selectedLoan.amount, selectedLoan.totalToRepay, selectedLoan.dailyPayment, Date.now(), 0]);
 
-                            await db.query('COMMIT');
+                            await sql.query("COMMIT");
 
+                            // تعطيل الأزرار بعد النجاح
                             const disabledRows = [];
                             if (i.message.components && Array.isArray(i.message.components)) {
                                 i.message.components.forEach(row => {
@@ -193,7 +201,7 @@ module.exports = {
                             collector.stop();
 
                         } catch (txError) {
-                            await db.query('ROLLBACK');
+                            await sql.query("ROLLBACK");
                             console.error("Loan Transaction Error:", txError);
                             return i.followUp({ 
                                 content: `❌ حدث خطأ في قاعدة البيانات ولم يتم منح القرض. لم يتم خصم أو إضافة أي شيء.`, 
