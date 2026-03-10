@@ -1,9 +1,13 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const path = require('path');
 
+// ✅ المسار الصحيح: استدعاء دالة التذاكر ودالة الخيم معاً
 const { manageTickets, manageCampfires } = require(path.join(process.cwd(), 'handlers/dungeon/utils.js'));
 
 module.exports = {
+    // ============================================================
+    // 1. بيانات السلاش كوماند (Slash Command Data)
+    // ============================================================
     data: new SlashCommandBuilder()
         .setName('tickets')
         .setDescription('عرض عدد تذاكر وخيم الدانجون المتوفرة')
@@ -13,16 +17,24 @@ module.exports = {
                 .setRequired(false)
         ),
 
+    // ============================================================
+    // 2. خصائص الهاندلر
+    // ============================================================
     name: 'tickets',
+    // 🔥 تمت إضافة اختصارات الخيم هنا 🔥
     aliases: ['ticket', 'تذاكري', 'تذاكر', 'تذكرة', 'خيمة', 'خيم', 'مخيمات', 'camps', 'campfires'],
     category: "Economy", 
     description: 'عرض عدد تذاكر الدانجون والخيم المتوفرة وموعد التجديد.',
     usage: '-tickets [@user]',
 
+    // ============================================================
+    // 3. التنفيذ
+    // ============================================================
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, user, targetMember;
 
+        // تجهيز المتغيرات بناءً على المصدر (سلاش أو رسالة)
         if (isSlash) {
             interaction = interactionOrMessage;
             user = interaction.user;
@@ -34,22 +46,25 @@ module.exports = {
         }
 
         const client = interactionOrMessage.client;
-        const db = client.sql; 
+        const sql = client.sql; 
 
-        if (!db) {
-            console.error("Error: SQL Database is not attached to Client.");
+        if (!sql) {
+            console.error("❌ Error: SQL Database is not attached to Client.");
             return;
         }
 
         const targetUser = targetMember.user;
 
-        const ticketData = await manageTickets(targetUser.id, interactionOrMessage.guild.id, db, 'check', targetMember);
+        // 1. جلب بيانات التذاكر (تمت إضافة await)
+        const ticketData = await manageTickets(targetUser.id, interactionOrMessage.guild.id, sql, 'check', targetMember);
 
-        const campData = await manageCampfires(targetUser.id, interactionOrMessage.guild.id, db, 'check', targetMember);
+        // 2. 🔥 جلب بيانات الخيم 🔥 (تمت إضافة await)
+        const campData = await manageCampfires(targetUser.id, interactionOrMessage.guild.id, sql, 'check', targetMember);
 
+        // 3. حساب موعد التجديد (الساعة 12:00 ص بتوقيت السعودية)
         const now = new Date();
         const nextReset = new Date(now);
-        nextReset.setUTCHours(21, 0, 0, 0); 
+        nextReset.setUTCHours(21, 0, 0, 0); // 21:00 UTC = 00:00 KSA
 
         if (now > nextReset) {
             nextReset.setDate(nextReset.getDate() + 1);
@@ -57,8 +72,10 @@ module.exports = {
 
         const timestamp = Math.floor(nextReset.getTime() / 1000);
 
+        // 4. تجهيز النصوص
         const titleText = targetUser.id === user.id ? 'عـدد تـذاكـرك' : `عـدد تـذاكـر ${targetUser.username}`;
 
+        // 5. تصميم الإيمبد
         const embed = new EmbedBuilder()
             .setTitle('✥ تـذاكـر وخيـم الدانـجـون')
             .setColor('#E8271C') 
@@ -71,6 +88,7 @@ module.exports = {
             )
             .setFooter({ text: targetUser.username, iconURL: targetUser.displayAvatarURL() });
 
+        // الإرسال
         if (isSlash) {
             await interaction.reply({ embeds: [embed] });
         } else {
