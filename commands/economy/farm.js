@@ -121,11 +121,13 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
     let currentCapacityUsed = 0;
 
     if (category === 'animals') {
-        const userFarmQuery = await sql.query(`SELECT SUM("quantity") as totalQty FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, item.id]);
-        userQuantity = userFarmQuery.rows[0] && userFarmQuery.rows[0].totalqty ? Number(userFarmQuery.rows[0].totalqty) : 0;
+        const userFarmQueryRes = await sql.query(`SELECT SUM("quantity") as totalQty FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, item.id]);
+        const userFarmQuery = userFarmQueryRes.rows[0];
+        userQuantity = userFarmQuery && userFarmQuery.totalqty ? Number(userFarmQuery.totalqty) : 0;
 
         const userFarmRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
         const userFarmRows = userFarmRowsRes.rows;
+        
         for (const row of userFarmRows) {
             const fa = farmAnimals.find(a => a.id === (row.animalID || row.animalid));
             if (fa) currentCapacityUsed += (fa.size || 1) * (Number(row.quantity) || 1);
@@ -406,7 +408,8 @@ module.exports = {
                                     const currentMax = await getPlayerCapacity(client, user.id, guild.id);
                                     const requiredSize = (itemData.size || 1) * qty;
                                     
-                                    if (currentCap + requiredSize > currentMax) {
+                                    // 🔥 الحماية ضد تجاوز الحد المسموح به بعد تحويلها لأرقام
+                                    if (Number(currentCap) + Number(requiredSize) > Number(currentMax)) {
                                         return submit.reply({ content: `🚫 لا توجد مساحة كافية! المساحة المطلوبة: ${requiredSize}, المتاحة: ${currentMax - currentCap}`, flags: MessageFlags.Ephemeral });
                                     }
                                 }
@@ -461,8 +464,11 @@ module.exports = {
                                         remainingToSell -= sellFromRow;
                                         soldCount += sellFromRow;
 
-                                        if (Number(row.quantity) === sellFromRow) await sql.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
-                                        else await sql.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]);
+                                        if (Number(row.quantity) === sellFromRow) {
+                                            await sql.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
+                                        } else {
+                                            await sql.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]);
+                                        }
                                     }
 
                                     if (soldCount === 0) return submit.reply({ content: `🚫 فشل البيع! حيواناتك كبيرة في السن ولا يقبلها السوق.`, flags: MessageFlags.Ephemeral });
@@ -482,8 +488,11 @@ module.exports = {
                                     userData.mora = Number(userData.mora) + totalGain;
                                     await client.setLevel(userData);
 
-                                    if (Number(invItem.quantity) === qty) await sql.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]);
-                                    else await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, user.id, guild.id, itemId]);
+                                    if (Number(invItem.quantity) === qty) {
+                                        await sql.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]);
+                                    } else {
+                                        await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, user.id, guild.id, itemId]);
+                                    }
 
                                     await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
                                 }
