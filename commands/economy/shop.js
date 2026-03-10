@@ -56,8 +56,8 @@ module.exports = {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             const guildId = guild.id;
             try {
-                await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guildId]);
-                const settingsRes = await db.query("SELECT shopChannelID FROM settings WHERE guild = $1", [guildId]);
+                await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guildId]);
+                const settingsRes = await db.query(`SELECT "shopChannelID" FROM settings WHERE "guild" = $1`, [guildId]);
                 const settings = settingsRes.rows[0];
                 const shopId = settings?.shopchannelid || settings?.shopChannelID;
 
@@ -107,8 +107,8 @@ module.exports = {
             const guildId = guild.id;
             const channelId = channel.id;
 
-            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guildId]);
-            await db.query("UPDATE settings SET shopChannelID = $1 WHERE guild = $2", [channelId, guildId]);
+            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guildId]);
+            await db.query(`UPDATE settings SET "shopChannelID" = $1 WHERE "guild" = $2`, [channelId, guildId]);
 
             if (isSlash) {
                 await interaction.editReply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.' });
