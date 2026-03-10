@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
-const marketConfig = require('../../json/market-items.json'); 
+const marketConfig = require('../../json/market-items.json'); // استيراد ملف الإعدادات للفلترة
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -74,9 +74,11 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
     
     const col1 = [], col2 = [], col3 = [];
     itemsOnPage.forEach((item, index) => {
-        const changeEmoji = getItemChangeEmoji(item.lastchangepercent || item.lastChangePercent);
+        const changePercent = Number(item.lastChangePercent || item.lastchangepercent);
+        const currentPrice = Number(item.currentPrice || item.currentprice);
+        const changeEmoji = getItemChangeEmoji(changePercent);
         const assetEmoji = EMOJI_ASSET_LARGE[item.id] || '📈';
-        const price = Number(item.currentprice || item.currentPrice).toLocaleString();
+        const price = currentPrice.toLocaleString();
         const cleanName = cleanEmojiFromName(item.name); 
 
         const itemLine = `${assetEmoji} **${cleanName.split(' ').slice(0, 2).join(' ')}**\n${price} ${EMOJI_MORA} ${changeEmoji}`;
@@ -100,7 +102,7 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
 
     const selectOptions = itemsOnPage.map(item => ({
         label: `${cleanEmojiFromName(item.name)}`,
-        description: `السعر الحالي: ${Number(item.currentprice || item.currentPrice).toLocaleString()} مورا`,
+        description: `السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()} مورا`,
         value: item.id,
         emoji: EMOJI_ASSET_SMALL[item.id] || '📈'
     }));
@@ -115,16 +117,16 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
     return { embed, components: [selectMenuRow] };
 }
 
-async function buildDetailView(item, userId, guildId, allItems, timeRemaining, db) {
-    let userQuantity = 0;
-    try {
-        const res = await db.query("SELECT quantity FROM user_portfolio WHERE userID = $1 AND guildID = $2 AND itemID = $3", [userId, guildId, item.id]);
-        if (res.rows.length > 0) userQuantity = Number(res.rows[0].quantity);
-    } catch(e) {}
-
-    const changePercent = Number(item.lastchangepercent || item.lastChangePercent);
+async function buildDetailView(item, userId, guildId, allItems, timeRemaining, sql) {
+    const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
+    const userPortfolio = userPortfolioRes.rows[0];
+    const userQuantity = userPortfolio ? Number(userPortfolio.quantity) : 0;
+    
+    const changePercent = Number(item.lastChangePercent || item.lastchangepercent);
+    const currentPrice = Number(item.currentPrice || item.currentprice);
+    
     const changeEmoji = getItemChangeEmoji(changePercent);
-    const price = Number(item.currentprice || item.currentPrice).toLocaleString();
+    const price = currentPrice.toLocaleString();
     const cleanName = cleanEmojiFromName(item.name);
 
     const detailEmbed = new EmbedBuilder()
@@ -167,19 +169,19 @@ module.exports = {
     async execute(interactionOrMessage, args) {
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, db, user, guild;
+        let interaction, message, client, sql, user, guild;
 
         if (isSlash) {
             interaction = interactionOrMessage;
             client = interaction.client;
-            db = client.sql;
+            sql = client.sql;
             user = interaction.user;
             guild = interaction.guild;
             await interaction.deferReply();
         } else {
             message = interactionOrMessage;
             client = message.client;
-            db = client.sql;
+            sql = client.sql;
             user = message.author;
             guild = message.guild;
         }
@@ -192,12 +194,11 @@ module.exports = {
             }
         };
 
-        let dbItems = [];
-        try {
-            const res = await db.query("SELECT * FROM market_items");
-            dbItems = res.rows;
-        } catch(e) {}
+        // 🔥 1. جلب العناصر من قاعدة البيانات
+        const dbItemsRes = await sql.query("SELECT * FROM market_items");
+        const dbItems = dbItemsRes.rows;
 
+        // 🔥 2. تصفية العناصر: نعرض فقط العناصر الموجودة في ملف JSON (الأسهم والعقارات)
         const validItemIds = new Set(marketConfig.map(i => i.id));
         const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
@@ -246,7 +247,7 @@ module.exports = {
                             }
 
                             const item = allItems[currentItemIndex];
-                            const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, db); 
+                            const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
                             await i.editReply({ embeds: [detailEmbed], components: detailComponents });
                         }
 
@@ -272,7 +273,7 @@ module.exports = {
                             .setCustomId('quantity_input')
                             .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
                             .setStyle(TextInputStyle.Short)
-                            .setPlaceholder(`السعر الحالي: ${Number(item.currentprice || item.currentPrice).toLocaleString()}`)
+                            .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()}`)
                             .setRequired(true);
 
                         modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
@@ -286,7 +287,7 @@ module.exports = {
                     const selectedID = i.values[0];
                     currentItemIndex = allItems.findIndex(it => it.id === selectedID);
                     const item = allItems[currentItemIndex];
-                    const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, db); 
+                    const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
                     await i.editReply({ embeds: [detailEmbed], components: detailComponents });
                 }
             } catch (error) {
