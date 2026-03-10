@@ -73,7 +73,7 @@ module.exports = {
             }
         };
 
-        const db = client.sql;
+        const sql = client.sql;
 
         let data = await client.getLevel(user.id, guild.id);
         if (!data) {
@@ -81,7 +81,7 @@ module.exports = {
         }
 
         const now = Date.now();
-        const lastDaily = Number(data.lastdaily ?? data.lastDaily) || 0;
+        const lastDaily = Number(data.lastDaily || data.lastdaily) || 0;
 
         const todayKSA = getKSADateString(now);
         const lastDailyKSA = getKSADateString(lastDaily);
@@ -103,7 +103,7 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        let newStreak = Number(data.dailystreak ?? data.dailyStreak) || 0;
+        let newStreak = Number(data.dailyStreak || data.dailystreak) || 0;
         
         const date1 = new Date(todayKSA);
         const date2 = new Date(lastDailyKSA);
@@ -121,11 +121,7 @@ module.exports = {
         const rewardRange = REWARDS[currentRewardKey];
         const baseAmount = getRandomAmount(rewardRange.min, rewardRange.max);
 
-        let moraMultiplier = 1.0;
-        try {
-            moraMultiplier = await calculateMoraBuff(member, db);
-        } catch (e) {}
-
+        const moraMultiplier = await calculateMoraBuff(member, sql);
         const finalAmount = Math.floor(baseAmount * moraMultiplier);
 
         data.mora = (Number(data.mora) || 0) + finalAmount;
