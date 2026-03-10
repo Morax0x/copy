@@ -1,5 +1,5 @@
 const { EmbedBuilder, Colors } = require("discord.js");
-const { EMOJI_MORA } = require('../shop_system/utils.js'); 
+const { EMOJI_MORA } = require('./utils.js'); 
 
 function calculateSlippage(basePrice, quantity, isBuy) {
     const slippageFactor = 0.0001; 
@@ -19,7 +19,7 @@ async function updateMarketPrices(db) {
     if (!db) return;
     
     try {
-        const allItemsRes = await db.query("SELECT * FROM market_items");
+        const allItemsRes = await db.query(`SELECT * FROM market_items`);
         const allItems = allItemsRes.rows;
         if (allItems.length === 0) return;
         
@@ -30,19 +30,19 @@ async function updateMarketPrices(db) {
         try {
             await db.query("BEGIN");
             for (const item of allItems) {
-                const resultRes = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemid = $1", [item.id]);
-                const totalOwned = parseInt(resultRes.rows[0].total) || 0;
+                const resultRes = await db.query(`SELECT SUM("quantity") as total FROM user_portfolio WHERE "itemID" = $1`, [item.id]);
+                const totalOwned = Number(resultRes.rows[0].total) || 0;
                 
                 let randomPercent = (Math.random() * 0.20) - 0.10; 
                 
                 const saturationPenalty = (totalOwned / SATURATION_POINT) * 0.02;
                 let finalChangePercent = randomPercent - saturationPenalty;
                 
-                if (parseInt(item.currentprice) > 5000 && finalChangePercent > 0) finalChangePercent /= 2; 
+                if (Number(item.currentPrice || item.currentprice) > 5000 && finalChangePercent > 0) finalChangePercent /= 2; 
                 
                 if (finalChangePercent < -0.30) finalChangePercent = -0.30;
                 
-                const oldPrice = parseInt(item.currentprice);
+                const oldPrice = Number(item.currentPrice || item.currentprice);
                 let newPrice = Math.floor(oldPrice * (1 + finalChangePercent));
                 
                 if (newPrice < MIN_PRICE) newPrice = MIN_PRICE;
@@ -51,7 +51,7 @@ async function updateMarketPrices(db) {
                 const changeAmount = newPrice - oldPrice;
                 const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
                 
-                await db.query("UPDATE market_items SET currentprice = $1, lastchangepercent = $2, lastchange = $3 WHERE id = $4", [newPrice, displayPercent, changeAmount, item.id]);
+                await db.query(`UPDATE market_items SET "currentPrice" = $1, "lastChangePercent" = $2, "lastChange" = $3 WHERE "id" = $4`, [newPrice, displayPercent, changeAmount, item.id]);
             }
             await db.query("COMMIT");
             console.log(`[Market System] Prices updated successfully.`);
@@ -82,33 +82,33 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             return await i.editReply({ content: `🚫 **السهم في حالة انهيار وإعادة هيكلة!**\nيرجى الانتظار قليلاً حتى يتم طرحه بالسعر الجديد.` });
         }
 
-        const itemRes = await db.query("SELECT * FROM market_items WHERE id = $1", [assetId]);
+        const itemRes = await db.query(`SELECT * FROM market_items WHERE "id" = $1`, [assetId]);
         const item = itemRes.rows[0];
         if (!item) return await i.editReply({ content: '❌ الأصل (السهم) غير موجود في النظام.' });
 
-        let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, i.guild.id]);
+        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
         let userData = userDataRes.rows[0];
 
         if (!userData) {
-            userData = { userid: i.user.id, guildid: i.guild.id, mora: 0, bank: 0 };
-            await db.query("INSERT INTO levels (userid, guildid, mora, bank, xp, level, totalxp) VALUES ($1, $2, 0, 0, 0, 1, 0)", [i.user.id, i.guild.id]);
+            userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0 };
+            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
         }
 
-        let userMora = parseInt(userData.mora) || 0; 
-        const userBank = parseInt(userData.bank) || 0;
+        let userMora = Number(userData.mora) || 0; 
+        const userBank = Number(userData.bank) || 0;
 
-        const pfItemRes = await db.query("SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3", [i.user.id, i.guild.id, item.id]);
+        const pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, item.id]);
         let pfItem = pfItemRes.rows[0];
         
         if (isBuy) {
-            const avgPrice = calculateSlippage(parseInt(item.currentprice), quantity, true);
+            const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice), quantity, true);
             const totalCost = Math.floor(avgPrice * quantity);
             
             if (userMora < totalCost) {
                 let msg = `❌ **رصيدك غير كافي!**`;
                 if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، يمكنك السحب منه.`;
                 
-                if (totalCost > (parseInt(item.currentprice) * quantity)) {
+                if (totalCost > (Number(item.currentPrice || item.currentprice) * quantity)) {
                     msg += `\n⚠️ **تنبيه:** السعر ارتفع قليلاً بسبب الانزلاق السعري للكميات الكبيرة.\nالتكلفة الحالية: **${totalCost.toLocaleString()}**`;
                 }
                 return await i.editReply({ content: msg });
@@ -116,12 +116,12 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                await db.query("UPDATE levels SET mora = mora - $1, shop_purchases = COALESCE(shop_purchases, 0) + 1 WHERE userid = $2 AND guildid = $3", [totalCost, i.user.id, i.guild.id]);
+                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
                 
                 if (pfItem) {
-                    await db.query("UPDATE user_portfolio SET quantity = quantity + $1 WHERE id = $2", [quantity, pfItem.id]);
+                    await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]);
                 } else {
-                    await db.query("INSERT INTO user_portfolio (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4)", [i.guild.id, i.user.id, item.id, quantity]);
+                    await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]);
                 }
                 await db.query("COMMIT");
             } catch (txErr) {
@@ -138,23 +138,23 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             await i.editReply({ embeds: [embed] });
 
         } else {
-            const userQty = pfItem ? parseInt(pfItem.quantity) : 0;
+            const userQty = pfItem ? Number(pfItem.quantity) : 0;
             
             if (userQty < quantity) {
                 return await i.editReply({ content: `❌ لا تملك هذه الكمية للبيع (لديك: **${userQty}**).` });
             }
             
-            const avgPrice = calculateSlippage(parseInt(item.currentprice), quantity, false);
+            const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
             
             try {
                 await db.query("BEGIN");
-                await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3", [totalGain, i.user.id, i.guild.id]);
+                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]);
                 
                 if (userQty - quantity > 0) {
-                    await db.query("UPDATE user_portfolio SET quantity = $1 WHERE id = $2", [userQty - quantity, pfItem.id]);
+                    await db.query(`UPDATE user_portfolio SET "quantity" = $1 WHERE "id" = $2`, [userQty - quantity, pfItem.id]);
                 } else {
-                    await db.query("DELETE FROM user_portfolio WHERE id = $1", [pfItem.id]);
+                    await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]);
                 }
                 await db.query("COMMIT");
             } catch (txErr) {
