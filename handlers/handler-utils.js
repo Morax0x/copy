@@ -3,16 +3,17 @@ const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 async function getFreeBalance(member, db) {
     if (!db) return 0;
     
-    const levelDataRes = await db.query("SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2", [member.id, member.guild.id]);
+    // 🔥 تم وضع أسماء الأعمدة بين علامات تنصيص لضمان المطابقة
+    const levelDataRes = await db.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [member.id, member.guild.id]);
     const levelData = levelDataRes.rows[0];
-    const currentMora = levelData ? (levelData.mora || 0) : 0;
-    const currentBank = levelData ? (levelData.bank || 0) : 0;
+    const currentMora = levelData ? (Number(levelData.mora) || 0) : 0;
+    const currentBank = levelData ? (Number(levelData.bank) || 0) : 0;
     
     const totalWealth = currentMora + currentBank;
 
-    const loanDataRes = await db.query("SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2", [member.id, member.guild.id]);
+    const loanDataRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [member.id, member.guild.id]);
     const loanData = loanDataRes.rows[0];
-    const debt = loanData ? loanData.remainingamount : 0;
+    const debt = loanData ? Number(loanData.remainingAmount) : 0;
 
     const freeBalance = totalWealth - debt;
     
@@ -21,21 +22,21 @@ async function getFreeBalance(member, db) {
 
 async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpData, db) {
      try {
-         const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [interaction.guild.id]);
+         const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [interaction.guild.id]);
          let customSettings = settingsRes.rows[0];
          
-         const channelRes = await db.query("SELECT * FROM channel WHERE guild = $1", [interaction.guild.id]);
+         const channelRes = await db.query(`SELECT * FROM channel WHERE "guild" = $1`, [interaction.guild.id]);
          let channelLevel = channelRes.rows[0];
          
          let levelUpContent = null;
          let embed;
 
-         if (customSettings && (customSettings.lvluptitle || customSettings.lvlUpTitle)) {
-             const title = customSettings.lvluptitle || customSettings.lvlUpTitle;
-             const desc = customSettings.lvlupdesc || customSettings.lvlUpDesc;
-             const color = customSettings.lvlupcolor || customSettings.lvlUpColor || "Random";
-             const image = customSettings.lvlupimage || customSettings.lvlUpImage;
-             const mention = customSettings.lvlupmention !== undefined ? customSettings.lvlupmention : customSettings.lvlUpMention;
+         if (customSettings && (customSettings.lvlUpTitle || customSettings.lvluptitle)) {
+             const title = customSettings.lvlUpTitle || customSettings.lvluptitle;
+             const desc = customSettings.lvlUpDesc || customSettings.lvlupdesc;
+             const color = customSettings.lvlUpColor || customSettings.lvlupcolor || "Random";
+             const image = customSettings.lvlUpImage || customSettings.lvlupimage;
+             const mention = customSettings.lvlUpMention !== undefined ? customSettings.lvlUpMention : customSettings.lvlupmention;
 
              function antonymsLevelUp(string) {
                  return string
@@ -43,8 +44,8 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
                     .replace(/{level}/gi, `${newLevel}`)
                     .replace(/{level_old}/gi, `${oldLevel}`)
                     .replace(/{xp}/gi, `${xpData.xp || 0}`)
-                    .replace(/{totalXP}/gi, `${xpData.totalxp || xpData.totalXP || 0}`)
-                    .replace(/{mora}/gi, `${(xpData.mora || 0).toLocaleString()}`); 
+                    .replace(/{totalXP}/gi, `${xpData.totalXP || xpData.totalxp || 0}`)
+                    .replace(/{mora}/gi, `${(Number(xpData.mora) || 0).toLocaleString()}`); 
              }
              
              embed = new EmbedBuilder()
@@ -54,7 +55,7 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
                  .setTimestamp();
                  
              if (image) { embed.setImage(antonymsLevelUp(image)); }
-             if (mention == 1) { levelUpContent = `${member}`; }
+             if (Number(mention) === 1) { levelUpContent = `${member}`; }
          } else {
              embed = new EmbedBuilder()
                  .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
@@ -69,7 +70,7 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
          if (!channelToSend) return;
 
          const permissionFlags = channelToSend.permissionsFor(interaction.guild.members.me);
-         if (permissionFlags.has(PermissionsBitField.Flags.SendMessages) && permissionFlags.has(PermissionsBitField.Flags.ViewChannel)) {
+         if (permissionFlags && permissionFlags.has(PermissionsBitField.Flags.SendMessages) && permissionFlags.has(PermissionsBitField.Flags.ViewChannel)) {
              await channelToSend.send({ content: levelUpContent, embeds: [embed] }).catch(e => console.error(`[LevelUp Send Error]: ${e.message}`));
          }
     } catch (err) {
