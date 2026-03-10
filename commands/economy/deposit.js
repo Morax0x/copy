@@ -1,6 +1,6 @@
 const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const COOLDOWN_MS = 1 * 60 * 1000;
+const COOLDOWN_MS = 1 * 60 * 1000; // ✅ تم التعديل إلى 1 دقيقة
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -52,11 +52,13 @@ module.exports = {
             }
 
             const now = Date.now();
-            const lastDeposit = Number(data.lastDeposit) || 0;
+            const lastDeposit = Number(data.lastDeposit || data.lastdeposit) || 0;
             const timeLeft = lastDeposit + COOLDOWN_MS - now;
 
             if (timeLeft > 0) {
+                const minutes = Math.floor(timeLeft / 60000);
                 const seconds = Math.floor((timeLeft % 60000) / 1000);
+                // ✅ تم تعديل النص ليقول "دقيقة واحدة"
                 const replyContent = `🕐 يمكنك الإيداع مرة واحدة كل دقيقة. يرجى الانتظار **${seconds} ثانية**.`;
 
                 if (isSlash) {
@@ -67,9 +69,7 @@ module.exports = {
             }
 
             let amountToDeposit;
-            data.mora = Number(data.mora) || 0;
-            data.bank = Number(data.bank) || 0;
-            const userMora = data.mora;
+            const userMora = Number(data.mora) || 0;
 
             if (!amountArg || amountArg.toLowerCase() === 'all' || amountArg.toLowerCase() === 'الكل') {
                 amountToDeposit = userMora;
@@ -92,8 +92,9 @@ module.exports = {
                 return isSlash ? interaction.editReply({ content: replyContent, ephemeral: true }) : message.reply(replyContent);
             }
 
-            data.mora -= amountToDeposit;
-            data.bank += amountToDeposit;
+            // تنفيذ العملية
+            data.mora = userMora - amountToDeposit;
+            data.bank = (Number(data.bank) || 0) + amountToDeposit;
             data.lastDeposit = now; 
 
             await client.setLevel(data);
@@ -108,7 +109,7 @@ module.exports = {
                     `❖ تـم ايـداع: **${amountToDeposit.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيد البـنك: **${data.bank.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيـدك الكـاش: **${data.mora.toLocaleString()}** ${EMOJI_MORA}\n\n` +
-                    `◇ ستحصل على فائدة يومية: **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                    `◇ ستحصل على فائدة يومية 0.05% : **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `◇ وسنحمي اموالك بنسبة اكبر من السرقـة`
                 );
 
