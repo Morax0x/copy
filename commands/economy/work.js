@@ -5,6 +5,7 @@ const { calculateMoraBuff } = require('../../streak-handler.js');
 
 let updateGuildStat;
 try {
+    // 🔥 التعديل هنا: جلب الدالة من ملف اللوحة بدلاً من التراكر المحذوف 🔥
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
@@ -62,10 +63,11 @@ module.exports = {
         let data = await client.getLevel(user.id, guildId);
         if (!data) {
             data = { ...client.defaultData, user: user.id, guild: guildId };
+            await client.setLevel(data);
         }
 
         const now = Date.now();
-        const timeLeft = (Number(data.lastWork) || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(data.lastWork || data.lastwork) || 0) + COOLDOWN_MS - now;
 
         if (timeLeft > 0 && user.id !== ownerID) {
             const minutes = Math.floor(timeLeft / 60000);
@@ -83,7 +85,7 @@ module.exports = {
         let taxText = "";
 
         try {
-            const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guildId]);
+            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
             const settings = settingsRes.rows[0];
             const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
 
@@ -95,11 +97,13 @@ module.exports = {
                     if (casinoTax > 0) {
                         finalAmount -= casinoTax;
                         taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                        await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guildId]);
+                        await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
                     }
                 }
             }
-        } catch(e) {}
+        } catch (e) {
+            console.error("خطأ في جلب أو تحديث ضريبة الكازينو:", e);
+        }
 
         data.mora = (Number(data.mora) || 0) + finalAmount;
         data.lastWork = now;
