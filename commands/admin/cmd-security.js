@@ -45,8 +45,8 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS command_permissions (guildID TEXT, channelID TEXT, commandName TEXT, PRIMARY KEY (guildID, channelID, commandName))`);
-            await db.query(`CREATE TABLE IF NOT EXISTS command_shortcuts (guildID TEXT, channelID TEXT, shortcutWord TEXT, commandName TEXT, PRIMARY KEY (guildID, channelID, shortcutWord))`);
+            await db.query(`CREATE TABLE IF NOT EXISTS command_permissions ("guildID" TEXT, "channelID" TEXT, "commandName" TEXT, PRIMARY KEY ("guildID", "channelID", "commandName"))`);
+            await db.query(`CREATE TABLE IF NOT EXISTS command_shortcuts ("guildID" TEXT, "channelID" TEXT, "shortcutWord" TEXT, "commandName" TEXT, PRIMARY KEY ("guildID", "channelID", "shortcutWord"))`);
         } catch(e) {}
 
         let route = '';
@@ -115,7 +115,7 @@ module.exports = {
                 const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
                 if (!command) return reply(`❌ | لم يتم العثور على أمر باسم \`${commandName}\`.`);
 
-                await db.query("INSERT INTO command_permissions (guildID, channelID, commandName) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [guild.id, targetChannel.id, command.name]);
+                await db.query(`INSERT INTO command_permissions ("guildID", "channelID", "commandName") VALUES ($1, $2, $3) ON CONFLICT ("guildID", "channelID", "commandName") DO NOTHING`, [guild.id, targetChannel.id, command.name]);
                 return reply(`✅ | تم السماح لأمر \`${command.name}\` بالعمل في: ${targetChannel}.`);
             }
 
@@ -125,25 +125,25 @@ module.exports = {
                 const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
                 if (!command) return reply(`❌ | لم يتم العثور على أمر باسم \`${commandName}\`.`);
 
-                const res = await db.query("DELETE FROM command_permissions WHERE guildID = $1 AND channelID = $2 AND commandName = $3", [guild.id, targetChannel.id, command.name]);
+                const res = await db.query(`DELETE FROM command_permissions WHERE "guildID" = $1 AND "channelID" = $2 AND "commandName" = $3`, [guild.id, targetChannel.id, command.name]);
                 if (res.rowCount > 0) return reply(`✅ | تم إزالة أمر \`${command.name}\` من ${targetChannel}.`);
                 return reply(`ℹ️ | أمر \`${command.name}\` لم يكن مسموحاً في ${targetChannel} أصلاً.`);
             }
 
             if (route === 'perms_list') {
-                const permsRes = await db.query("SELECT * FROM command_permissions WHERE guildID = $1 ORDER BY channelID, commandName", [guild.id]);
-                const settingsRes = await db.query("SELECT casinoChannelID FROM settings WHERE guild = $1", [guild.id]);
+                const permsRes = await db.query(`SELECT * FROM command_permissions WHERE "guildID" = $1 ORDER BY "channelID", "commandName"`, [guild.id]);
+                const settingsRes = await db.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guild.id]);
                 
                 let description = "**القنوات المسموحة (Whitelist):**\n";
                 if (permsRes.rows.length > 0) {
-                    description += permsRes.rows.map(p => `• في <#${p.channelid || p.channelID}> ➔ مسموح أمر: \`${p.commandname || p.commandName}\``).join('\n');
+                    description += permsRes.rows.map(p => `• في <#${p.channelID || p.channelid}> ➔ مسموح أمر: \`${p.commandName || p.commandname}\``).join('\n');
                 } else {
                     description += "لم يتم تحديد أي صلاحيات (سيتم تجاهل الأعضاء العاديين).\n";
                 }
 
                 description += "\n**إعدادات خاصة:**\n";
-                if (settingsRes.rows.length > 0 && settingsRes.rows[0].casinochannelid) {
-                    description += `- **روم الكازينو (بدون بريفكس):** <#${settingsRes.rows[0].casinochannelid}>`;
+                if (settingsRes.rows.length > 0 && (settingsRes.rows[0].casinoChannelID || settingsRes.rows[0].casinochannelid)) {
+                    description += `- **روم الكازينو (بدون بريفكس):** <#${settingsRes.rows[0].casinoChannelID || settingsRes.rows[0].casinochannelid}>`;
                 } else {
                     description += "- لم يتم تحديد روم كازينو.\n";
                 }
@@ -161,7 +161,7 @@ module.exports = {
 
                 await db.query("BEGIN");
                 for (const word of shortcutWords) {
-                    await db.query("INSERT INTO command_shortcuts (guildID, channelID, shortcutWord, commandName) VALUES ($1, $2, $3, $4) ON CONFLICT (guildID, channelID, shortcutWord) DO UPDATE SET commandName = EXCLUDED.commandName", [guild.id, targetChannel.id, word, command.name]);
+                    await db.query(`INSERT INTO command_shortcuts ("guildID", "channelID", "shortcutWord", "commandName") VALUES ($1, $2, $3, $4) ON CONFLICT ("guildID", "channelID", "shortcutWord") DO UPDATE SET "commandName" = EXCLUDED."commandName"`, [guild.id, targetChannel.id, word, command.name]);
                 }
                 await db.query("COMMIT");
 
@@ -171,16 +171,16 @@ module.exports = {
             if (route === 'shortcut_remove') {
                 if (!targetChannel || !inputWordsString) return reply('**الاستخدام:** `-remove-shortcut <#channel> <الكلمة>`');
 
-                const res = await db.query("DELETE FROM command_shortcuts WHERE guildID = $1 AND channelID = $2 AND shortcutWord = $3", [guild.id, targetChannel.id, inputWordsString]);
+                const res = await db.query(`DELETE FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [guild.id, targetChannel.id, inputWordsString]);
                 if (res.rowCount > 0) return reply(`✅ | تم حذف اختصار \`${inputWordsString}\` من ${targetChannel}.`);
                 return reply(`ℹ️ | لم يتم العثور على اختصار بهذا الاسم في تلك القناة.`);
             }
 
             if (route === 'shortcut_list') {
-                const res = await db.query("SELECT * FROM command_shortcuts WHERE guildID = $1", [guild.id]);
+                const res = await db.query(`SELECT * FROM command_shortcuts WHERE "guildID" = $1`, [guild.id]);
                 if (res.rows.length === 0) return reply("ℹ️ | لا توجد أي اختصارات مفعلة في هذا السيرفر.");
 
-                const description = res.rows.map(s => `• في <#${s.channelid || s.channelID}>: \`${s.shortcutword || s.shortcutWord}\` ➔ \`-${s.commandname || s.commandName}\``).join('\n');
+                const description = res.rows.map(s => `• في <#${s.channelID || s.channelid}>: \`${s.shortcutWord || s.shortcutword}\` ➔ \`-${s.commandName || s.commandname}\``).join('\n');
                 return reply({ embeds: [new EmbedBuilder().setTitle('⚙️ قائمة الاختصارات المفعلة').setColor('Blue').setDescription(description)] });
             }
 
