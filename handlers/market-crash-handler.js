@@ -12,9 +12,11 @@ module.exports = async function handleMarketCrash(client, db, item) {
     try {
         console.log(`[Market Crash] Stock ${item.id} crashed! Processing...`);
 
-        await db.query("UPDATE market_items SET currentprice = $1, lastchangepercent = 0, lastchange = 0 WHERE id = $2", [RESET_PRICE, item.id]);
+        // تحديث سعر السهم المنهار وإعادة ضبطه
+        await db.query(`UPDATE market_items SET "currentPrice" = $1, "lastChangePercent" = 0, "lastChange" = 0 WHERE "id" = $2`, [RESET_PRICE, item.id]);
 
-        const investorsRes = await db.query("SELECT userid, quantity FROM user_portfolio WHERE itemid = $1", [item.id]);
+        // جلب جميع المستثمرين في هذا السهم
+        const investorsRes = await db.query(`SELECT "userID", "quantity" FROM user_portfolio WHERE "itemID" = $1`, [item.id]);
         const investors = investorsRes.rows;
 
         if (investors.length === 0) {
@@ -23,21 +25,26 @@ module.exports = async function handleMarketCrash(client, db, item) {
             return;
         }
 
-        const settingsRes = await db.query("SELECT casinochannelid FROM settings WHERE casinochannelid IS NOT NULL LIMIT 1");
+        // جلب قناة الكازينو لإرسال البيانات
+        const settingsRes = await db.query(`SELECT "casinoChannelID" FROM settings WHERE "casinoChannelID" IS NOT NULL LIMIT 1`);
         const settings = settingsRes.rows[0];
         let channel = null;
-        if (settings && settings.casinochannelid) {
-            channel = client.channels.cache.get(settings.casinochannelid);
+        if (settings && (settings.casinoChannelID || settings.casinochannelid)) {
+            channel = client.channels.cache.get(settings.casinoChannelID || settings.casinochannelid);
         }
 
         try {
             await db.query("BEGIN");
             for (const inv of investors) {
-                const refundAmount = inv.quantity * CRASH_PRICE_TRIGGER; 
+                const uID = inv.userID || inv.userid;
+                const qty = Number(inv.quantity);
+                const refundAmount = qty * CRASH_PRICE_TRIGGER; 
                 
-                await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2", [refundAmount, inv.userid]);
+                // إضافة التعويض لرصيد العضو
+                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2`, [refundAmount, uID]);
                 
-                await db.query("DELETE FROM user_portfolio WHERE userid = $1 AND itemid = $2", [inv.userid, item.id]);
+                // حذف السهم من محفظة العضو
+                await db.query(`DELETE FROM user_portfolio WHERE "userID" = $1 AND "itemID" = $2`, [uID, item.id]);
             }
             await db.query("COMMIT");
         } catch (e) {
@@ -47,19 +54,22 @@ module.exports = async function handleMarketCrash(client, db, item) {
 
         if (channel) {
             investors.forEach((inv, index) => {
+                const uID = inv.userID || inv.userid;
+                const qty = Number(inv.quantity);
+
                 setTimeout(async () => {
                     try {
-                        const member = await channel.guild.members.fetch(inv.userid).catch(() => null);
+                        const member = await channel.guild.members.fetch(uID).catch(() => null);
                         if (!member) return; 
 
-                        const refundAmount = inv.quantity * CRASH_PRICE_TRIGGER;
+                        const refundAmount = qty * CRASH_PRICE_TRIGGER;
 
                         const embed = new EmbedBuilder()
                             .setTitle(`❖ بـيـان صـادر عـن خـزانـة الإمبـراطوريـة`)
                             .setDescription(
                                 `إن سـهـم **[ ${item.name} ]** قـد هوى واعلن افلاسـه، وتهاوى حتى بلـغ أقصـى دركٍ في السـوق\n\n` +
                                 `**التـدابـيـر الإمبـراطوريـة لإعـادة البعـث:**\n` +
-                                `✶ إعلان إفلاس السهم على رؤوس الأشهاد\n` +
+                                `✶ إعلان إفلاس السهم \n` +
                                 `✶ نزع محافظ المستثمرين كاملة بلا أي استثناء\n` +
                                 `✶ إحياء السهم بأمرٍ سامٍ من الإمبراطور وطرحه بسعره الجديد **${RESET_PRICE}**\n\n` +
                                 `✬ لانك احد مستثمري هذا السهم تم منحـك قيمتـه\n` +
@@ -69,10 +79,10 @@ module.exports = async function handleMarketCrash(client, db, item) {
                             .setImage('https://i.postimg.cc/4dftMyQ6/markett.png')
                             .setThumbnail(member.user.displayAvatarURL({ dynamic: true }));
 
-                        await channel.send({ content: `<@${inv.userid}>`, embeds: [embed] });
+                        await channel.send({ content: `<@${uID}>`, embeds: [embed] });
 
                     } catch (err) {
-                        console.error(`[Crash Notification Error] User: ${inv.userid}`, err);
+                        console.error(`[Crash Notification Error] User: ${uID}`, err);
                     }
 
                     if (index === investors.length - 1) {
