@@ -51,6 +51,7 @@ module.exports = {
     description: `تحدي البوت (فردي) أو تحدي أصدقائك (جماعي) في لعبة تخمين الرقم.`,
 
     async execute(interactionOrMessage, args) {
+
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, author, client, guild, db, channel;
         let betInput, opponents = new Collection();
@@ -114,8 +115,7 @@ module.exports = {
 
         const now = Date.now();
         if (author.id !== OWNER_ID) {
-            const lastGuess = Number(userData.lastGuess) || 0;
-            const timeLeft = lastGuess + COOLDOWN_MS - now;
+            const timeLeft = (Number(userData.lastGuess || userData.lastguess) || 0) + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
@@ -155,10 +155,8 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, db
 
     let authorData = await client.getLevel(author.id, guild.id);
     if (!authorData) authorData = { ...client.defaultData, user: author.id, guild: guild.id };
-    authorData.mora = Number(authorData.mora) || 0;
-    authorData.level = Number(authorData.level) || 1;
 
-    if (authorData.mora < bet) {
+    if (Number(authorData.mora) < bet) {
         return replyError(`ليس لديك مورا كافية لهذا الرهان! (رصيدك: ${authorData.mora})`);
     }
 
@@ -183,24 +181,20 @@ async function startGuessGame(channel, author, opponents, bet, client, guild, db
 
     } else {
         if (bet > MAX_LOAN_BET) {
-            try {
-                const authorLoanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [author.id, guild.id]);
-                const authorLoan = authorLoanRes.rows[0];
-                if (authorLoan && Number(authorLoan.remainingamount || authorLoan.remainingAmount) > 0) {
-                    return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
-                }
-            } catch(e) {}
+            const authorLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [author.id, guild.id]);
+            const authorLoan = authorLoanRes.rows[0];
+            if (authorLoan && Number(authorLoan.remainingAmount || authorLoan.remainingamount) > 0) {
+                return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
+            }
         }
 
         if (bet > MAX_LOAN_BET) {
             for (const opponent of opponents.values()) {
-                try {
-                    const opponentLoanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
-                    const opponentLoan = opponentLoanRes.rows[0];
-                    if (opponentLoan && Number(opponentLoan.remainingamount || opponentLoan.remainingAmount) > 0) {
-                        return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
-                    }
-                } catch(e) {}
+                const opponentLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opponent.id, guild.id]);
+                const opponentLoan = opponentLoanRes.rows[0];
+                if (opponentLoan && Number(opponentLoan.remainingAmount || opponentLoan.remainingamount) > 0) {
+                    return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
+                }
             }
         }
 
@@ -226,9 +220,9 @@ async function playSolo(channel, author, bet, authorData, db, replyFunction, cli
     const targetNumber = Math.floor(Math.random() * 100) + 1;
     let attempts = 0;
 
-    const maxAttempts = getMaxAttempts(authorData.level);
+    const maxAttempts = getMaxAttempts(Number(authorData.level));
 
-    authorData.mora -= bet;
+    authorData.mora = Number(authorData.mora) - bet;
     await client.setLevel(authorData);
 
     const startingPrize = bet * 5; 
@@ -258,35 +252,28 @@ async function playSolo(channel, author, bet, authorData, db, replyFunction, cli
 
         if (guess === targetNumber) {
             hasWon = true; 
-            let moraMultiplier = 1.0;
-            try {
-                moraMultiplier = await calculateMoraBuff(author, db);
-            } catch(e) {}
-            
+            const moraMultiplier = await calculateMoraBuff(author, db);
             let finalWinnings = Math.floor(currentWinnings * moraMultiplier);
 
             let casinoTax = 0;
             let taxText = "";
-            try {
-                const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [channel.guild.id]);
-                const settings = settingsRes.rows[0];
-                const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
-
-                if (roleId && !author.roles.cache.has(roleId)) {
-                    const kingMembers = channel.guild.roles.cache.get(roleId)?.members;
-                    if (kingMembers && kingMembers.size > 0) {
-                        const king = kingMembers.first();
-                        casinoTax = Math.floor(finalWinnings * 0.01);
-                        if (casinoTax > 0) {
-                            finalWinnings -= casinoTax;
-                            taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                            await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, channel.guild.id]);
-                        }
+            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [channel.guild.id]);
+            const settings = settingsRes.rows[0];
+            
+            if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !author.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
+                const kingMembers = channel.guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
+                if (kingMembers && kingMembers.size > 0) {
+                    const king = kingMembers.first();
+                    casinoTax = Math.floor(finalWinnings * 0.01);
+                    if (casinoTax > 0) {
+                        finalWinnings -= casinoTax;
+                        taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
+                        await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, channel.guild.id]);
                     }
                 }
-            } catch(e) {}
+            }
 
-            authorData.mora += finalWinnings;
+            authorData.mora = Number(authorData.mora) + finalWinnings;
             await client.setLevel(authorData);
 
             if (updateGuildStat) {
@@ -423,13 +410,12 @@ async function playChallenge(channel, author, opponents, bet, authorData, db, re
                 let data = await client.getLevel(player.id, channel.guild.id);
                 if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
                 
-                data.mora = Number(data.mora) || 0;
-                data.mora -= bet;
+                data.mora = Number(data.mora) - bet;
                 if (player.id !== OWNER_ID && player.id !== author.id) data.lastGuess = Date.now();
                 await client.setLevel(data);
                 
                 playerAttempts.set(player.id, 0); 
-                maxAttemptsMap.set(player.id, getMaxAttempts(Number(data.level) || 1));
+                maxAttemptsMap.set(player.id, getMaxAttempts(Number(data.level)));
             }
             
             if (author.id !== OWNER_ID) {
@@ -468,8 +454,7 @@ async function playChallenge(channel, author, opponents, bet, authorData, db, re
 
                     let taxText = "";
 
-                    winnerData.mora = Number(winnerData.mora) || 0;
-                    winnerData.mora += finalWinnings;
+                    winnerData.mora = Number(winnerData.mora) + finalWinnings;
                     await client.setLevel(winnerData);
 
                     if (updateGuildStat) {
