@@ -139,8 +139,8 @@ module.exports = {
             data = { ...client.defaultData, user: targetUser.id, guild: guild.id };
         }
 
-        data.mora = data.mora || 0;
-        data.bank = data.bank || 0;
+        data.mora = Number(data.mora) || 0;
+        data.bank = Number(data.bank) || 0;
 
         let actionWord = "";
 
