@@ -3,8 +3,9 @@ const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const OWNER_ID = "1145327691772481577"; 
+const OWNER_ID = "1145327691772481577"; // 👑 آيدي الإمبراطور
 
+// 🔥 تم تعديل النسبة هنا للعرض فقط لتطابق النظام (0.0005 = 0.05%) 🔥
 const INTEREST_RATE = 0.0005; 
 const INTEREST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -54,6 +55,7 @@ module.exports = {
 
                 const target = interaction.options.getUser('المستخدم') || interaction.user;
                 
+                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Slash) 🔥🔥🔥
                 if (target.id === OWNER_ID && interaction.user.id !== OWNER_ID) {
                     return; 
                 }
@@ -75,6 +77,7 @@ module.exports = {
                 targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
                 targetUser = targetMember.user;
 
+                // 🔥🔥🔥 حماية الخصوصية للإمبراطور (Prefix) 🔥🔥🔥
                 if (targetUser.id === OWNER_ID && message.author.id !== OWNER_ID) {
                     return; 
                 }
@@ -95,8 +98,8 @@ module.exports = {
 
             data.mora = Number(data.mora) || 0;
             data.bank = Number(data.bank) || 0;
-            data.lastInterest = Number(data.lastinterest || data.lastInterest) || 0;
-            data.totalInterestEarned = Number(data.totalinterestearned || data.totalInterestEarned) || 0;
+            data.lastInterest = Number(data.lastInterest || data.lastinterest) || 0;
+            data.totalInterestEarned = Number(data.totalInterestEarned || data.totalinterestearned) || 0;
 
             const now = Date.now();
             const timeLeft = data.lastInterest + INTEREST_COOLDOWN_MS - now;
@@ -122,19 +125,20 @@ module.exports = {
 
             description.push('\n');
 
-            const loanRes = await db.query("SELECT * FROM user_loans WHERE userID = $1 AND guildID = $2 AND remainingAmount > 0", [targetUser.id, guild.id]);
+            // 🔥 تم تعديل الاستعلام ليتوافق مع PostgreSQL السحابية
+            const loanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [targetUser.id, guild.id]);
             const loan = loanRes.rows[0];
 
             if (!loan) {
                 description.push(`🏦 **حالة القرض:** (غير مدين)`);
                 description.push(`للحصول على قرض، قدم طلبك من خلال: \`/قرض\``);
             } else {
-                const loanAmount = Number(loan.loanamount || loan.loanAmount) || 0;
-                const remaining = Number(loan.remainingamount || loan.remainingAmount) || 0;
-                const daily = Number(loan.dailypayment || loan.dailyPayment) || 1;
-
+                const loanAmount = Number(loan.loanAmount || loan.loanamount);
                 const loanConfig = LOANS.find(l => l.amount === loanAmount);
                 const totalToRepay = loanConfig ? loanConfig.totalToRepay : (loanAmount * 1.10);
+                
+                const remaining = Number(loan.remainingAmount || loan.remainingamount) || 0;
+                const daily = Number(loan.dailyPayment || loan.dailypayment) || 1;
                 
                 const daysLeft = Math.ceil(remaining / daily);
 
@@ -175,7 +179,9 @@ module.exports = {
 
                 attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'mora-card.png' });
 
-            } catch (err) {}
+            } catch (err) {
+                console.error("Error creating bank card canvas:", err);
+            }
 
             const embed = new EmbedBuilder()
                 .setColor("#F09000")
@@ -193,6 +199,7 @@ module.exports = {
             }
 
         } catch (error) {
+            console.error("Error in bank command:", error);
             const errorPayload = { content: "حدث خطأ أثناء جلب التقرير البنكي.", ephemeral: true };
             if (isSlash) {
                 if (interaction.deferred || interaction.replied) {
