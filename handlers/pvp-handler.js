@@ -102,7 +102,7 @@ async function handlePvpChallenge(i, client, db) {
         if (!core.activePvpChallenges.has(i.channel.id)) return i.update({ content: "انتهى وقت التحدي.", embeds: [], components: [] });
         core.activePvpChallenges.delete(i.channel.id);
 
-        await db.query("UPDATE levels SET lastpvp = 0 WHERE userid = $1 AND guildid = $2", [challengerId, i.guild.id]);
+        await db.query(`UPDATE levels SET "lastPVP" = 0 WHERE "user" = $1 AND "guild" = $2`, [challengerId, i.guild.id]);
 
         const isCancel = i.user.id === challengerId;
         const declineEmbed = new EmbedBuilder()
@@ -119,7 +119,7 @@ async function handlePvpChallenge(i, client, db) {
         const challengerMember = await i.guild.members.fetch(challengerId).catch(() => null);
         
         if (!challengerMember) {
-            await db.query("UPDATE levels SET lastpvp = 0 WHERE userid = $1 AND guildid = $2", [challengerId, i.guild.id]);
+            await db.query(`UPDATE levels SET "lastPVP" = 0 WHERE "user" = $1 AND "guild" = $2`, [challengerId, i.guild.id]);
             return i.update({ content: "المتحدي غادر السيرفر.", embeds: [], components: [] });
         }
 
@@ -128,7 +128,7 @@ async function handlePvpChallenge(i, client, db) {
 
         const challengerWeapon = await core.getWeaponData(db, challengerMember);
         if (!challengerWeapon || challengerWeapon.currentLevel === 0) {
-            await db.query("UPDATE levels SET lastpvp = 0 WHERE userid = $1 AND guildid = $2", [challengerId, i.guild.id]);
+            await db.query(`UPDATE levels SET "lastPVP" = 0 WHERE "user" = $1 AND "guild" = $2`, [challengerId, i.guild.id]);
             return i.update({ content: `❌ المتحدي لم يعد جاهزاً.`, embeds: [], components: [] });
         }
 
