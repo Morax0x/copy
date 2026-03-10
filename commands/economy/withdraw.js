@@ -87,9 +87,9 @@ module.exports = {
         try {
             const query = `
                 UPDATE levels 
-                SET bank = bank - $1, 
-                    mora = mora + $2 
-                WHERE "user" = $3 AND guild = $4 AND bank >= $5
+                SET "bank" = "bank" - $1, 
+                    "mora" = "mora" + $2 
+                WHERE "user" = $3 AND "guild" = $4 AND "bank" >= $5
             `;
 
             const result = await db.query(query, [
