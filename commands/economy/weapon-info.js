@@ -135,7 +135,8 @@ module.exports = {
             const user = targetMember.user;
             const cleanName = cleanDisplayName(user.displayName);
 
-            const userRace = await getUserRace(targetMember, db);
+            // 🔥 تمت إضافة await هنا لكي تعمل بشكل متزامن مع قاعدة بيانات PostgreSQL
+            const userRace = await getUserRace(db, targetMember);
             const weaponData = await getWeaponData(db, targetMember);
 
             if (!userRace) {
