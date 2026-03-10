@@ -45,8 +45,10 @@ module.exports = {
                 return reply({ content: "❌ هذا العضو ليس لديه رتبة أو مستوى بعد." });
             }
 
-            const totalXp = Number(score.totalxp || score.totalXP) || 0;
-            const rankRes = await db.query("SELECT COUNT(*) as count FROM levels WHERE guild = $1 AND totalXP > $2", [guildId, totalXp]);
+            const totalXp = Number(score.totalXP || score.totalxp) || 0;
+            
+            // 🔥 التعديل هنا: حماية أسماء الأعمدة بعلامات تنصيص لتناسب السحابة
+            const rankRes = await db.query(`SELECT COUNT(*) as count FROM levels WHERE "guild" = $1 AND "totalXP" > $2`, [guildId, totalXp]);
             const rank = Number(rankRes.rows[0].count) + 1;
 
             const currentLevel = Number(score.level) || 0;
