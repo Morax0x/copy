@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -109,7 +109,7 @@ module.exports = {
 
         if (victim.id === REAL_OWNER_ID) {
             if (!isSlash && message) await message.delete().catch(() => {});
-            if (isSlash) await interaction.reply({ content: `🏰`, flags: [MessageFlags.Ephemeral] });
+            if (isSlash) await interaction.reply({ content: `🏰`, ephemeral: true });
 
             const redirectMsg = await interactionOrMessage.channel.send({
                 content: `🏰 **تـم نـقـل قـصـر الامبراطـور الى حسـاب الامبراطورة!**\nحاول مجـددا ولكن منشن البوت <@${EMPRESS_BOT_ID}> ..`
@@ -120,12 +120,12 @@ module.exports = {
 
         if (isSlash && !interaction.deferred && !interaction.replied) await interaction.deferReply();
 
-        const db = client.sql;
+        const sql = client.sql;
 
         if (victim.id === robber.id) {
             if (robber.id === REAL_OWNER_ID) {
                 const context = isSlash ? interaction : message;
-                return await startGuardBattle(context, client, db, robber, 5000);
+                return await startGuardBattle(context, client, sql, robber, 5000);
             }
             return reply("تـسـرق نـفـسـك؟ غـبـي انـت؟؟ <:mirkk:1435648219488190525>");
         }
@@ -146,7 +146,7 @@ module.exports = {
         }
 
         const now = Date.now();
-        const timeLeft = (Number(robberData.lastRob) || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(robberData.lastRob || robberData.lastrob) || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
             return reply(`🕐 حـرامـي مـجتـهد انـت <:stop:1436337453098340442> انتـظـر **\`${formatTime(timeLeft)}\`** عشان تسـوي عمـليـة سـطو ثـانيـة.`);
         }
@@ -238,7 +238,7 @@ module.exports = {
                         activeRobberies.delete(robber.id);
                         
                         const context = isSlash ? interaction : message;
-                        return await startGuardBattle(context, client, db, robber, amountToSteal);
+                        return await startGuardBattle(context, client, sql, robber, amountToSteal);
                     }
                 }
             });
@@ -332,14 +332,14 @@ module.exports = {
         collector.on('collect', async i => {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
-            const vGuard = Number(victimData.hasGuard) || 0;
-            if (vGuard > 0) {
+            if (Number(victimData.hasGuard || victimData.hasguard) > 0) {
                 deductFromRobber(robberData, amountToSteal);
                 victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
                 
-                victimData.hasGuard = vGuard - 1; 
+                victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
                 const guardLeft = victimData.hasGuard;
                 if (guardLeft === 0) victimData.guardExpires = 0;
+                
                 await client.setLevel(victimData);
                 await client.setLevel(robberData);
 
@@ -361,14 +361,18 @@ module.exports = {
                     robberData.mora = (Number(robberData.mora) || 0) + amountToSteal;
                     
                     if (targetPool === 'bank') {
-                        if (Number(victimData.bank) >= amountToSteal) victimData.bank -= amountToSteal;
+                        if (Number(victimData.bank) >= amountToSteal) {
+                            victimData.bank = Number(victimData.bank) - amountToSteal;
+                        }
                         else {
                             const remainder = amountToSteal - Number(victimData.bank);
                             victimData.bank = 0;
                             victimData.mora = Math.max(0, Number(victimData.mora) - remainder);
                         }
                     } else {
-                        if (Number(victimData.mora) >= amountToSteal) victimData.mora -= amountToSteal;
+                        if (Number(victimData.mora) >= amountToSteal) {
+                            victimData.mora = Number(victimData.mora) - amountToSteal;
+                        }
                         else {
                             const remainder = amountToSteal - Number(victimData.mora);
                             victimData.mora = 0;
