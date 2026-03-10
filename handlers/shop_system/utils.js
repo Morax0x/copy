@@ -47,22 +47,22 @@ async function ensureInventoryTable(db) {
     if(!db) return;
     await db.query(`
         CREATE TABLE IF NOT EXISTS user_inventory (
-            id SERIAL PRIMARY KEY,
-            guildid TEXT,
-            userid TEXT,
-            itemid TEXT,
-            quantity INTEGER DEFAULT 0,
-            UNIQUE(guildid, userid, itemid)
+            "id" BIGSERIAL PRIMARY KEY,
+            "guildID" TEXT,
+            "userID" TEXT,
+            "itemID" TEXT,
+            "quantity" BIGINT DEFAULT 0,
+            UNIQUE("guildID", "userID", "itemID")
         );
     `);
 }
 
 async function sendShopLog(client, guildId, member, item, price, type = "شراء") {
     try {
-        const settingsRes = await client.db.query("SELECT shoplogchannelid FROM settings WHERE guild = $1", [guildId]);
+        const settingsRes = await client.db.query(`SELECT "shopLogChannelID" FROM settings WHERE "guild" = $1`, [guildId]);
         const settings = settingsRes.rows[0];
-        if (!settings || !settings.shoplogchannelid) return;
-        const channel = await client.channels.fetch(settings.shoplogchannelid).catch(() => null);
+        if (!settings || (!settings.shopLogChannelID && !settings.shoplogchannelid)) return;
+        const channel = await client.channels.fetch(settings.shopLogChannelID || settings.shoplogchannelid).catch(() => null);
         if (!channel) return;
         const embed = new EmbedBuilder()
             .setTitle(`🛒 سجل عمليات المتجر`)
