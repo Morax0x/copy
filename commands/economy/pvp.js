@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, SlashCommandBuilder, MessageFlags } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, SlashCommandBuilder } = require("discord.js");
 const { activePvpChallenges, getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js');
 
 let updateGuildStat;
@@ -73,7 +73,7 @@ module.exports = {
 
         const replyError = async (content) => {
             if (isSlash) {
-                return interaction.editReply({ content, flags: [MessageFlags.Ephemeral] });
+                return interaction.editReply({ content, ephemeral: true });
             } else {
                 return message.reply({ content });
             }
@@ -88,7 +88,7 @@ module.exports = {
         };
 
         const channel = interactionOrMessage.channel;
-        const db = client.sql; 
+        const sql = client.sql; 
         
         if (bet <= 0) {
             return replyError("مبلغ الرهان يجب أن يكون رقماً موجباً.");
@@ -103,25 +103,17 @@ module.exports = {
         }
 
         if (bet > MAX_LOAN_BET) {
-            let challengerLoan = null;
-            try {
-                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [challenger.id, guild.id]);
-                challengerLoan = res.rows[0];
-            } catch(e) {}
-            
-            if (challengerLoan && Number(challengerLoan.remainingamount || challengerLoan.remainingAmount) > 0) {
+            const challengerLoanRes = await sql.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [challenger.id, guild.id]);
+            const challengerLoan = challengerLoanRes.rows[0];
+            if (challengerLoan && Number(challengerLoan.remainingAmount || challengerLoan.remainingamount) > 0) {
                 return replyError(`❌ **عذراً!** عليك قرض لم يتم سداده.\nلا يمكنك المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA} في التحديات حتى تسدد قرضك.`);
             }
         }
 
         if (bet > MAX_LOAN_BET) {
-            let opponentLoan = null;
-            try {
-                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
-                opponentLoan = res.rows[0];
-            } catch(e) {}
-
-            if (opponentLoan && Number(opponentLoan.remainingamount || opponentLoan.remainingAmount) > 0) {
+            const opponentLoanRes = await sql.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opponent.id, guild.id]);
+            const opponentLoan = opponentLoanRes.rows[0];
+            if (opponentLoan && Number(opponentLoan.remainingAmount || opponentLoan.remainingamount) > 0) {
                 return replyError(`❌ الخصم ${opponent.displayName} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`);
             }
         }
@@ -138,18 +130,15 @@ module.exports = {
 
         const now = Date.now();
 
-        let woundedDebuff = null;
-        try {
-            const res = await db.query("SELECT * FROM user_buffs WHERE userID = $1 AND guildID = $2 AND buffType = 'pvp_wounded' AND expiresAt > $3", [challenger.id, guild.id, now]);
-            woundedDebuff = res.rows[0];
-        } catch(e) {}
+        const woundedDebuffRes = await sql.query(`SELECT * FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'pvp_wounded' AND "expiresAt" > $3`, [challenger.id, guild.id, now]);
+        const woundedDebuff = woundedDebuffRes.rows[0];
 
         if (woundedDebuff) {
-            const woundTimeLeft = Math.ceil((Number(woundedDebuff.expiresat || woundedDebuff.expiresAt) - now) / 60000);
+            const woundTimeLeft = Math.ceil((Number(woundedDebuff.expiresAt || woundedDebuff.expiresat) - now) / 60000);
             return replyError(`❌ | أنت جريح حالياً! 🤕\nيمـكنـك تلقـي التحديـات ولكن لا يمـكـنـك ارسالـهـا ستشفـى بالكـامل بعـد **${woundTimeLeft}**دقيقـة`);
         }
 
-        const timeLeft = (Number(challengerData.lastPVP) || 0) + PVP_COOLDOWN_MS - now;
+        const timeLeft = (Number(challengerData.lastPVP || challengerData.lastpvp) || 0) + PVP_COOLDOWN_MS - now;
         const executorId = isSlash ? interaction.user.id : message.author.id;
 
         if (timeLeft > 0 && executorId !== "1145327691772481577") {
@@ -165,8 +154,8 @@ module.exports = {
             return replyError(`خصمك ${opponent.displayName} لا يملك **${bet.toLocaleString()}** ${EMOJI_MORA} في رصيده (الكاش).`);
         }
 
-        const challengerRace = await getUserRace(challenger, db);
-        const challengerWeapon = await getWeaponData(db, challenger);
+        const challengerRace = await getUserRace(sql, challenger);
+        const challengerWeapon = await getWeaponData(sql, challenger);
 
         if (!challengerRace || !challengerWeapon || challengerWeapon.currentLevel === 0) {
             return replyError(`❌ | لا يمكنك بدء تحدٍ وأنت لست جاهزاً! (تحتاج إلى عرق + سلاح مستوى 1 على الأقل).`);
@@ -179,8 +168,8 @@ module.exports = {
 
         const totalPot = bet * 2;
 
-        const challengerName = cleanDisplayName(challenger.user.displayName);
-        const opponentName = cleanDisplayName(opponent.user.displayName);
+        const challengerName = cleanDisplayName(challenger.user.displayName || challenger.user.username);
+        const opponentName = cleanDisplayName(opponent.user.displayName || opponent.user.username);
 
         const randomChallengeImage = CHALLENGE_IMAGES[Math.floor(Math.random() * CHALLENGE_IMAGES.length)];
 
