@@ -63,10 +63,10 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS custom_role_permissions (guildID TEXT, roleID TEXT, PRIMARY KEY (guildID, roleID))`);
-            await db.query(`CREATE TABLE IF NOT EXISTS custom_roles (id TEXT PRIMARY KEY, guildID TEXT, userID TEXT, roleID TEXT)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, customRoleAnchorID TEXT, customRolePanelTitle TEXT, customRolePanelDescription TEXT, customRolePanelImage TEXT, customRolePanelColor TEXT)`);
-            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guild.id]);
+            await db.query(`CREATE TABLE IF NOT EXISTS custom_role_permissions ("guildID" TEXT, "roleID" TEXT, PRIMARY KEY ("guildID", "roleID"))`);
+            await db.query(`CREATE TABLE IF NOT EXISTS custom_roles ("id" TEXT PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "roleID" TEXT)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS settings ("guild" TEXT PRIMARY KEY, "customRoleAnchorID" TEXT, "customRolePanelTitle" TEXT, "customRolePanelDescription" TEXT, "customRolePanelImage" TEXT, "customRolePanelColor" TEXT)`);
+            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
         } catch(e) {}
 
         let group = '';
@@ -86,24 +86,24 @@ module.exports = {
             if (group === 'setup') {
                 if (sub === 'anchor') {
                     const role = interactionOrMessage.options.getRole('role');
-                    await db.query("UPDATE settings SET customRoleAnchorID = $1 WHERE guild = $2", [role.id, guild.id]);
+                    await db.query(`UPDATE settings SET "customRoleAnchorID" = $1 WHERE "guild" = $2`, [role.id, guild.id]);
                     return reply(`✅ تم تحديد الرتبة الثابتة. جميع الرتب الجديدة ستكون تحت ${role}.`);
                 }
                 if (sub === 'add_allowed') {
                     const role = interactionOrMessage.options.getRole('role');
-                    await db.query("INSERT INTO custom_role_permissions (guildID, roleID) VALUES ($1, $2) ON CONFLICT DO NOTHING", [guild.id, role.id]);
+                    await db.query(`INSERT INTO custom_role_permissions ("guildID", "roleID") VALUES ($1, $2) ON CONFLICT DO NOTHING`, [guild.id, role.id]);
                     return reply(`✅ تم إضافة ${role} إلى الرتب المسموحة بإنشاء رتب مخصصة.`);
                 }
                 if (sub === 'remove_allowed') {
                     const role = interactionOrMessage.options.getRole('role');
-                    const res = await db.query("DELETE FROM custom_role_permissions WHERE guildID = $1 AND roleID = $2", [guild.id, role.id]);
+                    const res = await db.query(`DELETE FROM custom_role_permissions WHERE "guildID" = $1 AND "roleID" = $2`, [guild.id, role.id]);
                     if (res.rowCount > 0) return reply(`✅ تم إزالة ${role} من الرتب المسموحة.`);
                     return reply("❌ هذه الرتبة غير موجودة في القائمة أصلاً.");
                 }
                 if (sub === 'list_allowed') {
-                    const res = await db.query("SELECT roleID FROM custom_role_permissions WHERE guildID = $1", [guild.id]);
+                    const res = await db.query(`SELECT "roleID" FROM custom_role_permissions WHERE "guildID" = $1`, [guild.id]);
                     if (res.rows.length === 0) return reply("لا توجد رتب مسموحة محددة حالياً.");
-                    const roleList = res.rows.map(r => `<@&${r.roleid || r.roleID}>`).join('\n');
+                    const roleList = res.rows.map(r => `<@&${r.roleID || r.roleid}>`).join('\n');
                     const embed = new EmbedBuilder().setTitle("📜 الرتب المسموح لها بإنشاء رتب مخصصة").setColor(Colors.Blue).setDescription(roleList);
                     return reply({ embeds: [embed] });
                 }
@@ -119,7 +119,7 @@ module.exports = {
                     let successCount = 0;
                     await db.query("BEGIN");
                     for (const [, mem] of membersWithRole) {
-                        await db.query("INSERT INTO custom_roles (id, guildID, userID, roleID) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET roleID = EXCLUDED.roleID", [`${guild.id}-${mem.id}`, guild.id, mem.id, role.id]);
+                        await db.query(`INSERT INTO custom_roles ("id", "guildID", "userID", "roleID") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "roleID" = EXCLUDED."roleID"`, [`${guild.id}-${mem.id}`, guild.id, mem.id, role.id]);
                         successCount++;
                     }
                     await db.query("COMMIT");
@@ -129,19 +129,19 @@ module.exports = {
                 if (sub === 'single') {
                     const targetUser = interactionOrMessage.options.getUser('user');
                     const targetRole = interactionOrMessage.options.getRole('role');
-                    await db.query("INSERT INTO custom_roles (id, guildID, userID, roleID) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET roleID = EXCLUDED.roleID", [`${guild.id}-${targetUser.id}`, guild.id, targetUser.id, targetRole.id]);
+                    await db.query(`INSERT INTO custom_roles ("id", "guildID", "userID", "roleID") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "roleID" = EXCLUDED."roleID"`, [`${guild.id}-${targetUser.id}`, guild.id, targetUser.id, targetRole.id]);
                     return reply(`✅ تم تسجيل الرتبة ${targetRole} للعضو ${targetUser} بنجاح.`);
                 }
 
                 if (sub === 'remove') {
                     const targetUser = interactionOrMessage.options.getUser('user');
-                    const res = await db.query("DELETE FROM custom_roles WHERE guildID = $1 AND userID = $2", [guild.id, targetUser.id]);
+                    const res = await db.query(`DELETE FROM custom_roles WHERE "guildID" = $1 AND "userID" = $2`, [guild.id, targetUser.id]);
                     if (res.rowCount > 0) return reply(`✅ تم إلغاء تسجيل الرتبة الخاصة للعضو ${targetUser}.`);
                     return reply(`❌ هذا العضو ليس لديه رتبة مسجلة.`);
                 }
 
                 if (sub === 'list') {
-                    const res = await db.query("SELECT userID, roleID FROM custom_roles WHERE guildID = $1", [guild.id]);
+                    const res = await db.query(`SELECT "userID", "roleID" FROM custom_roles WHERE "guildID" = $1`, [guild.id]);
                     if (res.rows.length === 0) return reply("📭 لا توجد أي رتب خاصة مسجلة.");
 
                     let currentPage = 1;
@@ -151,7 +151,7 @@ module.exports = {
                     const generateEmbed = (page) => {
                         const startIndex = (page - 1) * itemsPerPage;
                         const pageItems = res.rows.slice(startIndex, startIndex + itemsPerPage);
-                        const description = pageItems.map((item, index) => `**${startIndex + index + 1}.** <@${item.userid || item.userID}> : <@&${item.roleid || item.roleID}>`).join('\n');
+                        const description = pageItems.map((item, index) => `**${startIndex + index + 1}.** <@${item.userID || item.userid}> : <@&${item.roleID || item.roleid}>`).join('\n');
                         return new EmbedBuilder().setTitle(`📜 الرتب المسجلة (${res.rows.length})`).setDescription(description || "لا يوجد").setFooter({ text: `صفحة ${page} من ${totalPages}` }).setColor(Colors.Blue);
                     };
 
@@ -180,15 +180,15 @@ module.exports = {
 
             if (group === 'panel') {
                 if (sub === 'send') {
-                    const res = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
-                    const settings = res.rows[0];
+                    const res = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guild.id]);
+                    const settings = res.rows[0] || {};
 
-                    const title = settings?.customrolepaneltitle || settings?.customRolePanelTitle || '✶ انـشـاء رتـبـة خـاصـة';
-                    const description = settings?.customrolepaneldescription || settings?.customRolePanelDescription || `**✥ هنا يمكنك انشاء رتبتك الخاصة والتعديل عليها**\n- استخدم الأزرار أدناه لإنشاء رتبتك، تغيير اسمها، لونها، أو أيقونتها.\n- يجب أن تمتلك إحدى الرتب المسموحة لاستخدام هذه الميزة.`;
+                    const title = settings.customRolePanelTitle || settings.customrolepaneltitle || '✶ انـشـاء رتـبـة خـاصـة';
+                    const description = settings.customRolePanelDescription || settings.customrolepaneldescription || `**✥ هنا يمكنك انشاء رتبتك الخاصة والتعديل عليها**\n- استخدم الأزرار أدناه لإنشاء رتبتك، تغيير اسمها، لونها، أو أيقونتها.\n- يجب أن تمتلك إحدى الرتب المسموحة لاستخدام هذه الميزة.`;
                     
-                    const colorHex = settings?.customrolepanelcolor || settings?.customRolePanelColor;
+                    const colorHex = settings.customRolePanelColor || settings.customrolepanelcolor;
                     const color = colorHex ? parseInt(colorHex.replace('#', ''), 16) : 0x5d92ff;
-                    const image = settings?.customrolepanelimage || settings?.customRolePanelImage || null;
+                    const image = settings.customRolePanelImage || settings.customrolepanelimage || null;
 
                     const embed = new EmbedBuilder().setTitle(title).setDescription(description).setColor(color);
                     if (image) embed.setImage(image);
@@ -216,13 +216,13 @@ module.exports = {
 
                 if (sub === 'title') {
                     const value = interactionOrMessage.options.getString('text');
-                    await db.query("UPDATE settings SET customRolePanelTitle = $1 WHERE guild = $2", [value, guild.id]);
+                    await db.query(`UPDATE settings SET "customRolePanelTitle" = $1 WHERE "guild" = $2`, [value, guild.id]);
                     return reply(`✅ تم تحديث **العنوان** بنجاح.`);
                 }
 
                 if (sub === 'desc') {
                     const value = interactionOrMessage.options.getString('text');
-                    await db.query("UPDATE settings SET customRolePanelDescription = $1 WHERE guild = $2", [value, guild.id]);
+                    await db.query(`UPDATE settings SET "customRolePanelDescription" = $1 WHERE "guild" = $2`, [value, guild.id]);
                     return reply(`✅ تم تحديث **الوصف** بنجاح.`);
                 }
 
@@ -240,7 +240,7 @@ module.exports = {
                         const fetchedMessage = await fetchedChannel.messages.fetch(messageId);
                         if (!fetchedMessage || !fetchedMessage.content) return reply("لم أتمكن من العثور على محتوى في هذه الرسالة.");
 
-                        await db.query("UPDATE settings SET customRolePanelDescription = $1 WHERE guild = $2", [fetchedMessage.content, guild.id]);
+                        await db.query(`UPDATE settings SET "customRolePanelDescription" = $1 WHERE "guild" = $2`, [fetchedMessage.content, guild.id]);
                         return reply(`✅ تم نسخ الوصف بنجاح من الرسالة.`);
                     } catch (e) {
                         return reply("فشل في جلب الرسالة. تأكد من الرابط والصلاحيات.");
@@ -250,31 +250,31 @@ module.exports = {
                 if (sub === 'image') {
                     const value = interactionOrMessage.options.getString('link');
                     if (!value.startsWith('https://')) return reply("الرابط غير صالح، يجب أن يبدأ بـ `https://`.");
-                    await db.query("UPDATE settings SET customRolePanelImage = $1 WHERE guild = $2", [value, guild.id]);
+                    await db.query(`UPDATE settings SET "customRolePanelImage" = $1 WHERE "guild" = $2`, [value, guild.id]);
                     return reply(`✅ تم تحديث **الصورة** بنجاح.`);
                 }
 
                 if (sub === 'color') {
                     const value = interactionOrMessage.options.getString('hex');
                     if (!isValidHexColor(value)) return reply("كود اللون غير صالح. يجب أن يكون بصيغة HEX (مثل #FFFFFF).");
-                    await db.query("UPDATE settings SET customRolePanelColor = $1 WHERE guild = $2", [value, guild.id]);
+                    await db.query(`UPDATE settings SET "customRolePanelColor" = $1 WHERE "guild" = $2`, [value, guild.id]);
                     return reply(`✅ تم تحديث **اللون** بنجاح.`);
                 }
 
                 if (sub === 'view_settings') {
-                    const res = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
+                    const res = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guild.id]);
                     const settings = res.rows[0] || {};
-                    const colorHex = settings.customrolepanelcolor || settings.customRolePanelColor;
+                    const colorHex = settings.customRolePanelColor || settings.customrolepanelcolor;
                     
                     const embed = new EmbedBuilder()
                         .setTitle("الإعدادات الحالية للوحة الرتب المخصصة")
                         .setColor(colorHex ? parseInt(colorHex.replace('#', ''), 16) : Colors.Blue)
                         .addFields(
-                            { name: "العنوان", value: settings.customrolepaneltitle || settings.customRolePanelTitle || "*(لم يحدد)*" },
-                            { name: "الوصف", value: (settings.customrolepaneldescription || settings.customRolePanelDescription || "*(لم يحدد)*").substring(0, 1020) + "..." },
+                            { name: "العنوان", value: settings.customRolePanelTitle || settings.customrolepaneltitle || "*(لم يحدد)*" },
+                            { name: "الوصف", value: (settings.customRolePanelDescription || settings.customrolepaneldescription || "*(لم يحدد)*").substring(0, 1020) + "..." },
                             { name: "اللون", value: colorHex || "*(لم يحدد)*" }
                         )
-                        .setImage(settings.customrolepanelimage || settings.customRolePanelImage || null);
+                        .setImage(settings.customRolePanelImage || settings.customrolepanelimage || null);
                     return reply({ embeds: [embed] });
                 }
             }
