@@ -118,9 +118,9 @@ module.exports = {
                 
                 try {
                     await db.query(`
-                        INSERT INTO active_auctions (messageID, channelID, hostID, item_name, current_bid, start_price, min_increment, end_time, image_url, bid_count)
+                        INSERT INTO active_auctions ("messageID", "channelID", "hostID", "item_name", "current_bid", "start_price", "min_increment", "end_time", "image_url", "bid_count")
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0)
-                    `, [finalMsg.id, targetChannel.id, message.author.id, itemName, startPrice, startPrice, increment, endTime, itemImage]);
+                    `, [finalMsg.id, targetChannel.id, message.author.id, itemName, startPrice, startPrice, increment, endTime, itemImage || null]);
                 } catch(e) {
                     console.error("[Auction Create Error]:", e);
                 }
