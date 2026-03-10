@@ -99,7 +99,7 @@ module.exports = {
 
         const now = Date.now();
         if (user.id !== OWNER_ID) {
-            const timeLeft = (Number(userData.lastRPS) || 0) + COOLDOWN_MS - now;
+            const timeLeft = (Number(userData.lastRPS || userData.lastrps) || 0) + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
@@ -145,7 +145,7 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
     if (opponent && opponent.id !== user.id && !opponent.bot) {
         if (bet > MAX_LOAN_BET) {
             try {
-                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [user.id, guild.id]);
+                const res = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
                 if (res.rows.length > 0 && Number(res.rows[0].remainingamount || res.rows[0].remainingAmount) > 0) {
                     client.activePlayers.delete(user.id);
                     const msg = `❌ **عذراً!** عليك قرض. حدك الأقصى في التحديات هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`;
@@ -157,7 +157,7 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
 
         if (bet > MAX_LOAN_BET) {
             try {
-                const res = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [opponent.id, guild.id]);
+                const res = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opponent.id, guild.id]);
                 if (res.rows.length > 0 && Number(res.rows[0].remainingamount || res.rows[0].remainingAmount) > 0) {
                     client.activePlayers.delete(user.id);
                     const msg = `❌ الخصم ${opponent} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`;
@@ -431,7 +431,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                 winnings = Math.floor((bet * 2) * multiplier); 
                 
                 try {
-                    const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guild.id]);
+                    const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guild.id]);
                     const settings = settingsRes.rows[0];
                     const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
 
@@ -443,7 +443,7 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                             if (casinoTax > 0) {
                                 winnings -= casinoTax;
                                 taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guild.id]);
+                                await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guild.id]);
                             }
                         }
                     }
