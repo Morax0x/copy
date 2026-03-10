@@ -9,7 +9,7 @@ module.exports = {
 
     async execute(message, args) {
         const { guild, client } = message;
-        const sql = client.sql;
+        const db = client.sql;
 
         // 1. التحقق من الصلاحيات (أدمن فقط)
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -20,8 +20,9 @@ module.exports = {
         // الحالة الأولى: عرض القائمة (إذا لم يحدد رتبة)
         // ============================================================
         if (!args[0]) {
-            // جلب البيانات من الجدول
-            const allRoles = sql.prepare("SELECT roleID, limitCount FROM role_campfire_limits WHERE guildID = ? ORDER BY limitCount DESC").all(guild.id);
+            // جلب البيانات من الجدول (تحويل لـ PostgreSQL)
+            const allRolesRes = await db.query(`SELECT "roleID", "limitCount" FROM role_campfire_limits WHERE "guildID" = $1 ORDER BY "limitCount" DESC`, [guild.id]);
+            const allRoles = allRolesRes.rows;
 
             if (!allRoles || allRoles.length === 0) {
                 return message.reply({ 
@@ -39,16 +40,19 @@ module.exports = {
             let description = "**قائمة الرتب وعدد الخيم المسموح:**\n\n";
             let foundCount = 0;
 
-            allRoles.forEach((data, index) => {
-                const role = guild.roles.cache.get(data.roleID);
+            for (const data of allRoles) {
+                const roleID = data.roleID || data.roleid;
+                const limitCount = data.limitCount || data.limitcount;
+                const role = guild.roles.cache.get(roleID);
+                
                 if (role) {
-                    description += `**${index + 1}.** ${role} ➔ \`${data.limitCount}\` ⛺\n`;
+                    description += `**${foundCount + 1}.** ${role} ➔ \`${limitCount}\` ⛺\n`;
                     foundCount++;
                 } else {
                     // تنظيف الرتب المحذوفة تلقائياً
-                    sql.prepare("DELETE FROM role_campfire_limits WHERE guildID = ? AND roleID = ?").run(guild.id, data.roleID);
+                    await db.query(`DELETE FROM role_campfire_limits WHERE "guildID" = $1 AND "roleID" = $2`, [guild.id, roleID]);
                 }
-            });
+            }
 
             if (foundCount === 0) description = "لا توجد بيانات (تم تنظيف الرتب المحذوفة).";
 
@@ -82,9 +86,12 @@ module.exports = {
         }
 
         try {
-            // الحفظ في قاعدة البيانات
-            sql.prepare("INSERT OR REPLACE INTO role_campfire_limits (guildID, roleID, limitCount) VALUES (?, ?, ?)")
-                .run(guild.id, role.id, limit);
+            // الحفظ في قاعدة البيانات (PostgreSQL ON CONFLICT)
+            await db.query(`
+                INSERT INTO role_campfire_limits ("guildID", "roleID", "limitCount") 
+                VALUES ($1, $2, $3)
+                ON CONFLICT ("roleID") DO UPDATE SET "limitCount" = EXCLUDED."limitCount"
+            `, [guild.id, role.id, limit]);
 
             const successEmbed = new EmbedBuilder()
                 .setTitle("✅ تم تحديث إعدادات الخيم")
