@@ -17,7 +17,7 @@ module.exports = {
     name: 'balance',
     aliases: ['bal', 'mora', 'رصيد', 'مورا','فلوس'],
     category: "Economy",
-    description: "يعرض رصيدك من المورا في بطاقة بنكية احترافية.",
+    description: "يعرض رصيدك من المورا.",
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
