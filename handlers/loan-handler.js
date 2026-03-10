@@ -7,28 +7,36 @@ async function checkLoanPayments(client, db) {
     const now = Date.now();
     const ONE_DAY = 24 * 60 * 60 * 1000;
 
-    const activeLoansRes = await db.query("SELECT * FROM user_loans WHERE remainingamount > 0 AND (lastpaymentdate + $1) <= $2", [ONE_DAY, now]);
+    const activeLoansRes = await db.query(`SELECT * FROM user_loans WHERE "remainingAmount" > 0 AND ("lastPaymentDate" + $1) <= $2`, [ONE_DAY, now]);
     const activeLoans = activeLoansRes.rows;
 
     if (activeLoans.length === 0) return;
 
-    for (const loan of activeLoans) {
+    for (let loan of activeLoans) {
         try {
-            const guild = client.guilds.cache.get(loan.guildid);
+            const guild = client.guilds.cache.get(loan.guildID || loan.guildid);
             if (!guild) continue;
 
-            let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+            let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [loan.userID || loan.userid, loan.guildID || loan.guildid]);
             let userData = userDataRes.rows[0];
             
             if (!userData) continue; 
 
-            const member = await guild.members.fetch(loan.userid).catch(() => null);
+            const member = await guild.members.fetch(loan.userID || loan.userid).catch(() => null);
 
-            const paymentAmount = Math.min(loan.dailypayment, loan.remainingamount);
+            const dailyPay = Number(loan.dailyPayment || loan.dailypayment);
+            let remainingAmount = Number(loan.remainingAmount || loan.remainingamount);
+
+            const paymentAmount = Math.min(dailyPay, remainingAmount);
             let remainingToPay = paymentAmount; 
             let deductionDetails = ""; 
             
             const EMOJI_MORA = client.EMOJI_MORA || '🪙'; 
+
+            userData.mora = Number(userData.mora);
+            userData.bank = Number(userData.bank);
+            userData.xp = Number(userData.xp);
+            userData.level = Number(userData.level);
 
             if (userData.mora > 0) {
                 const takeMora = Math.min(userData.mora, remainingToPay);
@@ -51,25 +59,26 @@ async function checkLoanPayments(client, db) {
             }
 
             if (remainingToPay > 0) {
-                 const portfolioRes = await db.query("SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+                 const portfolioRes = await db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2`, [loan.userID || loan.userid, loan.guildID || loan.guildid]);
                  const portfolio = portfolioRes.rows;
                  
                  for (const item of portfolio) {
                      if (remainingToPay <= 0) break; 
 
-                     const marketDataRes = await db.query("SELECT currentprice, name FROM market_items WHERE id = $1", [item.itemid]);
+                     const marketDataRes = await db.query(`SELECT "currentPrice", "name" FROM market_items WHERE "id" = $1`, [item.itemID || item.itemid]);
                      const marketData = marketDataRes.rows[0];
                      if (!marketData) continue; 
 
-                     const price = marketData.currentprice;
+                     const price = Number(marketData.currentPrice || marketData.currentprice);
                      const neededQty = Math.ceil(remainingToPay / price);
-                     const sellQty = Math.min(item.quantity, neededQty);
+                     const itemQty = Number(item.quantity);
+                     const sellQty = Math.min(itemQty, neededQty);
                      const value = sellQty * price;
                      
-                     if (sellQty >= item.quantity) {
-                         await db.query("DELETE FROM user_portfolio WHERE id = $1", [item.id]);
+                     if (sellQty >= itemQty) {
+                         await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [item.id]);
                      } else {
-                         await db.query("UPDATE user_portfolio SET quantity = quantity - $1 WHERE id = $2", [sellQty, item.id]);
+                         await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellQty, item.id]);
                      }
                      
                      if (value > remainingToPay) {
@@ -85,18 +94,18 @@ async function checkLoanPayments(client, db) {
             }
 
             if (remainingToPay > 0) {
-                 const farmRes = await db.query("SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+                 const farmRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [loan.userID || loan.userid, loan.guildID || loan.guildid]);
                  const farm = farmRes.rows;
                  
                  for (const animalRow of farm) {
                      if (remainingToPay <= 0) break;
 
-                     const animalData = farmAnimals.find(a => a.id === animalRow.animalid);
+                     const animalData = farmAnimals.find(a => a.id === (animalRow.animalID || animalRow.animalid));
                      if (!animalData) continue;
 
-                     const price = animalData.price; 
+                     const price = Number(animalData.price); 
                      
-                     await db.query("DELETE FROM user_farm WHERE id = $1", [animalRow.id]);
+                     await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [animalRow.id]);
 
                      if (price > remainingToPay) {
                          const change = price - remainingToPay;
@@ -124,29 +133,29 @@ async function checkLoanPayments(client, db) {
                 remainingToPay = 0; 
             }
 
-            await db.query("UPDATE levels SET mora = $1, bank = $2, xp = $3, level = $4 WHERE userid = $5 AND guildid = $6", [userData.mora, userData.bank, userData.xp, userData.level, loan.userid, loan.guildid]);
+            await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2, "xp" = $3, "level" = $4 WHERE "user" = $5 AND "guild" = $6`, [userData.mora, userData.bank, userData.xp, userData.level, loan.userID || loan.userid, loan.guildID || loan.guildid]);
             
-            loan.remainingamount -= paymentAmount; 
+            remainingAmount -= paymentAmount; 
             
-            if (loan.remainingamount < 0) loan.remainingamount = 0;
+            if (remainingAmount < 0) remainingAmount = 0;
 
-            if (loan.remainingamount <= 0) {
-                await db.query("DELETE FROM user_loans WHERE userid = $1 AND guildid = $2", [loan.userid, loan.guildid]);
+            if (remainingAmount <= 0) {
+                await db.query(`DELETE FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [loan.userID || loan.userid, loan.guildID || loan.guildid]);
                 deductionDetails += `\n🎉 **تم سداد القرض بالكامل!**`;
             } else {
-                await db.query("UPDATE user_loans SET remainingamount = $1, lastpaymentdate = $2 WHERE userid = $3 AND guildid = $4", [loan.remainingamount, now, loan.userid, loan.guildid]);
+                await db.query(`UPDATE user_loans SET "remainingAmount" = $1, "lastPaymentDate" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [remainingAmount, now, loan.userID || loan.userid, loan.guildID || loan.guildid]);
             }
 
             if (!member) continue; 
 
-            const settingsRes = await db.query("SELECT casinochannelid FROM settings WHERE guild = $1", [guild.id]);
+            const settingsRes = await db.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
             
-            if (settings && settings.casinochannelid) {
-                const channel = guild.channels.cache.get(settings.casinochannelid);
+            if (settings && (settings.casinoChannelID || settings.casinochannelid)) {
+                const channel = guild.channels.cache.get(settings.casinoChannelID || settings.casinochannelid);
                 if (channel && deductionDetails) {
                     
-                    const daysLeft = Math.ceil(loan.remainingamount / loan.dailypayment);
+                    const daysLeft = Math.ceil(remainingAmount / dailyPay);
 
                     const embed = new EmbedBuilder()
                         .setTitle(`❖ إشـعـار سـداد القـرض`)
@@ -156,21 +165,21 @@ async function checkLoanPayments(client, db) {
                         .setDescription(
                             `**📊 موقف القرض:**\n` +
                             `• المبلغ المستقطع: **${paymentAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
-                            `• المتبقي من الدين: **${loan.remainingamount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                            `• المتبقي من الدين: **${remainingAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                             `• الأقساط المتبقية: **${daysLeft}** يوم تقريباً\n\n` +
                             `**🧾 تفاصيل العملية:**\n${deductionDetails}`
                         )
                         .setFooter({ text: "يتم الخصم تلقائياً كل 24 ساعة" })
                         .setTimestamp();
 
-                    await channel.send({ content: `<@${loan.userid}>`, embeds: [embed] }).catch(() => {});
+                    await channel.send({ content: `<@${loan.userID || loan.userid}>`, embeds: [embed] }).catch(() => {});
                     
                     await new Promise(r => setTimeout(r, 1000));
                 }
             }
 
         } catch (err) {
-            console.error(`[Loan Error] User: ${loan.userid}`, err);
+            console.error(`[Loan Error] User: ${loan.userID || loan.userid}`, err);
         }
     }
 }
