@@ -92,9 +92,8 @@ module.exports = {
 
         const now = Date.now();
         const OWNER_ID = "1145327691772481577"; 
-        
         if (user.id !== OWNER_ID) {
-            const lastPlayed = Number(userData.lastMemory) || 0; 
+            const lastPlayed = Number(userData.lastMemory || userData.lastmemory) || 0; 
             const timeLeft = lastPlayed + COOLDOWN_MS - now;
             if (timeLeft > 0) {
                 return replyError(`🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.`);
@@ -102,16 +101,15 @@ module.exports = {
         }
 
         let finalBetAmount = betInput;
-        userData.mora = Number(userData.mora) || 0;
 
         if (finalBetAmount) {
             if (finalBetAmount < MIN_BET) return replyError(`❌ الحد الأدنى للرهان هو **${MIN_BET}** ${EMOJI_MORA}.`);
             if (finalBetAmount > MAX_BET) return replyError(`🚫 الحد الأقصى للرهان هو **${MAX_BET}** ${EMOJI_MORA}.`);
         } 
         else {
-            if (userData.mora < MIN_BET) return replyError(`❌ لا تملك مورا كافية (الحد الأدنى ${MIN_BET})!`);
+            if (Number(userData.mora) < MIN_BET) return replyError(`❌ لا تملك مورا كافية (الحد الأدنى ${MIN_BET})!`);
             finalBetAmount = 100;
-            if (userData.mora < 100) finalBetAmount = userData.mora;
+            if (Number(userData.mora) < 100) finalBetAmount = Number(userData.mora);
         }
 
         return startMemoryGame(channel, user, member, finalBetAmount, client, guild, db, isSlash ? interaction : null);
@@ -123,9 +121,8 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
     
     let userData = await client.getLevel(user.id, guild.id);
     if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
-    userData.mora = Number(userData.mora) || 0;
 
-    if (userData.mora < bet) {
+    if (Number(userData.mora) < bet) {
         const msg = `❌ ليس لديك مورا كافية! (رصيدك: ${userData.mora})`;
         if (interaction && !interaction.replied && !interaction.deferred) await interaction.reply({ content: msg, ephemeral: true });
         else if (interaction) await interaction.editReply({ content: msg, ephemeral: true });
@@ -135,7 +132,7 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
 
     client.activePlayers.add(user.id);
     
-    userData.mora -= bet;
+    userData.mora = Number(userData.mora) - bet;
     userData.lastMemory = Date.now(); 
     await client.setLevel(userData);
 
@@ -251,19 +248,18 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
                         let casinoTax = 0;
                         let taxText = "";
 
-                        const settingsRes = await db.query("SELECT roleCasinoKing FROM settings WHERE guild = $1", [guild.id]);
+                        const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guild.id]);
                         const settings = settingsRes.rows[0];
-                        const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
-
-                        if (roleId && !member.roles.cache.has(roleId)) {
-                            const kingMembers = guild.roles.cache.get(roleId)?.members;
+                        
+                        if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !member.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
+                            const kingMembers = guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
                             if (kingMembers && kingMembers.size > 0) {
                                 const king = kingMembers.first();
                                 casinoTax = Math.floor(winAmount * 0.01);
                                 if (casinoTax > 0) {
                                     winAmount -= casinoTax;
                                     taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                    await db.query('UPDATE levels SET bank = bank + $1 WHERE "user" = $2 AND guild = $3', [casinoTax, king.id, guild.id]);
+                                    await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guild.id]);
                                 }
                             }
                         }
@@ -274,7 +270,7 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
                         const buffPercent = Math.round((moraMultiplier - 1) * 100);
                         if (buffPercent > 0) buffString = ` (+${buffPercent}%)`;
 
-                        await db.query('UPDATE levels SET mora = mora + $1 WHERE "user" = $2 AND guild = $3', [payout, user.id, guild.id]);
+                        await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [payout, user.id, guild.id]);
 
                         if (updateGuildStat) {
                             updateGuildStat(client, guild.id, user.id, 'casino_profit', winAmount);
