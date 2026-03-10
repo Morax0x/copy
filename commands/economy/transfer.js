@@ -86,23 +86,23 @@ module.exports = {
         if (receiver.user.bot) return replyError("لا يمكنك التحويل للبوتات!");
 
         try {
-            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS lastTransferDate TEXT DEFAULT ''");
-            await db.query("ALTER TABLE levels ADD COLUMN IF NOT EXISTS dailyTransferCount BIGINT DEFAULT 0");
+            await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "lastTransferDate" TEXT DEFAULT ''`);
+            await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "dailyTransferCount" BIGINT DEFAULT 0`);
         } catch (e) {}
 
         let senderData = await client.getLevel(sender.id, guild.id);
         if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id };
 
         try {
-            const loanRes = await db.query("SELECT remainingAmount FROM user_loans WHERE userID = $1 AND guildID = $2", [sender.id, guild.id]);
+            const loanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]);
             const loanData = loanRes.rows[0];
-            if (loanData && Number(loanData.remainingamount || loanData.remainingAmount) > 0) {
-                return replyError(`❌ **عذراً!** عليك قرض بقيمة **${Number(loanData.remainingamount || loanData.remainingAmount).toLocaleString()}** مورا.`);
+            if (loanData && Number(loanData.remainingAmount || loanData.remainingamount) > 0) {
+                return replyError(`❌ **عذراً!** عليك قرض بقيمة **${Number(loanData.remainingAmount || loanData.remainingamount).toLocaleString()}** مورا.`);
             }
         } catch (e) {}
 
         const now = Date.now();
-        const timeLeft = (Number(senderData.lastTransfer) || 0) + COOLDOWN_MS - now;
+        const timeLeft = (Number(senderData.lastTransfer || senderData.lasttransfer) || 0) + COOLDOWN_MS - now;
         if (timeLeft > 0) {
             const minutes = Math.floor(timeLeft / 60000);
             const seconds = Math.floor((timeLeft % 60000) / 1000);
@@ -113,7 +113,7 @@ module.exports = {
 
         let isPhilanthropistKing = false;
         try {
-            const settingsRes = await db.query("SELECT rolePhilanthropist FROM settings WHERE guild = $1", [guild.id]);
+            const settingsRes = await db.query(`SELECT "rolePhilanthropist" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
             const roleId = settings?.rolephilanthropist || settings?.rolePhilanthropist;
             if (roleId && senderMember.roles.cache.has(roleId)) {
