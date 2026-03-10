@@ -59,7 +59,7 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guild = isSlash ? interactionOrMessage.guild : interactionOrMessage.guild;
         const client = interactionOrMessage.client;
-        const db = client.sql;
+        const sql = client.sql;
 
         const reply = async (payload) => {
             if (payload.ephemeral) { delete payload.ephemeral; payload.flags = [MessageFlags.Ephemeral]; }
@@ -81,12 +81,12 @@ module.exports = {
         }
 
         const now = Date.now();
-        const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel) || 1)) || rodsConfig[0];
-        const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel) || 1)) || boatsConfig[0];
+        const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
+        const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel || userData.boatlevel) || 1)) || boatsConfig[0];
         let cooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
         if (cooldown < 10000) cooldown = 10000;
 
-        const lastFish = Number(userData.lastFish) || 0;
+        const lastFish = Number(userData.lastFish || userData.lastfish) || 0;
         if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
             const remaining = lastFish + cooldown - now;
             const minutes = Math.floor((remaining % 3600000) / 60000);
@@ -94,45 +94,40 @@ module.exports = {
             return reply({ content: `قمـت بالصيـد مؤخـرا انتـظـر **${minutes}:${seconds}** لتـذهب للصيـد مجددا` });
         }
 
-        let woundedDebuff = null;
-        try {
-            const res = await db.query("SELECT expiresAt FROM user_buffs WHERE userID = $1 AND guildID = $2 AND buffType = 'pvp_wounded' AND expiresAt > $3", [user.id, guild.id, now]);
-            woundedDebuff = res.rows[0];
-        } catch(e) {}
-
+        const woundedDebuffRes = await sql.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'pvp_wounded' AND "expiresAt" > $3`, [user.id, guild.id, now]);
+        const woundedDebuff = woundedDebuffRes.rows[0];
+        
         if (woundedDebuff) {
-            const minutesLeft = Math.ceil((Number(woundedDebuff.expiresat) - now) / 60000);
+            const minutesLeft = Math.ceil((Number(woundedDebuff.expiresAt) - now) / 60000);
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
-        const locationId = userData.currentLocation || 'beach';
+        const locationId = userData.currentLocation || userData.currentlocation || 'beach';
         const currentLocation = locationsConfig.find(l => l.id === locationId) || locationsConfig[0];
 
         let usedBaitName = null;
         let baitLuckBonus = 0;
-        let userBaits = [];
-
-        try {
-            const res = await db.query("SELECT * FROM user_inventory WHERE userID = $1 AND guildID = $2", [user.id, guild.id]);
-            userBaits = res.rows;
-        } catch(e) {}
-
-        const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === invItem.itemid && Number(invItem.quantity) > 0));
+        
+        const userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+        const userBaits = userBaitsRes.rows;
+        
+        const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === (invItem.itemID || invItem.itemid) && Number(invItem.quantity) > 0));
 
         if (availableBaits.length > 0) {
             const richBaits = availableBaits.map(invItem => {
-                const config = fishingConfig.baits.find(b => b.id === invItem.itemid);
+                const config = fishingConfig.baits.find(b => b.id === (invItem.itemID || invItem.itemid));
                 return { ...invItem, luck: config.luck, name: config.name };
             });
             richBaits.sort((a, b) => b.luck - a.luck);
             const bestBait = richBaits[0];
             usedBaitName = bestBait.name;
             baitLuckBonus = bestBait.luck;
-
-            try {
-                if (Number(bestBait.quantity) > 1) await db.query("UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1", [bestBait.id]);
-                else await db.query("DELETE FROM user_inventory WHERE id = $1", [bestBait.id]);
-            } catch(e) {}
+            
+            if (Number(bestBait.quantity) > 1) {
+                await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "id" = $1`, [bestBait.id]);
+            } else {
+                await sql.query(`DELETE FROM user_inventory WHERE "id" = $1`, [bestBait.id]);
+            }
         }
 
         activeFishingSessions.add(user.id);
@@ -249,10 +244,7 @@ module.exports = {
                         .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
                         .setColor(Colors.Red);
                     
-                    try {
-                        await db.query('UPDATE levels SET lastFish = $1 WHERE "user" = $2 AND guild = $3', [Date.now(), user.id, guild.id]);
-                    } catch(e) {}
-
+                    await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), user.id, guild.id]);
                     activeFishingSessions.delete(user.id);
                     
                     await j.editReply({ content: '', embeds: [failEmbed], components: [] });
@@ -272,23 +264,22 @@ module.exports = {
                     
                     if (possibleMonsters.length > 0 && monsterTriggered) {
                         const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        let playerWeapon = pvpCore.getWeaponData(db, j.member);
+                        let playerWeapon = pvpCore.getWeaponData(sql, j.member);
                         if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
                             await j.editReply({ content: '' }); 
-                            await pvpCore.startPveBattle(j, client, db, j.member, monster, playerWeapon);
+                            await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
                             return; 
                         }
                     }
 
                     let isFisherKing = false;
                     try {
-                        const settingsRes = await db.query("SELECT roleFisherKing FROM settings WHERE guild = $1", [guild.id]);
+                        const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
                         const settings = settingsRes.rows[0];
-                        const roleId = settings?.rolefisherking || settings?.roleFisherKing;
-                        if (roleId && j.member.roles.cache.has(roleId)) {
+                        if (settings && (settings.roleFisherKing || settings.rolefisherking) && j.member.roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
                             isFisherKing = true;
                         }
                     } catch (e) {}
@@ -308,7 +299,8 @@ module.exports = {
                     const maxRarity = currentRod.max_rarity || 2;
 
                     try {
-                        await db.query('BEGIN');
+                        await sql.query("BEGIN");
+                        
                         for (let k = 0; k < fishCount; k++) {
                             const rerolls = 1 + Math.floor(totalLuck / 20);
                             let bestFish = null;
@@ -326,19 +318,20 @@ module.exports = {
                             if (bestFish) {
                                 caughtFish.push(bestFish);
                                 totalValue += bestFish.price;
-                                await db.query("INSERT INTO user_inventory (guildID, userID, itemID, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildID, userID, itemID) DO UPDATE SET quantity = user_inventory.quantity + $5", [guild.id, user.id, bestFish.id, 1, 1]);
+                                await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]);
                             }
                         }
                         
-                        await db.query('UPDATE levels SET mora = mora + $1, lastFish = $2 WHERE "user" = $3 AND guild = $4', [totalValue, Date.now(), user.id, guild.id]);
+                        await sql.query(`UPDATE levels SET "mora" = "mora" + $1, "lastFish" = $2 WHERE "user" = $3 AND "guild" = $4`, [totalValue, Date.now(), user.id, guild.id]);
                         
-                        await db.query('COMMIT');
+                        if (updateGuildStat) {
+                            updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
+                        }
+                        
+                        await sql.query("COMMIT");
                     } catch (e) {
-                        await db.query('ROLLBACK');
-                    }
-
-                    if (updateGuildStat) {
-                        updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
+                        await sql.query("ROLLBACK");
+                        throw e;
                     }
 
                     const summary = {};
@@ -374,9 +367,7 @@ module.exports = {
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
-                        try {
-                            await db.query('UPDATE levels SET lastFish = $1 WHERE "user" = $2 AND guild = $3', [Date.now(), user.id, guild.id]);
-                        } catch(e) {}
+                        await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), user.id, guild.id]);
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
