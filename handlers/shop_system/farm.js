@@ -32,16 +32,16 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
         
         if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
-        let userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, i.guild.id]);
+        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
         let userData = userDataRes.rows[0];
 
         if (!userData) {
-            userData = { userid: i.user.id, guildid: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalxp: 0 };
-            await db.query("INSERT INTO levels (userid, guildid, mora, bank, xp, level, totalxp) VALUES ($1, $2, 0, 0, 0, 1, 0)", [i.user.id, i.guild.id]);
+            userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalXP: 0 };
+            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
         }
 
-        let userMora = parseInt(userData.mora) || 0; 
-        const userBank = parseInt(userData.bank) || 0;
+        let userMora = Number(userData.mora) || 0; 
+        const userBank = Number(userData.bank) || 0;
 
         if (isBuy) {
             const maxCapacity = await getPlayerCapacity(client, i.user.id, i.guild.id);
@@ -80,10 +80,10 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                await db.query("UPDATE levels SET mora = mora - $1, shop_purchases = COALESCE(shop_purchases, 0) + 1 WHERE userid = $2 AND guildid = $3", [totalCost, i.user.id, i.guild.id]);
+                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
                 
                 await db.query(`
-                    INSERT INTO user_farm (guildid, userid, animalid, quantity, purchasetimestamp, lastcollected, lastfedtimestamp) 
+                    INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                 `, [i.guild.id, i.user.id, animal.id, quantity, now, now, now]);
                 
@@ -103,9 +103,9 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
 
         } 
         else {
-            const totalQtyRowRes = await db.query("SELECT SUM(quantity) as totalqty FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3", [i.user.id, i.guild.id, animal.id]);
+            const totalQtyRowRes = await db.query(`SELECT SUM("quantity") as totalqty FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [i.user.id, i.guild.id, animal.id]);
             const totalQtyRow = totalQtyRowRes.rows[0];
-            const ownedQuantity = totalQtyRow ? (parseInt(totalQtyRow.totalqty) || 0) : 0;
+            const ownedQuantity = totalQtyRow ? (Number(totalQtyRow.totalqty) || 0) : 0;
 
             if (ownedQuantity < quantity) {
                 return await i.editReply({ content: `❌ لا تملك هذه الكمية (لديك: **${ownedQuantity}**).` });
@@ -113,7 +113,7 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                const rowsRes = await db.query("SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 ORDER BY purchasetimestamp ASC", [i.user.id, i.guild.id, animal.id]);
+                const rowsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, animal.id]);
                 const rows = rowsRes.rows;
                 
                 let remainingToSell = quantity;
@@ -128,12 +128,12 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                 for (const row of rows) {
                     if (remainingToSell <= 0) break;
                     
-                    const purchaseTime = parseInt(row.purchasetimestamp) || now;
+                    const purchaseTime = Number(row.purchaseTimestamp || row.purchasetimestamp) || now;
                     const ageMs = now - purchaseTime;
                     const remainingLifeMs = lifespanMs - ageMs;
 
                     if (remainingLifeMs <= noSellMs) {
-                        unsellableCount += parseInt(row.quantity);
+                        unsellableCount += Number(row.quantity);
                         continue; 
                     }
 
@@ -143,7 +143,7 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
 
                     const refundPricePerUnit = Math.floor(animal.price * 0.70 * currentValRatio);
 
-                    const rowQty = parseInt(row.quantity);
+                    const rowQty = Number(row.quantity);
                     const sellFromThisRow = Math.min(rowQty, remainingToSell);
                     
                     totalRefund += (refundPricePerUnit * sellFromThisRow);
@@ -151,9 +151,9 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                     soldCount += sellFromThisRow;
 
                     if (rowQty === sellFromThisRow) {
-                        await db.query("DELETE FROM user_farm WHERE id = $1", [row.id]);
+                        await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
                     } else {
-                        await db.query("UPDATE user_farm SET quantity = quantity - $1 WHERE id = $2", [sellFromThisRow, row.id]);
+                        await db.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromThisRow, row.id]);
                     }
                 }
 
@@ -162,7 +162,7 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                     return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
                 }
 
-                await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3", [totalRefund, i.user.id, i.guild.id]);
+                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalRefund, i.user.id, i.guild.id]);
                 await db.query("COMMIT");
 
                 let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
