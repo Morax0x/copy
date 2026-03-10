@@ -32,7 +32,7 @@ module.exports = {
             member = message.member;
         }
 
-        const sql = client.sql;
+        const db = client.sql;
         const reply = async (payload) => {
             if (isSlash) return interaction.editReply(payload);
             return message.reply(payload);
@@ -53,13 +53,16 @@ module.exports = {
         try {
             // محاولة إضافة العمود إذا لم يكن موجوداً (لضمان عدم حدوث خطأ)
             try {
-                sql.prepare("ALTER TABLE settings ADD COLUMN bumpNotifyRoleID TEXT").run();
+                await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bumpNotifyRoleID" TEXT`);
             } catch (e) {
                 // العمود موجود مسبقاً، نتجاهل الخطأ
             }
 
-            sql.prepare("INSERT INTO settings (guild, bumpNotifyRoleID) VALUES (?, ?) ON CONFLICT(guild) DO UPDATE SET bumpNotifyRoleID = excluded.bumpNotifyRoleID")
-               .run(guild.id, role.id);
+            await db.query(`
+                INSERT INTO settings ("guild", "bumpNotifyRoleID") 
+                VALUES ($1, $2) 
+                ON CONFLICT("guild") DO UPDATE SET "bumpNotifyRoleID" = EXCLUDED."bumpNotifyRoleID"
+            `, [guild.id, role.id]);
 
             return reply(`✅ تم تفعيل تنبيهات البومب! سيتم منشنة **${role.name}** وآخر شخص قام بالبومب بعد ساعتين.`);
         } catch (err) {
