@@ -66,7 +66,7 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS giveaway_weights (guildID TEXT, roleID TEXT PRIMARY KEY, weight INTEGER)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS giveaway_weights ("guildID" TEXT, "roleID" TEXT PRIMARY KEY, "weight" INTEGER)`);
         } catch(e) {}
 
         let subcommand = '';
@@ -231,11 +231,11 @@ module.exports = {
             if (subcommand === 'end') {
                 if (!targetMessageId) return reply("❌ يرجى وضع آيدي رسالة القيفاواي.");
                 
-                const gRes = await db.query("SELECT * FROM active_giveaways WHERE messageID = $1", [targetMessageId]);
+                const gRes = await db.query(`SELECT * FROM active_giveaways WHERE "messageID" = $1`, [targetMessageId]);
                 const giveaway = gRes.rows[0];
 
                 if (!giveaway) return reply("❌ لم يتم العثور على قيفاواي بهذا الآيدي.");
-                if (giveaway.isfinished === 1 || giveaway.isFinished === 1) return reply("⚠️ هذا القيفاواي منتهي بالفعل.");
+                if (giveaway.isFinished === 1 || giveaway.isfinished === 1) return reply("⚠️ هذا القيفاواي منتهي بالفعل.");
 
                 await endGiveaway(client, targetMessageId, true); 
                 return reply(`✅ تم إنهاء القيفاواي (ID: ${targetMessageId}) واختيار الفائزين بنجاح!`);
@@ -255,7 +255,7 @@ module.exports = {
                 }
 
                 const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-                const gRes = await db.query(`SELECT * FROM active_giveaways WHERE (isFinished = 1 OR endsAt <= $1) AND endsAt > $2 ORDER BY endsAt DESC LIMIT 25`, [Date.now(), sevenDaysAgo]);
+                const gRes = await db.query(`SELECT * FROM active_giveaways WHERE ("isFinished" = 1 OR "endsAt" <= $1) AND "endsAt" > $2 ORDER BY "endsAt" DESC LIMIT 25`, [Date.now(), sevenDaysAgo]);
                 const giveawaysList = gRes.rows;
 
                 if (giveawaysList.length === 0) return reply("❌ لا يوجد أي قيفاوايز حديثة لعمل ريرول لها.\nجرب وضع الآيدي يدوياً.");
@@ -263,19 +263,19 @@ module.exports = {
                 const options = giveawaysList.map(g => {
                     let endsDate = "تاريخ غير معروف";
                     try {
-                        if (typeof getKSADateString === 'function') endsDate = getKSADateString(g.endsat || g.endsAt);
-                        else endsDate = new Date(g.endsat || g.endsAt).toLocaleDateString('en-US');
+                        if (typeof getKSADateString === 'function') endsDate = getKSADateString(g.endsAt || g.endsat);
+                        else endsDate = new Date(g.endsAt || g.endsat).toLocaleDateString('en-US');
                     } catch (e) {}
 
-                    const status = (g.isfinished === 1 || g.isFinished === 1) ? "منتهي" : "معلق";
+                    const status = (g.isFinished === 1 || g.isfinished === 1) ? "منتهي" : "معلق";
                     let label = g.prize || "جائزة مجهولة";
                     if (label.length > 100) label = label.substring(0, 97) + "...";
 
                     return new StringSelectMenuOptionBuilder()
                         .setLabel(label)
-                        .setValue(g.messageid || g.messageID)
-                        .setDescription(`[${status}] (ID: ${g.messageid || g.messageID}) - ${endsDate}`)
-                        .setEmoji((g.isfinished === 1 || g.isFinished === 1) ? '✅' : '⏳');
+                        .setValue(g.messageID || g.messageid)
+                        .setDescription(`[${status}] (ID: ${g.messageID || g.messageid}) - ${endsDate}`)
+                        .setEmoji((g.isFinished === 1 || g.isfinished === 1) ? '✅' : '⏳');
                 });
 
                 const selectMenu = new StringSelectMenuBuilder().setCustomId('g_reroll_select').setPlaceholder('اختر القيفاواي الذي تريد عمل ريرول له...').addOptions(options);
@@ -292,7 +292,7 @@ module.exports = {
                     return reply("❌ الاستخدام: `/giveaway-admin weight <@Role> <Weight>` (أقل شيء 1).");
                 }
                 
-                await db.query("INSERT INTO giveaway_weights (guildID, roleID, weight) VALUES ($1, $2, $3) ON CONFLICT (roleID) DO UPDATE SET weight = EXCLUDED.weight", [guild.id, targetRole.id, targetWeight]);
+                await db.query(`INSERT INTO giveaway_weights ("guildID", "roleID", "weight") VALUES ($1, $2, $3) ON CONFLICT ("roleID") DO UPDATE SET "weight" = EXCLUDED."weight"`, [guild.id, targetRole.id, targetWeight]);
                 return reply(`✅ تم تحديد وزن رتبة ${targetRole.name} إلى **${targetWeight}** تذكرة.`);
             }
 
