@@ -253,6 +253,88 @@ async function checkDailyStreaks(client, db) {
     }
 }
 
+// 🔥 إضافة الدالة المفقودة التي سببت الخطأ في تشغيل البوت
+async function checkDailyMediaStreaks(client, db) {
+    let allMediaStreaks = [];
+    try {
+        const res = await db.query(`SELECT * FROM media_streaks WHERE "streakCount" > 0`);
+        allMediaStreaks = res.rows;
+    } catch (e) {
+        return;
+    }
+
+    const todayKSA = getKSADateString(Date.now());
+
+    for (const streakData of allMediaStreaks) {
+        const lastDateKSA = getKSADateString(Number(streakData.lastMediaTimestamp || streakData.lastmediatimestamp));
+        const diffDays = getDayDifference(todayKSA, lastDateKSA);
+
+        if (diffDays <= 1) continue;
+
+        let member;
+        try {
+            const guild = await client.guilds.fetch(streakData.guildID || streakData.guildid);
+            member = await guild.members.fetch(streakData.userID || streakData.userid);
+        } catch (err) { continue; }
+
+        const sendDM = Number(streakData.dmNotify || streakData.dmnotify) === 1;
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel(`الذهاب إلى: ${member.guild.name}`)
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://discord.com/channels/${member.guild.id}`)
+        );
+
+        if (diffDays === 2) {
+            if (Number(streakData.hasItemShield || streakData.hasitemshield) === 1) {
+                streakData.hasItemShield = 0;
+                streakData.lastMediaTimestamp = Date.now(); 
+                await db.query(`UPDATE media_streaks SET "streakCount" = $1, "hasGracePeriod" = $2, "hasItemShield" = $3, "lastMediaTimestamp" = $4 WHERE "id" = $5`, [Number(streakData.streakCount || streakData.streakcount), Number(streakData.hasGracePeriod || streakData.hasgraceperiod), streakData.hasItemShield, streakData.lastMediaTimestamp, streakData.id]);
+                if (sendDM) {
+                    const embed = new EmbedBuilder().setTitle('✶ اشـعـارات ستـريـك المـيـديـا').setColor(Colors.Green)
+                        .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
+                        .setDescription(`- 🛡️ **تم تفعيل درع المتجر!**\n- تم حماية ستريك الميديا الخاص بك (${streakData.streakCount || streakData.streakcount} ${EMOJI_MEDIA_STREAK}) من الضياع.\n- لا تنسَ الإرسال اليوم!`);
+                    member.send({ embeds: [embed], components: [row] }).catch(() => {});
+                }
+            } else if (Number(streakData.hasGracePeriod || streakData.hasgraceperiod) === 1) {
+                streakData.hasGracePeriod = 0;
+                streakData.lastMediaTimestamp = Date.now(); 
+                await db.query(`UPDATE media_streaks SET "streakCount" = $1, "hasGracePeriod" = $2, "hasItemShield" = $3, "lastMediaTimestamp" = $4 WHERE "id" = $5`, [Number(streakData.streakCount || streakData.streakcount), streakData.hasGracePeriod, Number(streakData.hasItemShield || streakData.hasitemshield), streakData.lastMediaTimestamp, streakData.id]);
+                if (sendDM) {
+                    const embed = new EmbedBuilder().setTitle('✶ اشـعـارات ستـريـك المـيـديـا').setColor(Colors.Green)
+                        .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
+                        .setDescription(`- 🛡️ **تم تفعيل فترة السماح المجانية!**\n- تم حماية ستريك الميديا الخاص بك (${streakData.streakCount || streakData.streakcount} ${EMOJI_MEDIA_STREAK}).\n- لا تنسَ الإرسال اليوم!`);
+                    member.send({ embeds: [embed], components: [row] }).catch(() => {});
+                }
+            } else {
+                const oldStreak = Number(streakData.streakCount || streakData.streakcount);
+                streakData.streakCount = 0;
+                streakData.hasGracePeriod = 0;
+                await db.query(`UPDATE media_streaks SET "streakCount" = $1, "hasGracePeriod" = $2, "hasItemShield" = $3, "lastMediaTimestamp" = $4 WHERE "id" = $5`, [streakData.streakCount, streakData.hasGracePeriod, Number(streakData.hasItemShield || streakData.hasitemshield), Number(streakData.lastMediaTimestamp || streakData.lastmediatimestamp), streakData.id]);
+                if (sendDM) {
+                    const embed = new EmbedBuilder().setTitle('✶ اشـعـارات ستـريـك المـيـديـا').setColor(Colors.Red)
+                        .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
+                        .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت ستـريـك المـيـديـا 💔\n- لم تكن تملك اي درع للحماية.\n- كـان ستريـكك: ${oldStreak}`);
+                    member.send({ embeds: [embed], components: [row] }).catch(() => {});
+                }
+            }
+
+        } else if (diffDays > 2) {
+            const oldStreak = Number(streakData.streakCount || streakData.streakcount);
+            streakData.streakCount = 0;
+            streakData.hasGracePeriod = 0;
+            await db.query(`UPDATE media_streaks SET "streakCount" = $1, "hasGracePeriod" = $2, "hasItemShield" = $3, "lastMediaTimestamp" = $4 WHERE "id" = $5`, [streakData.streakCount, streakData.hasGracePeriod, Number(streakData.hasItemShield || streakData.hasitemshield), Number(streakData.lastMediaTimestamp || streakData.lastmediatimestamp), streakData.id]);
+            if (sendDM) {
+                const embed = new EmbedBuilder().setTitle('✶ اشـعـارات ستـريـك المـيـديـا').setColor(Colors.Red)
+                    .setImage('https://i.postimg.cc/NfLYXwD5/123.jpg')
+                    .setDescription(`- يؤسـفنـا ابلاغـك بـ انـك قـد فقدت ستـريـك المـيـديـا 💔\n- لقد انقطعت عن الإرسال مدة طويلة.\n- كـان ستريـكك: ${oldStreak}`);
+                member.send({ embeds: [embed], components: [row] }).catch(() => {});
+            }
+        }
+    }
+}
+
 async function handleStreakMessage(message) {
     const db = message.client.sql;
     
@@ -733,7 +815,7 @@ module.exports = {
     handleStreakMessage,
     handleMediaStreakMessage,
     checkDailyStreaks,
-    checkDailyMediaStreaks,
+    checkDailyMediaStreaks, // 🔥 تمت إضافتها هنا!
     sendMediaStreakReminders,
     sendDailyMediaUpdate,
     sendStreakWarnings,
