@@ -38,37 +38,37 @@ module.exports = {
 
             let boostChannelInc = 0;
             try {
-                const settingsRes = await db.query("SELECT boostChannelID FROM settings WHERE guild = $1", [guildID]);
+                const settingsRes = await db.query(`SELECT "boostChannelID" FROM settings WHERE "guild" = $1`, [guildID]);
                 const settings = settingsRes.rows[0];
-                if (settings && (settings.boostchannelid || settings.boostChannelID) === reaction.message.channel.id) {
+                if (settings && (settings.boostChannelID || settings.boostchannelid) === reaction.message.channel.id) {
                     boostChannelInc = 1;
                 }
             } catch (e) {}
 
-            try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS boost_channel_reactions INTEGER DEFAULT 0"); } catch(e) {}
+            try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "boost_channel_reactions" INTEGER DEFAULT 0`); } catch(e) {}
 
             const dRes = await db.query(`
-                INSERT INTO user_daily_stats (id, userID, guildID, date, reactions_added, boost_channel_reactions) 
+                INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "reactions_added", "boost_channel_reactions") 
                 VALUES ($1, $2, $3, $4, 1, $5) 
-                ON CONFLICT(id) DO UPDATE SET 
-                reactions_added = COALESCE(user_daily_stats.reactions_added, 0) + 1,
-                boost_channel_reactions = COALESCE(user_daily_stats.boost_channel_reactions, 0) + $5
+                ON CONFLICT("id") DO UPDATE SET 
+                "reactions_added" = COALESCE(user_daily_stats."reactions_added", 0) + 1,
+                "boost_channel_reactions" = COALESCE(user_daily_stats."boost_channel_reactions", 0) + $5
                 RETURNING *
             `, [dailyStatsId, userID, guildID, dateStr, boostChannelInc]);
 
             const wRes = await db.query(`
-                INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, reactions_added) 
+                INSERT INTO user_weekly_stats ("id", "userID", "guildID", "weekStartDate", "reactions_added") 
                 VALUES ($1, $2, $3, $4, 1) 
-                ON CONFLICT(id) DO UPDATE SET 
-                reactions_added = COALESCE(user_weekly_stats.reactions_added, 0) + 1
+                ON CONFLICT("id") DO UPDATE SET 
+                "reactions_added" = COALESCE(user_weekly_stats."reactions_added", 0) + 1
                 RETURNING *
             `, [weeklyStatsId, userID, guildID, weekStartDateStr]);
 
             const tRes = await db.query(`
-                INSERT INTO user_total_stats (id, userID, guildID, total_reactions_added) 
+                INSERT INTO user_total_stats ("id", "userID", "guildID", "total_reactions_added") 
                 VALUES ($1, $2, $3, 1) 
-                ON CONFLICT(id) DO UPDATE SET 
-                total_reactions_added = COALESCE(user_total_stats.total_reactions_added, 0) + 1
+                ON CONFLICT("id") DO UPDATE SET 
+                "total_reactions_added" = COALESCE(user_total_stats."total_reactions_added", 0) + 1
                 RETURNING *
             `, [totalStatsId, userID, guildID]);
 
