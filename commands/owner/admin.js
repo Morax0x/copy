@@ -73,11 +73,11 @@ module.exports = {
         else if (commandName === 'sss') {
             const channel = message.mentions.channels.first() || message.channel;
             try {
-                await db.query(`CREATE TABLE IF NOT EXISTS bot_config (key TEXT PRIMARY KEY, value TEXT)`);
+                await db.query(`CREATE TABLE IF NOT EXISTS bot_config ("key" TEXT PRIMARY KEY, "value" TEXT)`);
                 await db.query(`
-                    INSERT INTO bot_config (key, value) 
+                    INSERT INTO bot_config ("key", "value") 
                     VALUES ($1, $2) 
-                    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value
+                    ON CONFLICT("key") DO UPDATE SET "value" = EXCLUDED."value"
                 `, ['backup_channel', channel.id]);
                 
                 message.reply(`✅ تم تعيين قناة النسخ التلقائي السحابي: ${channel}`);
