@@ -47,7 +47,7 @@ module.exports = {
 
             const totalXp = Number(score.totalXP || score.totalxp) || 0;
             
-            // 🔥 التعديل هنا: حماية أسماء الأعمدة بعلامات تنصيص لتناسب السحابة
+            // 🔥 حماية أسماء الأعمدة بعلامات تنصيص لتناسب السحابة PostgreSQL
             const rankRes = await db.query(`SELECT COUNT(*) as count FROM levels WHERE "guild" = $1 AND "totalXP" > $2`, [guildId, totalXp]);
             const rank = Number(rankRes.rows[0].count) + 1;
 
