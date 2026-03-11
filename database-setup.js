@@ -25,7 +25,7 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS streaks ("id" TEXT PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "streakCount" BIGINT, "lastMessageTimestamp" BIGINT, "hasGracePeriod" BIGINT, "hasItemShield" BIGINT, "nicknameActive" BIGINT DEFAULT 1, "hasReceivedFreeShield" BIGINT DEFAULT 0, "separator" TEXT DEFAULT '|', "dmNotify" BIGINT DEFAULT 1, "highestStreak" BIGINT DEFAULT 0, "has12hWarning" BIGINT DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS rankCardTable ("id" TEXT PRIMARY KEY, "barColor" TEXT, "textColor" TEXT, "backgroundColor" TEXT)`,
         `CREATE TABLE IF NOT EXISTS market_items ("id" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "description" TEXT, "currentPrice" BIGINT DEFAULT 0, "lastChangePercent" REAL DEFAULT 0.0, "lastChange" BIGINT DEFAULT 0)`,
-        `CREATE TABLE IF NOT EXISTS user_portfolio ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT NOT NULL, "userID" TEXT NOT NULL, "itemID" TEXT NOT NULL, "quantity" BIGINT DEFAULT 0, "purchasePrice" BIGINT DEFAULT 0, FOREIGN KEY ("itemID") REFERENCES market_items("id"), UNIQUE("guildID", "userID", "itemID"))`,
+        `CREATE TABLE IF NOT EXISTS user_portfolio ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT NOT NULL, "userID" TEXT NOT NULL, "itemID" TEXT NOT NULL, "quantity" BIGINT DEFAULT 0, "purchasePrice" BIGINT DEFAULT 0, UNIQUE("guildID", "userID", "itemID"))`,
         `CREATE TABLE IF NOT EXISTS user_inventory ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "itemID" TEXT, "quantity" BIGINT DEFAULT 0, UNIQUE("guildID", "userID", "itemID"))`,
         `CREATE TABLE IF NOT EXISTS dungeon_stats ("guildID" TEXT, "userID" TEXT, "tickets" BIGINT DEFAULT 0, "last_reset" TEXT DEFAULT '', "campfires" BIGINT DEFAULT 1, "last_campfire_reset" TEXT DEFAULT '', PRIMARY KEY ("guildID", "userID"))`,
         `CREATE TABLE IF NOT EXISTS blacklistTable ("id" TEXT PRIMARY KEY, "guild" TEXT, "typeId" TEXT, "type" TEXT)`,
@@ -88,7 +88,7 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS afk ("userID" TEXT, "guildID" TEXT, "reason" TEXT, "timestamp" BIGINT, "mentionsCount" BIGINT DEFAULT 0, "subscribers" TEXT DEFAULT '[]', "messages" TEXT DEFAULT '[]', PRIMARY KEY ("userID", "guildID"))`,
 
         // --- 🔥 جداول نظام السمعة (Reputation) 🔥 ---
-        `CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" BIGINT DEFAULT 0, "last_rep_given" BIGINT DEFAULT 0, "weekly_reps_given" BIGINT DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`,
+        `CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" BIGINT DEFAULT 0, "last_rep_given" TEXT DEFAULT '0', "weekly_reps_given" BIGINT DEFAULT 0, "daily_reps_given" BIGINT DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`,
 
         // --- جداول أخرى ---
         `CREATE TABLE IF NOT EXISTS race_dungeon_buffs ("guildID" TEXT, "roleID" TEXT, "dungeonKey" TEXT, "statType" TEXT, "buffValue" REAL, PRIMARY KEY ("guildID", "roleID", "dungeonKey"))`,
