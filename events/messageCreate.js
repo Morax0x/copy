@@ -173,7 +173,7 @@ module.exports = {
 
                     const timeAgo = `<t:${afkData.timestamp}:R>`;
                     
-                    let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionscount || afkData.mentionsCount} مرة أثناء غيابك`;
+                    let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount || afkData.mentionscount} مرة أثناء غيابك`;
                     
                     if (reward > 0) {
                         replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
@@ -271,129 +271,131 @@ module.exports = {
                     files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
                 message.channel.setName('˖✶⁺〢🍀・الـنـشـر').catch(err => {});
-                // ملاحظة: الجدول settings ليس لديه أعمدة nextBumpTime و lastBumperID في الإعدادات الأصلية، لذلك تم تجاهله بصمت
             }
             return;
         }
 
-        if (message.mentions.has(client.user) && !message.author.bot) {
+        const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
+        if (mentionRegex.test(message.content)) {
+            return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
+        }
+
+        if (message.mentions.has(client.user) && !message.author.bot && !message.content.startsWith(Prefix)) {
             
-            if (!message.content.startsWith(Prefix)) {
-                const argsRaw = message.content.trim().split(/ +/);
-                const firstWord = argsRaw[0].toLowerCase();
-                const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
-                let isShortcut = false;
+            const argsRaw = message.content.trim().split(/ +/);
+            const firstWord = argsRaw[0].toLowerCase();
+            const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
+            let isShortcut = false;
+            try {
+                const scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]);
+                if(scRes.rows.length > 0) isShortcut = true;
+            } catch(e) {}
+
+            if (!isCommand && !isShortcut) {
+                if (message.reference) {
+                    try {
+                        const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                        if (repliedMsg && repliedMsg.author.id === client.user.id) {
+                            if (repliedMsg.embeds.length > 0 || repliedMsg.interaction) return;
+                        }
+                    } catch (e) {}
+                }
+
+                if (message.content.includes("@everyone") || message.content.includes("@here")) return;
+
+                let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
+                
+                const OWNER_ID = "1145327691772481577"; 
+                const isOwnerMentioning = message.author.id === OWNER_ID;
+
+                let isWisdomKing = false;
                 try {
-                    const scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]);
-                    if(scRes.rows.length > 0) isShortcut = true;
+                    if (settings && (settings.roleAdvisor || settings.roleadvisor) && message.member.roles.cache.has(settings.roleAdvisor || settings.roleadvisor)) {
+                        isWisdomKing = true;
+                    }
                 } catch(e) {}
 
-                if (!isCommand && !isShortcut) {
-                    if (message.reference) {
-                        try {
-                            const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                            if (repliedMsg && repliedMsg.author.id === client.user.id) {
-                                if (repliedMsg.embeds.length > 0 || repliedMsg.interaction) return;
+                if (!isOwnerMentioning && !isWisdomKing) {
+                    if (!aiChannelData && message.channel.parentId) {
+                        if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
+                            const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
+                            if (paidStatus) {
+                                aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                            } else {
+                                if (paymentCooldowns.has(message.channel.id)) return; 
+                                paymentCooldowns.add(message.channel.id);
+                                setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
+                                const payBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_pay_category_1000').setLabel('فتح الشات (1000 مورا)').setEmoji('🔓').setStyle(ButtonStyle.Primary));
+                                return message.reply({ content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`, components: [payBtn] }).catch(()=>{});
                             }
-                        } catch (e) {}
+                        }
                     }
-
-                    if (message.content.includes("@everyone") || message.content.includes("@here")) return;
-
-                    let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
-                    
-                    const OWNER_ID = "1145327691772481577"; 
-                    const isOwnerMentioning = message.author.id === OWNER_ID;
-
-                    let isWisdomKing = false;
-                    try {
-                        if (settings && (settings.roleAdvisor || settings.roleadvisor) && message.member.roles.cache.has(settings.roleAdvisor || settings.roleadvisor)) {
-                            isWisdomKing = true;
-                        }
-                    } catch(e) {}
-
-                    if (!isOwnerMentioning && !isWisdomKing) {
-                        if (!aiChannelData && message.channel.parentId) {
-                            if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
-                                const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                                if (paidStatus) {
-                                    aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
-                                } else {
-                                    if (paymentCooldowns.has(message.channel.id)) return; 
-                                    paymentCooldowns.add(message.channel.id);
-                                    setTimeout(() => paymentCooldowns.delete(message.channel.id), 60000); 
-                                    const payBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_pay_category_1000').setLabel('فتح الشات (1000 مورا)').setEmoji('🔓').setStyle(ButtonStyle.Primary));
-                                    return message.reply({ content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`, components: [payBtn] }).catch(()=>{});
-                                }
-                            }
-                        }
-                        if (!aiChannelData) return;
-                    }
-
-                    const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
-                    if (!usageStatus.canChat && !isOwnerMentioning && !isWisdomKing) {
-                        if (paymentCooldowns.has(message.author.id)) return; 
-                        paymentCooldowns.add(message.author.id);
-                        setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
-                        const payButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_topup_2500').setLabel('ادفـع 2500 مورا').setEmoji(client.EMOJI_MORA || '💰').setStyle(ButtonStyle.Success));
-                        return message.reply({ content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`, components: [payButton] }).catch(()=>{});
-                    }
-
-                    if (paymentCooldowns.has(message.author.id)) paymentCooldowns.delete(message.author.id);
-
-                    const isNsfw = aiChannelData ? Boolean(aiChannelData.nsfw) : false; 
-
-                    try {
-                        await message.channel.sendTyping();
-                        const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
-                        
-                        let imageAttachment = null;
-                        
-                        if (message.attachments.size > 0) {
-                            const attachment = message.attachments.first();
-                            if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-                                imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
-                            }
-                        } 
-                        else if (message.stickers.size > 0) {
-                            const sticker = message.stickers.first();
-                            if (sticker.format === 1 || sticker.format === 2) { 
-                                 imageAttachment = { url: sticker.url, mimeType: 'image/png' };
-                            }
-                        }
-
-                        if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
-
-                        const reply = await askMorax(
-                            message.author.id, 
-                            message.guild.id, 
-                            message.channel.id, 
-                            cleanContent, 
-                            message.member.displayName,
-                            imageAttachment, 
-                            isNsfw,
-                            message 
-                        );
-                        
-                        if (!reply) return;
-
-                        if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id);
-
-                        const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
-                        const replyOptions = { repliedUser: true, parse: ['users'] };
-
-                        if (safeReplyMsg.length > 2000) {
-                            const chunks = safeReplyMsg.match(/[\s\S]{1,1950}/g) || [];
-                            for (const chunk of chunks) {
-                                await safeReply(message, { content: chunk, allowedMentions: replyOptions });
-                            }
-                        } else {
-                            await safeReply(message, { content: safeReplyMsg, allowedMentions: replyOptions });
-                        }
-
-                    } catch (err) {}
-                    return; 
+                    if (!aiChannelData) return;
                 }
+
+                const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
+                if (!usageStatus.canChat && !isOwnerMentioning && !isWisdomKing) {
+                    if (paymentCooldowns.has(message.author.id)) return; 
+                    paymentCooldowns.add(message.author.id);
+                    setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
+                    const payButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ai_topup_2500').setLabel('ادفـع 2500 مورا').setEmoji(client.EMOJI_MORA || '💰').setStyle(ButtonStyle.Success));
+                    return message.reply({ content: `✶ نـفـد وقـتي معـك ... \n✶ ان اردت استكمال محادثتنا ارفع مستواك او ادفـع مـورا لتجديد رصيـد محادثتنـا`, components: [payButton] }).catch(()=>{});
+                }
+
+                if (paymentCooldowns.has(message.author.id)) paymentCooldowns.delete(message.author.id);
+
+                const isNsfw = aiChannelData ? Boolean(aiChannelData.nsfw) : false; 
+
+                try {
+                    await message.channel.sendTyping();
+                    const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
+                    
+                    let imageAttachment = null;
+                    
+                    if (message.attachments.size > 0) {
+                        const attachment = message.attachments.first();
+                        if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+                            imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
+                        }
+                    } 
+                    else if (message.stickers.size > 0) {
+                        const sticker = message.stickers.first();
+                        if (sticker.format === 1 || sticker.format === 2) { 
+                             imageAttachment = { url: sticker.url, mimeType: 'image/png' };
+                        }
+                    }
+
+                    if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
+
+                    const reply = await askMorax(
+                        message.author.id, 
+                        message.guild.id, 
+                        message.channel.id, 
+                        cleanContent, 
+                        message.member.displayName,
+                        imageAttachment, 
+                        isNsfw,
+                        message 
+                    );
+                    
+                    if (!reply) return;
+
+                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id);
+
+                    const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
+                    const replyOptions = { repliedUser: true, parse: ['users'] };
+
+                    if (safeReplyMsg.length > 2000) {
+                        const chunks = safeReplyMsg.match(/[\s\S]{1,1950}/g) || [];
+                        for (const chunk of chunks) {
+                            await safeReply(message, { content: chunk, allowedMentions: replyOptions });
+                        }
+                    } else {
+                        await safeReply(message, { content: safeReplyMsg, allowedMentions: replyOptions });
+                    }
+
+                } catch (err) {}
+                return; 
             }
         }
 
@@ -421,7 +423,6 @@ module.exports = {
 
         if (db) {
             try {
-                // ملاحظة: جدول xp_ignore ليس في التكوين الأساسي لكن تركته كما هو لعدم كسره إذا كان موجودًا
                 const isChannelIgnoredRes = await db.query(`SELECT * FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [message.guild.id, message.channel.id]);
                 if (isChannelIgnoredRes.rows.length > 0) return; 
             } catch (e) {}
@@ -624,11 +625,6 @@ module.exports = {
                 }
             }
         } catch (err) {}
-
-        const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
-        if (mentionRegex.test(message.content)) {
-            return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
-        }
 
         if (message.content.startsWith(Prefix)) {
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
