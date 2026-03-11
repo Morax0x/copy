@@ -57,8 +57,8 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             const weapons = weaponsRes.rows;
             const lvlRes = await sql.query(`SELECT "user", "level" FROM levels WHERE "guild" = $1`, [guild.id]);
             const levelsMap = new Map(lvlRes.rows.map(r => [r.user, Number(r.level)]));
-            const skillsRes = await sql.query(`SELECT "userID", SUM("skillLevel") as totalLevels FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guild.id]);
-            const skillsMap = new Map(skillsRes.rows.map(r => [r.userID || r.userid, parseInt(r.totallevels) || 0]));
+            const skillsRes = await sql.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guild.id]);
+            const skillsMap = new Map(skillsRes.rows.map(r => [r.userID || r.userid, parseInt(r.totalLevels || r.totallevels) || 0]));
             let stats = [];
             for (const w of weapons) {
                 const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
@@ -175,6 +175,7 @@ module.exports = {
             user = message.author;
             channelId = message.channel.id;
             
+            // 🔥 حماية عمود الكازينو
             const settingsRes = await client.sql.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
             if (settings && (settings.casinoChannelID || settings.casinochannelid) === channelId) argType = 'mora'; 
