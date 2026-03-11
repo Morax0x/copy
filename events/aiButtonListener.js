@@ -23,7 +23,7 @@ module.exports = {
                 const COST = 2500;
                 const REWARD_MESSAGES = 100;
 
-                const res = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
+                const res = await db.query(`SELECT mora FROM levels WHERE "user" = $1 AND guild = $2`, [userID, guildID]);
                 let userMora = res.rows.length > 0 ? res.rows[0].mora : 0;
 
                 if (userMora < COST) {
@@ -32,7 +32,7 @@ module.exports = {
                     });
                 }
 
-                await db.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [COST, userID, guildID]);
+                await db.query(`UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3`, [COST, userID, guildID]);
 
                 aiLimitHandler.addPurchasedBalance(userID, REWARD_MESSAGES);
 
@@ -49,7 +49,7 @@ module.exports = {
                 await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                 const COST = 1000;
-                const res = await db.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [userID, guildID]);
+                const res = await db.query(`SELECT mora FROM levels WHERE "user" = $1 AND guild = $2`, [userID, guildID]);
                 let userMora = res.rows.length > 0 ? res.rows[0].mora : 0;
 
                 if (userMora < COST) {
@@ -58,7 +58,7 @@ module.exports = {
                     });
                 }
 
-                await db.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [COST, userID, guildID]);
+                await db.query(`UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3`, [COST, userID, guildID]);
 
                 const modeButtons = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('ai_mode_select_sfw').setLabel('SFW (عادية)').setStyle(ButtonStyle.Success).setEmoji('🛡️'),
