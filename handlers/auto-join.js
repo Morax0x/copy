@@ -2,50 +2,57 @@ const { joinVoiceChannel } = require('@discordjs/voice');
 const { ActivityType } = require('discord.js');
 
 module.exports = async (client) => {
-    const db = client.db;
+    const db = client.sql || client.db; // التأكد من استخدام الكائن الصحيح للـ db
 
     console.log("🔄 [Auto-Join] Checking saved voice channels and status...");
 
     try {
-        const savedStatusRes = await db.query("SELECT savedstatustype, savedstatustext FROM settings WHERE savedstatustext IS NOT NULL LIMIT 1");
+        // 🔥 حماية الأعمدة المزدوجة "savedStatusType" و "savedStatusText"
+        const savedStatusRes = await db.query('SELECT "savedStatusType", "savedStatusText" FROM settings WHERE "savedStatusText" IS NOT NULL LIMIT 1');
         const savedStatus = savedStatusRes.rows[0];
         
         if (savedStatus) {
+            const statusType = savedStatus.savedStatusType || savedStatus.savedstatustype;
+            const statusText = savedStatus.savedStatusText || savedStatus.savedstatustext;
+
             let type = ActivityType.Playing;
-            if (savedStatus.savedstatustype === 'Watching') type = ActivityType.Watching;
-            else if (savedStatus.savedstatustype === 'Listening') type = ActivityType.Listening;
-            else if (savedStatus.savedstatustype === 'Streaming') type = ActivityType.Streaming;
-            else if (savedStatus.savedstatustype === 'Competing') type = ActivityType.Competing;
-            else if (savedStatus.savedstatustype === 'Custom') type = ActivityType.Custom;
+            if (statusType === 'Watching') type = ActivityType.Watching;
+            else if (statusType === 'Listening') type = ActivityType.Listening;
+            else if (statusType === 'Streaming') type = ActivityType.Streaming;
+            else if (statusType === 'Competing') type = ActivityType.Competing;
+            else if (statusType === 'Custom') type = ActivityType.Custom;
 
             if (type === ActivityType.Custom) {
                 client.user.setPresence({
-                    activities: [{ name: savedStatus.savedstatustext, type: type, state: savedStatus.savedstatustext }],
+                    activities: [{ name: statusText, type: type, state: statusText }],
                     status: 'online'
                 });
             } else {
                 client.user.setPresence({
-                    activities: [{ name: savedStatus.savedstatustext, type: type }],
+                    activities: [{ name: statusText, type: type }],
                     status: 'online'
                 });
             }
-            console.log(`✅ [Status] Restored: ${savedStatus.savedstatustype} ${savedStatus.savedstatustext}`);
+            console.log(`✅ [Status] Restored: ${statusType} ${statusText}`);
         }
     } catch (e) {
         console.error("[Auto-Join] Error restoring status:", e.message);
     }
 
     try {
-        const settingsRes = await db.query("SELECT guild, voicechannelid FROM settings WHERE voicechannelid IS NOT NULL");
+        // 🔥 حماية الأعمدة المزدوجة "voiceChannelID"
+        const settingsRes = await db.query('SELECT "guild", "voiceChannelID" FROM settings WHERE "voiceChannelID" IS NOT NULL');
         const settings = settingsRes.rows;
 
         for (const data of settings) {
             const guild = client.guilds.cache.get(data.guild);
             if (!guild) continue;
 
-            const channel = guild.channels.cache.get(data.voicechannelid);
+            const voiceChannelId = data.voiceChannelID || data.voicechannelid;
+            const channel = guild.channels.cache.get(voiceChannelId);
+            
             if (!channel || !channel.isVoiceBased()) {
-                await db.query("UPDATE settings SET voicechannelid = NULL WHERE guild = $1", [data.guild]);
+                await db.query('UPDATE settings SET "voiceChannelID" = NULL WHERE "guild" = $1', [data.guild]);
                 continue;
             }
 
