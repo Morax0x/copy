@@ -28,7 +28,7 @@ module.exports = {
     async execute(interaction) {
 
         const client = interaction.client;
-        const sql = client.sql;
+        const db = client.sql; // تم التغيير إلى db ليتوافق مع أسلوبنا
         const message = interaction.targetMessage; // الرسالة التي تم الضغط عليها
 
         // --- ( 🌟 تم إصلاح الكود هنا 🌟 ) ---
@@ -43,13 +43,15 @@ module.exports = {
         }
         // --- ( 🌟 نهاية الإصلاح 🌟 ) ---
 
-
         // (التحقق من الإعدادات والصلاحيات)
-        const settings = getReportSettings(sql, interaction.guildId);
-        if (!settings.logChannelID) {
+        // ⚠️ ملاحظة: تم إضافة await لأن PostgreSQL يتطلب عمليات غير متزامنة
+        const settings = await getReportSettings(db, interaction.guildId);
+        
+        if (!settings || !settings.logChannelID) {
             return interaction.reply({ content: "يجب على المسؤول إعداد البوت أولاً باستخدام أمر `/اعدادات-البلاغات`.", ephemeral: true });
         }
-        if (!hasReportPermission(sql, interaction.member)) {
+        
+        if (!(await hasReportPermission(db, interaction.member))) {
              return interaction.reply({ content: "ليس لديك صلاحية استخدام هذا الأمر.", ephemeral: true });
         }
 
