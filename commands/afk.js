@@ -38,32 +38,34 @@ module.exports = {
         try {
             await db.query(`
                 CREATE TABLE IF NOT EXISTS afk (
-                    userID TEXT,
-                    guildID TEXT,
-                    reason TEXT,
-                    timestamp BIGINT,
-                    mentionsCount INTEGER DEFAULT 0,
-                    subscribers TEXT DEFAULT '[]',
-                    messages TEXT DEFAULT '[]',
-                    PRIMARY KEY (userID, guildID)
+                    "userID" TEXT,
+                    "guildID" TEXT,
+                    "reason" TEXT,
+                    "timestamp" BIGINT,
+                    "mentionsCount" INTEGER DEFAULT 0,
+                    "subscribers" TEXT DEFAULT '[]',
+                    "messages" TEXT DEFAULT '[]',
+                    PRIMARY KEY ("userID", "guildID")
                 )
             `);
             
-            await db.query("ALTER TABLE afk ADD COLUMN IF NOT EXISTS messages TEXT DEFAULT '[]'");
-        } catch (e) {}
+            await db.query(`ALTER TABLE afk ADD COLUMN IF NOT EXISTS "messages" TEXT DEFAULT '[]'`);
+        } catch (e) {
+            console.error("AFK Table Creation Error:", e);
+        }
 
         const reason = args.join(" ") || "مشغـول حالياً";
         const timestamp = Math.floor(now / 1000);
 
         await db.query(`
-            INSERT INTO afk (userID, guildID, reason, timestamp, mentionsCount, subscribers, messages) 
+            INSERT INTO afk ("userID", "guildID", "reason", "timestamp", "mentionsCount", "subscribers", "messages") 
             VALUES ($1, $2, $3, $4, 0, '[]', '[]')
-            ON CONFLICT (userID, guildID) DO UPDATE SET 
-            reason = EXCLUDED.reason,
-            timestamp = EXCLUDED.timestamp,
-            mentionsCount = 0,
-            subscribers = '[]',
-            messages = '[]'
+            ON CONFLICT ("userID", "guildID") DO UPDATE SET 
+            "reason" = EXCLUDED."reason",
+            "timestamp" = EXCLUDED."timestamp",
+            "mentionsCount" = 0,
+            "subscribers" = '[]',
+            "messages" = '[]'
         `, [userId, guildId, reason, timestamp]);
 
         try {
