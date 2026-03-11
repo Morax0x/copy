@@ -15,16 +15,20 @@ module.exports = {
         const client = message.client;
         const db = client.sql;
 
+        // جلب إعدادات البلاغات باستخدام await للتوافق مع PostgreSQL
         const settings = await getReportSettings(db, message.guild.id);
-        const reportChannel = settings ? (settings.reportchannelid || settings.reportChannelID) : null;
+        const reportChannel = settings ? (settings.reportChannelID || settings.reportchannelid) : null;
 
+        // التأكد من أن الأمر يُستخدم في روم البلاغات المخصصة فقط
         if (!reportChannel || message.channel.id !== reportChannel) {
             return;
         }
 
+        // التحقق من الصلاحيات
         const hasPerm = await hasReportPermission(db, message.member);
         if (!hasPerm) {
             await message.delete().catch(() => {});
+            // نرسل رسالة الخطأ للخاص لأن رسالته الأصلية تم حذفها
             return sendReportError(message.author, "❖ ليس لـديـك صلاحيـات التـبليـغ", "ليس لديك صلاحيات التبليغ. يرجى رفع مستواك في السيرفر لتقديم البلاغات.", true);
         }
 
@@ -36,6 +40,7 @@ module.exports = {
             return sendReportError(message, "✶ تـم تقـديـم الـبلاغ بطـريقـة غـير صحـيحـة !", description);
         }
 
+        // معالجة البلاغ
         await processReportLogic(client, message, targetMember, reason, null);
     }
 };
