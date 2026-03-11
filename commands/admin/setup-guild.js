@@ -32,20 +32,22 @@ module.exports = {
         const db = client.sql;
 
         try { 
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS kingsBoardMessageID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS chatterChannelID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS roleChatterBadge TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS roleKnightSlayer TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS questChannelID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS countingChannelID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS treeChannelID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS treeBotID TEXT");
-            await db.query("ALTER TABLE settings ADD COLUMN IF NOT EXISTS treeMessageID TEXT");
-            await db.query("CREATE TABLE IF NOT EXISTS quest_achievement_roles (guildID TEXT, roleID TEXT, achievementID TEXT, PRIMARY KEY (guildID, achievementID))"); 
-        } catch (e) {}
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "kingsBoardMessageID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "chatterChannelID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "roleChatterBadge" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "roleKnightSlayer" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "questChannelID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "countingChannelID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeChannelID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeBotID" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeMessageID" TEXT`);
+            await db.query(`CREATE TABLE IF NOT EXISTS quest_achievement_roles ("guildID" TEXT, "roleID" TEXT, "achievementID" TEXT, PRIMARY KEY ("guildID", "achievementID"))`); 
+        } catch (e) {
+            console.error("Setup Guild DB Error:", e);
+        }
 
         const generateDashboardEmbed = async () => {
-            const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [guildId]);
+            const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]);
             const settings = settingsRes.rows[0] || {};
             
             const getCh = (id) => id ? `<#${id}>` : '❌ غير محدد';
@@ -53,8 +55,8 @@ module.exports = {
             const getTxt = (val) => val ? `\`${val}\`` : '❌ غير محدد';
             
             const getAchRole = async (achId) => {
-                const res = await db.query("SELECT roleID FROM quest_achievement_roles WHERE guildID = $1 AND achievementID = $2", [guildId, achId]);
-                return res.rows[0] ? `<@&${res.rows[0].roleid || res.rows[0].roleID}>` : '❌ غير محدد';
+                const res = await db.query(`SELECT "roleID" FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, achId]);
+                return res.rows[0] ? `<@&${res.rows[0].roleID || res.rows[0].roleid}>` : '❌ غير محدد';
             };
 
             const caesarRole = await getAchRole('ach_caesar_role');
@@ -67,22 +69,22 @@ module.exports = {
                 .addFields(
                     { 
                         name: '📡 الرومات الأساسية', 
-                        value: `**لوحة النقابة:** ${getCh(settings.guildboardchannelid || settings.guildBoardChannelID)}\n**روم إعلانات الملوك:** ${getCh(settings.guildannouncechannelid || settings.guildAnnounceChannelID)}\n**إشعارات المهام:** ${getCh(settings.questchannelid || settings.questChannelID)}\n**شات ثرثار الحانة:** ${getCh(settings.chatterchannelid || settings.chatterChannelID)}\n**قناة العد:** ${getCh(settings.countingchannelid || settings.countingChannelID)}\n**قناة الشجرة:** ${getCh(settings.treechannelid || settings.treeChannelID)}`, 
+                        value: `**لوحة النقابة:** ${getCh(settings.guildBoardChannelID || settings.guildboardchannelid)}\n**روم إعلانات الملوك:** ${getCh(settings.guildAnnounceChannelID || settings.guildannouncechannelid)}\n**إشعارات المهام:** ${getCh(settings.questChannelID || settings.questchannelid)}\n**شات ثرثار الحانة:** ${getCh(settings.chatterChannelID || settings.chatterchannelid)}\n**قناة العد:** ${getCh(settings.countingChannelID || settings.countingchannelid)}\n**قناة الشجرة:** ${getCh(settings.treeChannelID || settings.treechannelid)}`, 
                         inline: false 
                     },
                     { 
                         name: '🌲 إعدادات الشجرة المتقدمة', 
-                        value: `**بوت الشجرة:** ${getTxt(settings.treebotid || settings.treeBotID)}\n**آيدي رسالة الشجرة:** ${getTxt(settings.treemessageid || settings.treeMessageID)}`, 
+                        value: `**بوت الشجرة:** ${getTxt(settings.treeBotID || settings.treebotid)}\n**آيدي رسالة الشجرة:** ${getTxt(settings.treeMessageID || settings.treemessageid)}`, 
                         inline: false 
                     },
                     { 
                         name: '👑 ألقاب الملوك (8 ألقاب)', 
-                        value: `🎰 **الكازينو:** ${getRl(settings.rolecasinoking || settings.roleCasinoKing)} | 🌑 **الهاوية:** ${getRl(settings.roleabyss || settings.roleAbyss)}\n🗣️ **البلاغة:** ${getRl(settings.rolechatter || settings.roleChatter)} | 🤝 **الكرم:** ${getRl(settings.rolephilanthropist || settings.rolePhilanthropist)}\n🧠 **الحكمة:** ${getRl(settings.roleadvisor || settings.roleAdvisor)} | 🎣 **القنص:** ${getRl(settings.rolefisherking || settings.roleFisherKing)}\n⚔️ **النزاع:** ${getRl(settings.rolepvpking || settings.rolePvPKing)} | 🌾 **الحصاد:** ${getRl(settings.rolefarmking || settings.roleFarmKing)}`, 
+                        value: `🎰 **الكازينو:** ${getRl(settings.roleCasinoKing || settings.rolecasinoking)} | 🌑 **الهاوية:** ${getRl(settings.roleAbyss || settings.roleabyss)}\n🗣️ **البلاغة:** ${getRl(settings.roleChatter || settings.rolechatter)} | 🤝 **الكرم:** ${getRl(settings.rolePhilanthropist || settings.rolephilanthropist)}\n🧠 **الحكمة:** ${getRl(settings.roleAdvisor || settings.roleadvisor)} | 🎣 **القنص:** ${getRl(settings.roleFisherKing || settings.rolefisherking)}\n⚔️ **النزاع:** ${getRl(settings.rolePvPKing || settings.rolepvpking)} | 🌾 **الحصاد:** ${getRl(settings.roleFarmKing || settings.rolefarmking)}`, 
                         inline: false 
                     },
                     { 
                         name: '🎖️ أوسمة الإنجازات والمهام', 
-                        value: `🗣️ **ثرثار الحانة:** ${getRl(settings.rolechatterbadge || settings.roleChatterBadge)}\n🛡️ **قاهر الفرسان:** ${getRl(settings.roleknightslayer || settings.roleKnightSlayer)}\n✨ **الختم اليومي:** ${getRl(settings.roledailybadge || settings.roleDailyBadge || settings.roleDailyQuester)}\n🌟 **الختم الأسبوعي:** ${getRl(settings.roleweeklybadge || settings.roleWeeklyBadge || settings.roleWeeklyQuester)}\n👑 **إنجاز القيصر:** ${caesarRole}\n🌲 **إنجاز الشجرة:** ${treeRole}`, 
+                        value: `🗣️ **ثرثار الحانة:** ${getRl(settings.roleChatterBadge || settings.rolechatterbadge)}\n🛡️ **قاهر الفرسان:** ${getRl(settings.roleKnightSlayer || settings.roleknightslayer)}\n✨ **الختم اليومي:** ${getRl(settings.roleDailyBadge || settings.roleDailyQuester || settings.roledailybadge)}\n🌟 **الختم الأسبوعي:** ${getRl(settings.roleWeeklyBadge || settings.roleWeeklyQuester || settings.roleweeklybadge)}\n👑 **إنجاز القيصر:** ${caesarRole}\n🌲 **إنجاز الشجرة:** ${treeRole}`, 
                         inline: false 
                     }
                 )
@@ -225,17 +227,17 @@ module.exports = {
                     try {
                         if (dbColumn.startsWith('ach_')) {
                             await db.query(`
-                                INSERT INTO quest_achievement_roles (guildID, roleID, achievementID) 
+                                INSERT INTO quest_achievement_roles ("guildID", "roleID", "achievementID") 
                                 VALUES ($1, $2, $3) 
-                                ON CONFLICT(guildID, achievementID) 
-                                DO UPDATE SET roleID = EXCLUDED.roleID
+                                ON CONFLICT("guildID", "achievementID") 
+                                DO UPDATE SET "roleID" = EXCLUDED."roleID"
                             `, [guildId, selectedId, dbColumn]);
                         } else {
                             await db.query(`
-                                INSERT INTO settings (guild, ${dbColumn}) 
+                                INSERT INTO settings ("guild", "${dbColumn}") 
                                 VALUES ($1, $2) 
-                                ON CONFLICT(guild) 
-                                DO UPDATE SET ${dbColumn} = EXCLUDED.${dbColumn}
+                                ON CONFLICT("guild") 
+                                DO UPDATE SET "${dbColumn}" = EXCLUDED."${dbColumn}"
                             `, [guildId, selectedId]);
                         }
                         
@@ -259,20 +261,22 @@ module.exports = {
                     const dbColumn = interaction.customId.replace('clear_', '');
                     try {
                         if (dbColumn.startsWith('ach_')) {
-                            await db.query("DELETE FROM quest_achievement_roles WHERE guildID = $1 AND achievementID = $2", [guildId, dbColumn]);
+                            await db.query(`DELETE FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, dbColumn]);
                         } else {
-                            await db.query(`UPDATE settings SET ${dbColumn} = NULL WHERE guild = $1`, [guildId]);
+                            await db.query(`UPDATE settings SET "${dbColumn}" = NULL WHERE "guild" = $1`, [guildId]);
                         }
                         const updatedEmbed = await generateDashboardEmbed();
                         await interaction.update({ embeds: [updatedEmbed], components: getMainMenuComponents() });
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error(e);
+                    }
                     return;
                 }
 
                 if (interaction.customId === 'send_guild_board') {
                     await interaction.deferReply({ flags: 64 });
 
-                    const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [guildId]);
+                    const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]);
                     const settings = settingsRes.rows[0];
                     if (!settings || (!settings.guildboardchannelid && !settings.guildBoardChannelID)) {
                         return interaction.editReply({ content: '❌ يجب عليك تحديد **روم لوحة النقابة (الثابتة)** أولاً لكي أرسلها!' });
@@ -289,18 +293,33 @@ module.exports = {
                         const ksaTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
                         const todayStr = ksaTime.toISOString().split('T')[0];
                         
-                        const casinoData = (await db.query("SELECT userID, (COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) as totalProfit FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND (casino_profit > 0 OR mora_earned > 0) ORDER BY totalProfit DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const abyssData = (await db.query('SELECT "user" AS userID, max_dungeon_floor FROM levels WHERE guild = $1 AND max_dungeon_floor > 0 ORDER BY max_dungeon_floor DESC LIMIT 1', [guildId])).rows[0];
-                        const chatterData = (await db.query("SELECT userID, messages FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND messages > 0 ORDER BY messages DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const philanData = (await db.query("SELECT userID, mora_donated FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND mora_donated > 0 ORDER BY mora_donated DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const advisorData = (await db.query("SELECT userID, ai_interactions FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND ai_interactions > 0 ORDER BY ai_interactions DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const fisherData = (await db.query("SELECT userID, fish_caught FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND fish_caught > 0 ORDER BY fish_caught DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const pvpData = (await db.query("SELECT userID, pvp_wins FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND pvp_wins > 0 ORDER BY pvp_wins DESC LIMIT 1", [guildId, todayStr])).rows[0];
-                        const farmData = (await db.query("SELECT userID, crops_harvested FROM user_daily_stats WHERE guildID = $1 AND date = $2 AND crops_harvested > 0 ORDER BY crops_harvested DESC LIMIT 1", [guildId, todayStr])).rows[0];
+                        const casinoDataRes = await db.query(`SELECT "userID", (COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as "totalProfit" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND ("casino_profit" > 0 OR "mora_earned" > 0) ORDER BY "totalProfit" DESC LIMIT 1`, [guildId, todayStr]);
+                        const casinoData = casinoDataRes.rows[0];
+                        
+                        const abyssDataRes = await db.query(`SELECT "user" AS "userID", "max_dungeon_floor" FROM levels WHERE "guild" = $1 AND "max_dungeon_floor" > 0 ORDER BY "max_dungeon_floor" DESC LIMIT 1`, [guildId]);
+                        const abyssData = abyssDataRes.rows[0];
+
+                        const chatterDataRes = await db.query(`SELECT "userID", "messages" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "messages" > 0 ORDER BY "messages" DESC LIMIT 1`, [guildId, todayStr]);
+                        const chatterData = chatterDataRes.rows[0];
+
+                        const philanDataRes = await db.query(`SELECT "userID", "mora_donated" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "mora_donated" > 0 ORDER BY "mora_donated" DESC LIMIT 1`, [guildId, todayStr]);
+                        const philanData = philanDataRes.rows[0];
+
+                        const advisorDataRes = await db.query(`SELECT "userID", "ai_interactions" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "ai_interactions" > 0 ORDER BY "ai_interactions" DESC LIMIT 1`, [guildId, todayStr]);
+                        const advisorData = advisorDataRes.rows[0];
+
+                        const fisherDataRes = await db.query(`SELECT "userID", "fish_caught" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "fish_caught" > 0 ORDER BY "fish_caught" DESC LIMIT 1`, [guildId, todayStr]);
+                        const fisherData = fisherDataRes.rows[0];
+
+                        const pvpDataRes = await db.query(`SELECT "userID", "pvp_wins" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "pvp_wins" > 0 ORDER BY "pvp_wins" DESC LIMIT 1`, [guildId, todayStr]);
+                        const pvpData = pvpDataRes.rows[0];
+
+                        const farmDataRes = await db.query(`SELECT "userID", "crops_harvested" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "crops_harvested" > 0 ORDER BY "crops_harvested" DESC LIMIT 1`, [guildId, todayStr]);
+                        const farmData = farmDataRes.rows[0];
 
                         async function getKingInfo(dataObj, valueKey, suffix, title, emoji) {
                             if (!dataObj) return { title, emoji, displayName: 'لا أحد حتى الآن', avatarUrl: null, valueText: `0 ${suffix}` };
-                            const uid = dataObj.userid || dataObj.userID;
+                            const uid = dataObj.userID || dataObj.userid;
                             try {
                                 let member = await interaction.guild.members.fetch(uid).catch(()=>null);
                                 let user = member ? member.user : await client.users.fetch(uid).catch(()=>null);
@@ -309,11 +328,11 @@ module.exports = {
                                         title, emoji,
                                         displayName: member ? member.displayName : user.username,
                                         avatarUrl: user.displayAvatarURL({ extension: 'png', size: 128 }),
-                                        valueText: `${parseInt(dataObj[valueKey.toLowerCase()] || dataObj[valueKey]).toLocaleString()} ${suffix}`
+                                        valueText: `${parseInt(dataObj[valueKey] || dataObj[valueKey.toLowerCase()] || 0).toLocaleString()} ${suffix}`
                                     };
                                 }
                             } catch (e) {}
-                            return { title, emoji, displayName: 'مغامر مجهول', avatarUrl: null, valueText: `${parseInt(dataObj[valueKey.toLowerCase()] || dataObj[valueKey]).toLocaleString()} ${suffix}` };
+                            return { title, emoji, displayName: 'مغامر مجهول', avatarUrl: null, valueText: `${parseInt(dataObj[valueKey] || dataObj[valueKey.toLowerCase()] || 0).toLocaleString()} ${suffix}` };
                         }
 
                         const kingsArray = [
@@ -327,14 +346,14 @@ module.exports = {
                             await getKingInfo(farmData, 'crops_harvested', 'محصول', 'ملك الحصاد', '🌾')
                         ];
 
-                        const oldKingsMsgID = settings.kingsboardmessageid || settings.kingsBoardMessageID;
+                        const oldKingsMsgID = settings.kingsBoardMessageID || settings.kingsboardmessageid;
                         if (oldKingsMsgID) {
                             try {
                                 const oldKingsMsg = await targetChannel.messages.fetch(oldKingsMsgID);
                                 await oldKingsMsg.delete();
                             } catch (e) { }
                         }
-                        const oldMainMsgID = settings.guildboardmessageid || settings.guildBoardMessageID;
+                        const oldMainMsgID = settings.guildBoardMessageID || settings.guildboardmessageid;
                         if (oldMainMsgID) {
                             try {
                                 const oldMainMsg = await targetChannel.messages.fetch(oldMainMsgID);
@@ -368,7 +387,7 @@ module.exports = {
                         const kingsMsg = await targetChannel.send({ files: [kingsBoardAttachment] });
                         const boardMsg = await targetChannel.send({ files: [mainBoardAttachment], components: [menuRow] });
                         
-                        await db.query("UPDATE settings SET guildBoardMessageID = $1, kingsBoardMessageID = $2 WHERE guild = $3", [boardMsg.id, kingsMsg.id, guildId]);
+                        await db.query(`UPDATE settings SET "guildBoardMessageID" = $1, "kingsBoardMessageID" = $2 WHERE "guild" = $3`, [boardMsg.id, kingsMsg.id, guildId]);
 
                         await interaction.editReply({ content: `✅ **تم تحديث وإرسال اللوحات بنجاح في <#${targetChannel.id}>!**` });
                     } catch (err) {
@@ -387,10 +406,10 @@ module.exports = {
                 
                 try {
                     await db.query(`
-                        INSERT INTO settings (guild, treeBotID, treeMessageID) 
+                        INSERT INTO settings ("guild", "treeBotID", "treeMessageID") 
                         VALUES ($1, $2, $3) 
-                        ON CONFLICT(guild) 
-                        DO UPDATE SET treeBotID = EXCLUDED.treeBotID, treeMessageID = EXCLUDED.treeMessageID
+                        ON CONFLICT("guild") 
+                        DO UPDATE SET "treeBotID" = EXCLUDED."treeBotID", "treeMessageID" = EXCLUDED."treeMessageID"
                     `, [guildId, botId, msgId]);
                     
                     await modalInteraction.reply({ content: '✅ تم حفظ إعدادات رسالة وبوت الشجرة بنجاح.', flags: 64 });
