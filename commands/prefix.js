@@ -25,10 +25,13 @@ module.exports = {
 
         let currentPrefix = "-";
         try {
-            const res = await db.query("SELECT prefix FROM settings WHERE guild = $1", [guild.id]);
-            if (res.rows.length > 0 && res.rows[0].prefix) currentPrefix = res.rows[0].prefix;
+            // استخدام الجدول الموحد للبريفكس
+            const res = await db.query(`SELECT "serverprefix" FROM prefix WHERE "guild" = $1`, [guild.id]);
+            if (res.rows.length > 0 && res.rows[0].serverprefix) {
+                currentPrefix = res.rows[0].serverprefix;
+            }
         } catch (e) {
-            
+            // يمكن تجاهل الخطأ هنا في حال كان الجدول غير موجود، سيتم إنشاؤه في الخطوة التالية
         }
 
         if(newPrefix === currentPrefix) {
@@ -36,10 +39,13 @@ module.exports = {
         }
 
         try {
+            // إنشاء الجدول في حال لم يكن موجوداً لضمان عدم حدوث خطأ
+            await db.query(`CREATE TABLE IF NOT EXISTS prefix ("guild" TEXT PRIMARY KEY, "serverprefix" TEXT)`);
+
             await db.query(`
-                INSERT INTO settings (guild, prefix) 
+                INSERT INTO prefix ("guild", "serverprefix") 
                 VALUES ($1, $2) 
-                ON CONFLICT(guild) DO UPDATE SET prefix = EXCLUDED.prefix
+                ON CONFLICT("guild") DO UPDATE SET "serverprefix" = EXCLUDED."serverprefix"
             `, [guild.id, newPrefix]);
             
             return message.reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
