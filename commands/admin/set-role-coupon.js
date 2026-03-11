@@ -23,14 +23,31 @@ module.exports = {
 
         const role = interaction.options.getRole('role');
         const discount = interaction.options.getInteger('discount');
-        const sql = interaction.client.sql;
+        const db = interaction.client.sql;
 
-        // حفظ الإعدادات في الداتابيس
-        sql.prepare("INSERT OR REPLACE INTO role_coupons_config (guildID, roleID, discountPercent) VALUES (?, ?, ?)").run(interaction.guild.id, role.id, discount);
+        // التأكد من وجود الجدول لضمان عمل ON CONFLICT بشكل سليم
+        try {
+            await db.query(`CREATE TABLE IF NOT EXISTS role_coupons_config ("guildID" TEXT, "roleID" TEXT, "discountPercent" INTEGER, PRIMARY KEY ("guildID", "roleID"))`);
+        } catch(e) {
+            console.error("Error creating role_coupons_config table:", e);
+        }
 
-        return interaction.reply({ 
-            content: `✅ **تم إعداد الكوبون بنجاح!**\n\n🎭 **الرتبة:** ${role}\n📉 **الخصم:** ${discount}%\n⏳ **التجديد:** تلقائياً كل 15 يوم لكل عضو يحمل الرتبة.`,
-            flags: [MessageFlags.Ephemeral] 
-        });
+        // حفظ الإعدادات في الداتابيس باستخدام PostgreSQL Upsert
+        try {
+            await db.query(`
+                INSERT INTO role_coupons_config ("guildID", "roleID", "discountPercent") 
+                VALUES ($1, $2, $3) 
+                ON CONFLICT ("guildID", "roleID") 
+                DO UPDATE SET "discountPercent" = EXCLUDED."discountPercent"
+            `, [interaction.guild.id, role.id, discount]);
+
+            return interaction.reply({ 
+                content: `✅ **تم إعداد الكوبون بنجاح!**\n\n🎭 **الرتبة:** ${role}\n📉 **الخصم:** ${discount}%\n⏳ **التجديد:** تلقائياً كل 15 يوم لكل عضو يحمل الرتبة.`,
+                flags: [MessageFlags.Ephemeral] 
+            });
+        } catch (error) {
+            console.error("Set Role Coupon Error:", error);
+            return interaction.reply({ content: "❌ حدث خطأ أثناء حفظ بيانات الكوبون في قاعدة البيانات.", flags: [MessageFlags.Ephemeral] });
+        }
     }
 };
