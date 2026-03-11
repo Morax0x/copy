@@ -53,19 +53,21 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS xp_ignore (guildID TEXT, id TEXT, type TEXT)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS xp_ignore ("guildID" TEXT, "id" TEXT, "type" TEXT)`);
             await db.query(`CREATE TABLE IF NOT EXISTS settings (
-                guild TEXT PRIMARY KEY, 
-                boostChannelID TEXT, 
-                bumpChannelID TEXT, 
-                modLogChannelID TEXT, 
-                shopLogChannelID TEXT, 
-                streakTimerChannelID TEXT, 
-                dailyTimerChannelID TEXT, 
-                weeklyTimerChannelID TEXT
+                "guild" TEXT PRIMARY KEY, 
+                "boostChannelID" TEXT, 
+                "bumpChannelID" TEXT, 
+                "modLogChannelID" TEXT, 
+                "shopLogChannelID" TEXT, 
+                "streakTimerChannelID" TEXT, 
+                "dailyTimerChannelID" TEXT, 
+                "weeklyTimerChannelID" TEXT
             )`);
-            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guild.id]);
-        } catch(e) {}
+            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
+        } catch(e) {
+            console.error("Error creating tables in setup-channels:", e);
+        }
 
         let subcommand = '';
         let targetChannel = null;
@@ -94,25 +96,25 @@ module.exports = {
         try {
             if (subcommand === 'boost') {
                 if (!targetChannel || targetChannel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة نصية فقط.");
-                await db.query("UPDATE settings SET boostChannelID = $1 WHERE guild = $2", [targetChannel.id, guild.id]);
+                await db.query(`UPDATE settings SET "boostChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
                 return reply(`✅ تم تحديد قناة التعزيز بنجاح: ${targetChannel}\nالآن سيتم احتساب مهمة الرياكشن في هذه القناة.`);
             }
 
             if (subcommand === 'bump') {
                 if (!targetChannel || targetChannel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة نصية فقط.");
-                await db.query("UPDATE settings SET bumpChannelID = $1 WHERE guild = $2", [targetChannel.id, guild.id]);
+                await db.query(`UPDATE settings SET "bumpChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
                 return reply(`✅ تم تحديد قناة البومب (Disboard) بنجاح إلى ${targetChannel}.`);
             }
 
             if (subcommand === 'modlog') {
                 targetChannel = targetChannel || interactionOrMessage.channel;
-                await db.query("UPDATE settings SET modLogChannelID = $1 WHERE guild = $2", [targetChannel.id, guild.id]);
+                await db.query(`UPDATE settings SET "modLogChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
                 return reply(`✅ **تم تعيين قناة سجلات الإشراف إلى:** ${targetChannel}`);
             }
 
             if (subcommand === 'shoplog') {
                 if (!targetChannel) return reply("حدد القناة.");
-                await db.query("UPDATE settings SET shopLogChannelID = $1 WHERE guild = $2", [targetChannel.id, guild.id]);
+                await db.query(`UPDATE settings SET "shopLogChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
                 return reply(`✅ تم تعيين قناة سجلات المتجر: ${targetChannel}`);
             }
 
@@ -141,7 +143,7 @@ module.exports = {
                     permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.Connect] }],
                 });
 
-                await db.query("UPDATE settings SET streakTimerChannelID = $1, dailyTimerChannelID = $2, weeklyTimerChannelID = $3 WHERE guild = $4", [streakChannel.id, dailyChannel.id, weeklyChannel.id, guild.id]);
+                await db.query(`UPDATE settings SET "streakTimerChannelID" = $1, "dailyTimerChannelID" = $2, "weeklyTimerChannelID" = $3 WHERE "guild" = $4`, [streakChannel.id, dailyChannel.id, weeklyChannel.id, guild.id]);
                 return reply('✅ تم إنشاء القنوات بنجاح! سيتم تحديث أسمائها تلقائياً كل 5 دقائق.');
             }
 
@@ -152,14 +154,14 @@ module.exports = {
 
                 if (!targetChannel) return reply("يرجى تحديد القناة.");
 
-                const res = await db.query("SELECT * FROM xp_ignore WHERE guildID = $1 AND id = $2", [guild.id, targetChannel.id]);
+                const res = await db.query(`SELECT * FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [guild.id, targetChannel.id]);
                 
                 if (res.rows.length > 0) {
-                    await db.query("DELETE FROM xp_ignore WHERE guildID = $1 AND id = $2", [guild.id, targetChannel.id]);
+                    await db.query(`DELETE FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [guild.id, targetChannel.id]);
                     return reply(`✅ **تم تفعيل** احتساب اللفل في ${targetChannel.name} مرة أخرى.`);
                 } else {
                     let type = targetChannel.type === ChannelType.GuildCategory ? 'category' : 'channel';
-                    await db.query("INSERT INTO xp_ignore (guildID, id, type) VALUES ($1, $2, $3)", [guild.id, targetChannel.id, type]);
+                    await db.query(`INSERT INTO xp_ignore ("guildID", "id", "type") VALUES ($1, $2, $3)`, [guild.id, targetChannel.id, type]);
                     
                     if (type === 'category') {
                         return reply(`🚫 **تم تعطيل** احتساب اللفل في الكاتيغوري **${targetChannel.name}** وجميع القنوات داخله.`);
