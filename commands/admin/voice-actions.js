@@ -39,7 +39,7 @@ module.exports = {
             return interactionOrMessage.reply(content);
         };
 
-        const sql = client.sql; // تأكد أن client.sql معرف
+        const db = client.sql; // تأكد أن client.sql هو اتصال الـ PostgreSQL
 
         // --- أمر الدخول ---
         if (sub === 'دخول' || sub === 'join') {
@@ -57,8 +57,8 @@ module.exports = {
                 });
 
                 // 2. حفظ القناة في قاعدة البيانات للتثبيت
-                sql.prepare("INSERT OR IGNORE INTO settings (guild) VALUES (?)").run(guild.id);
-                sql.prepare("UPDATE settings SET voiceChannelID = ? WHERE guild = ?").run(channel.id, guild.id);
+                await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
+                await db.query(`UPDATE settings SET "voiceChannelID" = $1 WHERE "guild" = $2`, [channel.id, guild.id]);
 
                 return reply(`✅ **تم الدخول والتثبيت!**\n- القناة: ${channel.name}\n- سيعود البوت لهذه القناة تلقائياً إذا أعيد تشغيله.`);
             
@@ -73,7 +73,11 @@ module.exports = {
             const connection = getVoiceConnection(guild.id);
             
             // 1. حذف القناة من قاعدة البيانات لإلغاء التثبيت
-            sql.prepare("UPDATE settings SET voiceChannelID = NULL WHERE guild = ?").run(guild.id);
+            try {
+                await db.query(`UPDATE settings SET "voiceChannelID" = NULL WHERE "guild" = $1`, [guild.id]);
+            } catch (e) {
+                console.error("Failed to update voiceChannelID to NULL:", e);
+            }
 
             if (connection) {
                 connection.destroy();
