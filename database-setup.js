@@ -6,25 +6,6 @@ async function setupDatabase(clientOrSql) {
 
     console.log("[Database] Starting Cloud Integrity & Schema Check...");
 
-    // ⚠️⚠️⚠️ كود المسح الشامل (التدمير الذاتي) ⚠️⚠️⚠️
-    // سيقوم بمسح كل الجداول من جذورها لتنظيف السحابة
-    try {
-        console.log("⚠️ [Database] Wiping all existing tables for a clean slate...");
-        await db.query(`
-            DO $$ DECLARE
-                r RECORD;
-            BEGIN
-                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-                END LOOP;
-            END $$;
-        `);
-        console.log("✅ [Database] Database wiped successfully! Building new tables...");
-    } catch (e) {
-        console.error("❌ [Database] Error wiping database:", e.message);
-    }
-    // ==========================================
-
     // 🔥 تحويل كود SQLite إلى PostgreSQL مع حماية مطلقة لأسماء الأعمدة القديمة
     const tables = [
         `CREATE TABLE IF NOT EXISTS levels ("user" TEXT NOT NULL, "guild" TEXT NOT NULL, "xp" BIGINT DEFAULT 0, "level" BIGINT DEFAULT 1, "totalXP" BIGINT DEFAULT 0, "mora" BIGINT DEFAULT 0, "lastWork" BIGINT DEFAULT 0, "lastDaily" BIGINT DEFAULT 0, "dailyStreak" BIGINT DEFAULT 0, "bank" BIGINT DEFAULT 0, "lastInterest" BIGINT DEFAULT 0, "totalInterestEarned" BIGINT DEFAULT 0, "hasGuard" BIGINT DEFAULT 0, "guardExpires" BIGINT DEFAULT 0, "totalVCTime" BIGINT DEFAULT 0, "lastCollected" BIGINT DEFAULT 0, "lastRob" BIGINT DEFAULT 0, "last_rob_pardon" TEXT DEFAULT '', "lastGuess" BIGINT DEFAULT 0, "lastRPS" BIGINT DEFAULT 0, "lastRoulette" BIGINT DEFAULT 0, "lastTransfer" BIGINT DEFAULT 0, "lastDeposit" BIGINT DEFAULT 0, "shop_purchases" BIGINT DEFAULT 0, "total_meow_count" BIGINT DEFAULT 0, "boost_count" BIGINT DEFAULT 0, "lastPVP" BIGINT DEFAULT 0, "lastFarmYield" BIGINT DEFAULT 0, "lastFish" BIGINT DEFAULT 0, "rodLevel" BIGINT DEFAULT 1, "boatLevel" BIGINT DEFAULT 1, "currentLocation" TEXT DEFAULT 'beach', "lastMemory" BIGINT DEFAULT 0, "lastArrange" BIGINT DEFAULT 0, "last_dungeon" BIGINT DEFAULT 0, "dungeon_tickets" BIGINT DEFAULT 0, "last_ticket_reset" TEXT DEFAULT '', "dungeon_gate_level" BIGINT DEFAULT 1, "max_dungeon_floor" BIGINT DEFAULT 0, "dungeon_wins" BIGINT DEFAULT 0, "dungeon_join_count" BIGINT DEFAULT 0, "last_join_reset" BIGINT DEFAULT 0, "lastRace" BIGINT DEFAULT 0, PRIMARY KEY ("user", "guild"))`,
