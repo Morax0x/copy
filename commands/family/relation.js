@@ -29,7 +29,7 @@ module.exports = {
 
         let familyConfig = null;
         try {
-            const configRes = await db.query("SELECT maleRole, femaleRole FROM family_config WHERE guildID = $1", [guildId]);
+            const configRes = await db.query(`SELECT "maleRole", "femaleRole" FROM family_config WHERE "guildID" = $1`, [guildId]);
             familyConfig = configRes.rows[0];
         } catch(e) {}
         
@@ -45,8 +45,8 @@ module.exports = {
                 return false;
             };
 
-            const isMale = familyConfig && checkRole(familyConfig.malerole || familyConfig.maleRole);
-            const isFemale = familyConfig && checkRole(familyConfig.femalerole || familyConfig.femaleRole);
+            const isMale = familyConfig && checkRole(familyConfig.maleRole || familyConfig.malerole);
+            const isFemale = familyConfig && checkRole(familyConfig.femaleRole || familyConfig.femalerole);
             
             const titles = {
                 spouse: isMale ? "الزوج" : (isFemale ? "الزوجة" : "شريك حياة"),
@@ -72,17 +72,17 @@ module.exports = {
         };
 
         const getParents = async (id) => {
-            const res = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [id, guildId]);
-            return res.rows.map(r => r.parentid || r.parentID);
+            const res = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [id, guildId]);
+            return res.rows.map(r => r.parentID || r.parentid);
         };
         const getChildren = async (id) => {
-            const res = await db.query("SELECT childID FROM children WHERE parentID = $1 AND guildID = $2", [id, guildId]);
-            return res.rows.map(r => r.childid || r.childID);
+            const res = await db.query(`SELECT "childID" FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [id, guildId]);
+            return res.rows.map(r => r.childID || r.childid);
         };
         const getPartner = async (id) => {
-            const res = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2 LIMIT 1", [id, guildId]);
+            const res = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2 LIMIT 1`, [id, guildId]);
             const m = res.rows[0];
-            return m ? (m.partnerid || m.partnerID) : null;
+            return m ? (m.partnerID || m.partnerid) : null;
         };
 
         let relName = "غـربـاء 🚶‍♂️";
