@@ -27,7 +27,7 @@ module.exports = {
         }
 
         try {
-            const isMyChildRes = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2 AND guildID = $3", [userId, childMember.id, guildId]);
+            const isMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, childMember.id, guildId]);
             if (isMyChildRes.rows.length === 0) {
                 return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك! تأكد من الشخص.`);
             }
@@ -38,9 +38,9 @@ module.exports = {
 
         let partnerId = null;
         try {
-            const marriageDataRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            const marriageDataRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
             if (marriageDataRes.rows.length > 0) {
-                partnerId = marriageDataRes.rows[0].partnerid || marriageDataRes.rows[0].partnerID;
+                partnerId = marriageDataRes.rows[0].partnerID || marriageDataRes.rows[0].partnerid;
             }
         } catch(e) {}
         
@@ -82,7 +82,7 @@ module.exports = {
                 await client.setLevel(childData);
 
                 for (const pid of parentIds) {
-                    await db.query("DELETE FROM children WHERE parentID = $1 AND childID = $2 AND guildID = $3", [pid, childId, guildId]);
+                    await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [pid, childId, guildId]);
                 }
 
                 await db.query('COMMIT');
