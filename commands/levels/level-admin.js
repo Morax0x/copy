@@ -85,10 +85,12 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS level_roles (guildID TEXT, roleID TEXT, level INTEGER)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS role_buffs (guildID TEXT, roleID TEXT, buffPercent INTEGER)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS user_buffs (guildID TEXT, userID TEXT, buffPercent INTEGER, expiresAt BIGINT, buffType TEXT, multiplier REAL)`);
-        } catch(e) {}
+            await db.query(`CREATE TABLE IF NOT EXISTS level_roles ("guildID" TEXT, "roleID" TEXT, "level" INTEGER)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS role_buffs ("guildID" TEXT, "roleID" TEXT, "buffPercent" INTEGER)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS user_buffs ("guildID" TEXT, "userID" TEXT, "buffPercent" INTEGER, "expiresAt" BIGINT, "buffType" TEXT, "multiplier" REAL)`);
+        } catch(e) {
+            console.error("Level Admin Table Creation Error:", e);
+        }
 
         let subcommand = '';
         let targetUser = null;
@@ -171,10 +173,10 @@ module.exports = {
 
             if (subcommand === 'channel') {
                 if (!targetChannel || targetChannel === 'reset') {
-                    await db.query("UPDATE settings SET levelChannel = NULL WHERE guild = $1", [guildId]);
+                    await db.query(`UPDATE settings SET "levelChannel" = NULL WHERE "guild" = $1`, [guildId]);
                     return reply("✅ تم إعادة التعيين. سيتم إرسال بطاقة اللفل في نفس القناة التي يتفاعل فيها العضو.");
                 } else {
-                    await db.query(`INSERT INTO settings (guild, levelChannel) VALUES ($1, $2) ON CONFLICT(guild) DO UPDATE SET levelChannel = EXCLUDED.levelChannel`, [guildId, targetChannel.id]);
+                    await db.query(`INSERT INTO settings ("guild", "levelChannel") VALUES ($1, $2) ON CONFLICT("guild") DO UPDATE SET "levelChannel" = EXCLUDED."levelChannel"`, [guildId, targetChannel.id]);
                     return reply(`✅ تم تحديد قناة الإشعارات: ${targetChannel}`);
                 }
             }
@@ -182,21 +184,21 @@ module.exports = {
             if (subcommand === 'message') {
                 if (actionStr === 'empire') {
                     const desc = "╭⭒★︰ <a:wi:1435572304988868769> {member} <a:wii:1435572329039007889>\\n✶ مبارك صعودك في سُلّم الإمبراطورية\\n★ فقد كـسرت حـاجـز الـمستوى〃{level_old}〃وبلغـت المسـتـوى الـ 〃{level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>";
-                    await db.query("UPDATE settings SET lvlUpDesc = $1, lvlUpTitle = NULL, lvlUpImage = NULL WHERE guild = $2", [desc, guildId]);
+                    await db.query(`UPDATE settings SET "lvlUpDesc" = $1, "lvlUpTitle" = NULL, "lvlUpImage" = NULL WHERE "guild" = $2`, [desc, guildId]);
                     return reply("✅ **تم تفعيل نمط الإمبراطورية!**");
                 } 
                 else if (actionStr === 'custom' || actionStr === 'desc') {
                     if(!textInput) return reply("❌ يرجى إدخال النص.");
-                    await db.query("UPDATE settings SET lvlUpDesc = $1, lvlUpTitle = NULL, lvlUpImage = NULL WHERE guild = $2", [textInput, guildId]);
+                    await db.query(`UPDATE settings SET "lvlUpDesc" = $1, "lvlUpTitle" = NULL, "lvlUpImage" = NULL WHERE "guild" = $2`, [textInput, guildId]);
                     return reply("✅ تم تحديث النص المخصص.");
                 }
                 else if (actionStr === 'reset') {
-                    await db.query("UPDATE settings SET lvlUpDesc = NULL, lvlUpTitle = NULL, lvlUpImage = NULL WHERE guild = $1", [guildId]);
+                    await db.query(`UPDATE settings SET "lvlUpDesc" = NULL, "lvlUpTitle" = NULL, "lvlUpImage" = NULL WHERE "guild" = $1`, [guildId]);
                     return reply("✅ تم العودة للرسالة الافتراضية.");
                 }
                 else if (actionStr === 'show') {
-                    const setRes = await db.query("SELECT lvlUpDesc FROM settings WHERE guild = $1", [guildId]);
-                    let msg = setRes.rows[0]?.lvlupdesc || "الرسالة الافتراضية للنظام.";
+                    const setRes = await db.query(`SELECT "lvlUpDesc" FROM settings WHERE "guild" = $1`, [guildId]);
+                    let msg = setRes.rows[0]?.lvlUpDesc || setRes.rows[0]?.lvlupdesc || "الرسالة الافتراضية للنظام.";
                     msg = msg.replace(/{member}/gi, `<@${interactionOrMessage.member.id}>`).replace(/{level}/gi, `10`).replace(/{level_old}/gi, `9`).replace(/\\n/g, '\n');
                     return reply(`**معاينة النص الحالي:**\n\n${msg}`);
                 }
@@ -205,28 +207,28 @@ module.exports = {
             if (subcommand === 'reward') {
                 if (actionStr === 'add') {
                     if (!amount || !targetRole) return reply("❌ يرجى تحديد اللفل والرتبة.");
-                    await db.query("DELETE FROM level_roles WHERE guildID = $1 AND level = $2", [guildId, amount]);
-                    await db.query("INSERT INTO level_roles (guildID, roleID, level) VALUES ($1, $2, $3)", [guildId, targetRole.id, amount]);
+                    await db.query(`DELETE FROM level_roles WHERE "guildID" = $1 AND "level" = $2`, [guildId, amount]);
+                    await db.query(`INSERT INTO level_roles ("guildID", "roleID", "level") VALUES ($1, $2, $3)`, [guildId, targetRole.id, amount]);
                     return reply(`✅ سيتم إعطاء رتبة ${targetRole} عند الوصول للمستوى **${amount}**.`);
                 } 
                 else if (actionStr === 'remove' || actionStr === 'delete') {
                     if (!amount) return reply("❌ يرجى تحديد اللفل.");
-                    await db.query("DELETE FROM level_roles WHERE guildID = $1 AND level = $2", [guildId, amount]);
+                    await db.query(`DELETE FROM level_roles WHERE "guildID" = $1 AND "level" = $2`, [guildId, amount]);
                     return reply(`✅ تم حذف رتبة المستوى **${amount}**.`);
                 }
                 else if (actionStr === 'show' || actionStr === 'list') {
-                    const rolesRes = await db.query("SELECT * FROM level_roles WHERE guildID = $1 ORDER BY level ASC", [guildId]);
+                    const rolesRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 ORDER BY "level" ASC`, [guildId]);
                     if (rolesRes.rows.length === 0) return reply("⚠️ لا توجد رتب مستويات مضافة.");
-                    let desc = rolesRes.rows.map(r => `🔹 **مستوى ${r.level}**: <@&${r.roleid || r.roleID}>`).join('\n');
+                    let desc = rolesRes.rows.map(r => `🔹 **مستوى ${r.level}**: <@&${r.roleID || r.roleid}>`).join('\n');
                     return reply({ embeds: [new EmbedBuilder().setTitle('📜 قائمة رتب المستويات').setDescription(desc).setColor('Blue')] });
                 }
             }
 
             if (subcommand === 'rolebuff') {
                 if (!targetRole || isNaN(amount)) return reply("❌ يرجى تحديد الرتبة والنسبة.");
-                await db.query("DELETE FROM role_buffs WHERE roleID = $1", [targetRole.id]);
+                await db.query(`DELETE FROM role_buffs WHERE "roleID" = $1`, [targetRole.id]);
                 if (amount !== 0) {
-                    await db.query("INSERT INTO role_buffs (guildID, roleID, buffPercent) VALUES ($1, $2, $3)", [guildId, targetRole.id, amount]);
+                    await db.query(`INSERT INTO role_buffs ("guildID", "roleID", "buffPercent") VALUES ($1, $2, $3)`, [guildId, targetRole.id, amount]);
                     return reply(`✅ تم تعيين البف للرتبة ${targetRole} بنسبة **${amount}%**.`);
                 }
                 return reply(`✅ تم إزالة البف من الرتبة ${targetRole}.`);
@@ -236,7 +238,7 @@ module.exports = {
                 if (!targetUser || isNaN(amount) || isNaN(hoursInput)) return reply("❌ يرجى تحديد العضو، النسبة، وعدد الساعات.");
                 const expiresAt = Date.now() + (hoursInput * 60 * 60 * 1000);
                 const multiplier = amount / 100;
-                await db.query("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildId, targetUser.id, amount, expiresAt, 'xp', multiplier]);
+                await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, targetUser.id, amount, expiresAt, 'xp', multiplier]);
                 return reply(`✅ تم إعطاء بف **${amount}%** للعضو ${targetUser} لمدة **${hoursInput}** ساعة.`);
             }
 
