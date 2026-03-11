@@ -50,11 +50,13 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS streaks (id TEXT PRIMARY KEY, guildID TEXT, userID TEXT, streakCount INTEGER, lastMessageTimestamp BIGINT, hasGracePeriod INTEGER, hasItemShield INTEGER)`);
-            await db.query(`CREATE TABLE IF NOT EXISTS media_streak_channels (guildID TEXT, channelID TEXT, PRIMARY KEY (guildID, channelID))`);
-            await db.query(`CREATE TABLE IF NOT EXISTS settings (guild TEXT PRIMARY KEY, streakEmoji TEXT)`);
-            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guild.id]);
-        } catch(e) {}
+            await db.query(`CREATE TABLE IF NOT EXISTS streaks ("id" TEXT PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "streakCount" INTEGER, "lastMessageTimestamp" BIGINT, "hasGracePeriod" INTEGER, "hasItemShield" INTEGER)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS media_streak_channels ("guildID" TEXT, "channelID" TEXT, PRIMARY KEY ("guildID", "channelID"))`);
+            await db.query(`CREATE TABLE IF NOT EXISTS settings ("guild" TEXT PRIMARY KEY, "streakEmoji" TEXT)`);
+            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
+        } catch(e) {
+            console.error("Streak Admin Setup DB Error:", e);
+        }
 
         let route = '';
         let targetUser = null;
@@ -106,11 +108,11 @@ module.exports = {
 
                 const streakId = `${guild.id}-${targetUser.id}`;
                 await db.query(`
-                    INSERT INTO streaks (id, guildID, userID, streakCount, lastMessageTimestamp, hasGracePeriod, hasItemShield) 
+                    INSERT INTO streaks ("id", "guildID", "userID", "streakCount", "lastMessageTimestamp", "hasGracePeriod", "hasItemShield") 
                     VALUES ($1, $2, $3, $4, $5, 1, 0)
-                    ON CONFLICT(id) DO UPDATE SET 
-                    streakCount = EXCLUDED.streakCount,
-                    lastMessageTimestamp = EXCLUDED.lastMessageTimestamp
+                    ON CONFLICT("id") DO UPDATE SET 
+                    "streakCount" = EXCLUDED."streakCount",
+                    "lastMessageTimestamp" = EXCLUDED."lastMessageTimestamp"
                 `, [streakId, guild.id, targetUser.id, amount, Date.now()]);
 
                 try {
@@ -127,7 +129,7 @@ module.exports = {
                 
                 if (!emojiStr) return reply("الاستخدام: يرجى إدخال الإيموجي الجديد.");
 
-                await db.query("UPDATE settings SET streakEmoji = $1 WHERE guild = $2", [emojiStr, guild.id]);
+                await db.query(`UPDATE settings SET "streakEmoji" = $1 WHERE "guild" = $2`, [emojiStr, guild.id]);
                 return reply(`✅ | تم تغيير إيموجي الستريك بنجاح إلى ${emojiStr}.`);
             }
 
@@ -185,7 +187,7 @@ module.exports = {
                 if (isSlash) targetChannel = interactionOrMessage.options.getChannel('channel');
                 if (!targetChannel) return reply({ content: `❌ يجب تحديد القناة.` });
 
-                await db.query("INSERT INTO media_streak_channels (guildID, channelID) VALUES ($1, $2) ON CONFLICT DO NOTHING", [guild.id, targetChannel.id]);
+                await db.query(`INSERT INTO media_streak_channels ("guildID", "channelID") VALUES ($1, $2) ON CONFLICT ("guildID", "channelID") DO NOTHING`, [guild.id, targetChannel.id]);
                 return reply({ embeds: [new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ تم إضافة روم ${targetChannel} إلى رومات ستريك الميديا.`)] });
             }
 
@@ -193,18 +195,18 @@ module.exports = {
                 if (isSlash) targetChannel = interactionOrMessage.options.getChannel('channel');
                 if (!targetChannel) return reply({ content: `❌ يجب تحديد القناة.` });
 
-                const res = await db.query("DELETE FROM media_streak_channels WHERE guildID = $1 AND channelID = $2", [guild.id, targetChannel.id]);
+                const res = await db.query(`DELETE FROM media_streak_channels WHERE "guildID" = $1 AND "channelID" = $2`, [guild.id, targetChannel.id]);
                 if (res.rowCount > 0) return reply({ embeds: [new EmbedBuilder().setColor(Colors.Green).setDescription(`✅ تم إزالة روم ${targetChannel} من رومات ستريك الميديا.`)] });
                 return reply({ embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription(`❌ روم ${targetChannel} غير موجود في القائمة أصلاً.`)] });
             }
 
             if (route === 'media_list') {
-                const res = await db.query("SELECT * FROM media_streak_channels WHERE guildID = $1", [guild.id]);
+                const res = await db.query(`SELECT * FROM media_streak_channels WHERE "guildID" = $1`, [guild.id]);
                 const channels = res.rows;
 
                 if (channels.length === 0) return reply({ embeds: [new EmbedBuilder().setColor(Colors.Yellow).setDescription("ℹ️ لا توجد أي رومات مخصصة لستريك الميديا حالياً.")] });
                 
-                const channelList = channels.map(c => `<#${c.channelid || c.channelID}>`).join('\n');
+                const channelList = channels.map(c => `<#${c.channelID || c.channelid}>`).join('\n');
                 return reply({ embeds: [new EmbedBuilder().setColor(Colors.Green).setTitle('📸 رومات ستريك الميديا المسجلة').setDescription(channelList)] });
             }
 
