@@ -5,7 +5,9 @@ const path = require('path');
 try {
     const fontPath = path.join(process.cwd(), 'fonts', 'bein-ar-normal.ttf');
     GlobalFonts.registerFromPath(fontPath, 'Bein');
-} catch (e) { }
+} catch (e) { 
+    console.error("Font loading error:", e);
+}
 
 module.exports = {
     name: 'color',
