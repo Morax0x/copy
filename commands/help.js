@@ -39,7 +39,8 @@ const DESCRIPTION_TRANSLATIONS = new Map([
     ['arrange', 'لعبة ترتيب الأرقام (سرعة وذاكرة)'],
     ['race', 'سباق الخيول (فردي وجماعي)'],
     ['colors', 'يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر'], 
-    ['top', 'عرض قائمة المتصدرين (مورا/لفل/ستريك)']
+    ['top', 'عرض قائمة المتصدرين (مورا/لفل/ستريك)'],
+    ['afk', 'تفعيل وضع الغياب المؤقت (AFK) وترك رسالة']
 ]);
 
 // خريطة للأسماء العربية اليدوية
@@ -75,7 +76,8 @@ const MANUAL_ARABIC_NAMES = new Map([
     ['dungeon', 'دانجون'],
     ['arrange', 'ترتيب'],
     ['race', 'سباق'],
-    ['colors', 'الوان']
+    ['colors', 'الوان'],
+    ['afk', 'غياب']
 ]);
 
 function getArabicDescription(cmd) {
@@ -110,6 +112,7 @@ function buildMainMenuEmbed(client) {
 ✶** ${getCmdName(commands, 'top')}: ** \`لوحـة الصدار لـ اعلى لمصنفين في السيرفر\`
 ✶** ${getCmdName(commands, 'profile')}: ** \`اظهار البروفايل الشخصي وأهم معلوماتك\`
 ✶** ${getCmdName(commands, 'colors')}: ** \`يظهر لوحة الالوان لتغيير لون اسمك بالسيرفر\`
+✶** ${getCmdName(commands, 'afk')}: ** \`تفعيل وضع الغياب وترك رسالة لمن يذكرك\`
     `;
 
     return new EmbedBuilder()
@@ -223,7 +226,7 @@ function buildAdminManagementEmbed(client) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('مساعدة')
-        .setDescription('عرض قائمة المساعدة التفاعلية.')
+        .setDescription('عرض قائمة المساعدة.')
         .addStringOption(option =>
             option.setName('اسم-الامر')
             .setDescription('عرض تفاصيل أمر معين')
@@ -270,7 +273,7 @@ module.exports = {
 
         const reply = async (payload) => {
             if (isSlash) return interaction.editReply(payload);
-            return message.channel.send(payload);
+            return message.reply(payload); // استخدام reply بدلاً من send لضمان الرد المباشر
         };
 
         const replyError = async (content) => {
@@ -279,14 +282,19 @@ module.exports = {
             return message.reply(payload);
         };
 
-        const sql = client.sql; 
+        const db = client.sql; 
         const { commands } = client;
 
+        // 🔥 تحديث استعلام البريفكس ليتوافق مع PostgreSQL
         let prefix = "-"; 
         try {
-            const prefixRow = sql.prepare("SELECT serverprefix FROM prefix WHERE guild = ?").get(guild.id);
-            if (prefixRow && prefixRow.serverprefix) prefix = prefixRow.serverprefix;
-        } catch (e) {}
+            const prefixRes = await db.query(`SELECT "serverprefix" FROM prefix WHERE "guild" = $1`, [guild.id]);
+            if (prefixRes.rows.length > 0 && prefixRes.rows[0].serverprefix) {
+                prefix = prefixRes.rows[0].serverprefix;
+            }
+        } catch (e) {
+            console.error("Prefix query error in help:", e);
+        }
 
         if (!guild.members.me.permissions.has(PermissionsBitField.Flags.EmbedLinks)) {
             return replyError(`Missing Permission: EMBED_LINKS`);
@@ -327,14 +335,18 @@ module.exports = {
 
         const isAdmin = guild.members.cache.get(user.id).permissions.has(PermissionsBitField.Flags.ManageGuild);
         
+        // 🔥 تحديث استعلام غرفة الكازينو ليتوافق مع PostgreSQL
         let settings;
         try {
-            settings = sql.prepare("SELECT casinoChannelID FROM settings WHERE guild = ?").get(guild.id);
-        } catch (e) { settings = null; }
+            const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guild.id]);
+            settings = settingsRes.rows[0];
+        } catch (e) { 
+            settings = null; 
+        }
 
         // فحص هل القناة هي قناة الكازينو
         const currentChannelId = isSlash ? interaction.channel.id : message.channel.id;
-        const isCasinoChannel = settings && settings.casinoChannelID === currentChannelId;
+        const isCasinoChannel = settings && (settings.casinoChannelID === currentChannelId || settings.casinochannelid === currentChannelId);
         
         let initialEmbed, row;
 
@@ -442,11 +454,13 @@ module.exports = {
                 disabledRow = new ActionRowBuilder().addComponents(oldSelect.setDisabled(true));
             }
 
-            if (helpMessage.editable) {
-                helpMessage.edit({ components: [disabledRow] }).catch(() => {});
-            } else if (isSlash) {
-                interaction.editReply({ components: [disabledRow] }).catch(() => {});
-            }
+            try {
+                if (helpMessage && helpMessage.editable) {
+                    helpMessage.edit({ components: [disabledRow] }).catch(() => {});
+                } else if (isSlash && interaction) {
+                    interaction.editReply({ components: [disabledRow] }).catch(() => {});
+                }
+            } catch(e) {}
         });
     }
 };
