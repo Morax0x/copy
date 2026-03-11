@@ -50,12 +50,12 @@ module.exports = {
         if (childMember.user.bot) return replyTemp("🤖 لا يمكنك تبني الروبوتات!");
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS children (parentID TEXT, childID TEXT, adoptDate BIGINT, guildID TEXT)`);
+            await db.query(`CREATE TABLE IF NOT EXISTS children ("parentID" TEXT, "childID" TEXT, "adoptDate" BIGINT, "guildID" TEXT)`);
         } catch (e) {}
         
         let currentChildrenCount = 0;
         try {
-            const countRes = await db.query("SELECT count(*) as count FROM children WHERE parentID = $1 AND guildID = $2", [userId, guildId]);
+            const countRes = await db.query(`SELECT count(*) as count FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [userId, guildId]);
             currentChildrenCount = Number(countRes.rows[0].count);
         } catch(e) {}
 
@@ -74,26 +74,26 @@ module.exports = {
         
         let partnerId = null;
         try {
-            const marriageData = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [userId, guildId]);
-            if (marriageData.rows.length > 0) partnerId = marriageData.rows[0].partnerid || marriageData.rows[0].partnerID;
+            const marriageData = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+            if (marriageData.rows.length > 0) partnerId = marriageData.rows[0].partnerID || marriageData.rows[0].partnerid;
         } catch(e) {}
 
         if (partnerId === childMember.id) return replyTemp("🚫 **لا يمكنك تبني شريك حياتك!**");
 
         let currentParents = [];
         try {
-            const cpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [childMember.id, guildId]);
+            const cpRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [childMember.id, guildId]);
             currentParents = cpRes.rows;
         } catch(e) {}
         
         if (currentParents.length > 0) {
             let isStepParent = false;
             for (const row of currentParents) {
-                const pId = row.parentid || row.parentID;
+                const pId = row.parentID || row.parentid;
                 try {
-                    const parentSpouseRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [pId, guildId]);
+                    const parentSpouseRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [pId, guildId]);
                     const pSpouse = parentSpouseRes.rows[0];
-                    if (pSpouse && (pSpouse.partnerid === userId || pSpouse.partnerID === userId)) {
+                    if (pSpouse && (pSpouse.partnerID === userId || pSpouse.partnerid === userId)) {
                         isStepParent = true;
                         break;
                     }
@@ -104,7 +104,7 @@ module.exports = {
                 return replyTemp(`🚫 **لا يمكن إتمام العملية!**\n**${childMember.displayName}** لديه عائلة بالفعل (أب/أم).\nلا يمكنك تبنيه إلا إذا كنت متزوجاً من والده/والدته الحاليين لإكمال العائلة.`);
             }
             
-            if (currentParents.some(row => (row.parentid || row.parentID) === userId)) {
+            if (currentParents.some(row => (row.parentID || row.parentid) === userId)) {
                 return replyTemp(`❌ **${childMember.displayName}** هو ابنك بالفعل!`);
             }
         }
@@ -118,9 +118,9 @@ module.exports = {
             checked.add(current);
 
             try {
-                const parentsRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [current, guildId]);
+                const parentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [current, guildId]);
                 for (const p of parentsRes.rows) {
-                    const pId = p.parentid || p.parentID;
+                    const pId = p.parentID || p.parentid;
                     if (pId === childMember.id) {
                         return replyTemp(`🚫 **لا يعقل!** كيف تتبنى **${childMember.displayName}** وهو (أبوك/جدك)؟ احترم المقامات.`);
                     }
@@ -140,9 +140,9 @@ module.exports = {
             checked.add(current);
 
             try {
-                const childrenRes = await db.query("SELECT childID FROM children WHERE parentID = $1 AND guildID = $2", [current, guildId]);
+                const childrenRes = await db.query(`SELECT "childID" FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [current, guildId]);
                 for (const c of childrenRes.rows) {
-                    const cId = c.childid || c.childID;
+                    const cId = c.childID || c.childid;
                     myDescendants.add(cId);
                     if (cId === childMember.id) {
                         return replyTemp(`🚫 **هذا من نسلك!**\n**${childMember.displayName}** موجود بالفعل في شجرة عائلتك (حفيد أو حفيد حفيد..).\nهو مربوط بك بالدم ولا يحتاج لتبني.`);
@@ -156,11 +156,11 @@ module.exports = {
         let myParents = [];
         let childParents = [];
         try {
-            const mpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
-            myParents = mpRes.rows.map(r => r.parentid || r.parentID);
+            const mpRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [userId, guildId]);
+            myParents = mpRes.rows.map(r => r.parentID || r.parentid);
             
-            const cpRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [childMember.id, guildId]);
-            childParents = cpRes.rows.map(r => r.parentid || r.parentID);
+            const cpRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [childMember.id, guildId]);
+            childParents = cpRes.rows.map(r => r.parentID || r.parentid);
         } catch(e) {}
         
         if (myParents.some(p => childParents.includes(p))) {
@@ -168,9 +168,9 @@ module.exports = {
         }
 
         try {
-            const targetSpouseRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [childMember.id, guildId]);
+            const targetSpouseRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [childMember.id, guildId]);
             const targetSpouse = targetSpouseRes.rows[0];
-            if (targetSpouse && myDescendants.has(targetSpouse.partnerid || targetSpouse.partnerID)) {
+            if (targetSpouse && myDescendants.has(targetSpouse.partnerID || targetSpouse.partnerid)) {
                 return replyTemp(`🚫 **هذه زوجة ابنك / زوج ابنتك!**\nلا يمكن تبني أصهارك الموجودين في شجرة العائلة.`);
             }
         } catch(e) {}
@@ -261,13 +261,13 @@ module.exports = {
             await client.setLevel(childData);
 
             const now = Date.now();
-            await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [userId, childMember.id, now, guildId]);
+            await db.query(`INSERT INTO children ("parentID", "childID", "adoptDate", "guildID") VALUES ($1, $2, $3, $4)`, [userId, childMember.id, now, guildId]);
 
             if (partnerId) {
                 try {
-                    const checkPartnerRes = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2", [partnerId, childMember.id]);
+                    const checkPartnerRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2`, [partnerId, childMember.id]);
                     if (checkPartnerRes.rows.length === 0) {
-                        await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [partnerId, childMember.id, now, guildId]);
+                        await db.query(`INSERT INTO children ("parentID", "childID", "adoptDate", "guildID") VALUES ($1, $2, $3, $4)`, [partnerId, childMember.id, now, guildId]);
                     }
                 } catch(e) {}
             }
