@@ -41,8 +41,8 @@ module.exports = {
         const guildId = message.guild.id;
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS user_reputation (userID TEXT, guildID TEXT, rep_points INTEGER DEFAULT 0, last_rep_given TEXT, daily_reps_given INTEGER DEFAULT 0, weekly_reps_given INTEGER DEFAULT 0, PRIMARY KEY (userID, guildID))`);
-            await db.query("ALTER TABLE user_reputation ADD COLUMN IF NOT EXISTS daily_reps_given INTEGER DEFAULT 0");
+            await db.query(`CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" INTEGER DEFAULT 0, "last_rep_given" TEXT, "daily_reps_given" INTEGER DEFAULT 0, "weekly_reps_given" INTEGER DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`);
+            await db.query(`ALTER TABLE user_reputation ADD COLUMN IF NOT EXISTS "daily_reps_given" INTEGER DEFAULT 0`);
         } catch (e) {}
 
         let maxVotes = 1;
@@ -54,12 +54,12 @@ module.exports = {
             }
         }
 
-        const senderRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [senderId, guildId]);
+        const senderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
         let senderRep = senderRepRes.rows[0];
         
         if (!senderRep) {
-            await db.query("INSERT INTO user_reputation (userID, guildID) VALUES ($1, $2)", [senderId, guildId]);
-            const newSenderRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [senderId, guildId]);
+            await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [senderId, guildId]);
+            const newSenderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
             senderRep = newSenderRepRes.rows[0];
         }
 
@@ -94,7 +94,7 @@ module.exports = {
             return message.reply({ embeds: [selfEmbed] });
         }
 
-        const senderLevelRes = await db.query('SELECT level FROM levels WHERE "user" = $1 AND guild = $2', [senderId, guildId]);
+        const senderLevelRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [senderId, guildId]);
         const senderLevel = senderLevelRes.rows.length > 0 ? senderLevelRes.rows[0].level : 1;
 
         if (senderId !== OWNER_ID && senderLevel < 10) {
@@ -110,7 +110,7 @@ module.exports = {
         
         if (senderId !== OWNER_ID) {
             const dailyStatId = `${senderId}-${guildId}-${dbDateStr}`;
-            const dailyStatsRes = await db.query("SELECT messages FROM user_daily_stats WHERE id = $1", [dailyStatId]);
+            const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "id" = $1`, [dailyStatId]);
             const todayMessages = dailyStatsRes.rows.length > 0 ? (parseInt(dailyStatsRes.rows[0].messages) || 0) : 0;
 
             if (todayMessages < 20) {
@@ -133,12 +133,12 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        const targetRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
+        const targetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
         let targetRep = targetRepRes.rows[0];
         
         if (!targetRep) {
-            await db.query("INSERT INTO user_reputation (userID, guildID) VALUES ($1, $2)", [targetId, guildId]);
-            const newTargetRepRes = await db.query("SELECT * FROM user_reputation WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
+            await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [targetId, guildId]);
+            const newTargetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
             targetRep = newTargetRepRes.rows[0];
         }
 
@@ -147,8 +147,8 @@ module.exports = {
         
         try {
             await db.query("BEGIN");
-            await db.query("UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userID = $1 AND guildID = $2", [targetId, guildId]);
-            await db.query("UPDATE user_reputation SET last_rep_given = $1, daily_reps_given = $2, weekly_reps_given = weekly_reps_given + 1 WHERE userID = $3 AND guildID = $4", [todayDateStr, newDailyRepsGiven, senderId, guildId]);
+            await db.query(`UPDATE user_reputation SET "rep_points" = "rep_points" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
+            await db.query(`UPDATE user_reputation SET "last_rep_given" = $1, "daily_reps_given" = $2, "weekly_reps_given" = "weekly_reps_given" + 1 WHERE "userID" = $3 AND "guildID" = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
             await db.query("COMMIT");
         } catch (e) {
             await db.query("ROLLBACK");
