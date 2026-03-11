@@ -78,8 +78,10 @@ module.exports = {
         }
 
         try {
-            await db.query(`CREATE TABLE IF NOT EXISTS race_roles (guildID TEXT, roleID TEXT PRIMARY KEY, raceName TEXT)`);
-        } catch(e) {}
+            await db.query(`CREATE TABLE IF NOT EXISTS race_roles ("guildID" TEXT, "roleID" TEXT PRIMARY KEY, "raceName" TEXT)`);
+        } catch(e) {
+            console.error("Error creating race_roles table:", e);
+        }
 
         let subcommand, targetRole, raceName;
 
@@ -129,9 +131,9 @@ module.exports = {
 
                 try {
                     await db.query(`
-                        INSERT INTO race_roles (guildID, roleID, raceName) 
+                        INSERT INTO race_roles ("guildID", "roleID", "raceName") 
                         VALUES ($1, $2, $3) 
-                        ON CONFLICT (roleID) DO UPDATE SET raceName = EXCLUDED.raceName
+                        ON CONFLICT ("roleID") DO UPDATE SET "raceName" = EXCLUDED."raceName"
                     `, [guildID, targetRole.id, validRaceName]);
                     return reply(`✅ تم ربط العرق **${validRaceName}** بالرول ${targetRole}.`);
                 } catch (e) {
@@ -143,7 +145,7 @@ module.exports = {
             case 'إزالة': {
                 if (!targetRole) return replyError("❌ لم أتمكن من العثور على هذا الرول.");
                 try {
-                    const result = await db.query("DELETE FROM race_roles WHERE guildID = $1 AND roleID = $2", [guildID, targetRole.id]);
+                    const result = await db.query(`DELETE FROM race_roles WHERE "guildID" = $1 AND "roleID" = $2`, [guildID, targetRole.id]);
                     if (result.rowCount > 0) {
                         return reply(`✅ تم حذف الرول ${targetRole} من قائمة الأعراق.`);
                     } else {
@@ -157,13 +159,13 @@ module.exports = {
 
             case 'عرض': {
                 try {
-                    const res = await db.query("SELECT roleID, raceName FROM race_roles WHERE guildID = $1", [guildID]);
+                    const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [guildID]);
                     const roles = res.rows;
                     
                     if (roles.length === 0) {
                         return reply("لا توجد رتب أعراق محددة حالياً.");
                     }
-                    const roleList = roles.map(r => `**${r.racename || r.raceName}**: <@&${r.roleid || r.roleID}>`).join('\n');
+                    const roleList = roles.map(r => `**${r.raceName || r.racename}**: <@&${r.roleID || r.roleid}>`).join('\n');
                     const embed = new EmbedBuilder()
                         .setTitle("📜 قائمة رتب الأعراق المسجلة")
                         .setColor(Colors.Green)
