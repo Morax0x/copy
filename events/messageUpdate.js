@@ -15,21 +15,24 @@ module.exports = {
         if (!newMessage.guild) return;
 
         const client = newMessage.client;
-        const db = client.sql; // 🔥 تم التصحيح هنا ليتوافق مع قاعدة البيانات السحابية
+        const db = client.sql; 
         
         if (!db) return; 
 
         try {
-            // 🔥 تم تصحيح guild_id إلى guild
-            const settingsResult = await db.query("SELECT treechannelid, treebotid, treemessageid FROM settings WHERE guild = $1", [newMessage.guild.id]);
+            // 🔥 حماية أسماء الأعمدة ذات الحروف المزدوجة والمحجوزة
+            const settingsResult = await db.query(`SELECT "treeChannelID", "treeBotID", "treeMessageID" FROM settings WHERE "guild" = $1`, [newMessage.guild.id]);
             const settings = settingsResult.rows[0];
             
-            if (!settings || !settings.treechannelid) return;
+            if (!settings || (!settings.treeChannelID && !settings.treechannelid)) return;
 
-            if (newMessage.channel.id !== settings.treechannelid) return;
+            const targetChannelId = settings.treeChannelID || settings.treechannelid;
+            const targetBotId = settings.treeBotID || settings.treebotid;
+
+            if (newMessage.channel.id !== targetChannelId) return;
             if (!newMessage.author.bot) return;
 
-            if (settings.treebotid && newMessage.author.id !== settings.treebotid) return;
+            if (targetBotId && newMessage.author.id !== targetBotId) return;
 
             let fullContent = (newMessage.content || "") + " ";
             
@@ -83,9 +86,7 @@ module.exports = {
                 }
             }
         } catch (err) {
-            if (!err.message.includes('database connection is not open')) {
-                console.error("[Tree Update Error]", err);
-            }
+            console.error("[Tree Update Error]", err);
         }
     },
 };
