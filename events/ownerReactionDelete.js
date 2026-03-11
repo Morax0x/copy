@@ -27,6 +27,7 @@ module.exports = {
             console.log(`[Owner Action] تم حذف رسالة في ${reaction.message.channel.name} بواسطة المالك.`);
         } catch (error) {
             if (error.code === 10008) {
+                // الرسالة محذوفة مسبقاً
                 return;
             }
             
