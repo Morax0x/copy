@@ -21,6 +21,7 @@ module.exports = {
         
         const client = message.client; 
 
+        // تجاهل رسائل البوتات العادية، مع السماح لرسائل النظام الخاصة بالبوست
         if (message.author.bot && message.type !== 8 && message.type !== 9 && message.type !== 10 && message.type !== 11) return;
 
         const db = client.sql; 
@@ -28,12 +29,12 @@ module.exports = {
 
         let settings;
         try {
-            const res = await db.query("SELECT boostChannelID FROM settings WHERE guild = $1", [message.guild.id]);
+            const res = await db.query(`SELECT "boostChannelID" FROM settings WHERE "guild" = $1`, [message.guild.id]);
             settings = res.rows[0];
         } catch (e) { return; }
 
         if (!settings || (!settings.boostchannelid && !settings.boostChannelID)) return;
-        const targetChannelID = settings.boostchannelid || settings.boostChannelID;
+        const targetChannelID = settings.boostChannelID || settings.boostchannelid;
         
         if (message.channel.id !== targetChannelID) return;
 
@@ -56,12 +57,12 @@ module.exports = {
                 const guildID = message.guild.id;
 
                 await db.query(`
-                    INSERT INTO levels ("user", guild, mora, xp, totalXP, level) 
+                    INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
                     VALUES ($1, $2, $3, $4, $5, 1) 
-                    ON CONFLICT ("user", guild) DO UPDATE SET 
-                    mora = levels.mora + EXCLUDED.mora, 
-                    xp = levels.xp + EXCLUDED.xp, 
-                    totalXP = levels.totalXP + EXCLUDED.totalXP
+                    ON CONFLICT ("user", "guild") DO UPDATE SET 
+                    "mora" = levels."mora" + EXCLUDED."mora", 
+                    "xp" = levels."xp" + EXCLUDED."xp", 
+                    "totalXP" = levels."totalXP" + EXCLUDED."totalXP"
                 `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]);
 
             } catch (err) {
