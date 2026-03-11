@@ -21,16 +21,17 @@ module.exports = (client, db) => {
             const CRASH_PRICE = 10; 
 
             for (const item of allItems) {
-                if (client.marketLocks.has(item.id)) continue;
+                const itemId = item.id || item.itemID;
+                if (client.marketLocks.has(itemId)) continue;
 
-                const resOwned = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemID = $1", [item.id]);
+                const resOwned = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemid = $1 OR itemID = $1", [itemId]);
                 const totalOwned = resOwned.rows[0].total || 0;
 
                 let randomPercent = (Math.random() * 0.20) - 0.10;
                 const saturationPenalty = (totalOwned / 2000) * 0.02;
                 let finalChangePercent = randomPercent - saturationPenalty;
 
-                const oldPrice = item.currentprice || item.currentPrice;
+                const oldPrice = item.currentprice || item.currentPrice || 0;
                 if (oldPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
                 if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
@@ -46,7 +47,7 @@ module.exports = (client, db) => {
                 const changeAmount = newPrice - oldPrice;
                 const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
                 
-                await db.query(`UPDATE market_items SET currentPrice = $1, lastChangePercent = $2, lastChange = $3 WHERE id = $4`, [newPrice, displayPercent, changeAmount, item.id]);
+                await db.query(`UPDATE market_items SET currentPrice = $1, lastChangePercent = $2, lastChange = $3 WHERE id = $4 OR id = $4`, [newPrice, displayPercent, changeAmount, itemId]);
             }
             await db.query('COMMIT');
         } catch (err) {
@@ -57,20 +58,27 @@ module.exports = (client, db) => {
     async function checkTemporaryRoles() {
         const now = Date.now();
         try {
-            const expiredRoles = (await db.query("SELECT * FROM temporary_roles WHERE expiresAt <= $1", [now])).rows;
+            const expiredRoles = (await db.query("SELECT * FROM temporary_roles WHERE expiresat <= $1 OR expiresAt <= $1", [now])).rows;
             if (expiredRoles.length === 0) return;
 
             await db.query('BEGIN');
             for (const record of expiredRoles) {
-                await db.query("DELETE FROM temporary_roles WHERE userID = $1 AND guildID = $2 AND roleID = $3", [record.userid || record.userID, record.guildid || record.guildID, record.roleid || record.roleID]);
+                const uId = record.userid || record.userID;
+                const gId = record.guildid || record.guildID;
+                const rId = record.roleid || record.roleID;
+                await db.query("DELETE FROM temporary_roles WHERE (userID = $1 OR userid = $1) AND (guildID = $2 OR guildid = $2) AND (roleID = $3 OR roleid = $3)", [uId, gId, rId]);
             }
             await db.query('COMMIT');
 
             for (const record of expiredRoles) {
-                const guild = client.guilds.cache.get(record.guildid || record.guildID);
+                const gId = record.guildid || record.guildID;
+                const uId = record.userid || record.userID;
+                const rId = record.roleid || record.roleID;
+
+                const guild = client.guilds.cache.get(gId);
                 if (!guild) continue;
-                const member = await guild.members.fetch(record.userid || record.userID).catch(() => null);
-                const role = guild.roles.cache.get(record.roleid || record.roleID);
+                const member = await guild.members.fetch(uId).catch(() => null);
+                const role = guild.roles.cache.get(rId);
                 if (member && role) {
                     member.roles.remove(role).catch(() => {});
                 }
@@ -91,22 +99,25 @@ module.exports = (client, db) => {
             
             await db.query('BEGIN');
             for (const user of allUsers) {
-                const lastInterest = user.lastinterest || user.lastInterest || 0;
-                const lastDaily = user.lastdaily || user.lastDaily || 0;
-                const lastWork = user.lastwork || user.lastWork || 0;
+                const lastInterest = Number(user.lastinterest || user.lastInterest || 0);
+                const lastDaily = Number(user.lastdaily || user.lastDaily || 0);
+                const lastWork = Number(user.lastwork || user.lastWork || 0);
+                const userId = user.user || user.userID;
+                const guildId = user.guild || user.guildID;
 
                 if ((now - lastInterest) >= COOLDOWN) {
                     const timeSinceDaily = now - lastDaily;
                     const timeSinceWork = now - lastWork;
                     
                     if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                        await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, user.user, user.guild]);
+                        await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, userId, guildId]);
                     } else {
-                        const interestAmount = Math.floor(user.bank * INTEREST_RATE);
+                        const bankBalance = Number(user.bank || 0);
+                        const interestAmount = Math.floor(bankBalance * INTEREST_RATE);
                         if (interestAmount > 0) {
-                            await db.query('UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE "user" = $4 AND guild = $5', [interestAmount, now, interestAmount, user.user, user.guild]);
+                            await db.query('UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE "user" = $4 AND guild = $5', [interestAmount, now, interestAmount, userId, guildId]);
                         } else {
-                            await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, user.user, user.guild]);
+                            await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, userId, guildId]);
                         }
                     }
                 }
@@ -118,62 +129,68 @@ module.exports = (client, db) => {
     };
 
     async function updateTimerChannels() {
-        const guilds = client.guilds.cache.values();
+        const guilds = Array.from(client.guilds.cache.values());
         const KSA_OFFSET = 3 * 60 * 60 * 1000; 
         for (const guild of guilds) {
-            const settings = (await db.query("SELECT streakTimerChannelID, dailyTimerChannelID, weeklyTimerChannelID FROM settings WHERE guild = $1", [guild.id]))?.rows[0];
-            if (!settings) continue;
-            const now = new Date();
-            const nowKSA = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + KSA_OFFSET);
+            try {
+                const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
+                const settings = settingsRes.rows[0];
+                if (!settings) continue;
 
-            const endOfDay = new Date(nowKSA); endOfDay.setHours(24, 0, 0, 0);
-            const msUntilDaily = endOfDay - nowKSA;
-            const hDaily = Math.floor(msUntilDaily / (1000 * 60 * 60));
-            const mDaily = Math.floor((msUntilDaily % (1000 * 60 * 60)) / (1000 * 60));
-            const dailyText = `${hDaily} سـ ${mDaily} د`;
+                const now = new Date();
+                const nowKSA = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + KSA_OFFSET);
 
-            const endOfWeek = new Date(nowKSA);
-            const dayOfWeek = nowKSA.getDay(); 
-            const daysUntilFriday = (5 + 7 - dayOfWeek) % 7; 
-            endOfWeek.setDate(nowKSA.getDate() + daysUntilFriday + (daysUntilFriday === 0 && nowKSA.getHours() >= 0 ? 7 : 0));
-            endOfWeek.setHours(24, 0, 0, 0); 
-            const msUntilWeekly = endOfWeek - nowKSA;
-            const dWeekly = Math.floor(msUntilWeekly / (1000 * 60 * 60 * 24));
-            const hWeekly = Math.floor((msUntilWeekly % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const weeklyText = `${dWeekly} يـ ${hWeekly} سـ`;
+                const endOfDay = new Date(nowKSA); endOfDay.setHours(24, 0, 0, 0);
+                const msUntilDaily = endOfDay - nowKSA;
+                const hDaily = Math.floor(msUntilDaily / (1000 * 60 * 60));
+                const mDaily = Math.floor((msUntilDaily % (1000 * 60 * 60)) / (1000 * 60));
+                const dailyText = `${hDaily} سـ ${mDaily} د`;
 
-            const updateChannel = async (channelId, prefix, timeText) => {
-                if (!channelId) return;
-                try {
-                    const channel = guild.channels.cache.get(channelId);
-                    if (channel) {
-                        const newName = `${prefix} ${timeText}`;
-                        if (channel.name !== newName) await channel.setName(newName);
-                    }
-                } catch (e) { }
-            };
+                const endOfWeek = new Date(nowKSA);
+                const dayOfWeek = nowKSA.getDay(); 
+                const daysUntilFriday = (5 + 7 - dayOfWeek) % 7; 
+                endOfWeek.setDate(nowKSA.getDate() + daysUntilFriday + (daysUntilFriday === 0 && nowKSA.getHours() >= 0 ? 7 : 0));
+                endOfWeek.setHours(24, 0, 0, 0); 
+                const msUntilWeekly = endOfWeek - nowKSA;
+                const dWeekly = Math.floor(msUntilWeekly / (1000 * 60 * 60 * 24));
+                const hWeekly = Math.floor((msUntilWeekly % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const weeklyText = `${dWeekly} يـ ${hWeekly} سـ`;
 
-            const sTimer = settings.streaktimerchannelid || settings.streakTimerChannelID;
-            const dTimer = settings.dailytimerchannelid || settings.dailyTimerChannelID;
-            const wTimer = settings.weeklytimerchannelid || settings.weeklyTimerChannelID;
+                const updateChannel = async (channelId, prefix, timeText) => {
+                    if (!channelId) return;
+                    try {
+                        const channel = guild.channels.cache.get(channelId);
+                        if (channel) {
+                            const newName = `${prefix} ${timeText}`;
+                            if (channel.name !== newName) await channel.setName(newName);
+                        }
+                    } catch (e) { }
+                };
 
-            await updateChannel(sTimer, '🔥〢الـستـريـك:', dailyText);
-            await updateChannel(dTimer, '🏆〢مهام اليومية:', dailyText);
-            await updateChannel(wTimer, '🔮〢مهام اسبوعية:', weeklyText);
+                const sTimer = settings.streaktimerchannelid || settings.streakTimerChannelID;
+                const dTimer = settings.dailytimerchannelid || settings.dailyTimerChannelID;
+                const wTimer = settings.weeklytimerchannelid || settings.weeklyTimerChannelID;
+
+                await updateChannel(sTimer, '🔥〢الـستـريـك:', dailyText);
+                await updateChannel(dTimer, '🏆〢مهام اليومية:', dailyText);
+                await updateChannel(wTimer, '🔮〢مهام اسبوعية:', weeklyText);
+            } catch (err) {}
         }
     }
 
     async function updateRainbowRoles() {
         try {
-            const rainbowRoles = (await db.query("SELECT roleID, guildID FROM rainbow_roles")).rows;
+            const rainbowRoles = (await db.query("SELECT * FROM rainbow_roles")).rows;
             if (rainbowRoles.length === 0) return;
             const randomColor = Math.floor(Math.random() * 16777215);
             for (const record of rainbowRoles) {
-                const guild = client.guilds.cache.get(record.guildid || record.guildID);
+                const gId = record.guildid || record.guildID;
+                const rId = record.roleid || record.roleID;
+                const guild = client.guilds.cache.get(gId);
                 if (!guild) continue;
-                const role = guild.roles.cache.get(record.roleid || record.roleID);
+                const role = guild.roles.cache.get(rId);
                 if (role) await role.edit({ color: randomColor }).catch(() => {});
-                else await db.query("DELETE FROM rainbow_roles WHERE roleID = $1", [record.roleid || record.roleID]);
+                else await db.query("DELETE FROM rainbow_roles WHERE roleid = $1 OR roleID = $1", [rId]);
             }
         } catch (e) {}
     }
@@ -208,7 +225,7 @@ module.exports = (client, db) => {
     setInterval(async () => {
         const now = Date.now();
         try {
-            const guildsToNotify = (await db.query("SELECT guild, bumpChannelID, bumpNotifyRoleID, lastBumperID FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= $1", [now])).rows;
+            const guildsToNotify = (await db.query("SELECT * FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= $1", [now])).rows;
 
             for (const row of guildsToNotify) {
                 try {
@@ -240,7 +257,7 @@ module.exports = (client, db) => {
     setInterval(async () => {
         const now = Date.now();
         try {
-            const expired = (await db.query("SELECT * FROM auto_responses WHERE expiresAt IS NOT NULL AND expiresAt < $1", [now])).rows;
+            const expired = (await db.query("SELECT * FROM auto_responses WHERE expiresat < $1 OR expiresAt < $1", [now])).rows;
             for (const reply of expired) {
                 await db.query("DELETE FROM auto_responses WHERE id = $1", [reply.id]);
             }
@@ -278,8 +295,11 @@ module.exports = (client, db) => {
         for (const guild of client.guilds.cache.values()) { 
             const guildID = guild.id; 
             if (lastRandomGiveawayDate.get(guildID) === today) continue; 
+            
+            if (!client.recentMessageTimestamps) client.recentMessageTimestamps = new Map();
             const guildTimestamps = client.recentMessageTimestamps.get(guildID) || []; 
             while (guildTimestamps.length > 0 && guildTimestamps[0] < (now - RECENT_MESSAGE_WINDOW)) { guildTimestamps.shift(); } 
+            
             const totalMessagesLast2Hours = guildTimestamps.length; 
             if (totalMessagesLast2Hours < 200) continue; 
             const roll = Math.random(); 
