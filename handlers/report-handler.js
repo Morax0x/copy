@@ -4,7 +4,8 @@ const COOLDOWN_DURATION = 86400;
 const JAIL_DURATION = 10800;     
 
 async function getReportSettings(db, guildID) {
-    const res = await db.query("SELECT * FROM report_settings WHERE guildid = $1", [guildID]);
+    // 🔥 حماية الأسماء المحمية في PostgreSQL
+    const res = await db.query(`SELECT * FROM report_settings WHERE "guildID" = $1`, [guildID]);
     return res.rows[0] || {};
 }
 
@@ -13,14 +14,16 @@ async function hasReportPermission(db, member) {
         return true;
     }
     const settings = await getReportSettings(db, member.guild.id);
-    if (!settings.logchannelid) return false; 
+    // التحقق من الحقل سواء كان بحروف صغيرة أو محمية لضمان عدم التعطل
+    const logChannelID = settings.logChannelID || settings.logchannelid;
+    if (!logChannelID) return false; 
 
-    const allowedRolesRes = await db.query("SELECT roleid FROM report_permissions WHERE guildid = $1", [member.guild.id]);
+    const allowedRolesRes = await db.query(`SELECT "roleID" FROM report_permissions WHERE "guildID" = $1`, [member.guild.id]);
     const allowedRoles = allowedRolesRes.rows;
     
     if (allowedRoles.length === 0) return true; 
 
-    const allowedRoleIDs = allowedRoles.map(r => r.roleid);
+    const allowedRoleIDs = allowedRoles.map(r => r.roleID || r.roleid);
     return member.roles.cache.some(r => allowedRoleIDs.includes(r.id));
 }
 
@@ -53,12 +56,12 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
     const reporter = interactionOrMessage.member;
     const settings = await getReportSettings(db, guild.id);
 
-    const LOG_CHANNEL_ID = settings.logchannelid;
-    const JAIL_ROLE_ID = settings.jailroleid;
-    const ARENA_ROLE_ID = settings.arenaroleid; 
-    const UNLIMITED_ROLE_ID = settings.unlimitedroleid;
-    const TEST_ROLE_ID = settings.testroleid;
-    const REPORT_CHANNEL_ID = settings.reportchannelid; 
+    const LOG_CHANNEL_ID = settings.logChannelID || settings.logchannelid;
+    const JAIL_ROLE_ID = settings.jailRoleID || settings.jailroleid;
+    const ARENA_ROLE_ID = settings.arenaRoleID || settings.arenaroleid; 
+    const UNLIMITED_ROLE_ID = settings.unlimitedRoleID || settings.unlimitedroleid;
+    const TEST_ROLE_ID = settings.testRoleID || settings.testroleid;
+    const REPORT_CHANNEL_ID = settings.reportChannelID || settings.reportchannelid; 
 
     const isSlash = !!interactionOrMessage.isChatInputCommand || !!interactionOrMessage.isContextMenuCommand || !!interactionOrMessage.isModalSubmit;
      
@@ -73,22 +76,22 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
     const isUnlimited = (reporter.permissions.has('Administrator') || reporter.id === guild.ownerId || (unlimitedRole && reporter.roles.cache.has(unlimitedRole.id)) || (testRole && reporter.roles.cache.has(testRole.id)));
 
     if (!isUnlimited) {
-        const cooldownRes = await db.query("SELECT timestamp FROM active_reports WHERE guildid = $1 AND targetid = $2 AND reporterid = $3", [guild.id, targetMember.id, reporter.id]);
+        const cooldownRes = await db.query(`SELECT "timestamp" FROM active_reports WHERE "guildID" = $1 AND "targetID" = $2 AND "reporterID" = $3`, [guild.id, targetMember.id, reporter.id]);
         const cooldownRecord = cooldownRes.rows[0];
         if (cooldownRecord && (currentTimestamp - cooldownRecord.timestamp) < COOLDOWN_DURATION) {
             return sendReportError(interactionOrMessage, "❖ بـلاغ مـكـرر !", "حـلاوة هي؟ كل شوي تبلغ عليـه.", true);
         }
     }
 
-    await db.query("DELETE FROM active_reports WHERE timestamp < $1", [currentTimestamp - COOLDOWN_DURATION]);
+    await db.query(`DELETE FROM active_reports WHERE "timestamp" < $1`, [currentTimestamp - COOLDOWN_DURATION]);
     
     await db.query(`
-        INSERT INTO active_reports (guildid, targetid, reporterid, timestamp) 
+        INSERT INTO active_reports ("guildID", "targetID", "reporterID", "timestamp") 
         VALUES ($1, $2, $3, $4) 
-        ON CONFLICT (guildid, targetid, reporterid) DO UPDATE SET timestamp = EXCLUDED.timestamp
+        ON CONFLICT ("guildID", "targetID", "reporterID") DO UPDATE SET "timestamp" = EXCLUDED."timestamp"
     `, [guild.id, targetMember.id, reporter.id, currentTimestamp]);
     
-    const countRes = await db.query("SELECT COUNT(DISTINCT reporterid) as count FROM active_reports WHERE guildid = $1 AND targetid = $2", [guild.id, targetMember.id]);
+    const countRes = await db.query(`SELECT COUNT(DISTINCT "reporterID") as count FROM active_reports WHERE "guildID" = $1 AND "targetID" = $2`, [guild.id, targetMember.id]);
     const reportCount = parseInt(countRes.rows[0].count, 10);
 
     const embedSuccess = new EmbedBuilder()
@@ -141,12 +144,12 @@ async function processReportLogic(client, interactionOrMessage, targetMember, re
 
             const unjailTime = currentTimestamp + JAIL_DURATION;
             await db.query(`
-                INSERT INTO jailed_members (guildid, userid, unjailtime) 
+                INSERT INTO jailed_members ("guildID", "userID", "unjailTime") 
                 VALUES ($1, $2, $3) 
-                ON CONFLICT (guildid, userid) DO UPDATE SET unjailtime = EXCLUDED.unjailtime
+                ON CONFLICT ("guildID", "userID") DO UPDATE SET "unjailTime" = EXCLUDED."unjailTime"
             `, [guild.id, targetMember.id, unjailTime]);
             
-            await db.query("DELETE FROM active_reports WHERE guildid = $1 AND targetid = $2", [guild.id, targetMember.id]);
+            await db.query(`DELETE FROM active_reports WHERE "guildID" = $1 AND "targetID" = $2`, [guild.id, targetMember.id]);
 
             const jailEmbed = new EmbedBuilder()
                 .setTitle("❖ تلقـى بلاغين وتـم سـجـنـه!")
@@ -167,28 +170,33 @@ async function checkUnjailTask(client) {
     const db = client.sql;
     if (!db) return;
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    const res = await db.query("SELECT * FROM jailed_members WHERE unjailtime <= $1", [currentTimestamp]);
+    // 🔥 حماية "unjailTime" بعلامات التنصيص
+    const res = await db.query(`SELECT * FROM jailed_members WHERE "unjailTime" <= $1`, [currentTimestamp]);
     const jailedToRelease = res.rows;
     
     for (const record of jailedToRelease) {
-        const guild = client.guilds.cache.get(record.guildid);
+        const guildID = record.guildID || record.guildid;
+        const userID = record.userID || record.userid;
+        
+        const guild = client.guilds.cache.get(guildID);
         if (!guild) { 
-            await db.query("DELETE FROM jailed_members WHERE guildid = $1 AND userid = $2", [record.guildid, record.userid]); 
+            await db.query(`DELETE FROM jailed_members WHERE "guildID" = $1 AND "userID" = $2`, [guildID, userID]); 
             continue; 
         }
 
         const settings = await getReportSettings(db, guild.id);
-        const jailRoleID = settings.jailroleid;
+        const jailRoleID = settings.jailRoleID || settings.jailroleid;
         if (!jailRoleID) { 
-            await db.query("DELETE FROM jailed_members WHERE guildid = $1 AND userid = $2", [record.guildid, record.userid]); 
+            await db.query(`DELETE FROM jailed_members WHERE "guildID" = $1 AND "userID" = $2`, [guildID, userID]); 
             continue; 
         }
 
         const jailRole = guild.roles.cache.get(jailRoleID);
-        const logChannel = settings.logchannelid ? guild.channels.cache.get(settings.logchannelid) : null;
+        const logChannelID = settings.logChannelID || settings.logchannelid;
+        const logChannel = logChannelID ? guild.channels.cache.get(logChannelID) : null;
         
         try {
-            const member = await guild.members.fetch(record.userid);
+            const member = await guild.members.fetch(userID);
             if (member) {
                 if (jailRole && member.roles.cache.has(jailRole.id)) {
                     await member.roles.remove(jailRole, "انتهاء مدة السجن التلقائي");
@@ -211,7 +219,7 @@ async function checkUnjailTask(client) {
         } catch (e) {
         }
         
-        await db.query("DELETE FROM jailed_members WHERE guildid = $1 AND userid = $2", [record.guildid, record.userid]);
+        await db.query(`DELETE FROM jailed_members WHERE "guildID" = $1 AND "userID" = $2`, [guildID, userID]);
     }
 }
 
