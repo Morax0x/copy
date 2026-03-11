@@ -57,17 +57,28 @@ module.exports = {
         }
 
         try {
-            await db.query(`
-                INSERT INTO settings (guild, viproleid) 
-                VALUES ($1, $2) 
-                ON CONFLICT(guild) DO UPDATE SET 
-                viproleid = EXCLUDED.viproleid
-            `, [guild.id, role.id]);
+            // المحاولة الأولى مع الاعتبار أن اسم العمود بحالة الأحرف المزدوجة (CamelCase)
+            try {
+                await db.query(`
+                    INSERT INTO settings ("guild", "vipRoleID") 
+                    VALUES ($1, $2) 
+                    ON CONFLICT("guild") DO UPDATE SET 
+                    "vipRoleID" = EXCLUDED."vipRoleID"
+                `, [guild.id, role.id]);
+            } catch (e) {
+                // المحاولة الثانية في حال كان اسم العمود في قاعدة البيانات بحروف صغيرة
+                await db.query(`
+                    INSERT INTO settings ("guild", "viproleid") 
+                    VALUES ($1, $2) 
+                    ON CONFLICT("guild") DO UPDATE SET 
+                    "viproleid" = EXCLUDED."viproleid"
+                `, [guild.id, role.id]);
+            }
 
             return reply(`✅ | تم تحديد رتبة الـ VIP بنجاح إلى: ${role.name}`);
 
         } catch (err) {
-            console.error(err);
+            console.error("Set VIP Role Error:", err);
             return reply('❌ | حدث خطأ أثناء تحديث قاعدة البيانات.', true);
         }
     }
