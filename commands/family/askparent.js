@@ -64,7 +64,7 @@ module.exports = {
 
         let parentsChildrenCount = 0;
         try {
-            const countRes = await db.query("SELECT count(*) as count FROM children WHERE parentID = $1 AND guildID = $2", [parentUser.id, guildId]);
+            const countRes = await db.query(`SELECT count(*) as count FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [parentUser.id, guildId]);
             parentsChildrenCount = Number(countRes.rows[0].count);
         } catch(e) {}
         
@@ -81,15 +81,15 @@ module.exports = {
         }
 
         try {
-            const existingParentRes = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2 LIMIT 1", [user.id, guildId]);
+            const existingParentRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2 LIMIT 1`, [user.id, guildId]);
             if (existingParentRes.rows.length > 0) return reply("❌ **لديك عائلة بالفعل!** لا يمكنك البحث عن أب جديد وأنت على ذمة عائلة.", true);
 
-            const isHeMyChildRes = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2 LIMIT 1", [user.id, parentUser.id]);
+            const isHeMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 LIMIT 1`, [user.id, parentUser.id]);
             if (isHeMyChildRes.rows.length > 0) return reply("😵‍💫 **لا يعقل!** هذا الشخص هو ابنك، كيف تطلب منه أن يتبناك؟", true);
 
-            const marriageCheckRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2 LIMIT 1", [user.id, guildId]);
+            const marriageCheckRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2 LIMIT 1`, [user.id, guildId]);
             const marriageCheck = marriageCheckRes.rows[0];
-            if (marriageCheck && (marriageCheck.partnerid === parentUser.id || marriageCheck.partnerID === parentUser.id)) {
+            if (marriageCheck && (marriageCheck.partnerID === parentUser.id || marriageCheck.partnerid === parentUser.id)) {
                 return reply("🚫 لا يمكنك أن تكون ابناً لشريك حياتك!", true);
             }
         } catch (e) {
@@ -148,16 +148,16 @@ module.exports = {
                     await client.setLevel(parentData);
 
                     const now = Date.now();
-                    await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [parentUser.id, user.id, now, guildId]);
+                    await db.query(`INSERT INTO children ("parentID", "childID", "adoptDate", "guildID") VALUES ($1, $2, $3, $4)`, [parentUser.id, user.id, now, guildId]);
 
-                    const parentMarRes = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [parentUser.id, guildId]);
+                    const parentMarRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [parentUser.id, guildId]);
                     const parentMarriage = parentMarRes.rows[0];
                     
                     if (parentMarriage) {
-                        const partnerId = parentMarriage.partnerid || parentMarriage.partnerID;
-                        const checkPartnerChild = await db.query("SELECT 1 FROM children WHERE parentID = $1 AND childID = $2", [partnerId, user.id]);
+                        const partnerId = parentMarriage.partnerID || parentMarriage.partnerid;
+                        const checkPartnerChild = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2`, [partnerId, user.id]);
                         if (checkPartnerChild.rows.length === 0) {
-                            await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [partnerId, user.id, now, guildId]);
+                            await db.query(`INSERT INTO children ("parentID", "childID", "adoptDate", "guildID") VALUES ($1, $2, $3, $4)`, [partnerId, user.id, now, guildId]);
                             parentText = " وشريكه";
                         }
                     }
