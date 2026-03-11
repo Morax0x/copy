@@ -36,7 +36,7 @@ const CANVAS_HEIGHT = Y_GREAT_GRAND + DIMS.GREAT_GRAND + 80;
 async function getUserColor(client, userId, guild, db) {
     if (TEST_MODE) return THEME.DEFAULT;
     try {
-        const configRes = await db.query("SELECT maleRole, femaleRole FROM family_config WHERE guildID = $1", [guild.id]);
+        const configRes = await db.query(`SELECT "maleRole", "femaleRole" FROM family_config WHERE "guildID" = $1`, [guild.id]);
         const config = configRes.rows[0];
         if (!config) return THEME.DEFAULT;
         
@@ -55,8 +55,8 @@ async function getUserColor(client, userId, guild, db) {
             return false;
         };
 
-        if (checkRole(config.malerole || config.maleRole)) return THEME.MALE;
-        if (checkRole(config.femalerole || config.femaleRole)) return THEME.FEMALE;
+        if (checkRole(config.maleRole || config.malerole)) return THEME.MALE;
+        if (checkRole(config.femaleRole || config.femalerole)) return THEME.FEMALE;
         return THEME.DEFAULT;
     } catch { return THEME.DEFAULT; }
 }
@@ -360,16 +360,16 @@ module.exports = {
         addId(targetUser.id);
 
         const getParents = async (id) => {
-            const res = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [id, guildId]);
-            return res.rows.map(r => r.parentid || r.parentID);
+            const res = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [id, guildId]);
+            return res.rows.map(r => r.parentID || r.parentid);
         };
         const getChildren = async (id) => {
-            const res = await db.query("SELECT childID FROM children WHERE parentID = $1 AND guildID = $2", [id, guildId]);
-            return res.rows.map(r => r.childid || r.childID);
+            const res = await db.query(`SELECT "childID" FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [id, guildId]);
+            return res.rows.map(r => r.childID || r.childid);
         };
         const getPartners = async (id) => {
-            const res = await db.query("SELECT partnerID FROM marriages WHERE userID = $1 AND guildID = $2", [id, guildId]);
-            return res.rows.map(r => r.partnerid || r.partnerID);
+            const res = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [id, guildId]);
+            return res.rows.map(r => r.partnerID || r.partnerid);
         };
 
         // 🔥 1. جلب الآباء وزوجاتهم/أزواجهم (Step-parents)
