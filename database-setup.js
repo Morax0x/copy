@@ -6,6 +6,25 @@ async function setupDatabase(clientOrSql) {
 
     console.log("[Database] Starting Cloud Integrity & Schema Check...");
 
+    // ⚠️⚠️⚠️ كود المسح الشامل (التدمير الذاتي) ⚠️⚠️⚠️
+    // سيقوم بمسح كل الجداول من جذورها لتنظيف السحابة
+    try {
+        console.log("⚠️ [Database] Wiping all existing tables for a clean slate...");
+        await db.query(`
+            DO $$ DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                END LOOP;
+            END $$;
+        `);
+        console.log("✅ [Database] Database wiped successfully! Building new tables...");
+    } catch (e) {
+        console.error("❌ [Database] Error wiping database:", e.message);
+    }
+    // ==========================================
+
     // 🔥 تحويل كود SQLite إلى PostgreSQL مع حماية مطلقة لأسماء الأعمدة القديمة
     const tables = [
         `CREATE TABLE IF NOT EXISTS levels ("user" TEXT NOT NULL, "guild" TEXT NOT NULL, "xp" BIGINT DEFAULT 0, "level" BIGINT DEFAULT 1, "totalXP" BIGINT DEFAULT 0, "mora" BIGINT DEFAULT 0, "lastWork" BIGINT DEFAULT 0, "lastDaily" BIGINT DEFAULT 0, "dailyStreak" BIGINT DEFAULT 0, "bank" BIGINT DEFAULT 0, "lastInterest" BIGINT DEFAULT 0, "totalInterestEarned" BIGINT DEFAULT 0, "hasGuard" BIGINT DEFAULT 0, "guardExpires" BIGINT DEFAULT 0, "totalVCTime" BIGINT DEFAULT 0, "lastCollected" BIGINT DEFAULT 0, "lastRob" BIGINT DEFAULT 0, "last_rob_pardon" TEXT DEFAULT '', "lastGuess" BIGINT DEFAULT 0, "lastRPS" BIGINT DEFAULT 0, "lastRoulette" BIGINT DEFAULT 0, "lastTransfer" BIGINT DEFAULT 0, "lastDeposit" BIGINT DEFAULT 0, "shop_purchases" BIGINT DEFAULT 0, "total_meow_count" BIGINT DEFAULT 0, "boost_count" BIGINT DEFAULT 0, "lastPVP" BIGINT DEFAULT 0, "lastFarmYield" BIGINT DEFAULT 0, "lastFish" BIGINT DEFAULT 0, "rodLevel" BIGINT DEFAULT 1, "boatLevel" BIGINT DEFAULT 1, "currentLocation" TEXT DEFAULT 'beach', "lastMemory" BIGINT DEFAULT 0, "lastArrange" BIGINT DEFAULT 0, "last_dungeon" BIGINT DEFAULT 0, "dungeon_tickets" BIGINT DEFAULT 0, "last_ticket_reset" TEXT DEFAULT '', "dungeon_gate_level" BIGINT DEFAULT 1, "max_dungeon_floor" BIGINT DEFAULT 0, "dungeon_wins" BIGINT DEFAULT 0, "dungeon_join_count" BIGINT DEFAULT 0, "last_join_reset" BIGINT DEFAULT 0, "lastRace" BIGINT DEFAULT 0, PRIMARY KEY ("user", "guild"))`,
@@ -33,7 +52,6 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS user_farm ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT NOT NULL, "userID" TEXT NOT NULL, "animalID" TEXT NOT NULL, "quantity" BIGINT DEFAULT 1, "purchaseTimestamp" BIGINT DEFAULT 0, "lastCollected" BIGINT DEFAULT 0, "lastFedTimestamp" BIGINT DEFAULT 0)`,
         `CREATE INDEX IF NOT EXISTS idx_user_farm_lookup ON user_farm ("guildID", "userID")`,
         
-        // 🔥 جدول الأراضي المفقود
         `CREATE TABLE IF NOT EXISTS user_lands ("userID" TEXT NOT NULL, "guildID" TEXT NOT NULL, "plotID" BIGINT NOT NULL, "status" TEXT, "seedID" TEXT, "plantTime" BIGINT, PRIMARY KEY ("userID", "guildID", "plotID"))`,
         
         `CREATE TABLE IF NOT EXISTS user_daily_stats ("id" TEXT PRIMARY KEY, "userID" TEXT NOT NULL, "guildID" TEXT NOT NULL, "date" TEXT NOT NULL, "messages" BIGINT DEFAULT 0, "images" BIGINT DEFAULT 0, "stickers" BIGINT DEFAULT 0, "emojis_sent" BIGINT DEFAULT 0, "reactions_added" BIGINT DEFAULT 0, "replies_sent" BIGINT DEFAULT 0, "mentions_received" BIGINT DEFAULT 0, "vc_minutes" BIGINT DEFAULT 0, "water_tree" BIGINT DEFAULT 0, "counting_channel" BIGINT DEFAULT 0, "meow_count" BIGINT DEFAULT 0, "streaming_minutes" BIGINT DEFAULT 0, "disboard_bumps" BIGINT DEFAULT 0, "boost_channel_reactions" BIGINT DEFAULT 0, "ai_interactions" BIGINT DEFAULT 0, "casino_profit" BIGINT DEFAULT 0, "mora_earned" BIGINT DEFAULT 0, "mora_donated" BIGINT DEFAULT 0, "knights_defeated" BIGINT DEFAULT 0, "fish_caught" BIGINT DEFAULT 0, "pvp_wins" BIGINT DEFAULT 0, "crops_harvested" BIGINT DEFAULT 0)`,
@@ -71,7 +89,6 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS mod_cases ("id" TEXT PRIMARY KEY, "guildID" TEXT, "caseID" BIGINT, "type" TEXT, "targetID" TEXT, "moderatorID" TEXT, "reason" TEXT, "timestamp" BIGINT)`,
         `CREATE TABLE IF NOT EXISTS active_dungeons ("channelID" TEXT PRIMARY KEY, "guildID" TEXT, "hostID" TEXT, "data" TEXT)`,
         
-        // --- 🔥 جداول الذكاء الاصطناعي 🔥 ---
         `CREATE TABLE IF NOT EXISTS ai_channels ("channelID" TEXT PRIMARY KEY, "guildID" TEXT, "isNsfw" BIGINT DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS ai_blacklist ("userID" TEXT PRIMARY KEY)`,
         `CREATE TABLE IF NOT EXISTS ai_role_limits ("guildID" TEXT, "roleID" TEXT, "limitCount" BIGINT, PRIMARY KEY("guildID", "roleID"))`,
@@ -79,18 +96,14 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS ai_restricted_categories ("guildID" TEXT, "categoryID" TEXT, PRIMARY KEY ("categoryID"))`,
         `CREATE TABLE IF NOT EXISTS ai_paid_channels ("channelID" TEXT, "guildID" TEXT, "mode" TEXT, "expiresAt" BIGINT, PRIMARY KEY ("channelID"))`,
 
-        // --- 🔥 جداول نظام العائلة 🔥 ---
         `CREATE TABLE IF NOT EXISTS family_config ("guildID" TEXT PRIMARY KEY, "maleRole" TEXT, "femaleRole" TEXT, "divorceFee" BIGINT DEFAULT 5000, "adoptFee" BIGINT DEFAULT 2000)`,
         `CREATE TABLE IF NOT EXISTS marriages ("id" BIGSERIAL PRIMARY KEY, "userID" TEXT, "partnerID" TEXT, "marriageDate" BIGINT, "guildID" TEXT)`,
         `CREATE TABLE IF NOT EXISTS children ("parentID" TEXT, "childID" TEXT, "adoptDate" BIGINT, "guildID" TEXT)`,
 
-        // --- 🔥 جدول نظام الـ AFK المطور 🔥 ---
         `CREATE TABLE IF NOT EXISTS afk ("userID" TEXT, "guildID" TEXT, "reason" TEXT, "timestamp" BIGINT, "mentionsCount" BIGINT DEFAULT 0, "subscribers" TEXT DEFAULT '[]', "messages" TEXT DEFAULT '[]', PRIMARY KEY ("userID", "guildID"))`,
 
-        // --- 🔥 جداول نظام السمعة (Reputation) 🔥 ---
         `CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" BIGINT DEFAULT 0, "last_rep_given" TEXT DEFAULT '0', "weekly_reps_given" BIGINT DEFAULT 0, "daily_reps_given" BIGINT DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`,
 
-        // --- جداول أخرى ---
         `CREATE TABLE IF NOT EXISTS race_dungeon_buffs ("guildID" TEXT, "roleID" TEXT, "dungeonKey" TEXT, "statType" TEXT, "buffValue" REAL, PRIMARY KEY ("guildID", "roleID", "dungeonKey"))`,
         `CREATE TABLE IF NOT EXISTS active_auctions ("messageID" TEXT PRIMARY KEY, "channelID" TEXT, "hostID" TEXT, "item_name" TEXT, "current_bid" BIGINT, "highest_bidder" TEXT, "min_increment" BIGINT, "end_time" BIGINT, "image_url" TEXT, "buy_now_price" BIGINT DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS dungeon_saves ("hostID" TEXT, "guildID" TEXT, "floor" BIGINT, "timestamp" BIGINT, PRIMARY KEY ("hostID", "guildID"))`,
@@ -115,7 +128,6 @@ async function setupDatabase(clientOrSql) {
     }
 }
 
-// 🛠️ دالة مساعدة لإضافة الأعمدة الناقصة بأمان (يتم مناداتها لاحقاً في ملف الصيانة)
 async function ensureColumn(db, table, column, typeDef) {
     try {
         const check = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name='${table}' AND column_name='${column}'`);
