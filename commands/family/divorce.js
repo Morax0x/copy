@@ -29,7 +29,7 @@ module.exports = {
 
             let allMarriages = [];
             try {
-                const res = await db.query("SELECT * FROM marriages WHERE userID = $1 AND guildID = $2", [user.id, guildId]);
+                const res = await db.query(`SELECT * FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]);
                 allMarriages = res.rows;
             } catch(e) {}
 
@@ -40,7 +40,7 @@ module.exports = {
             }
 
             if (targetMember) {
-                const specificMarriage = allMarriages.find(m => (m.partnerid || m.partnerID) === targetMember.id);
+                const specificMarriage = allMarriages.find(m => (m.partnerID || m.partnerid) === targetMember.id);
                 if (!specificMarriage) {
                     const msg = await message.reply(`🚫 **أنت لست متزوجاً من ${targetMember.displayName}!**`);
                     setTimeout(() => msg.delete().catch(() => {}), 5000);
@@ -50,11 +50,11 @@ module.exports = {
                 partner = targetMember;
             } else {
                 if (allMarriages.length === 1) {
-                    partnerId = allMarriages[0].partnerid || allMarriages[0].partnerID;
+                    partnerId = allMarriages[0].partnerID || allMarriages[0].partnerid;
                     partner = await message.guild.members.fetch(partnerId).catch(() => null);
                 } else {
                     const options = await Promise.all(allMarriages.map(async (m) => {
-                        const pid = m.partnerid || m.partnerID;
+                        const pid = m.partnerID || m.partnerid;
                         const p = await message.guild.members.fetch(pid).catch(() => null);
                         return {
                             label: p ? p.displayName : `Unknown User (${pid})`,
@@ -89,8 +89,8 @@ module.exports = {
             if (!partner) {
                 try {
                     await db.query('BEGIN');
-                    await db.query("DELETE FROM marriages WHERE userID = $1 AND partnerID = $2 AND guildID = $3", [user.id, partnerId, guildId]); 
-                    await db.query("UPDATE children SET parentID = $1 WHERE parentID = $2 AND guildID = $3", [user.id, partnerId, guildId]);
+                    await db.query(`DELETE FROM marriages WHERE "userID" = $1 AND "partnerID" = $2 AND "guildID" = $3`, [user.id, partnerId, guildId]); 
+                    await db.query(`UPDATE children SET "parentID" = $1 WHERE "parentID" = $2 AND "guildID" = $3`, [user.id, partnerId, guildId]);
                     await db.query('COMMIT');
                 } catch(e) {
                     await db.query('ROLLBACK');
@@ -112,7 +112,7 @@ module.exports = {
 
             let familyConfig = null;
             try {
-                const confRes = await db.query("SELECT * FROM family_config WHERE guildID = $1", [guildId]);
+                const confRes = await db.query(`SELECT * FROM family_config WHERE "guildID" = $1`, [guildId]);
                 familyConfig = confRes.rows[0];
             } catch(e) {}
             
@@ -127,7 +127,7 @@ module.exports = {
                 return false;
             };
 
-            const isMale = familyConfig && checkRole(familyConfig.malerole || familyConfig.maleRole);
+            const isMale = familyConfig && checkRole(familyConfig.maleRole || familyConfig.malerole);
             
             let title, desc, footer;
             let cost = 0;
@@ -152,7 +152,7 @@ module.exports = {
 
             let children = [];
             try {
-                const childRes = await db.query("SELECT * FROM children WHERE (parentID = $1 OR parentID = $2) AND guildID = $3", [user.id, partner.id, guildId]);
+                const childRes = await db.query(`SELECT * FROM children WHERE ("parentID" = $1 OR "parentID" = $2) AND "guildID" = $3`, [user.id, partner.id, guildId]);
                 children = childRes.rows;
             } catch(e) {}
             
@@ -280,11 +280,11 @@ module.exports = {
                     receiverDB.mora = Number(receiverDB.mora) + amount;
                     await client.setLevel(receiverDB);
 
-                    await db.query("DELETE FROM marriages WHERE ((userID = $1 AND partnerID = $2) OR (userID = $2 AND partnerID = $1)) AND guildID = $3", [payer.id, receiver.id, guildId]);
+                    await db.query(`DELETE FROM marriages WHERE (("userID" = $1 AND "partnerID" = $2) OR ("userID" = $2 AND "partnerID" = $1)) AND "guildID" = $3`, [payer.id, receiver.id, guildId]);
 
                     let kidsMsg = "";
                     if (kidsKeeper && children.length > 0) {
-                        await db.query("UPDATE children SET parentID = $1 WHERE (parentID = $2 OR parentID = $3) AND guildID = $4", [kidsKeeper.id, payer.id, receiver.id, guildId]);
+                        await db.query(`UPDATE children SET "parentID" = $1 WHERE ("parentID" = $2 OR "parentID" = $3) AND "guildID" = $4`, [kidsKeeper.id, payer.id, receiver.id, guildId]);
                         kidsMsg = `\n👶 **الحضانة:** انتقلت جميع الأطفال إلى كفالة **${kidsKeeper.displayName}**.`;
                     }
 
