@@ -60,14 +60,14 @@ async function buildDailyEmbed(sql, member, dailyStats, page = 1) {
     const { generateDailyQuestsImage } = require('../generators/daily-quest-generator.js'); 
 
     const dateStr = getTodayDateString();
-    const completedRes = await sql.query("SELECT * FROM user_quest_claims WHERE userID = $1 AND guildID = $2 AND dateStr = $3", [member.id, member.guild.id, dateStr]);
+    const completedRes = await sql.query(`SELECT * FROM user_quest_claims WHERE "userID" = $1 AND "guildID" = $2 AND "dateStr" = $3`, [member.id, member.guild.id, dateStr]);
     const completed = completedRes.rows;
 
     let allCompleted = true;
 
     const questsData = questsConfig.daily.map(quest => {
         const progress = dailyStats[quest.stat] || 0;
-        const isDone = completed.some(c => (c.questid || c.questID) === quest.id);
+        const isDone = completed.some(c => (c.questID || c.questid) === quest.id);
         
         if (!isDone) allCompleted = false;
 
@@ -78,20 +78,20 @@ async function buildDailyEmbed(sql, member, dailyStats, page = 1) {
     });
 
     const badgeClaimId = `${member.id}-${member.guild.id}-daily_badge-${dateStr}`;
-    const badgeClaimedRes = await sql.query("SELECT 1 FROM user_quest_claims WHERE claimID = $1", [badgeClaimId]);
+    const badgeClaimedRes = await sql.query(`SELECT 1 FROM user_quest_claims WHERE "claimID" = $1`, [badgeClaimId]);
     const badgeClaimed = badgeClaimedRes.rows[0];
 
     if (allCompleted && questsData.length > 0 && !badgeClaimed) {
-        await sql.query("INSERT INTO user_quest_claims (claimID, userID, guildID, questID, dateStr) VALUES ($1, $2, $3, $4, $5)", [badgeClaimId, member.id, member.guild.id, 'daily_badge', dateStr]);
+        await sql.query(`INSERT INTO user_quest_claims ("claimID", "userID", "guildID", "questID", "dateStr") VALUES ($1, $2, $3, $4, $5)`, [badgeClaimId, member.id, member.guild.id, 'daily_badge', dateStr]);
         
-        const settingsRes = await sql.query("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = $1", [member.guild.id]);
+        const settingsRes = await sql.query(`SELECT "questChannelID", "lastQuestPanelChannelID" FROM settings WHERE "guild" = $1`, [member.guild.id]);
         const settings = settingsRes.rows[0];
         
-        if (settings && (settings.questchannelid || settings.questChannelID)) {
-            const questChannelId = settings.questchannelid || settings.questChannelID;
+        if (settings && (settings.questChannelID || settings.questchannelid)) {
+            const questChannelId = settings.questChannelID || settings.questchannelid;
             const channel = member.guild.channels.cache.get(questChannelId);
             if (channel) {
-                const lastQuestPanelId = settings.lastquestpanelchannelid || settings.lastQuestPanelChannelID;
+                const lastQuestPanelId = settings.lastQuestPanelChannelID || settings.lastquestpanelchannelid;
                 const panelLink = lastQuestPanelId ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${lastQuestPanelId}>` : "";
                 const badgeMsg = announcementsTexts.getBadgeMessage('daily', `<@${member.id}>`, member.client, panelLink);
                 channel.send({ content: badgeMsg }).catch(()=>{});
@@ -112,14 +112,14 @@ async function buildWeeklyEmbed(sql, member, weeklyStats, page = 1) {
     const { generateWeeklyQuestsImage } = require('../generators/weekly-quest-generator.js');
 
     const weekStartDateStr = getWeekStartDateString();
-    const completedRes = await sql.query("SELECT * FROM user_quest_claims WHERE userID = $1 AND guildID = $2 AND dateStr = $3", [member.id, member.guild.id, weekStartDateStr]);
+    const completedRes = await sql.query(`SELECT * FROM user_quest_claims WHERE "userID" = $1 AND "guildID" = $2 AND "dateStr" = $3`, [member.id, member.guild.id, weekStartDateStr]);
     const completed = completedRes.rows;
 
     let allCompleted = true;
 
     const questsData = questsConfig.weekly.map(quest => {
         const progress = weeklyStats[quest.stat] || 0;
-        const isDone = completed.some(c => (c.questid || c.questID) === quest.id);
+        const isDone = completed.some(c => (c.questID || c.questid) === quest.id);
         
         if (!isDone) allCompleted = false;
 
@@ -130,20 +130,20 @@ async function buildWeeklyEmbed(sql, member, weeklyStats, page = 1) {
     });
 
     const badgeClaimId = `${member.id}-${member.guild.id}-weekly_badge-${weekStartDateStr}`;
-    const badgeClaimedRes = await sql.query("SELECT 1 FROM user_quest_claims WHERE claimID = $1", [badgeClaimId]);
+    const badgeClaimedRes = await sql.query(`SELECT 1 FROM user_quest_claims WHERE "claimID" = $1`, [badgeClaimId]);
     const badgeClaimed = badgeClaimedRes.rows[0];
 
     if (allCompleted && questsData.length > 0 && !badgeClaimed) {
-        await sql.query("INSERT INTO user_quest_claims (claimID, userID, guildID, questID, dateStr) VALUES ($1, $2, $3, $4, $5)", [badgeClaimId, member.id, member.guild.id, 'weekly_badge', weekStartDateStr]);
+        await sql.query(`INSERT INTO user_quest_claims ("claimID", "userID", "guildID", "questID", "dateStr") VALUES ($1, $2, $3, $4, $5)`, [badgeClaimId, member.id, member.guild.id, 'weekly_badge', weekStartDateStr]);
         
-        const settingsRes = await sql.query("SELECT questChannelID, lastQuestPanelChannelID FROM settings WHERE guild = $1", [member.guild.id]);
+        const settingsRes = await sql.query(`SELECT "questChannelID", "lastQuestPanelChannelID" FROM settings WHERE "guild" = $1`, [member.guild.id]);
         const settings = settingsRes.rows[0];
         
-        if (settings && (settings.questchannelid || settings.questChannelID)) {
-            const questChannelId = settings.questchannelid || settings.questChannelID;
+        if (settings && (settings.questChannelID || settings.questchannelid)) {
+            const questChannelId = settings.questChannelID || settings.questchannelid;
             const channel = member.guild.channels.cache.get(questChannelId);
             if (channel) {
-                const lastQuestPanelId = settings.lastquestpanelchannelid || settings.lastQuestPanelChannelID;
+                const lastQuestPanelId = settings.lastQuestPanelChannelID || settings.lastquestpanelchannelid;
                 const panelLink = lastQuestPanelId ? `\n\n✶ قـاعـة الانجـازات والمـهام والاشعـارات:\n<#${lastQuestPanelId}>` : "";
                 const badgeMsg = announcementsTexts.getBadgeMessage('weekly', `<@${member.id}>`, member.client, panelLink);
                 channel.send({ content: badgeMsg }).catch(()=>{});
@@ -202,7 +202,7 @@ module.exports = {
         const weeklyStats = message.client.getWeeklyStats.get(`${userId}-${guildId}-${weekStartDateStr}`) || {};
         const totalStats = message.client.getTotalStats.get(totalStatsId) || {};
         
-        const completedAchievementsRes = await sql.query("SELECT * FROM user_achievements WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+        const completedAchievementsRes = await sql.query(`SELECT * FROM user_achievements WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
         const completedAchievements = completedAchievementsRes.rows;
 
         let currentPage = 1;
