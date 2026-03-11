@@ -29,22 +29,23 @@ function getRepRankInfo(points) {
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
     
-    const wRes = await db.query("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = $1 AND userID != $2", [guildID, TARGET_OWNER_ID]);
+    // 🔥 حماية الأعمدة لـ PostgreSQL
+    const wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]);
     const weapons = wRes.rows;
 
-    const lvlRes = await db.query('SELECT "user" as userID, level FROM levels WHERE guild = $1', [guildID]);
-    const levelsMap = new Map(lvlRes.rows.map(r => [r.userid, r.level]));
+    const lvlRes = await db.query(`SELECT "user" as "userID", "level" FROM levels WHERE "guild" = $1`, [guildID]);
+    const levelsMap = new Map(lvlRes.rows.map(r => [r.userID || r.userid, r.level]));
 
-    const skillRes = await db.query("SELECT userID, SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = $1 GROUP BY userID", [guildID]);
-    const skillsMap = new Map(skillRes.rows.map(r => [r.userid, parseInt(r.totallevels) || 0]));
+    const skillRes = await db.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guildID]);
+    const skillsMap = new Map(skillRes.rows.map(r => [r.userID || r.userid, parseInt(r.totalLevels || r.totallevels) || 0]));
 
     let stats = [];
     for (const w of weapons) {
-        const conf = weaponsConfig.find(c => c.race === (w.racename || w.raceName));
+        const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
         if(!conf) continue;
-        const wLvl = w.weaponlevel || w.weaponLevel;
+        const wLvl = w.weaponLevel || w.weaponlevel;
         const dmg = conf.base_damage + (conf.damage_increment * (wLvl - 1));
-        const uid = w.userid || w.userID;
+        const uid = w.userID || w.userid;
         const playerLevel = levelsMap.get(uid) || 1;
         const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
         const skillLevelsTotal = skillsMap.get(uid) || 0;
@@ -105,7 +106,7 @@ module.exports = {
                 levelData = await client.getLevel(userId, guildId);
             }
             if (!levelData) {
-                const lvlRes = await db.query('SELECT xp, level, mora, bank FROM levels WHERE "user" = $1 AND guild = $2', [userId, guildId]);
+                const lvlRes = await db.query(`SELECT "xp", "level", "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
                 levelData = lvlRes.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
             }
             
@@ -113,12 +114,12 @@ module.exports = {
             const currentXP = levelData.xp || 0;
             const requiredXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
 
-            const repRes = await db.query("SELECT rep_points FROM user_reputation WHERE userID = $1 AND guildID = $2", [userId, guildId]);
+            const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
             const repData = repRes.rows[0] || { rep_points: 0 };
             const rankInfo = getRepRankInfo(repData.rep_points || repData.reppoints || 0);
 
             const userRaceData = await getUserRace(targetMember, db);
-            const raceNameRaw = userRaceData ? (userRaceData.racename || userRaceData.raceName) : null;
+            const raceNameRaw = userRaceData ? (userRaceData.raceName || userRaceData.racename) : null;
             const raceName = raceNameRaw ? (RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw) : "مجهول";
             
             const weaponData = await getWeaponData(db, targetMember);
@@ -126,11 +127,11 @@ module.exports = {
             const weaponDmg = weaponData ? weaponData.currentDamage : 0;
             const maxHp = PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL);
 
-            const streakRes = await db.query("SELECT * FROM streaks WHERE guildID = $1 AND userID = $2", [guildId, userId]);
+            const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, userId]);
             const streakData = streakRes.rows[0];
-            const streakCount = streakData ? (streakData.streakcount || streakData.streakCount || 0) : 0;
-            let hasItemShields = streakData ? (streakData.hasitemshield || streakData.hasItemShield || 0) : 0;
-            let hasGraceShield = (streakData && (streakData.hasgraceperiod === 1 || streakData.hasGracePeriod === 1)) ? 1 : 0;
+            const streakCount = streakData ? (streakData.streakCount || streakData.streakcount || 0) : 0;
+            let hasItemShields = streakData ? (streakData.hasItemShield || streakData.hasitemshield || 0) : 0;
+            let hasGraceShield = (streakData && (streakData.hasGracePeriod === 1 || streakData.hasgraceperiod === 1)) ? 1 : 0;
             const totalShields = hasItemShields + hasGraceShield;
 
             const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
@@ -140,16 +141,16 @@ module.exports = {
 
             let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
             if (userId !== TARGET_OWNER_ID) {
-                const allScores = await db.query('SELECT "user" FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY totalXP DESC', [guildId, TARGET_OWNER_ID]);
+                const allScores = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY "totalXP" DESC`, [guildId, TARGET_OWNER_ID]);
                 let rLvl = allScores.rows.findIndex(s => s.user === userId) + 1;
                 ranks.level = rLvl > 0 ? rLvl.toString() : "0";
 
-                const allMora = await db.query('SELECT "user" FROM levels WHERE guild = $1 AND "user" != $2 ORDER BY (mora + bank) DESC', [guildId, TARGET_OWNER_ID]);
+                const allMora = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY ("mora" + "bank") DESC`, [guildId, TARGET_OWNER_ID]);
                 let rMora = allMora.rows.findIndex(s => s.user === userId) + 1;
                 ranks.mora = rMora > 0 ? rMora.toString() : "0";
 
-                const allStreaks = await db.query('SELECT userID FROM streaks WHERE guildID = $1 AND userID != $2 ORDER BY streakCount DESC', [guildId, TARGET_OWNER_ID]);
-                let rStreak = allStreaks.rows.findIndex(s => (s.userid || s.userID) === userId) + 1;
+                const allStreaks = await db.query(`SELECT "userID" FROM streaks WHERE "guildID" = $1 AND "userID" != $2 ORDER BY "streakCount" DESC`, [guildId, TARGET_OWNER_ID]);
+                let rStreak = allStreaks.rows.findIndex(s => (s.userID || s.userid) === userId) + 1;
                 ranks.streak = rStreak > 0 ? rStreak.toString() : "0";
 
                 let rPower = await calculateStrongestRank(db, guildId, userId);
