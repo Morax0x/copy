@@ -22,7 +22,7 @@ module.exports = {
 
         let parents = [];
         try {
-            const res = await db.query("SELECT parentID FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
+            const res = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [userId, guildId]);
             parents = res.rows;
         } catch (e) {}
 
@@ -82,7 +82,7 @@ module.exports = {
                     const amountPerParent = Math.floor(RUNAWAY_FEE / parents.length);
 
                     for (const p of parents) {
-                        const pid = p.parentid || p.parentID;
+                        const pid = p.parentID || p.parentid;
                         let parentData = await client.getLevel(pid, guildId);
                         if (!parentData) parentData = { id: `${guildId}-${pid}`, user: pid, guild: guildId, xp: 0, level: 1, mora: 0 };
                         
@@ -90,7 +90,7 @@ module.exports = {
                         await client.setLevel(parentData);
                     }
 
-                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [userId, guildId]);
+                    await db.query(`DELETE FROM children WHERE "childID" = $1 AND "guildID" = $2`, [userId, guildId]);
 
                     await db.query('COMMIT');
 
