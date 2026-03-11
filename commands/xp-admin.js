@@ -88,18 +88,18 @@ module.exports = {
         }
 
         try {
-            await db.query("INSERT INTO settings (guild) VALUES ($1) ON CONFLICT (guild) DO NOTHING", [guild.id]);
+            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
 
             const cooldownSeconds = 60;
             const cooldownMS = cooldownSeconds * 1000;
 
             if (subcommand === 'voice') {
-                await db.query(`UPDATE settings SET voiceXP = $1, voiceCooldown = $2 WHERE guild = $3`, [amount, cooldownMS, guild.id]);
+                await db.query(`UPDATE settings SET "voiceXP" = $1, "voiceCooldown" = $2 WHERE "guild" = $3`, [amount, cooldownMS, guild.id]);
                 return reply(`Users in voice channels will now gain ${amount}XP every ${cooldownSeconds} seconds.`);
             }
 
             if (subcommand === 'text') {
-                await db.query(`UPDATE settings SET customXP = $1, customCooldown = $2 WHERE guild = $3`, [amount, cooldownMS, guild.id]);
+                await db.query(`UPDATE settings SET "customXP" = $1, "customCooldown" = $2 WHERE "guild" = $3`, [amount, cooldownMS, guild.id]);
                 return reply(`Users from now will gain 1 - ${amount} XP / ${cooldownSeconds} seconds.`);
             }
 
