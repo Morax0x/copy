@@ -14,21 +14,21 @@ module.exports = {
         const db = message.client.sql;
         if (!db) return message.reply("❌ البوت غير متصل بقاعدة البيانات السحابية!");
 
-        const msg = await message.reply("⚠️ **تحذير: جاري تفريغ جميع البيانات في السحابة (بدون حذف الصناديق)...**");
+        const msg = await message.reply("⚠️ **تحذير: جاري تفريغ ومسح جميع الجداول من السحابة من جذورها...**");
 
         try {
-            // هذا أمر متقدم في PostgreSQL يقوم بتفريغ كل الجداول دفعة واحدة
+            // مسح كل الجداول من جذورها لكي يقوم البوت بإعادة إنشائها بالأسماء الصحيحة
             await db.query(`
                 DO $$ DECLARE
                     r RECORD;
                 BEGIN
                     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                        EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' CASCADE';
+                        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
                     END LOOP;
                 END $$;
             `);
             
-            await msg.edit("✅ **تم مسح جميع البيانات من السحابة بنجاح!**\nالسحابة الآن فارغة ونظيفة وجاهزة تماماً لاستقبال الملف الجديد.\n\nاكتب `-mc` للبدء في الهجرة الجديدة!");
+            await msg.edit("✅ **تم مسح جميع الجداول من السحابة بنجاح!**\nالسحابة الآن فارغة تماماً كأنها جديدة.\n\n⚠️ **الرجاء إعادة تشغيل البوت (Restart) فوراً من اللوحة** لكي يبني الجداول بالشكل الصحيح، وبعدها استخدم أمر `-mc` براحتك!");
         } catch(e) {
             await msg.edit(`❌ **حدث خطأ أثناء التفريغ:**\n\`\`\`js\n${e.message}\n\`\`\``);
         }
