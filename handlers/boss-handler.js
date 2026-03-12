@@ -24,7 +24,7 @@ function createProgressBar(current, max, length = 12) {
 
 function updateBossLog(boss, username, toolName, damage) {
     let logs = [];
-    try { logs = JSON.parse(boss.lastlog || '[]'); } catch (e) {}
+    try { logs = JSON.parse(boss.lastLog || boss.lastlog || '[]'); } catch (e) {}
     const logEntry = `╰ **${username}**: هـاجـم بـ **${toolName}** وتسبب بضرر \`${damage.toLocaleString()}\``;
     logs.unshift(logEntry);
     if (logs.length > 3) logs = logs.slice(0, 3); 
@@ -73,10 +73,10 @@ async function handleBossInteraction(interaction, client, db) {
     }
 
     try {
-        await db.query("SELECT totalhits FROM world_boss LIMIT 1");
+        await db.query('SELECT "totalHits" FROM world_boss LIMIT 1');
     } catch (err) {
         if (err.message.includes("does not exist") || err.message.includes("undefined column")) {
-            await db.query("ALTER TABLE world_boss ADD COLUMN totalhits INTEGER DEFAULT 0");
+            await db.query('ALTER TABLE world_boss ADD COLUMN "totalHits" BIGINT DEFAULT 0');
         }
     }
     
@@ -84,18 +84,18 @@ async function handleBossInteraction(interaction, client, db) {
     const guildID = guild.id;
     const userID = user.id;
 
-    const bossRes = await db.query("SELECT * FROM world_boss WHERE guildid = $1 AND active = 1", [guildID]);
+    const bossRes = await db.query('SELECT * FROM world_boss WHERE "guildID" = $1 AND "active" = 1', [guildID]);
     const boss = bossRes.rows[0];
     if (!boss) return safeReply(interaction, { content: "❌ **الوحش مات!**", flags: [MessageFlags.Ephemeral] });
 
     if (customId === 'boss_status') {
-        const leaderboardRes = await db.query("SELECT userid, totaldamage FROM boss_leaderboard WHERE guildid = $1 ORDER BY totaldamage DESC LIMIT 3", [guildID]);
+        const leaderboardRes = await db.query('SELECT "userID", "totalDamage" FROM boss_leaderboard WHERE "guildID" = $1 ORDER BY "totalDamage" DESC LIMIT 3', [guildID]);
         const leaderboard = leaderboardRes.rows;
         let lbText = leaderboard.length > 0 
-            ? leaderboard.map((entry, index) => `${index + 1}# <@${entry.userid}> : **${entry.totaldamage.toLocaleString()}**`).join('\n') 
+            ? leaderboard.map((entry, index) => `${index + 1}# <@${entry.userID || entry.userid}> : **${(entry.totalDamage || entry.totaldamage).toLocaleString()}**`).join('\n') 
             : "لا يوجد سجلات.";
 
-        const totalHits = boss.totalhits || 0;
+        const totalHits = boss.totalHits || boss.totalhits || 0;
 
         const statusEmbed = new EmbedBuilder()
             .setTitle(`✥ تـقـريـر المعـركـة`)
@@ -104,7 +104,7 @@ async function handleBossInteraction(interaction, client, db) {
                 `✶ **معـلومـات الزعـيـم:**\n` +
                 `- الاسـم: **${boss.name}**\n` +
                 `- هجمات متلـقـية: **${totalHits}**\n` +
-                `- نقـاط الصحـة: **${boss.currenthp.toLocaleString()} / ${boss.maxhp.toLocaleString()}**\n\n` +
+                `- نقـاط الصحـة: **${(boss.currentHP || boss.currenthp).toLocaleString()} / ${(boss.maxHP || boss.maxhp).toLocaleString()}**\n\n` +
                 `✶ **اعـلـى ضـرر:**\n${lbText}`
             );
         if (boss.image) statusEmbed.setThumbnail(boss.image);
@@ -130,11 +130,11 @@ async function handleBossInteraction(interaction, client, db) {
     const isOwner = (userID === OWNER_ID); 
     const now = Date.now();
     if (!isOwner) {
-        const cooldownDataRes = await db.query("SELECT lasthit FROM boss_cooldowns WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+        const cooldownDataRes = await db.query('SELECT "lastHit" FROM boss_cooldowns WHERE "guildID" = $1 AND "userID" = $2', [guildID, userID]);
         const cooldownData = cooldownDataRes.rows[0];
         
-        if (cooldownData && (now - parseInt(cooldownData.lasthit)) < HIT_COOLDOWN) {
-            const expiryTime = Math.floor((parseInt(cooldownData.lasthit) + HIT_COOLDOWN) / 1000);
+        if (cooldownData && (now - parseInt(cooldownData.lastHit || cooldownData.lasthit)) < HIT_COOLDOWN) {
+            const expiryTime = Math.floor((parseInt(cooldownData.lastHit || cooldownData.lasthit) + HIT_COOLDOWN) / 1000);
             return safeReply(interaction, { 
                 content: `⏳ **اسـترح قليلا ايهـا المحـارب <a:MugiStronk:1438795606872166462>!**\nيمكنك الهجوم مجدداً بعـد <t:${expiryTime}:R>`, 
                 flags: [MessageFlags.Ephemeral] 
@@ -172,32 +172,32 @@ async function handleBossInteraction(interaction, client, db) {
     let finalDamage = hitResult.damage;
     let isCrit = hitResult.isCritical;
 
-    let newHP = boss.currenthp - finalDamage;
+    let newHP = (boss.currentHP || boss.currenthp) - finalDamage;
     if (newHP < 0) newHP = 0;
 
     const newLogStr = updateBossLog(boss, member.user.displayName, toolName, finalDamage);
-    await db.query("UPDATE world_boss SET currenthp = $1, lastlog = $2, totalhits = COALESCE(totalhits, 0) + 1 WHERE guildid = $3", [newHP, newLogStr, guildID]);
+    await db.query('UPDATE world_boss SET "currentHP" = $1, "lastLog" = $2, "totalHits" = COALESCE("totalHits", 0) + 1 WHERE "guildID" = $3', [newHP, newLogStr, guildID]);
     
     if (!isOwner) {
-        await db.query("INSERT INTO boss_cooldowns (guildid, userid, lasthit) VALUES ($1, $2, $3) ON CONFLICT(guildid, userid) DO UPDATE SET lasthit = EXCLUDED.lasthit", [guildID, userID, now]);
+        await db.query('INSERT INTO boss_cooldowns ("guildID", "userID", "lastHit") VALUES ($1, $2, $3) ON CONFLICT("guildID", "userID") DO UPDATE SET "lastHit" = EXCLUDED."lastHit"', [guildID, userID, now]);
     }
 
-    const userDmgRecordRes = await db.query("SELECT totaldamage FROM boss_leaderboard WHERE guildid = $1 AND userid = $2", [guildID, userID]);
+    const userDmgRecordRes = await db.query('SELECT "totalDamage" FROM boss_leaderboard WHERE "guildID" = $1 AND "userID" = $2', [guildID, userID]);
     const userDmgRecord = userDmgRecordRes.rows[0];
-    const updatedDamage = (userDmgRecord ? parseInt(userDmgRecord.totaldamage) : 0) + finalDamage;
+    const updatedDamage = (userDmgRecord ? parseInt(userDmgRecord.totalDamage || userDmgRecord.totaldamage) : 0) + finalDamage;
     
-    await db.query("INSERT INTO boss_leaderboard (guildid, userid, totaldamage) VALUES ($1, $2, $3) ON CONFLICT(guildid, userid) DO UPDATE SET totaldamage = EXCLUDED.totaldamage", [guildID, userID, updatedDamage]);
+    await db.query('INSERT INTO boss_leaderboard ("guildID", "userID", "totalDamage") VALUES ($1, $2, $3) ON CONFLICT("guildID", "userID") DO UPDATE SET "totalDamage" = EXCLUDED."totalDamage"', [guildID, userID, updatedDamage]);
 
     let rewardString = "";
     const roll = Math.random() * 100;
     
-    const userDataRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
-    let userData = userDataRes.rows[0] || { userid: userID, guildid: guildID, level: 1, xp: 0, mora: 0, totalxp: 0 };
+    const userDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [userID, guildID]);
+    let userData = userDataRes.rows[0] || { user: userID, guild: guildID, level: 1, xp: 0, mora: 0, totalXP: 0 };
     
     userData.level = parseInt(userData.level) || 1;
     userData.xp = parseInt(userData.xp) || 0;
     userData.mora = parseInt(userData.mora) || 0; 
-    userData.totalxp = parseInt(userData.totalxp) || 0; 
+    userData.totalxp = parseInt(userData.totalXP || userData.totalxp) || 0; 
     
     let xpToAdd = 0;
 
@@ -210,16 +210,16 @@ async function handleBossInteraction(interaction, client, db) {
     }
 
     if (roll > 98) { 
-        const existingCouponRes = await db.query("SELECT 1 FROM user_coupons WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+        const existingCouponRes = await db.query('SELECT 1 FROM user_coupons WHERE "userID" = $1 AND "guildID" = $2', [userID, guildID]);
         if (existingCouponRes.rows.length === 0) {
             const discount = Math.floor(Math.random() * 10) + 1;
-            await db.query("INSERT INTO user_coupons (guildid, userid, discountpercent) VALUES ($1, $2, $3)", [guildID, userID, discount]);
+            await db.query('INSERT INTO user_coupons ("guildID", "userID", "discountPercent") VALUES ($1, $2, $3)', [guildID, userID, discount]);
             rewardString = `${discount}% كـوبـون خـصـم للمتجـر`;
         } else {
             const duration = getRandomDuration(10, 180); 
             const percent = Math.floor(Math.random() * 46) + 5; 
             const expiresAt = Date.now() + duration;
-            await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
+            await db.query('INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)', [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
             
             rewardString = `${percent}% تعـزيـز خبرة ${EMOJI_XP} (لمدة ${formatDuration(duration)})`;
         }
@@ -228,7 +228,7 @@ async function handleBossInteraction(interaction, client, db) {
         const duration = getRandomDuration(10, 180);
         const percent = Math.floor(Math.random() * 46) + 5; 
         const expiresAt = Date.now() + duration;
-        await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
+        await db.query('INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)', [guildID, userID, percent, expiresAt, 'xp', percent / 100]);
         
         rewardString = `${percent}% تعـزيـز خبرة${EMOJI_XP} (لمدة ${formatDuration(duration)})`;
 
@@ -236,7 +236,7 @@ async function handleBossInteraction(interaction, client, db) {
         const duration = getRandomDuration(10, 180);
         const percent = Math.floor(Math.random() * 8) + 1; 
         const expiresAt = Date.now() + duration;
-        await db.query("INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildID, userID, percent, expiresAt, 'mora', percent / 100]);
+        await db.query('INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)', [guildID, userID, percent, expiresAt, 'mora', percent / 100]);
         
         rewardString = `${percent}% تعـزيـز مورا${EMOJI_MORA} (لمدة ${formatDuration(duration)})`;
 
@@ -265,9 +265,9 @@ async function handleBossInteraction(interaction, client, db) {
     }
     
     if (userDataRes.rows.length > 0) {
-        await db.query("UPDATE levels SET mora = $1, xp = $2, totalxp = $3, level = $4 WHERE userid = $5 AND guildid = $6", [userData.mora, userData.xp, userData.totalxp, userData.level, userID, guildID]);
+        await db.query('UPDATE levels SET "mora" = $1, "xp" = $2, "totalXP" = $3, "level" = $4 WHERE "user" = $5 AND "guild" = $6', [userData.mora, userData.xp, userData.totalxp, userData.level, userID, guildID]);
     } else {
-        await db.query("INSERT INTO levels (userid, guildid, mora, xp, totalxp, level) VALUES ($1, $2, $3, $4, $5, $6)", [userID, guildID, userData.mora, userData.xp, userData.totalxp, userData.level]);
+        await db.query('INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") VALUES ($1, $2, $3, $4, $5, $6)', [userID, guildID, userData.mora, userData.xp, userData.totalxp, userData.level]);
     }
 
     let weakWeaponWarning = "";
@@ -277,10 +277,10 @@ async function handleBossInteraction(interaction, client, db) {
 
     let critText = isCrit ? " 🔥 **ضربة حرجة!**" : "";
 
-    const bossMsg = await interaction.channel.messages.fetch(boss.messageid).catch(() => null);
+    const bossMsg = await interaction.channel.messages.fetch(boss.messageID || boss.messageid).catch(() => null);
     if (bossMsg) {
-        const hpPercent = Math.floor((newHP / boss.maxhp) * 100);
-        const progressBar = createProgressBar(newHP, boss.maxhp, 12); 
+        const hpPercent = Math.floor((newHP / (boss.maxHP || boss.maxhp)) * 100);
+        const progressBar = createProgressBar(newHP, (boss.maxHP || boss.maxhp), 12); 
         let logsArr = [];
         try { logsArr = JSON.parse(newLogStr); } catch(e){}
         const logDisplay = logsArr.length > 0 ? logsArr.join('\n') : "╰ بانتظار الهجوم الأول...";
@@ -291,24 +291,24 @@ async function handleBossInteraction(interaction, client, db) {
                 `✬ ظـهـر زعـيـم في السـاحـة تـعاونـوا عـلـى قتاله واكسبوا الجوائـز <:trophy:1438797232458432602>!\n\n` +
                 `✬ **نـقـاط صـحـة الزعـيـم <a:Nerf:1438795685280612423>:**\n` +
                 `${progressBar} **${hpPercent}%**\n` +
-                `╰ **${newHP.toLocaleString()}** / ${boss.maxhp.toLocaleString()} HP\n\n` +
+                `╰ **${newHP.toLocaleString()}** / ${(boss.maxHP || boss.maxhp).toLocaleString()} HP\n\n` +
                 `✬ **سـجـل الـمـعـركـة ⚔️:**\n` +
                 `${logDisplay}`
             ).setFields([]); 
 
         if (newHP <= 0) {
-            const leaderboardResFinal = await db.query("SELECT userid, totaldamage FROM boss_leaderboard WHERE guildid = $1 ORDER BY totaldamage DESC LIMIT 3", [guildID]);
+            const leaderboardResFinal = await db.query('SELECT "userID", "totalDamage" FROM boss_leaderboard WHERE "guildID" = $1 ORDER BY "totalDamage" DESC LIMIT 3', [guildID]);
             const leaderboardFinal = leaderboardResFinal.rows;
             let lbText = "لا يوجد.";
             if (leaderboardFinal.length > 0) {
-                lbText = leaderboardFinal.map((entry, index) => `${index + 1}. <@${entry.userid}>: **${parseInt(entry.totaldamage).toLocaleString()}**`).join('\n');
+                lbText = leaderboardFinal.map((entry, index) => `${index + 1}. <@${entry.userID || entry.userid}>: **${parseInt(entry.totalDamage || entry.totaldamage).toLocaleString()}**`).join('\n');
             }
             
             let finalHits = 0;
             try {
-                const finalBossDataRes = await db.query("SELECT totalhits FROM world_boss WHERE guildid = $1", [guildID]);
+                const finalBossDataRes = await db.query('SELECT "totalHits" FROM world_boss WHERE "guildID" = $1', [guildID]);
                 const finalBossData = finalBossDataRes.rows[0];
-                finalHits = finalBossData ? (parseInt(finalBossData.totalhits) + 1) : 1; 
+                finalHits = finalBossData ? (parseInt(finalBossData.totalHits || finalBossData.totalhits) + 1) : 1; 
             } catch (e) { finalHits = 1; }
 
             newEmbed.setTitle(`✥ تـمـت هزيـمـة الزعـيـم ${boss.name}`)
@@ -316,7 +316,7 @@ async function handleBossInteraction(interaction, client, db) {
                     `✶ **معـلومـات الزعـيـم:**\n` +
                     `- الاسـم: **${boss.name}**\n` +
                     `- هجمات متلـقـية ⚔️: **${finalHits}**\n` +
-                    `- نقـاط الصحـة <a:Nerf:1438795685280612423>: **${boss.maxhp.toLocaleString()}**\n\n` +
+                    `- نقـاط الصحـة <a:Nerf:1438795685280612423>: **${(boss.maxHP || boss.maxhp).toLocaleString()}**\n\n` +
                     `✶ **اعـلـى ضـرر <a:buff:1438796257522094081>:**\n` +
                     `${lbText}\n\n` +
                     `**صـاحـب الضربـة القاضيـة 🗡️:**\n` +
@@ -325,8 +325,8 @@ async function handleBossInteraction(interaction, client, db) {
                 .setColor(Colors.Gold);
 
             await bossMsg.edit({ embeds: [newEmbed], components: [] });
-            await db.query("UPDATE world_boss SET active = 0 WHERE guildid = $1", [guildID]);
-            await db.query("DELETE FROM boss_leaderboard WHERE guildid = $1", [guildID]);
+            await db.query('UPDATE world_boss SET "active" = 0 WHERE "guildID" = $1', [guildID]);
+            await db.query('DELETE FROM boss_leaderboard WHERE "guildID" = $1', [guildID]);
             
             return safeReply(interaction, { 
                 content: `✬ هـاجـمـت الزعـيـم وتسببـت بـ **${finalDamage.toLocaleString()}** ضرر (قاضية!)${critText}\n✶ حـصـلت عـلـى: ${rewardString}${weakWeaponWarning}`, 
