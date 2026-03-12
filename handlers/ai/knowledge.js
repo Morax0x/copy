@@ -60,18 +60,18 @@ const staticKnowledge = {
 async function getDynamicServerData(guildId, db) {
     if (!db) return null;
     try {
-        const topLevelsRes = await db.query("SELECT userid AS user, level FROM levels WHERE guildid = $1 ORDER BY totalxp DESC LIMIT 3", [guildId]);
+        const topLevelsRes = await db.query('SELECT "user", "level" FROM levels WHERE "guild" = $1 ORDER BY "totalXP" DESC LIMIT 3', [guildId]);
         const topLevels = topLevelsRes.rows;
         
-        const topRichRes = await db.query("SELECT userid AS user, (mora + bank) as total FROM levels WHERE guildid = $1 ORDER BY total DESC LIMIT 3", [guildId]);
+        const topRichRes = await db.query('SELECT "user", ("mora" + "bank") as total FROM levels WHERE "guild" = $1 ORDER BY total DESC LIMIT 3', [guildId]);
         const topRich = topRichRes.rows;
 
-        const bossRes = await db.query("SELECT name, currenthp, maxhp, active FROM world_boss WHERE guildid = $1", [guildId]);
+        const bossRes = await db.query('SELECT "name", "currentHP", "maxHP", "active" FROM world_boss WHERE "guildID" = $1', [guildId]);
         const boss = bossRes.rows[0];
 
         return { topLevels, topRich, boss };
     } catch (error) {
-        console.error("[AI Dynamic Data Error]", error);
+        console.error("[AI Dynamic Data Error]", error.message);
         return null;
     }
 }
@@ -79,16 +79,17 @@ async function getDynamicServerData(guildId, db) {
 async function getUserData(userId, guildId, db) {
     if (!db) return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     try {
-        const levelRes = await db.query('SELECT level, xp, mora, bank FROM levels WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        // ⚠️ تم تعديل الاستعلامات هنا لتقرأ الجداول بأسمائها المحمية 100%
+        const levelRes = await db.query('SELECT "level", "xp", "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2', [userId, guildId]);
         const levelRow = levelRes.rows[0];
         
-        const streakRes = await db.query('SELECT streakcount FROM streaks WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        const streakRes = await db.query('SELECT "streakCount" FROM streaks WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
         const streakRow = streakRes.rows[0];
         
-        const repRes = await db.query('SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2', [userId, guildId]);
+        const repRes = await db.query('SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
         const repRow = repRes.rows[0];
         
-        const dungeonRes = await db.query('SELECT floor as current_floor FROM dungeon_saves WHERE hostid = $1 AND guildid = $2', [userId, guildId]);
+        const dungeonRes = await db.query('SELECT "floor" as current_floor FROM dungeon_saves WHERE "hostID" = $1 AND "guildID" = $2', [userId, guildId]);
         const dungeonRow = dungeonRes.rows[0];
         
         const cash = levelRow ? (parseInt(levelRow.mora) || 0) : 0;
@@ -102,12 +103,12 @@ async function getUserData(userId, guildId, db) {
             bank_balance: bank,          
             total_wealth: cash + bank,   
             
-            streak: streakRow ? parseInt(streakRow.streakcount) : 0,
+            streak: streakRow ? parseInt(streakRow.streakCount || streakRow.streakcount) : 0,
             reputation: repRow ? (parseInt(repRow.rep_points) || 0) : 0,            
             dungeon_floor: dungeonRow ? (parseInt(dungeonRow.current_floor) || 0) : 0 
         };
     } catch (error) {
-        console.error("[User Data Fetch Error]", error);
+        console.error("[User Data Fetch Error]", error.message);
         return { level: 0, total_wealth: 0, bank_balance: 0, wallet_cash: 0, streak: 0, reputation: 0, dungeon_floor: 0 };
     }
 }
