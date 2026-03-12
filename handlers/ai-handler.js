@@ -19,7 +19,6 @@ const OWNER_ID = "1145327691772481577";
 function sanitizeOutput(text) {
     if (!text) return "";
     let cleanText = text.replace(/@(everyone|here)/gi, "");
-    // 🔥 تم إزالة (مغامر) - الآن سيقوم بمسح المنشنات الرقمية فقط دون استبدالها بنص
     cleanText = cleanText.replace(/<@!?\d+>/g, ""); 
     cleanText = cleanText.replace(/@/g, "");
     cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
@@ -69,6 +68,7 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                 }
             }
 
+            // 1. خيمة الدانجون
             if (lowerText.includes('خيم') || lowerText.includes('طابق')) {
                 if (amount > 0) {
                     const guildID = message.guild.id;
@@ -87,6 +87,7 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                 }
             }
             
+            // 2. السمعة / التزكية
             else if (!actionDone && (lowerText.includes('سمع') || lowerText.includes('تزكي') || lowerText.includes('نقاط'))) {
                 if (amount > 0) {
                     const guildID = message.guild.id;
@@ -99,11 +100,11 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                     }
 
                     if (isGive) {
-                        await db.query('UPDATE user_reputation SET "rep_points" = "rep_points" + $1 WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
+                        await db.query('UPDATE user_reputation SET "rep_points" = COALESCE("rep_points", 0) + $1 WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
                         await message.react('🌟').catch(()=>{});
                         feedback = `\n\n🌟 **تم التنفيذ:** تم إضافة **${amount}** نقطة سمعة إلى **${targetUser.username}**.`;
                     } else {
-                        await db.query('UPDATE user_reputation SET "rep_points" = GREATEST(0, "rep_points" - $1) WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
+                        await db.query('UPDATE user_reputation SET "rep_points" = GREATEST(0, COALESCE("rep_points", 0) - $1) WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
                         await message.react('💔').catch(()=>{});
                         feedback = `\n\n💔 **تم التنفيذ:** تم خصم **${amount}** نقطة سمعة من **${targetUser.username}**.`;
                     }
@@ -111,6 +112,7 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                 }
             }
 
+            // 3. المورا
             else if (!actionDone && (lowerText.includes('اعط') || lowerText.includes('حول') || lowerText.includes('هاتي') || lowerText.includes('سحب') || lowerText.includes('اسحب'))) {
                 if (amount > 0) {
                     const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); 
@@ -120,37 +122,53 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                         await db.query('INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora") VALUES ($1, $2, 0, 1, 0, 0) ON CONFLICT ("user", "guild") DO NOTHING', [targetUser.id, message.guild.id]);
                     }
 
+                    // 🔥 تم إصلاح تحويلات الـ المورا لتتوافق مع نوع BIGINT!
                     if (isGive) {
-                        await db.query('UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3', [amount, targetUser.id, message.guild.id]);
+                        await db.query('UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3', [String(amount), targetUser.id, message.guild.id]);
                         await message.react('💸').catch(()=>{});
                         feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
                     } else {
-                        await db.query('UPDATE levels SET "mora" = GREATEST(0, "mora" - $1) WHERE "user" = $2 AND "guild" = $3', [amount, targetUser.id, message.guild.id]);
+                        await db.query('UPDATE levels SET "mora" = GREATEST(0, CAST("mora" AS BIGINT) - CAST($1 AS BIGINT)) WHERE "user" = $2 AND "guild" = $3', [String(amount), targetUser.id, message.guild.id]);
                         await message.react('📉').catch(()=>{});
                         feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
                     }
+                    
+                    // تحديث الكاش ليقرأ الرصيد الجديد مباشرة
+                    if (message.client.getLevel) {
+                        let cache = await message.client.getLevel(targetUser.id, message.guild.id);
+                        if (cache) {
+                            if (isGive) cache.mora = String(BigInt(cache.mora || 0) + BigInt(amount));
+                            else {
+                                let newMora = BigInt(cache.mora || 0) - BigInt(amount);
+                                cache.mora = newMora > 0n ? String(newMora) : "0";
+                            }
+                            await message.client.setLevel(cache);
+                        }
+                    }
+
                     actionDone = true;
                 }
             }
 
+            // 4. الميوت
             if (!actionDone && (lowerText.includes('تايم') || lowerText.includes('سكت') || lowerText.includes('اصمت') || lowerText.includes('ميوت') || lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح'))) {
-                const targetMember = await message.guild.members.fetch(targetUser.id).catch(()=>null);
-                if (targetMember) {
+                const targetMemberObj = await message.guild.members.fetch(targetUser.id).catch(()=>null);
+                if (targetMemberObj) {
                     if (lowerText.includes('فك') || lowerText.includes('شيل') || lowerText.includes('سامح')) {
-                        if (targetMember.isCommunicationDisabled()) {
-                            await targetMember.timeout(null, "أمر من الامبراطورة (AI)");
+                        if (targetMemberObj.isCommunicationDisabled()) {
+                            await targetMemberObj.timeout(null, "أمر من الامبراطورة (AI)");
                             await message.react('✅').catch(()=>{});
-                            feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMember.user.username}**.`;
+                            feedback = `\n\n✅ **تم التنفيذ:** تم رفع العقوبة عن **${targetMemberObj.user.username}**.`;
                         }
                     } 
                     else {
                         let minutes = 5; 
                         if (amount > 0) minutes = amount; 
 
-                        if (targetMember.manageable) {
-                            await targetMember.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
+                        if (targetMemberObj.manageable) {
+                            await targetMemberObj.timeout(minutes * 60 * 1000, "أمر من الامبراطورة (AI)");
                             await message.react('🤐').catch(()=>{});
-                            feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMember.user.username}** لمدة **${minutes}** دقيقة.`;
+                            feedback = `\n\n✅ **تم التنفيذ:** تم إسكات **${targetMemberObj.user.username}** لمدة **${minutes}** دقيقة.`;
                         } else {
                             feedback = `\n\n❌ لا يمكنني إسكاته (رتبته أعلى مني).`;
                         }
@@ -185,7 +203,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         const finalNsfwStatus = channelSettings ? Boolean(channelSettings.nsfw) : Boolean(isDiscordNsfw);
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
         
-        const db = messageObject ? messageObject.client.db : null;
+        const db = messageObject ? messageObject.client.sql : null; // 🔥 تصحيح: استخدام client.sql بدلاً من client.db
         
         const userData = await getUserData(userId, guildId, db);
 
