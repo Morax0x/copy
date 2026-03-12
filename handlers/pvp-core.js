@@ -46,6 +46,7 @@ function cleanDisplayName(name) {
 
 async function getUserRace(member, db) {
     if (!member || !member.guild) return null;
+    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [member.guild.id]);
     const allRaceRoles = res.rows;
     if (!member.roles || !member.roles.cache) return null;
@@ -59,6 +60,8 @@ async function getWeaponData(db, member) {
     const raceName = userRace.raceName || userRace.racename;
     const weaponConfig = weaponsConfig.find(w => w.race === raceName);
     if (!weaponConfig) return null;
+    
+    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [member.id, member.guild.id, raceName]);
     let userWeapon = res.rows[0];
     if (!userWeapon || Number(userWeapon.weaponLevel || userWeapon.weaponlevel) <= 0) return null;
@@ -69,9 +72,10 @@ async function getWeaponData(db, member) {
 async function getAllSkillData(db, member) {
     const userRace = await getUserRace(member, db);
     const skillsOutput = {};
+    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [member.id, member.guild.id]);
     const userSkillsData = res.rows;
-     
+      
     if (userSkillsData) {
         userSkillsData.forEach(userSkill => {
             const skillConfig = skillsConfig.find(s => s.id === (userSkill.skillID || userSkill.skillid));
@@ -95,6 +99,7 @@ async function getAllSkillData(db, member) {
 }
 
 async function getUserActiveSkill(db, userId, guildId) {
+    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
     const userSkills = res.rows;
     if (userSkills.length > 0) {
