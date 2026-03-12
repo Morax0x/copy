@@ -614,8 +614,9 @@ module.exports = {
                 const targetName = (shortcut.commandName || shortcut.commandname).toLowerCase();
                 const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
                 if (cmd) {
-                    if (checkPermissions(message, cmd)) {
-                        const cooldownMsg = checkCooldown(message, cmd);
+                    // 🔥 إضافة الـ await هنا
+                    if (await checkPermissions(message, cmd)) {
+                        const cooldownMsg = await checkCooldown(message, cmd);
                         if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); return; }
                         try {
                             const finalArgs = argsRaw.slice(1);
@@ -650,8 +651,10 @@ module.exports = {
                             const isBlacklistedRes = await db.query(`SELECT 1 FROM blacklistTable WHERE "id" = $1`, [message.author.id]);
                             if (isBlacklistedRes.rows.length > 0) return; 
                         } catch(e) {}
-                        if (checkPermissions(message, command)) {
-                            const cooldownMsg = checkCooldown(message, command);
+                        
+                        // 🔥 إضافة الـ await هنا
+                        if (await checkPermissions(message, command)) {
+                            const cooldownMsg = await checkCooldown(message, command);
                             if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
                             else { try { await command.execute(message, args); } catch (error) { message.reply("❌ حدث خطأ."); } }
                         }
@@ -666,7 +669,8 @@ module.exports = {
             const commandName = args.shift().toLowerCase();
             const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
             if (command && command.category === "Economy") {
-                if (!checkPermissions(message, command)) return;
+                // 🔥 إضافة الـ await هنا
+                if (!(await checkPermissions(message, command))) return;
                 try { await command.execute(message, args); } catch (error) {}
             }
             return;
