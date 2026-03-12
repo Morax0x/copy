@@ -1,5 +1,5 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, ComponentType, SlashCommandBuilder } = require("discord.js");
-const marketConfig = require('../../json/market-items.json'); // استيراد ملف الإعدادات للفلترة
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder } = require("discord.js");
+const marketConfig = require('../../json/market-items.json'); 
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -177,6 +177,7 @@ module.exports = {
             sql = client.sql;
             user = interaction.user;
             guild = interaction.guild;
+            // 🔥 منعنا الـ Ephemeral لكي تكون رسائل البيع والشراء ظاهرة للجميع
             await interaction.deferReply();
         } else {
             message = interactionOrMessage;
@@ -194,11 +195,9 @@ module.exports = {
             }
         };
 
-        // 🔥 1. جلب العناصر من قاعدة البيانات
         const dbItemsRes = await sql.query("SELECT * FROM market_items");
         const dbItems = dbItemsRes.rows;
 
-        // 🔥 2. تصفية العناصر: نعرض فقط العناصر الموجودة في ملف JSON (الأسهم والعقارات)
         const validItemIds = new Set(marketConfig.map(i => i.id));
         const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
