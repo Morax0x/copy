@@ -135,8 +135,8 @@ module.exports = {
             const user = targetMember.user;
             const cleanName = cleanDisplayName(user.displayName);
 
-            // 🔥 تمت إضافة await هنا لكي تعمل بشكل متزامن مع قاعدة بيانات PostgreSQL
-            const userRace = await getUserRace(db, targetMember);
+            // 🔥 تم التعديل هنا: تصحيح الترتيب ليتوافق مع pvp-core.js (targetMember ثم db)
+            const userRace = await getUserRace(targetMember, db);
             const weaponData = await getWeaponData(db, targetMember);
 
             if (!userRace) {
@@ -144,7 +144,7 @@ module.exports = {
             }
 
             if (!weaponData) {
-                return replyError(`❌ **${cleanName}** يمتلك عرق \`${userRace.raceName}\` لكنه لم يشتري السلاح بعد من المتجر.`);
+                return replyError(`❌ **${cleanName}** يمتلك عرق \`${userRace.raceName || userRace.racename}\` لكنه لم يشتري السلاح بعد من المتجر.`);
             }
 
             const description = [
