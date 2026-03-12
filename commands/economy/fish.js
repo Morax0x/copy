@@ -79,10 +79,11 @@ module.exports = {
 
         if (!userData) {
             userData = { user: user.id, guild: guild.id, rodLevel: 1, boatLevel: 1, currentLocation: 'beach', lastFish: 0 };
-            await sql.query('INSERT INTO levels ("user", "guild", "rodLevel", "boatLevel", "currentLocation", "lastFish") VALUES ($1, $2, 1, 1, $3, 0)', [user.id, guild.id, 'beach']);
+            await sql.query('INSERT INTO levels ("user", "guild", "rodLevel", "boatLevel", "currentLocation", "lastFish") VALUES ($1, $2, 1, 1, $3, $4)', [user.id, guild.id, 'beach', '0']);
         }
 
         const now = Date.now();
+        const nowStr = String(now);
         // 🔥 تثبيت الكوول داون لساعة كاملة (3600000 مللي ثانية) لجميع اللاعبين!
         const cooldown = 3600000; 
 
@@ -104,9 +105,25 @@ module.exports = {
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
-        // 🔥 الحل الجذري: تطبيق الكوول داون في قاعدة البيانات فوراً قبل بدء اللعبة لضمان عدم السبام
+        // =========================================================================
+        // 🔥 الحل الجذري للثغرة: تحديث قاعدة البيانات + الكاش الداخلي للبوت فوراً
+        // =========================================================================
         if (user.id !== OWNER_ID) {
-            await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [now, user.id, guild.id]).catch(() => {});
+            try {
+                // 1. تحديث السحابة
+                await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [nowStr, user.id, guild.id]);
+                
+                // 2. تحديث كاش البوت لمنعه من الكتابة فوق السحابة
+                if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                    let cacheData = await client.getLevel(user.id, guild.id);
+                    if (cacheData) {
+                        cacheData.lastFish = nowStr;
+                        await client.setLevel(cacheData);
+                    }
+                }
+            } catch (err) {
+                console.error("Fish Cooldown Fix Error:", err);
+            }
         }
 
         const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
@@ -250,7 +267,7 @@ module.exports = {
                     
                     const failEmbed = new EmbedBuilder()
                         .setTitle("❌ انقطع الخيط!")
-                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر! (لقد خسرت محاولتك لهذه الساعة)`)
+                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
                         .setColor(Colors.Red);
                     
                     activeFishingSessions.delete(user.id);
@@ -329,8 +346,17 @@ module.exports = {
                             }
                         }
                         
-                        // تحديث المورا فقط هنا لأن الكوول داون تم تسجيله بالفعل
-                        await sql.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalValue, user.id, guild.id]);
+                        // 🔥 تحديث المورا مع تحويلها لـ BIGINT لحماية الداتابيس
+                        await sql.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]);
+                        
+                        // تحديث كاش البوت لزيادة المورا حتى لا تُمسح
+                        if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                            let cache = await client.getLevel(user.id, guild.id);
+                            if (cache) {
+                                cache.mora = String(BigInt(cache.mora || 0) + BigInt(totalValue));
+                                await client.setLevel(cache);
+                            }
+                        }
                         
                         if (updateGuildStat) {
                             updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
@@ -372,7 +398,7 @@ module.exports = {
                     if (reason !== 'success' && reason !== 'wrong_input') {
                         const failEmbed = new EmbedBuilder()
                             .setTitle("💨 هربت السمكة!")
-                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة. (لقد خسرت محاولتك لهذه الساعة)")
+                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.)")
                             .setColor(Colors.Red);
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
