@@ -240,7 +240,9 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
             rankInfo = getRankInfo(item.db.rp);
         } 
         else if (type === 'mora') {
-            statVal = ((item.db.mora||0) + (item.db.bank||0)).toLocaleString();
+            // 🔥 الإصلاح الجوهري: نستخدم النص المنسق الجاهز من السحابة مباشرة
+            // نأخذ القيمة المنسقة التي جهزناها في ملف top.js (تجنب الحساب هنا)
+            statVal = item.db.total_wealth_formatted || (BigInt(item.db.total_wealth || 0).toLocaleString());
             statLabel = theme.unit;
         } 
         else if (type === 'level') {
@@ -318,7 +320,10 @@ async function generateTopImage(pageData, type, page, totalPages, targetUserId, 
     ctx.textAlign = 'center';
     
     let footerText = `الـصـفـحـة ${page} مـن ${totalPages}`;
-    if (extraData.totalMora) footerText += `   |   إجـمـالـي ثـروة الـسـيـرفـر: ${extraData.totalMora.toLocaleString()} 💰`;
+    // 🔥 إصلاح المجموع الكلي أسفل الصورة ليدعم الترليونات
+    if (extraData.totalMora) {
+        footerText += `   |   إجـمـالـي ثـروة الـسـيـرفـر: ${extraData.totalMora} 💰`;
+    }
     
     ctx.fillText(fixAr(footerText), width / 2, footerY);
 
