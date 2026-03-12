@@ -60,8 +60,11 @@ async function ensureKingTrackerTable(db) {
             "ai_interactions" BIGINT DEFAULT 0,
             "fish_caught" BIGINT DEFAULT 0,
             "pvp_wins" BIGINT DEFAULT 0,
-            "crops_harvested" BIGINT DEFAULT 0
+            "crops_harvested" BIGINT DEFAULT 0,
+            "dungeon_floor" BIGINT DEFAULT 0
         )`);
+        // 🔥 تحديث الجدول الحالي إذا كان موجوداً مسبقاً لإضافة العمود الجديد
+        try { await db.query(`ALTER TABLE kings_board_tracker ADD COLUMN IF NOT EXISTS "dungeon_floor" BIGINT DEFAULT 0`); } catch(e){}
     } catch (e) {}
 }
 
@@ -623,7 +626,8 @@ async function autoUpdateKingsBoard(client, db) {
             const casinoDataRes = await db.query(`SELECT "userID", SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr]);
             const casinoData = casinoDataRes.rows[0];
             
-            const abyssDataRes = await db.query(`SELECT "user" as userID, "max_dungeon_floor" as val FROM levels WHERE "guild" = $1 AND "max_dungeon_floor" > 0 ORDER BY val DESC LIMIT 1`, [guildId]);
+            // 🔥 تعديل الاستعلام ليأخذ أعلى طابق في هذا اليوم فقط بدلاً من الرقم القياسي الأبدي
+            const abyssDataRes = await db.query(`SELECT "userID", "dungeon_floor" as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildId, todayStr]);
             const abyssData = abyssDataRes.rows[0];
             
             const chatterDataRes = await db.query(`SELECT "userID", SUM(COALESCE("messages", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr]);
@@ -646,7 +650,7 @@ async function autoUpdateKingsBoard(client, db) {
 
             const currentHashArray = [
                 casinoData ? `${casinoData.userID}:${casinoData.val}` : 'none',
-                abyssData ? `${abyssData.userid || abyssData.userID}:${abyssData.val}` : 'none',
+                abyssData ? `${abyssData.userID}:${abyssData.val}` : 'none',
                 chatterData ? `${chatterData.userID}:${chatterData.val}` : 'none',
                 philanData ? `${philanData.userID}:${philanData.val}` : 'none',
                 advisorData ? `${advisorData.userID}:${advisorData.val}` : 'none',
@@ -696,12 +700,10 @@ async function autoUpdateKingsBoard(client, db) {
                         await getKingInfo(farmData, 'مورا', 'ملك الحصاد', '🌾')
                     ];
 
-                    // 1. تحديث لوحة الملوك (صورة اللوحة تتحدث دائماً)
                     const kingsBoardBuffer = await generateKingsBoardImage(kingsArray);
                     const kingsBoardAttachment = new AttachmentBuilder(kingsBoardBuffer, { name: `kings-board-${Date.now()}.png` });
                     await kingsMsg.edit({ files: [kingsBoardAttachment] });
 
-                    // 2. معالجة الإشعارات وسحب الرولات
                     if (oldHash) {
                         const oldParts = oldHash.split('|');
                         const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الحكمة', 'ملك القنص', 'ملك النزاع', 'ملك الحصاد'];
@@ -710,15 +712,12 @@ async function autoUpdateKingsBoard(client, db) {
                         const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 'roleFisherKing', 'rolePvPKing', 'roleFarmKing'];
 
                         for (let i = 0; i < 8; i++) {
-                            // إذا كان هناك تغيير في هذا المركز
                             if (oldParts[i] !== currentHashArray[i] && currentHashArray[i] !== 'none') {
                                 const [newUserId, newVal] = currentHashArray[i].split(':');
                                 const [oldUserId] = oldParts[i] === 'none' ? [null] : oldParts[i].split(':');
 
-                                // 🔥 الإصلاح السحري: هل الملك تغير فعلاً؟
                                 if (newUserId !== oldUserId) {
                                     
-                                    // أ. نقل الرتبة من الملك القديم للجديد
                                     const roleId = settings[roleCols[i]];
                                     if (roleId) {
                                         const targetRole = guild.roles.cache.get(roleId);
@@ -733,7 +732,6 @@ async function autoUpdateKingsBoard(client, db) {
                                         }
                                     }
 
-                                    // ب. إرسال الإشعار لانتزاع التاج
                                     if (newUserId !== 'none') {
                                         const notifDataRes = await db.query(`SELECT "kingsNotif" FROM quest_notifications WHERE "id" = $1`, [`${newUserId}-${guildId}`]);
                                         const notifData = notifDataRes.rows[0];
@@ -764,7 +762,6 @@ async function autoUpdateKingsBoard(client, db) {
                                         }
                                     }
                                 }
-                                // إذا كان نفس الشخص (يكسر رقمه فقط)، لا نفعل شيئاً (اللوحة ستتحدث تلقائياً فوق)
                             }
                         }
                     }
@@ -798,7 +795,8 @@ async function rewardDailyKings(client, db) {
             const casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
             const casinoData = casinoDataRes.rows[0];
             
-            const abyssDataRes = await db.query(`SELECT "user" as userID FROM levels WHERE "guild" = $1 AND "max_dungeon_floor" > 0 ORDER BY "max_dungeon_floor" DESC LIMIT 1`, [guildId]);
+            // 🔥 تعديل ليحسب بناءً على طابق اليوم فقط
+            const abyssDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildId, yesterdayStr]);
             const abyssData = abyssDataRes.rows[0];
             
             const chatterDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY SUM(COALESCE("messages", 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
@@ -816,7 +814,7 @@ async function rewardDailyKings(client, db) {
 
             const winnersRaw = [
                 { id: casinoData?.userID, title: 'ملك الكازينو', rep: 5, roleCol: 'roleCasinoKing' },
-                { id: abyssData?.userid || abyssData?.userID, title: 'ملك الهاوية', rep: 4, roleCol: 'roleAbyss' },
+                { id: abyssData?.userID, title: 'ملك الهاوية', rep: 4, roleCol: 'roleAbyss' },
                 { id: chatterData?.userID, title: 'ملك البلاغة', rep: 7, roleCol: 'roleChatter' },
                 { id: philanData?.userID, title: 'ملك الكرم', rep: 1, roleCol: 'rolePhilanthropist' },
                 { id: advisorData?.userID, title: 'ملك الحكمة', rep: 2, roleCol: 'roleAdvisor' },
@@ -891,6 +889,7 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
         if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
 
         if (statName === 'max_dungeon_floor') {
+            // 1. تحديث الرقم القياسي الأبدي للبروفايل وبطاقة اللاعب
             const rowRes = await db.query(`SELECT "max_dungeon_floor" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
             const row = rowRes.rows[0];
             if (row) {
@@ -900,6 +899,15 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
             } else {
                 await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora", "max_dungeon_floor") VALUES ($1, $2, 0, 1, 0, 0, $3)`, [userId, guildId, addedVal]);
             }
+
+            // 2. 🔥 التحديث الجديد: حساب أعلى طابق "لليوم فقط" لمنافسة الملوك باستخدام GREATEST
+            const dailyID = `${userId}-${guildId}-${todayStr}`;
+            await db.query(`
+                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "dungeon_floor") 
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT("id") DO UPDATE SET "dungeon_floor" = GREATEST(COALESCE(kings_board_tracker."dungeon_floor", 0), $6)
+            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+
         } else {
             const dailyID = `${userId}-${guildId}-${todayStr}`;
             const colName = statName;
