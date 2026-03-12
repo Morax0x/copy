@@ -32,12 +32,10 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
         
         if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
-        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
-        let userData = userDataRes.rows[0];
-
+        // 🔥 استخدام الكاش للتحقق من الرصيد لضمان عدم التعارض
+        let userData = await client.getLevel(i.user.id, i.guild.id);
         if (!userData) {
             userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalXP: 0 };
-            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
         }
 
         let userMora = Number(userData.mora) || 0; 
@@ -80,7 +78,12 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
+                
+                // 🔥 تحديث المورا والكاش معاً لتجنب فقدان البيانات
+                userData.mora = userMora - totalCost;
+                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+                await client.setLevel(userData);
+                await db.query(`UPDATE levels SET "mora" = $1, "shop_purchases" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, userData.shop_purchases, i.user.id, i.guild.id]);
                 
                 await db.query(`
                     INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
@@ -162,7 +165,11 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                     return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
                 }
 
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalRefund, i.user.id, i.guild.id]);
+                // 🔥 تحديث المورا والكاش معاً عند البيع
+                userData.mora = userMora + totalRefund;
+                await client.setLevel(userData);
+                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [userData.mora, i.user.id, i.guild.id]);
+                
                 await db.query("COMMIT");
 
                 let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
