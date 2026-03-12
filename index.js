@@ -149,14 +149,51 @@ async function bootstrap() {
 
 bootstrap();
 
-async function shutdownGracefully() {
-    console.log("⚠️ Shutting down gracefully...");
+// ==========================================
+// 🛡️ نظام الإغلاق الآمن (Graceful Shutdown)
+// ==========================================
+async function shutdownGracefully(signal) {
+    console.log(`\n🛑 [${signal}] الإمبراطور أمر بإنهاء البوت... جاري التوقف بسلام وإنقاذ البيانات!`);
+    
     try {
+        if (client.user) {
+            client.user.setStatus('dnd');
+            client.user.setActivity('جاري الصيانة...', { type: 3 });
+        }
+
+        const sql = client.sql;
+        if (sql) {
+            console.log("⏳ جاري رفع بيانات الرام المهمة إلى السحابة...");
+            
+            // ⚠️ حفظ أوقات الفويس:
+            if (client.voiceJoinedTracker && client.voiceJoinedTracker.size > 0) {
+                const now = Date.now();
+                let savedCount = 0;
+                
+                for (const [userId, joinInfo] of client.voiceJoinedTracker.entries()) {
+                    try {
+                        const minutesSpent = Math.floor((now - joinInfo.timestamp) / 60000);
+                        if (minutesSpent > 0 && client.addVoiceTime) {
+                            await client.addVoiceTime(userId, joinInfo.guildId, minutesSpent);
+                            savedCount++;
+                        }
+                    } catch (e) {
+                        console.error(`خطأ أثناء حفظ فويس العضو ${userId}:`, e.message);
+                    }
+                }
+                console.log(`✅ تم إنقاذ أوقات ${savedCount} عضو من الرومات الصوتية!`);
+            }
+        }
+
+    } catch (err) {
+        console.error("❌ حدث خطأ أثناء التوقف الآمن:", err.message);
+    } finally {
+        console.log("👋 وداعاً... (البوت توقف الآن)");
         if (client) client.destroy();
         if (db) await db.end(); 
         process.exit(0);
-    } catch (err) { process.exit(1); }
+    }
 }
 
-process.on('SIGINT', shutdownGracefully);
-process.on('SIGTERM', shutdownGracefully);
+process.on('SIGINT', () => shutdownGracefully('SIGINT'));
+process.on('SIGTERM', () => shutdownGracefully('SIGTERM'));
