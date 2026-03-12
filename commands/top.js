@@ -41,12 +41,13 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             const res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
             allUsers = res.rows;
         } else if (type === 'mora') {
-            // 🔥 تعديل: استخدام CAST لضمان دقة الأرقام الضخمة واستثناء المالك من المجموع أيضاً
+            // 🔥 الإصلاح هنا: استخدام NUMERIC للتعامل مع أرقام ضخمة جداً وتحويلها لنص (TEXT) لمنع تشوه الرقم
             const res = await sql.query(`
-                SELECT "user", "mora", "bank", (CAST("mora" AS BIGINT) + CAST("bank" AS BIGINT)) as total_wealth 
+                SELECT "user", "mora", "bank", 
+                (CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as total_wealth 
                 FROM levels 
                 WHERE "guild" = $1 AND "user" != $2 
-                ORDER BY total_wealth DESC`, [guild.id, OWNER_ID]);
+                ORDER BY (CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC)) DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows;
         } else if (type === 'streak') {
             const res = await sql.query(`SELECT "userID" as "user", "streakCount" FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND "streakCount" > 0 ORDER BY "streakCount" DESC`, [guild.id, OWNER_ID]);
@@ -91,9 +92,9 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            // 🔥 تعديل: حساب المجموع الكلي مع استثناء المالك لضمان عدم ظهور أرقام فلكية
-            const tmRes = await sql.query(`SELECT SUM(CAST("mora" AS BIGINT) + CAST("bank" AS BIGINT)) as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
-            totalMora = tmRes.rows[0]?.t ? String(tmRes.rows[0].t) : "0";
+            // 🔥 الإصلاح هنا أيضاً للمجموع الكلي في أسفل الصفحة
+            const tmRes = await sql.query(`SELECT SUM(CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
+            totalMora = tmRes.rows[0]?.t || "0";
         }
 
         const pageDataRaw = allUsers.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
