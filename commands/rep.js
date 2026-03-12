@@ -42,7 +42,6 @@ module.exports = {
 
         try {
             await db.query(`CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" INTEGER DEFAULT 0, "last_rep_given" TEXT, "daily_reps_given" INTEGER DEFAULT 0, "weekly_reps_given" INTEGER DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`);
-            await db.query(`ALTER TABLE user_reputation ADD COLUMN IF NOT EXISTS "daily_reps_given" INTEGER DEFAULT 0`);
         } catch (e) {}
 
         let maxVotes = 1;
@@ -109,17 +108,21 @@ module.exports = {
         const dbDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
         
         if (senderId !== OWNER_ID) {
-            const dailyStatId = `${senderId}-${guildId}-${dbDateStr}`;
-            const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "id" = $1`, [dailyStatId]);
-            const todayMessages = dailyStatsRes.rows.length > 0 ? (parseInt(dailyStatsRes.rows[0].messages) || 0) : 0;
+            try {
+                // 🔥 تم الإصلاح هنا: استخدام الطريقة الصحيحة للبحث عن إحصائيات اليوم!
+                const dailyStatsRes = await db.query(`SELECT "messages" FROM guild_member_stats WHERE "userID" = $1 AND "guildID" = $2 AND "date" = $3`, [senderId, guildId, dbDateStr]);
+                const todayMessages = dailyStatsRes.rows.length > 0 ? (parseInt(dailyStatsRes.rows[0].messages) || 0) : 0;
 
-            if (todayMessages < 20) {
-                const msgEmbed = new EmbedBuilder()
-                    .setTitle('✥ لا تسـتوفـي شـروط التزكيـة ..')
-                    .setDescription('✦ يجـب ان تكـون متفـاعـل بالدردشـة لهـذا اليوم')
-                    .setThumbnail('https://i.postimg.cc/mrLwL056/ayqwnt-(3).png')
-                    .setColor(getRandomColor());
-                return message.reply({ embeds: [msgEmbed] });
+                if (todayMessages < 20) {
+                    const msgEmbed = new EmbedBuilder()
+                        .setTitle('✥ لا تسـتوفـي شـروط التزكيـة ..')
+                        .setDescription('✦ يجـب ان تكـون متفـاعـل بالدردشـة لهـذا اليوم (20 رسالة على الأقل)')
+                        .setThumbnail('https://i.postimg.cc/mrLwL056/ayqwnt-(3).png')
+                        .setColor(getRandomColor());
+                    return message.reply({ embeds: [msgEmbed] });
+                }
+            } catch (e) {
+                console.error("Rep Stat Check Error:", e.message);
             }
         }
 
