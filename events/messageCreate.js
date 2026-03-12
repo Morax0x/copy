@@ -275,9 +275,10 @@ module.exports = {
             return;
         }
 
+        // 🔥 التعديل هنا: الرد بـ "نـعـم .. ؟" عند المنشن المجرد
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
         if (mentionRegex.test(message.content)) {
-            return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
+            return message.reply("نـعـم .. ؟").catch(() => {});
         }
 
         if (message.mentions.has(client.user) && !message.author.bot && !message.content.startsWith(Prefix)) {
@@ -380,7 +381,8 @@ module.exports = {
                     
                     if (!reply) return;
 
-                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id);
+                    // 🔥 إصلاح خطأ `Cannot read properties of undefined` بتمرير `db`
+                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
 
                     const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
                     const replyOptions = { repliedUser: true, parse: ['users'] };
