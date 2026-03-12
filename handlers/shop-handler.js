@@ -402,13 +402,15 @@ async function _handleBoatSelect(i, client, db) {
     await i.editReply({ embeds: [embed], components: [row] });
 }
 
+// 🔥 تعديل: عرض الطعم كـ (حزمة من 5 حبات)
 async function _handleBaitSelect(i, client, db) {
     if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
     const baitOptions = baitsConfig.map(b => {
-        const unitPrice = Math.round(b.price / 5); 
-        return { label: b.name, description: `${b.description} | ${unitPrice.toLocaleString()} مورا`, value: `buy_bait_${b.id}`, emoji: '🪱' };
+        // 🔥 حساب سعر الحزمة (5 حبات)
+        const packPrice = Math.round((b.price / 5) * 5); 
+        return { label: `حزمة 5x ${b.name}`, description: `${b.description} | ${packPrice.toLocaleString()} مورا`, value: `buy_bait_${b.id}`, emoji: '🪱' };
     });
-    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_bait_menu').setPlaceholder('اختر الطعم - حبة واحدة...').addOptions(baitOptions));
+    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_bait_menu').setPlaceholder('اختر الطعم (حزمة من 5 حبات)...').addOptions(baitOptions));
     await i.editReply({ content: "**🛒 متجر الطعوم:**", components: [row], embeds: [] });
 }
 
@@ -487,25 +489,32 @@ async function _handleBoatUpgrade(i, client, db) {
     await _handleBoatSelect(i, client, db);
 }
 
+// 🔥 تعديل: معالجة الشراء لحزمة من 5 طعوم
 async function _handleBaitBuy(i, client, db) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const baitId = i.values[0].replace('buy_bait_', '');
     const bait = baitsConfig.find(b => b.id === baitId);
-    const qty = 1; 
+    
+    // 🔥 الكمية الآن 5 حبات
+    const qty = 5; 
     const unitPrice = Math.round(bait.price / 5);
-    const cost = unitPrice * qty;
+    const cost = unitPrice * qty; // السعر لـ 5 حبات
+    
     let userData = await client.getLevel(i.user.id, i.guild.id);
     if (Number(userData.mora) < cost) {
         const userBank = Number(userData.bank) || 0;
-        let msg = `❌ رصيدك غير كافي.`;
+        let msg = `❌ رصيدك غير كافي لشراء هذه الحزمة! تحتاج إلى **${cost.toLocaleString()}** ${EMOJI_MORA}`;
         if (userBank >= cost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، اسحب منها.`;
         return i.editReply(msg);
     }
     userData.mora = Number(userData.mora) - cost; 
     await client.setLevel(userData);
+    
+    // إدراج 5 حبات في المخزون
     await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $5`, [i.guild.id, i.user.id, baitId, qty, qty]);
-    await i.editReply({ content: `✅ تم شراء **${qty}x ${bait.name}** بنجاح!` });
-    sendShopLog(client, i.guild.id, i.member, `طعم: ${bait.name} (x${qty})`, cost, "شراء");
+    
+    await i.editReply({ content: `✅ تم شراء **حزمة (${qty} حبات) من ${bait.name}** بنجاح!` });
+    sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
 
 async function _handleWeaponUpgrade(i, client, db, isUpdate = false) {
