@@ -1,4 +1,4 @@
-const { EmbedBuilder, Colors, MessageFlags } = require("discord.js");
+const { EmbedBuilder, Colors } = require("discord.js");
 const marketItemsConfig = require('../../json/market-items.json');
 
 let EMOJI_MORA = '🪙'; 
@@ -95,7 +95,7 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         const item = itemRes.rows[0];
         if (!item) return await i.editReply({ content: '❌ الأصل (السهم) غير موجود في النظام.' });
 
-        // 🔥 الاعتماد الكامل على الكاش لمنع التضارب
+        // 🔥 الاعتماد الكامل على الكاش لمنع تضارب البيانات ورجوع الرصيد
         let userData = await client.getLevel(i.user.id, i.guild.id);
         if (!userData) {
             userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
@@ -114,23 +114,22 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             if (userMora < totalCost) {
                 let msg = `❌ **رصيدك غير كافي!** تحتاج: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`;
                 if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، يمكنك السحب منه.`;
+                
+                if (totalCost > (Number(item.currentPrice || item.currentprice) * quantity)) {
+                    msg += `\n⚠️ **تنبيه:** السعر ارتفع قليلاً بسبب الانزلاق السعري للكميات الكبيرة.\nالتكلفة الحالية: **${totalCost.toLocaleString()}**`;
+                }
                 return await i.editReply({ content: msg });
             }
             
-            try {
-                // 🔥 تحديث المورا داخل الكاش وحفظه (هذه الطريقة تضمن الخصم 100%)
-                userData.mora = userMora - totalCost;
-                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
-                await client.setLevel(userData);
-                
-                if (pfItem) {
-                    await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]);
-                } else {
-                    await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]);
-                }
-            } catch (txErr) {
-                console.error("Market Buy Error:", txErr);
-                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام الشراء.' });
+            // 🔥 الخصم من الكاش مباشرةً (آمن 100%)
+            userData.mora = userMora - totalCost;
+            userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+            await client.setLevel(userData);
+            
+            if (pfItem) {
+                await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]);
+            } else {
+                await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]);
             }
             
             const embed = new EmbedBuilder()
@@ -152,21 +151,15 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
             
-            try {
-                if (userQty - quantity > 0) {
-                    await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, pfItem.id]);
-                } else {
-                    await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]);
-                }
-
-                // 🔥 إضافة الأرباح إلى الكاش وحفظها
-                userData.mora = userMora + totalGain;
-                await client.setLevel(userData);
-                
-            } catch (txErr) {
-                console.error("Market Sell Error:", txErr);
-                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام البيع.' });
+            if (userQty - quantity > 0) {
+                await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, pfItem.id]);
+            } else {
+                await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]);
             }
+
+            // 🔥 إضافة الأرباح إلى الكاش مباشرةً
+            userData.mora = userMora + totalGain;
+            await client.setLevel(userData);
             
             const embed = new EmbedBuilder()
                 .setTitle('📈 تمت عملية البيع بنجاح')
