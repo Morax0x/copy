@@ -111,18 +111,16 @@ module.exports = {
         const targetUser = targetMember.user;
         const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
-        // 1. جلب البيانات الأساسية للقتال
-        const userRace = await getUserRace(sql, targetMember);
+        // 🔥 تم الإصلاح هنا: عكسنا المتغيرات لتتطابق مع دالة pvp-core! (targetMember قبل sql)
+        const userRace = await getUserRace(targetMember, sql);
         const weaponData = await getWeaponData(sql, targetMember);
         
-        // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" لضمان القراءة الصحيحة من PostgreSQL
         const userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]);
         const userSkillsDB = userSkillsRes.rows;
         
         // جلب الجرعات
         let potionsList = [];
         try {
-            // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" 
             const userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]);
             const userInventory = userInventoryRes.rows;
 
@@ -206,7 +204,6 @@ module.exports = {
         if (userRace && raceSkillId && !hasRaceSkillInDB) {
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             if (raceSkillConfig) {
-                // تأكد أيضاً إن مهارة العرق هذي مو "شق زمكان" (ولو إن المفروض لها عرق خاص، بس احتياط)
                 if (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID) {
                      skillsList.push(`✶ ${raceSkillConfig.emoji} ${raceSkillConfig.name} : (Lv.1) [غير مفعلة]\n✶ وصف المهارة: ${raceSkillConfig.description}`);
                 }
