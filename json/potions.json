@@ -29,7 +29,7 @@
   {
     "id": "potion_time",
     "name": "جرعة الزمن",
-    "price": 200,
+    "price": 500,
     "description": "⏳ تعيد شحن مهاراتك فوراً.",
     "category": "potions",
     "emoji": "⏳",
@@ -38,7 +38,7 @@
   {
     "id": "potion_titan",
     "name": "جرعة العملاق",
-    "price": 700,
+    "price": 999,
     "description": "🔥 تضاعف صحتك وتجبر الوحش على مهاجمتك (تستمر لـ 5 طوابق).",
     "category": "potions",
     "emoji": "🔥",
@@ -47,7 +47,7 @@
   {
     "id": "potion_sacrifice",
     "name": "جرعة التضحية",
-    "price": 2000,
+    "price": 3000,
     "description": "💀 تضحي بنفسك لإنعاش وشفاء كامل الفريق.",
     "category": "potions",
     "emoji": "💀",
