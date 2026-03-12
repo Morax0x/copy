@@ -71,7 +71,7 @@ module.exports = {
         };
 
         if (activeFishingSessions.has(user.id)) {
-            return reply({ content: "⚠️ **لديك رحلة صيد جارية!**", ephemeral: true });
+            return reply({ content: "⚠️ **لديك رحلة صيد جارية!** ركز على سنارتك.", ephemeral: true });
         }
 
         let userDataRes = await sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]);
@@ -83,15 +83,17 @@ module.exports = {
         }
 
         const now = Date.now();
-        // 🔥 تم تثبيت وقت الانتظار إلى ساعة واحدة (3,600,000 مللي ثانية) لجميع اللاعبين
+        // 🔥 تثبيت الكوول داون لساعة كاملة (3600000 مللي ثانية) لجميع اللاعبين!
         const cooldown = 3600000; 
 
         const lastFish = Number(userData.lastFish || userData.lastfish) || 0;
+        
+        // التحقق من وقت الانتظار
         if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
             const remaining = lastFish + cooldown - now;
             const minutes = Math.floor((remaining % 3600000) / 60000);
             const seconds = Math.floor((remaining % 60000) / 1000).toString().padStart(2, '0');
-            return reply({ content: `قمـت بالصيـد مؤخـرا انتـظـر **${minutes}:${seconds}** لتـذهب للصيـد مجددا` });
+            return reply({ content: `⏳ رميت السنارة مؤخراً! الأسماك حذرة الآن، انتظر **${minutes}:${seconds}** دقيقة لتعود للصيد.` });
         }
 
         const woundedDebuffRes = await sql.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'pvp_wounded' AND "expiresAt" > $3`, [user.id, guild.id, now]);
@@ -100,6 +102,11 @@ module.exports = {
         if (woundedDebuff) {
             const minutesLeft = Math.ceil((Number(woundedDebuff.expiresAt || woundedDebuff.expiresat) - now) / 60000);
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
+        }
+
+        // 🔥 الحل الجذري: تطبيق الكوول داون في قاعدة البيانات فوراً قبل بدء اللعبة لضمان عدم السبام
+        if (user.id !== OWNER_ID) {
+            await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [now, user.id, guild.id]).catch(() => {});
         }
 
         const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
@@ -243,12 +250,10 @@ module.exports = {
                     
                     const failEmbed = new EmbedBuilder()
                         .setTitle("❌ انقطع الخيط!")
-                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
+                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر! (لقد خسرت محاولتك لهذه الساعة)`)
                         .setColor(Colors.Red);
                     
-                    await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [String(Date.now()), user.id, guild.id]);
                     activeFishingSessions.delete(user.id);
-                    
                     await j.editReply({ content: '', embeds: [failEmbed], components: [] }).catch(()=>{});
                     return;
                 }
@@ -324,7 +329,8 @@ module.exports = {
                             }
                         }
                         
-                        await sql.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + $1, "lastFish" = $2 WHERE "user" = $3 AND "guild" = $4`, [totalValue, String(Date.now()), user.id, guild.id]);
+                        // تحديث المورا فقط هنا لأن الكوول داون تم تسجيله بالفعل
+                        await sql.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalValue, user.id, guild.id]);
                         
                         if (updateGuildStat) {
                             updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
@@ -333,7 +339,7 @@ module.exports = {
                         await sql.query("COMMIT");
                     } catch (e) {
                         await sql.query("ROLLBACK");
-                        throw e;
+                        console.error("Fish DB Error:", e);
                     }
 
                     const summary = {};
@@ -366,10 +372,8 @@ module.exports = {
                     if (reason !== 'success' && reason !== 'wrong_input') {
                         const failEmbed = new EmbedBuilder()
                             .setTitle("💨 هربت السمكة!")
-                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
+                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة. (لقد خسرت محاولتك لهذه الساعة)")
                             .setColor(Colors.Red);
-                        
-                        await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [String(Date.now()), user.id, guild.id]);
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
