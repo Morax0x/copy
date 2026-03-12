@@ -626,7 +626,6 @@ async function autoUpdateKingsBoard(client, db) {
             const casinoDataRes = await db.query(`SELECT "userID", SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr]);
             const casinoData = casinoDataRes.rows[0];
             
-            // 🔥 تعديل الاستعلام ليأخذ أعلى طابق في هذا اليوم فقط بدلاً من الرقم القياسي الأبدي
             const abyssDataRes = await db.query(`SELECT "userID", "dungeon_floor" as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildId, todayStr]);
             const abyssData = abyssDataRes.rows[0];
             
@@ -777,13 +776,14 @@ async function autoUpdateKingsBoard(client, db) {
 async function rewardDailyKings(client, db) {
     if (!db) return;
     try {
-        await db.query(`CREATE TABLE IF NOT EXISTS kings_daily_payout ("datestr" TEXT PRIMARY KEY)`);
+        await db.query(`CREATE TABLE IF NOT EXISTS kings_daily_payout ("dateStr" TEXT PRIMARY KEY)`);
 
         const yesterdayKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
         yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
         const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
 
-        const isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "datestr" = $1`, [yesterdayStr]);
+        // 🔥 تم الإصلاح هنا (استخدام dateStr بالحرف الكبير S)
+        const isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "dateStr" = $1`, [yesterdayStr]);
         if (isPaidRes.rows.length > 0) return; 
 
         for (const guild of client.guilds.cache.values()) {
@@ -795,7 +795,6 @@ async function rewardDailyKings(client, db) {
             const casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC LIMIT 1`, [guildId, yesterdayStr]);
             const casinoData = casinoDataRes.rows[0];
             
-            // 🔥 تعديل ليحسب بناءً على طابق اليوم فقط
             const abyssDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildId, yesterdayStr]);
             const abyssData = abyssDataRes.rows[0];
             
@@ -873,7 +872,8 @@ async function rewardDailyKings(client, db) {
             }
         }
 
-        await db.query(`INSERT INTO kings_daily_payout ("datestr") VALUES ($1)`, [yesterdayStr]);
+        // 🔥 تم الإصلاح هنا أيضاً 
+        await db.query(`INSERT INTO kings_daily_payout ("dateStr") VALUES ($1)`, [yesterdayStr]);
     } catch (e) { console.error("Reward Daily Kings Error:", e); }
 }
 
@@ -889,7 +889,6 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
         if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
 
         if (statName === 'max_dungeon_floor') {
-            // 1. تحديث الرقم القياسي الأبدي للبروفايل وبطاقة اللاعب
             const rowRes = await db.query(`SELECT "max_dungeon_floor" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
             const row = rowRes.rows[0];
             if (row) {
@@ -900,7 +899,6 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
                 await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora", "max_dungeon_floor") VALUES ($1, $2, 0, 1, 0, 0, $3)`, [userId, guildId, addedVal]);
             }
 
-            // 2. 🔥 التحديث الجديد: حساب أعلى طابق "لليوم فقط" لمنافسة الملوك باستخدام GREATEST
             const dailyID = `${userId}-${guildId}-${todayStr}`;
             await db.query(`
                 INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "dungeon_floor") 
