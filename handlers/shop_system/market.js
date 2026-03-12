@@ -1,5 +1,17 @@
-const { EmbedBuilder, Colors } = require("discord.js");
-const { EMOJI_MORA } = require('./utils.js'); 
+const { EmbedBuilder, Colors, MessageFlags } = require("discord.js");
+const marketItemsConfig = require('../../json/market-items.json');
+
+let EMOJI_MORA = '🪙'; 
+try {
+    const utils = require('./utils');
+    if (utils.EMOJI_MORA) EMOJI_MORA = utils.EMOJI_MORA;
+    else {
+        const constants = require('../dungeon/constants');
+        if (constants.EMOJI_MORA) EMOJI_MORA = constants.EMOJI_MORA;
+    }
+} catch (e) {}
+
+const MARKET_VOLATILITY = 0.05; 
 
 function calculateSlippage(basePrice, quantity, isBuy) {
     const slippageFactor = 0.0001; 
@@ -17,8 +29,13 @@ function calculateSlippage(basePrice, quantity, isBuy) {
 
 async function updateMarketPrices(db) {
     if (!db) return;
-    
     try {
+        await db.query(`CREATE TABLE IF NOT EXISTS market_prices (
+            "itemID" TEXT PRIMARY KEY,
+            "currentPrice" INTEGER,
+            "lastPrice" INTEGER
+        )`);
+
         const allItemsRes = await db.query(`SELECT * FROM market_items`);
         const allItems = allItemsRes.rows;
         if (allItems.length === 0) return;
@@ -66,7 +83,7 @@ async function updateMarketPrices(db) {
 }
 
 async function _handleMarketTransaction(i, client, db, isBuy) {
-    await i.deferReply({ ephemeral: false }); 
+    if (!i.deferred && !i.replied) await i.deferReply({ flags: MessageFlags.Ephemeral }); 
     
     try {
         const quantityString = i.fields.getTextInputValue('quantity_input');
@@ -86,12 +103,9 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         const item = itemRes.rows[0];
         if (!item) return await i.editReply({ content: '❌ الأصل (السهم) غير موجود في النظام.' });
 
-        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
-        let userData = userDataRes.rows[0];
-
+        let userData = await client.getLevel(i.user.id, i.guild.id);
         if (!userData) {
-            userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0 };
-            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
+            userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalXP: 0 };
         }
 
         let userMora = Number(userData.mora) || 0; 
@@ -105,7 +119,7 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             const totalCost = Math.floor(avgPrice * quantity);
             
             if (userMora < totalCost) {
-                let msg = `❌ **رصيدك غير كافي!**`;
+                let msg = `❌ **رصيدك غير كافي!** تحتاج: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`;
                 if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، يمكنك السحب منه.`;
                 
                 if (totalCost > (Number(item.currentPrice || item.currentprice) * quantity)) {
@@ -116,7 +130,11 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
+                
+                userData.mora = userMora - totalCost;
+                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+                await client.setLevel(userData);
+                await db.query(`UPDATE levels SET "mora" = $1, "shop_purchases" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, userData.shop_purchases, i.user.id, i.guild.id]);
                 
                 if (pfItem) {
                     await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]);
@@ -135,7 +153,9 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 اشتريت: **${quantity}** سهم من **${item.name}**\n💵 التكلفة الإجمالية: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\n📊 متوسط السعر: **${avgPrice.toLocaleString()}**`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
             
-            await i.editReply({ embeds: [embed] });
+            // 🔥 إرسال رسالة الشراء بشكل عام في الشات
+            await i.editReply({ content: "✅ اكتملت العملية. (تم إرسال الفاتورة في الشات)" });
+            return await i.channel.send({ content: `<@${i.user.id}>`, embeds: [embed] });
 
         } else {
             const userQty = pfItem ? Number(pfItem.quantity) : 0;
@@ -149,13 +169,17 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             
             try {
                 await db.query("BEGIN");
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]);
                 
                 if (userQty - quantity > 0) {
                     await db.query(`UPDATE user_portfolio SET "quantity" = $1 WHERE "id" = $2`, [userQty - quantity, pfItem.id]);
                 } else {
                     await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]);
                 }
+
+                userData.mora = userMora + totalGain;
+                await client.setLevel(userData);
+                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [userData.mora, i.user.id, i.guild.id]);
+                
                 await db.query("COMMIT");
             } catch (txErr) {
                 await db.query("ROLLBACK");
@@ -163,12 +187,14 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             }
             
             const embed = new EmbedBuilder()
-                .setTitle('✅ تمت عملية البيع بنجاح')
-                .setColor(Colors.Green)
-                .setDescription(`📦 بعت: **${quantity}** سهم من **${item.name}**\n💵 الربح الإجمالي: **${totalGain.toLocaleString()}** ${EMOJI_MORA}\n📊 متوسط السعر: **${avgPrice.toLocaleString()}**`)
+                .setTitle('📈 تمت عملية البيع بنجاح')
+                .setColor(Colors.Blue)
+                .setDescription(`📦 بعت: **${quantity}** سهم من **${item.name}**\n💰 الربح الإجمالي: **${totalGain.toLocaleString()}** ${EMOJI_MORA}\n📊 متوسط السعر: **${avgPrice.toLocaleString()}**`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
             
-            await i.editReply({ embeds: [embed] });
+            // 🔥 إرسال رسالة البيع بشكل عام في الشات
+            await i.editReply({ content: "✅ اكتملت العملية. (تم إرسال الفاتورة في الشات)" });
+            return await i.channel.send({ content: `<@${i.user.id}>`, embeds: [embed] });
         }
 
     } catch (e) { 
