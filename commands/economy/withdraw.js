@@ -85,12 +85,12 @@ module.exports = {
         }
 
         try {
-            // 🔥 الإصلاح هنا: تحويل الأعمدة إلى أرقام (NUMERIC) قبل الحساب، ثم إرجاع الرصيد الجديد مباشرة
+            // 🔥 تم التعديل: استخدام CAST كـ BIGINT لتتوافق تماماً مع نوع العمود في قاعدة بياناتك
             const query = `
                 UPDATE levels 
-                SET "bank" = (CAST("bank" AS NUMERIC) - CAST($1 AS NUMERIC))::TEXT, 
-                    "mora" = (CAST("mora" AS NUMERIC) + CAST($2 AS NUMERIC))::TEXT 
-                WHERE "user" = $3 AND "guild" = $4 AND CAST("bank" AS NUMERIC) >= CAST($5 AS NUMERIC)
+                SET "bank" = "bank" - CAST($1 AS BIGINT), 
+                    "mora" = "mora" + CAST($2 AS BIGINT) 
+                WHERE "user" = $3 AND "guild" = $4 AND "bank" >= CAST($5 AS BIGINT)
                 RETURNING "bank", "mora"
             `;
 
@@ -106,11 +106,11 @@ module.exports = {
                 return replyError(`❌ فشلت العملية: يبدو أن رصيدك تغير أثناء المحاولة أو أنه غير كافٍ.`);
             }
 
-            // 🔥 استخدام البيانات المرجعة مباشرة من السحابة لضمان الدقة وتفادي الكاش القديم
+            // سحب البيانات المحدثة كـ BigInt لضمان دقتها
             const finalBank = BigInt(result.rows[0].bank || 0);
             const finalMora = BigInt(result.rows[0].mora || 0);
             
-            // تحديث الكاش الخاص بالبوت يدوياً حتى لا يظهر الرصيد القديم في الأوامر الأخرى
+            // تحديث الكاش الداخلي للبوت
             data.bank = String(finalBank);
             data.mora = String(finalMora);
             if (client.setLevel) await client.setLevel(data);
