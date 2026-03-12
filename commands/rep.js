@@ -1,5 +1,5 @@
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
-const { generateRepCard } = require('../generators/rep-card-generator.js');
+const { generateRepCard } = require('../generators/rep-card-generator.js'); // تأكد من مسار الملف
 
 const OWNER_ID = "1145327691772481577";
 
@@ -66,7 +66,8 @@ module.exports = {
         
         let currentDailyReps = 0;
         if (senderRep.last_rep_given === todayDateStr) {
-            currentDailyReps = senderRep.daily_reps_given || 0;
+            // 🔥 حماية: التأكد من أنه رقم
+            currentDailyReps = Number(senderRep.daily_reps_given) || 0;
         }
 
         let remainingVotes = maxVotes - currentDailyReps;
@@ -94,7 +95,7 @@ module.exports = {
         }
 
         const senderLevelRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [senderId, guildId]);
-        const senderLevel = senderLevelRes.rows.length > 0 ? senderLevelRes.rows[0].level : 1;
+        const senderLevel = senderLevelRes.rows.length > 0 ? Number(senderLevelRes.rows[0].level) : 1;
 
         if (senderId !== OWNER_ID && senderLevel < 10) {
             const lvlEmbed = new EmbedBuilder()
@@ -109,9 +110,8 @@ module.exports = {
         
         if (senderId !== OWNER_ID) {
             try {
-                // 🔥 تم الإصلاح هنا: استخدام الطريقة الصحيحة للبحث عن إحصائيات اليوم!
                 const dailyStatsRes = await db.query(`SELECT "messages" FROM guild_member_stats WHERE "userID" = $1 AND "guildID" = $2 AND "date" = $3`, [senderId, guildId, dbDateStr]);
-                const todayMessages = dailyStatsRes.rows.length > 0 ? (parseInt(dailyStatsRes.rows[0].messages) || 0) : 0;
+                const todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
 
                 if (todayMessages < 20) {
                     const msgEmbed = new EmbedBuilder()
@@ -145,7 +145,10 @@ module.exports = {
             targetRep = newTargetRepRes.rows[0];
         }
 
-        const newTargetPoints = (targetRep.rep_points || 0) + 1;
+        // 🔥 هنا كان الخطأ الأساسي! أجبرنا المتغير على أن يكون رقماً حقيقياً (Number) لتجنب دمج النصوص
+        const currentTargetPoints = Number(targetRep.rep_points) || 0;
+        const newTargetPoints = currentTargetPoints + 1;
+        
         const newDailyRepsGiven = currentDailyReps + 1;
         
         try {
@@ -159,7 +162,7 @@ module.exports = {
         }
 
         const targetRankData = getRepRank(newTargetPoints);
-        const oldRankData = getRepRank(targetRep.rep_points || 0);
+        const oldRankData = getRepRank(currentTargetPoints); // استخدمنا المتغير المصحح هنا أيضاً
         const isRankUp = targetRankData.rank !== oldRankData.rank;
 
         message.channel.sendTyping();
@@ -170,6 +173,7 @@ module.exports = {
             const receiverAvatar = targetMember.user.displayAvatarURL({ extension: 'png', size: 256 });
             const receiverName = targetMember.displayName || targetMember.user.username;
 
+            // نرسل الرقم الجديد المصحح رياضياً لمولد الصورة
             const imageBuffer = await generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'reputation.png' });
 
