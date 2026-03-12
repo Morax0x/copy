@@ -95,16 +95,14 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         const item = itemRes.rows[0];
         if (!item) return await i.editReply({ content: '❌ الأصل (السهم) غير موجود في النظام.' });
 
-        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
-        let userDataDb = userDataRes.rows[0];
-
-        if (!userDataDb) {
-            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
-            userDataDb = { mora: 0, bank: 0 };
+        // 🔥 الاعتماد الكامل على الكاش لمنع التضارب
+        let userData = await client.getLevel(i.user.id, i.guild.id);
+        if (!userData) {
+            userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
         }
 
-        let userMora = Number(userDataDb.mora) || 0; 
-        const userBank = Number(userDataDb.bank) || 0;
+        let userMora = Number(userData.mora) || 0; 
+        const userBank = Number(userData.bank) || 0;
 
         const pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, item.id]);
         let pfItem = pfItemRes.rows[0];
@@ -116,32 +114,20 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             if (userMora < totalCost) {
                 let msg = `❌ **رصيدك غير كافي!** تحتاج: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`;
                 if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}**، يمكنك السحب منه.`;
-                
-                if (totalCost > (Number(item.currentPrice || item.currentprice) * quantity)) {
-                    msg += `\n⚠️ **تنبيه:** السعر ارتفع قليلاً بسبب الانزلاق السعري للكميات الكبيرة.\nالتكلفة الحالية: **${totalCost.toLocaleString()}**`;
-                }
                 return await i.editReply({ content: msg });
             }
             
             try {
-                // 🔥 الخصم المباشر من قاعدة البيانات بقيمة سالبة لضمان عدم ضياع الأموال
-                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
+                // 🔥 تحديث المورا داخل الكاش وحفظه (هذه الطريقة تضمن الخصم 100%)
+                userData.mora = userMora - totalCost;
+                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+                await client.setLevel(userData);
                 
                 if (pfItem) {
                     await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]);
                 } else {
                     await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]);
                 }
-
-                // تحديث الكاش لمنع استرجاع القيمة القديمة
-                if (client.getLevel && client.setLevel) {
-                    let cacheData = await client.getLevel(i.user.id, i.guild.id);
-                    if (cacheData) {
-                        cacheData.mora = Number(cacheData.mora) - totalCost;
-                        await client.setLevel(cacheData);
-                    }
-                }
-
             } catch (txErr) {
                 console.error("Market Buy Error:", txErr);
                 return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام الشراء.' });
@@ -173,18 +159,10 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                     await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]);
                 }
 
-                // 🔥 الإضافة المباشرة لقاعدة البيانات بقيمة موجبة
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]);
-
-                // تحديث الكاش لمنع استرجاع القيمة القديمة
-                if (client.getLevel && client.setLevel) {
-                    let cacheData = await client.getLevel(i.user.id, i.guild.id);
-                    if (cacheData) {
-                        cacheData.mora = Number(cacheData.mora) + totalGain;
-                        await client.setLevel(cacheData);
-                    }
-                }
-
+                // 🔥 إضافة الأرباح إلى الكاش وحفظها
+                userData.mora = userMora + totalGain;
+                await client.setLevel(userData);
+                
             } catch (txErr) {
                 console.error("Market Sell Error:", txErr);
                 return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام البيع.' });
