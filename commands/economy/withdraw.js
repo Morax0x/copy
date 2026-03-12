@@ -85,28 +85,35 @@ module.exports = {
         }
 
         try {
+            // 🔥 الإصلاح هنا: تحويل الأعمدة إلى أرقام (NUMERIC) قبل الحساب، ثم إرجاع الرصيد الجديد مباشرة
             const query = `
                 UPDATE levels 
-                SET "bank" = "bank" - $1, 
-                    "mora" = "mora" + $2 
-                WHERE "user" = $3 AND "guild" = $4 AND "bank" >= $5
+                SET "bank" = (CAST("bank" AS NUMERIC) - CAST($1 AS NUMERIC))::TEXT, 
+                    "mora" = (CAST("mora" AS NUMERIC) + CAST($2 AS NUMERIC))::TEXT 
+                WHERE "user" = $3 AND "guild" = $4 AND CAST("bank" AS NUMERIC) >= CAST($5 AS NUMERIC)
+                RETURNING "bank", "mora"
             `;
 
             const result = await db.query(query, [
-                amountToWithdraw, 
-                amountToWithdraw, 
+                String(amountToWithdraw), 
+                String(amountToWithdraw), 
                 user.id, 
                 guildId, 
-                amountToWithdraw 
+                String(amountToWithdraw) 
             ]);
 
             if (result.rowCount === 0) {
                 return replyError(`❌ فشلت العملية: يبدو أن رصيدك تغير أثناء المحاولة أو أنه غير كافٍ.`);
             }
 
-            const newData = await client.getLevel(user.id, guildId);
-            const finalBank = Number(newData.bank) || 0;
-            const finalMora = Number(newData.mora) || 0;
+            // 🔥 استخدام البيانات المرجعة مباشرة من السحابة لضمان الدقة وتفادي الكاش القديم
+            const finalBank = BigInt(result.rows[0].bank || 0);
+            const finalMora = BigInt(result.rows[0].mora || 0);
+            
+            // تحديث الكاش الخاص بالبوت يدوياً حتى لا يظهر الرصيد القديم في الأوامر الأخرى
+            data.bank = String(finalBank);
+            data.mora = String(finalMora);
+            if (client.setLevel) await client.setLevel(data);
 
             const embed = new EmbedBuilder()
                 .setColor("Random")
