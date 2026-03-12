@@ -74,7 +74,6 @@ module.exports = {
             return reply({ content: "⚠️ **لديك رحلة صيد جارية!**", ephemeral: true });
         }
 
-        // استخدام استعلام مباشر لجلب البيانات بأسماء الأعمدة الصحيحة
         let userDataRes = await sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]);
         let userData = userDataRes.rows[0];
 
@@ -84,10 +83,8 @@ module.exports = {
         }
 
         const now = Date.now();
-        const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
-        const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel || userData.boatlevel) || 1)) || boatsConfig[0];
-        let cooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
-        if (cooldown < 10000) cooldown = 10000;
+        // 🔥 تم تثبيت وقت الانتظار إلى ساعة واحدة (3,600,000 مللي ثانية) لجميع اللاعبين
+        const cooldown = 3600000; 
 
         const lastFish = Number(userData.lastFish || userData.lastfish) || 0;
         if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
@@ -105,6 +102,8 @@ module.exports = {
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
+        const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
+        const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel || userData.boatlevel) || 1)) || boatsConfig[0];
         const locationId = userData.currentLocation || userData.currentlocation || 'beach';
         const currentLocation = locationsConfig.find(l => l.id === locationId) || locationsConfig[0];
 
@@ -228,7 +227,7 @@ module.exports = {
             let failed = false;
 
             pullCollector.on('collect', async j => {
-                await j.deferUpdate();
+                await j.deferUpdate().catch(()=>{});
                 
                 if (failed) return; 
 
@@ -247,10 +246,10 @@ module.exports = {
                         .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
                         .setColor(Colors.Red);
                     
-                    await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), user.id, guild.id]);
+                    await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [String(Date.now()), user.id, guild.id]);
                     activeFishingSessions.delete(user.id);
                     
-                    await j.editReply({ content: '', embeds: [failEmbed], components: [] });
+                    await j.editReply({ content: '', embeds: [failEmbed], components: [] }).catch(()=>{});
                     return;
                 }
 
@@ -267,12 +266,12 @@ module.exports = {
                     
                     if (possibleMonsters.length > 0 && monsterTriggered) {
                         const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        let playerWeapon = pvpCore.getWeaponData(sql, j.member);
+                        let playerWeapon = await pvpCore.getWeaponData(sql, j.member);
                         if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
-                            await j.editReply({ content: '' }); 
+                            await j.editReply({ content: '' }).catch(()=>{}); 
                             await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
                             return; 
                         }
@@ -325,8 +324,7 @@ module.exports = {
                             }
                         }
                         
-                        // ⚠️ هنا يتم تحديث الـ lastFish بشكل صحيح ومباشر
-                        await sql.query(`UPDATE levels SET "mora" = "mora" + $1, "lastFish" = $2 WHERE "user" = $3 AND "guild" = $4`, [totalValue, Date.now(), user.id, guild.id]);
+                        await sql.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + $1, "lastFish" = $2 WHERE "user" = $3 AND "guild" = $4`, [totalValue, String(Date.now()), user.id, guild.id]);
                         
                         if (updateGuildStat) {
                             updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
@@ -359,7 +357,7 @@ module.exports = {
                         .setFooter({ text: `السنارة: ${currentRod.name}` });
 
                     activeFishingSessions.delete(user.id);
-                    await j.editReply({ content: '', embeds: [resultEmbed], components: [] });
+                    await j.editReply({ content: '', embeds: [resultEmbed], components: [] }).catch(()=>{});
                 }
             });
 
@@ -371,8 +369,7 @@ module.exports = {
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
-                        // ⚠️ هنا أيضاً يتم تحديث الـ lastFish بشكل صحيح ومباشر
-                        await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), user.id, guild.id]);
+                        await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [String(Date.now()), user.id, guild.id]);
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
                         if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
