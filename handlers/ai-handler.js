@@ -72,13 +72,13 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                 if (amount > 0) {
                     const guildID = message.guild.id;
                     const userID = targetUser.id;
-                    const saveRes = await db.query("SELECT * FROM dungeon_saves WHERE hostid = $1 AND guildid = $2", [userID, guildID]);
+                    const saveRes = await db.query('SELECT * FROM dungeon_saves WHERE "hostID" = $1 AND "guildID" = $2', [userID, guildID]);
                     const existingSave = saveRes.rows[0];
                     
                     if (existingSave) {
-                        await db.query("UPDATE dungeon_saves SET floor = $1, timestamp = $2 WHERE hostid = $3 AND guildid = $4", [amount, Date.now(), userID, guildID]);
+                        await db.query('UPDATE dungeon_saves SET "floor" = $1, "timestamp" = $2 WHERE "hostID" = $3 AND "guildID" = $4', [amount, Date.now(), userID, guildID]);
                     } else {
-                        await db.query("INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) VALUES ($1, $2, $3, $4)", [userID, guildID, amount, Date.now()]);
+                        await db.query('INSERT INTO dungeon_saves ("hostID", "guildID", "floor", "timestamp") VALUES ($1, $2, $3, $4)', [userID, guildID, amount, Date.now()]);
                     }
                     await message.react('⛺').catch(()=>{});
                     feedback = `\n\n⛺ **تم التنفيذ:** تم منح **${targetUser.username}** خيمة حفظ في الدانجون عند الطابق **${amount}**.`;
@@ -92,17 +92,17 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                     const userID = targetUser.id;
                     const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب') && !lowerText.includes('خصم') && !lowerText.includes('نقص'); 
                     
-                    const repRes = await db.query("SELECT * FROM user_reputation WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                    const repRes = await db.query('SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2', [userID, guildID]);
                     if (repRes.rows.length === 0) {
-                        await db.query("INSERT INTO user_reputation (userid, guildid, rep_points) VALUES ($1, $2, 0)", [userID, guildID]);
+                        await db.query('INSERT INTO user_reputation ("userID", "guildID", "rep_points") VALUES ($1, $2, 0)', [userID, guildID]);
                     }
 
                     if (isGive) {
-                        await db.query("UPDATE user_reputation SET rep_points = rep_points + $1 WHERE userid = $2 AND guildid = $3", [amount, userID, guildID]);
+                        await db.query('UPDATE user_reputation SET "rep_points" = "rep_points" + $1 WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
                         await message.react('🌟').catch(()=>{});
                         feedback = `\n\n🌟 **تم التنفيذ:** تم إضافة **${amount}** نقطة سمعة إلى **${targetUser.username}**.`;
                     } else {
-                        await db.query("UPDATE user_reputation SET rep_points = GREATEST(0, rep_points - $1) WHERE userid = $2 AND guildid = $3", [amount, userID, guildID]);
+                        await db.query('UPDATE user_reputation SET "rep_points" = GREATEST(0, "rep_points" - $1) WHERE "userID" = $2 AND "guildID" = $3', [amount, userID, guildID]);
                         await message.react('💔').catch(()=>{});
                         feedback = `\n\n💔 **تم التنفيذ:** تم خصم **${amount}** نقطة سمعة من **${targetUser.username}**.`;
                     }
@@ -114,17 +114,17 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                 if (amount > 0) {
                     const isGive = !lowerText.includes('سحب') && !lowerText.includes('اسحب'); 
                     
-                    const lvlRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [targetUser.id, message.guild.id]);
+                    const lvlRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [targetUser.id, message.guild.id]);
                     if (lvlRes.rows.length === 0) {
-                        await db.query("INSERT INTO levels (userid, guildid, xp, level, totalxp, mora) VALUES ($1, $2, 0, 1, 0, 0) ON CONFLICT (userid, guildid) DO NOTHING", [targetUser.id, message.guild.id]);
+                        await db.query('INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora") VALUES ($1, $2, 0, 1, 0, 0) ON CONFLICT ("user", "guild") DO NOTHING', [targetUser.id, message.guild.id]);
                     }
 
                     if (isGive) {
-                        await db.query("UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3", [amount, targetUser.id, message.guild.id]);
+                        await db.query('UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3', [amount, targetUser.id, message.guild.id]);
                         await message.react('💸').catch(()=>{});
                         feedback = `\n\n✅ **تم التنفيذ:** تم تحويل **${amount}** مورا إلى **${targetUser.username}**.`;
                     } else {
-                        await db.query("UPDATE levels SET mora = GREATEST(0, mora - $1) WHERE userid = $2 AND guildid = $3", [amount, targetUser.id, message.guild.id]);
+                        await db.query('UPDATE levels SET "mora" = GREATEST(0, "mora" - $1) WHERE "user" = $2 AND "guild" = $3', [amount, targetUser.id, message.guild.id]);
                         await message.react('📉').catch(()=>{});
                         feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
                     }
@@ -196,8 +196,8 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 const topLevelNames = await resolveNames(messageObject.guild, dynamicData.topLevels);
                 const topRichNames = await resolveNames(messageObject.guild, dynamicData.topRich);
                 let bossInfo = "لا يوجد زعيم حالياً.";
-                if (dynamicData.boss && dynamicData.boss.active) {
-                    const hpPercent = Math.floor((dynamicData.boss.currenthp / dynamicData.boss.maxhp) * 100);
+                if (dynamicData.boss && (dynamicData.boss.active || dynamicData.boss.active === 1)) {
+                    const hpPercent = Math.floor((dynamicData.boss.currentHP / dynamicData.boss.maxHP) * 100);
                     bossInfo = `⚠️ الزعيم (${dynamicData.boss.name}) حي ويهدد السيرفر! صحته المتبقية: ${hpPercent}%`;
                 }
                 dynamicContext = `\n[Server Live Stats]:\n- Top Strongest: ${topLevelNames}\n- Top Richest: ${topRichNames}\n- World Boss: ${bossInfo}\n`;
@@ -229,11 +229,11 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
 
         let canGiveMora = true;
         if (userId !== OWNER_ID && db) { 
-            await db.query(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userid TEXT PRIMARY KEY, lastmoratime BIGINT)`);
-            const cdRes = await db.query("SELECT lastmoratime FROM ai_cooldowns WHERE userid = $1", [userId]);
+            await db.query(`CREATE TABLE IF NOT EXISTS ai_cooldowns ("userID" TEXT PRIMARY KEY, "lastMoraTime" BIGINT)`);
+            const cdRes = await db.query('SELECT "lastMoraTime" FROM ai_cooldowns WHERE "userID" = $1', [userId]);
             const cooldownData = cdRes.rows[0];
             const oneHour = 60 * 60 * 1000;
-            if (cooldownData && (Date.now() - parseInt(cooldownData.lastmoratime) < oneHour)) {
+            if (cooldownData && (Date.now() - parseInt(cooldownData.lastMoraTime || cooldownData.lastmoratime)) < oneHour) {
                 canGiveMora = false; 
             }
         }
@@ -267,14 +267,14 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 const dateStr = nowKSA.toLocaleDateString('en-CA'); 
                 
                 let dailyIdToUse = `${userId}-${guildId}-${dateStr}`;
-                const dailyRes = await db.query("SELECT id FROM user_daily_stats WHERE userid = $1 AND guildid = $2 AND date = $3", [userId, guildId, dateStr]);
+                const dailyRes = await db.query('SELECT "id" FROM user_daily_stats WHERE "userID" = $1 AND "guildID" = $2 AND "date" = $3', [userId, guildId, dateStr]);
                 let daily = dailyRes.rows[0];
                 
                 if (daily) {
-                    await db.query("UPDATE user_daily_stats SET ai_interactions = ai_interactions + 1 WHERE id = $1", [daily.id]);
+                    await db.query('UPDATE user_daily_stats SET "ai_interactions" = "ai_interactions" + 1 WHERE "id" = $1', [daily.id]);
                     dailyIdToUse = daily.id;
                 } else {
-                    try { await db.query("INSERT INTO user_daily_stats (id, userid, guildid, date, ai_interactions) VALUES ($1, $2, $3, $4, 1) ON CONFLICT (id) DO NOTHING", [dailyIdToUse, userId, guildId, dateStr]); } catch (e) { }
+                    try { await db.query('INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "ai_interactions") VALUES ($1, $2, $3, $4, 1) ON CONFLICT ("id") DO NOTHING', [dailyIdToUse, userId, guildId, dateStr]); } catch (e) { }
                 }
 
                 if (updateGuildStat) {
@@ -289,37 +289,35 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                 
                 let weeklyIdToUse = `${userId}-${guildId}-${weekStart}`;
 
-                const weeklyRes = await db.query("SELECT id FROM user_weekly_stats WHERE userid = $1 AND guildid = $2 AND weekstartdate = $3", [userId, guildId, weekStart]);
+                const weeklyRes = await db.query('SELECT "id" FROM user_weekly_stats WHERE "userID" = $1 AND "guildID" = $2 AND "weekStartDate" = $3', [userId, guildId, weekStart]);
                 let weekly = weeklyRes.rows[0];
-                
-                try { await db.query("ALTER TABLE user_weekly_stats ADD COLUMN ai_interactions INTEGER DEFAULT 0"); } catch(e){}
 
                 if (weekly) {
-                    await db.query("UPDATE user_weekly_stats SET ai_interactions = COALESCE(ai_interactions, 0) + 1 WHERE id = $1", [weekly.id]);
+                    await db.query('UPDATE user_weekly_stats SET "ai_interactions" = COALESCE("ai_interactions", 0) + 1 WHERE "id" = $1', [weekly.id]);
                     weeklyIdToUse = weekly.id;
                 } else {
-                    try { await db.query("INSERT INTO user_weekly_stats (id, userid, guildid, weekstartdate, ai_interactions) VALUES ($1, $2, $3, $4, 1) ON CONFLICT (id) DO NOTHING", [weeklyIdToUse, userId, guildId, weekStart]); } catch (e) { }
+                    try { await db.query('INSERT INTO user_weekly_stats ("id", "userID", "guildID", "weekStartDate", "ai_interactions") VALUES ($1, $2, $3, $4, 1) ON CONFLICT ("id") DO NOTHING', [weeklyIdToUse, userId, guildId, weekStart]); } catch (e) { }
                 }
 
                 let totalIdToUse = `${userId}-${guildId}`;
-                const totalRes = await db.query("SELECT id FROM user_total_stats WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+                const totalRes = await db.query('SELECT "id" FROM user_total_stats WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
                 let total = totalRes.rows[0];
                 
                 if (total) {
-                    await db.query("UPDATE user_total_stats SET total_ai_interactions = total_ai_interactions + 1 WHERE userid = $1 AND guildid = $2", [userId, guildId]);
+                    await db.query('UPDATE user_total_stats SET "total_ai_interactions" = "total_ai_interactions" + 1 WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
                     totalIdToUse = total.id;
                 } else {
-                    await db.query("INSERT INTO user_total_stats (id, userid, guildid, total_ai_interactions) VALUES ($1, $2, $3, 1) ON CONFLICT (id) DO NOTHING", [totalIdToUse, userId, guildId]);
+                    await db.query('INSERT INTO user_total_stats ("id", "userID", "guildID", "total_ai_interactions") VALUES ($1, $2, $3, 1) ON CONFLICT ("id") DO NOTHING', [totalIdToUse, userId, guildId]);
                 }
 
                 if (client && typeof client.checkQuests === 'function') {
-                    const updatedDailyStatsRes = await db.query("SELECT * FROM user_daily_stats WHERE id = $1", [dailyIdToUse]);
+                    const updatedDailyStatsRes = await db.query('SELECT * FROM user_daily_stats WHERE "id" = $1', [dailyIdToUse]);
                     const updatedDailyStats = updatedDailyStatsRes.rows[0];
                     
-                    const updatedWeeklyStatsRes = await db.query("SELECT * FROM user_weekly_stats WHERE id = $1", [weeklyIdToUse]);
+                    const updatedWeeklyStatsRes = await db.query('SELECT * FROM user_weekly_stats WHERE "id" = $1', [weeklyIdToUse]);
                     const updatedWeeklyStats = updatedWeeklyStatsRes.rows[0];
                     
-                    const updatedTotalStatsRes = await db.query("SELECT * FROM user_total_stats WHERE id = $1", [totalIdToUse]);
+                    const updatedTotalStatsRes = await db.query('SELECT * FROM user_total_stats WHERE "id" = $1', [totalIdToUse]);
                     const updatedTotalStats = updatedTotalStatsRes.rows[0];
 
                     if (updatedDailyStats) await client.checkQuests(client, messageObject.member, updatedDailyStats, 'daily', dateStr);
