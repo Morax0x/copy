@@ -49,18 +49,18 @@ function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// تم تعديل أسماء خصائص الأعمدة لتطابق الكيس (حالة الأحرف) في PostgreSQL
+// ⚠️ تم تعديل أسماء الأعمدة هنا لتطابق قاعدة البيانات (PostgreSQL) بشكل دقيق جداً (CamelCase)
 const COMMANDS_TO_CHECK = [
-    { name: 'work', db_column: 'lastwork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
-    { name: 'rob', db_column: 'lastrob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
-    { name: 'rps', db_column: 'lastrps', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
-    { name: 'guess', db_column: 'lastguess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
-    { name: 'roulette', db_column: 'lastroulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
-    { name: 'emoji', db_column: 'lastmemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
-    { name: 'arrange', db_column: 'lastarrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
-    { name: 'pvp', db_column: 'lastpvp', cooldown: 5 * 60 * 1000, label: 'تحدي' },
-    { name: 'race', db_column: 'lastrace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
-    { name: 'dungeon', db_column: 'last_dungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
+    { name: 'work', db_column: 'lastWork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
+    { name: 'rob', db_column: 'lastRob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
+    { name: 'rps', db_column: 'lastRPS', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
+    { name: 'guess', db_column: 'lastGuess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
+    { name: 'roulette', db_column: 'lastRoulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
+    { name: 'emoji', db_column: 'lastMemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
+    { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
+    { name: 'pvp', db_column: 'lastPvP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
+    { name: 'race', db_column: 'lastRace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
+    { name: 'dungeon', db_column: 'lastDungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
 module.exports = {
@@ -120,8 +120,8 @@ module.exports = {
 
                 // 2. الأوامر الثابتة
                 for (const cmd of COMMANDS_TO_CHECK) {
-                    // فحص العمود بأحرف كبيرة وصغيرة
-                    const lastUsed = Number(data[cmd.db_column] || data[cmd.db_column.toLowerCase()] || data[cmd.name] || 0);
+                    // فحص دقيق يغطي كل الاحتمالات (CamelCase و Lowercase)
+                    const lastUsed = Number(data[cmd.db_column] || data[cmd.db_column.toLowerCase()] || data[cmd.name] || data['last_dungeon'] || 0);
                     const cooldownAmount = cmd.cooldown;
                     const timeLeft = lastUsed + cooldownAmount - now;
 
@@ -187,9 +187,6 @@ module.exports = {
             });
 
             collector.on('collect', async (i) => {
-                // 🔥 التعديل هنا: تحديد من هو المستخدم المستهدف بناءً على من ضغط الزر
-                // إذا الضغط من صاحب الأمر -> نعرض بيانات التارجت الأصلي
-                // إذا الضغط من شخص غريب -> نعرض بياناته هو شخصياً
                 const clickerIsOwner = i.user.id === originalUser.id;
                 const subjectUser = clickerIsOwner ? targetUser : i.user;
 
@@ -222,7 +219,8 @@ module.exports = {
                     .setDescription(finalDesc)
                     .setImage(HIDDEN_EMBED_IMAGE);
 
-                await i.reply({ embeds: [hiddenEmbed], ephemeral: true });
+                // ⚠️ تم إصلاح ephemeral لتصبح مطابقة لتحديثات Discord.js
+                await i.reply({ embeds: [hiddenEmbed], flags: [MessageFlags.Ephemeral] });
             });
 
             collector.on('end', () => {
