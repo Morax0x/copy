@@ -48,11 +48,11 @@ async function getLeaderboardKnowledge(db, guildID) {
     if (!db) return "";
 
     try {
-        const topLevelsRes = await db.query("SELECT userid AS user, level FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY totalxp DESC LIMIT 5", [guildID, OWNER_ID]);
+        const topLevelsRes = await db.query('SELECT "user", "level" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY "totalXP" DESC LIMIT 5', [guildID, OWNER_ID]);
         const topLevels = topLevelsRes.rows;
         const levelText = topLevels.length > 0 ? topLevels.map((u, i) => `${i+1}. <@${u.user}> (Lv.${u.level})`).join('\n') : "لا يوجد بيانات.";
 
-        const topMoraRes = await db.query("SELECT userid AS user, (mora + bank) as totalwealth FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY (mora + bank) DESC LIMIT 5", [guildID, OWNER_ID]);
+        const topMoraRes = await db.query('SELECT "user", ("mora" + "bank") as totalwealth FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY ("mora" + "bank") DESC LIMIT 5', [guildID, OWNER_ID]);
         const topMora = topMoraRes.rows;
         const moraText = topMora.length > 0 ? topMora.map((u, i) => `${i+1}. <@${u.user}> (💰 ${parseInt(u.totalwealth).toLocaleString()})`).join('\n') : "لا يوجد بيانات.";
 
