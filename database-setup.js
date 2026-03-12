@@ -6,9 +6,9 @@ async function setupDatabase(clientOrSql) {
 
     console.log("[Database] Starting Cloud Integrity & Schema Check...");
 
-    // ⚠️ كود المسح الشامل المؤقت (لتنظيف السحابة قبل بناء الهيكل الدقيق) ⚠️
+    // ⚠️ كود المسح الشامل المؤقت (لتنظيف السحابة قبل بناء الهيكل المصحح) ⚠️
     try {
-        console.log("⚠️ [Database] Wiping existing tables to rebuild exact schema...");
+        console.log("⚠️ [Database] Wiping existing tables to rebuild exact schema with corrected types...");
         await db.query(`
             DO $$ DECLARE
                 r RECORD;
@@ -24,7 +24,7 @@ async function setupDatabase(clientOrSql) {
     }
     // ==========================================
 
-    // 🔥 بناء الجداول مطابقة بنسبة 100% لملف الـ SQLite القديم مع حماية الأسماء المزدوجة بـ " "
+    // 🔥 بناء الجداول مع تصحيح أنواع البيانات (TEXT للتواريخ، REAL للأرقام العشرية)
     const tables = [
         `CREATE TABLE IF NOT EXISTS levels ("user" TEXT NOT NULL, "guild" TEXT NOT NULL, "xp" BIGINT DEFAULT 0, "level" BIGINT DEFAULT 1, "totalXP" BIGINT DEFAULT 0, "mora" BIGINT DEFAULT 0, "lastWork" BIGINT DEFAULT 0, "lastDaily" BIGINT DEFAULT 0, "dailyStreak" BIGINT DEFAULT 0, "bank" BIGINT DEFAULT 0, "lastInterest" BIGINT DEFAULT 0, "totalInterestEarned" BIGINT DEFAULT 0, "hasGuard" BIGINT DEFAULT 0, "guardExpires" BIGINT DEFAULT 0, "totalVCTime" BIGINT DEFAULT 0, "lastCollected" BIGINT DEFAULT 0, "lastRob" BIGINT DEFAULT 0, "lastGuess" BIGINT DEFAULT 0, "lastRPS" BIGINT DEFAULT 0, "lastRoulette" BIGINT DEFAULT 0, "lastTransfer" BIGINT DEFAULT 0, "lastDeposit" BIGINT DEFAULT 0, "shop_purchases" BIGINT DEFAULT 0, "total_meow_count" BIGINT DEFAULT 0, "boost_count" BIGINT DEFAULT 0, "lastPVP" BIGINT DEFAULT 0, "lastFarmYield" BIGINT DEFAULT 0, "lastFish" BIGINT DEFAULT 0, "rodLevel" BIGINT DEFAULT 0, "boatLevel" BIGINT DEFAULT 0, "currentLocation" TEXT DEFAULT 'beach', "lastMemory" BIGINT DEFAULT 0, "lastArrange" BIGINT DEFAULT 0, "dungeon_gate_level" BIGINT DEFAULT 1, "max_dungeon_floor" BIGINT DEFAULT 0, "dungeon_wins" BIGINT DEFAULT 0, "lastDungeon" BIGINT DEFAULT 0, "last_dungeon" BIGINT DEFAULT 0, "dungeon_join_count" BIGINT DEFAULT 0, "last_join_reset" BIGINT DEFAULT 0, "lastRace" BIGINT DEFAULT 0, "dungeon_tickets" BIGINT DEFAULT 0, "last_ticket_reset" TEXT DEFAULT '', "last_rob_pardon" TEXT DEFAULT '', "lastTransferDate" TEXT DEFAULT '', "dailyTransferCount" BIGINT DEFAULT 0, PRIMARY KEY ("user", "guild"))`,
 
@@ -39,10 +39,15 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS prefix ("serverprefix" TEXT, "guild" TEXT PRIMARY KEY)`,
         `CREATE TABLE IF NOT EXISTS role_buffs ("guildID" TEXT NOT NULL, "roleID" TEXT NOT NULL, "buffPercent" BIGINT NOT NULL, PRIMARY KEY ("guildID", "roleID"))`,
         `CREATE TABLE IF NOT EXISTS role_mora_buffs ("guildID" TEXT NOT NULL, "roleID" TEXT NOT NULL, "buffPercent" BIGINT NOT NULL, PRIMARY KEY ("guildID", "roleID"))`,
-        `CREATE TABLE IF NOT EXISTS user_buffs ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "buffPercent" BIGINT, "expiresAt" BIGINT, "buffType" TEXT, "multiplier" REAL DEFAULT 0.0)`,
+        
+        // ⚠️ تم التعديل: expiresAt إلى REAL لقبول الكسور!
+        `CREATE TABLE IF NOT EXISTS user_buffs ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "buffPercent" BIGINT, "expiresAt" REAL, "buffType" TEXT, "multiplier" REAL DEFAULT 0.0)`,
         
         `CREATE TABLE IF NOT EXISTS streaks ("id" TEXT PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "streakCount" BIGINT, "lastMessageTimestamp" BIGINT, "hasGracePeriod" BIGINT, "hasItemShield" BIGINT, "nicknameActive" BIGINT DEFAULT 1, "hasReceivedFreeShield" BIGINT DEFAULT 0, "separator" TEXT DEFAULT '|', "dmNotify" BIGINT DEFAULT 1, "highestStreak" BIGINT DEFAULT 0, "has12hWarning" BIGINT DEFAULT 0)`,
-        `CREATE TABLE IF NOT EXISTS rankCardTable ("id" TEXT PRIMARY KEY, "barColor" TEXT, "textColor" TEXT, "backgroundColor" TEXT)`,
+        
+        // ⚠️ تم الإضافة: rankCardTable التي كانت ناقصة
+        `CREATE TABLE IF NOT EXISTS "rankCardTable" ("id" TEXT PRIMARY KEY, "barColor" TEXT, "textColor" TEXT, "backgroundColor" TEXT)`,
+        
         `CREATE TABLE IF NOT EXISTS market_items ("id" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "description" TEXT, "currentPrice" BIGINT DEFAULT 0, "lastChangePercent" REAL DEFAULT 0.0, "lastChange" BIGINT DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS user_portfolio ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT NOT NULL, "userID" TEXT NOT NULL, "itemID" TEXT NOT NULL, "quantity" BIGINT DEFAULT 0, "purchasePrice" BIGINT DEFAULT 0, FOREIGN KEY ("itemID") REFERENCES market_items("id"), UNIQUE("guildID", "userID", "itemID"))`,
         `CREATE TABLE IF NOT EXISTS blacklistTable ("id" TEXT PRIMARY KEY, "guild" TEXT, "typeId" TEXT, "type" TEXT)`,
@@ -83,10 +88,16 @@ async function setupDatabase(clientOrSql) {
         `CREATE TABLE IF NOT EXISTS rainbow_roles ("roleID" TEXT PRIMARY KEY, "guildID" TEXT NOT NULL)`,
         
         `CREATE TABLE IF NOT EXISTS auto_responses ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT NOT NULL, "trigger" TEXT NOT NULL, "response" TEXT NOT NULL, "images" TEXT, "matchType" TEXT DEFAULT 'exact', "cooldown" BIGINT DEFAULT 0, "allowedChannels" TEXT, "ignoredChannels" TEXT, "createdBy" TEXT, "expiresAt" BIGINT, UNIQUE("guildID", "trigger"))`,
-        `CREATE TABLE IF NOT EXISTS world_boss ("guildID" TEXT PRIMARY KEY, "currentHP" BIGINT, "maxHP" BIGINT, "name" TEXT, "image" TEXT, "active" BIGINT DEFAULT 0, "messageID" TEXT, "channelID" TEXT, "lastLog" TEXT DEFAULT '[]', "totalHits" BIGINT DEFAULT 0)`,
+        
+        // ⚠️ تم التعديل: world_boss (currentHP, maxHP) إلى REAL
+        `CREATE TABLE IF NOT EXISTS world_boss ("guildID" TEXT PRIMARY KEY, "currentHP" REAL, "maxHP" REAL, "name" TEXT, "image" TEXT, "active" BIGINT DEFAULT 0, "messageID" TEXT, "channelID" TEXT, "lastLog" TEXT DEFAULT '[]', "totalHits" BIGINT DEFAULT 0)`,
+        
         `CREATE TABLE IF NOT EXISTS boss_cooldowns ("guildID" TEXT, "userID" TEXT, "lastHit" BIGINT, PRIMARY KEY ("guildID", "userID"))`,
         `CREATE TABLE IF NOT EXISTS user_coupons ("id" BIGSERIAL PRIMARY KEY, "guildID" TEXT, "userID" TEXT, "discountPercent" BIGINT, "isUsed" BIGINT DEFAULT 0)`,
-        `CREATE TABLE IF NOT EXISTS boss_leaderboard ("guildID" TEXT, "userID" TEXT, "totalDamage" BIGINT DEFAULT 0, PRIMARY KEY("guildID", "userID"))`,
+        
+        // ⚠️ تم التعديل: boss_leaderboard (totalDamage) إلى REAL
+        `CREATE TABLE IF NOT EXISTS boss_leaderboard ("guildID" TEXT, "userID" TEXT, "totalDamage" REAL DEFAULT 0, PRIMARY KEY("guildID", "userID"))`,
+        
         `CREATE TABLE IF NOT EXISTS role_coupons_config ("guildID" TEXT, "roleID" TEXT, "discountPercent" BIGINT, PRIMARY KEY ("guildID", "roleID"))`,
         `CREATE TABLE IF NOT EXISTS user_role_coupon_usage ("guildID" TEXT, "userID" TEXT, "lastUsedTimestamp" BIGINT, PRIMARY KEY ("guildID", "userID"))`,
         `CREATE TABLE IF NOT EXISTS farm_last_payout ("id" TEXT PRIMARY KEY, "lastPayoutDate" BIGINT)`,
@@ -121,7 +132,9 @@ async function setupDatabase(clientOrSql) {
         
         `CREATE TABLE IF NOT EXISTS dungeon_saves ("hostID" TEXT PRIMARY KEY, "guildID" TEXT, "floor" BIGINT, "timestamp" BIGINT)`,
         `CREATE TABLE IF NOT EXISTS role_campfire_limits ("guildID" TEXT, "roleID" TEXT, "limitCount" BIGINT, PRIMARY KEY ("guildID", "roleID"))`,
-        `CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" BIGINT DEFAULT 0, "last_rep_given" BIGINT DEFAULT 0, "weekly_reps_given" BIGINT DEFAULT 0, "daily_reps_given" BIGINT DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`,
+        
+        // ⚠️ تم التعديل: user_reputation (last_rep_given) إلى TEXT لتقبل التواريخ مثل "3/11/2026"
+        `CREATE TABLE IF NOT EXISTS user_reputation ("userID" TEXT, "guildID" TEXT, "rep_points" BIGINT DEFAULT 0, "last_rep_given" TEXT DEFAULT '0', "weekly_reps_given" BIGINT DEFAULT 0, "daily_reps_given" BIGINT DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`,
         
         `CREATE TABLE IF NOT EXISTS kings_board_tracker ("id" TEXT PRIMARY KEY, "userID" TEXT, "guildID" TEXT, "date" TEXT, "casino_profit" BIGINT DEFAULT 0, "mora_earned" BIGINT DEFAULT 0, "messages" BIGINT DEFAULT 0, "mora_donated" BIGINT DEFAULT 0, "ai_interactions" BIGINT DEFAULT 0, "fish_caught" BIGINT DEFAULT 0, "pvp_wins" BIGINT DEFAULT 0, "crops_harvested" BIGINT DEFAULT 0)`,
         `CREATE TABLE IF NOT EXISTS kings_daily_payout ("dateStr" TEXT PRIMARY KEY)`
