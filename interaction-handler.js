@@ -299,6 +299,7 @@ module.exports = (client, db, antiRolesCache) => {
                 } else if (i.customId.startsWith('farm_plant_modal_')) {
                     await handleLandInteractions(i, client, db);
                 } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
+                    // 🔥 تم توجيه طلبات السوق إلى الدالة المصلحة الجديدة بالأسفل 🔥
                     await handleMarketInteraction(i, client, db);
                 } else if (await handleShopModal(i, client, db)) {
 
@@ -319,12 +320,13 @@ module.exports = (client, db, antiRolesCache) => {
     });
 };
 
+// 💰🔥 نظـــــام الســـــوق المصلّـــــح 100% 🔥💰
 async function handleMarketInteraction(interaction, client, db) {
     const user = interaction.user;
     const guild = interaction.guild;
 
     if (interaction.customId.startsWith('buy_modal_')) {
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ ephemeral: false }); // ليكون ظاهراً للجميع
 
         const assetId = interaction.customId.replace('buy_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
@@ -348,9 +350,11 @@ async function handleMarketInteraction(interaction, client, db) {
             itemName = configItem.name;
         }
 
-        const userDataRes = await db.query('SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]);
-        const userData = userDataRes.rows[0];
-        const userMora = userData ? userData.mora : 0;
+        // 🔥 الاعتماد الكامل على الكاش لمعرفة الرصيد 
+        let userData = await client.getLevel(user.id, guild.id);
+        if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
+        const userMora = Number(userData.mora) || 0;
+        
         const totalCost = currentPrice * quantity;
 
         if (userMora < totalCost) return interaction.editReply({ content: `🚫 ليس لديك رصيد كافٍ! التكلفة: **${totalCost.toLocaleString()}**` });
@@ -369,30 +373,34 @@ async function handleMarketInteraction(interaction, client, db) {
         }
 
         try {
-            await db.query('BEGIN');
-            await db.query('UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3', [totalCost, user.id, guild.id]);
+            // 🔥 الخصم الذري المتزامن بين الداتابيز والكاش!
+            const updateRes = await db.query('UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"', [totalCost, user.id, guild.id]);
+            const exactNewMora = updateRes.rows[0] ? updateRes.rows[0].mora : (userMora - totalCost);
+            
+            // نثبت الرصيد الجديد في الكاش لكي لا يمسحه نظام interaction-handler الأساسي
+            userData.mora = Number(exactNewMora);
+            await client.setLevel(userData);
+
             if (portfolioItem) {
                 await db.query('UPDATE user_portfolio SET "quantity" = "quantity" + $1, "purchasePrice" = $2 WHERE "userID" = $3 AND "guildID" = $4 AND "itemID" = $5', [quantity, newPurchasePrice, user.id, guild.id, assetId]);
             } else {
                 await db.query('INSERT INTO user_portfolio ("userID", "guildID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)', [user.id, guild.id, assetId, quantity, newPurchasePrice]);
             }
-            await db.query('COMMIT');
 
             const embed = new EmbedBuilder()
                 .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
                 .setTitle('✶ تـم شـراء الاصـل')
-                .setDescription(`★ **${quantity}** x **${itemName}**\n★ **التكـلفـة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
+                .setDescription(`★ **الأسهم:** ${quantity} x **${itemName}**\n★ **التكـلفـة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
                 .setThumbnail('https://i.postimg.cc/0QgvCMBN/5956138480503032828-120-removebg-preview.png')
                 .setColor(Colors.Green);
 
-            await interaction.editReply({ embeds: [embed] });
+            await interaction.editReply({ content: `<@${user.id}>`, embeds: [embed] });
         } catch (err) {
-            await db.query('ROLLBACK');
             console.error(err);
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
     } else if (interaction.customId.startsWith('sell_modal_')) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        await interaction.deferReply({ ephemeral: false }); // ليكون ظاهراً للجميع
 
         const assetId = interaction.customId.replace('sell_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
@@ -418,24 +426,31 @@ async function handleMarketInteraction(interaction, client, db) {
 
         const totalEarned = Math.floor(currentPrice * quantity);
 
+        let userData = await client.getLevel(user.id, guild.id);
+        if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
+
         try {
-            await db.query('BEGIN');
-            await db.query('UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3', [totalEarned, user.id, guild.id]);
+            // 🔥 الإضافة الذرية المتزامنة بين الداتابيز والكاش!
+            const updateRes = await db.query('UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"', [totalEarned, user.id, guild.id]);
+            const exactNewMora = updateRes.rows[0] ? updateRes.rows[0].mora : (Number(userData.mora) + totalEarned);
+            
+            // نثبت الرصيد الجديد في الكاش لكي لا يمسحه نظام interaction-handler الأساسي
+            userData.mora = Number(exactNewMora);
+            await client.setLevel(userData);
+
             if (parseInt(portfolioItem.quantity) === quantity) {
                 await db.query('DELETE FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3', [user.id, guild.id, assetId]);
             } else {
                 await db.query('UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4', [quantity, user.id, guild.id, assetId]);
             }
-            await db.query('COMMIT');
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ تمت عملية البيع بنجاح')
                 .setDescription(`تم بيع **${quantity}** من **${marketItem ? marketItem.name : assetId}**\nبسعر **${currentPrice}** للوحدة.\n\n💰 المبلغ المستلم: **${totalEarned.toLocaleString()}**`)
                 .setColor(Colors.Red);
 
-            await interaction.editReply({ embeds: [embed] });
+            await interaction.editReply({ content: `<@${user.id}>`, embeds: [embed] });
         } catch (err) {
-            await db.query('ROLLBACK');
             console.error(err);
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
