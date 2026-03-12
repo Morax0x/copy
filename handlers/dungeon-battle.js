@@ -198,7 +198,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             }
         }
 
-        // حفظ الحالة عند بداية كل طابق (كافٍ جداً ويقلل الضغط)
         await saveDungeonState(db, threadChannel.id, guild.id, hostId, {
             floor, players, merchantState, retreatedPlayers, isTrapActive, retreatState, 
             loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
@@ -242,7 +241,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                                 
                                 const debuffDuration = 60 * 60 * 1000; const expiresAt = Date.now() + debuffDuration;
                                 if (db) {
-                                    // تم تصحيح أسماء الأعمدة لـ PostgreSQL
                                     await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'mora', -1.0]).catch(()=>{});
                                     await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'xp', -1.0]).catch(()=>{});
                                 }
@@ -333,7 +331,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                // ملاحظة: لا حاجة لحفظ الحالة في كل دور (Turn) لتوفير موارد السحابة
                 
                 if (floor === 100) {
                     ongoing = await processMoraxTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
@@ -436,11 +433,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         await deleteDungeonState(db, threadChannel.id);
         statusCollector.stop(); 
 
+        // 🔥 تم حماية الصورة هنا! 
+        const bossImage = (dungeonConfig.final_boss && dungeonConfig.final_boss.image) 
+            ? dungeonConfig.final_boss.image 
+            : 'https://i.postimg.cc/WzRGhgJ9/mwraks.png';
+
         const winEmbed = new EmbedBuilder()
             .setTitle('👑 اعتـراف الإمبـراطـور: اجتيـاز الاختبـار الأعظـم 👑')
             .setDescription(`**"أحسنتـم... لم أتوقع أن تصمدوا أمامي لكل هذا الوقت."**\n\nتـمت تصفيـة الدانجـون بنجـاح، فالتسجـل امبراطوريتـنـا اسمأئكـم بين العظمـاء!`)
             .setColor(Colors.Gold)
-            .setImage(dungeonConfig.final_boss.image || 'https://i.postimg.cc/WzRGhgJ9/mwraks.png')
+            .setImage(bossImage)
             .setTimestamp();
 
         const mentions = alivePlayers.map(p => `<@${p.id}>`).join(' ');
