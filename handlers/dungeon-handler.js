@@ -26,7 +26,7 @@ async function startDungeon(interaction, db) {
         const denyEmbed = new EmbedBuilder()
             .setTitle("✶ لا تستوفي الشروط")
             .setDescription("- الـدانجـون محفوف بالمخـاطر، ارفع مستواك إلى **10** لتتمكن من قيادة غارة الدانجون.")
-            .setColor(Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]])
+            .setColor('#FF0000')
             .setThumbnail('https://i.postimg.cc/hPxYnBZ7/adaft-ʿnwan.png');
 
         return interaction.reply({ embeds: [denyEmbed], flags: [MessageFlags.Ephemeral] });
@@ -159,8 +159,6 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
     } else {
         msg = await interaction.channel.send({ embeds: [updateEmbed()], components: [row] });
     }
-      
-    if (!interaction.isChatInputCommand && interaction.lastBotReply) interaction.lastBotReply = msg;
       
     const collector = msg.createMessageComponentCollector({ time: 60000 });
 
@@ -306,25 +304,37 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
             }
 
             try {
+                // 🔥 تحسين إنشاء الثريد: إضافة محاولة التأكد من الجاهزية
                 const thread = await msg.channel.threads.create({
-                    name: `دانجون-${theme.name.replace(/ /g, '-')}`,
+                    name: `🏰-دانجون-${theme.name.replace(/ /g, '-')}`,
                     autoArchiveDuration: 60,
                     type: ChannelType.PublicThread,
                     reason: 'Start Dungeon Battle'
                 });
 
-                for (const uid of validParty) { try { await thread.members.add(uid); } catch(e){} }
+                if (msg.editable) await msg.edit({ content: `✅ **بوابة الـدانـجون فُتحت!** <#${thread.id}>`, components: [] });
 
-                await thread.send(`🔔 **بدأت المعركة!**`);
-                
-                if (msg.editable) await msg.edit({ content: `✅ **بدأت المعركة!** <#${thread.id}>`, components: [] });
+                // 💡 سر المهنة: انتظار قصير لضمان أن ديسكورد استوعب وجود الثريد
+                await new Promise(r => setTimeout(r, 1500));
 
-                await runDungeon(thread, msg.channel, validParty, theme, db, host.id, partyClasses, activeDungeonRequests, startFloor);
+                for (const uid of validParty) { 
+                    try { await thread.members.add(uid); } catch(e){} 
+                }
+
+                // رسالة تأكيدية داخل الثريد لتنشيطه
+                const startMsg = await thread.send(`🔔 **يتم الآن استدعاء وحوش ${theme.name}.. استعدوا!**`);
+
+                // التحقق من وجود دالة runDungeon وبدء اللعبة
+                if (typeof runDungeon === 'function') {
+                    await runDungeon(thread, msg.channel, validParty, theme, db, host.id, partyClasses, activeDungeonRequests, startFloor);
+                } else {
+                    throw new Error("Dungeon battle logic (runDungeon) is not loaded correctly.");
+                }
 
             } catch (e) {
-                console.error(e);
+                console.error("Dungeon Start Fatal Error:", e);
                 activeDungeonRequests.delete(host.id);
-                msg.channel.send("❌ خطأ في إنشاء الثريد.");
+                msg.channel.send(`❌ **فشل في استكمال طقوس الدانجون:** ${e.message}`);
             }
         } else {
             activeDungeonRequests.delete(host.id);
