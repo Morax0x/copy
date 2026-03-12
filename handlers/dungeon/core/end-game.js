@@ -79,7 +79,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                 }
             }
             
-            await sql.query('UPDATE levels SET xp = xp + $1, mora = mora + $2 WHERE "user" = $3 AND guild = $4', [finalXp, finalMora, p.id, guildId]);
+            // 🔥 الإصلاح: إضافة علامات التنصيص
+            await sql.query(`UPDATE levels SET "xp" = "xp" + $1, "mora" = "mora" + $2 WHERE "user" = $3 AND "guild" = $4`, [finalXp, finalMora, p.id, guildId]).catch(()=>{});
         }
 
         let effectiveEndFloor = floor;
@@ -99,11 +100,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
         if (repReward > 0) {
             try {
+                // 🔥 الإصلاح: إضافة علامات التنصيص
                 await sql.query(`
-                    INSERT INTO user_reputation (userID, guildID, rep_points) 
+                    INSERT INTO user_reputation ("userID", "guildID", "rep_points") 
                     VALUES ($1, $2, $3) 
-                    ON CONFLICT (userID, guildID) 
-                    DO UPDATE SET rep_points = COALESCE(user_reputation.rep_points, 0) + $4
+                    ON CONFLICT ("userID", "guildID") 
+                    DO UPDATE SET "rep_points" = COALESCE(user_reputation."rep_points", 0) + $4
                 `, [p.id, guildId, repReward, repReward]);
             } catch (err) {}
         }
@@ -144,7 +146,8 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            await sql.query('UPDATE levels SET mora = mora + 500 WHERE "user" = $1 AND guild = $2', [mvpPlayer.id, guildId]);
+            // 🔥 الإصلاح: إضافة علامات التنصيص
+            await sql.query(`UPDATE levels SET "mora" = "mora" + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]).catch(()=>{});
         }
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
@@ -155,16 +158,18 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         const expiresAt = Date.now() + debuffDuration;
         
         for (const p of allParticipants) {
-            await sql.query("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildId, p.id, -15, expiresAt, 'mora', -0.15]);
-            await sql.query("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildId, p.id, -15, expiresAt, 'xp', -0.15]);
+            // 🔥 الإصلاح السحري: استخدام علامات التنصيص المزدوجة حول الأسماء لـ PostgreSQL
+            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'mora', -0.15]).catch(()=>{});
+            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'xp', -0.15]).catch(()=>{});
         }
     }
 
     if (floor >= 10 && status !== 'lose' && status !== 'camp' && mvpPlayer) {
         const buffDuration = 15 * 60 * 1000; 
         const expiresAt = Date.now() + buffDuration;
-        await sql.query("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15]);
-        await sql.query("INSERT INTO user_buffs (guildID, userID, buffPercent, expiresAt, buffType, multiplier) VALUES ($1, $2, $3, $4, $5, $6)", [guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15]);
+        // 🔥 الإصلاح: إضافة علامات التنصيص
+        await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15]).catch(()=>{});
+        await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15]).catch(()=>{});
     }
 
     const embed = new EmbedBuilder()
