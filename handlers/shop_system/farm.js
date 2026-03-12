@@ -6,12 +6,7 @@ let EMOJI_MORA = '🪙';
 try {
     const utils = require('./utils');
     if (utils.EMOJI_MORA) EMOJI_MORA = utils.EMOJI_MORA;
-    else {
-        const constants = require('../dungeon/constants');
-        if (constants.EMOJI_MORA) EMOJI_MORA = constants.EMOJI_MORA;
-    }
-} catch (e) {
-}
+} catch (e) {}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -31,7 +26,7 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
         
         if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
-        // 🔥 الكاش هو الملك!
+        // 🔥 استخدام الكاش لمنع التضارب
         let userData = await client.getLevel(i.user.id, i.guild.id);
         if (!userData) {
             userData = { ...client.defaultData, user: i.user.id, guild: i.guild.id };
@@ -75,20 +70,15 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
 
             const now = Date.now();
             
-            try {
-                // 🔥 خصم التكلفة من الكاش
-                userData.mora = userMora - totalCost;
-                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
-                await client.setLevel(userData);
-                
-                await db.query(`
-                    INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                `, [i.guild.id, i.user.id, animal.id, quantity, now, now, now]);
-            } catch (txErr) {
-                console.error("Farm Buy Error:", txErr);
-                return await i.editReply({ content: '❌ حدث خطأ أثناء الحفظ في قاعدة البيانات.' });
-            }
+            // 🔥 الخصم المباشر من الكاش (آمن 100%)
+            userData.mora = userMora - totalCost;
+            userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+            await client.setLevel(userData);
+            
+            await db.query(`
+                INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `, [i.guild.id, i.user.id, animal.id, quantity, now, now, now]);
 
             const embed = new EmbedBuilder()
                 .setTitle('✅ تم الشراء بنجاح')
@@ -108,78 +98,72 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                 return await i.editReply({ content: `❌ لا تملك هذه الكمية (لديك: **${ownedQuantity}**).` });
             }
             
-            try {
-                const rowsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, animal.id]);
-                const rows = rowsRes.rows;
+            const rowsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, animal.id]);
+            const rows = rowsRes.rows;
+            
+            let remainingToSell = quantity;
+            let totalRefund = 0;
+            let soldCount = 0;
+            let unsellableCount = 0;
+            const now = Date.now();
+
+            const lifespanMs = animal.lifespan_days * DAY_MS;
+            const noSellMs = Math.ceil(animal.lifespan_days * 0.2) * DAY_MS;
+
+            for (const row of rows) {
+                if (remainingToSell <= 0) break;
                 
-                let remainingToSell = quantity;
-                let totalRefund = 0;
-                let soldCount = 0;
-                let unsellableCount = 0;
-                const now = Date.now();
+                const purchaseTime = Number(row.purchaseTimestamp || row.purchasetimestamp) || now;
+                const ageMs = now - purchaseTime;
+                const remainingLifeMs = lifespanMs - ageMs;
 
-                const lifespanMs = animal.lifespan_days * DAY_MS;
-                const noSellMs = Math.ceil(animal.lifespan_days * 0.2) * DAY_MS;
-
-                for (const row of rows) {
-                    if (remainingToSell <= 0) break;
-                    
-                    const purchaseTime = Number(row.purchaseTimestamp || row.purchasetimestamp) || now;
-                    const ageMs = now - purchaseTime;
-                    const remainingLifeMs = lifespanMs - ageMs;
-
-                    if (remainingLifeMs <= noSellMs) {
-                        unsellableCount += Number(row.quantity);
-                        continue; 
-                    }
-
-                    let currentValRatio = (remainingLifeMs / lifespanMs);
-                    if (currentValRatio > 1) currentValRatio = 1;
-                    if (currentValRatio < 0) currentValRatio = 0;
-
-                    const refundPricePerUnit = Math.floor(animal.price * 0.70 * currentValRatio);
-
-                    const rowQty = Number(row.quantity);
-                    const sellFromThisRow = Math.min(rowQty, remainingToSell);
-                    
-                    totalRefund += (refundPricePerUnit * sellFromThisRow);
-                    remainingToSell -= sellFromThisRow;
-                    soldCount += sellFromThisRow;
-
-                    if (rowQty === sellFromThisRow) {
-                        await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
-                    } else {
-                        await db.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromThisRow, row.id]);
-                    }
+                if (remainingLifeMs <= noSellMs) {
+                    unsellableCount += Number(row.quantity);
+                    continue; 
                 }
 
-                if (soldCount === 0) {
-                    return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
-                }
+                let currentValRatio = (remainingLifeMs / lifespanMs);
+                if (currentValRatio > 1) currentValRatio = 1;
+                if (currentValRatio < 0) currentValRatio = 0;
 
-                // 🔥 إضافة أرباح البيع للكاش
-                userData.mora = userMora + totalRefund;
-                await client.setLevel(userData);
+                const refundPricePerUnit = Math.floor(animal.price * 0.70 * currentValRatio);
 
-                let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
-                if (remainingToSell > 0) {
-                    desc += `\n⚠️ لم يتم بيع **${remainingToSell}** لأنها كبيرة في السن.`;
+                const rowQty = Number(row.quantity);
+                const sellFromThisRow = Math.min(rowQty, remainingToSell);
+                
+                totalRefund += (refundPricePerUnit * sellFromThisRow);
+                remainingToSell -= sellFromThisRow;
+                soldCount += sellFromThisRow;
+
+                if (rowQty === sellFromThisRow) {
+                    await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
                 } else {
-                    desc += `\n📉 (تم خصم قيمة الاستهلاك بناءً على عمر الحيوان)`;
+                    await db.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromThisRow, row.id]);
                 }
-
-                const embed = new EmbedBuilder()
-                    .setTitle('✅ تم البيع بنجاح')
-                    .setColor(Colors.Green)
-                    .setDescription(desc)
-                    .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-
-                return await i.editReply({ embeds: [embed] });
-
-            } catch (txErr) {
-                console.error("Farm Sell Error:", txErr);
-                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام عملية البيع.' });
             }
+
+            if (soldCount === 0) {
+                return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
+            }
+
+            // 🔥 إضافة الأرباح إلى الكاش مباشرةً
+            userData.mora = userMora + totalRefund;
+            await client.setLevel(userData);
+
+            let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
+            if (remainingToSell > 0) {
+                desc += `\n⚠️ لم يتم بيع **${remainingToSell}** لأنها كبيرة في السن.`;
+            } else {
+                desc += `\n📉 (تم خصم قيمة الاستهلاك بناءً على عمر الحيوان)`;
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ تم البيع بنجاح')
+                .setColor(Colors.Green)
+                .setDescription(desc)
+                .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
+
+            return await i.editReply({ embeds: [embed] });
         }
 
     } catch (e) { 
