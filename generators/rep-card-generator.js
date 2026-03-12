@@ -35,6 +35,21 @@ function drawRandomPolygon(ctx, cx, cy, radius, sides) {
     ctx.closePath();
 }
 
+function drawRoundRect(ctx, x, y, width, height, radius) {
+    if (typeof radius === 'undefined') radius = 5;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+}
+
 async function generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, currentPoints, rankData, isRankUp) {
     const width = 1000;
     const height = 450;
@@ -164,16 +179,26 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 2;
-        ctx.beginPath(); 
-        ctx.roundRect(barX, barY, barW, barH, 15); 
+        drawRoundRect(ctx, barX, barY, barW, barH, 15);
         ctx.fill();
         ctx.stroke();
 
+        // 🔥 تم الإصلاح هنا لضمان دقة الشريط والأرقام
         const tiers = [0, 10, 25, 50, 100, 250, 500, 1000];
-        const currentTierMin = tiers.slice().reverse().find(t => currentPoints >= t) || 0;
+        let currentTierMin = 0;
+        for (let i = tiers.length - 1; i >= 0; i--) {
+            if (currentPoints >= tiers[i]) {
+                currentTierMin = tiers[i];
+                break;
+            }
+        }
         
         let progress = (currentPoints - currentTierMin) / (rankData.next - currentTierMin);
-        progress = Math.max(0.05, Math.min(progress, 1)); 
+        
+        // منع القيم السالبة والنسب غير المنطقية
+        if (progress < 0) progress = 0;
+        if (progress > 1) progress = 1;
+        if (progress < 0.05 && currentPoints > 0) progress = 0.05; // على الأقل يظهر جزء صغير
         
         const barColor = isRankUp ? '#00FF88' : rankData.color;
         const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
@@ -183,8 +208,7 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
         ctx.fillStyle = grad;
         ctx.shadowColor = barColor;
         ctx.shadowBlur = 15;
-        ctx.beginPath(); 
-        ctx.roundRect(barX, barY, barW * progress, barH, 15); 
+        drawRoundRect(ctx, barX, barY, barW * progress, barH, 15);
         ctx.fill();
         ctx.shadowBlur = 0;
 
@@ -195,6 +219,7 @@ async function generateRepCard(senderAvatar, senderName, receiverAvatar, receive
             ctx.fillStyle = '#000000'; 
             ctx.fillText(fixAr("🎉 تـم الارتـقـاء للـرتـبـة الجـديـدة! 🎉"), barX + barW / 2, barY + 25);
         } else {
+            // عرض الرقم الكلي مقابل الرقم القادم لتجنب الأرقام الغريبة
             const progressText = `${currentPoints} / ${rankData.next}`;
             ctx.fillStyle = '#FFFFFF';
             ctx.shadowColor = '#000000';
