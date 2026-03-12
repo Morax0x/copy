@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -14,10 +14,10 @@ module.exports = {
         if (message.author.id !== OWNER_ID) return;
 
         const db = message.client.sql;
-        if (!db) return;
+        if (!db) return message.reply("❌ البوت غير متصل بقاعدة البيانات السحابية!");
 
         const downloadUrl = "https://files.catbox.moe/kvjbvp.sqlite";
-        const msg = await message.reply("⏳ **جاري سحب الملف الإمبراطوري (45 ميجا) والبدء في الهجرة...**");
+        const msg = await message.reply("⏳ **جاري سحب الملف الإمبراطوري (45 ميجا) واستخراج هيكل الجداول الأصلي...**");
         
         const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
         const file = fs.createWriteStream(tempPath);
@@ -35,61 +35,44 @@ module.exports = {
 
             file.on('finish', async function() {
                 file.close();
-                await msg.edit("✅ **تم السحب! جاري ضخ 125,000+ سجل في السحابة... (لا تقم بإيقاف البوت 🛑)**");
+                await msg.edit("✅ **تم السحب! جاري تحليل الهيكل الداخلي للملف (لا تقم بإيقاف البوت 🛑)**");
 
                 try {
                     const sqliteDb = new Database(tempPath);
-                    const tablesToMigrate = [
-                        'levels', 'settings', 'streaks', 'media_streaks', 'user_daily_stats', 'user_weekly_stats', 'user_total_stats', 'user_inventory', 'user_portfolio', 'user_loans', 'user_reputation', 'user_weapons', 'user_skills', 'marriages', 'children', 'quest_notifications', 'user_quest_claims', 'user_achievements', 'market_items', 'active_giveaways', 'giveaway_entries', 'race_roles', 'user_farm'
-                    ];
                     
-                    let totalSuccess = 0;
-                    let logDetails = [];
+                    // استخراج هيكل الجداول من SQLite
+                    const schemaRows = sqliteDb.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
+                    
+                    let schemaContent = "====== 📊 هيكل الجداول الأصلي ======\n\n";
+                    schemaRows.forEach(row => {
+                        schemaContent += `-- Table: ${row.name}\n`;
+                        schemaContent += `${row.sql};\n\n`;
+                    });
+                    schemaContent += "=====================================\n";
 
-                    for (const table of tablesToMigrate) {
-                        const checkTable = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table);
-                        if (!checkTable) continue;
-                        const rows = sqliteDb.prepare(`SELECT * FROM ${table}`).all();
-                        if (rows.length === 0) continue;
+                    const schemaFilePath = path.join(process.cwd(), 'old_schema.txt');
+                    fs.writeFileSync(schemaFilePath, schemaContent);
 
-                        const columns = Object.keys(rows[0]);
-                        const colsString = columns.map(c => `"${c.toLowerCase()}"`).join(', ');
-                        
-                        let successCount = 0;
-                        let errorCount = 0;
+                    const attachment = new AttachmentBuilder(schemaFilePath);
+                    
+                    await msg.edit({ 
+                        content: "✅ **تم استخراج الهيكل الأصلي من الملف المحمل بنجاح!**\n👇 انسخ محتوى هذا الملف وأرسله لي لنقوم ببناء الجداول السحابية المطابقة له بنسبة 100% قبل بدء الهجرة الفعلية.", 
+                        files: [attachment] 
+                    });
 
-                        for (const row of rows) {
-                            const values = columns.map(col => row[col]);
-                            const valsString = columns.map((_, i) => `$${i + 1}`).join(', ');
-                            try {
-                                await db.query(`INSERT INTO "${table}" (${colsString}) VALUES (${valsString}) ON CONFLICT DO NOTHING`, values);
-                                successCount++;
-                                totalSuccess++;
-                            } catch (err) {
-                                if (err.code === '23505') successCount++; 
-                                else errorCount++;
-                            }
-                        }
-                        logDetails.push(`**${table}**: ✅ ${successCount} | ❌ ${errorCount}`);
-                    }
+                    // إغلاق الداتا بيس وحذف الملفات المؤقتة
                     sqliteDb.close();
                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-
-                    const embed = new EmbedBuilder()
-                        .setTitle("🎉 تمت الهجرة الكبرى بنجاح!")
-                        .setDescription(`تم فحص ونقل **${totalSuccess}** سجل إلى السحابة السريعة!\n\n**التفاصيل:**\n${logDetails.join('\n')}`)
-                        .setColor("Green");
-
-                    await msg.edit({ content: " ", embeds: [embed] });
+                    setTimeout(() => { if (fs.existsSync(schemaFilePath)) fs.unlinkSync(schemaFilePath); }, 10000);
 
                 } catch (err) {
                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-                    await msg.edit(`❌ **خطأ أثناء الهجرة:**\n\`\`\`js\n${err.message}\n\`\`\``);
+                    await msg.edit(`❌ **خطأ أثناء تحليل الهيكل:**\n\`\`\`js\n${err.message}\n\`\`\``);
                 }
             });
         } catch (err) {
             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            await msg.edit(`❌ فشل التحميل.`);
+            await msg.edit(`❌ فشل التحميل من الرابط.`);
         }
     }
 };
