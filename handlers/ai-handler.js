@@ -19,7 +19,8 @@ const OWNER_ID = "1145327691772481577";
 function sanitizeOutput(text) {
     if (!text) return "";
     let cleanText = text.replace(/@(everyone|here)/gi, "");
-    cleanText = cleanText.replace(/<@!?\d+>/g, "(مغامر)"); 
+    // 🔥 تم إزالة (مغامر) - الآن سيقوم بمسح المنشنات الرقمية فقط دون استبدالها بنص
+    cleanText = cleanText.replace(/<@!?\d+>/g, ""); 
     cleanText = cleanText.replace(/@/g, "");
     cleanText = cleanText.replace(/(.)\1{3,}/g, "$1$1$1");
     return cleanText.trim();
