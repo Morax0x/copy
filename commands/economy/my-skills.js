@@ -25,7 +25,7 @@ function buildSkillsEmbed(targetUser, cleanName, weaponData, userRace, skillsLis
                 `**✶ مستوى السلاح:** \`Lv.${weaponData.currentLevel}\`\n` +
                 `**✶ ضـرر السلاح:** \`${weaponData.currentDamage}\` DMG`;
         } else if (userRace && !weaponData) {
-            weaponField = `**✶ العرق:** **${userRace.raceName}** (بدون سلاح)`;
+            weaponField = `**✶ العرق:** **${userRace.raceName || userRace.racename}** (بدون سلاح)`;
         } else {
             weaponField = "لم يتم اختيار عرق بعد.";
         }
@@ -111,17 +111,18 @@ module.exports = {
         const targetUser = targetMember.user;
         const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
-        // 1. جلب البيانات
+        // 1. جلب البيانات الأساسية للقتال
         const userRace = await getUserRace(sql, targetMember);
         const weaponData = await getWeaponData(sql, targetMember);
         
-        // جلب المهارات التي مستواها أكبر من 0
+        // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" لضمان القراءة الصحيحة من PostgreSQL
         const userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]);
         const userSkillsDB = userSkillsRes.rows;
         
         // جلب الجرعات
         let potionsList = [];
         try {
+            // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" 
             const userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]);
             const userInventory = userInventoryRes.rows;
 
@@ -133,7 +134,9 @@ module.exports = {
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("Error fetching inventory:", e);
+        }
 
         // --- حساب القيمة وتجهيز قائمة المهارات ---
         let totalSpent = 0;
