@@ -80,11 +80,13 @@ function buildSkillSelector(player) {
 
 async function buildPotionSelector(player, db, guildID) {
     await ensureInventoryTable(db); 
-    const userItemsRes = await db.query("SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2", [player.id, guildID]);
+    // 🔥 تم إصلاح أسماء الأعمدة لتتوافق مع PostgreSQL (علامات التنصيص المزدوجة)
+    const userItemsRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
     const userItems = userItemsRes.rows;
       
     const potions = userItems.map(ui => {
-        const itemDef = potionItems.find(si => si.id === ui.itemid);
+        // دعم itemID و itemid حسب ما يُرجعه الاستعلام
+        const itemDef = potionItems.find(si => si.id === (ui.itemID || ui.itemid));
         if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity) };
         return null;
     }).filter(p => p !== null && p.quantity > 0);
