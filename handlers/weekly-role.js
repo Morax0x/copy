@@ -31,17 +31,17 @@ async function updateWeeklyRole(client) {
         const role = guild.roles.cache.get(CONFIG.ROLE_ID);
         if (!role) return console.log("[WeeklyRole] ❌ Role not found!");
 
-        const db = client.db;
+        const db = client.sql; // ⚠️ تم التعديل من client.db إلى client.sql للتوافق مع باقي البوت
         if (!db) return;
 
         const weekStart = getWeekStartDateString();
 
         const queryResult = await db.query(`
-            SELECT userid, 
-                   (COALESCE(messages, 0) * 15 + COALESCE(vc_minutes, 0) * 10) as score 
+            SELECT "userID", 
+                   (COALESCE("messages", 0) * 15 + COALESCE("vc_minutes", 0) * 10) as score 
             FROM user_weekly_stats 
-            WHERE guildid = $1 AND userid != $2 AND weekstartdate = $3 
-            ORDER BY score DESC, messages DESC 
+            WHERE "guildID" = $1 AND "userID" != $2 AND "weekStartDate" = $3 
+            ORDER BY score DESC, "messages" DESC 
             LIMIT 1
         `, [CONFIG.GUILD_ID, OWNER_ID, weekStart]);
 
@@ -51,25 +51,27 @@ async function updateWeeklyRole(client) {
             return; 
         }
 
-        const winnerMember = await guild.members.fetch(topUser.userid).catch(() => null);
+        const topUserId = topUser.userID || topUser.userid; // ⚠️ حماية لضمان قراءة الـ ID
+
+        const winnerMember = await guild.members.fetch(topUserId).catch(() => null);
         if (!winnerMember) return;
 
         const currentHolders = role.members;
 
-        if (currentHolders.has(topUser.userid) && currentHolders.size === 1) {
+        if (currentHolders.has(topUserId) && currentHolders.size === 1) {
             return;
         }
 
         console.log(`👑 [WeeklyRole] New King Detected: ${winnerMember.user.tag} (Score: ${topUser.score})`);
 
         for (const [memberID, member] of currentHolders) {
-            if (memberID !== topUser.userid) {
+            if (memberID !== topUserId) {
                 await member.roles.remove(role).catch(e => console.error(`[WeeklyRole] Failed to remove role from ${memberID}:`, e.message));
             }
         }
 
-        if (!currentHolders.has(topUser.userid)) {
-            await winnerMember.roles.add(role).catch(e => console.error(`[WeeklyRole] Failed to add role to ${topUser.userid}:`, e.message));
+        if (!currentHolders.has(topUserId)) {
+            await winnerMember.roles.add(role).catch(e => console.error(`[WeeklyRole] Failed to add role to ${topUserId}:`, e.message));
         }
 
     } catch (error) {
