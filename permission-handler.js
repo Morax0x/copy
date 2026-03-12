@@ -26,33 +26,45 @@ function formatTimeSimple(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function checkPermissions(message, command) {
+async function checkPermissions(message, command) {
     const { client } = message;
-    const isOwner = message.author.id === ownerID;
-
+    const targetUser = message.author || message.user;
+    if (!targetUser) return true;
+    
+    const isOwner = targetUser.id === ownerID;
     if (isOwner) return true; 
 
     const cmdInfo = DB_COOLDOWN_COMMANDS.find(c => command.name === c.name || (command.aliases && command.aliases.includes(c.name)));
 
     if (cmdInfo && cmdInfo.level_required > 0) {
-        let levelData = client.getLevel.get(message.author.id, message.guild.id);
-        let userLevel = (levelData && levelData.level) ? levelData.level : 1; 
+        let userLevel = 1;
+        try {
+            const res = await client.sql.query('SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2', [targetUser.id, message.guild.id]);
+            if (res.rows[0]) userLevel = parseInt(res.rows[0].level) || 1;
+        } catch(e) {}
 
         const requiredLevel = cmdInfo.level_required;
         if (userLevel < requiredLevel) {
-            const cmdName = command.aliases.find(a => ['تحويل', 'سرقة', 'نهب'].includes(a)) || command.name; 
-            message.reply(`✥ مـا زلـت رحالاً يا غـلام ! ارفـع مستواك الـى \__${requiredLevel}__\ لتتمكن من استعمال \`${cmdName}\` <:araara:1436297148894412862>`);
+            const cmdName = (command.aliases && command.aliases.find(a => ['تحويل', 'سرقة', 'نهب'].includes(a))) || command.name; 
+            const replyData = { content: `✥ مـا زلـت رحالاً يا غـلام ! ارفـع مستواك الـى \__${requiredLevel}__\ لتتمكن من استعمال \`${cmdName}\` <:araara:1436297148894412862>`, flags: [64] };
+            
+            if (message.replied || message.deferred) {
+                message.followUp(replyData).catch(()=>{});
+            } else {
+                message.reply(replyData).catch(()=>{});
+            }
             return false;
         }
     }
-
     return true; 
 }
 
-function checkCooldown(message, command) {
+async function checkCooldown(message, command) {
     const { client } = message;
-    const isOwner = message.author.id === ownerID;
+    const targetUser = message.author || message.user;
+    if (!targetUser) return false;
 
+    const isOwner = targetUser.id === ownerID;
     if (isOwner) return false;
 
     const now = Date.now();
@@ -60,12 +72,16 @@ function checkCooldown(message, command) {
     let timeLeft = 0;
 
     if (cmdInfo) {
-        let data = client.getLevel.get(message.author.id, message.guild.id);
-        if (!data) return false; 
+        let lastUsed = 0;
+        try {
+            const dbCol = cmdInfo.db_column;
+            const res = await client.sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [targetUser.id, message.guild.id]);
+            if (res.rows[0]) {
+                lastUsed = parseInt(res.rows[0][dbCol] || res.rows[0][dbCol.toLowerCase()] || 0);
+            }
+        } catch(e) {}
 
-        const lastUsed = parseInt(data[cmdInfo.db_column.toLowerCase()] || data[cmdInfo.db_column] || 0);
         const expirationTime = lastUsed + cmdInfo.cooldown_ms;
-
         if (now < expirationTime) {
             timeLeft = expirationTime - now;
         }
@@ -77,19 +93,23 @@ function checkCooldown(message, command) {
         const timestamps = client.cooldowns.get(command.name);
         const cooldownAmount = (command.cooldown || 3) * 1000;
 
-        const expirationTime = timestamps.get(message.author.id) + cooldownAmount;
-
-        if (now < expirationTime) {
-            timeLeft = expirationTime - now;
+        if (timestamps.has(targetUser.id)) {
+            const expirationTime = timestamps.get(targetUser.id) + cooldownAmount;
+            if (now < expirationTime) {
+                timeLeft = expirationTime - now;
+            } else {
+                timestamps.set(targetUser.id, now);
+                setTimeout(() => timestamps.delete(targetUser.id), cooldownAmount);
+            }
         } else {
-            timestamps.set(message.author.id, now);
-            setTimeout(() => timestamps.delete(message.author.id), cooldownAmount);
+            timestamps.set(targetUser.id, now);
+            setTimeout(() => timestamps.delete(targetUser.id), cooldownAmount);
         }
     }
 
     if (timeLeft > 0) {
         const timeString = formatTimeSimple(timeLeft); 
-        const cmdName = command.aliases.find(a => a.length > 2) || command.name; 
+        const cmdName = (command.aliases && command.aliases.find(a => a.length > 2)) || command.name; 
         return `✥ انـتـظـر \`${timeString}\` لتستعمل \`${cmdName}\` مجددا <:stop:1436337453098340442>`;
     }
 
