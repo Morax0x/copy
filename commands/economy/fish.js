@@ -74,10 +74,13 @@ module.exports = {
             return reply({ content: "⚠️ **لديك رحلة صيد جارية!**", ephemeral: true });
         }
 
-        let userData = await client.getLevel(user.id, guild.id);
+        // استخدام استعلام مباشر لجلب البيانات بأسماء الأعمدة الصحيحة
+        let userDataRes = await sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]);
+        let userData = userDataRes.rows[0];
+
         if (!userData) {
-            userData = { ...client.defaultData, user: user.id, guild: guild.id, rodLevel: 1, boatLevel: 1, currentLocation: 'beach', lastFish: 0 };
-            await client.setLevel(userData);
+            userData = { user: user.id, guild: guild.id, rodLevel: 1, boatLevel: 1, currentLocation: 'beach', lastFish: 0 };
+            await sql.query('INSERT INTO levels ("user", "guild", "rodLevel", "boatLevel", "currentLocation", "lastFish") VALUES ($1, $2, 1, 1, $3, 0)', [user.id, guild.id, 'beach']);
         }
 
         const now = Date.now();
@@ -98,7 +101,7 @@ module.exports = {
         const woundedDebuff = woundedDebuffRes.rows[0];
         
         if (woundedDebuff) {
-            const minutesLeft = Math.ceil((Number(woundedDebuff.expiresAt) - now) / 60000);
+            const minutesLeft = Math.ceil((Number(woundedDebuff.expiresAt || woundedDebuff.expiresat) - now) / 60000);
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
@@ -322,6 +325,7 @@ module.exports = {
                             }
                         }
                         
+                        // ⚠️ هنا يتم تحديث الـ lastFish بشكل صحيح ومباشر
                         await sql.query(`UPDATE levels SET "mora" = "mora" + $1, "lastFish" = $2 WHERE "user" = $3 AND "guild" = $4`, [totalValue, Date.now(), user.id, guild.id]);
                         
                         if (updateGuildStat) {
@@ -367,6 +371,7 @@ module.exports = {
                             .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.")
                             .setColor(Colors.Red);
                         
+                        // ⚠️ هنا أيضاً يتم تحديث الـ lastFish بشكل صحيح ومباشر
                         await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), user.id, guild.id]);
                         
                         const failPayload = { content: '', embeds: [failEmbed], components: [] };
