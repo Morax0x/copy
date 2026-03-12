@@ -1,4 +1,4 @@
-const { EmbedBuilder, Colors, MessageFlags } = require("discord.js");
+const { EmbedBuilder, Colors } = require("discord.js");
 const marketItemsConfig = require('../../json/market-items.json');
 
 let EMOJI_MORA = '🪙'; 
@@ -29,13 +29,8 @@ function calculateSlippage(basePrice, quantity, isBuy) {
 
 async function updateMarketPrices(db) {
     if (!db) return;
+    
     try {
-        await db.query(`CREATE TABLE IF NOT EXISTS market_prices (
-            "itemID" TEXT PRIMARY KEY,
-            "currentPrice" INTEGER,
-            "lastPrice" INTEGER
-        )`);
-
         const allItemsRes = await db.query(`SELECT * FROM market_items`);
         const allItems = allItemsRes.rows;
         if (allItems.length === 0) return;
@@ -45,7 +40,6 @@ async function updateMarketPrices(db) {
         const MAX_PRICE = 50000;             
         
         try {
-            await db.query("BEGIN");
             for (const item of allItems) {
                 const resultRes = await db.query(`SELECT SUM("quantity") as total FROM user_portfolio WHERE "itemID" = $1`, [item.id]);
                 const totalOwned = Number(resultRes.rows[0].total) || 0;
@@ -70,11 +64,9 @@ async function updateMarketPrices(db) {
                 
                 await db.query(`UPDATE market_items SET "currentPrice" = $1, "lastChangePercent" = $2, "lastChange" = $3 WHERE "id" = $4`, [newPrice, displayPercent, changeAmount, item.id]);
             }
-            await db.query("COMMIT");
             console.log(`[Market System] Prices updated successfully.`);
         } catch (txErr) {
-            await db.query("ROLLBACK");
-            throw txErr;
+            console.error("Market Price Update Error:", txErr);
         }
         
     } catch (err) { 
@@ -83,7 +75,7 @@ async function updateMarketPrices(db) {
 }
 
 async function _handleMarketTransaction(i, client, db, isBuy) {
-    if (!i.deferred && !i.replied) await i.deferReply({ flags: MessageFlags.Ephemeral }); 
+    await i.deferReply(); // تم إزالة ephemeral: false لتجنب التحذير
     
     try {
         const quantityString = i.fields.getTextInputValue('quantity_input');
@@ -129,8 +121,6 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             }
             
             try {
-                await db.query("BEGIN");
-                
                 userData.mora = userMora - totalCost;
                 userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
                 await client.setLevel(userData);
@@ -141,10 +131,9 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 } else {
                     await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]);
                 }
-                await db.query("COMMIT");
             } catch (txErr) {
-                await db.query("ROLLBACK");
-                throw txErr;
+                console.error("Market Buy Error:", txErr);
+                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام الشراء.' });
             }
             
             const embed = new EmbedBuilder()
@@ -153,7 +142,6 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 اشتريت: **${quantity}** سهم من **${item.name}**\n💵 التكلفة الإجمالية: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\n📊 متوسط السعر: **${avgPrice.toLocaleString()}**`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
             
-            // 🔥 إرسال رسالة الشراء بشكل عام في الشات
             await i.editReply({ content: "✅ اكتملت العملية. (تم إرسال الفاتورة في الشات)" });
             return await i.channel.send({ content: `<@${i.user.id}>`, embeds: [embed] });
 
@@ -168,8 +156,6 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             const totalGain = Math.floor(avgPrice * quantity);
             
             try {
-                await db.query("BEGIN");
-                
                 if (userQty - quantity > 0) {
                     await db.query(`UPDATE user_portfolio SET "quantity" = $1 WHERE "id" = $2`, [userQty - quantity, pfItem.id]);
                 } else {
@@ -179,11 +165,9 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 userData.mora = userMora + totalGain;
                 await client.setLevel(userData);
                 await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [userData.mora, i.user.id, i.guild.id]);
-                
-                await db.query("COMMIT");
             } catch (txErr) {
-                await db.query("ROLLBACK");
-                throw txErr;
+                console.error("Market Sell Error:", txErr);
+                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام البيع.' });
             }
             
             const embed = new EmbedBuilder()
@@ -192,7 +176,6 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 بعت: **${quantity}** سهم من **${item.name}**\n💰 الربح الإجمالي: **${totalGain.toLocaleString()}** ${EMOJI_MORA}\n📊 متوسط السعر: **${avgPrice.toLocaleString()}**`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
             
-            // 🔥 إرسال رسالة البيع بشكل عام في الشات
             await i.editReply({ content: "✅ اكتملت العملية. (تم إرسال الفاتورة في الشات)" });
             return await i.channel.send({ content: `<@${i.user.id}>`, embeds: [embed] });
         }
