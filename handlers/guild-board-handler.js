@@ -696,10 +696,12 @@ async function autoUpdateKingsBoard(client, db) {
                         await getKingInfo(farmData, 'مورا', 'ملك الحصاد', '🌾')
                     ];
 
+                    // 1. تحديث لوحة الملوك (صورة اللوحة تتحدث دائماً)
                     const kingsBoardBuffer = await generateKingsBoardImage(kingsArray);
                     const kingsBoardAttachment = new AttachmentBuilder(kingsBoardBuffer, { name: `kings-board-${Date.now()}.png` });
                     await kingsMsg.edit({ files: [kingsBoardAttachment] });
 
+                    // 2. معالجة الإشعارات وسحب الرولات
                     if (oldHash) {
                         const oldParts = oldHash.split('|');
                         const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الحكمة', 'ملك القنص', 'ملك النزاع', 'ملك الحصاد'];
@@ -708,11 +710,15 @@ async function autoUpdateKingsBoard(client, db) {
                         const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 'roleFisherKing', 'rolePvPKing', 'roleFarmKing'];
 
                         for (let i = 0; i < 8; i++) {
+                            // إذا كان هناك تغيير في هذا المركز
                             if (oldParts[i] !== currentHashArray[i] && currentHashArray[i] !== 'none') {
                                 const [newUserId, newVal] = currentHashArray[i].split(':');
                                 const [oldUserId] = oldParts[i] === 'none' ? [null] : oldParts[i].split(':');
 
+                                // 🔥 الإصلاح السحري: هل الملك تغير فعلاً؟
                                 if (newUserId !== oldUserId) {
+                                    
+                                    // أ. نقل الرتبة من الملك القديم للجديد
                                     const roleId = settings[roleCols[i]];
                                     if (roleId) {
                                         const targetRole = guild.roles.cache.get(roleId);
@@ -726,37 +732,39 @@ async function autoUpdateKingsBoard(client, db) {
                                             }
                                         }
                                     }
-                                }
 
-                                if (newUserId !== 'none') {
-                                    const notifDataRes = await db.query(`SELECT "kingsNotif" FROM quest_notifications WHERE "id" = $1`, [`${newUserId}-${guildId}`]);
-                                    const notifData = notifDataRes.rows[0];
-                                    if (!notifData || Number(notifData.kingsNotif) !== 0) {
-                                        const kingMsgContent = announcementsTexts.getKingMessage(`<@${newUserId}>`, titles[i], `${parseInt(newVal).toLocaleString()} ${suffixes[i]}`, client);
-                                        
-                                        if (announceChannel) {
-                                            let files = [];
-                                            if (announceChannel.permissionsFor(guild.members.me)?.has(PermissionsBitField.Flags.AttachFiles)) {
-                                                try {
-                                                    const newKingUser = await client.users.fetch(newUserId).catch(()=>null);
-                                                    let oldUserObj = 'EMPTY';
-                                                    if (oldUserId && oldUserId !== 'none') {
-                                                        const oldMem = await guild.members.fetch(oldUserId).catch(()=>null);
-                                                        if (oldMem) oldUserObj = oldMem.user;
-                                                    }
-                                                    
-                                                    const description = oldUserObj === 'EMPTY' ? `اعتلى العرش بكل جدارة!` : `انتزع التاج بقوة واعتلى القمة!`;
+                                    // ب. إرسال الإشعار لانتزاع التاج
+                                    if (newUserId !== 'none') {
+                                        const notifDataRes = await db.query(`SELECT "kingsNotif" FROM quest_notifications WHERE "id" = $1`, [`${newUserId}-${guildId}`]);
+                                        const notifData = notifDataRes.rows[0];
+                                        if (!notifData || Number(notifData.kingsNotif) !== 0) {
+                                            const kingMsgContent = announcementsTexts.getKingMessage(`<@${newUserId}>`, titles[i], `${parseInt(newVal).toLocaleString()} ${suffixes[i]}`, client);
+                                            
+                                            if (announceChannel) {
+                                                let files = [];
+                                                if (announceChannel.permissionsFor(guild.members.me)?.has(PermissionsBitField.Flags.AttachFiles)) {
+                                                    try {
+                                                        const newKingUser = await client.users.fetch(newUserId).catch(()=>null);
+                                                        let oldUserObj = 'EMPTY';
+                                                        if (oldUserId && oldUserId !== 'none') {
+                                                            const oldMem = await guild.members.fetch(oldUserId).catch(()=>null);
+                                                            if (oldMem) oldUserObj = oldMem.user;
+                                                        }
+                                                        
+                                                        const description = oldUserObj === 'EMPTY' ? `اعتلى العرش بكل جدارة!` : `انتزع التاج بقوة واعتلى القمة!`;
 
-                                                    if (newKingUser) {
-                                                        const buffer = await generateEpicAnnouncement(newKingUser, '👑 انـتـزاع عـرش 👑', titles[i], description, `الرقم القياسي: ${parseInt(newVal).toLocaleString()} ${suffixes[i]}`, colors[i], oldUserObj, true);
-                                                        files.push(new AttachmentBuilder(buffer, { name: `new-king-${Date.now()}.png` }));
-                                                    }
-                                                } catch(e) {}
+                                                        if (newKingUser) {
+                                                            const buffer = await generateEpicAnnouncement(newKingUser, '👑 انـتـزاع عـرش 👑', titles[i], description, `الرقم القياسي: ${parseInt(newVal).toLocaleString()} ${suffixes[i]}`, colors[i], oldUserObj, true);
+                                                            files.push(new AttachmentBuilder(buffer, { name: `new-king-${Date.now()}.png` }));
+                                                        }
+                                                    } catch(e) {}
+                                                }
+                                                await announceChannel.send({ content: kingMsgContent, files: files }).catch(()=>{});
                                             }
-                                            await announceChannel.send({ content: kingMsgContent, files: files }).catch(()=>{});
                                         }
                                     }
                                 }
+                                // إذا كان نفس الشخص (يكسر رقمه فقط)، لا نفعل شيئاً (اللوحة ستتحدث تلقائياً فوق)
                             }
                         }
                     }
