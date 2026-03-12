@@ -1,62 +1,38 @@
-const { EmbedBuilder } = require('discord.js');
-
-const OWNER_ID = "1145327691772481577";
+const OWNER_ID = "1145327691772481577"; // أيديك
 
 module.exports = {
     name: 'fix-db',
-    aliases: ['اصلاح'],
-    description: 'إصلاح الترقيم التلقائي وبناء الأعمدة.',
+    aliases: ['اصلاح-العداد'],
+    description: 'مزامنة عدادات الـ ID بعد الهجرة.',
     category: "Owner",
 
     async execute(message, args) {
         if (message.author.id !== OWNER_ID) return;
 
         const db = message.client.sql;
-        if (!db) return message.reply("❌ البوت غير متصل بقاعدة البيانات السحابية!");
+        if (!db) return message.reply("❌ غير متصل بالسحابة!");
 
-        const msg = await message.reply("🛠️ **جاري إصلاح البنية ومزامنة عدادات السحابة (Sequence Sync)...**");
+        const msg = await message.reply("⏳ **جاري مزامنة عدادات الـ ID للسحابة...**");
 
-        const queries = [
-            "ALTER TABLE levels ADD COLUMN IF NOT EXISTS lastdungeon BIGINT DEFAULT 0;",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS chatchannelid VARCHAR(50);",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS nextbumptime BIGINT DEFAULT 0;",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS lastbumperid VARCHAR(50);",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS chatterchannelid VARCHAR(50);",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS rolechatterbadge VARCHAR(50);",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS roledailybadge VARCHAR(50);",
-            "ALTER TABLE settings ADD COLUMN IF NOT EXISTS roleweeklybadge VARCHAR(50);",
-            "ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS main_chat_messages BIGINT DEFAULT 0;",
-            "ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS chatter_badge_given INTEGER DEFAULT 0;",
-            "ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS daily_badge_given INTEGER DEFAULT 0;",
-            "ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS knight_badge_given INTEGER DEFAULT 0;",
-            "ALTER TABLE user_weekly_stats ADD COLUMN IF NOT EXISTS weekly_badge_given INTEGER DEFAULT 0;",
-            "ALTER TABLE user_reputation ADD COLUMN IF NOT EXISTS daily_reps_given INTEGER DEFAULT 0;",
-            "ALTER TABLE marriages ADD COLUMN IF NOT EXISTS dowry BIGINT DEFAULT 0;",
-            
-            // 🔥 أوامر مزامنة العدادات (Sequence Sync)
-            "SELECT setval('user_achievements_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_achievements));",
-            "SELECT setval('active_reports_id_seq', (SELECT COALESCE(MAX(id), 1) FROM active_reports));",
-            "SELECT setval('user_buffs_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_buffs));",
-            "SELECT setval('user_portfolio_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_portfolio));",
-            "SELECT setval('user_inventory_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_inventory));",
-            "SELECT setval('user_farm_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_farm));",
-            "SELECT setval('user_lands_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_lands));",
-            "SELECT setval('user_weapons_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_weapons));",
-            "SELECT setval('user_skills_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_skills));",
-            "SELECT setval('user_loans_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_loans));",
-            "SELECT setval('giveaway_entries_id_seq', (SELECT COALESCE(MAX(id), 1) FROM giveaway_entries));",
-            "SELECT setval('auto_responses_id_seq', (SELECT COALESCE(MAX(id), 1) FROM auto_responses));",
-            "SELECT setval('user_coupons_id_seq', (SELECT COALESCE(MAX(id), 1) FROM user_coupons));",
-            "SELECT setval('marriages_id_seq', (SELECT COALESCE(MAX(id), 1) FROM marriages));"
+        // الجداول التي تحتوي على عداد تلقائي (BIGSERIAL)
+        const tablesWithSerial = [
+            'active_reports', 'user_buffs', 'user_portfolio', 'user_inventory',
+            'user_farm', 'user_achievements', 'user_weapons', 'user_skills',
+            'user_loans', 'giveaway_entries', 'auto_responses', 'user_coupons',
+            'farm_daily_log'
         ];
 
-        try {
-            for (const q of queries) {
-                await db.query(q).catch(e => { /* تجاهل الأخطاء إذا كان العداد غير موجود بعد */ });
+        let success = 0;
+        for (const table of tablesWithSerial) {
+            try {
+                // أمر SQL يقفز بالعداد إلى أعلى رقم ID موجود في الجدول
+                await db.query(`SELECT setval('"${table}_id_seq"', COALESCE((SELECT MAX(id) FROM "${table}"), 1))`);
+                success++;
+            } catch (e) {
+                console.error(`خطأ في مزامنة جدول ${table}:`, e.message);
             }
-            await msg.edit("✅ **تم إصلاح الجداول ومزامنة جميع العدادات التلقائية بنجاح!**\nلن يظهر لك خطأ (duplicate key) مرة أخرى.");
-        } catch(e) {
-            await msg.edit(`❌ **حدث خطأ:**\n\`\`\`js\n${e.message}\n\`\`\``);
         }
+
+        await msg.edit(`✅ **تمت المزامنة!** تم إصلاح عدادات ${success} جدول. مشكلة الـ (Duplicate) انتهت تماماً!`);
     }
 };
