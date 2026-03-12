@@ -16,7 +16,7 @@ module.exports = {
         const db = message.client.sql;
         if (!db) return message.reply("❌ البوت غير متصل بقاعدة البيانات السحابية!");
 
-        const downloadUrl = "https://files.catbox.moe/b6sfaw.sqlite";
+        const downloadUrl = "https://files.catbox.moe/inkkh7.sqlite";
         const msg = await message.reply("⏳ **جاري سحب الملف الإمبراطوري والبدء في الهجرة الكبرى...**");
         
         const tempPath = path.join(process.cwd(), `temp_migrate_${Date.now()}.sqlite`);
