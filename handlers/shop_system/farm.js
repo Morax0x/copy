@@ -32,7 +32,6 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
         
         if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
-        // 🔥 استخدام الكاش للتحقق من الرصيد لضمان عدم التعارض
         let userData = await client.getLevel(i.user.id, i.guild.id);
         if (!userData) {
             userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalXP: 0 };
@@ -77,9 +76,6 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             const now = Date.now();
             
             try {
-                await db.query("BEGIN");
-                
-                // 🔥 تحديث المورا والكاش معاً لتجنب فقدان البيانات
                 userData.mora = userMora - totalCost;
                 userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
                 await client.setLevel(userData);
@@ -89,11 +85,9 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                     INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                 `, [i.guild.id, i.user.id, animal.id, quantity, now, now, now]);
-                
-                await db.query("COMMIT");
             } catch (txErr) {
-                await db.query("ROLLBACK");
-                throw txErr;
+                console.error("Farm Buy Error:", txErr);
+                return await i.editReply({ content: '❌ حدث خطأ أثناء الحفظ في قاعدة البيانات.' });
             }
 
             const embed = new EmbedBuilder()
@@ -115,7 +109,6 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             }
             
             try {
-                await db.query("BEGIN");
                 const rowsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, animal.id]);
                 const rows = rowsRes.rows;
                 
@@ -161,16 +154,12 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                 }
 
                 if (soldCount === 0) {
-                    await db.query("ROLLBACK");
                     return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
                 }
 
-                // 🔥 تحديث المورا والكاش معاً عند البيع
                 userData.mora = userMora + totalRefund;
                 await client.setLevel(userData);
                 await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [userData.mora, i.user.id, i.guild.id]);
-                
-                await db.query("COMMIT");
 
                 let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
                 if (remainingToSell > 0) {
@@ -188,8 +177,8 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                 return await i.editReply({ embeds: [embed] });
 
             } catch (txErr) {
-                await db.query("ROLLBACK");
-                throw txErr;
+                console.error("Farm Sell Error:", txErr);
+                return await i.editReply({ content: '❌ حدث خطأ أثناء إتمام عملية البيع.' });
             }
         }
 
