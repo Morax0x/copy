@@ -3,7 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// 1. الاتصال بقاعدة البيانات في أول سطر لضمان جاهزيتها للجميع
+// 1. الاتصال بقاعدة البيانات مع إعدادات حماية الـ Pool
 const db = require('./database.js');
 
 const aiConfig = require('./utils/aiConfig');
@@ -27,6 +27,13 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction] 
 });
 
+// 🔥 إدارة أخطاء قاعدة البيانات العالمية (تمنع انهيار البوت عند ضغط السحابة)
+if (db) {
+    db.on('error', (err) => {
+        console.error('❌ [Critical DB Pool Error]:', err.message);
+    });
+}
+
 client.commands = new Collection();
 client.cooldowns = new Collection();
 client.talkedRecently = new Map();
@@ -41,9 +48,8 @@ client.EMOJI_FASTER = '<a:JaFaster:1435572430042042409>';
 client.EMOJI_PRAY = '<:0Pray:1437067281493524502>';
 client.EMOJI_COOL = '<a:NekoCool:1435572459276337245>';
 
-// 2. ربط قاعدة البيانات بالبوت فوراً
 client.sql = db;
-client.db = db; // 🔥 الرصاصة الفضية: هذا السطر سيجعل كل الملفات القديمة تقرأ السحابة فوراً دون أخطاء!
+client.db = db; 
 
 client.generateQuestAlert = generateQuestAlert;
 client.generateAchievementCard = generateAchievementCard; 
@@ -73,7 +79,8 @@ async function bootstrap() {
         console.log("✅ Database and AI Config initialized successfully!");
     } catch (err) {
         console.error("!!! Database Setup Fatal Error !!!", err);
-        process.exit(1);
+        // لا نغلق البوت فوراً، نحاول الانتظار قليلاً
+        setTimeout(() => process.exit(1), 5000);
     }
 
     require('./utils/db-manager.js')(client, client.sql);
@@ -94,7 +101,6 @@ async function bootstrap() {
     client.once(Events.ClientReady, async () => { 
         console.log(`✅ Logged in as ${client.user.username}`);
           
-        // 🛡️ استخدام الدروع (try-catch) لمنع انهيار البوت إذا فشل نظام واحد
         try { await autoJoin(client); } catch(e) { console.log("⚠️ AutoJoin skipped:", e.message); }
         try { await initGiveaways(client); } catch(e) { console.log("⚠️ Giveaways skipped:", e.message); }
         try { require('./handlers/voice-timer.js')(client); } catch(e) { console.log("⚠️ Voice Timer skipped:", e.message); }
@@ -150,7 +156,7 @@ async function bootstrap() {
 bootstrap();
 
 // ==========================================
-// 🛡️ نظام الإغلاق الآمن (Graceful Shutdown)
+// 🛡️ نظام الإغلاق الآمن المطوّر
 // ==========================================
 async function shutdownGracefully(signal) {
     console.log(`\n🛑 [${signal}] الإمبراطور أمر بإنهاء البوت... جاري التوقف بسلام وإنقاذ البيانات!`);
@@ -158,14 +164,13 @@ async function shutdownGracefully(signal) {
     try {
         if (client.user) {
             client.user.setStatus('dnd');
-            client.user.setActivity('جاري الصيانة...', { type: 3 });
+            client.user.setActivity('جاري حفظ البيانات...', { type: 3 });
         }
 
-        const sql = client.sql;
-        if (sql) {
+        if (client.sql) {
             console.log("⏳ جاري رفع بيانات الرام المهمة إلى السحابة...");
             
-            // ⚠️ حفظ أوقات الفويس:
+            // ⚠️ حفظ أوقات الفويس العالقة:
             if (client.voiceJoinedTracker && client.voiceJoinedTracker.size > 0) {
                 const now = Date.now();
                 let savedCount = 0;
@@ -174,6 +179,7 @@ async function shutdownGracefully(signal) {
                     try {
                         const minutesSpent = Math.floor((now - joinInfo.timestamp) / 60000);
                         if (minutesSpent > 0 && client.addVoiceTime) {
+                            // نستخدم await هنا لضمان الحفظ قبل الإغلاق
                             await client.addVoiceTime(userId, joinInfo.guildId, minutesSpent);
                             savedCount++;
                         }
@@ -190,10 +196,22 @@ async function shutdownGracefully(signal) {
     } finally {
         console.log("👋 وداعاً... (البوت توقف الآن)");
         if (client) client.destroy();
-        if (db) await db.end(); 
-        process.exit(0);
+        // إعطاء مهلة بسيطة لقاعدة البيانات لإنهاء العمليات ثم الإغلاق
+        if (db) {
+            setTimeout(async () => {
+                await db.end();
+                process.exit(0);
+            }, 2000);
+        } else {
+            process.exit(0);
+        }
     }
 }
 
 process.on('SIGINT', () => shutdownGracefully('SIGINT'));
 process.on('SIGTERM', () => shutdownGracefully('SIGTERM'));
+
+// منع انهيار البوت من الأخطاء غير المتوقعة
+process.on('unhandledRejection', error => {
+	console.error('Unhandled promise rejection:', error);
+});
