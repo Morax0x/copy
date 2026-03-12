@@ -41,7 +41,6 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             const res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
             allUsers = res.rows;
         } else if (type === 'mora') {
-            // 🔥 الإصلاح الجذري: استدعاء المجموع كنص (TEXT) مباشرة من السحابة لضمان الدقة المطلقة
             const res = await sql.query(`
                 SELECT "user", "mora", "bank", 
                 (CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as total_wealth 
@@ -92,7 +91,6 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            // 🔥 حساب مجموع السيرفر كنص من السحابة لضمان الدقة
             const tmRes = await sql.query(`SELECT SUM(CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
             totalMora = tmRes.rows[0]?.t ? BigInt(tmRes.rows[0].t).toLocaleString() : "0";
         }
@@ -106,7 +104,6 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
                 try { dUser = await client.users.fetch(uid); } catch(e){} 
             }
             
-            // 🔥 تحويل الرصيد إلى نص منسق (toLocaleString) باستخدام BigInt لمنع الأرقام العلمية
             if (type === 'mora' && u.total_wealth) {
                 u.total_wealth_formatted = BigInt(u.total_wealth).toLocaleString();
             }
@@ -139,7 +136,7 @@ function createButtons(activeId, page, totalPages) {
     );
 
     const rowNav = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('leaderboard_prev').setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+        new ButtonBuilder().setCustomId('leaderboard_prev').setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1),
         new ButtonBuilder().setCustomId('leaderboard_find_me').setEmoji('📍').setStyle(ButtonStyle.Success), 
         new ButtonBuilder().setCustomId('leaderboard_next').setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages)
     );
@@ -187,7 +184,8 @@ module.exports = {
             user = message.author;
             channelId = message.channel.id;
             
-            const settingsRes = await client.sql.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`);
+            // 🔥 تم إصلاح الخطأ هنا: تمرير guild.id لتجنب "حدث خطأ"
+            const settingsRes = await client.sql.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
             if (settings && (settings.casinoChannelID || settings.casinochannelid) === channelId) argType = 'mora'; 
 
@@ -227,7 +225,6 @@ module.exports = {
         let payload = { components: createButtons(argType, currentPage, data.totalPages) };
         if (data.imageBuffer) {
             payload.files = [new AttachmentBuilder(data.imageBuffer, { name: 'leaderboard.png' })];
-            payload.embeds = []; 
         } else {
             payload.content = "❌ خطأ في تحميل بيانات الصورة.";
         }
@@ -279,8 +276,6 @@ module.exports = {
             let updatePayload = { components: createButtons(argType, newData.currentPage, newData.totalPages), content: '' };
             if (newData.imageBuffer) {
                 updatePayload.files = [new AttachmentBuilder(newData.imageBuffer, { name: 'leaderboard.png' })];
-                updatePayload.attachments = []; 
-                updatePayload.embeds = [];
             } else {
                 updatePayload.content = "❌ لا توجد بيانات.";
                 updatePayload.files = [];
