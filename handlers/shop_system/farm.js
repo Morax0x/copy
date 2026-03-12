@@ -32,13 +32,16 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
         
         if (!animal) return await i.editReply({ content: '❌ حيوان غير موجود في القائمة.' });
 
-        let userData = await client.getLevel(i.user.id, i.guild.id);
-        if (!userData) {
-            userData = { user: i.user.id, guild: i.guild.id, mora: 0, bank: 0, level: 1, xp: 0, totalXP: 0 };
+        let userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]);
+        let userDataDb = userDataRes.rows[0];
+
+        if (!userDataDb) {
+            await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level", "totalXP") VALUES ($1, $2, 0, 0, 0, 1, 0)`, [i.user.id, i.guild.id]);
+            userDataDb = { mora: 0, bank: 0 };
         }
 
-        let userMora = Number(userData.mora) || 0; 
-        const userBank = Number(userData.bank) || 0;
+        let userMora = Number(userDataDb.mora) || 0; 
+        const userBank = Number(userDataDb.bank) || 0;
 
         if (isBuy) {
             const maxCapacity = await getPlayerCapacity(client, i.user.id, i.guild.id);
@@ -76,15 +79,22 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
             const now = Date.now();
             
             try {
-                userData.mora = userMora - totalCost;
-                userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
-                await client.setLevel(userData);
-                await db.query(`UPDATE levels SET "mora" = $1, "shop_purchases" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, userData.shop_purchases, i.user.id, i.guild.id]);
+                // 🔥 الخصم المباشر من قاعدة البيانات بقيمة سالبة
+                await db.query(`UPDATE levels SET "mora" = "mora" - $1, "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, i.user.id, i.guild.id]);
                 
                 await db.query(`
                     INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastCollected", "lastFedTimestamp") 
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                 `, [i.guild.id, i.user.id, animal.id, quantity, now, now, now]);
+
+                // تحديث الكاش لمنع التجاوز
+                if (client.getLevel && client.setLevel) {
+                    let cacheData = await client.getLevel(i.user.id, i.guild.id);
+                    if (cacheData) {
+                        cacheData.mora = Number(cacheData.mora) - totalCost;
+                        await client.setLevel(cacheData);
+                    }
+                }
             } catch (txErr) {
                 console.error("Farm Buy Error:", txErr);
                 return await i.editReply({ content: '❌ حدث خطأ أثناء الحفظ في قاعدة البيانات.' });
@@ -157,9 +167,17 @@ async function _handleFarmTransaction(i, client, db, isBuy) {
                     return await i.editReply({ content: `🚫 **فشلت العملية!**\nحيواناتك كبيرة في السن (باقي لها أقل من ${Math.ceil(animal.lifespan_days * 0.2)} يوم) ولا يمكن بيعها.` });
                 }
 
-                userData.mora = userMora + totalRefund;
-                await client.setLevel(userData);
-                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [userData.mora, i.user.id, i.guild.id]);
+                // 🔥 الإضافة المباشرة لقاعدة البيانات
+                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalRefund, i.user.id, i.guild.id]);
+
+                // تحديث الكاش لمنع التجاوز
+                if (client.getLevel && client.setLevel) {
+                    let cacheData = await client.getLevel(i.user.id, i.guild.id);
+                    if (cacheData) {
+                        cacheData.mora = Number(cacheData.mora) + totalRefund;
+                        await client.setLevel(cacheData);
+                    }
+                }
 
                 let desc = `📦 بعت **${soldCount}** × ${animal.name}\n💰 حصلت على: **${totalRefund.toLocaleString()}** ${EMOJI_MORA}`;
                 if (remainingToSell > 0) {
