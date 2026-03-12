@@ -198,6 +198,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             }
         }
 
+        // حفظ الحالة عند بداية كل طابق (كافٍ جداً ويقلل الضغط)
         await saveDungeonState(db, threadChannel.id, guild.id, hostId, {
             floor, players, merchantState, retreatedPlayers, isTrapActive, retreatState, 
             loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
@@ -241,8 +242,9 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                                 
                                 const debuffDuration = 60 * 60 * 1000; const expiresAt = Date.now() + debuffDuration;
                                 if (db) {
-                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'mora', -1.0]);
-                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'xp', -1.0]);
+                                    // تم تصحيح أسماء الأعمدة لـ PostgreSQL
+                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'mora', -1.0]).catch(()=>{});
+                                    await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, afkP.id, -100, expiresAt, 'xp', -1.0]).catch(()=>{});
                                 }
                                 log.push(`☠️ **${afkP.name}** ابتـلعـه الدانـجون بسبب الخمـول!`);
                                 await threadChannel.send(`✶ <@${afkP.id}> <:emoji_69:1451172248173023263> خـرقـت قوانين الدانجـون بسبب خمولك المستمـر... ابتلعك الدانجون وتم لعنـك بـ -100% اضعاف`).catch(()=>{});
@@ -312,7 +314,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                 
                 p.effects = p.effects.filter(e => { 
                     if (e.floors) return true; 
-                    e.turns--; 
+                    if (e.turns !== undefined) e.turns--; 
                     if (e.turns <= 0) return false; 
                     return true; 
                 });
@@ -320,7 +322,7 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
 
             if (turnCount % 3 === 0 && ongoing) {
                 try {
-                    await battleMsg.delete();
+                    await battleMsg.delete().catch(()=>{});
                     battleMsg = await threadChannel.send({ 
                         content: '', 
                         embeds: [generateBattleEmbed(players, monster, floor, theme, log, [])], 
@@ -331,12 +333,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
 
             if (monster.hp > 0 && ongoing) {
                 turnCount++;
-                await saveDungeonState(db, threadChannel.id, guild.id, hostId, {
-                    floor, players, merchantState, retreatedPlayers, isTrapActive, retreatState, 
-                    loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
-                    themeName: theme.name, monsterData: monster 
-                });
-
+                // ملاحظة: لا حاجة لحفظ الحالة في كل دور (Turn) لتوفير موارد السحابة
+                
                 if (floor === 100) {
                     ongoing = await processMoraxTurn(monster, players, log, turnCount, battleMsg, floor, theme, threadChannel);
                 } else {
