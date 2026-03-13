@@ -195,7 +195,6 @@ async function handlePlayerBattleInteraction(i, context) {
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
         else if (i.customId === 'heal') {
-            // 🔥 هنا كان الخلل! تمت إضافة await لانتظار قاعدة البيانات.
             const potionRow = await buildPotionSelector(p, sql, guild.id);
             
             if (!potionRow) {
@@ -209,9 +208,21 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 const selectedValue = selection.values[0];
 
+                // 🔥 معالجة المتجر الآمنة جداً 🔥
                 if (selectedValue === 'buy_potions_action') {
-                    const userLevelRes = await sql.query('SELECT mora FROM levels WHERE "user" = $1 AND guild = $2', [p.id, guild.id]);
-                    const currentMora = userLevelRes.rows.length > 0 ? userLevelRes.rows[0].mora : 0;
+                    let currentMora = 0;
+                    try {
+                        const userLevelRes = await sql.query(`SELECT mora FROM levels WHERE "user" = $1 AND "guild" = $2`, [p.id, guild.id]);
+                        if (userLevelRes.rows.length === 0) {
+                            const userLevelRes2 = await sql.query(`SELECT mora FROM levels WHERE user = $1 AND guild = $2`, [p.id, guild.id]);
+                            currentMora = userLevelRes2.rows.length > 0 ? userLevelRes2.rows[0].mora : 0;
+                        } else {
+                            currentMora = userLevelRes.rows[0].mora;
+                        }
+                    } catch(e) {
+                        const userLevelRes3 = await sql.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [p.id, guild.id]).catch(()=>({rows:[]}));
+                        currentMora = userLevelRes3.rows.length > 0 ? userLevelRes3.rows[0].mora : 0;
+                    }
 
                     const shopOptions = potionItems.map(pot => ({
                         label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
@@ -228,7 +239,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     );
 
                     const shopMsg = await selection.followUp({
-                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
+                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${Number(currentMora).toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
                         components: [shopRow],
                         ephemeral: true
                     });
@@ -240,17 +251,27 @@ async function handlePlayerBattleInteraction(i, context) {
                         const itemID = buyInteraction.values[0];
                         const targetItem = potionItems.find(x => x.id === itemID);
 
-                        if (currentMora < targetItem.price) {
+                        if (Number(currentMora) < targetItem.price) {
                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                         } else {
-                            await sql.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [targetItem.price, p.id, guild.id]);
+                            try { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]); } 
+                            catch(e) { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [targetItem.price, p.id, guild.id]).catch(()=>{}); }
                             
-                            await sql.query(`
-                                INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") 
-                                VALUES ($1, $2, $3, 1) 
-                                ON CONFLICT ("guildID", "userID", "itemID") 
-                                DO UPDATE SET quantity = user_inventory.quantity + 1
-                            `, [guild.id, p.id, targetItem.id]);
+                            try {
+                                const check = await sql.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                                if (check.rows.length > 0) {
+                                    await sql.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                                } else {
+                                    await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
+                                }
+                            } catch (e) {
+                                const check2 = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
+                                if (check2.rows.length > 0) {
+                                    await sql.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
+                                } else {
+                                    await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
+                                }
+                            }
 
                             await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
                         }
@@ -277,7 +298,8 @@ async function handlePlayerBattleInteraction(i, context) {
                 }
                 
                 if (sql) {
-                    await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
+                    try { await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]); } 
+                    catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, potionId]).catch(()=>{}); }
                 }
 
                 let actionMsg = "";
@@ -338,7 +360,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 if (!ongoingRef.value) return { ongoing: false };
 
             } catch (err) { 
-                console.error("Potion Selection Error:", err); // إظهار الخطأ إذا وجد بدلاً من الصمت
+                console.error("Potion Selection Error:", err); 
                 processingUsers.delete(i.user.id); 
                 return { ongoing: true }; 
             }
@@ -408,7 +430,7 @@ async function handlePlayerBattleInteraction(i, context) {
             clearTimeout(turnTimeout); collector.stop('turn_end'); 
         }
     } catch (error) { 
-        console.error("Main Action Error:", error); // طباعة الأخطاء بدلاً من السكوت
+        console.error("Main Action Error:", error); 
     } finally { 
         processingUsers.delete(i.user.id); 
     }
