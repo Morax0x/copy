@@ -24,7 +24,8 @@ module.exports = (client, db) => {
                 const itemId = item.id || item.itemID;
                 if (client.marketLocks.has(itemId)) continue;
 
-                const resOwned = await db.query("SELECT SUM(quantity) as total FROM user_portfolio WHERE itemid = $1 OR itemID = $1", [itemId]);
+                // 🔥 تصحيح وضع اسم العمود في علامات تنصيص للاحتياط
+                const resOwned = await db.query(`SELECT SUM(quantity) as total FROM user_portfolio WHERE "itemID" = $1`, [itemId]);
                 const totalOwned = resOwned.rows[0].total || 0;
 
                 let randomPercent = (Math.random() * 0.20) - 0.10;
@@ -47,18 +48,19 @@ module.exports = (client, db) => {
                 const changeAmount = newPrice - oldPrice;
                 const displayPercent = oldPrice > 0 ? ((changeAmount / oldPrice) * 100).toFixed(2) : 0;
                 
-                await db.query(`UPDATE market_items SET currentPrice = $1, lastChangePercent = $2, lastChange = $3 WHERE id = $4 OR id = $4`, [newPrice, displayPercent, changeAmount, itemId]);
+                await db.query(`UPDATE market_items SET "currentPrice" = $1, "lastChangePercent" = $2, "lastChange" = $3 WHERE "id" = $4`, [newPrice, displayPercent, changeAmount, itemId]);
             }
             await db.query('COMMIT');
         } catch (err) {
-            await db.query('ROLLBACK');
+            console.error("[Cron - Market Error]:", err);
+            await db.query('ROLLBACK').catch(()=>{});
         }
     }
 
     async function checkTemporaryRoles() {
         const now = Date.now();
         try {
-            const expiredRoles = (await db.query("SELECT * FROM temporary_roles WHERE expiresat <= $1 OR expiresAt <= $1", [now])).rows;
+            const expiredRoles = (await db.query(`SELECT * FROM temporary_roles WHERE "expiresAt" <= $1 OR "expiresat" <= $1`, [now])).rows;
             if (expiredRoles.length === 0) return;
 
             await db.query('BEGIN');
@@ -66,7 +68,7 @@ module.exports = (client, db) => {
                 const uId = record.userid || record.userID;
                 const gId = record.guildid || record.guildID;
                 const rId = record.roleid || record.roleID;
-                await db.query("DELETE FROM temporary_roles WHERE (userID = $1 OR userid = $1) AND (guildID = $2 OR guildid = $2) AND (roleID = $3 OR roleid = $3)", [uId, gId, rId]);
+                await db.query(`DELETE FROM temporary_roles WHERE "userID" = $1 AND "guildID" = $2 AND "roleID" = $3`, [uId, gId, rId]);
             }
             await db.query('COMMIT');
 
@@ -84,10 +86,11 @@ module.exports = (client, db) => {
                 }
             }
         } catch (err) {
-            await db.query('ROLLBACK');
+            await db.query('ROLLBACK').catch(()=>{});
         }
     }
 
+    // 🔥 تم تحسين هذه الدالة لتجنب خنق قاعدة البيانات (DbHandler exited)
     const calculateInterest = async () => {
         const now = Date.now();
         const INTEREST_RATE = 0.0005; 
@@ -95,36 +98,53 @@ module.exports = (client, db) => {
         const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
         
         try {
-            const allUsers = (await db.query("SELECT * FROM levels WHERE bank > 0")).rows;
+            const allUsersRes = await db.query(`SELECT "user", "guild", "bank", "lastInterest", "lastDaily", "lastWork", "lastinterest", "lastdaily", "lastwork" FROM levels WHERE "bank" > 0`);
+            const allUsers = allUsersRes.rows;
             
-            await db.query('BEGIN');
-            for (const user of allUsers) {
-                const lastInterest = Number(user.lastinterest || user.lastInterest || 0);
-                const lastDaily = Number(user.lastdaily || user.lastDaily || 0);
-                const lastWork = Number(user.lastwork || user.lastWork || 0);
-                const userId = user.user || user.userID;
-                const guildId = user.guild || user.guildID;
+            if (allUsers.length === 0) return;
 
-                if ((now - lastInterest) >= COOLDOWN) {
-                    const timeSinceDaily = now - lastDaily;
-                    const timeSinceWork = now - lastWork;
-                    
-                    if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
-                        await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, userId, guildId]);
-                    } else {
-                        const bankBalance = Number(user.bank || 0);
-                        const interestAmount = Math.floor(bankBalance * INTEREST_RATE);
-                        if (interestAmount > 0) {
-                            await db.query('UPDATE levels SET bank = bank + $1, lastInterest = $2, totalInterestEarned = totalInterestEarned + $3 WHERE "user" = $4 AND guild = $5', [interestAmount, now, interestAmount, userId, guildId]);
+            // نظام معالجة على دفعات (Batching) لتخفيف الضغط
+            const batchSize = 100; // معالجة 100 يوزر في كل دفعة
+            
+            for (let i = 0; i < allUsers.length; i += batchSize) {
+                const batch = allUsers.slice(i, i + batchSize);
+                
+                await db.query('BEGIN'); // بدء معاملة الدفعة الحالية
+                
+                for (const user of batch) {
+                    const lastInterest = Number(user.lastinterest || user.lastInterest || 0);
+                    const lastDaily = Number(user.lastdaily || user.lastDaily || 0);
+                    const lastWork = Number(user.lastwork || user.lastWork || 0);
+                    const userId = user.user;
+                    const guildId = user.guild;
+
+                    if ((now - lastInterest) >= COOLDOWN) {
+                        const timeSinceDaily = now - lastDaily;
+                        const timeSinceWork = now - lastWork;
+                        
+                        if (timeSinceDaily > INACTIVITY_LIMIT && timeSinceWork > INACTIVITY_LIMIT) {
+                            await db.query(`UPDATE levels SET "lastInterest" = $1 WHERE "user" = $2 AND "guild" = $3`, [now, userId, guildId]);
                         } else {
-                            await db.query('UPDATE levels SET lastInterest = $1 WHERE "user" = $2 AND guild = $3', [now, userId, guildId]);
+                            const bankBalance = Number(user.bank || 0);
+                            const interestAmount = Math.floor(bankBalance * INTEREST_RATE);
+                            if (interestAmount > 0) {
+                                await db.query(`UPDATE levels SET "bank" = "bank" + $1, "lastInterest" = $2, "totalInterestEarned" = COALESCE("totalInterestEarned", 0) + $3 WHERE "user" = $4 AND "guild" = $5`, [interestAmount, now, interestAmount, userId, guildId]);
+                            } else {
+                                await db.query(`UPDATE levels SET "lastInterest" = $1 WHERE "user" = $2 AND "guild" = $3`, [now, userId, guildId]);
+                            }
                         }
                     }
                 }
+                await db.query('COMMIT'); // حفظ الدفعة الحالية
+                
+                // استراحة قصيرة جداً للـ Pool بين الدفعات
+                if (i + batchSize < allUsers.length) {
+                    await new Promise(resolve => setTimeout(resolve, 500)); 
+                }
             }
-            await db.query('COMMIT');
         } catch (err) {
-            await db.query('ROLLBACK');
+            console.error("[Cron - Interest Error]:", err);
+            await db.query('ROLLBACK').catch(()=>{});
         }
     };
 
@@ -133,7 +153,7 @@ module.exports = (client, db) => {
         const KSA_OFFSET = 3 * 60 * 60 * 1000; 
         for (const guild of guilds) {
             try {
-                const settingsRes = await db.query("SELECT * FROM settings WHERE guild = $1", [guild.id]);
+                const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guild.id]);
                 const settings = settingsRes.rows[0];
                 if (!settings) continue;
 
@@ -190,7 +210,7 @@ module.exports = (client, db) => {
                 if (!guild) continue;
                 const role = guild.roles.cache.get(rId);
                 if (role) await role.edit({ color: randomColor }).catch(() => {});
-                else await db.query("DELETE FROM rainbow_roles WHERE roleid = $1 OR roleID = $1", [rId]);
+                else await db.query(`DELETE FROM rainbow_roles WHERE "roleID" = $1 OR "roleid" = $1`, [rId]);
             }
         } catch (e) {}
     }
@@ -225,7 +245,7 @@ module.exports = (client, db) => {
     setInterval(async () => {
         const now = Date.now();
         try {
-            const guildsToNotify = (await db.query("SELECT * FROM settings WHERE nextBumpTime > 0 AND nextBumpTime <= $1", [now])).rows;
+            const guildsToNotify = (await db.query(`SELECT * FROM settings WHERE "nextBumpTime" > 0 AND "nextBumpTime" <= $1`, [now])).rows;
 
             for (const row of guildsToNotify) {
                 try {
@@ -249,7 +269,7 @@ module.exports = (client, db) => {
                     }
                 } catch (err) {}
                 
-                await db.query("UPDATE settings SET nextBumpTime = 0 WHERE guild = $1", [row.guild]);
+                await db.query(`UPDATE settings SET "nextBumpTime" = 0 WHERE "guild" = $1`, [row.guild]);
             }
         } catch(e) {}
     }, 60 * 1000); 
@@ -257,9 +277,9 @@ module.exports = (client, db) => {
     setInterval(async () => {
         const now = Date.now();
         try {
-            const expired = (await db.query("SELECT * FROM auto_responses WHERE expiresat < $1 OR expiresAt < $1", [now])).rows;
+            const expired = (await db.query(`SELECT * FROM auto_responses WHERE "expiresAt" < $1 OR "expiresat" < $1`, [now])).rows;
             for (const reply of expired) {
-                await db.query("DELETE FROM auto_responses WHERE id = $1", [reply.id]);
+                await db.query(`DELETE FROM auto_responses WHERE "id" = $1`, [reply.id]);
             }
         } catch (err) {}
     }, 60 * 60 * 1000);
