@@ -11,9 +11,9 @@ const {
 const { OWNER_ID, skillsConfig, potionItems } = require('./constants');
 const { ensureInventoryTable, buildHpBar } = require('./utils');
 
-// 🔥 استدعاء الجرعات مباشرة لضمان عدم حدوث خطأ Undefined
-const potionItemsList = require('../../json/potions.json');
-
+// =========================================================
+// 1. إنشاء قائمة المهارات (Dropdown)
+// =========================================================
 function buildSkillSelector(player) {
     const options = [];
       
@@ -81,21 +81,23 @@ function buildSkillSelector(player) {
     );
 }
 
-// 🔥 تم صيانة دالة الجرعات لتكون مضادة للأخطاء بنسبة 100%
+// =========================================================
+// 2. إنشاء قائمة الجرعات (Dropdown) المتوافقة مع Supabase
+// =========================================================
 async function buildPotionSelector(player, sql, guildID) {
-    if (!sql) return null; 
-    
-    try { await ensureInventoryTable(sql); } catch(e) {} 
-    
+    if (!sql) return null;
+
     try {
-        // تم استبدال تحديد الأعمدة بـ * لكي نتفادى مشاكل الحروف الكبيرة والصغيرة
-        const userItemsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
+        await ensureInventoryTable(sql); 
+        
+        // 🔥 التعديل الأهم: قراءة البيانات بشكل متوافق مع PostgreSQL و Supabase
+        const userItemsRes = await sql.query(`SELECT "itemID", "itemid", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
         const userItems = userItemsRes.rows;
           
         const potions = userItems.map(ui => {
-            const currentItemID = ui.itemID || ui.itemid;
-            // نستخدم القائمة الموثوقة من ملف الجسون مباشرة
-            const itemDef = potionItemsList.find(si => si.id === currentItemID);
+            // معالجة مشكلة الحروف الكبيرة والصغيرة (itemID vs itemid)
+            const dbItemID = ui.itemID || ui.itemid; 
+            const itemDef = potionItems.find(si => si.id === dbItemID);
             if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity || 0) };
             return null;
         }).filter(p => p !== null && p.quantity > 0);
@@ -108,7 +110,7 @@ async function buildPotionSelector(player, sql, guildID) {
                     .setLabel(`${p.name} (x${p.quantity})`)
                     .setValue(`use_potion_${p.id}`)
                     .setDescription((p.description || "استخدم هذه الجرعة").substring(0, 90))
-                    .setEmoji(p.emoji || '🧪'));
+                    .setEmoji(p.emoji));
             });
         } else {
             options.push(new StringSelectMenuOptionBuilder()
@@ -130,25 +132,29 @@ async function buildPotionSelector(player, sql, guildID) {
                 .setPlaceholder('اختر جرعة أو اشترِ المزيد...')
                 .addOptions(options.slice(0, 25))
         );
+
     } catch (e) {
-        console.error("Potion Selector Check Error:", e.message);
+        console.error("Potion Selector Database Error:", e);
         
-        // خيار طوارئ في حال فشل الاتصال لكي لا يقول "لا تملك جرعات"
-        const emergencyOption = new StringSelectMenuOptionBuilder()
+        // في حال حدوث خطأ، لا نعطل اللعبة، بل نظهر المتجر كخيار وحيد لإنقاذ اللاعب
+        const fallbackOption = new StringSelectMenuOptionBuilder()
             .setLabel('شراء المزيد من الجرعات')
             .setValue('buy_potions_action') 
-            .setDescription('فتح متجر الجرعات السريع (حدث خطأ في قراءة الحقيبة)')
+            .setDescription('فتح متجر الجرعات السريع')
             .setEmoji('🛒');
 
         return new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('potion_select_menu')
                 .setPlaceholder('اختر خياراً...')
-                .addOptions([emergencyOption])
+                .addOptions([fallbackOption])
         );
     }
 }
 
+// =========================================================
+// 3. إنشاء تصميم المعركة (Embed)
+// =========================================================
 function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = null) {
     const embedColor = color || theme.color || '#2F3136'; 
 
@@ -239,6 +245,9 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     return embed;
 }
 
+// =========================================================
+// 4. إنشاء أزرار التحكم (Buttons)
+// =========================================================
 function generateBattleRows(disabled = false) {
     const row1 = new ActionRowBuilder();
 
