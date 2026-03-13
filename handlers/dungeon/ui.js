@@ -78,49 +78,55 @@ function buildSkillSelector(player) {
     );
 }
 
-async function buildPotionSelector(player, db, guildID) {
-    await ensureInventoryTable(db); 
-    // 🔥 تم إصلاح أسماء الأعمدة لتتوافق مع PostgreSQL (علامات التنصيص المزدوجة)
-    const userItemsRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
-    const userItems = userItemsRes.rows;
-      
-    const potions = userItems.map(ui => {
-        // دعم itemID و itemid حسب ما يُرجعه الاستعلام
-        const itemDef = potionItems.find(si => si.id === (ui.itemID || ui.itemid));
-        if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity) };
-        return null;
-    }).filter(p => p !== null && p.quantity > 0);
+// 🔥 تم إصلاح دالة الجرعات هنا لاستقبال sql بشكل آمن
+async function buildPotionSelector(player, sql, guildID) {
+    if (!sql) return null; // حماية إضافية لمنع الانهيار إذا لم تتوفر قاعدة البيانات
+    await ensureInventoryTable(sql); 
+    
+    try {
+        const userItemsRes = await sql.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
+        const userItems = userItemsRes.rows;
+          
+        const potions = userItems.map(ui => {
+            const itemDef = potionItems.find(si => si.id === (ui.itemID || ui.itemid));
+            if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity) };
+            return null;
+        }).filter(p => p !== null && p.quantity > 0);
 
-    const options = [];
+        const options = [];
 
-    if (potions.length > 0) {
-        potions.forEach(p => {
+        if (potions.length > 0) {
+            potions.forEach(p => {
+                options.push(new StringSelectMenuOptionBuilder()
+                    .setLabel(`${p.name} (x${p.quantity})`)
+                    .setValue(`use_potion_${p.id}`)
+                    .setDescription(p.description.substring(0, 90))
+                    .setEmoji(p.emoji));
+            });
+        } else {
             options.push(new StringSelectMenuOptionBuilder()
-                .setLabel(`${p.name} (x${p.quantity})`)
-                .setValue(`use_potion_${p.id}`)
-                .setDescription(p.description.substring(0, 90))
-                .setEmoji(p.emoji));
-        });
-    } else {
+                .setLabel('لا تملك جرعات')
+                .setValue('no_potions')
+                .setDescription('اضغط بالأسفل لشراء الجرعات')
+                .setEmoji('🚫'));
+        }
+
         options.push(new StringSelectMenuOptionBuilder()
-            .setLabel('لا تملك جرعات')
-            .setValue('no_potions')
-            .setDescription('اضغط بالأسفل لشراء الجرعات')
-            .setEmoji('🚫'));
+            .setLabel('شراء المزيد من الجرعات')
+            .setValue('buy_potions_action') 
+            .setDescription('فتح متجر الجرعات السريع')
+            .setEmoji('🛒'));
+
+        return new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('potion_select_menu')
+                .setPlaceholder('اختر جرعة أو اشترِ المزيد...')
+                .addOptions(options.slice(0, 25))
+        );
+    } catch (e) {
+        console.error("Potion Selector Error:", e);
+        return null;
     }
-
-    options.push(new StringSelectMenuOptionBuilder()
-        .setLabel('شراء المزيد من الجرعات')
-        .setValue('buy_potions_action') 
-        .setDescription('فتح متجر الجرعات السريع')
-        .setEmoji('🛒'));
-
-    return new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId('potion_select_menu')
-            .setPlaceholder('اختر جرعة أو اشترِ المزيد...')
-            .addOptions(options.slice(0, 25))
-    );
 }
 
 function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = null) {
