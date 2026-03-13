@@ -141,6 +141,7 @@ module.exports = {
         const timeLeft = (Number(challengerData.lastPVP || challengerData.lastpvp) || 0) + PVP_COOLDOWN_MS - now;
         const executorId = isSlash ? interaction.user.id : message.author.id;
 
+        // استثناء لمالك البوت من الكولداون
         if (timeLeft > 0 && executorId !== "1145327691772481577") {
             const minutes = Math.floor(timeLeft / 60000);
             const seconds = Math.floor((timeLeft % 60000) / 1000);
@@ -154,10 +155,11 @@ module.exports = {
             return replyError(`خصمك ${opponent.displayName} لا يملك **${bet.toLocaleString()}** ${EMOJI_MORA} في رصيده (الكاش).`);
         }
 
-        const challengerRace = await getUserRace(sql, challenger);
+        // 🔥 هـنـا كـان الـخـلـل! تم تصحيح ترتيب المتغيرات للمتدخل challenger
+        const challengerRace = await getUserRace(challenger, sql); 
         const challengerWeapon = await getWeaponData(sql, challenger);
 
-        if (!challengerRace || !challengerWeapon || challengerWeapon.currentLevel === 0) {
+        if (!challengerRace || !challengerWeapon || Number(challengerWeapon.currentLevel) === 0) {
             return replyError(`❌ | لا يمكنك بدء تحدٍ وأنت لست جاهزاً! (تحتاج إلى عرق + سلاح مستوى 1 على الأقل).`);
         }
 
