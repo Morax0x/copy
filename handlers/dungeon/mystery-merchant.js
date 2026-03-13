@@ -88,9 +88,16 @@ function triggerMysteryMerchant(thread, players, db, guildId, merchantState) {
 
             if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
 
-            const userBalanceRes = await db.query("SELECT mora FROM levels WHERE userid = $1 AND guildid = $2", [i.user.id, guildId]);
-            const userBalance = userBalanceRes.rows[0];
-            const currentMora = userBalance ? parseInt(userBalance.mora) : 0;
+            // 🔥 التعديل هنا: جلب الرصيد بالاسم الصحيح للعمود ("user" و "guild")
+            let currentMora = 0;
+            try {
+                const userBalanceRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, guildId]);
+                currentMora = userBalanceRes.rows[0] ? parseInt(userBalanceRes.rows[0].mora) : 0;
+            } catch(e) {
+                // محاولة احتياطية إذا فشل الأول
+                const userBalanceRes2 = await db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, guildId]).catch(()=>({rows:[]}));
+                currentMora = userBalanceRes2.rows[0] ? parseInt(userBalanceRes2.rows[0].mora) : 0;
+            }
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId('merchant_select')
@@ -136,15 +143,25 @@ function triggerMysteryMerchant(thread, players, db, guildId, merchantState) {
                     }
                 }
 
-                const freshBalanceRes = await db.query("SELECT mora FROM levels WHERE userid = $1 AND guildid = $2", [si.user.id, guildId]);
-                const freshBalance = freshBalanceRes.rows[0];
-                const actualMora = freshBalance ? parseInt(freshBalance.mora) : 0;
+                // 🔥 التعديل هنا أيضاً: جلب وتحديث الرصيد بالاسم الصحيح للعمود
+                let actualMora = 0;
+                try {
+                    const freshBalanceRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [si.user.id, guildId]);
+                    actualMora = freshBalanceRes.rows[0] ? parseInt(freshBalanceRes.rows[0].mora) : 0;
+                } catch (e) {
+                    const freshBalanceRes2 = await db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [si.user.id, guildId]).catch(()=>({rows:[]}));
+                    actualMora = freshBalanceRes2.rows[0] ? parseInt(freshBalanceRes2.rows[0].mora) : 0;
+                }
 
                 if (actualMora < item.price) {
                     return si.reply({ content: `❌ **لا تملك مورا كافية!** تحتاج ${item.price} مورا.`, ephemeral: true });
                 }
 
-                await db.query("UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3", [item.price, si.user.id, guildId]);
+                try {
+                    await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [item.price, si.user.id, guildId]);
+                } catch(e) {
+                    await db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [item.price, si.user.id, guildId]).catch(()=>{});
+                }
 
                 let effectMsg = "";
 
