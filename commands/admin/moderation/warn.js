@@ -64,24 +64,30 @@ module.exports = {
 };
 
 async function sendModLog(message, targetMember, reason, db) {
-    const settingsRes = await db.query("SELECT modLogChannelID FROM settings WHERE guild = $1", [message.guild.id]);
-    const settings = settingsRes.rows[0];
-    
-    if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
-        const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
-        if (logChannel) {
-            const logEmbed = new EmbedBuilder()
-                .setTitle(`⚠️ New Warning Issued`)
-                .setColor(Colors.Yellow)
-                .setThumbnail(targetMember.user.displayAvatarURL())
-                .addFields(
-                    { name: '👤 العضو', value: `${targetMember.user.tag} (${targetMember.id})`, inline: true },
-                    { name: '👮 المشرف', value: `${message.author.tag} (${message.author.id})`, inline: true },
-                    { name: '📝 السبب', value: reason },
-                    { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:F>` }
-                )
-                .setFooter({ text: `EMorax Security System` });
-            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+    if (!db) return;
+    try {
+        // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" لكي تقبلها PostgreSQL
+        const settingsRes = await db.query(`SELECT "modLogChannelID" FROM settings WHERE "guild" = $1`, [message.guild.id]);
+        const settings = settingsRes.rows[0];
+        
+        if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
+            const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
+            if (logChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setTitle(`⚠️ New Warning Issued`)
+                    .setColor(Colors.Yellow)
+                    .setThumbnail(targetMember.user.displayAvatarURL())
+                    .addFields(
+                        { name: '👤 العضو', value: `${targetMember.user.tag} (${targetMember.id})`, inline: true },
+                        { name: '👮 المشرف', value: `${message.author.tag} (${message.author.id})`, inline: true },
+                        { name: '📝 السبب', value: reason },
+                        { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:F>` }
+                    )
+                    .setFooter({ text: `EMorax Security System` });
+                logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+            }
         }
+    } catch (error) {
+        console.error("[Warn Command] ModLog Error:", error);
     }
 }
