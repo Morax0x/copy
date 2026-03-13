@@ -33,7 +33,6 @@ const weaponCalculator = require('../../combat/weapon-calculator');
 const { cleanName } = require('../core/battle-utils'); 
 const { handleOwnerMenu } = require('../actions/owner-menu');
 const { saveDungeonState } = require('../core/state-manager');
-
 const { getFloorCaps } = require('./seal-system'); 
 
 async function handlePlayerBattleInteraction(i, context) {
@@ -48,32 +47,16 @@ async function handlePlayerBattleInteraction(i, context) {
 
     if (!isOwnerDefend) {
         if (!i.replied && !i.deferred && !i.isStringSelectMenu() && !i.isModalSubmit()) {
-            try {
-                await i.deferUpdate();
-            } catch (e) {}
+            try { await i.deferUpdate(); } catch (e) {}
         }
     }
 
-    if (processingUsers.has(i.user.id)) {
-        return; 
-    }
-
+    if (processingUsers.has(i.user.id)) return; 
     const { damageCap, levelCap } = getFloorCaps(floor);
 
     if (isOwnerDefend) {
-        try {
-            await handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef);
-        } catch (err) {
-            console.error("Owner Menu Error:", err);
-            if (!i.replied && !i.deferred) {
-                await i.reply({ content: `❌ حدث خطأ في قائمة المالك.`, ephemeral: true }).catch(()=>{});
-            }
-        }
-        
-        if (!ongoingRef.value) {
-             if (!collector.ended) collector.stop('owner_action'); 
-             return { ongoing: false };
-        }
+        try { await handleOwnerMenu(i, players, monster, log, threadChannel, sql, guild, hostId, activeDungeonRequests, merchantState, battleMsg, turnTimeout, collector, ongoingRef); } catch (err) {}
+        if (!ongoingRef.value) { if (!collector.ended) collector.stop('owner_action'); return { ongoing: false }; }
         return { ongoing: true };
     }
 
@@ -88,26 +71,15 @@ async function handlePlayerBattleInteraction(i, context) {
     }
         
     let p = players.find(pl => pl.id === i.user.id);
-    if (!p) {
-        return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true }).catch(()=>{});
-    }
-    
+    if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true }).catch(()=>{});
     if (p.isDead || actedPlayers.includes(p.id)) return { ongoing: true };
 
     if (p.effects.some(e => e.type === 'stun')) {
         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
         actedPlayers.push(p.id); p.skipCount = 0; 
         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
-        
-        await battleMsg.edit({ 
-            content: '', 
-            embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
-        }).catch(()=>{});
-        
-        if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
-            clearTimeout(turnTimeout); 
-            collector.stop('turn_end'); 
-        }
+        await battleMsg.edit({ content: '', embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
+        if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { clearTimeout(turnTimeout); collector.stop('turn_end'); }
         return { ongoing: true };
     }
         
@@ -126,7 +98,6 @@ async function handlePlayerBattleInteraction(i, context) {
                 await selection.deferUpdate().catch(()=>{}); 
 
                 const skillId = selection.values[0];
-                
                 const shieldSkills = ['skill_shielding', 'race_human_skill'];
                 if (shieldSkills.includes(skillId) && p.shield > 0) {
                     await selection.followUp({ content: `🛡️ **لديك درع نشط بالفعل!**`, ephemeral: true });
@@ -137,10 +108,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0, level: 1 };
                 
                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
-                     if (p.skills[skillId]) {
-                         skillObj = { ...p.skills[skillId] }; 
-                         if (skillObj.level > levelCap) skillObj.level = levelCap; 
-                     }
+                     if (p.skills[skillId]) { skillObj = { ...p.skills[skillId] }; if (skillObj.level > levelCap) skillObj.level = levelCap; }
                 }
 
                 const monsterHpBefore = monster.hp;
@@ -150,21 +118,14 @@ async function handlePlayerBattleInteraction(i, context) {
                 if (dmgDealt > 0) {
                     let finalDmg = dmgDealt;
                     let isCapped = false;
-
                     if (damageCap !== Infinity && finalDmg > damageCap) {
-                        finalDmg = damageCap;
-                        monster.hp = Math.max(0, monsterHpBefore - finalDmg);
-                        isCapped = true;
+                        finalDmg = damageCap; monster.hp = Math.max(0, monsterHpBefore - finalDmg); isCapped = true;
                     }
-
                     if (log.length > 0) {
                         const lastLogIdx = log.length - 1;
                         if (!log[lastLogIdx].includes(finalDmg.toString())) {
-                            if (isCapped) {
-                                log[lastLogIdx] += ` (مختوم: ${finalDmg})`; 
-                            } else {
-                                log[lastLogIdx] += ` (**${finalDmg}** 💥)`;
-                            }
+                            if (isCapped) log[lastLogIdx] += ` (مختوم: ${finalDmg})`; 
+                            else log[lastLogIdx] += ` (**${finalDmg}** 💥)`;
                         }
                     }
                 }
@@ -178,15 +139,9 @@ async function handlePlayerBattleInteraction(i, context) {
                 else if (skillObj.name !== 'Skill') skillNameUsed = skillObj.name;
 
                 p.threat = (p.threat || 0) + 100;
-
                 actedPlayers.push(p.id); p.skipCount = 0; 
                 await selection.editReply({ content: `✅ تم استخـدام: ${skillNameUsed}`, components: [] }).catch(()=>{});
-                
-                await battleMsg.edit({ 
-                    content: '', 
-                    embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] 
-                }).catch(()=>{});
-
+                await battleMsg.edit({ content: '', embeds: [generateBattleEmbed(players, monster, floor, theme, log, actedPlayers)] }).catch(()=>{});
                 checkBossPhase(monster, log); 
                 
                 await handleImmediateDeaths(players, threadChannel, ongoingRef, collector, monster);
@@ -194,11 +149,13 @@ async function handlePlayerBattleInteraction(i, context) {
 
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
+        // ==========================================
+        // 🔥🔥 نظام الجرعات والمتجر السريع الجديد 🔥🔥
+        // ==========================================
         else if (i.customId === 'heal') {
             const potionRow = await buildPotionSelector(p, sql, guild.id);
-            
             if (!potionRow) {
-                await i.followUp({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
+                await i.followUp({ content: "❌ حدث خطأ في النظام.", ephemeral: true });
                 processingUsers.delete(i.user.id); return { ongoing: true };
             }
             try {
@@ -208,21 +165,11 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 const selectedValue = selection.values[0];
 
-                // 🔥 معالجة المتجر الآمنة جداً 🔥
+                // 🛒 المتجر السريع
                 if (selectedValue === 'buy_potions_action') {
-                    let currentMora = 0;
-                    try {
-                        const userLevelRes = await sql.query(`SELECT mora FROM levels WHERE "user" = $1 AND "guild" = $2`, [p.id, guild.id]);
-                        if (userLevelRes.rows.length === 0) {
-                            const userLevelRes2 = await sql.query(`SELECT mora FROM levels WHERE user = $1 AND guild = $2`, [p.id, guild.id]);
-                            currentMora = userLevelRes2.rows.length > 0 ? userLevelRes2.rows[0].mora : 0;
-                        } else {
-                            currentMora = userLevelRes.rows[0].mora;
-                        }
-                    } catch(e) {
-                        const userLevelRes3 = await sql.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [p.id, guild.id]).catch(()=>({rows:[]}));
-                        currentMora = userLevelRes3.rows.length > 0 ? userLevelRes3.rows[0].mora : 0;
-                    }
+                    // جلب المورا من قاعدة بيانات PostgreSQL
+                    const userLevelRes = await sql.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [p.id, guild.id]);
+                    const currentMora = userLevelRes.rows.length > 0 ? Number(userLevelRes.rows[0].mora) : 0;
 
                     const shopOptions = potionItems.map(pot => ({
                         label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
@@ -239,7 +186,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     );
 
                     const shopMsg = await selection.followUp({
-                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${Number(currentMora).toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
+                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
                         components: [shopRow],
                         ephemeral: true
                     });
@@ -251,29 +198,21 @@ async function handlePlayerBattleInteraction(i, context) {
                         const itemID = buyInteraction.values[0];
                         const targetItem = potionItems.find(x => x.id === itemID);
 
-                        if (Number(currentMora) < targetItem.price) {
+                        if (currentMora < targetItem.price) {
                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                         } else {
-                            try { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]); } 
-                            catch(e) { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [targetItem.price, p.id, guild.id]).catch(()=>{}); }
+                            // 1. خصم المورا
+                            await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]);
                             
-                            try {
-                                const check = await sql.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
-                                if (check.rows.length > 0) {
-                                    await sql.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
-                                } else {
-                                    await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
-                                }
-                            } catch (e) {
-                                const check2 = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
-                                if (check2.rows.length > 0) {
-                                    await sql.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
-                                } else {
-                                    await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
-                                }
+                            // 2. فحص الحقيبة وتحديثها/إضافتها (PostgreSQL)
+                            const checkInv = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                            if (checkInv.rows.length > 0) {
+                                await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                            } else {
+                                await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
                             }
 
-                            await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nيمكنك الآن فتح قائمة الجرعات مرة أخرى لاستخدامها.`, ephemeral: true });
+                            await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nاضغط على (جرعة) مرة أخرى لفتح حقيبتك واستخدامها.`, ephemeral: true });
                         }
                     } catch (e) {
                         await shopMsg.edit({ content: "⏰ انتهى وقت الشراء.", components: [] }).catch(()=>{});
@@ -283,11 +222,11 @@ async function handlePlayerBattleInteraction(i, context) {
                     return { ongoing: true }; 
                 }
 
+                // 🧪 استخدام الجرعة 
                 const potionId = selectedValue.replace('use_potion_', '');
                 
                 if (potionId === 'potion_titan') {
                     const limit = (ITEM_LIMITS && ITEM_LIMITS['titan_potion']) ? ITEM_LIMITS['titan_potion'] : 3;
-                    
                     p.titanPotionUses = p.titanPotionUses || 0;
                     if (p.titanPotionUses >= limit) {
                         await selection.followUp({ content: `🚫 **لقد استهلكت الحد الأقصى (${limit}) من جرعة العملاق في هذا الدانجون!**`, ephemeral: true });
@@ -297,9 +236,9 @@ async function handlePlayerBattleInteraction(i, context) {
                     p.titanPotionUses++; 
                 }
                 
+                // 3. خصم الجرعة من الحقيبة (PostgreSQL)
                 if (sql) {
-                    try { await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]); } 
-                    catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, potionId]).catch(()=>{}); }
+                    await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
                 }
 
                 let actionMsg = "";
@@ -349,21 +288,15 @@ async function handlePlayerBattleInteraction(i, context) {
                 }).catch(()=>{});
 
                 await saveDungeonState(sql, threadChannel.id, guild.id, hostId, {
-                    floor, players, merchantState, retreatedPlayers, isTrapActive,
-                    retreatState, 
+                    floor, players, merchantState, retreatedPlayers, isTrapActive, retreatState, 
                     loot: { coins: totalAccumulatedCoins, xp: totalAccumulatedXP },
-                    themeName: theme.name,
-                    monsterData: monster
+                    themeName: theme.name, monsterData: monster
                 });
 
                 await handleImmediateDeaths(players, threadChannel, ongoingRef, collector, monster);
                 if (!ongoingRef.value) return { ongoing: false };
 
-            } catch (err) { 
-                console.error("Potion Selection Error:", err); 
-                processingUsers.delete(i.user.id); 
-                return { ongoing: true }; 
-            }
+            } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
         else if (i.customId === 'atk' || i.customId === 'def') {
             actedPlayers.push(p.id); p.skipCount = 0; 
@@ -384,32 +317,25 @@ async function handlePlayerBattleInteraction(i, context) {
                 if (canAttack) {
                     const isOwner = p.id === OWNER_ID;
                     const monsterHpBefore = monster.hp;
-
                     const cappedPlayer = { ...p }; 
-                    if (cappedPlayer.weaponLevel > levelCap) {
-                        cappedPlayer.weaponLevel = levelCap;
-                    }
+                    if (cappedPlayer.weaponLevel > levelCap) cappedPlayer.weaponLevel = levelCap;
 
                     const result = weaponCalculator.executeWeaponAttack(cappedPlayer, monster, isOwner);
                     const dmgDealt = monsterHpBefore - monster.hp;
 
                     if (dmgDealt > 0) {
                         let finalDmg = dmgDealt;
-
                         if (damageCap !== Infinity && finalDmg > damageCap) {
                             finalDmg = damageCap;
                             monster.hp = Math.max(0, monsterHpBefore - finalDmg);
-                            
                             result.log = result.log.replace(result.damage.toString(), finalDmg.toString());
                             result.log += ` (مختوم)`;
                         }
                     }
 
                     log.push(result.log);
-                    
                     const threatGen = calculateThreat(p, dmgDealt, false);
                     p.threat = (p.threat || 0) + threatGen;
-
                     checkBossPhase(monster, log);
                 }
             } else if (i.customId === 'def') {
@@ -429,11 +355,7 @@ async function handlePlayerBattleInteraction(i, context) {
         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
             clearTimeout(turnTimeout); collector.stop('turn_end'); 
         }
-    } catch (error) { 
-        console.error("Main Action Error:", error); 
-    } finally { 
-        processingUsers.delete(i.user.id); 
-    }
+    } catch (error) { console.error(error); } finally { processingUsers.delete(i.user.id); }
 
     return { ongoing: true };
 }
