@@ -160,21 +160,20 @@ async function handleRestMenu(context) {
 
                 const nextFloor = floor + 1;
                 
-                // 🛡️ الاستعلام المحمي والمتوافق مع PostgreSQL 100%
+                // 🛡️ الاستعلام المحمي والمتوافق تماماً مع PRIMARY KEY لجدولك
                 try {
                     await db.query(`
                         INSERT INTO dungeon_saves ("hostID", "guildID", "floor", "timestamp") 
                         VALUES ($1, $2, $3, $4) 
-                        ON CONFLICT("hostID", "guildID") 
-                        DO UPDATE SET "floor" = EXCLUDED.floor, "timestamp" = EXCLUDED.timestamp
+                        ON CONFLICT("hostID") 
+                        DO UPDATE SET "floor" = EXCLUDED.floor, "timestamp" = EXCLUDED.timestamp, "guildID" = EXCLUDED."guildID"
                     `, [p.id, guild.id, nextFloor, Date.now()]);
                 } catch (e) {
-                    // إذا كان اسم الأعمدة بالحروف الصغيرة في قاعدة البيانات
                     await db.query(`
                         INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) 
                         VALUES ($1, $2, $3, $4) 
-                        ON CONFLICT(hostid, guildid) 
-                        DO UPDATE SET floor = EXCLUDED.floor, timestamp = EXCLUDED.timestamp
+                        ON CONFLICT(hostid) 
+                        DO UPDATE SET floor = EXCLUDED.floor, timestamp = EXCLUDED.timestamp, guildid = EXCLUDED.guildid
                     `, [p.id, guild.id, nextFloor, Date.now()]).catch(console.error);
                 }
                 
