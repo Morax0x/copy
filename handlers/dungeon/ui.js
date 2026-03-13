@@ -11,6 +11,9 @@ const {
 const { OWNER_ID, skillsConfig, potionItems } = require('./constants');
 const { ensureInventoryTable, buildHpBar } = require('./utils');
 
+// 🔥 استدعاء الجرعات مباشرة لضمان عدم حدوث خطأ Undefined
+const potionItemsList = require('../../json/potions.json');
+
 function buildSkillSelector(player) {
     const options = [];
       
@@ -78,18 +81,22 @@ function buildSkillSelector(player) {
     );
 }
 
-// 🔥 تم إصلاح دالة الجرعات هنا لاستقبال sql بشكل آمن
+// 🔥 تم صيانة دالة الجرعات لتكون مضادة للأخطاء بنسبة 100%
 async function buildPotionSelector(player, sql, guildID) {
-    if (!sql) return null; // حماية إضافية لمنع الانهيار إذا لم تتوفر قاعدة البيانات
-    await ensureInventoryTable(sql); 
+    if (!sql) return null; 
+    
+    try { await ensureInventoryTable(sql); } catch(e) {} 
     
     try {
-        const userItemsRes = await sql.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
+        // تم استبدال تحديد الأعمدة بـ * لكي نتفادى مشاكل الحروف الكبيرة والصغيرة
+        const userItemsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
         const userItems = userItemsRes.rows;
           
         const potions = userItems.map(ui => {
-            const itemDef = potionItems.find(si => si.id === (ui.itemID || ui.itemid));
-            if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity) };
+            const currentItemID = ui.itemID || ui.itemid;
+            // نستخدم القائمة الموثوقة من ملف الجسون مباشرة
+            const itemDef = potionItemsList.find(si => si.id === currentItemID);
+            if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity || 0) };
             return null;
         }).filter(p => p !== null && p.quantity > 0);
 
@@ -100,8 +107,8 @@ async function buildPotionSelector(player, sql, guildID) {
                 options.push(new StringSelectMenuOptionBuilder()
                     .setLabel(`${p.name} (x${p.quantity})`)
                     .setValue(`use_potion_${p.id}`)
-                    .setDescription(p.description.substring(0, 90))
-                    .setEmoji(p.emoji));
+                    .setDescription((p.description || "استخدم هذه الجرعة").substring(0, 90))
+                    .setEmoji(p.emoji || '🧪'));
             });
         } else {
             options.push(new StringSelectMenuOptionBuilder()
@@ -124,8 +131,21 @@ async function buildPotionSelector(player, sql, guildID) {
                 .addOptions(options.slice(0, 25))
         );
     } catch (e) {
-        console.error("Potion Selector Error:", e);
-        return null;
+        console.error("Potion Selector Check Error:", e.message);
+        
+        // خيار طوارئ في حال فشل الاتصال لكي لا يقول "لا تملك جرعات"
+        const emergencyOption = new StringSelectMenuOptionBuilder()
+            .setLabel('شراء المزيد من الجرعات')
+            .setValue('buy_potions_action') 
+            .setDescription('فتح متجر الجرعات السريع (حدث خطأ في قراءة الحقيبة)')
+            .setEmoji('🛒');
+
+        return new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('potion_select_menu')
+                .setPlaceholder('اختر خياراً...')
+                .addOptions([emergencyOption])
+        );
     }
 }
 
