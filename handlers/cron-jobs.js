@@ -57,26 +57,26 @@ module.exports = (client, db) => {
         }
     }
 
-    // 2. فحص الرتب المؤقتة المنتهية
+    // 2. فحص الرتب المؤقتة المنتهية (تم إصلاح عمود expiresAt)
     async function checkTemporaryRoles() {
         const now = Date.now();
         try {
-            const expiredRoles = (await db.query(`SELECT * FROM temporary_roles WHERE "expiresAt" <= $1 OR "expiresat" <= $1`, [now])).rows;
+            const expiredRoles = (await db.query(`SELECT * FROM temporary_roles WHERE "expiresAt" <= $1`, [now])).rows;
             if (expiredRoles.length === 0) return;
 
             await db.query('BEGIN');
             for (const record of expiredRoles) {
-                const uId = record.userid || record.userID;
-                const gId = record.guildid || record.guildID;
-                const rId = record.roleid || record.roleID;
+                const uId = record.userID || record.userid;
+                const gId = record.guildID || record.guildid;
+                const rId = record.roleID || record.roleid;
                 await db.query(`DELETE FROM temporary_roles WHERE "userID" = $1 AND "guildID" = $2 AND "roleID" = $3`, [uId, gId, rId]);
             }
             await db.query('COMMIT');
 
             for (const record of expiredRoles) {
-                const gId = record.guildid || record.guildID;
-                const uId = record.userid || record.userID;
-                const rId = record.roleid || record.roleID;
+                const gId = record.guildID || record.guildid;
+                const uId = record.userID || record.userid;
+                const rId = record.roleID || record.roleid;
 
                 const guild = client.guilds.cache.get(gId);
                 if (!guild) continue;
@@ -142,7 +142,7 @@ module.exports = (client, db) => {
         }
     };
 
-    // 4. تحديث قنوات الوقت (الستريك، المهام اليومية/الأسبوعية)
+    // 4. تحديث قنوات الوقت
     async function updateTimerChannels() {
         const guilds = Array.from(client.guilds.cache.values());
         const KSA_OFFSET = 3 * 60 * 60 * 1000; 
@@ -206,44 +206,37 @@ module.exports = (client, db) => {
                 if (!guild) continue;
                 const role = guild.roles.cache.get(rId);
                 if (role) await role.edit({ color: randomColor }).catch(() => {});
-                else await db.query(`DELETE FROM rainbow_roles WHERE "roleID" = $1 OR "roleid" = $1`, [rId]);
+                else await db.query(`DELETE FROM rainbow_roles WHERE "roleID" = $1`, [rId]);
             }
         } catch (e) {}
     }
 
     // --- تسجيل وإطلاق جميع المهام (Timers) ---
 
-    // فوائد البنك (كل ساعة)
     setInterval(calculateInterest, 60 * 60 * 1000); 
     calculateInterest(); 
 
-    // أسعار السوق (كل ساعة)
     setInterval(updateMarketPrices, 60 * 60 * 1000); 
     updateMarketPrices(); 
       
-    // القروض والمزارع (كل ساعة)
     setInterval(() => checkLoanPayments(client, db), 60 * 60 * 1000); 
     setInterval(() => checkFarmIncome(client, db), 60 * 60 * 1000); 
     checkFarmIncome(client, db); 
 
-    // الستريك (كل ساعة)
     setInterval(() => checkDailyStreaks(client, db), 3600000); 
     checkDailyStreaks(client, db);
     setInterval(() => checkDailyMediaStreaks(client, db), 3600000); 
     checkDailyMediaStreaks(client, db);
 
-    // فك السجن والتحقق من الرتب (كل دقيقة / 5 دقائق)
     setInterval(() => checkUnjailTask(client, db), 5 * 60 * 1000); 
     checkUnjailTask(client, db);
     setInterval(() => checkTemporaryRoles(), 60000); 
     checkTemporaryRoles();
 
-    // تحديث القنوات وألوان قوس قزح
     setInterval(() => updateTimerChannels(), 5 * 60 * 1000); 
     updateTimerChannels(); 
     setInterval(() => updateRainbowRoles(), 180000); 
 
-    // فحص النشر (Bump) كل دقيقة
     setInterval(async () => {
         const now = Date.now();
         try {
@@ -270,18 +263,17 @@ module.exports = (client, db) => {
         } catch(e) {}
     }, 60 * 1000); 
 
-    // حذف الردود التلقائية المنتهية (كل ساعة)
+    // 🔥 تم إزالة OR "expiresat" من هنا أيضاً لتجنب أي خطأ مشابه
     setInterval(async () => {
         const now = Date.now();
         try {
-            const expired = (await db.query(`SELECT * FROM auto_responses WHERE "expiresAt" < $1 OR "expiresat" < $1`, [now])).rows;
+            const expired = (await db.query(`SELECT * FROM auto_responses WHERE "expiresAt" < $1`, [now])).rows;
             for (const reply of expired) {
                 await db.query(`DELETE FROM auto_responses WHERE "id" = $1`, [reply.id]);
             }
         } catch (err) {}
     }, 60 * 60 * 1000);
 
-    // مهام المواعيد الثابتة (يومية/تحذيرات)
     setInterval(() => { 
         const KSA_TIMEZONE = 'Asia/Riyadh'; 
         const nowKSA = new Date().toLocaleString('en-US', { timeZone: KSA_TIMEZONE }); 
@@ -305,7 +297,6 @@ module.exports = (client, db) => {
         } else if (ksaHour !== 15) client.lastReminderSentHour = -1; 
     }, 60000); 
       
-    // الهدايا العشوائية (Random Drop)
     setInterval(async () => { 
         const today = new Date().toISOString().split('T')[0]; 
         const now = Date.now(); 
@@ -330,7 +321,6 @@ module.exports = (client, db) => {
         } 
     }, 30 * 60 * 1000); 
       
-    // تنظيف الذاكرة المؤقتة للألعاب
     setInterval(() => {
         try {
             if (client.activePlayers) client.activePlayers.clear();
@@ -340,11 +330,9 @@ module.exports = (client, db) => {
         } catch (e) {}
     }, 30 * 60 * 1000); 
 
-    // لوحة الملوك (كل دقيقة)
     setInterval(() => {
         autoUpdateKingsBoard(client, db).catch(() => {});
     }, 60 * 1000);
 
-    // تحديث ميديا أولي عند التشغيل
     sendDailyMediaUpdate(client, db);
 };
