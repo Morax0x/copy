@@ -10,10 +10,11 @@ const marketConfig = require('../json/market-items.json');
 const RECENT_MESSAGE_WINDOW = 2 * 60 * 60 * 1000; 
 
 module.exports = (client, db) => {
+    // 1. تحديث أسعار السوق
     async function updateMarketPrices() {
         try {
             if (!client.marketLocks) client.marketLocks = new Set();
-            const res = await db.query("SELECT * FROM market_items");
+            const res = await db.query('SELECT * FROM market_items');
             const allItems = res.rows;
             if (allItems.length === 0) return;
 
@@ -24,7 +25,6 @@ module.exports = (client, db) => {
                 const itemId = item.id || item.itemID;
                 if (client.marketLocks.has(itemId)) continue;
 
-                // 🔥 تصحيح وضع اسم العمود في علامات تنصيص للاحتياط
                 const resOwned = await db.query(`SELECT SUM(quantity) as total FROM user_portfolio WHERE "itemID" = $1`, [itemId]);
                 const totalOwned = resOwned.rows[0].total || 0;
 
@@ -32,7 +32,7 @@ module.exports = (client, db) => {
                 const saturationPenalty = (totalOwned / 2000) * 0.02;
                 let finalChangePercent = randomPercent - saturationPenalty;
 
-                const oldPrice = item.currentprice || item.currentPrice || 0;
+                const oldPrice = Number(item.currentPrice || item.currentprice || 0);
                 if (oldPrice > 5000 && finalChangePercent > 0) finalChangePercent /= 2;
                 if (finalChangePercent < -0.30) finalChangePercent = -0.30;
 
@@ -57,6 +57,7 @@ module.exports = (client, db) => {
         }
     }
 
+    // 2. فحص الرتب المؤقتة المنتهية
     async function checkTemporaryRoles() {
         const now = Date.now();
         try {
@@ -86,11 +87,12 @@ module.exports = (client, db) => {
                 }
             }
         } catch (err) {
+            console.error("[Cron - Temp Roles Error]:", err);
             await db.query('ROLLBACK').catch(()=>{});
         }
     }
 
-    // 🔥 تم تحسين هذه الدالة لتجنب خنق قاعدة البيانات (DbHandler exited)
+    // 3. حساب فوائد البنك (محسنة بنظام الدفعات Batching)
     const calculateInterest = async () => {
         const now = Date.now();
         const INTEREST_RATE = 0.0005; 
@@ -98,23 +100,19 @@ module.exports = (client, db) => {
         const INACTIVITY_LIMIT = 7 * 24 * 60 * 60 * 1000; 
         
         try {
-            const allUsersRes = await db.query(`SELECT "user", "guild", "bank", "lastInterest", "lastDaily", "lastWork", "lastinterest", "lastdaily", "lastwork" FROM levels WHERE "bank" > 0`);
+            const allUsersRes = await db.query(`SELECT "user", "guild", "bank", "lastInterest", "lastDaily", "lastWork" FROM levels WHERE "bank" > 0`);
             const allUsers = allUsersRes.rows;
-            
             if (allUsers.length === 0) return;
 
-            // نظام معالجة على دفعات (Batching) لتخفيف الضغط
-            const batchSize = 100; // معالجة 100 يوزر في كل دفعة
-            
+            const batchSize = 100; 
             for (let i = 0; i < allUsers.length; i += batchSize) {
                 const batch = allUsers.slice(i, i + batchSize);
-                
-                await db.query('BEGIN'); // بدء معاملة الدفعة الحالية
+                await db.query('BEGIN');
                 
                 for (const user of batch) {
-                    const lastInterest = Number(user.lastinterest || user.lastInterest || 0);
-                    const lastDaily = Number(user.lastdaily || user.lastDaily || 0);
-                    const lastWork = Number(user.lastwork || user.lastWork || 0);
+                    const lastInterest = Number(user.lastInterest || 0);
+                    const lastDaily = Number(user.lastDaily || 0);
+                    const lastWork = Number(user.lastWork || 0);
                     const userId = user.user;
                     const guildId = user.guild;
 
@@ -135,12 +133,8 @@ module.exports = (client, db) => {
                         }
                     }
                 }
-                await db.query('COMMIT'); // حفظ الدفعة الحالية
-                
-                // استراحة قصيرة جداً للـ Pool بين الدفعات
-                if (i + batchSize < allUsers.length) {
-                    await new Promise(resolve => setTimeout(resolve, 500)); 
-                }
+                await db.query('COMMIT');
+                if (i + batchSize < allUsers.length) await new Promise(r => setTimeout(r, 500)); 
             }
         } catch (err) {
             console.error("[Cron - Interest Error]:", err);
@@ -148,6 +142,7 @@ module.exports = (client, db) => {
         }
     };
 
+    // 4. تحديث قنوات الوقت (الستريك، المهام اليومية/الأسبوعية)
     async function updateTimerChannels() {
         const guilds = Array.from(client.guilds.cache.values());
         const KSA_OFFSET = 3 * 60 * 60 * 1000; 
@@ -166,9 +161,9 @@ module.exports = (client, db) => {
                 const mDaily = Math.floor((msUntilDaily % (1000 * 60 * 60)) / (1000 * 60));
                 const dailyText = `${hDaily} سـ ${mDaily} د`;
 
-                const endOfWeek = new Date(nowKSA);
                 const dayOfWeek = nowKSA.getDay(); 
                 const daysUntilFriday = (5 + 7 - dayOfWeek) % 7; 
+                const endOfWeek = new Date(nowKSA);
                 endOfWeek.setDate(nowKSA.getDate() + daysUntilFriday + (daysUntilFriday === 0 && nowKSA.getHours() >= 0 ? 7 : 0));
                 endOfWeek.setHours(24, 0, 0, 0); 
                 const msUntilWeekly = endOfWeek - nowKSA;
@@ -184,7 +179,7 @@ module.exports = (client, db) => {
                             const newName = `${prefix} ${timeText}`;
                             if (channel.name !== newName) await channel.setName(newName);
                         }
-                    } catch (e) { }
+                    } catch (e) {}
                 };
 
                 const sTimer = settings.streaktimerchannelid || settings.streakTimerChannelID;
@@ -198,9 +193,10 @@ module.exports = (client, db) => {
         }
     }
 
+    // 5. تحديث ألوان رتب قوس قزح
     async function updateRainbowRoles() {
         try {
-            const rainbowRoles = (await db.query("SELECT * FROM rainbow_roles")).rows;
+            const rainbowRoles = (await db.query('SELECT * FROM rainbow_roles')).rows;
             if (rainbowRoles.length === 0) return;
             const randomColor = Math.floor(Math.random() * 16777215);
             for (const record of rainbowRoles) {
@@ -215,65 +211,66 @@ module.exports = (client, db) => {
         } catch (e) {}
     }
 
+    // --- تسجيل وإطلاق جميع المهام (Timers) ---
+
+    // فوائد البنك (كل ساعة)
     setInterval(calculateInterest, 60 * 60 * 1000); 
     calculateInterest(); 
 
+    // أسعار السوق (كل ساعة)
     setInterval(updateMarketPrices, 60 * 60 * 1000); 
     updateMarketPrices(); 
       
+    // القروض والمزارع (كل ساعة)
     setInterval(() => checkLoanPayments(client, db), 60 * 60 * 1000); 
     setInterval(() => checkFarmIncome(client, db), 60 * 60 * 1000); 
     checkFarmIncome(client, db); 
 
+    // الستريك (كل ساعة)
     setInterval(() => checkDailyStreaks(client, db), 3600000); 
     checkDailyStreaks(client, db);
-
     setInterval(() => checkDailyMediaStreaks(client, db), 3600000); 
     checkDailyMediaStreaks(client, db);
 
+    // فك السجن والتحقق من الرتب (كل دقيقة / 5 دقائق)
     setInterval(() => checkUnjailTask(client, db), 5 * 60 * 1000); 
     checkUnjailTask(client, db);
-
     setInterval(() => checkTemporaryRoles(), 60000); 
     checkTemporaryRoles();
 
+    // تحديث القنوات وألوان قوس قزح
     setInterval(() => updateTimerChannels(), 5 * 60 * 1000); 
     updateTimerChannels(); 
-
     setInterval(() => updateRainbowRoles(), 180000); 
 
+    // فحص النشر (Bump) كل دقيقة
     setInterval(async () => {
         const now = Date.now();
         try {
             const guildsToNotify = (await db.query(`SELECT * FROM settings WHERE "nextBumpTime" > 0 AND "nextBumpTime" <= $1`, [now])).rows;
-
             for (const row of guildsToNotify) {
-                try {
-                    const guild = client.guilds.cache.get(row.guild);
-                    const bChannel = row.bumpchannelid || row.bumpChannelID;
-                    if (guild && bChannel) {
-                        const channel = guild.channels.cache.get(bChannel);
-                        if (channel) {
-                            const bRole = row.bumpnotifyroleid || row.bumpNotifyRoleID;
-                            const lBumper = row.lastbumperid || row.lastBumperID;
-                            const roleMention = bRole ? `<@&${bRole}>` : "";
-                            const userMention = lBumper ? `<@${lBumper}>` : " "; 
-
-                            channel.send({
-                                content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر، وكلّ ما ننتظره هو أمرك.\nأرسل الأمر التالي:\n/bump`,
-                                files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
-                            }).catch(() => {});
-
-                            channel.setName('˖✶⁺〢🔥・انشر・الان').catch(()=>{});
-                        }
+                const guild = client.guilds.cache.get(row.guild);
+                const bChannel = row.bumpchannelid || row.bumpChannelID;
+                if (guild && bChannel) {
+                    const channel = guild.channels.cache.get(bChannel);
+                    if (channel) {
+                        const bRole = row.bumpnotifyroleid || row.bumpNotifyRoleID;
+                        const lBumper = row.lastbumperid || row.lastBumperID;
+                        const roleMention = bRole ? `<@&${bRole}>` : "";
+                        const userMention = lBumper ? `<@${lBumper}>` : " "; 
+                        channel.send({
+                            content: `✥ ${roleMention} | ${userMention}\n\n❖ أيّها الموقر، <:2Salute:1428340456856490074> \n✶ آن أوان رفع راية الإمبراطورية من جديد السيرفر جاهز للنشر.\nأرسل الأمر التالي:\n/bump`,
+                            files: ["https://i.postimg.cc/KYZ5Ktj6/ump.jpg"]
+                        }).catch(() => {});
+                        channel.setName('˖✶⁺〢🔥・انشر・الان').catch(()=>{});
                     }
-                } catch (err) {}
-                
+                }
                 await db.query(`UPDATE settings SET "nextBumpTime" = 0 WHERE "guild" = $1`, [row.guild]);
             }
         } catch(e) {}
     }, 60 * 1000); 
 
+    // حذف الردود التلقائية المنتهية (كل ساعة)
     setInterval(async () => {
         const now = Date.now();
         try {
@@ -284,37 +281,39 @@ module.exports = (client, db) => {
         } catch (err) {}
     }, 60 * 60 * 1000);
 
-    let lastReminderSentHour = -1; let lastUpdateSentHour = -1; let lastWarningSentHour = -1; 
+    // مهام المواعيد الثابتة (يومية/تحذيرات)
     setInterval(() => { 
         const KSA_TIMEZONE = 'Asia/Riyadh'; 
         const nowKSA = new Date().toLocaleString('en-US', { timeZone: KSA_TIMEZONE }); 
         const ksaDate = new Date(nowKSA); 
         const ksaHour = ksaDate.getHours(); 
         
-        if (ksaHour === 0 && lastUpdateSentHour !== ksaHour) { 
+        if (ksaHour === 0 && client.lastUpdateSentHour !== ksaHour) { 
             sendDailyMediaUpdate(client, db); 
             rewardDailyKings(client, db);
-            lastUpdateSentHour = ksaHour; 
-        } else if (ksaHour !== 0) lastUpdateSentHour = -1; 
+            client.lastUpdateSentHour = ksaHour; 
+        } else if (ksaHour !== 0) client.lastUpdateSentHour = -1; 
         
-        if (ksaHour === 12 && lastWarningSentHour !== ksaHour) { 
+        if (ksaHour === 12 && client.lastWarningSentHour !== ksaHour) { 
             sendStreakWarnings(client, db); 
-            lastWarningSentHour = ksaHour; 
-        } else if (ksaHour !== 12) lastWarningSentHour = -1; 
+            client.lastWarningSentHour = ksaHour; 
+        } else if (ksaHour !== 12) client.lastWarningSentHour = -1; 
         
-        if (ksaHour === 15 && lastReminderSentHour !== ksaHour) { 
+        if (ksaHour === 15 && client.lastReminderSentHour !== ksaHour) { 
             sendMediaStreakReminders(client, db); 
-            lastReminderSentHour = ksaHour; 
-        } else if (ksaHour !== 15) lastReminderSentHour = -1; 
+            client.lastReminderSentHour = ksaHour; 
+        } else if (ksaHour !== 15) client.lastReminderSentHour = -1; 
     }, 60000); 
       
-    const lastRandomGiveawayDate = new Map(); 
+    // الهدايا العشوائية (Random Drop)
     setInterval(async () => { 
         const today = new Date().toISOString().split('T')[0]; 
         const now = Date.now(); 
+        if (!client.lastRandomGiveawayDate) client.lastRandomGiveawayDate = new Map();
+
         for (const guild of client.guilds.cache.values()) { 
             const guildID = guild.id; 
-            if (lastRandomGiveawayDate.get(guildID) === today) continue; 
+            if (client.lastRandomGiveawayDate.get(guildID) === today) continue; 
             
             if (!client.recentMessageTimestamps) client.recentMessageTimestamps = new Map();
             const guildTimestamps = client.recentMessageTimestamps.get(guildID) || []; 
@@ -322,28 +321,30 @@ module.exports = (client, db) => {
             
             const totalMessagesLast2Hours = guildTimestamps.length; 
             if (totalMessagesLast2Hours < 200) continue; 
-            const roll = Math.random(); 
-            if (roll < 0.10) { 
+            if (Math.random() < 0.10) { 
                 try { 
                     const success = await createRandomDropGiveaway(client, guild); 
-                    if (success) { lastRandomGiveawayDate.set(guildID, today); } 
+                    if (success) { client.lastRandomGiveawayDate.set(guildID, today); } 
                 } catch (err) {} 
             } 
         } 
     }, 30 * 60 * 1000); 
       
+    // تنظيف الذاكرة المؤقتة للألعاب
     setInterval(() => {
         try {
-            if (client.activePlayers && client.activePlayers.size > 0) client.activePlayers.clear();
-            if (client.activeGames && client.activeGames.size > 0) client.activeGames.clear();
-            if (client.raceTimestamps && client.raceTimestamps.size > 0) client.raceTimestamps.clear();
-            if (client.marketLocks && client.marketLocks.size > 0) client.marketLocks.clear();
+            if (client.activePlayers) client.activePlayers.clear();
+            if (client.activeGames) client.activeGames.clear();
+            if (client.raceTimestamps) client.raceTimestamps.clear();
+            if (client.marketLocks) client.marketLocks.clear();
         } catch (e) {}
     }, 30 * 60 * 1000); 
 
+    // لوحة الملوك (كل دقيقة)
     setInterval(() => {
         autoUpdateKingsBoard(client, db).catch(() => {});
     }, 60 * 1000);
 
+    // تحديث ميديا أولي عند التشغيل
     sendDailyMediaUpdate(client, db);
 };
