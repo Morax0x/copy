@@ -177,8 +177,14 @@ module.exports = {
             sql = client.sql;
             user = interaction.user;
             guild = interaction.guild;
-            // 🔥 منعنا الـ Ephemeral لكي تكون رسائل البيع والشراء ظاهرة للجميع
-            await interaction.deferReply();
+            
+            // 🔥 الحل السحري لتفادي مهلة הـ 3 ثواني
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.deferReply();
+                }
+            } catch (e) {}
+
         } else {
             message = interactionOrMessage;
             client = message.client;
@@ -189,9 +195,9 @@ module.exports = {
 
         const reply = async (payload) => {
             if (isSlash) {
-                return interaction.editReply(payload);
+                return await interaction.editReply(payload);
             } else {
-                return message.channel.send(payload);
+                return await message.channel.send(payload);
             }
         };
 
@@ -212,7 +218,13 @@ module.exports = {
         let timeRemaining = getUpdateTimeRemaining();
 
         const { embed, components } = buildGridView(allItems, currentPage, timeRemaining);
-        const msg = await reply({ embeds: [embed], components: components, fetchReply: true });
+        
+        let msg;
+        if (isSlash) {
+            msg = await interaction.editReply({ embeds: [embed], components: components });
+        } else {
+            msg = await message.channel.send({ embeds: [embed], components: components });
+        }
 
         const filter = i => i.user.id === user.id;
         const collector = msg.createMessageComponentCollector({
@@ -225,7 +237,9 @@ module.exports = {
 
                 if (i.isButton()) {
                     if (i.customId.startsWith('market_prev') || i.customId.startsWith('market_next')) {
-                        await i.deferUpdate(); 
+                        
+                        // 🔥 تفادي كراش الأزرار
+                        try { await i.deferUpdate(); } catch (e) {}
 
                         if (currentView === 'grid') {
                             if (i.customId === 'market_next') currentPage = Math.min(Math.ceil(allItems.length / ITEMS_PER_PAGE) - 1, currentPage + 1);
@@ -251,7 +265,7 @@ module.exports = {
                         }
 
                     } else if (i.customId === 'market_back_to_grid') {
-                        await i.deferUpdate(); 
+                        try { await i.deferUpdate(); } catch (e) {}
                         currentView = 'grid';
                         timeRemaining = getUpdateTimeRemaining();
                         const { embed: gridEmbed, components: gridComponents } = buildGridView(allItems, currentPage, timeRemaining);
@@ -281,7 +295,7 @@ module.exports = {
                 }
 
                 else if (i.isStringSelectMenu() && i.customId === 'market_select_item') {
-                    await i.deferUpdate(); 
+                    try { await i.deferUpdate(); } catch (e) {}
                     currentView = 'detail';
                     const selectedID = i.values[0];
                     currentItemIndex = allItems.findIndex(it => it.id === selectedID);
@@ -291,15 +305,6 @@ module.exports = {
                 }
             } catch (error) {
                 console.error("خطأ في جامع السوق:", error);
-                try {
-                    if (i.replied || i.deferred) { 
-                        await i.followUp({ content: '❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.', ephemeral: true });
-                    } else {
-                        await i.reply({ content: '❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.', ephemeral: true });
-                    }
-                } catch (e) {
-                    console.error("لا يمكن إرسال رسالة الخطأ:", e);
-                }
             }
         });
 
