@@ -10,7 +10,6 @@ const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 const ITEMS_PER_PAGE = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -58,47 +57,9 @@ module.exports = {
         const guildId = guild.id;
         
         const isOwner = user.id === userId; 
-
         const now = Date.now();
-        const deadAnimals = [];
-        
-        const allUserAnimalsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
-        const allUserAnimals = allUserAnimalsRes.rows;
 
-        for (const row of allUserAnimals) {
-            const animalDef = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-            const maxHunger = animalDef ? (animalDef.max_hunger_days || 7) : 7;
-
-            if (!row.lastFedTimestamp && !row.lastfedtimestamp) {
-                await db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "id" = $2`, [now, row.id]);
-                continue;
-            }
-
-            const diff = now - Number(row.lastFedTimestamp || row.lastfedtimestamp);
-            const daysHungry = Math.floor(diff / DAY_MS);
-
-            if (daysHungry >= maxHunger) {
-                const animalName = animalDef ? animalDef.name : 'حيوان مجهول';
-                const qty = Number(row.quantity) || 1;
-
-                deadAnimals.push(`${qty}x ${animalName}`);
-                
-                await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
-
-                await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userId, guildId, 'death_starve', animalName, qty, now]);
-            }
-        }
-
-        if (deadAnimals.length > 0 && isOwner) {
-            const deathEmbed = new EmbedBuilder()
-                .setTitle('☠️ لقد نفقت بعض حيواناتك من الجوع!')
-                .setDescription(`بسبب الإهمال وطول فترة الجوع، خسرت:\n\n❌ **${deadAnimals.join('\n❌ ')}**`)
-                .setColor(Colors.Red);
-            
-            const msgPayload = { embeds: [deathEmbed], flags: [MessageFlags.Ephemeral] };
-            if (isSlash) await interaction.followUp(msgPayload).catch(() => {});
-            else message.reply(msgPayload).catch(() => {});
-        }
+        // 🔥 تم مسح كود الموت من الجوع هنا (بناءً على التحديث الجديد) 🔥
 
         const renderFarmAnimals = async (page = 0) => {
             const maxCapacity = await getPlayerCapacity(client, userId, guildId);
@@ -125,41 +86,46 @@ module.exports = {
                 
                 const qty = Number(row.quantity) || 1;
                 currentCapacityUsed += (qty * (animalData.size || 1));
-                totalFarmIncome += (animalData.income_per_day * qty);
 
                 const purchaseTime = Number(row.purchaseTimestamp || row.purchasetimestamp) || now;
                 const ageMS = now - purchaseTime;
                 const ageDays = Math.floor(ageMS / DAY_MS);
                 const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
+                // ----------------------------------------------------
+                // 🟢 نظام العداد الزمني للشبع الجديد
+                // ----------------------------------------------------
                 const lastFed = Number(row.lastFedTimestamp || row.lastfedtimestamp) || now;
-                const hungerTimeMs = now - lastFed;
-                const hungerDays = Math.floor(hungerTimeMs / DAY_MS);
-                const maxHunger = animalData.max_hunger_days || 7;
-                const daysUntilDeath = Math.max(0, maxHunger - Math.floor((now - lastFed) / DAY_MS));
-
+                const maxHungerMs = (animalData.max_hunger_days || 3) * DAY_MS; 
+                const fullUntil = lastFed + maxHungerMs; 
+                const timeLeftMs = fullUntil - now;
+                
                 let hungerStatusText = "";
-                const cooldownMs = 12 * HOUR_MS; 
+                
+                // حساب الدخل (فقط إذا بقي له أكثر من 12 ساعة شبع)
+                if (timeLeftMs >= (12 * 60 * 60 * 1000)) {
+                    totalFarmIncome += (animalData.income_per_day * qty);
+                }
 
-                // 🔥 التعديل المطلوب: حساب الساعات إذا كان أقل من 12 ساعة، والأيام إذا تجاوزها 🔥
-                if (hungerTimeMs < cooldownMs) {
-                    const remainingHours = Math.ceil((cooldownMs - hungerTimeMs) / HOUR_MS);
-                    hungerStatusText = `🟢 شبعان - متبقي ${remainingHours} ساعات للإطعام 🥄`;
+                // تجهيز نص الشبع للديسكورد
+                if (timeLeftMs > 0) {
+                    const timestampSeconds = Math.floor(fullUntil / 1000);
+                    hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
                 } else {
-                    if (daysUntilDeath <= 1) hungerStatusText = `🔴 على وشك الموت - يوم واحد متبقي!`;
-                    else hungerStatusText = `🟡 بدأ يجوع - ${daysUntilDeath} أيام متبقية`;
+                    hungerStatusText = `🔴 جـائـع - بـدون دخـل`;
                 }
 
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
                     existing.quantity += qty;
-                    existing.income += (animalData.income_per_day * qty);
-                    if (daysUntilDeath < existing.minDays) { existing.minDays = daysUntilDeath; existing.hungerText = hungerStatusText; }
+                    // تجميع الدخل فقط إذا كان الحيوان مدمجاً وحالته شبعان
+                    if (timeLeftMs >= (12 * 60 * 60 * 1000)) existing.income += (animalData.income_per_day * qty);
                     if (ageDays > existing.age) { existing.age = ageDays; existing.lifeRemaining = lifeRemaining; }
                 } else {
                     animalsMap.set(animalData.id, {
-                        ...animalData, quantity: qty, income: animalData.income_per_day * qty,
-                        minDays: daysUntilDeath, hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
+                        ...animalData, quantity: qty, 
+                        income: (timeLeftMs >= (12 * 60 * 60 * 1000)) ? (animalData.income_per_day * qty) : 0,
+                        hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
                     });
                 }
             }
@@ -181,13 +147,13 @@ module.exports = {
             const desc = currentItems.map(item => 
                 `**✥ ${item.name} ${item.emoji}**\n` +
                 `✶ الـعـدد: \`${item.quantity.toLocaleString()}\`\n` +
-                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA}\n` +
+                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA} ${item.income === 0 ? ' متوقف بسبب الجوع' : ''}\n` +
                 `✥ حالـة الجـوع: ${item.hungerText}\n` +
-                `✥ اقـدم حـيـوان عمـره: \`${item.age}\` يوم - متبقي \`${item.lifeRemaining}\` يوم`
+                `✥ اقـدم حـيـوان عمـره: \`${item.age}\` يوم - متبقي \`${item.lifeRemaining}\``
             ).join('\n\n');
 
             baseEmbed.setDescription(header + (desc || "لا يوجد حيوانات في هذه الصفحة."));
-            baseEmbed.setFooter({ text: `صفحة ${page + 1}/${totalPages} • الدخل اليومي: ${totalFarmIncome.toLocaleString()}`, iconURL: targetUser.displayAvatarURL() });
+            baseEmbed.setFooter({ text: `صفحة ${page + 1}/${totalPages} • إجمالي الدخل اليومي: ${totalFarmIncome.toLocaleString()}`, iconURL: targetUser.displayAvatarURL() });
 
             return { embed: baseEmbed, rows: getAnimalsButtons(page, totalPages), files: [] };
         };
@@ -354,12 +320,18 @@ module.exports = {
                             const animalId = subI.values[0];
                             const animal = farmAnimals.find(a => String(a.id) === String(animalId));
                             const feedId = animal.feed_id;
+                            const maxHungerMs = (animal.max_hunger_days || 3) * DAY_MS;
                             
                             const sampleRes = await db.query(`SELECT "lastFedTimestamp" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 LIMIT 1`, [userId, guildId, animalId]);
                             const sample = sampleRes.rows[0];
                             
-                            if (sample && (sample.lastFedTimestamp || sample.lastfedtimestamp) && (Date.now() - Number(sample.lastFedTimestamp || sample.lastfedtimestamp)) < 12*3600*1000) {
-                                return subI.reply({ content: `✋ **${animal.name}** شبعان!\nيمكنك إطعامه مرة كل 12 ساعة.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                            // 🔥 حماية الإطعام المبكر: لا يمكن إطعامه إلا إذا نقص الشبع عن النصف
+                            if (sample && (sample.lastFedTimestamp || sample.lastfedtimestamp)) {
+                                const lastFed = Number(sample.lastFedTimestamp || sample.lastfedtimestamp);
+                                const timeSinceFed = Date.now() - lastFed;
+                                if (timeSinceFed < (maxHungerMs * 0.5)) {
+                                    return subI.reply({ content: `✋ **${animal.name}** ما زال شبعاناً!\nيرجى الانتظار حتى يجوع قليلاً لعدم تبذير الأعلاف.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                                }
                             }
 
                             const countRowRes = await db.query(`SELECT SUM("quantity") as total FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, animalId]);
@@ -376,7 +348,7 @@ module.exports = {
                             await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [totalAnimals, userId, guildId, feedId]);
                             await db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "userID" = $2 AND "guildID" = $3 AND "animalID" = $4`, [Date.now(), userId, guildId, animalId]);
                             
-                            await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                            await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             
                             if (currentView === 'feed_store') {
                                 const data = await renderFeedStore();
