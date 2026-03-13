@@ -3,7 +3,8 @@ const { PermissionsBitField, EmbedBuilder, Colors } = require('discord.js');
 module.exports = {
     name: 'timeout',
     description: 'إسكات عضو (تلقائي 30 دقيقة إذا لم يحدد وقت)',
-    aliases: ['اوت', 'تايم', 'اسكات', 'انطم', 'اخرس'],
+    // 🔥 تم إضافة اختصار "اسكت"
+    aliases: ['اوت', 'تايم', 'اسكات', 'انطم', 'اخرس', 'اسكت'],
     category: 'Admin',
     usage: 'timeout <@user> [time] [reason] أو بالرد على رسالته',
     
@@ -75,7 +76,8 @@ module.exports = {
         let arabicTime = timeArg
             .replace('s', ' ثانية').replace('m', ' دقيقة').replace('h', ' ساعة').replace('d', ' يوم').replace('w', ' اسبوع');
 
-        const lastCaseRes = await db.query("SELECT caseID FROM mod_cases WHERE guildID = $1 ORDER BY caseID DESC LIMIT 1", [message.guild.id]);
+        // 🔥 تم إصلاح استعلام قاعدة البيانات ليوافق PostgreSQL
+        const lastCaseRes = await db.query(`SELECT "caseID" FROM mod_cases WHERE "guildID" = $1 ORDER BY "caseID" DESC LIMIT 1`, [message.guild.id]);
         let lastCase = lastCaseRes.rows[0];
         let newCaseID = lastCase ? parseInt(lastCase.caseid || lastCase.caseID) + 1 : 1;
         const uniqueID = `${message.guild.id}-${newCaseID}`;
@@ -96,7 +98,8 @@ module.exports = {
             return message.reply('❌ **حدث خطأ غير متوقع.**');
         }
 
-        await db.query(`INSERT INTO mod_cases (id, guildID, caseID, type, targetID, moderatorID, reason, timestamp) VALUES ($1, $2, $3, 'TIMEOUT', $4, $5, $6, $7)`, [uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now()]);
+        // 🔥 تم إصلاح استعلام الإدخال بوضع أسماء الأعمدة بين تنصيص 
+        await db.query(`INSERT INTO mod_cases ("id", "guildID", "caseID", "type", "targetID", "moderatorID", "reason", "timestamp") VALUES ($1, $2, $3, 'TIMEOUT', $4, $5, $6, $7)`, [uniqueID, message.guild.id, newCaseID, targetMember.id, message.author.id, reason, Date.now()]);
 
         const chatEmbed = new EmbedBuilder()
             .setDescription('✶ تـم الاسـكـات ...')
@@ -126,25 +129,31 @@ function parseDuration(str) {
 }
 
 async function sendModLog(message, targetMember, type, reason, caseID, duration, db) {
-    const settingsRes = await db.query("SELECT modLogChannelID FROM settings WHERE guild = $1", [message.guild.id]);
-    const settings = settingsRes.rows[0];
-    
-    if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
-        const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
-        if (logChannel) {
-            const logEmbed = new EmbedBuilder()
-                .setTitle(`🟡 New Timeout | Case #${caseID}`)
-                .setColor(Colors.Orange)
-                .setThumbnail(targetMember.user.displayAvatarURL())
-                .addFields(
-                    { name: '👤 العضو', value: `${targetMember.user.tag} (${targetMember.id})`, inline: true },
-                    { name: '👮 المشرف', value: `${message.author.tag} (${message.author.id})`, inline: true },
-                    { name: '⏱️ المدة', value: duration || 'N/A', inline: true },
-                    { name: '📝 السبب', value: reason },
-                    { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:F>` }
-                )
-                .setFooter({ text: `EMorax Security System` });
-            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+    if (!db) return;
+    try {
+        // 🔥 تم إصلاح هذا الاستعلام أيضاً 
+        const settingsRes = await db.query(`SELECT "modLogChannelID" FROM settings WHERE "guild" = $1`, [message.guild.id]);
+        const settings = settingsRes.rows[0];
+        
+        if (settings && (settings.modlogchannelid || settings.modLogChannelID)) {
+            const logChannel = message.guild.channels.cache.get(settings.modlogchannelid || settings.modLogChannelID);
+            if (logChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setTitle(`🟡 New Timeout | Case #${caseID}`)
+                    .setColor(Colors.Orange)
+                    .setThumbnail(targetMember.user.displayAvatarURL())
+                    .addFields(
+                        { name: '👤 العضو', value: `${targetMember.user.tag} (${targetMember.id})`, inline: true },
+                        { name: '👮 المشرف', value: `${message.author.tag} (${message.author.id})`, inline: true },
+                        { name: '⏱️ المدة', value: duration || 'N/A', inline: true },
+                        { name: '📝 السبب', value: reason },
+                        { name: '⏰ الوقت', value: `<t:${Math.floor(Date.now() / 1000)}:F>` }
+                    )
+                    .setFooter({ text: `EMorax Security System` });
+                logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+            }
         }
+    } catch (e) {
+        console.error("[Timeout Command] ModLog Error:", e);
     }
 }
