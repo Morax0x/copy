@@ -66,8 +66,8 @@ module.exports = {
         
         let currentDailyReps = 0;
         if (senderRep.last_rep_given === todayDateStr) {
-            // 🔥 حماية: التأكد من أنه رقم
-            currentDailyReps = Number(senderRep.daily_reps_given) || 0;
+            // تحويل دقيق لرقم
+            currentDailyReps = parseInt(senderRep.daily_reps_given, 10) || 0;
         }
 
         let remainingVotes = maxVotes - currentDailyReps;
@@ -145,8 +145,8 @@ module.exports = {
             targetRep = newTargetRepRes.rows[0];
         }
 
-        // 🔥 هنا كان الخطأ الأساسي! أجبرنا المتغير على أن يكون رقماً حقيقياً (Number) لتجنب دمج النصوص
-        const currentTargetPoints = Number(targetRep.rep_points) || 0;
+        // 🔥 الإصلاح الرئيسي: تحويل الرقم بدقة لتجنب الخطأ الرياضي في الرتبة
+        const currentTargetPoints = parseInt(targetRep.rep_points, 10) || 0;
         const newTargetPoints = currentTargetPoints + 1;
         
         const newDailyRepsGiven = currentDailyReps + 1;
@@ -162,7 +162,7 @@ module.exports = {
         }
 
         const targetRankData = getRepRank(newTargetPoints);
-        const oldRankData = getRepRank(currentTargetPoints); // استخدمنا المتغير المصحح هنا أيضاً
+        const oldRankData = getRepRank(currentTargetPoints); 
         const isRankUp = targetRankData.rank !== oldRankData.rank;
 
         message.channel.sendTyping();
