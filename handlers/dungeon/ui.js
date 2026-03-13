@@ -78,26 +78,17 @@ function buildSkillSelector(player) {
     );
 }
 
-// 🔥 تم تأمين دالة الجرعات لقراءة قاعدة البيانات بأي صيغة (Capital/Small) 🔥
 async function buildPotionSelector(player, sql, guildID) {
     if (!sql) return null;
-
-    try { await ensureInventoryTable(sql); } catch(e) {} 
     
     try {
-        let userItems = [];
-        try {
-            const res = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
-            userItems = res.rows;
-        } catch (e) {
-            const res2 = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [player.id, guildID]);
-            userItems = res2.rows;
-        }
-          
-        const potions = userItems.map(ui => {
-            const dbItemID = ui.itemID || ui.itemid; 
-            const itemDef = potionItems.find(si => si.id === dbItemID);
-            if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity || 0) };
+        await ensureInventoryTable(sql); 
+        // جلب الجرعات من قاعدة البيانات الجديدة
+        const userItemsRes = await sql.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
+        
+        const potions = userItemsRes.rows.map(ui => {
+            const itemDef = potionItems.find(si => si.id === ui.itemID);
+            if (itemDef) return { ...itemDef, quantity: Number(ui.quantity) };
             return null;
         }).filter(p => p !== null && p.quantity > 0);
 
@@ -108,8 +99,8 @@ async function buildPotionSelector(player, sql, guildID) {
                 options.push(new StringSelectMenuOptionBuilder()
                     .setLabel(`${p.name} (x${p.quantity})`)
                     .setValue(`use_potion_${p.id}`)
-                    .setDescription((p.description || "استخدم هذه الجرعة").substring(0, 90))
-                    .setEmoji(p.emoji || '🧪'));
+                    .setDescription(p.description.substring(0, 90))
+                    .setEmoji(p.emoji));
             });
         } else {
             options.push(new StringSelectMenuOptionBuilder()
@@ -119,6 +110,7 @@ async function buildPotionSelector(player, sql, guildID) {
                 .setEmoji('🚫'));
         }
 
+        // الخيار الدائم لفتح المتجر السريع
         options.push(new StringSelectMenuOptionBuilder()
             .setLabel('شراء المزيد من الجرعات')
             .setValue('buy_potions_action') 
@@ -133,19 +125,8 @@ async function buildPotionSelector(player, sql, guildID) {
         );
 
     } catch (e) {
-        console.error("Potion Selector Check Error:", e.message);
-        const fallbackOption = new StringSelectMenuOptionBuilder()
-            .setLabel('شراء المزيد من الجرعات')
-            .setValue('buy_potions_action') 
-            .setDescription('فتح متجر الجرعات السريع')
-            .setEmoji('🛒');
-
-        return new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('potion_select_menu')
-                .setPlaceholder('اختر خياراً...')
-                .addOptions([fallbackOption])
-        );
+        console.error("UI Potion Error:", e);
+        return null;
     }
 }
 
@@ -169,7 +150,6 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     if (monster.effects.some(e => e.type === 'confusion')) monsterStatus += " 😵";
     if (monster.frozen) monsterStatus += " ❄️";
     if (monster.effects.some(e => e.type === 'lightning_weaken')) monsterStatus += " ⚡";
-    
     if (monster.effects.some(e => e.type === 'reflect')) monsterStatus += " 🔄"; 
     if (monster.effects.some(e => e.type === 'blind')) monsterStatus += " 🕶️";   
     if (monster.effects.some(e => e.type === 'stun')) monsterStatus += " 💫";    
