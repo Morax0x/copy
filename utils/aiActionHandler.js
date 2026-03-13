@@ -24,7 +24,7 @@ module.exports = {
         // التأكد من إنشاء الجدول في PostgreSQL مرة واحدة فقط
         if (!tableCreated && db) {
             try {
-                await db.query(`CREATE TABLE IF NOT EXISTS ai_cooldowns (userID TEXT PRIMARY KEY, lastMoraTime BIGINT)`);
+                await db.query(`CREATE TABLE IF NOT EXISTS ai_cooldowns ("userID" TEXT PRIMARY KEY, "lastMoraTime" BIGINT)`);
                 tableCreated = true;
             } catch (err) {
                 console.error("[AI Action] Error creating table:", err);
@@ -85,7 +85,8 @@ module.exports = {
                 const oneHour = 60 * 60 * 1000;
                 const now = Date.now();
                 
-                const cdRes = await db.query("SELECT lastMoraTime FROM ai_cooldowns WHERE userID = $1", [userID]);
+                // 🔥 تم الإصلاح هنا: وضع أسماء الأعمدة بين "" 
+                const cdRes = await db.query(`SELECT "lastMoraTime" FROM ai_cooldowns WHERE "userID" = $1`, [userID]);
                 const cooldownData = cdRes.rows[0];
                 const lastMoraTime = cooldownData ? (parseInt(cooldownData.lastmoratime || cooldownData.lastMoraTime) || 0) : 0;
 
@@ -95,7 +96,8 @@ module.exports = {
                 }
 
                 // ب) فحص الثروة (الحد الأقصى 10,000) 💰
-                const udRes = await db.query("SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2", [userID, guildID]);
+                // 🔥 تم الإصلاح هنا للبحث عن اليوزر والجلد بالأعمدة الصحيحة 
+                const udRes = await db.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]);
                 const userData = udRes.rows[0];
                 
                 const currentMora = userData ? (parseInt(userData.mora) || 0) : 0;
@@ -110,19 +112,21 @@ module.exports = {
                 // 🔥 ج) التنفيذ: إعطاء مبلغ عشوائي بين 100 و 1000 🔥
                 const amount = Math.floor(Math.random() * (1000 - 100 + 1)) + 100;
 
+                // 🔥 تم الإصلاح هنا لاستخدام "user" و "guild" بدلاً من "userid"
                 await db.query(`
-                    INSERT INTO levels (userid, guildid, mora, bank, xp, level) 
+                    INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "level") 
                     VALUES ($1, $2, $3, 0, 0, 1) 
-                    ON CONFLICT(userid, guildid) 
-                    DO UPDATE SET mora = COALESCE(levels.mora, 0) + $4
+                    ON CONFLICT("user", "guild") 
+                    DO UPDATE SET "mora" = COALESCE(levels."mora", 0) + $4
                 `, [userID, guildID, amount, amount]);
                 
                 // د) تسجيل الكولداون
+                // 🔥 تم الإصلاح بوضع الأعمدة بين ""
                 await db.query(`
-                    INSERT INTO ai_cooldowns (userID, lastMoraTime) 
+                    INSERT INTO ai_cooldowns ("userID", "lastMoraTime") 
                     VALUES ($1, $2) 
-                    ON CONFLICT (userID) 
-                    DO UPDATE SET lastMoraTime = EXCLUDED.lastMoraTime
+                    ON CONFLICT ("userID") 
+                    DO UPDATE SET "lastMoraTime" = EXCLUDED."lastMoraTime"
                 `, [userID, now]);
 
                 await message.react('💸').catch(e => console.error("Failed to react:", e));
