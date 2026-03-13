@@ -195,7 +195,9 @@ async function handlePlayerBattleInteraction(i, context) {
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
         else if (i.customId === 'heal') {
-            const potionRow = buildPotionSelector(p, sql, guild.id);
+            // 🔥 هنا كان الخلل! تمت إضافة await لانتظار قاعدة البيانات.
+            const potionRow = await buildPotionSelector(p, sql, guild.id);
+            
             if (!potionRow) {
                 await i.followUp({ content: "❌ لا تملك جرعات في حقيبتك!", ephemeral: true });
                 processingUsers.delete(i.user.id); return { ongoing: true };
@@ -244,9 +246,9 @@ async function handlePlayerBattleInteraction(i, context) {
                             await sql.query('UPDATE levels SET mora = mora - $1 WHERE "user" = $2 AND guild = $3', [targetItem.price, p.id, guild.id]);
                             
                             await sql.query(`
-                                INSERT INTO user_inventory (guildID, userID, itemID, quantity) 
+                                INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") 
                                 VALUES ($1, $2, $3, 1) 
-                                ON CONFLICT (guildID, userID, itemID) 
+                                ON CONFLICT ("guildID", "userID", "itemID") 
                                 DO UPDATE SET quantity = user_inventory.quantity + 1
                             `, [guild.id, p.id, targetItem.id]);
 
@@ -275,7 +277,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 }
                 
                 if (sql) {
-                    await sql.query("UPDATE user_inventory SET quantity = quantity - 1 WHERE userID = $1 AND guildID = $2 AND itemID = $3", [p.id, guild.id, potionId]);
+                    await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
                 }
 
                 let actionMsg = "";
@@ -335,7 +337,11 @@ async function handlePlayerBattleInteraction(i, context) {
                 await handleImmediateDeaths(players, threadChannel, ongoingRef, collector, monster);
                 if (!ongoingRef.value) return { ongoing: false };
 
-            } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
+            } catch (err) { 
+                console.error("Potion Selection Error:", err); // إظهار الخطأ إذا وجد بدلاً من الصمت
+                processingUsers.delete(i.user.id); 
+                return { ongoing: true }; 
+            }
         } 
         else if (i.customId === 'atk' || i.customId === 'def') {
             actedPlayers.push(p.id); p.skipCount = 0; 
@@ -401,7 +407,11 @@ async function handlePlayerBattleInteraction(i, context) {
         if (actedPlayers.length >= players.filter(pl => !pl.isDead).length) { 
             clearTimeout(turnTimeout); collector.stop('turn_end'); 
         }
-    } catch (error) { console.error(error); } finally { processingUsers.delete(i.user.id); }
+    } catch (error) { 
+        console.error("Main Action Error:", error); // طباعة الأخطاء بدلاً من السكوت
+    } finally { 
+        processingUsers.delete(i.user.id); 
+    }
 
     return { ongoing: true };
 }
