@@ -1,5 +1,3 @@
-// commands/economy/gametime.js
-
 const { 
     EmbedBuilder, 
     SlashCommandBuilder, 
@@ -49,18 +47,18 @@ function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// ⚠️ تم تعديل أسماء الأعمدة هنا لتطابق قاعدة البيانات (PostgreSQL) بشكل دقيق جداً (CamelCase)
+// ⚠️ تم التعديل لتشمل الأسماء بالحروف الصغيرة كاحتمال احتياطي
 const COMMANDS_TO_CHECK = [
-    { name: 'work', db_column: 'lastWork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
-    { name: 'rob', db_column: 'lastRob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
-    { name: 'rps', db_column: 'lastRPS', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
-    { name: 'guess', db_column: 'lastGuess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
-    { name: 'roulette', db_column: 'lastRoulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
-    { name: 'emoji', db_column: 'lastMemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
-    { name: 'arrange', db_column: 'lastArrange', cooldown: 1 * 60 * 60 * 1000, label: 'ترتيب' },
-    { name: 'pvp', db_column: 'lastPvP', cooldown: 5 * 60 * 1000, label: 'تحدي' },
-    { name: 'race', db_column: 'lastRace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
-    { name: 'dungeon', db_column: 'lastDungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
+    { name: 'work', db_column: 'lastWork', fallback: 'lastwork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
+    { name: 'rob', db_column: 'lastRob', fallback: 'lastrob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
+    { name: 'rps', db_column: 'lastRPS', fallback: 'lastrps', cooldown: 1 * 60 * 60 * 1000, label: 'حجرة' },
+    { name: 'guess', db_column: 'lastGuess', fallback: 'lastguess', cooldown: 1 * 60 * 60 * 1000, label: 'خمن' },
+    { name: 'roulette', db_column: 'lastRoulette', fallback: 'lastroulette', cooldown: 1 * 60 * 60 * 1000, label: 'روليت' },
+    { name: 'emoji', db_column: 'lastMemory', fallback: 'lastmemory', cooldown: 1 * 60 * 60 * 1000, label: 'ايموجي' }, 
+    { name: 'arrange', db_column: 'lastArrange', fallback: 'lastarrange', cooldown: 1 * 60 * 60 * 1000, label: 'رتب' }, // 🔥 تم التصحيح إلى "رتب"
+    { name: 'pvp', db_column: 'lastPVP', fallback: 'lastpvp', cooldown: 5 * 60 * 1000, label: 'تحدي' },
+    { name: 'race', db_column: 'lastRace', fallback: 'lastrace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
+    { name: 'dungeon', db_column: 'last_dungeon', fallback: 'last_dungeon', cooldown: 1 * 60 * 60 * 1000, label: 'دانجون' } 
 ];
 
 module.exports = {
@@ -120,10 +118,10 @@ module.exports = {
 
                 // 2. الأوامر الثابتة
                 for (const cmd of COMMANDS_TO_CHECK) {
-                    // فحص دقيق يغطي كل الاحتمالات (CamelCase و Lowercase)
-                    const lastUsed = Number(data[cmd.db_column] || data[cmd.db_column.toLowerCase()] || data[cmd.name] || data['last_dungeon'] || 0);
+                    // 🔥 فحص قوي جداً لقراءة الوقت من قاعدة البيانات
+                    const lastUsed = Number(data[cmd.db_column] || data[cmd.fallback] || 0);
                     const cooldownAmount = cmd.cooldown;
-                    const timeLeft = lastUsed + cooldownAmount - now;
+                    const timeLeft = (lastUsed + cooldownAmount) - now;
 
                     if (timeLeft > 0) {
                         waitGames.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
@@ -132,15 +130,18 @@ module.exports = {
                     }
                 }
 
-                // 3. الصيد
+                // 3. الصيد (تم الإصلاح وتقويته)
                 const userRodLevel = Number(data.rodLevel || data.rodlevel) || 1;
                 const userBoatLevel = Number(data.boatLevel || data.boatlevel) || 1;
                 const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
                 const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
+                
                 let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
                 if (fishCooldown < 10000) fishCooldown = 10000;
+                
+                // 🔥 التأكد من القراءة الصحيحة لآخر صيد
                 const lastFish = Number(data.lastFish || data.lastfish) || 0;
-                const fishTimeLeft = lastFish + fishCooldown - now;
+                const fishTimeLeft = (lastFish + fishCooldown) - now;
 
                 if (fishTimeLeft > 0) {
                     waitGames.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
@@ -219,7 +220,6 @@ module.exports = {
                     .setDescription(finalDesc)
                     .setImage(HIDDEN_EMBED_IMAGE);
 
-                // ⚠️ تم إصلاح ephemeral لتصبح مطابقة لتحديثات Discord.js
                 await i.reply({ embeds: [hiddenEmbed], flags: [MessageFlags.Ephemeral] });
             });
 
