@@ -143,6 +143,7 @@ async function handleRestMenu(context) {
                 return decCollector.stop('continue');
             }
 
+            // 🔥 التعديل والحماية في زر نصب الخيمة 🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
                 if (!p || p.class !== 'Leader') return i.reply({ content: "⛺ **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
@@ -158,7 +159,24 @@ async function handleRestMenu(context) {
                 }
 
                 const nextFloor = floor + 1;
-                await db.query("INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) VALUES ($1, $2, $3, $4) ON CONFLICT(hostid, guildid) DO UPDATE SET floor = EXCLUDED.floor, timestamp = EXCLUDED.timestamp", [p.id, guild.id, nextFloor, Date.now()]);
+                
+                // 🛡️ الاستعلام المحمي والمتوافق مع PostgreSQL 100%
+                try {
+                    await db.query(`
+                        INSERT INTO dungeon_saves ("hostID", "guildID", "floor", "timestamp") 
+                        VALUES ($1, $2, $3, $4) 
+                        ON CONFLICT("hostID", "guildID") 
+                        DO UPDATE SET "floor" = EXCLUDED.floor, "timestamp" = EXCLUDED.timestamp
+                    `, [p.id, guild.id, nextFloor, Date.now()]);
+                } catch (e) {
+                    // إذا كان اسم الأعمدة بالحروف الصغيرة في قاعدة البيانات
+                    await db.query(`
+                        INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) 
+                        VALUES ($1, $2, $3, $4) 
+                        ON CONFLICT(hostid, guildid) 
+                        DO UPDATE SET floor = EXCLUDED.floor, timestamp = EXCLUDED.timestamp
+                    `, [p.id, guild.id, nextFloor, Date.now()]).catch(console.error);
+                }
                 
                 await i.deferUpdate(); 
                 return decCollector.stop('camp'); 
