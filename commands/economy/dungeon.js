@@ -20,6 +20,7 @@ module.exports = {
         const isSlash = context.isChatInputCommand === true;
         let interaction;
 
+        // 🛡️ توحيد بيئة العمل لكي تتعامل دالة startDungeon براحة سواء كان سلاش أو بريفكس
         if (isSlash) {
             interaction = context;
         } else {
@@ -31,13 +32,30 @@ module.exports = {
                 client: context.client,
                 id: context.id,
                 isChatInputCommand: false,
-                reply: async (payload) => context.reply(payload),
-                editReply: async (payload) => {
-                    if (context.lastBotReply) return context.lastBotReply.edit(payload);
-                    return context.channel.send(payload);
+                deferred: false,
+                replied: false,
+                
+                // دالة رد ذكية تحفظ الرسالة الأصلية لكي يتم تعديلها لاحقاً
+                reply: async (payload) => {
+                    const safePayload = { ...payload };
+                    delete safePayload.flags; // الرسائل العادية لا تدعم Ephemeral 
+                    const msg = await context.reply(safePayload);
+                    interaction.replied = true;
+                    interaction.lastBotReply = msg;
+                    return msg;
                 },
-                followUp: async (payload) => context.channel.send(payload),
-                deferReply: async () => {},
+                editReply: async (payload) => {
+                    const safePayload = { ...payload };
+                    delete safePayload.flags;
+                    if (interaction.lastBotReply) return interaction.lastBotReply.edit(safePayload);
+                    return context.channel.send(safePayload);
+                },
+                followUp: async (payload) => {
+                    const safePayload = { ...payload };
+                    delete safePayload.flags;
+                    return context.channel.send(safePayload);
+                },
+                deferReply: async () => { interaction.deferred = true; },
                 deferUpdate: async () => {},
                 isButton: () => false 
             };
@@ -47,7 +65,8 @@ module.exports = {
         const db = client.sql;
 
         if (!guild) {
-            return interaction.reply({ content: "🚫 **عذراً، هذا الأمر يعمل فقط داخل السيرفرات!**", flags: [MessageFlags.Ephemeral] });
+            const errPayload = { content: "🚫 **عذراً، هذا الأمر يعمل فقط داخل السيرفرات!**", flags: [MessageFlags.Ephemeral] };
+            return isSlash ? interaction.reply(errPayload) : interaction.reply(errPayload).then(m => setTimeout(()=>m.delete().catch(()=>null), 5000));
         }
 
         try {
@@ -66,6 +85,7 @@ module.exports = {
             }
         } catch (e) {}
 
+        // التحقق من مهلة الدانجون (Cooldown)
         if (user.id !== OWNER_ID && !isAbyssKing) { 
             let userData = await client.getLevel(user.id, guild.id);
             
@@ -97,30 +117,31 @@ module.exports = {
                     flags: [MessageFlags.Ephemeral] 
                 };
 
-                if (isSlash && (interaction.replied || interaction.deferred)) {
-                    return await interaction.followUp(payload);
-                }
                 return await interaction.reply(payload);
             }
         }
 
+        // إذا كان المالك أو سيد الهاوية، نرسل الرسالة دون أن نعطل الرد الرئيسي لـ startDungeon
         if (isAbyssKing && user.id !== OWNER_ID) {
-            const kingPayload = { content: "👑 **سيد الهاوية! أبواب الدانجون تفتح لك بلا قيود أو انتظار.**", flags: [MessageFlags.Ephemeral] };
-            if (isSlash && !interaction.replied && !interaction.deferred) {
-                await interaction.reply(kingPayload).catch(()=>{});
+            const kingPayload = { content: "👑 **ملك الهاوية! أبواب الدانجون تفتح لك بلا قيود أو انتظار.**" };
+            if (isSlash) {
+                await interaction.reply({ ...kingPayload, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
             } else {
-                await interaction.followUp(kingPayload).catch(()=>{});
+                interaction.channel.send(kingPayload).then(m => setTimeout(()=>m.delete().catch(()=>null), 5000));
             }
         }
 
         try {
+            // تنفيذ كود الدانجون الخارجي (الذي سيقوم بالرد وتعديل الرسالة)
             await startDungeon(interaction, db);
         } catch (err) {
             console.error("[Dungeon Command Error]", err);
             const errMsg = { content: "❌ حدث خطأ تقني أثناء بدء الدانجون.", flags: [MessageFlags.Ephemeral] };
             
-            if (interaction.replied || interaction.deferred) await interaction.followUp(errMsg);
-            else await interaction.reply(errMsg);
+            try {
+                if (interaction.replied || interaction.deferred) await interaction.followUp(errMsg);
+                else await interaction.reply(errMsg);
+            } catch (e) {} // تجاهل الأخطاء إذا كانت الرسالة ممسوحة أصلاً
         }
     }
 };
