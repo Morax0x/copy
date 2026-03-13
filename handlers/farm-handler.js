@@ -12,8 +12,8 @@ async function checkFarmIncome(client, db) {
     if (!db) return;
 
     const now = Date.now();
-    const ONE_HOUR = 60 * 60 * 1000;
     const ONE_DAY = 24 * 60 * 60 * 1000;
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 🔥 شرط الـ 12 ساعة الجديد
 
     try {
         await db.query(`CREATE TABLE IF NOT EXISTS farm_last_payout ("id" TEXT PRIMARY KEY, "lastPayoutDate" BIGINT)`);
@@ -59,7 +59,6 @@ async function checkFarmIncome(client, db) {
                             await client.setLevel(userData);
                         }
 
-                        // 🔥 تحديث ملك الحصاد بالقيمة السوقية بدلاً من العدد 🔥
                         if (updateGuildStat) {
                             updateGuildStat(client, guildID, userID, 'crops_harvested', seed.sell_price);
                         }
@@ -70,7 +69,7 @@ async function checkFarmIncome(client, db) {
             }
 
             // ---------------------------------------------------------
-            // 🐄 2. الإطعام التلقائي + الموت
+            // 🐄 2. صيانة الحيوانات (العامل + فحص الموت من الكبر)
             // ---------------------------------------------------------
             const userFarmRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
             const userFarm = userFarmRes.rows;
@@ -80,51 +79,46 @@ async function checkFarmIncome(client, db) {
                 if (!animal) continue; 
 
                 const qty = Number(row.quantity) || 1;
-                const lastFed = Number(row.lastFedTimestamp) || now;
-                const hungerTime = now - lastFed;
-                const maxHungerMs = (animal.max_hunger_days || 7) * ONE_DAY;
                 
-                const hungerThreshold = maxHungerMs * 0.9; 
+                // 🛑 النظام الجديد: متى ينتهي شبع الحيوان؟
+                const maxHungerMs = (animal.max_hunger_days || 3) * ONE_DAY; // الافتراضي 3 أيام
+                const lastFed = Number(row.lastFedTimestamp) || now;
+                const fullUntil = lastFed + maxHungerMs; 
+                const timeLeft = fullUntil - now; 
 
-                let fedToday = false;
-
-                if (hungerTime >= hungerThreshold) {
-                    if (hasWorker) {
-                        const invDataRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userID, guildID, animal.feed_id]);
-                        const invData = invDataRes.rows[0];
+                // 👨‍🌾 تدخل العامل التلقائي إذا نزل الشبع تحت 50%
+                if (hasWorker && timeLeft < (maxHungerMs * 0.5)) {
+                    const invDataRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userID, guildID, animal.feed_id]);
+                    const invData = invDataRes.rows[0];
+                    
+                    if (invData && Number(invData.quantity) >= qty) {
+                        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, userID, guildID, animal.feed_id]);
+                        await db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "id" = $2`, [now, row.id]);
                         
-                        if (invData && Number(invData.quantity) >= qty) {
-                            await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, userID, guildID, animal.feed_id]);
-                            await db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "id" = $2`, [now, row.id]);
-                            
-                            await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'feed', animal.name, qty, now]);
-                            fedToday = true;
-                        } else {
-                            const logsRes = await db.query(`SELECT * FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
-                            const logs = logsRes.rows;
-                            const alreadyLogged = logs.some(l => l.actionType === 'out_of_stock' && Number(l.timestamp) > (now - ONE_DAY));
-                            if (!alreadyLogged) {
-                                await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'out_of_stock', 'feed', 1, now]);
-                            }
+                        await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'feed', animal.name, qty, now]);
+                    } else {
+                        const logsRes = await db.query(`SELECT * FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2 AND "actionType" = 'out_of_stock'`, [userID, guildID]);
+                        const logs = logsRes.rows;
+                        const alreadyLogged = logs.some(l => Number(l.timestamp) > (now - ONE_DAY));
+                        if (!alreadyLogged) {
+                            await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'out_of_stock', 'feed', 1, now]);
                         }
                     }
                 }
 
+                // 🍂 الموت من الكبر (الشيخوخة فقط)
                 const purchaseTimestamp = Number(row.purchaseTimestamp) || now; 
                 const ageInMs = now - purchaseTimestamp;
                 const lifespanInMs = animal.lifespan_days * ONE_DAY;
 
-                if (!fedToday && hungerTime >= maxHungerMs) {
-                    await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
-                    await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'death_starve', animal.name, qty, now]);
-                } else if (ageInMs >= lifespanInMs) {
+                if (ageInMs >= lifespanInMs) {
                     await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
                     await db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'death_old', animal.name, qty, now]);
                 }
             }
 
             // =========================================================
-            // 📊 3. التقرير اليومي
+            // 📊 3. التقرير اليومي وتوزيع الدخل (بحسب شرط الـ 12 ساعة)
             // =========================================================
             const payoutID = `${userID}-${guildID}`;
             const lastPayoutDataRes = await db.query(`SELECT "lastPayoutDate" FROM farm_last_payout WHERE "id" = $1`, [payoutID]);
@@ -136,6 +130,7 @@ async function checkFarmIncome(client, db) {
 
             let dailyAnimalIncome = 0;
             let currentAnimalsCount = 0;
+            let hungryAnimalsCount = 0;
             
             const liveAnimalsRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
             const liveAnimals = liveAnimalsRes.rows;
@@ -144,7 +139,20 @@ async function checkFarmIncome(client, db) {
                 const animal = farmAnimals.find(a => String(a.id) === String(row.animalID));
                 if (animal) {
                     const qty = Number(row.quantity) || 1;
-                    dailyAnimalIncome += (Number(animal.income_per_day) * qty);
+                    
+                    // حساب مدة الشبع المتبقية
+                    const maxHungerMs = (animal.max_hunger_days || 3) * ONE_DAY;
+                    const lastFed = Number(row.lastFedTimestamp) || now;
+                    const fullUntil = lastFed + maxHungerMs; 
+                    const timeLeft = fullUntil - now; 
+
+                    // 🔥 شرط الـ 12 ساعة للدخل
+                    if (timeLeft >= TWELVE_HOURS) {
+                        dailyAnimalIncome += (Number(animal.income_per_day) * qty);
+                    } else {
+                        hungryAnimalsCount += qty; // هؤلاء لم ينتجوا شيئاً بسبب الجوع
+                    }
+                    
                     currentAnimalsCount += qty;
                 }
             }
@@ -162,7 +170,6 @@ async function checkFarmIncome(client, db) {
             
             let harvestedMap = new Map();
             let fedMap = new Map();
-            let starvedDeaths = [];
             let oldDeaths = [];
             let outOfStock = false;
 
@@ -172,8 +179,6 @@ async function checkFarmIncome(client, db) {
                     harvestedMap.set(log.itemName, (harvestedMap.get(log.itemName) || 0) + logCount);
                 } else if (log.actionType === 'feed') {
                     fedMap.set(log.itemName, (fedMap.get(log.itemName) || 0) + logCount);
-                } else if (log.actionType === 'death_starve') {
-                    if (!starvedDeaths.includes(log.itemName)) starvedDeaths.push(log.itemName);
                 } else if (log.actionType === 'death_old') {
                     if (!oldDeaths.includes(log.itemName)) oldDeaths.push(log.itemName);
                 } else if (log.actionType === 'out_of_stock') {
@@ -183,7 +188,8 @@ async function checkFarmIncome(client, db) {
 
             await db.query(`DELETE FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
 
-            if (dailyAnimalIncome <= 0 && dailyLogs.length === 0) {
+            // إذا لم يكن هناك دخل ولا أحداث، سجل الدفع وتخطى لإراحة البوت
+            if (dailyAnimalIncome <= 0 && dailyLogs.length === 0 && hungryAnimalsCount === 0) {
                 await db.query(`INSERT INTO farm_last_payout ("id", "lastPayoutDate") VALUES ($1, $2) ON CONFLICT("id") DO UPDATE SET "lastPayoutDate" = $3`, [payoutID, now, now]); 
                 continue;
             }
@@ -227,10 +233,14 @@ async function checkFarmIncome(client, db) {
             description += `✶ حـققـت حيواناتك دخـل يومي بقيمـة: **${dailyAnimalIncome.toLocaleString()}** ${EMOJI_MORA}\n` +
                            `✶ عـدد الحـيوانات الحية في مزرعتك: **${currentAnimalsCount.toLocaleString()}**`;
 
-            if (starvedDeaths.length > 0 || oldDeaths.length > 0) {
+            // 🔥 تنبيه للحيوانات الجائعة التي لم تنتج مورا
+            if (hungryAnimalsCount > 0) {
+                description += `\n\n⚠️ **تنبيه:** هناك **${hungryAnimalsCount}** حيوان(ات) لم تعطِ دخلاً اليوم لأنها جائعة! (الشبع أقل من 12 ساعة). أطعمها لتعود للإنتاج.`;
+            }
+
+            if (oldDeaths.length > 0) {
                 description += `\n\n💀 **سُنة الحياة في المزرعة...**\n`;
-                if (starvedDeaths.length > 0) description += `❌ **مات من الجوع:** ${starvedDeaths.join('، ')}\n`;
-                if (oldDeaths.length > 0) description += `🍂 **مات من الكبر:** ${oldDeaths.join('، ')}\n`;
+                description += `🍂 **مات من الكبر:** ${oldDeaths.join('، ')}\n`;
             }
 
             const embed = new EmbedBuilder()
