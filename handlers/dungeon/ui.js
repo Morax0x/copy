@@ -11,9 +11,6 @@ const {
 const { OWNER_ID, skillsConfig, potionItems } = require('./constants');
 const { ensureInventoryTable, buildHpBar } = require('./utils');
 
-// =========================================================
-// 1. إنشاء قائمة المهارات (Dropdown)
-// =========================================================
 function buildSkillSelector(player) {
     const options = [];
       
@@ -81,21 +78,23 @@ function buildSkillSelector(player) {
     );
 }
 
-// =========================================================
-// 2. إنشاء قائمة الجرعات (Dropdown) المتوافقة مع Supabase
-// =========================================================
+// 🔥 تم تأمين دالة الجرعات لقراءة قاعدة البيانات بأي صيغة (Capital/Small) 🔥
 async function buildPotionSelector(player, sql, guildID) {
     if (!sql) return null;
 
+    try { await ensureInventoryTable(sql); } catch(e) {} 
+    
     try {
-        await ensureInventoryTable(sql); 
-        
-        // 🔥 التعديل الأهم: قراءة البيانات بشكل متوافق مع PostgreSQL و Supabase
-        const userItemsRes = await sql.query(`SELECT "itemID", "itemid", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
-        const userItems = userItemsRes.rows;
+        let userItems = [];
+        try {
+            const res = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [player.id, guildID]);
+            userItems = res.rows;
+        } catch (e) {
+            const res2 = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [player.id, guildID]);
+            userItems = res2.rows;
+        }
           
         const potions = userItems.map(ui => {
-            // معالجة مشكلة الحروف الكبيرة والصغيرة (itemID vs itemid)
             const dbItemID = ui.itemID || ui.itemid; 
             const itemDef = potionItems.find(si => si.id === dbItemID);
             if (itemDef) return { ...itemDef, quantity: parseInt(ui.quantity || 0) };
@@ -110,7 +109,7 @@ async function buildPotionSelector(player, sql, guildID) {
                     .setLabel(`${p.name} (x${p.quantity})`)
                     .setValue(`use_potion_${p.id}`)
                     .setDescription((p.description || "استخدم هذه الجرعة").substring(0, 90))
-                    .setEmoji(p.emoji));
+                    .setEmoji(p.emoji || '🧪'));
             });
         } else {
             options.push(new StringSelectMenuOptionBuilder()
@@ -134,9 +133,7 @@ async function buildPotionSelector(player, sql, guildID) {
         );
 
     } catch (e) {
-        console.error("Potion Selector Database Error:", e);
-        
-        // في حال حدوث خطأ، لا نعطل اللعبة، بل نظهر المتجر كخيار وحيد لإنقاذ اللاعب
+        console.error("Potion Selector Check Error:", e.message);
         const fallbackOption = new StringSelectMenuOptionBuilder()
             .setLabel('شراء المزيد من الجرعات')
             .setValue('buy_potions_action') 
@@ -152,9 +149,6 @@ async function buildPotionSelector(player, sql, guildID) {
     }
 }
 
-// =========================================================
-// 3. إنشاء تصميم المعركة (Embed)
-// =========================================================
 function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers = [], color = null) {
     const embedColor = color || theme.color || '#2F3136'; 
 
@@ -245,9 +239,6 @@ function generateBattleEmbed(players, monster, floor, theme, log, actedPlayers =
     return embed;
 }
 
-// =========================================================
-// 4. إنشاء أزرار التحكم (Buttons)
-// =========================================================
 function generateBattleRows(disabled = false) {
     const row1 = new ActionRowBuilder();
 
