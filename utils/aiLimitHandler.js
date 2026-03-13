@@ -1,5 +1,8 @@
 const DEFAULT_DAILY_LIMIT = 20; // الحد المجاني للكل
 
+// 🚀 ذاكرة الطلبات المعلقة (تمنع تخطي الرصيد بالسبام والخصم الخاطئ)
+const pendingRequests = new Map();
+
 function getTodayDate() {
     return new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
 }
@@ -9,6 +12,8 @@ module.exports = {
      * حساب الحد اليومي (أساسي + رتب)
      */
     getUserDailyLimit: async (member, db) => {
+        if (!member || !member.roles) return DEFAULT_DAILY_LIMIT;
+
         const guildID = member.guild.id;
         const allLimitsRes = await db.query('SELECT "roleID", "limitCount" FROM ai_role_limits WHERE "guildID" = $1', [guildID]);
         const allLimits = allLimitsRes.rows;
@@ -29,7 +34,7 @@ module.exports = {
     },
 
     /**
-     * فحص هل يسمح للعضو بالتحدث؟
+     * فحص هل يسمح للعضو بالتحدث؟ (مع حجز الرصيد)
      */
     checkUserUsage: async (member) => {
         const db = member.client.sql;
@@ -53,13 +58,25 @@ module.exports = {
 
         const maxDailyLimit = await module.exports.getUserDailyLimit(member, db);
 
-        // هل بقي لديه رصيد مجاني؟
-        if (parseInt(userUsage.dailyUsage || userUsage.dailyusage) < maxDailyLimit) {
+        // حساب الطلبات المعلقة (الرسائل التي يعالجها البوت حالياً ولم تُخصم بعد)
+        const userPending = pendingRequests.get(userId) || [];
+        const pendingFree = userPending.filter(type => type === 'free').length;
+        const pendingPurchased = userPending.filter(type => type === 'purchased').length;
+
+        const currentDailyUsage = parseInt(userUsage.dailyUsage || userUsage.dailyusage) + pendingFree;
+        const currentPurchasedBalance = parseInt(userUsage.purchasedBalance || userUsage.purchasedbalance) - pendingPurchased;
+
+        // 1. هل بقي لديه رصيد مجاني (مع حساب المعلق)؟
+        if (currentDailyUsage < maxDailyLimit) {
+            userPending.push('free'); // حجز خانة مجانية
+            pendingRequests.set(userId, userPending);
             return { canChat: true, source: 'free' };
         }
 
-        // هل لديه رصيد مدفوع؟
-        if (parseInt(userUsage.purchasedBalance || userUsage.purchasedbalance) > 0) {
+        // 2. هل لديه رصيد مدفوع (مع حساب المعلق)؟
+        if (currentPurchasedBalance > 0) {
+            userPending.push('purchased'); // حجز خانة مدفوعة
+            pendingRequests.set(userId, userPending);
             return { canChat: true, source: 'purchased' };
         }
 
@@ -67,20 +84,23 @@ module.exports = {
     },
 
     /**
-     * تسجيل استهلاك رسالة (الخصم الفعلي)
+     * تسجيل استهلاك رسالة (الخصم الدقيق والفعلي)
      */
     incrementUsage: async (userId, db) => {
-        // البحث عن بيانات المستخدم
+        const userPending = pendingRequests.get(userId) || [];
+        // سحب أول طلب تم حجزه لمعرفة من أين نخصم
+        const actionType = userPending.shift() || 'free'; 
+        pendingRequests.set(userId, userPending);
+
         const userDataRes = await db.query('SELECT * FROM ai_user_usage WHERE "userID" = $1', [userId]);
         const userData = userDataRes.rows[0];
         if (!userData) return;
 
-        // زيادة الاستخدام اليومي دائماً
-        await db.query('UPDATE ai_user_usage SET "dailyUsage" = "dailyUsage" + 1 WHERE "userID" = $1', [userId]);
-
-        // إذا كان الاستخدام اليومي يتجاوز الحد الافتراضي ولديه رصيد مدفوع، نخصم منه
-        if (parseInt(userData.dailyUsage || userData.dailyusage) >= DEFAULT_DAILY_LIMIT && parseInt(userData.purchasedBalance || userData.purchasedbalance) > 0) {
-             await db.query('UPDATE ai_user_usage SET "purchasedBalance" = "purchasedBalance" - 1 WHERE "userID" = $1', [userId]);
+        // 🔥 الخصم الدقيق بناءً على ما قررته دالة الفحص (بدون أخطاء الرتب)
+        if (actionType === 'free') {
+            await db.query('UPDATE ai_user_usage SET "dailyUsage" = "dailyUsage" + 1 WHERE "userID" = $1', [userId]);
+        } else if (actionType === 'purchased') {
+            await db.query('UPDATE ai_user_usage SET "purchasedBalance" = "purchasedBalance" - 1 WHERE "userID" = $1', [userId]);
         }
     },
     
