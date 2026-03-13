@@ -36,12 +36,16 @@ const { saveDungeonState } = require('../core/state-manager');
 const { getFloorCaps } = require('./seal-system'); 
 
 async function handlePlayerBattleInteraction(i, context) {
+    // 🔥 التعديل هنا: جلبنا db بدلاً من sql
     const {
-        players, monster, floor, theme, log, threadChannel, sql, guild, hostId,
+        players, monster, floor, theme, log, threadChannel, db, guild, hostId,
         activeDungeonRequests, merchantState, retreatState, retreatedPlayers, isTrapActive,
         totalAccumulatedCoins, totalAccumulatedXP, battleMsg, turnTimeout, collector,
         ongoingRef, actedPlayers, processingUsers
     } = context;
+
+    // 🔥 الحل السحري: تعريف sql لتطابق db
+    const sql = db;
 
     const isOwnerDefend = (i.customId === 'def' && i.user.id === OWNER_ID);
 
@@ -155,7 +159,7 @@ async function handlePlayerBattleInteraction(i, context) {
         else if (i.customId === 'heal') {
             const potionRow = await buildPotionSelector(p, sql, guild.id);
             if (!potionRow) {
-                await i.followUp({ content: "❌ حدث خطأ في النظام.", ephemeral: true });
+                await i.followUp({ content: "❌ لا توجد جرعات في الحقيبة.", ephemeral: true });
                 processingUsers.delete(i.user.id); return { ongoing: true };
             }
             try {
@@ -167,9 +171,19 @@ async function handlePlayerBattleInteraction(i, context) {
 
                 // 🛒 المتجر السريع
                 if (selectedValue === 'buy_potions_action') {
-                    // جلب المورا من قاعدة بيانات PostgreSQL
-                    const userLevelRes = await sql.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [p.id, guild.id]);
-                    const currentMora = userLevelRes.rows.length > 0 ? Number(userLevelRes.rows[0].mora) : 0;
+                    let currentMora = 0;
+                    try {
+                        const userLevelRes = await sql.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [p.id, guild.id]);
+                        if (userLevelRes.rows.length === 0) {
+                            const userLevelRes2 = await sql.query(`SELECT mora FROM levels WHERE user = $1 AND guild = $2`, [p.id, guild.id]);
+                            currentMora = userLevelRes2.rows.length > 0 ? userLevelRes2.rows[0].mora : 0;
+                        } else {
+                            currentMora = userLevelRes.rows[0].mora;
+                        }
+                    } catch(e) {
+                        const userLevelRes3 = await sql.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [p.id, guild.id]).catch(()=>({rows:[]}));
+                        currentMora = userLevelRes3.rows.length > 0 ? userLevelRes3.rows[0].mora : 0;
+                    }
 
                     const shopOptions = potionItems.map(pot => ({
                         label: `${pot.name} (${pot.price.toLocaleString()} مورا)`,
@@ -186,7 +200,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     );
 
                     const shopMsg = await selection.followUp({
-                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${currentMora.toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
+                        content: `💰 **متجر الجرعات السريع**\nرصيدك الحالي: **${Number(currentMora).toLocaleString()}** ${EMOJI_MORA}\nاختر الجرعة التي تريد شراءها:`,
                         components: [shopRow],
                         ephemeral: true
                     });
@@ -198,18 +212,26 @@ async function handlePlayerBattleInteraction(i, context) {
                         const itemID = buyInteraction.values[0];
                         const targetItem = potionItems.find(x => x.id === itemID);
 
-                        if (currentMora < targetItem.price) {
+                        if (Number(currentMora) < targetItem.price) {
                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                         } else {
-                            // 1. خصم المورا
-                            await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]);
+                            try { await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]); } 
+                            catch(e) { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [targetItem.price, p.id, guild.id]).catch(()=>{}); }
                             
-                            // 2. فحص الحقيبة وتحديثها/إضافتها (PostgreSQL)
-                            const checkInv = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
-                            if (checkInv.rows.length > 0) {
-                                await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
-                            } else {
-                                await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
+                            try {
+                                const check = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                                if (check.rows.length > 0) {
+                                    await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
+                                } else {
+                                    await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
+                                }
+                            } catch (e) {
+                                const check2 = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
+                                if (check2.rows.length > 0) {
+                                    await sql.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, targetItem.id]);
+                                } else {
+                                    await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1)`, [guild.id, p.id, targetItem.id]);
+                                }
                             }
 
                             await buyInteraction.followUp({ content: `✅ **تم شراء ${targetItem.name}!**\nاضغط على (جرعة) مرة أخرى لفتح حقيبتك واستخدامها.`, ephemeral: true });
@@ -238,7 +260,11 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 // 3. خصم الجرعة من الحقيبة (PostgreSQL)
                 if (sql) {
-                    await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
+                    try {
+                        await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
+                    } catch (e) {
+                        await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [p.id, guild.id, potionId]).catch(()=>{});
+                    }
                 }
 
                 let actionMsg = "";
