@@ -74,9 +74,10 @@ async function recordBump(client, guildID, userID) {
     const totalID = `${userID}-${guildID}`;
     
     try {
+        // 🔥 تم الإصلاح هنا بوضع الأعمدة بين "" 
         await db.query(`INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "disboard_bumps", "boost_channel_reactions") VALUES ($1,$2,$3,$4,1,0) ON CONFLICT("id") DO UPDATE SET "disboard_bumps" = COALESCE(user_daily_stats."disboard_bumps", 0) + 1`, [dailyID, userID, guildID, dateStr]).catch(()=>{});
         await db.query(`INSERT INTO user_weekly_stats ("id", "userID", "guildID", "weekStartDate", "disboard_bumps") VALUES ($1,$2,$3,$4,1) ON CONFLICT("id") DO UPDATE SET "disboard_bumps" = COALESCE(user_weekly_stats."disboard_bumps", 0) + 1`, [weeklyID, userID, guildID, weekStr]).catch(()=>{});
-        await db.query(`INSERT INTO user_total_stats ("id", "userID", "guildID", "total_disboard_bumps") VALUES ($1,$2,$3,1) ON CONFLICT("userID", "guildID") DO UPDATE SET "total_disboard_bumps" = COALESCE(user_total_stats."total_disboard_bumps", 0) + 1`, [totalID, userID, guildID]).catch(()=>{});
+        await db.query(`INSERT INTO user_total_stats ("id", "userID", "guildID", "total_disboard_bumps") VALUES ($1,$2,$3,1) ON CONFLICT("id") DO UPDATE SET "total_disboard_bumps" = COALESCE(user_total_stats."total_disboard_bumps", 0) + 1`, [totalID, userID, guildID]).catch(()=>{});
         
         const member = await client.guilds.cache.get(guildID)?.members.fetch(userID).catch(() => null);
         if (member && client.checkQuests) {
@@ -275,7 +276,6 @@ module.exports = {
             return;
         }
 
-        // 🔥 التعديل هنا: الرد بـ "نـعـم .. ؟" عند المنشن المجرد
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
         if (mentionRegex.test(message.content)) {
             return message.reply("نـعـم .. ؟").catch(() => {});
@@ -381,7 +381,6 @@ module.exports = {
                     
                     if (!reply) return;
 
-                    // 🔥 إصلاح خطأ `Cannot read properties of undefined` بتمرير `db`
                     if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
 
                     const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
@@ -614,7 +613,6 @@ module.exports = {
                 const targetName = (shortcut.commandName || shortcut.commandname).toLowerCase();
                 const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
                 if (cmd) {
-                    // 🔥 إضافة الـ await هنا
                     if (await checkPermissions(message, cmd)) {
                         const cooldownMsg = await checkCooldown(message, cmd);
                         if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); return; }
@@ -652,7 +650,6 @@ module.exports = {
                             if (isBlacklistedRes.rows.length > 0) return; 
                         } catch(e) {}
                         
-                        // 🔥 إضافة الـ await هنا
                         if (await checkPermissions(message, command)) {
                             const cooldownMsg = await checkCooldown(message, command);
                             if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
@@ -669,7 +666,6 @@ module.exports = {
             const commandName = args.shift().toLowerCase();
             const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
             if (command && command.category === "Economy") {
-                // 🔥 إضافة الـ await هنا
                 if (!(await checkPermissions(message, command))) return;
                 try { await command.execute(message, args); } catch (error) {}
             }
