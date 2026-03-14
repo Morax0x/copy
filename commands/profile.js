@@ -110,8 +110,10 @@ module.exports = {
                 levelData = lvlRes.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
             }
             
-            const totalMora = (levelData.mora || 0) + (levelData.bank || 0);
-            const currentXP = levelData.xp || 0;
+            // 🔥 تم حل مشكلة دمج النصوص بدلاً من الجمع الرياضي هنا 🔥
+            const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
+            
+            const currentXP = Number(levelData.xp) || 0;
             const requiredXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
 
             const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
@@ -132,7 +134,7 @@ module.exports = {
             const streakCount = streakData ? (streakData.streakCount || streakData.streakcount || 0) : 0;
             let hasItemShields = streakData ? (streakData.hasItemShield || streakData.hasitemshield || 0) : 0;
             let hasGraceShield = (streakData && (streakData.hasGracePeriod === 1 || streakData.hasgraceperiod === 1)) ? 1 : 0;
-            const totalShields = hasItemShields + hasGraceShield;
+            const totalShields = Number(hasItemShields) + Number(hasGraceShield);
 
             const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
             const moraBuffMultiplier = await calculateMoraBuff(targetMember, db);
@@ -145,7 +147,8 @@ module.exports = {
                 let rLvl = allScores.rows.findIndex(s => s.user === userId) + 1;
                 ranks.level = rLvl > 0 ? rLvl.toString() : "0";
 
-                const allMora = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY ("mora" + "bank") DESC`, [guildId, TARGET_OWNER_ID]);
+                // 🔥 إصلاح الترتيب ليتعامل مع القيم كنصوص رقمية بشكل صحيح في SQL 🔥
+                const allMora = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY (CAST(COALESCE("mora", '0') AS BIGINT) + CAST(COALESCE("bank", '0') AS BIGINT)) DESC`, [guildId, TARGET_OWNER_ID]);
                 let rMora = allMora.rows.findIndex(s => s.user === userId) + 1;
                 ranks.mora = rMora > 0 ? rMora.toString() : "0";
 
