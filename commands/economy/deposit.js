@@ -9,8 +9,8 @@ module.exports = {
         .setDescription('إيداع المورا من الكاش إلى البنك.')
         .addStringOption(option =>
             option.setName('المبلغ')
-            .setDescription('المبلغ الذي تريد إيداعه أو "all" / "الكل"')
-            .setRequired(true)),
+            .setDescription('المبلغ الذي تريد إيداعه (اتركه فارغاً لإيداع الكل)')
+            .setRequired(false)), // 🔥 جعلنا الخيار اختيارياً لكي يقبل الأمر بدون رقم 🔥
 
     name: 'deposit',
     aliases: ['ايداع', 'dep'],
@@ -50,8 +50,6 @@ module.exports = {
             return message.reply(payload);
         };
 
-        if (!amountArg) return replyError(`الاستخدام: \`/ايداع <المبلغ | الكل>\``);
-
         const guildId = guild.id;
         const db = client.sql; 
 
@@ -69,12 +67,17 @@ module.exports = {
         }
 
         let amountToDeposit = 0;
-        let isAll = ['all', 'الكل'].includes(amountArg.toLowerCase());
+        
+        // 🔥 التعديل هنا: إذا لم يدخل رقم، أو كتب "all" أو "الكل"، سيعتبره إيداع كامل 🔥
+        let isAll = false;
+        if (!amountArg || ['all', 'الكل'].includes(amountArg.toLowerCase())) {
+            isAll = true;
+        }
 
         if (!isAll) {
             amountToDeposit = parseInt(amountArg.replace(/,/g, ''));
             if (isNaN(amountToDeposit) || amountToDeposit <= 0) {
-                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر.`);
+                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر، أو اترك الأمر فارغاً لإيداع الكل.`);
             }
         }
 
