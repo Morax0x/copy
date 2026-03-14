@@ -14,7 +14,7 @@ try {
     ({ updateGuildStat } = require('../../guild-board-handler.js'));
 } catch (e) {}
 
-// 🔥 نظام التحديث الآمن ورادار الفحص 🔥
+// 🔥 نظام التحديث الآمن  ورادار الفحص 🔥
 async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context) {
     console.log(`\n[🕵️ DUNGEON DEBUG - ${context}] Starting update for User: ${userId} | Mora: +${addMora} | XP: +${addXp}`);
     if (!db) return;
