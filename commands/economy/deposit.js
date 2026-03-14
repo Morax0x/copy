@@ -1,114 +1,128 @@
 const { EmbedBuilder, Colors, SlashCommandBuilder } = require("discord.js");
+
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const COOLDOWN_MS = 1 * 60 * 1000; // ✅ تم التعديل إلى 1 دقيقة
+const COOLDOWN_MS = 1 * 60 * 1000; // 1 دقيقة
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('deposit')
-        .setDescription('إيداع المورا من رصيدك إلى البنك.')
+        .setName('ايداع')
+        .setDescription('إيداع المورا من الكاش إلى البنك.')
         .addStringOption(option =>
-            option.setName('amount')
-                .setDescription('المبلغ الذي تريد إيداعه (اكتب "الكل" لإيداع كل شيء)')
-                .setRequired(true)),
+            option.setName('المبلغ')
+            .setDescription('المبلغ الذي تريد إيداعه أو "all" / "الكل"')
+            .setRequired(true)),
 
     name: 'deposit',
     aliases: ['ايداع', 'dep'],
     category: "Economy",
-    description: 'إيداع المورا من رصيدك إلى البنك لكسب الفائدة.',
+    cooldown: 3, 
+    description: 'إيداع المورا من الكاش إلى البنك',
 
     async execute(interactionOrMessage, args) {
 
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, guild, user;
+        let interaction, message, guild, client, user;
         let amountArg;
 
+        if (isSlash) {
+            interaction = interactionOrMessage;
+            guild = interaction.guild;
+            client = interaction.client;
+            user = interaction.user;
+            amountArg = interaction.options.getString('المبلغ');
+            await interaction.deferReply(); 
+        } else {
+            message = interactionOrMessage;
+            guild = message.guild;
+            client = message.client;
+            user = message.author;
+            amountArg = args[0];
+        }
+
+        const reply = async (payload) => {
+            if (isSlash) return interaction.editReply(payload);
+            return message.channel.send(payload);
+        };
+
+        const replyError = async (content) => {
+            const payload = { content, ephemeral: true };
+            if (isSlash) return interaction.editReply(payload);
+            return message.reply(payload);
+        };
+
+        if (!amountArg) return replyError(`الاستخدام: \`/ايداع <المبلغ | الكل>\``);
+
+        const guildId = guild.id;
+        const db = client.sql; 
+
+        // جلب البيانات الأساسية لفحص الكولداون والمبلغ المتاح
+        let data = await client.getLevel(user.id, guildId);
+        if (!data) data = { ...client.defaultData, user: user.id, guild: guildId };
+
+        const now = Date.now();
+        const lastDeposit = Number(data.lastDeposit || data.lastdeposit) || 0;
+        const timeLeft = lastDeposit + COOLDOWN_MS - now;
+
+        if (timeLeft > 0) {
+            const seconds = Math.floor((timeLeft % 60000) / 1000);
+            return replyError(`🕐 يمكنك الإيداع مرة واحدة كل دقيقة. يرجى الانتظار **${seconds} ثانية**.`);
+        }
+
+        let amountToDeposit = 0;
+        let isAll = ['all', 'الكل'].includes(amountArg.toLowerCase());
+
+        if (!isAll) {
+            amountToDeposit = parseInt(amountArg.replace(/,/g, ''));
+            if (isNaN(amountToDeposit) || amountToDeposit <= 0) {
+                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر.`);
+            }
+        }
+
         try {
-            if (isSlash) {
-                interaction = interactionOrMessage;
-                client = interaction.client;
-                guild = interaction.guild;
-                user = interaction.user;
-                amountArg = interaction.options.getString('amount');
-                await interaction.deferReply();
-            } else {
-                message = interactionOrMessage;
-                client = message.client;
-                guild = message.guild;
-                user = message.author;
-                amountArg = args[0];
-            }
-
-            const reply = async (payload) => {
-                if (isSlash) {
-                    return interaction.editReply(payload);
-                } else {
-                    return message.channel.send(payload);
+            let result;
+            
+            // 🔥 ضربة واحدة (Atomic Query): تحديث سريع وآمن 🔥
+            if (isAll) {
+                try {
+                    const q1 = `UPDATE levels SET "bank" = "bank" + "mora", "mora" = 0, "lastDeposit" = $3 WHERE "user" = $1 AND "guild" = $2 AND "mora" > 0 RETURNING "bank", "mora"`;
+                    result = await db.query(q1, [user.id, guildId, now]);
+                } catch(e) {
+                    const q2 = `UPDATE levels SET bank = bank + mora, mora = 0, lastdeposit = $3 WHERE userid = $1 AND guildid = $2 AND mora > 0 RETURNING bank, mora`;
+                    result = await db.query(q2, [user.id, guildId, now]);
                 }
-            };
-
-            let data = await client.getLevel(user.id, guild.id);
-            if (!data) {
-                data = { ...client.defaultData, user: user.id, guild: guild.id };
-            }
-
-            const now = Date.now();
-            const lastDeposit = Number(data.lastDeposit || data.lastdeposit) || 0;
-            const timeLeft = lastDeposit + COOLDOWN_MS - now;
-
-            if (timeLeft > 0) {
-                const minutes = Math.floor(timeLeft / 60000);
-                const seconds = Math.floor((timeLeft % 60000) / 1000);
-                // ✅ تم تعديل النص ليقول "دقيقة واحدة"
-                const replyContent = `🕐 يمكنك الإيداع مرة واحدة كل دقيقة. يرجى الانتظار **${seconds} ثانية**.`;
-
-                if (isSlash) {
-                    return interaction.editReply({ content: replyContent, ephemeral: true });
-                } else {
-                    return message.reply(replyContent);
+            } else {
+                try {
+                    const q1 = `UPDATE levels SET "mora" = "mora" - CAST($1 AS BIGINT), "bank" = "bank" + CAST($1 AS BIGINT), "lastDeposit" = $4 WHERE "user" = $2 AND "guild" = $3 AND "mora" >= CAST($1 AS BIGINT) RETURNING "bank", "mora"`;
+                    result = await db.query(q1, [String(amountToDeposit), user.id, guildId, now]);
+                } catch (e) {
+                    const q2 = `UPDATE levels SET mora = mora - CAST($1 AS BIGINT), bank = bank + CAST($1 AS BIGINT), lastdeposit = $4 WHERE userid = $2 AND guildid = $3 AND mora >= CAST($1 AS BIGINT) RETURNING bank, mora`;
+                    result = await db.query(q2, [String(amountToDeposit), user.id, guildId, now]);
                 }
             }
 
-            let amountToDeposit;
-            const userMora = Number(data.mora) || 0;
-
-            if (!amountArg || amountArg.toLowerCase() === 'all' || amountArg.toLowerCase() === 'الكل') {
-                amountToDeposit = userMora;
-            } else {
-                amountToDeposit = parseInt(amountArg.replace(/,/g, '')); 
+            if (!result || result.rowCount === 0) {
+                return replyError(`❌ فشلت العملية: يبدو أن رصيدك الكاش غير كافٍ أو صفر! <:stop:1436337453098340442>`);
             }
 
-            if (isNaN(amountToDeposit)) {
-                const replyContent = `الاستخدام: \`/ايداع المبلغ: <المبلغ | الكل>\` (المبلغ الذي أدخلته ليس رقماً).`;
-                return isSlash ? interaction.editReply({ content: replyContent, ephemeral: true }) : message.reply(replyContent);
-            }
+            const finalBank = BigInt(result.rows[0].bank || 0);
+            const finalMora = BigInt(result.rows[0].mora || 0);
+            
+            // تحديث الكاش الداخلي بصمت
+            data.bank = String(finalBank);
+            data.mora = String(finalMora);
+            data.lastDeposit = now;
 
-            if (amountToDeposit <= 0) {
-                 const replyContent = `ليس لديك أي مورا في رصيدك لإيداعها!`;
-                 return isSlash ? interaction.editReply({ content: replyContent, ephemeral: true }) : message.reply(replyContent);
-            }
-
-            if (userMora < amountToDeposit) {
-                const replyContent = `ليس لديك هذا المبلغ في رصيدك لإيداعه! (رصيدك: ${userMora.toLocaleString()} ${EMOJI_MORA})`;
-                return isSlash ? interaction.editReply({ content: replyContent, ephemeral: true }) : message.reply(replyContent);
-            }
-
-            // تنفيذ العملية
-            data.mora = userMora - amountToDeposit;
-            data.bank = (Number(data.bank) || 0) + amountToDeposit;
-            data.lastDeposit = now; 
-
-            await client.setLevel(data);
-
-            const interestAmount = Math.floor(data.bank * 0.0005);
+            const interestAmount = Math.floor(Number(finalBank) * 0.0005);
+            const displayAmount = isAll ? "كـل المـبـلـغ" : amountToDeposit.toLocaleString();
 
             const embed = new EmbedBuilder()
-                .setColor("Random") 
+                .setColor("Random")
                 .setTitle('✶ تـم الايداع !')
-                .setThumbnail(user.displayAvatarURL()) 
+                .setThumbnail(user.displayAvatarURL())
                 .setDescription(
-                    `❖ تـم ايـداع: **${amountToDeposit.toLocaleString()}** ${EMOJI_MORA}\n` +
-                    `❖ رصـيد البـنك: **${data.bank.toLocaleString()}** ${EMOJI_MORA}\n` +
-                    `❖ رصـيـدك الكـاش: **${data.mora.toLocaleString()}** ${EMOJI_MORA}\n\n` +
+                    `❖ تـم ايـداع: **${displayAmount}** ${EMOJI_MORA}\n` +
+                    `❖ رصـيد البـنك: **${finalBank.toLocaleString()}** ${EMOJI_MORA}\n` +
+                    `❖ رصـيـدك الكـاش: **${finalMora.toLocaleString()}** ${EMOJI_MORA}\n\n` +
                     `◇ ستحصل على فائدة يومية 0.05% : **${interestAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `◇ وسنحمي اموالك بنسبة اكبر من السرقـة`
                 );
@@ -116,17 +130,8 @@ module.exports = {
             await reply({ embeds: [embed] });
 
         } catch (error) {
-            console.error("Error in deposit command:", error);
-            const errorPayload = { content: "حدث خطأ أثناء عملية الإيداع.", ephemeral: true };
-            if (isSlash) {
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply(errorPayload);
-                } else {
-                    await interaction.reply(errorPayload);
-                }
-            } else {
-                message.reply(errorPayload.content);
-            }
+            console.error("Deposit Error:", error);
+            return replyError("حدث خطأ داخلي أثناء الإيداع.");
         }
     }
 };
