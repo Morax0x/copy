@@ -6,7 +6,7 @@ async function setupDatabase(clientOrSql) {
 
     console.log("[Database] Starting Cloud Integrity & Schema Check...");
 
-    // 🔥 بناء الجداول مطابقة بنسبة 100% لملف الـ SQLite القديم مع حماية الأسماء المزدوجة بـ " "
+    // 🔥 بناء الجداول مطابقة بنسبة 100%
     const tables = [
         `CREATE TABLE IF NOT EXISTS levels ("user" TEXT NOT NULL, "guild" TEXT NOT NULL, "xp" BIGINT DEFAULT 0, "level" BIGINT DEFAULT 1, "totalXP" BIGINT DEFAULT 0, "mora" BIGINT DEFAULT 0, "lastWork" BIGINT DEFAULT 0, "lastDaily" BIGINT DEFAULT 0, "dailyStreak" BIGINT DEFAULT 0, "bank" BIGINT DEFAULT 0, "lastInterest" BIGINT DEFAULT 0, "totalInterestEarned" BIGINT DEFAULT 0, "hasGuard" BIGINT DEFAULT 0, "guardExpires" BIGINT DEFAULT 0, "totalVCTime" BIGINT DEFAULT 0, "lastCollected" BIGINT DEFAULT 0, "lastRob" BIGINT DEFAULT 0, "lastGuess" BIGINT DEFAULT 0, "lastRPS" BIGINT DEFAULT 0, "lastRoulette" BIGINT DEFAULT 0, "lastTransfer" BIGINT DEFAULT 0, "lastDeposit" BIGINT DEFAULT 0, "shop_purchases" BIGINT DEFAULT 0, "total_meow_count" BIGINT DEFAULT 0, "boost_count" BIGINT DEFAULT 0, "lastPVP" BIGINT DEFAULT 0, "lastFarmYield" BIGINT DEFAULT 0, "lastFish" BIGINT DEFAULT 0, "rodLevel" BIGINT DEFAULT 0, "boatLevel" BIGINT DEFAULT 0, "currentLocation" TEXT DEFAULT 'beach', "lastMemory" BIGINT DEFAULT 0, "lastArrange" BIGINT DEFAULT 0, "dungeon_gate_level" BIGINT DEFAULT 1, "max_dungeon_floor" BIGINT DEFAULT 0, "dungeon_wins" BIGINT DEFAULT 0, "lastDungeon" BIGINT DEFAULT 0, "last_dungeon" BIGINT DEFAULT 0, "dungeon_join_count" BIGINT DEFAULT 0, "last_join_reset" BIGINT DEFAULT 0, "lastRace" BIGINT DEFAULT 0, "dungeon_tickets" BIGINT DEFAULT 0, "last_ticket_reset" TEXT DEFAULT '', "last_rob_pardon" TEXT DEFAULT '', "lastTransferDate" TEXT DEFAULT '', "dailyTransferCount" BIGINT DEFAULT 0, PRIMARY KEY ("user", "guild"))`,
 
@@ -115,6 +115,13 @@ async function setupDatabase(clientOrSql) {
             await db.query(query);
         }
 
+        // 🔥 الإضافة الجوهرية هنا لحل أخطاء "column does not exist" الجداول القديمة
+        await ensureColumn(db, 'knight_history', 'lastDate', 'BIGINT DEFAULT 0');
+        await ensureColumn(db, 'streaks', 'guildID', 'TEXT');
+        await ensureColumn(db, 'user_reputation', 'daily_reps_given', 'BIGINT DEFAULT 0');
+        await ensureColumn(db, 'user_reputation', 'weekly_reps_given', 'BIGINT DEFAULT 0');
+        await ensureColumn(db, 'levels', 'last_dungeon', 'BIGINT DEFAULT 0');
+        
         const insertItem = `INSERT INTO market_items ("id", "name", "description", "currentPrice") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO NOTHING`;
         for (const item of defaultMarketItems) {
             await db.query(insertItem, [item.id, item.name, item.description, item.price]);
