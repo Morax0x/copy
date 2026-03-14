@@ -44,7 +44,8 @@ module.exports = {
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
-        const guild = isSlash ? interactionOrMessage.guild : interactionOrMessage.guild;
+        const guild = interactionOrMessage.guild;
+        const member = interactionOrMessage.member; // 🔥 تعريف العضو بشكل آمن
         const client = interactionOrMessage.client;
         const sql = client.sql;
 
@@ -258,13 +259,13 @@ module.exports = {
                         
                         if (possibleMonsters.length > 0 && monsterTriggered) {
                             const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                            let playerWeapon = await pvpCore.getWeaponData(sql, (isSlash ? interactionOrMessage.member : message.member));
+                            // 🔥 تم إصلاح هذا السطر ليعتمد على member بشكل آمن! 🔥
+                            let playerWeapon = await pvpCore.getWeaponData(sql, member);
                             if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
                             if (pvpCore.startPveBattle) {
                                 activeFishingSessions.delete(user.id);
-                                const iObject = isSlash ? interactionOrMessage : message;
-                                await pvpCore.startPveBattle(iObject, client, sql, (isSlash ? interactionOrMessage.member : message.member), monster, playerWeapon);
+                                await pvpCore.startPveBattle(interactionOrMessage, client, sql, member, monster, playerWeapon);
                                 return; 
                             }
                         }
@@ -273,7 +274,8 @@ module.exports = {
                         try {
                             const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
                             const settings = settingsRes.rows[0];
-                            if (settings && (settings.roleFisherKing || settings.rolefisherking) && (isSlash ? interactionOrMessage.member : message.member).roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
+                            // 🔥 تم إصلاح هذا السطر أيضاً ليعتمد على member 🔥
+                            if (settings && (settings.roleFisherKing || settings.rolefisherking) && member.roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
                                 isFisherKing = true;
                             }
                         } catch (e) {}
@@ -349,7 +351,6 @@ module.exports = {
                             .setColor(Colors.Green)
                             .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png');
 
-                        // 🔥 التحديث الجذري هنا للإرسال الآمن 🔥
                         if (isSlash) {
                             await interactionOrMessage.followUp({ content: `<@${user.id}>`, embeds: [resultEmbed] }).catch(console.error);
                         } else {
