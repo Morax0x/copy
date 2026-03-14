@@ -85,24 +85,31 @@ module.exports = {
         }
 
         try {
-            // 🔥 تم التعديل: استخدام CAST كـ BIGINT لتتوافق تماماً مع نوع العمود في قاعدة بياناتك
-            const query = `
-                UPDATE levels 
-                SET "bank" = "bank" - CAST($1 AS BIGINT), 
-                    "mora" = "mora" + CAST($2 AS BIGINT) 
-                WHERE "user" = $3 AND "guild" = $4 AND "bank" >= CAST($5 AS BIGINT)
-                RETURNING "bank", "mora"
-            `;
+            let result;
+            // 🔥 نظام الحماية المزدوج لعملية السحب 🔥
+            try {
+                // المحاولة الأولى (تتوافق مع "user" و "guild")
+                const query1 = `
+                    UPDATE levels 
+                    SET "bank" = "bank" - CAST($1 AS BIGINT), 
+                        "mora" = "mora" + CAST($2 AS BIGINT) 
+                    WHERE "user" = $3 AND "guild" = $4 AND "bank" >= CAST($5 AS BIGINT)
+                    RETURNING "bank", "mora"
+                `;
+                result = await db.query(query1, [String(amountToWithdraw), String(amountToWithdraw), user.id, guildId, String(amountToWithdraw)]);
+            } catch (e) {
+                // المحاولة الثانية (تتوافق مع userid و guildid) في حال فشل الأولى
+                const query2 = `
+                    UPDATE levels 
+                    SET bank = bank - CAST($1 AS BIGINT), 
+                        mora = mora + CAST($2 AS BIGINT) 
+                    WHERE userid = $3 AND guildid = $4 AND bank >= CAST($5 AS BIGINT)
+                    RETURNING bank, mora
+                `;
+                result = await db.query(query2, [String(amountToWithdraw), String(amountToWithdraw), user.id, guildId, String(amountToWithdraw)]);
+            }
 
-            const result = await db.query(query, [
-                String(amountToWithdraw), 
-                String(amountToWithdraw), 
-                user.id, 
-                guildId, 
-                String(amountToWithdraw) 
-            ]);
-
-            if (result.rowCount === 0) {
+            if (!result || result.rowCount === 0) {
                 return replyError(`❌ فشلت العملية: يبدو أن رصيدك تغير أثناء المحاولة أو أنه غير كافٍ.`);
             }
 
