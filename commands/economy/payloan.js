@@ -67,8 +67,15 @@ module.exports = {
 
         const db = client.sql; 
 
-        const getLoanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
-        const loan = getLoanRes.rows[0]; 
+        // 🔥 الحماية المزدوجة لجلب القرض 🔥
+        let loan;
+        try {
+            const getLoanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
+            loan = getLoanRes.rows[0]; 
+        } catch (e) {
+            const getLoanRes = await db.query(`SELECT * FROM user_loans WHERE userid = $1 AND guildid = $2 AND remainingamount > 0`, [user.id, guild.id]).catch(()=>({rows:[]}));
+            loan = getLoanRes.rows[0];
+        }
 
         if (!loan) {
             return replyInfo(`✅ ليس لديك أي قروض مستحقة حالياً.`); 
@@ -134,13 +141,25 @@ module.exports = {
             try {
                 await db.query("BEGIN");
                 await client.setLevel(data);
-                await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                
+                // 🔥 الحماية المزدوجة لحذف القرض بأمان 🔥
+                try {
+                    await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                } catch (e) {
+                    await db.query(`DELETE FROM user_loans WHERE id = $1`, [loan.id]);
+                }
+                
                 await db.query("COMMIT");
                 
                 return replySuccess(`🎉 **تم سداد القرض بالكامل!**\nلقد قمت بسداد مبكر وحصلت على خصم **${discountAmount.toLocaleString()}** ${EMOJI_MORA} (50% من الفائدة المتبقية).\nدفعت: **${finalPayoffAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
             } catch (e) {
-                await db.query("ROLLBACK");
-                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+                await db.query("ROLLBACK").catch(()=>{});
+                // إرجاع الرصيد في الذاكرة في حال فشل العملية
+                data.mora = userMora;
+                data.bank = userBank;
+                await client.setLevel(data);
+                
+                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد. لم يتم سحب أي مبلغ.`);
             }
         }
 
@@ -174,12 +193,23 @@ module.exports = {
             try {
                 await db.query("BEGIN");
                 await client.setLevel(data);
-                await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                
+                // 🔥 الحماية المزدوجة لحذف القرض بأمان 🔥
+                try {
+                    await db.query(`DELETE FROM user_loans WHERE "id" = $1`, [loan.id]);
+                } catch(e) {
+                    await db.query(`DELETE FROM user_loans WHERE id = $1`, [loan.id]);
+                }
+
                 await db.query("COMMIT");
                 return replySuccess(`✅ تم سداد القرض بالكامل. تم إرجاع الباقي (**${change.toLocaleString()}** ${EMOJI_MORA}) إلى رصيدك.`); 
             } catch(e) {
-                await db.query("ROLLBACK");
-                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+                await db.query("ROLLBACK").catch(()=>{});
+                data.mora = userMora;
+                data.bank = userBank;
+                await client.setLevel(data);
+                
+                return replyInfo(`❌ حدث خطأ داخلي أثناء السداد. لم يتم سحب أي مبلغ.`);
             }
         }
 
@@ -196,13 +226,25 @@ module.exports = {
 
         try {
             await db.query("BEGIN");
-            await db.query(`UPDATE user_loans SET "remainingAmount" = $1 WHERE "id" = $2`, [remainingAmount, loan.id]);
+            
+            // 🔥 الحماية المزدوجة لتحديث القرض بأمان 🔥
+            try {
+                await db.query(`UPDATE user_loans SET "remainingAmount" = $1 WHERE "id" = $2`, [remainingAmount, loan.id]);
+            } catch(e) {
+                await db.query(`UPDATE user_loans SET remainingamount = $1 WHERE id = $2`, [remainingAmount, loan.id]);
+            }
+
             await client.setLevel(data);
             await db.query("COMMIT");
+            
             replySuccess(`✅ تم دفع **${amountToPay.toLocaleString()}** ${EMOJI_MORA}.\nالمبلغ المتبقي للقرض: **${remainingAmount.toLocaleString()}** ${EMOJI_MORA}.`); 
         } catch(e) {
-            await db.query("ROLLBACK");
-            return replyInfo(`❌ حدث خطأ داخلي أثناء السداد.`);
+            await db.query("ROLLBACK").catch(()=>{});
+            data.mora = userMora;
+            data.bank = userBank;
+            await client.setLevel(data);
+            
+            return replyInfo(`❌ حدث خطأ داخلي أثناء السداد. لم يتم سحب أي مبلغ.`);
         }
     }
 };
