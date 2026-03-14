@@ -95,6 +95,7 @@ module.exports = {
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
+        // 🔥 تسجيل الكولداون فورا بمجرد استخدام الأمر لمنع الاستغلال 🔥
         if (user.id !== OWNER_ID) {
             try {
                 await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [nowStr, user.id, guild.id]);
@@ -149,36 +150,33 @@ module.exports = {
 
         const loadingMsg = await reply({ content: `**🌊 يرمي السنارة في الماء...**\n${desc}` });
 
-        // انتظار وهمي لكي تعلق سمكة
         const waitTime = Math.floor(Math.random() * 3000) + 2000; 
 
         setTimeout(async () => {
             // 🎣 بداية اللعبة المصغرة
             let gameData = {
-                distance: 100, // المسافة الابتدائية للسمكة
-                tension: 10,   // توتر الخيط الابتدائي
+                distance: 100, 
+                tension: 10,   
                 statusText: "عـلـقـت سمـكـة! اسـحـب الآن!",
-                maxTension: 100 + (currentRod.level * 10), // السنارة القوية تتحمل توتراً أعلى (تصل لـ 140)
+                maxTension: 100 + (currentRod.level * 10), 
             };
 
-            // إنشاء أزرار التحكم
-            const getControlRows = (disabled = false) => {
+            const getControlRows = () => {
                 return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('fish_hard').setLabel('سحب قوي').setStyle(ButtonStyle.Danger).setEmoji('🔴').setDisabled(disabled),
-                    new ButtonBuilder().setCustomId('fish_steady').setLabel('سحب متوازن').setStyle(ButtonStyle.Primary).setEmoji('🟡').setDisabled(disabled),
-                    new ButtonBuilder().setCustomId('fish_relax').setLabel('إرخاء الخيط').setStyle(ButtonStyle.Success).setEmoji('🟢').setDisabled(disabled)
+                    new ButtonBuilder().setCustomId('fish_hard').setLabel('سحب قوي').setStyle(ButtonStyle.Danger).setEmoji('🔴'),
+                    new ButtonBuilder().setCustomId('fish_steady').setLabel('سحب متوازن').setStyle(ButtonStyle.Primary).setEmoji('🟡'),
+                    new ButtonBuilder().setCustomId('fish_relax').setLabel('إرخاء الخيط').setStyle(ButtonStyle.Success).setEmoji('🟢')
                 );
             };
 
             const sendUpdate = async (isFinal = false) => {
-                // توليد الصورة بناءً على الحالة الحالية
                 const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText);
                 const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
                 
                 const updatePayload = {
                     content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
                     files: [attachment],
-                    components: [getControlRows(isFinal)]
+                    components: isFinal ? [] : [getControlRows()] // 🔥 إخفاء الأزرار بالكامل إذا كانت اللعبة منتهية
                 };
                 
                 if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
@@ -189,80 +187,73 @@ module.exports = {
 
             const collector = (isSlash ? interactionOrMessage : loadingMsg).createMessageComponentCollector({
                 filter: i => i.user.id === user.id && i.customId.startsWith('fish_'),
-                time: 30000 // 30 ثانية للصيد كحد أقصى
+                time: 60000 // 🔥 زيادة الوقت إلى 60 ثانية لتوفير تجربة لعب أفضل
             });
 
             collector.on('collect', async i => {
                 await i.deferUpdate().catch(()=>{});
 
-                // منطق أزرار الصيد
                 if (i.customId === 'fish_hard') {
-                    gameData.distance -= Math.floor(Math.random() * 15) + 15; // يسحب من 15 لـ 30 متر
-                    gameData.tension += Math.floor(Math.random() * 20) + 20; // يزيد التوتر من 20 لـ 40
+                    gameData.distance -= Math.floor(Math.random() * 15) + 15; 
+                    gameData.tension += Math.floor(Math.random() * 20) + 20; 
                     gameData.statusText = "سحب عنيف! الخيط يهتز!";
                 } else if (i.customId === 'fish_steady') {
-                    gameData.distance -= Math.floor(Math.random() * 10) + 5; // يسحب 5 لـ 15 متر
-                    gameData.tension += Math.floor(Math.random() * 10) + 5; // يزيد التوتر من 5 لـ 15
+                    gameData.distance -= Math.floor(Math.random() * 10) + 5; 
+                    gameData.tension += Math.floor(Math.random() * 10) + 5; 
                     gameData.statusText = "سحب متوازن.. السمكة تقترب.";
                 } else if (i.customId === 'fish_relax') {
-                    gameData.distance += Math.floor(Math.random() * 15) + 5; // السمكة تبتعد
-                    gameData.tension -= Math.floor(Math.random() * 30) + 20; // التوتر يقل جداً
+                    gameData.distance += Math.floor(Math.random() * 15) + 5; 
+                    gameData.tension -= Math.floor(Math.random() * 30) + 20; 
                     gameData.statusText = "إرخاء الخيط! السمكة تبتعد لتستريح.";
                 }
 
-                // ذكاء السمكة (مقاومة عشوائية بعد كل ضغطة)
                 const fishAI = Math.random();
                 if (fishAI > 0.6) {
                     gameData.tension += 15;
-                    gameData.statusText += " (السمكة تقاوم بشدة!)";
+                    gameData.statusText += " (تقاوم!)";
                 }
 
-                // تأمين القيم
                 if (gameData.tension < 0) gameData.tension = 0;
                 if (gameData.distance < 0) gameData.distance = 0;
 
-                // التحقق من الخسارة (انقطاع الخيط أو هروب السمكة)
                 if (gameData.tension >= gameData.maxTension) {
                     gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
                     collector.stop('snapped');
-                    await sendUpdate(true);
+                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
                 
                 if (gameData.distance >= 120) {
                     gameData.statusText = "💨 السمكة ابتعدت جداً وأفلتت السنارة!";
                     collector.stop('escaped');
-                    await sendUpdate(true);
+                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
 
-                // التحقق من الفوز (المسافة وصلت 0)
                 if (gameData.distance <= 0) {
                     gameData.statusText = "✅ تم الصيد بنجاح!";
                     collector.stop('success');
-                    await sendUpdate(true);
+                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
 
-                // تحديث الصورة العادية
                 await sendUpdate();
             });
 
             collector.on('end', async (collected, reason) => {
                 if (reason === 'time') {
                     gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
-                    await sendUpdate(true);
+                    await sendUpdate(true); // إخفاء الأزرار
                 }
                 
                 if (reason === 'success') {
-                    // ====== إعطاء الجوائز (الكود القديم الخاص بالأسماك يعمل هنا) ======
+                    // ====== إعطاء الجوائز ======
                     const isOwner = user.id === OWNER_ID;
                     const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
                     const monsterTriggered = Math.random() < monsterChance;
                     let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
                     if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
                     
-                    // تحدي الوحوش (PVE)
                     if (possibleMonsters.length > 0 && monsterTriggered) {
                         const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
                         let playerWeapon = await pvpCore.getWeaponData(sql, (isSlash ? interactionOrMessage.member : message.member));
@@ -276,7 +267,6 @@ module.exports = {
                         }
                     }
 
-                    // جوائز الأسماك العادية
                     let isFisherKing = false;
                     try {
                         const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
@@ -324,13 +314,15 @@ module.exports = {
                             }
                         }
                         
+                        // 🔥 تحديث المورا مع الحماية 🔥
                         try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
                         catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
                         
+                        // 🔥 إصلاح تحديث الكاش: التعامل مع القيم بشكل رقمي طبيعي لمنع أخطاء الـ BigInt 🔥
                         if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
                             let cache = await client.getLevel(user.id, guild.id);
                             if (cache) {
-                                cache.mora = String(Number(cache.mora || 0) + totalValue);
+                                cache.mora = Number(cache.mora || 0) + totalValue;
                                 await client.setLevel(cache);
                             }
                         }
@@ -340,6 +332,7 @@ module.exports = {
                         await sql.query("COMMIT");
                     } catch (e) {
                         await sql.query("ROLLBACK").catch(()=>{});
+                        console.error("Fish Reward Error: ", e);
                     }
 
                     const summary = {};
