@@ -20,7 +20,7 @@ const THEME = {
 const DIMS = {
     NODE: 80, PARTNER: 65, KID: 60, GRAND: 45, GREAT_GRAND: 35, 
     PARENT: 65, GRANDPARENT: 50, SIBLING: 60, 
-    NEPHEW: 30, // 🔥 تم تصغير أبناء الإخوة بشكل واضح
+    NEPHEW: 30, // 🔥 تم تصغير  أبناء الإخوة بشكل واضح
     LEVEL_GAP: 250, SIB_GAP: 80, 
 };
 
