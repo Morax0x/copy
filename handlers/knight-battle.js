@@ -683,7 +683,6 @@ async function startGuardBattle(interaction, client, db, robberMember, amountToS
         }
         activeKnightPlayers.add(robberMember.id);
 
-        // 🔥 تم تحديث الاستعلام لحماية أسماء الأعمدة في Supabase 🔥
         let robberData;
         try {
             const getLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [robberMember.id, interaction.guild.id]);
@@ -709,22 +708,25 @@ async function startGuardBattle(interaction, client, db, robberMember, amountToS
         const guildId = interaction.guild.id;
         const historyId = `${userId}-${guildId}`;
 
-        await db.query(`CREATE TABLE IF NOT EXISTS knight_history ("id" TEXT PRIMARY KEY, "count" INTEGER, "lastdate" INTEGER)`).catch(()=>{});
+        // 🔥 تحديث لاستخدام lastDate مع D كابيتال ليتوافق مع قاعدة البيانات 
+        await db.query(`CREATE TABLE IF NOT EXISTS knight_history ("id" TEXT PRIMARY KEY, "count" INTEGER, "lastDate" BIGINT)`).catch(()=>{});
 
         const historyRes = await db.query(`SELECT * FROM knight_history WHERE "id" = $1`, [historyId]);
         let history = historyRes.rows[0];
         let encounterCount = 1; 
 
         if (history) {
-            if (Number(history.lastdate) === todayInt) {
+            // فحص تاريخ آخر مواجهة
+            const dbLastDate = Number(history.lastDate || history.lastdate) || 0;
+            if (dbLastDate === todayInt) {
                 encounterCount = Number(history.count) + 1; 
                 await db.query(`UPDATE knight_history SET "count" = $1 WHERE "id" = $2`, [encounterCount, historyId]);
             } else {
                 encounterCount = 1;
-                await db.query(`UPDATE knight_history SET "count" = $1, "lastdate" = $2 WHERE "id" = $3`, [1, todayInt, historyId]);
+                await db.query(`UPDATE knight_history SET "count" = $1, "lastDate" = $2 WHERE "id" = $3`, [1, todayInt, historyId]);
             }
         } else {
-            await db.query(`INSERT INTO knight_history ("id", "count", "lastdate") VALUES ($1, $2, $3)`, [historyId, 1, todayInt]);
+            await db.query(`INSERT INTO knight_history ("id", "count", "lastDate") VALUES ($1, $2, $3)`, [historyId, 1, todayInt]);
         }
 
         const multiplier = encounterCount; 
@@ -809,7 +811,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         
         activeKnightPlayers.delete(player.member.id);
 
-        // 🔥 تم تحديث الاستعلام للحماية 🔥
         let playerData;
         try {
             const getLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [player.member.id, battleState.message.guild.id]);
@@ -827,13 +828,25 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
         await battleState.message.edit({ components: [] }).catch(() => {});
 
+        let pMora = Number(playerData.mora) || 0;
+        let pBank = Number(playerData.bank) || 0;
+
         if (resultType === "win") {
-            playerData.mora = (Number(playerData.mora) || 0) + amount;
+            pMora += amount;
             
             try {
-                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [playerData.mora, player.member.id, battleState.message.guild.id]);
+                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [pMora, player.member.id, battleState.message.guild.id]);
             } catch(e) {
-                await db.query(`UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3`, [playerData.mora, player.member.id, battleState.message.guild.id]).catch(()=>{});
+                await db.query(`UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3`, [pMora, player.member.id, battleState.message.guild.id]).catch(()=>{});
+            }
+            
+            // 🔥 إضافة تحديث الذاكرة العشوائية (Cache) 🔥
+            if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                let cache = await client.getLevel(player.member.id, battleState.message.guild.id);
+                if (cache) {
+                    cache.mora = pMora;
+                    await client.setLevel(cache);
+                }
             }
             
             const randomWinImage = WIN_IMAGES_LIST[Math.floor(Math.random() * WIN_IMAGES_LIST.length)];
@@ -895,9 +908,6 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
             } catch(e) {}
 
         } else {
-            let pMora = Number(playerData.mora) || 0;
-            let pBank = Number(playerData.bank) || 0;
-            
             if (pMora >= amount) pMora -= amount;
             else {
                 const remaining = amount - pMora;
@@ -909,6 +919,16 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                 await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "user" = $3 AND "guild" = $4`, [pMora, pBank, player.member.id, battleState.message.guild.id]);
             } catch(e) {
                 await db.query(`UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4`, [pMora, pBank, player.member.id, battleState.message.guild.id]).catch(()=>{});
+            }
+            
+            // 🔥 إضافة تحديث الذاكرة العشوائية (Cache) في حالة الخسارة أيضاً 🔥
+            if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                let cache = await client.getLevel(player.member.id, battleState.message.guild.id);
+                if (cache) {
+                    cache.mora = pMora;
+                    cache.bank = pBank;
+                    await client.setLevel(cache);
+                }
             }
             
             embed.setTitle(`💀 هـُزمـت!`).setColor(Colors.DarkRed)
