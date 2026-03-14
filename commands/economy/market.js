@@ -118,8 +118,15 @@ function buildGridView(allItems, pageIndex, timeRemaining) {
 }
 
 async function buildDetailView(item, userId, guildId, allItems, timeRemaining, sql) {
-    const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
-    const userPortfolio = userPortfolioRes.rows[0];
+    // 🔥 الحماية المزدوجة لقراءة محفظة اللاعب 🔥
+    let userPortfolio;
+    try {
+        const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
+        userPortfolio = userPortfolioRes.rows[0];
+    } catch (e) {
+        const userPortfolioRes = await sql.query(`SELECT quantity FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
+        userPortfolio = userPortfolioRes.rows[0];
+    }
     const userQuantity = userPortfolio ? Number(userPortfolio.quantity) : 0;
     
     const changePercent = Number(item.lastChangePercent || item.lastchangepercent);
@@ -178,7 +185,6 @@ module.exports = {
             user = interaction.user;
             guild = interaction.guild;
             
-            // 🔥 الحل السحري لتفادي مهلة הـ 3 ثواني
             try {
                 if (!interaction.deferred && !interaction.replied) {
                     await interaction.deferReply();
@@ -234,11 +240,9 @@ module.exports = {
 
         collector.on('collect', async i => {
             try {
-
                 if (i.isButton()) {
                     if (i.customId.startsWith('market_prev') || i.customId.startsWith('market_next')) {
                         
-                        // 🔥 تفادي كراش الأزرار
                         try { await i.deferUpdate(); } catch (e) {}
 
                         if (currentView === 'grid') {
