@@ -14,6 +14,33 @@ try {
     ({ updateGuildStat } = require('../../guild-board-handler.js'));
 } catch (e) {}
 
+// 🔥 نظام التحديث الآمن ورادار الفحص 🔥
+async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context) {
+    console.log(`\n[🕵️ DUNGEON DEBUG - ${context}] Starting update for User: ${userId} | Mora: +${addMora} | XP: +${addXp}`);
+    if (!db) return;
+    try {
+        let currentMora = 0, currentXp = 0;
+        let useQuotes = true;
+        try {
+            const res = await db.query(`SELECT "mora", "xp" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+            if (res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
+        } catch (e1) {
+            useQuotes = false;
+            const res = await db.query(`SELECT mora, xp FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>{});
+            if (res && res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
+        }
+
+        const newMora = currentMora + addMora;
+        const newXp = currentXp + addXp;
+
+        if (useQuotes) await db.query(`UPDATE levels SET "mora" = $1, "xp" = $2 WHERE "user" = $3 AND "guild" = $4`, [String(newMora), String(newXp), userId, guildId]);
+        else await db.query(`UPDATE levels SET mora = $1, xp = $2 WHERE userid = $3 AND guildid = $4`, [String(newMora), String(newXp), userId, guildId]);
+        console.log(`[✅ DUNGEON DEBUG] Successfully updated DB -> New Mora: ${newMora}, New XP: ${newXp}`);
+    } catch (e) {
+        console.error(`[🚨 DUNGEON DEBUG FATAL ERROR]`, e);
+    }
+}
+
 async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests, client) {
     if (!sql) return;
     
@@ -21,8 +48,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
     if (status === 'win') { 
         title = "❖ أسطـورة الدانـجون !"; 
-        const randomHex = Math.floor(Math.random() * 16777215).toString(16);
-        color = `#${randomHex}`; 
+        color = `#${Math.floor(Math.random() * 16777215).toString(16)}`; 
         randomImage = getRandomImage(WIN_IMAGES); 
     } 
     else if (status === 'retreat' || status === 'camp') { 
@@ -39,9 +65,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     const allParticipants = [...activePlayers, ...retreatedPlayers];
     
     let mvpPlayer = allParticipants.length > 0 ? allParticipants.reduce((p, c) => ((p.totalDamage || 0) > (c.totalDamage || 0)) ? p : c) : null;
-    if (mvpPlayer && (mvpPlayer.totalDamage || 0) === 0) {
-        mvpPlayer = null; 
-    }
+    if (mvpPlayer && (mvpPlayer.totalDamage || 0) === 0) mvpPlayer = null; 
     
     const repMilestones = {
         20: 1, 30: 1, 35: 1, 40: 1, 45: 1, 50: 1,
@@ -52,9 +76,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
     let sessionStartFloor = 1;
     if (activeDungeonRequests && activeDungeonRequests.has(hostId)) {
         const sessionData = activeDungeonRequests.get(hostId);
-        if (sessionData && sessionData.startFloor) {
-            sessionStartFloor = sessionData.startFloor;
-        }
+        if (sessionData && sessionData.startFloor) sessionStartFloor = sessionData.startFloor;
     }
 
     let lootString = "";
@@ -72,28 +94,11 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
             } else {
                 finalMora = Math.floor(p.loot.mora || 0);
                 finalXp = Math.floor(p.loot.xp || 0);
-                
-                if (p.isDead) { 
-                    finalMora = Math.floor(finalMora * 0.5); 
-                    finalXp = Math.floor(finalXp * 0.5); 
-                }
+                if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
             }
             
-            // 🔥 الحل النهائي: استخدام نظام البوت الآمن لإضافة المورا والاكس بي
-            if (client && client.getLevel && client.setLevel) {
-                let pData = await client.getLevel(p.id, guildId);
-                if (!pData) pData = { ...client.defaultData, user: p.id, guild: guildId };
-                pData.mora = (Number(pData.mora) || 0) + finalMora;
-                pData.xp = (Number(pData.xp) || 0) + finalXp;
-                await client.setLevel(pData);
-            } else {
-                // حماية الطوارئ
-                try {
-                    await sql.query(`UPDATE levels SET "xp" = COALESCE("xp", 0) + CAST($1 AS BIGINT), "mora" = COALESCE("mora", 0) + CAST($2 AS BIGINT) WHERE "user" = $3 AND "guild" = $4`, [finalXp, finalMora, p.id, guildId]);
-                } catch (err1) {
-                    await sql.query(`UPDATE levels SET xp = COALESCE(xp, 0) + CAST($1 AS BIGINT), mora = COALESCE(mora, 0) + CAST($2 AS BIGINT) WHERE userid = $3 AND guildid = $4`, [finalXp, finalMora, p.id, guildId]).catch(()=>{});
-                }
-            }
+            // استخدام الفحص المطور للتوزيع
+            await safeUpdateLevels(sql, p.id, guildId, finalMora, finalXp, "END GAME WIN/LOSE");
         }
 
         let effectiveEndFloor = floor;
@@ -106,9 +111,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
 
         let repReward = 0;
         for (let f = playerStartFloor; f <= effectiveEndFloor; f++) {
-            if (repMilestones[f]) {
-                repReward += repMilestones[f];
-            }
+            if (repMilestones[f]) repReward += repMilestones[f];
         }
 
         if (repReward > 0) {
@@ -127,30 +130,17 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                         ON CONFLICT (userid, guildid) 
                         DO UPDATE SET rep_points = COALESCE(user_reputation.rep_points, 0) + $4
                     `, [p.id, guildId, repReward, repReward]);
-                } catch (err2) {}
+                } catch (err2) {
+                    console.log(`[❌ DUNGEON DEBUG] Failed to add Rep:`, err2.message);
+                }
             }
         }
 
         if (updateGuildStat && client) {
-            if (mvpPlayer) {
-                if (p.id === mvpPlayer.id) await updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
-            } else {
-                await updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
-            }
+            await updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
         }
         
-        let statusEmoji = "";
-        if (p.isDead) { 
-            const deathFloorInfo = p.deathFloor ? `(مات في ${p.deathFloor})` : "(مات)";
-            statusEmoji = `💀 ${deathFloorInfo}`;
-        } else if (p.retreatFloor) {
-            statusEmoji = `🏃‍♂️ (انسحب في ${p.retreatFloor})`;
-        } else if (status === 'camp') {
-            statusEmoji = "⛺ (مخيم)";
-        } else {
-            statusEmoji = "✅";
-        }
-
+        let statusEmoji = p.isDead ? `💀 ${p.deathFloor ? `(مات في ${p.deathFloor})` : ""}` : p.retreatFloor ? `🏃‍♂️ (انسحب في ${p.retreatFloor})` : status === 'camp' ? "⛺ (مخيم)" : "✅";
         let repString = repReward > 0 ? ` | 🌟 سمعة: **${repReward}**` : "";
         lootString += `✬ <@${p.id}> ${statusEmoji}: ${finalMora.toLocaleString()} ${EMOJI_MORA} | ${finalXp.toLocaleString()} XP${repString}\n`;
     }
@@ -163,20 +153,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            // 🔥 مكافأة النجم بالنظام الآمن
-            if (client && client.getLevel && client.setLevel) {
-                let mvpData = await client.getLevel(mvpPlayer.id, guildId);
-                if (mvpData) {
-                    mvpData.mora = (Number(mvpData.mora) || 0) + 500;
-                    await client.setLevel(mvpData);
-                }
-            } else {
-                try {
-                    await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]);
-                } catch (e1) {
-                    await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + 500 WHERE userid = $1 AND guildid = $2`, [mvpPlayer.id, guildId]).catch(()=>{});
-                }
-            }
+            await safeUpdateLevels(sql, mvpPlayer.id, guildId, 500, 0, "MVP REWARD");
         }
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
@@ -213,18 +190,10 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         }
     }
 
-    const embed = new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(description)
-        .setColor(color)
-        .setImage(randomImage)
-        .setTimestamp();
-
+    const embed = new EmbedBuilder().setTitle(title).setDescription(description).setColor(color).setImage(randomImage).setTimestamp();
     await mainChannel.send({ content: allParticipants.map(p => `<@${p.id}>`).join(' '), embeds: [embed] }).catch(()=>{});
     
-    if (activeDungeonRequests && activeDungeonRequests.has(hostId)) {
-        activeDungeonRequests.delete(hostId);
-    }
+    if (activeDungeonRequests && activeDungeonRequests.has(hostId)) activeDungeonRequests.delete(hostId);
     
     try {
         if (status === 'camp') await thread.send({ content: `**⛺ تم حفظ التقدم وإغلاق البوابة مؤقتاً. نراكم قريباً!**` });
