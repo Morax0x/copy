@@ -57,9 +57,15 @@ module.exports = {
                 }
             };
 
-
-            const getLoanRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
-            const existingLoan = getLoanRes.rows[0];
+            // 🔥 الحماية المزدوجة (Fallback) لفحص وجود قرض سابق 🔥
+            let existingLoan;
+            try {
+                const getLoanRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
+                existingLoan = getLoanRes.rows[0];
+            } catch (e) {
+                const getLoanRes = await sql.query(`SELECT * FROM user_loans WHERE userid = $1 AND guildid = $2 AND remainingamount > 0`, [user.id, guild.id]).catch(()=>({rows:[]}));
+                existingLoan = getLoanRes.rows[0];
+            }
 
             if (existingLoan) {
                 return sendError(`❌ لديك قرض سابق لم تقم بسداده. المبلغ المتبقي: **${Number(existingLoan.remainingAmount || existingLoan.remainingamount).toLocaleString()}** ${EMOJI_MORA}.`);
@@ -152,9 +158,15 @@ module.exports = {
                             });
                         }
 
-                        // تحقق مزدوج قبل التنفيذ
-                        const existingLoanCheckRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
-                        const existingLoanCheck = existingLoanCheckRes.rows[0];
+                        // 🔥 الحماية المزدوجة قبل التنفيذ 🔥
+                        let existingLoanCheck;
+                        try {
+                            const checkRes = await sql.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [user.id, guild.id]);
+                            existingLoanCheck = checkRes.rows[0];
+                        } catch (e) {
+                            const checkRes = await sql.query(`SELECT * FROM user_loans WHERE userid = $1 AND guildid = $2 AND remainingamount > 0`, [user.id, guild.id]).catch(()=>({rows:[]}));
+                            existingLoanCheck = checkRes.rows[0];
+                        }
                         
                         if (existingLoanCheck) {
                              return i.update({
@@ -163,23 +175,29 @@ module.exports = {
                             });
                         }
 
-                        // 🔥 التعديل الجوهري: استخدام Transaction لضمان الأمان عبر PostgreSQL 🔥
+                        // 🔥 التعديل الجوهري: استخدام Transaction آمن ومزدوج الحماية 🔥
                         try {
                             await sql.query("BEGIN");
                             
-                            // 1. تحديث الرصيد (إضافة المبلغ)
+                            // إضافة الفلوس للرصيد
                             data.mora = (Number(data.mora) || 0) + selectedLoan.amount;
                             await client.setLevel(data);
 
-                            // 2. إنشاء سجل القرض
-                            await sql.query(`
-                                INSERT INTO user_loans ("userID", "guildID", "loanAmount", "remainingAmount", "dailyPayment", "lastPaymentDate", "missedPayments") 
-                                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                            `, [user.id, guild.id, selectedLoan.amount, selectedLoan.totalToRepay, selectedLoan.dailyPayment, Date.now(), 0]);
+                            // تسجيل القرض بحماية مزدوجة
+                            try {
+                                await sql.query(`
+                                    INSERT INTO user_loans ("userID", "guildID", "loanAmount", "remainingAmount", "dailyPayment", "lastPaymentDate", "missedPayments") 
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                `, [user.id, guild.id, selectedLoan.amount, selectedLoan.totalToRepay, selectedLoan.dailyPayment, Date.now(), 0]);
+                            } catch (e) {
+                                await sql.query(`
+                                    INSERT INTO user_loans (userid, guildid, loanamount, remainingamount, dailypayment, lastpaymentdate, missedpayments) 
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                `, [user.id, guild.id, selectedLoan.amount, selectedLoan.totalToRepay, selectedLoan.dailyPayment, Date.now(), 0]);
+                            }
 
                             await sql.query("COMMIT");
 
-                            // تعطيل الأزرار بعد النجاح
                             const disabledRows = [];
                             if (i.message.components && Array.isArray(i.message.components)) {
                                 i.message.components.forEach(row => {
@@ -201,7 +219,11 @@ module.exports = {
                             collector.stop();
 
                         } catch (txError) {
-                            await sql.query("ROLLBACK");
+                            await sql.query("ROLLBACK").catch(()=>{});
+                            // التراجع عن الفلوس التي أضيفت في الذاكرة
+                            data.mora = (Number(data.mora) || 0) - selectedLoan.amount;
+                            await client.setLevel(data);
+                            
                             console.error("Loan Transaction Error:", txError);
                             return i.followUp({ 
                                 content: `❌ حدث خطأ في قاعدة البيانات ولم يتم منح القرض. لم يتم خصم أو إضافة أي شيء.`, 
@@ -224,9 +246,7 @@ module.exports = {
                         msg.components.forEach(row => {
                             const newRow = new ActionRowBuilder();
                             row.components.forEach(component => {
-                                newRow.addComponents(
-                                    ButtonBuilder.from(component).setDisabled(true)
-                                );
+                                newRow.addComponents(ButtonBuilder.from(component).setDisabled(true));
                             });
                             disabledRows.push(newRow);
                         });
