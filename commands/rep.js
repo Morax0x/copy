@@ -1,5 +1,5 @@
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
-const { generateRepCard } = require('../generators/rep-card-generator.js'); // تأكد من مسار الملف
+const { generateRepCard } = require('../generators/rep-card-generator.js'); 
 
 const OWNER_ID = "1145327691772481577";
 
@@ -53,21 +53,33 @@ module.exports = {
             }
         }
 
-        const senderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
-        let senderRep = senderRepRes.rows[0];
+        let senderRep;
+        try {
+            const senderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
+            senderRep = senderRepRes.rows[0];
+        } catch(e) {
+            const senderRepRes = await db.query(`SELECT * FROM user_reputation WHERE userid = $1 AND guildid = $2`, [senderId, guildId]).catch(()=>({rows:[]}));
+            senderRep = senderRepRes.rows[0];
+        }
         
         if (!senderRep) {
-            await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [senderId, guildId]);
-            const newSenderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
-            senderRep = newSenderRepRes.rows[0];
+            try { await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [senderId, guildId]); }
+            catch(e) { await db.query(`INSERT INTO user_reputation (userid, guildid) VALUES ($1, $2)`, [senderId, guildId]).catch(()=>{}); }
+            
+            try {
+                const newSenderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
+                senderRep = newSenderRepRes.rows[0];
+            } catch(e) {
+                const newSenderRepRes = await db.query(`SELECT * FROM user_reputation WHERE userid = $1 AND guildid = $2`, [senderId, guildId]).catch(()=>({rows:[]}));
+                senderRep = newSenderRepRes.rows[0];
+            }
         }
 
         const todayDateStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Riyadh' });
         
         let currentDailyReps = 0;
-        if (senderRep.last_rep_given === todayDateStr) {
-            // تحويل دقيق لرقم
-            currentDailyReps = parseInt(senderRep.daily_reps_given, 10) || 0;
+        if (senderRep && (senderRep.last_rep_given === todayDateStr || senderRep.last_rep_given === todayDateStr)) {
+            currentDailyReps = parseInt(senderRep.daily_reps_given || senderRep.daily_reps_given, 10) || 0;
         }
 
         let remainingVotes = maxVotes - currentDailyReps;
@@ -94,8 +106,14 @@ module.exports = {
             return message.reply({ embeds: [selfEmbed] });
         }
 
-        const senderLevelRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [senderId, guildId]);
-        const senderLevel = senderLevelRes.rows.length > 0 ? Number(senderLevelRes.rows[0].level) : 1;
+        let senderLevel = 1;
+        try {
+            const senderLevelRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [senderId, guildId]);
+            senderLevel = senderLevelRes.rows.length > 0 ? Number(senderLevelRes.rows[0].level) : 1;
+        } catch(e) {
+            const senderLevelRes = await db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [senderId, guildId]).catch(()=>({rows:[]}));
+            senderLevel = senderLevelRes.rows.length > 0 ? Number(senderLevelRes.rows[0].level) : 1;
+        }
 
         if (senderId !== OWNER_ID && senderLevel < 10) {
             const lvlEmbed = new EmbedBuilder()
@@ -110,8 +128,16 @@ module.exports = {
         
         if (senderId !== OWNER_ID) {
             try {
-                const dailyStatsRes = await db.query(`SELECT "messages" FROM guild_member_stats WHERE "userID" = $1 AND "guildID" = $2 AND "date" = $3`, [senderId, guildId, dbDateStr]);
-                const todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
+                let todayMessages = 0;
+                try {
+                    const dailyID = `${senderId}-${guildId}-${dbDateStr}`;
+                    const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "id" = $1`, [dailyID]);
+                    todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
+                } catch(e) {
+                    const dailyID = `${senderId}-${guildId}-${dbDateStr}`;
+                    const dailyStatsRes = await db.query(`SELECT messages FROM user_daily_stats WHERE id = $1`, [dailyID]).catch(()=>({rows:[]}));
+                    todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
+                }
 
                 if (todayMessages < 20) {
                     const msgEmbed = new EmbedBuilder()
@@ -136,28 +162,44 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
-        const targetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
-        let targetRep = targetRepRes.rows[0];
+        let targetRep;
+        try {
+            const targetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
+            targetRep = targetRepRes.rows[0];
+        } catch(e) {
+            const targetRepRes = await db.query(`SELECT * FROM user_reputation WHERE userid = $1 AND guildid = $2`, [targetId, guildId]).catch(()=>({rows:[]}));
+            targetRep = targetRepRes.rows[0];
+        }
         
         if (!targetRep) {
-            await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [targetId, guildId]);
-            const newTargetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
-            targetRep = newTargetRepRes.rows[0];
+            try { await db.query(`INSERT INTO user_reputation ("userID", "guildID") VALUES ($1, $2)`, [targetId, guildId]); }
+            catch(e) { await db.query(`INSERT INTO user_reputation (userid, guildid) VALUES ($1, $2)`, [targetId, guildId]).catch(()=>{}); }
+            
+            try {
+                const newTargetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
+                targetRep = newTargetRepRes.rows[0];
+            } catch(e) {
+                const newTargetRepRes = await db.query(`SELECT * FROM user_reputation WHERE userid = $1 AND guildid = $2`, [targetId, guildId]).catch(()=>({rows:[]}));
+                targetRep = newTargetRepRes.rows[0];
+            }
         }
 
-        // 🔥 الإصلاح الرئيسي: تحويل الرقم بدقة لتجنب الخطأ الرياضي في الرتبة
-        const currentTargetPoints = parseInt(targetRep.rep_points, 10) || 0;
+        const currentTargetPoints = parseInt(targetRep ? (targetRep.rep_points || targetRep.rep_points) : 0, 10) || 0;
         const newTargetPoints = currentTargetPoints + 1;
-        
         const newDailyRepsGiven = currentDailyReps + 1;
         
         try {
             await db.query("BEGIN");
-            await db.query(`UPDATE user_reputation SET "rep_points" = "rep_points" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
-            await db.query(`UPDATE user_reputation SET "last_rep_given" = $1, "daily_reps_given" = $2, "weekly_reps_given" = "weekly_reps_given" + 1 WHERE "userID" = $3 AND "guildID" = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
+            try {
+                await db.query(`UPDATE user_reputation SET "rep_points" = "rep_points" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
+                await db.query(`UPDATE user_reputation SET "last_rep_given" = $1, "daily_reps_given" = $2, "weekly_reps_given" = "weekly_reps_given" + 1 WHERE "userID" = $3 AND "guildID" = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
+            } catch(e) {
+                await db.query(`UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userid = $1 AND guildid = $2`, [targetId, guildId]);
+                await db.query(`UPDATE user_reputation SET last_rep_given = $1, daily_reps_given = $2, weekly_reps_given = weekly_reps_given + 1 WHERE userid = $3 AND guildid = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
+            }
             await db.query("COMMIT");
         } catch (e) {
-            await db.query("ROLLBACK");
+            await db.query("ROLLBACK").catch(()=>{});
             throw e;
         }
 
@@ -173,7 +215,6 @@ module.exports = {
             const receiverAvatar = targetMember.user.displayAvatarURL({ extension: 'png', size: 256 });
             const receiverName = targetMember.displayName || targetMember.user.username;
 
-            // نرسل الرقم الجديد المصحح رياضياً لمولد الصورة
             const imageBuffer = await generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'reputation.png' });
 
