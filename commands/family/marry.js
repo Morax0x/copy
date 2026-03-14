@@ -94,7 +94,12 @@ module.exports = {
         try {
             const configRes = await db.query(`SELECT * FROM family_config WHERE "guildID" = $1`, [guildId]);
             familyConfig = configRes.rows[0];
-        } catch(e) {}
+        } catch(e) {
+            try {
+                const configRes = await db.query(`SELECT * FROM family_config WHERE guildid = $1`, [guildId]);
+                familyConfig = configRes.rows[0];
+            } catch(err) {}
+        }
         
         if (!familyConfig || !(familyConfig.maleRole || familyConfig.malerole) || !(familyConfig.femaleRole || familyConfig.femalerole)) {
             return message.reply("🚫 **لم يتم إعداد رتب العائلة!** اطلب من الإدارة استخدام `!set-family-role`.");
@@ -134,25 +139,36 @@ module.exports = {
         }
 
         try {
-            const isParentRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]);
-            if (isParentRes.rows.length > 0) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
+            // 🔥 الحماية المزدوجة لجميع عمليات الفحص 🔥
+            let isParentRes, isChildRes, authorParentsRes, targetParentsRes, authorCountRes, targetCountRes, alreadyMarriedRes;
+            try {
+                isParentRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]);
+                isChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
+                authorParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
+                targetParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
+                authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
+                targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
+                alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE "userID" = $1 AND "partnerID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
+            } catch (e) {
+                isParentRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]);
+                isChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
+                authorParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [message.author.id, guildId]);
+                targetParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [targetMember.id, guildId]);
+                authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [message.author.id, guildId]);
+                targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [targetMember.id, guildId]);
+                alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE userid = $1 AND partnerid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
+            }
 
-            const isChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
+            if (isParentRes.rows.length > 0) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
             if (isChildRes.rows.length > 0) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو ابنك/ابنتك.`);
 
-            const authorParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
             const authorParents = authorParentsRes.rows.map(r => r.parentID || r.parentid);
-            
-            const targetParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
             const targetParents = targetParentsRes.rows.map(r => r.parentID || r.parentid);
             
             const isSibling = authorParents.some(parent => targetParents.includes(parent));
             if (isSibling) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو أخوك/أختك (لديكم نفس الوالدين).`);
 
-            const authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
             const authorCount = Number(authorCountRes.rows[0].count);
-            
-            const targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
             const targetCount = Number(targetCountRes.rows[0].count);
 
             if (isAuthorMale && authorCount >= 4) return replyTemp("🚫 **عـنـدك 4 زوجـات ارقـد**");
@@ -161,17 +177,16 @@ module.exports = {
             if (isTargetMale && targetCount >= 4) return replyTemp(`🚫 **${targetMember.displayName} وصل للحد الأقصى من الزوجات!**`);
             if (isTargetFemale && targetCount >= 1) return replyTemp(`🚫 **${targetMember.displayName} متزوجة بالفعـل!**`);
 
-            const alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE "userID" = $1 AND "partnerID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
             if (alreadyMarriedRes.rows.length > 0) return replyTemp("❌ **أنتم متزوجين بعض أصـلاً!**");
 
         } catch(e) {
-            console.error(e);
+            console.error("Family Check Error:", e);
             return replyTemp("❌ حدث خطأ داخلي أثناء الفحص.");
         }
 
         let authorData = await client.getLevel(message.author.id, guildId);
         if (!authorData || Number(authorData.mora) < dowry) {
-            return replyTemp(`💸 **رصيدك لا يكفي للمهر!** تملك: ${authorData ? Number(authorData.mora) : 0} ${MORA_EMOJI}`);
+            return replyTemp(`💸 **رصيدك لا يكفي للمهر!** تملك: ${authorData ? Number(authorData.mora).toLocaleString() : 0} ${MORA_EMOJI}`);
         }
 
         const row = new ActionRowBuilder().addComponents(
@@ -222,9 +237,11 @@ module.exports = {
                 try {
                     await db.query('BEGIN');
 
+                    // خصم المهر من العريس
                     authorData.mora -= dowry;
                     await client.setLevel(authorData);
 
+                    // إضافة المهر للعروس
                     let targetData = await client.getLevel(targetMember.id, guildId);
                     if (!targetData) targetData = { id: `${guildId}-${targetMember.id}`, user: targetMember.id, guild: guildId, xp: 0, level: 1, mora: 0 };
                     targetData.mora = Number(targetData.mora) || 0;
@@ -232,16 +249,22 @@ module.exports = {
                     await client.setLevel(targetData);
 
                     const now = Date.now();
-                    await db.query(`INSERT INTO marriages ("userID", "partnerID", "marriageDate", "guildID", "dowry") VALUES ($1, $2, $3, $4, $5)`, [message.author.id, targetMember.id, now, guildId, dowry]);
-                    await db.query(`INSERT INTO marriages ("userID", "partnerID", "marriageDate", "guildID", "dowry") VALUES ($1, $2, $3, $4, $5)`, [targetMember.id, message.author.id, now, guildId, dowry]);
+                    // 🔥 الحماية المزدوجة لتسجيل الزواج 🔥
+                    try {
+                        await db.query(`INSERT INTO marriages ("userID", "partnerID", "marriageDate", "guildID", "dowry") VALUES ($1, $2, $3, $4, $5)`, [message.author.id, targetMember.id, now, guildId, dowry]);
+                        await db.query(`INSERT INTO marriages ("userID", "partnerID", "marriageDate", "guildID", "dowry") VALUES ($1, $2, $3, $4, $5)`, [targetMember.id, message.author.id, now, guildId, dowry]);
+                    } catch (e) {
+                        await db.query(`INSERT INTO marriages (userid, partnerid, marriagedate, guildid, dowry) VALUES ($1, $2, $3, $4, $5)`, [message.author.id, targetMember.id, now, guildId, dowry]);
+                        await db.query(`INSERT INTO marriages (userid, partnerid, marriagedate, guildid, dowry) VALUES ($1, $2, $3, $4, $5)`, [targetMember.id, message.author.id, now, guildId, dowry]);
+                    }
 
                     await db.query('COMMIT');
                 } catch (err) {
-                    await db.query('ROLLBACK');
+                    await db.query('ROLLBACK').catch(()=>{});
+                    console.error("Marriage Error:", err);
                     if (err.code === '23505') { 
                         return i.update({ content: `❌ **حدث خطأ:** يبدو أن البيانات مسجلة مسبقاً.`, components: [], embeds: [] });
                     }
-                    console.error(err);
                     return i.update({ content: `❌ **حدث خطأ في قاعدة البيانات.**`, components: [], embeds: [] });
                 }
 
@@ -262,7 +285,7 @@ module.exports = {
 
         collector.on('end', (collected, reason) => {
             if (reason === 'time') {
-                proposalMsg.edit({ content: `⏳ **انتهى الوقت..** يبدو أن ${targetMember.displayName} يفكر/تفكر في الأمر.`, components: [], embeds: [] });
+                proposalMsg.edit({ content: `⏳ **انتهى الوقت..** يبدو أن ${targetMember.displayName} يفكر/تفكر في الأمر.`, components: [], embeds: [] }).catch(()=>{});
             }
         });
     }
