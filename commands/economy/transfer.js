@@ -93,8 +93,14 @@ module.exports = {
         let senderData = await client.getLevel(sender.id, guild.id);
         if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id };
 
+        // 🔥 الحماية المزدوجة لفحص القروض 🔥
         try {
-            const loanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]);
+            let loanRes;
+            try {
+                loanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]);
+            } catch (e) {
+                loanRes = await db.query(`SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2`, [sender.id, guild.id]);
+            }
             const loanData = loanRes.rows[0];
             if (loanData && Number(loanData.remainingAmount || loanData.remainingamount) > 0) {
                 return replyError(`❌ **عذراً!** عليك قرض بقيمة **${Number(loanData.remainingAmount || loanData.remainingamount).toLocaleString()}** مورا.`);
@@ -111,9 +117,15 @@ module.exports = {
 
         if (Number(senderData.mora) < amount) return replyError(`ليس لديك مورا كافية! (رصيدك: ${Number(senderData.mora).toLocaleString()})`);
 
+        // 🔥 الحماية المزدوجة لفحص رتبة ملك الكرم 🔥
         let isPhilanthropistKing = false;
         try {
-            const settingsRes = await db.query(`SELECT "rolePhilanthropist" FROM settings WHERE "guild" = $1`, [guild.id]);
+            let settingsRes;
+            try {
+                settingsRes = await db.query(`SELECT "rolePhilanthropist" FROM settings WHERE "guild" = $1`, [guild.id]);
+            } catch (e) {
+                settingsRes = await db.query(`SELECT rolephilanthropist FROM settings WHERE guild = $1`, [guild.id]);
+            }
             const settings = settingsRes.rows[0];
             const roleId = settings?.rolephilanthropist || settings?.rolePhilanthropist;
             if (roleId && senderMember.roles.cache.has(roleId)) {
@@ -200,6 +212,7 @@ module.exports = {
                 freshSenderData.lastTransfer = Date.now();
 
                 try {
+                    // بداية التحويل الآمن
                     await db.query('BEGIN');
                     await client.setLevel(freshSenderData); 
 
