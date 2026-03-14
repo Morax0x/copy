@@ -49,25 +49,41 @@ module.exports = {
             }
 
             const reply = async (payload) => {
-                if (isSlash) {
-                    return interaction.editReply(payload);
-                } else {
-                    return message.channel.send(payload);
-                }
+                if (isSlash) return interaction.editReply(payload);
+                return message.channel.send(payload);
             };
 
             if (user.id === EMPEROR_ID && commandAuthor.id !== EMPEROR_ID) {
                 return await reply({ files: [EMPEROR_CARD_URL] });
             }
 
-            let data = await client.getLevel(user.id, guild.id);
-
-            if (!data) {
-                data = { mora: 0, bank: 0 };
+            // 🔥 التعديل الجوهري: جلب البيانات الحية مباشرة من قاعدة البيانات 🔥
+            let liveData;
+            try {
+                // نحاول الجلب باستخدام أسماء الأعمدة المحمية
+                const res = await client.sql.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guild.id]);
+                if (res.rows.length > 0) {
+                    liveData = res.rows[0];
+                } else {
+                    // إذا لم يوجد حساب، نستخدم البيانات الافتراضية
+                    liveData = { mora: 0, bank: 0 };
+                }
+            } catch (e) {
+                // Fallback في حال كانت أسماء الأعمدة مختلفة (userid/guildid)
+                const res = await client.sql.query(`SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(() => null);
+                liveData = res?.rows?.[0] || { mora: 0, bank: 0 };
             }
 
-            const safeMora = Number(data.mora) || 0;
-            const safeBank = Number(data.bank) || 0;
+            const safeMora = Number(liveData.mora || liveData.mora) || 0;
+            const safeBank = Number(liveData.bank || liveData.bank) || 0;
+
+            // تحديث الذاكرة المؤقتة (Cache) لكي لا يحدث تضارب في الأوامر الأخرى
+            let cachedData = await client.getLevel(user.id, guild.id);
+            if (cachedData) {
+                cachedData.mora = safeMora;
+                cachedData.bank = safeBank;
+                // لا نحتاج لعمل setLevel هنا لأننا نريد فقط تحديث الذاكرة للعرض
+            }
 
             const canvas = Canvas.createCanvas(1000, 400); 
             const context = canvas.getContext('2d');
@@ -88,7 +104,6 @@ module.exports = {
 
             context.textAlign = 'left';
             context.fillStyle = '#E0B04A'; 
-
             context.font = 'bold 48px "Cairo"'; 
 
             context.fillText(safeMora.toLocaleString(), 335, 235); 
@@ -102,14 +117,9 @@ module.exports = {
             console.error("Error creating balance card:", error);
             const errorPayload = { content: "حدث خطأ أثناء إنشاء بطاقة الرصيد.", ephemeral: true };
             if (isSlash) {
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply(errorPayload);
-                } else {
-                    await interaction.reply(errorPayload);
-                }
-            } else {
-                message.reply(errorPayload.content);
-            }
+                if (interaction.deferred || interaction.replied) await interaction.editReply(errorPayload);
+                else await interaction.reply(errorPayload);
+            } else message.reply(errorPayload.content);
         }
     }
 };
