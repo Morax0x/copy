@@ -85,7 +85,14 @@ module.exports = {
         let taxText = "";
 
         try {
-            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
+            // 🔥 حماية جلب إعدادات رتبة ملك الكازينو 🔥
+            let settingsRes;
+            try {
+                settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
+            } catch (e) {
+                settingsRes = await db.query(`SELECT rolecasinoking FROM settings WHERE guild = $1`, [guildId]);
+            }
+            
             const settings = settingsRes.rows[0];
             const roleId = settings?.rolecasinoking || settings?.roleCasinoKing;
 
@@ -97,7 +104,13 @@ module.exports = {
                     if (casinoTax > 0) {
                         finalAmount -= casinoTax;
                         taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                        await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
+                        
+                        // 🔥 الحماية المزدوجة لإضافة ضريبة الكازينو 🔥
+                        try {
+                            await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
+                        } catch (e) {
+                            await db.query(`UPDATE levels SET bank = bank + $1 WHERE userid = $2 AND guildid = $3`, [casinoTax, king.id, guildId]).catch(()=>{});
+                        }
                     }
                 }
             }
