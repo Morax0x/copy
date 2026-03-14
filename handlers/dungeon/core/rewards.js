@@ -5,11 +5,20 @@ async function handleMemberRetreat(member, floor, db, guildId, thread) {
     const earnedXp = Math.floor(member.loot.xp || 0);
 
     if (db && (earnedMora > 0 || earnedXp > 0)) {
-        // 🛡️ حماية الاستعلام ض د حساسية حالة الأحرف في PostgreSQL
-        try {
-            await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2 WHERE "user" = $3 AND "guild" = $4`, [earnedMora, earnedXp, member.id, guildId]);
-        } catch (e) {
-            await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2 WHERE userid = $3 AND guildid = $4`, [earnedMora, earnedXp, member.id, guildId]).catch(()=>{});
+        // 🔥 استخدام نظام البوت الآمن
+        const client = thread ? thread.client : null;
+        if (client && client.getLevel && client.setLevel) {
+            let pData = await client.getLevel(member.id, guildId);
+            if (!pData) pData = { ...client.defaultData, user: member.id, guild: guildId };
+            pData.mora = (Number(pData.mora) || 0) + earnedMora;
+            pData.xp = (Number(pData.xp) || 0) + earnedXp;
+            await client.setLevel(pData);
+        } else {
+            try {
+                await db.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT), "xp" = COALESCE("xp", 0) + CAST($2 AS BIGINT) WHERE "user" = $3 AND "guild" = $4`, [earnedMora, earnedXp, member.id, guildId]);
+            } catch (e) {
+                await db.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT), xp = COALESCE(xp, 0) + CAST($2 AS BIGINT) WHERE userid = $3 AND guildid = $4`, [earnedMora, earnedXp, member.id, guildId]).catch(()=>{});
+            }
         }
     }
 
@@ -45,11 +54,10 @@ async function handleTeamWipe(players, currentFloor, db, guildId) {
         }
 
         if (db && (finalMora > 0 || finalXp > 0)) {
-            // 🛡️ حماية الاستعلام
             try {
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2 WHERE "user" = $3 AND "guild" = $4`, [finalMora, finalXp, p.id, guildId]);
+                await db.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT), "xp" = COALESCE("xp", 0) + CAST($2 AS BIGINT) WHERE "user" = $3 AND "guild" = $4`, [finalMora, finalXp, p.id, guildId]);
             } catch (e) {
-                await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2 WHERE userid = $3 AND guildid = $4`, [finalMora, finalXp, p.id, guildId]).catch(()=>{});
+                await db.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT), xp = COALESCE(xp, 0) + CAST($2 AS BIGINT) WHERE userid = $3 AND guildid = $4`, [finalMora, finalXp, p.id, guildId]).catch(()=>{});
             }
         }
 
@@ -75,11 +83,10 @@ async function handleLeaderRetreat(players, db, guildId) {
         const earnedXp = Math.floor(p.loot.xp || 0);
 
         if (db && (earnedMora > 0 || earnedXp > 0)) {
-            // 🛡️ حماية الاستعلام
             try {
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2 WHERE "user" = $3 AND "guild" = $4`, [earnedMora, earnedXp, p.id, guildId]);
+                await db.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT), "xp" = COALESCE("xp", 0) + CAST($2 AS BIGINT) WHERE "user" = $3 AND "guild" = $4`, [earnedMora, earnedXp, p.id, guildId]);
             } catch (e) {
-                await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2 WHERE userid = $3 AND guildid = $4`, [earnedMora, earnedXp, p.id, guildId]).catch(()=>{});
+                await db.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT), xp = COALESCE(xp, 0) + CAST($2 AS BIGINT) WHERE userid = $3 AND guildid = $4`, [earnedMora, earnedXp, p.id, guildId]).catch(()=>{});
             }
         }
 
