@@ -24,9 +24,10 @@ module.exports = {
 
         if (message.author.id !== OWNER_ID) return; 
 
+        // دالة بحث ذكية لجلب الآيدي من (منشن - آيدي مباشر - يوزرنيم)
         const resolveUser = async (input) => {
             if (!input) return null;
-            let cleanId = input.replace(/[<@!>]/g, '');
+            let cleanId = input.replace(/[<@!>]/g, '').trim();
             
             try {
                 const user = await client.users.fetch(cleanId);
@@ -49,9 +50,9 @@ module.exports = {
                 .addOptions([
                     { label: 'تزويج إجباري', value: 'force_marry', emoji: '💍' },
                     { label: 'طلاق إجباري', value: 'force_divorce', emoji: '💔' },
-                    { label: 'تبني إجباري', value: 'force_adopt', emoji: '👶' },
+                    { label: 'تبني إجباري (متعدد)', value: 'force_adopt', emoji: '👶' },
                     { label: 'تحرير ابن', value: 'force_disown', emoji: '🦅' },
-                    { label: 'تصفير عضو', value: 'reset_user', emoji: '☢️' }
+                    { label: 'تصفير عضو بالكامل', value: 'reset_user', emoji: '☢️' }
                 ])
         );
 
@@ -80,10 +81,10 @@ module.exports = {
                 modal = new ModalBuilder().setCustomId('modal_force_divorce').setTitle('💔 طلاق إجباري');
                 modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('target').setLabel('الشخص (آيدي/منشن/اسم)').setStyle(TextInputStyle.Short)));
             } else if (choice === 'force_adopt') {
-                modal = new ModalBuilder().setCustomId('modal_force_adopt').setTitle('👶 تبني إجباري');
+                modal = new ModalBuilder().setCustomId('modal_force_adopt').setTitle('👶 تبني إجباري (يقبل المتعدد)');
                 modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('parent').setLabel('الأب (آيدي/منشن/اسم)').setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('child').setLabel('الابن (آيدي/منشن/اسم)').setStyle(TextInputStyle.Short))
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('parent').setLabel('الأب / الأم (آيدي/منشن/اسم)').setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('children').setLabel('الأبناء (ضع مسافة بينهم إذا كانوا أكثر من واحد)').setStyle(TextInputStyle.Paragraph))
                 );
             } else if (choice === 'force_disown') {
                 modal = new ModalBuilder().setCustomId('modal_force_disown').setTitle('🦅 تحرير ابن');
@@ -105,38 +106,80 @@ module.exports = {
                     const u1 = await resolveUser(rawU1);
                     const u2 = await resolveUser(rawU2);
 
-                    if (!u1 || !u2) return submitted.reply({ content: `❌ لم يتم العثور على الأعضاء: ${rawU1} أو ${rawU2}`, ephemeral: true });
-                    if (u1 === u2) return submitted.reply({ content: "❌ نفس الشخص!", ephemeral: true });
+                    if (!u1 || !u2) return submitted.reply({ content: `❌ لم يتم العثور على الأعضاء.`, ephemeral: true });
+                    if (u1 === u2) return submitted.reply({ content: "❌ لا يمكنك تزويج الشخص لنفسه!", ephemeral: true });
 
-                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [u1, u1]);
-                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [u2, u2]);
-                    const now = Date.now();
-                    await db.query("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES ($1, $2, $3, $4)", [u1, u2, guildId, now]);
-                    await db.query("INSERT INTO marriages (userID, partnerID, guildID, marriageDate) VALUES ($1, $2, $3, $4)", [u2, u1, guildId, now]);
-                    await submitted.reply({ content: `✅ **تم تزويج <@${u1}> و <@${u2}> بنجاح!**` });
+                    try {
+                        await db.query(`DELETE FROM marriages WHERE "userID" = $1 OR "partnerID" = $2`, [u1, u1]);
+                        await db.query(`DELETE FROM marriages WHERE "userID" = $1 OR "partnerID" = $2`, [u2, u2]);
+                        const now = Date.now();
+                        await db.query(`INSERT INTO marriages ("userID", "partnerID", "guildID", "marriageDate") VALUES ($1, $2, $3, $4)`, [u1, u2, guildId, now]);
+                        await db.query(`INSERT INTO marriages ("userID", "partnerID", "guildID", "marriageDate") VALUES ($1, $2, $3, $4)`, [u2, u1, guildId, now]);
+                    } catch(e) {
+                        await db.query(`DELETE FROM marriages WHERE userid = $1 OR partnerid = $2`, [u1, u1]).catch(()=>{});
+                        await db.query(`DELETE FROM marriages WHERE userid = $1 OR partnerid = $2`, [u2, u2]).catch(()=>{});
+                        const now = Date.now();
+                        await db.query(`INSERT INTO marriages (userid, partnerid, guildid, marriagedate) VALUES ($1, $2, $3, $4)`, [u1, u2, guildId, now]).catch(()=>{});
+                        await db.query(`INSERT INTO marriages (userid, partnerid, guildid, marriagedate) VALUES ($1, $2, $3, $4)`, [u2, u1, guildId, now]).catch(()=>{});
+                    }
+                    
+                    await submitted.reply({ content: `✅ **تم تزويج <@${u1}> و <@${u2}> غصباً عنهم وبأمر الإمبراطور!**` });
                 }
                 
                 else if (submitted.customId === 'modal_force_divorce') {
                     const rawT = submitted.fields.getTextInputValue('target');
                     const t = await resolveUser(rawT);
-                    if (!t) return submitted.reply({ content: `❌ لم يتم العثور على: ${rawT}`, ephemeral: true });
+                    if (!t) return submitted.reply({ content: `❌ لم يتم العثور على الشخص.`, ephemeral: true });
 
-                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [t, t]);
-                    await submitted.reply({ content: `✅ **تم تطليق <@${t}> من أي شريك.**` });
+                    try {
+                        await db.query(`DELETE FROM marriages WHERE "userID" = $1 OR "partnerID" = $2`, [t, t]);
+                    } catch(e) {
+                        await db.query(`DELETE FROM marriages WHERE userid = $1 OR partnerid = $2`, [t, t]).catch(()=>{});
+                    }
+                    await submitted.reply({ content: `✅ **تم تطليق <@${t}> من أي شريك!**` });
                 }
                 
+                // 🔥 نظام التبني المتعدد المطور 🔥
                 else if (submitted.customId === 'modal_force_adopt') {
                     const rawP = submitted.fields.getTextInputValue('parent');
-                    const rawC = submitted.fields.getTextInputValue('child');
+                    const rawChildren = submitted.fields.getTextInputValue('children');
+                    
                     const p = await resolveUser(rawP);
-                    const c = await resolveUser(rawC);
+                    if (!p) return submitted.reply({ content: `❌ لم يتم العثور على الأب.`, ephemeral: true });
 
-                    if (!p || !c) return submitted.reply({ content: `❌ خطأ في الأعضاء.`, ephemeral: true });
-                    if (p === c) return submitted.reply({ content: "❌ نفس الشخص!", ephemeral: true });
+                    const childrenInputs = rawChildren.split(/\s+/).filter(Boolean);
+                    let successList = [];
+                    let failList = [];
 
-                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [c, guildId]);
-                    await db.query("INSERT INTO children (parentID, childID, adoptDate, guildID) VALUES ($1, $2, $3, $4)", [p, c, Date.now(), guildId]);
-                    await submitted.reply({ content: `✅ **<@${c}> أصبح ابن <@${p}>!**` });
+                    for (const rawC of childrenInputs) {
+                        const c = await resolveUser(rawC);
+                        if (!c) {
+                            failList.push(rawC);
+                            continue;
+                        }
+                        if (p === c) {
+                            failList.push(rawC + " (نفس الشخص)");
+                            continue;
+                        }
+
+                        try {
+                            await db.query(`DELETE FROM children WHERE "childID" = $1 AND "guildID" = $2`, [c, guildId]);
+                            await db.query(`INSERT INTO children ("parentID", "childID", "adoptDate", "guildID") VALUES ($1, $2, $3, $4)`, [p, c, Date.now(), guildId]);
+                            successList.push(`<@${c}>`);
+                        } catch(e) {
+                            try {
+                                await db.query(`DELETE FROM children WHERE childid = $1 AND guildid = $2`, [c, guildId]);
+                                await db.query(`INSERT INTO children (parentid, childid, adoptdate, guildid) VALUES ($1, $2, $3, $4)`, [p, c, Date.now(), guildId]);
+                                successList.push(`<@${c}>`);
+                            } catch(err) { failList.push(rawC + " (خطأ DB)"); }
+                        }
+                    }
+
+                    let replyMsg = `✅ **اكتملت عملية التبني الإمبراطورية:**\n\n`;
+                    if (successList.length > 0) replyMsg += `**تم ضمهم كأبناء لـ <@${p}>:**\n${successList.join(' , ')}\n\n`;
+                    if (failList.length > 0) replyMsg += `**فشل تبني:**\n${failList.join(' , ')}`;
+
+                    await submitted.reply({ content: replyMsg });
                 }
                 
                 else if (submitted.customId === 'modal_force_disown') {
@@ -144,8 +187,12 @@ module.exports = {
                     const c = await resolveUser(rawC);
                     if (!c) return submitted.reply({ content: `❌ لم يتم العثور على العضو.`, ephemeral: true });
 
-                    await db.query("DELETE FROM children WHERE childID = $1 AND guildID = $2", [c, guildId]);
-                    await submitted.reply({ content: `✅ **تم تحرير <@${c}>!**` });
+                    try {
+                        await db.query(`DELETE FROM children WHERE "childID" = $1 AND "guildID" = $2`, [c, guildId]);
+                    } catch(e) {
+                        await db.query(`DELETE FROM children WHERE childid = $1 AND guildid = $2`, [c, guildId]).catch(()=>{});
+                    }
+                    await submitted.reply({ content: `✅ **تم تحرير <@${c}> وطرده من عائلته!**` });
                 }
                 
                 else if (submitted.customId === 'modal_reset_user') {
@@ -153,10 +200,16 @@ module.exports = {
                     const t = await resolveUser(rawT);
                     if (!t) return submitted.reply({ content: `❌ لم يتم العثور على العضو.`, ephemeral: true });
 
-                    await db.query("DELETE FROM marriages WHERE userID = $1 OR partnerID = $2", [t, t]);
-                    await db.query("DELETE FROM children WHERE childID = $1", [t]);
-                    await db.query("DELETE FROM children WHERE parentID = $1", [t]);
-                    await submitted.reply({ content: `✅ **تم تصفير <@${t}> بالكامل!**` });
+                    try {
+                        await db.query(`DELETE FROM marriages WHERE "userID" = $1 OR "partnerID" = $2`, [t, t]);
+                        await db.query(`DELETE FROM children WHERE "childID" = $1`, [t]);
+                        await db.query(`DELETE FROM children WHERE "parentID" = $1`, [t]);
+                    } catch(e) {
+                        await db.query(`DELETE FROM marriages WHERE userid = $1 OR partnerid = $2`, [t, t]).catch(()=>{});
+                        await db.query(`DELETE FROM children WHERE childid = $1`, [t]).catch(()=>{});
+                        await db.query(`DELETE FROM children WHERE parentid = $1`, [t]).catch(()=>{});
+                    }
+                    await submitted.reply({ content: `✅ **تم تصفير ونفي <@${t}> من سجلات العائلة بالكامل!**` });
                 }
 
                 await response.delete().catch(()=>{});
