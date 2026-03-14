@@ -125,9 +125,15 @@ module.exports = {
 
             description.push('\n');
 
-            // 🔥 تم تعديل الاستعلام ليتوافق مع PostgreSQL السحابية
-            const loanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [targetUser.id, guild.id]);
-            const loan = loanRes.rows[0];
+            // 🔥 الحماية المزدوجة لفحص القرض (الـ Fallback) 🔥
+            let loan;
+            try {
+                const loanRes = await db.query(`SELECT * FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [targetUser.id, guild.id]);
+                loan = loanRes.rows[0];
+            } catch (e) {
+                const loanRes = await db.query(`SELECT * FROM user_loans WHERE userid = $1 AND guildid = $2 AND remainingamount > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]}));
+                loan = loanRes.rows[0];
+            }
 
             if (!loan) {
                 description.push(`🏦 **حالة القرض:** (غير مدين)`);
