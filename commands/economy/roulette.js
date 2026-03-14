@@ -137,8 +137,14 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
 
     if (opponents.size > 0) {
         if (bet > MAX_LOAN_BET) {
-            const myLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
-            const myLoan = myLoanRes.rows[0];
+            let myLoan;
+            try {
+                const res = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+                myLoan = res.rows[0];
+            } catch(e) {
+                const res = await db.query(`SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]}));
+                myLoan = res.rows[0];
+            }
             if (myLoan && Number(myLoan.remainingAmount || myLoan.remainingamount) > 0) {
                 const msg = `❌ **عذراً!** عليك قرض. حدك الأقصى في الجماعي **${MAX_LOAN_BET}** ${EMOJI_MORA}.`;
                 if (interaction) await interaction.followUp({ content: msg, ephemeral: true }); else channel.send(msg);
@@ -148,8 +154,14 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
 
         for (const opp of opponents.values()) {
             if (bet > MAX_LOAN_BET) {
-                const oppLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opp.id, guild.id]);
-                const oppLoan = oppLoanRes.rows[0];
+                let oppLoan;
+                try {
+                    const res = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opp.id, guild.id]);
+                    oppLoan = res.rows[0];
+                } catch(e) {
+                    const res = await db.query(`SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2`, [opp.id, guild.id]).catch(()=>({rows:[]}));
+                    oppLoan = res.rows[0];
+                }
                 if (oppLoan && Number(oppLoan.remainingAmount || oppLoan.remainingamount) > 0) {
                     const msg = `❌ اللاعب ${opp} عليه قرض ولا يمكنه المراهنة بأكثر من **${MAX_LOAN_BET}** ${EMOJI_MORA}.`;
                     if (interaction) await interaction.followUp(msg); else channel.send(msg);
@@ -165,7 +177,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             
             const oppData = await client.getLevel(opp.id, guild.id);
             if (!oppData || Number(oppData.mora) < bet) {
-                const msg = `🚫 اللاعب ${opp} مفلس.`;
+                const msg = `🚫 اللاعب ${opp} مفلس أو لا يملك رصيداً كافياً.`;
                 if (interaction) await interaction.followUp(msg); else channel.send(msg);
                 return;
             }
@@ -203,7 +215,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
             
             if (i.customId === 'rl_pvp_decline') {
                 collector.stop('declined');
-                await i.update({ content: `❌ تم الإلغاء.`, embeds: [], components: [] });
+                await i.update({ content: `❌ تم الإلغاء بواسطة <@${i.user.id}>.`, embeds: [], components: [] });
                 return;
             }
             if (i.customId === 'rl_pvp_accept') {
@@ -217,7 +229,7 @@ async function startRoulette(channel, user, member, opponents, bet, client, guil
         collector.on('end', async (c, reason) => {
             if (reason !== 'start') {
                 players.forEach(p => client.activePlayers.delete(p.id));
-                if (reason !== 'declined') inviteMsg.edit({ content: "⏰ انتهى الوقت.", embeds: [], components: [] }).catch(() => {});
+                if (reason !== 'declined') inviteMsg.edit({ content: "⏰ انتهى الوقت ولم يقبل الجميع.", embeds: [], components: [] }).catch(() => {});
                 return;
             }
             for (const p of players) {
@@ -286,8 +298,14 @@ async function playSoloRound(message, user, member, bet, userData, client, db) {
                 
                 let casinoTax = 0;
                 let taxText = "";
-                const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [message.guild.id]);
-                const settings = settingsRes.rows[0];
+                let settings;
+                try {
+                    const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [message.guild.id]);
+                    settings = settingsRes.rows[0];
+                } catch(e) {
+                    const settingsRes = await db.query(`SELECT rolecasinoking FROM settings WHERE guild = $1`, [message.guild.id]).catch(()=>({rows:[]}));
+                    settings = settingsRes.rows[0];
+                }
                 
                 if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !member.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
                     const kingMembers = message.guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
@@ -297,12 +315,16 @@ async function playSoloRound(message, user, member, bet, userData, client, db) {
                         if (casinoTax > 0) {
                             win -= casinoTax;
                             taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                            await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, message.guild.id]);
+                            // 🔥 حماية ضريبة الكازينو
+                            try { await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, message.guild.id]); }
+                            catch(e) { await db.query(`UPDATE levels SET bank = bank + $1 WHERE userid = $2 AND guildid = $3`, [casinoTax, king.id, message.guild.id]).catch(()=>{}); }
                         }
                     }
                 }
 
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [win, user.id, message.guild.id]);
+                // 🔥 حماية أرباح اللاعب
+                try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [win, user.id, message.guild.id]); }
+                catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [win, user.id, message.guild.id]).catch(console.error); }
                 
                 if (updateGuildStat) {
                     updateGuildStat(client, message.guild.id, user.id, 'casino_profit', Math.max(0, win - bet));
@@ -338,8 +360,15 @@ async function playSoloRound(message, user, member, bet, userData, client, db) {
                         
                         let casinoTax = 0;
                         let taxText = "";
-                        const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [message.guild.id]);
-                        const settings = settingsRes.rows[0];
+                        let settings;
+                        try {
+                            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [message.guild.id]);
+                            settings = settingsRes.rows[0];
+                        } catch(e) {
+                            const settingsRes = await db.query(`SELECT rolecasinoking FROM settings WHERE guild = $1`, [message.guild.id]).catch(()=>({rows:[]}));
+                            settings = settingsRes.rows[0];
+                        }
+                        
                         if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !member.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
                             const kingMembers = message.guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
                             if (kingMembers && kingMembers.size > 0) {
@@ -348,12 +377,16 @@ async function playSoloRound(message, user, member, bet, userData, client, db) {
                                 if (casinoTax > 0) {
                                     win -= casinoTax;
                                     taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                    await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, message.guild.id]);
+                                    // 🔥 حماية ضريبة الكازينو
+                                    try { await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, message.guild.id]); }
+                                    catch(e) { await db.query(`UPDATE levels SET bank = bank + $1 WHERE userid = $2 AND guildid = $3`, [casinoTax, king.id, message.guild.id]).catch(()=>{}); }
                                 }
                             }
                         }
 
-                        await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [win, user.id, message.guild.id]);
+                        // 🔥 حماية أرباح اللاعب
+                        try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [win, user.id, message.guild.id]); }
+                        catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [win, user.id, message.guild.id]).catch(console.error); }
                         
                         if (updateGuildStat) {
                             updateGuildStat(client, message.guild.id, user.id, 'casino_profit', Math.max(0, win - bet));
@@ -441,7 +474,9 @@ async function playMultiplayerGame(msg, players, bet, totalPot, client, guild, d
         
         if (winner && maxMult > 1) {
             let finalWinnings = totalPot;
-            await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [finalWinnings, winner.id, guild.id]);
+            // 🔥 حماية أرباح اللاعب الجماعي
+            try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [finalWinnings, winner.id, guild.id]); }
+            catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [finalWinnings, winner.id, guild.id]).catch(console.error); }
 
             const winEmbed = new EmbedBuilder()
                 .setTitle(`🏆 الفائز: ${winner.displayName}`)
@@ -452,7 +487,9 @@ async function playMultiplayerGame(msg, players, bet, totalPot, client, guild, d
         } else {
             const loseEmbed = new EmbedBuilder().setTitle("💀 لا فائز").setDescription(`استرجاع الأموال.`).setColor("Red");
             for (const p of players) {
-                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [bet, p.id, guild.id]);
+                // 🔥 حماية استرجاع الأموال
+                try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [bet, p.id, guild.id]); }
+                catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [bet, p.id, guild.id]).catch(console.error); }
             }
             msg.edit({ embeds: [loseEmbed], components: [] }).catch(()=>{});
         }
