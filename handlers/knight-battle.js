@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ComponentType } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, ComponentType, MessageFlags } = require("discord.js");
 const path = require('path');
 
 let updateGuildStat;
@@ -75,8 +75,14 @@ function buildEffectsString(effects) {
 
 async function getUserRace(member, db) {
     if (!member || !member.guild) return null;
-    const res = await db.query("SELECT roleid, racename FROM race_roles WHERE guildid = $1", [member.guild.id]);
-    const allRaceRoles = res.rows;
+    let allRaceRoles = [];
+    try {
+        const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [member.guild.id]);
+        allRaceRoles = res.rows.map(r => ({ roleid: r.roleID, racename: r.raceName }));
+    } catch (e) {
+        const res = await db.query(`SELECT roleid, racename FROM race_roles WHERE guildid = $1`, [member.guild.id]).catch(()=>({rows:[]}));
+        allRaceRoles = res.rows;
+    }
     if (!member.roles || !member.roles.cache) return null;
     const userRoleIDs = member.roles.cache.map(r => r.id);
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleid)) || null;
@@ -87,25 +93,41 @@ async function getWeaponData(db, member) {
     if (!userRace) return null;
     const weaponConfig = weaponsConfig.find(w => w.race === userRace.racename);
     if (!weaponConfig) return null;
-    const res = await db.query("SELECT * FROM user_weapons WHERE userid = $1 AND guildid = $2 AND racename = $3", [member.id, member.guild.id, userRace.racename]);
-    let userWeapon = res.rows[0];
-    if (!userWeapon || userWeapon.weaponlevel <= 0) return null;
-    const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (userWeapon.weaponlevel - 1));
-    return { ...weaponConfig, currentDamage: damage, currentLevel: userWeapon.weaponlevel };
+    
+    let userWeapon;
+    try {
+        const res = await db.query(`SELECT * FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [member.id, member.guild.id, userRace.racename]);
+        userWeapon = res.rows[0];
+    } catch(e) {
+        const res = await db.query(`SELECT * FROM user_weapons WHERE userid = $1 AND guildid = $2 AND racename = $3`, [member.id, member.guild.id, userRace.racename]).catch(()=>({rows:[]}));
+        userWeapon = res.rows[0];
+    }
+    const weaponLevel = userWeapon ? (userWeapon.weaponLevel || userWeapon.weaponlevel) : 0;
+    if (!weaponLevel || weaponLevel <= 0) return null;
+    const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (weaponLevel - 1));
+    return { ...weaponConfig, currentDamage: damage, currentLevel: weaponLevel };
 }
 
 async function getAllSkillData(db, member) {
     const userRace = await getUserRace(member, db);
     const skillsOutput = {};
-    const res = await db.query("SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2", [member.id, member.guild.id]);
-    const userSkillsData = res.rows;
+    let userSkillsData = [];
+    try {
+        const res = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [member.id, member.guild.id]);
+        userSkillsData = res.rows;
+    } catch(e) {
+        const res = await db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2`, [member.id, member.guild.id]).catch(()=>({rows:[]}));
+        userSkillsData = res.rows;
+    }
       
     if (userSkillsData) {
         userSkillsData.forEach(userSkill => {
-            const skillConfig = skillsConfig.find(s => s.id === userSkill.skillid);
-            if (skillConfig && userSkill.skilllevel > 0) {
-                const effectValue = skillConfig.base_value + (skillConfig.value_increment * (userSkill.skilllevel - 1));
-                skillsOutput[skillConfig.id] = { ...skillConfig, currentLevel: userSkill.skilllevel, effectValue: effectValue };
+            const skillId = userSkill.skillID || userSkill.skillid;
+            const skillLvl = userSkill.skillLevel || userSkill.skilllevel;
+            const skillConfig = skillsConfig.find(s => s.id === skillId);
+            if (skillConfig && skillLvl > 0) {
+                const effectValue = skillConfig.base_value + (skillConfig.value_increment * (skillLvl - 1));
+                skillsOutput[skillConfig.id] = { ...skillConfig, currentLevel: skillLvl, effectValue: effectValue };
             }
         });
     }
@@ -661,10 +683,19 @@ async function startGuardBattle(interaction, client, db, robberMember, amountToS
         }
         activeKnightPlayers.add(robberMember.id);
 
-        const getLevelRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [robberMember.id, interaction.guild.id]);
-        let robberData = getLevelRes.rows[0] || { userid: robberMember.id, guildid: interaction.guild.id, level: 0, mora: 0, bank: 0 };
+        // 🔥 تم تحديث الاستعلام لحماية أسماء الأعمدة في Supabase 🔥
+        let robberData;
+        try {
+            const getLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [robberMember.id, interaction.guild.id]);
+            robberData = getLevelRes.rows[0];
+        } catch(e) {
+            const getLevelRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [robberMember.id, interaction.guild.id]).catch(()=>({rows:[]}));
+            robberData = getLevelRes.rows[0];
+        }
         
-        const pMaxHp = BASE_HP + (robberData.level * HP_PER_LEVEL);
+        if (!robberData) robberData = { user: robberMember.id, guild: interaction.guild.id, level: 0, mora: 0, bank: 0 };
+        
+        const pMaxHp = BASE_HP + ((Number(robberData.level) || 0) * HP_PER_LEVEL);
         let robberWeapon = await getWeaponData(db, robberMember);
         if (!robberWeapon || robberWeapon.currentLevel === 0) {
             robberWeapon = { name: "قبضة يد", currentDamage: 15 };
@@ -678,20 +709,22 @@ async function startGuardBattle(interaction, client, db, robberMember, amountToS
         const guildId = interaction.guild.id;
         const historyId = `${userId}-${guildId}`;
 
-        const historyRes = await db.query("SELECT * FROM knight_history WHERE id = $1", [historyId]);
+        await db.query(`CREATE TABLE IF NOT EXISTS knight_history ("id" TEXT PRIMARY KEY, "count" INTEGER, "lastdate" INTEGER)`).catch(()=>{});
+
+        const historyRes = await db.query(`SELECT * FROM knight_history WHERE "id" = $1`, [historyId]);
         let history = historyRes.rows[0];
         let encounterCount = 1; 
 
         if (history) {
-            if (history.lastdate === todayInt) {
-                encounterCount = history.count + 1; 
-                await db.query("UPDATE knight_history SET count = $1 WHERE id = $2", [encounterCount, historyId]);
+            if (Number(history.lastdate) === todayInt) {
+                encounterCount = Number(history.count) + 1; 
+                await db.query(`UPDATE knight_history SET "count" = $1 WHERE "id" = $2`, [encounterCount, historyId]);
             } else {
                 encounterCount = 1;
-                await db.query("UPDATE knight_history SET count = $1, lastdate = $2 WHERE id = $3", [1, todayInt, historyId]);
+                await db.query(`UPDATE knight_history SET "count" = $1, "lastdate" = $2 WHERE "id" = $3`, [1, todayInt, historyId]);
             }
         } else {
-            await db.query("INSERT INTO knight_history (id, count, lastdate) VALUES ($1, $2, $3)", [historyId, 1, todayInt]);
+            await db.query(`INSERT INTO knight_history ("id", "count", "lastdate") VALUES ($1, $2, $3)`, [historyId, 1, todayInt]);
         }
 
         const multiplier = encounterCount; 
@@ -770,14 +803,23 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
 
     try {
         const client = battleState.message.client;
-        const db = client.db;
+        const db = client.db || client.sql; 
         const playerMemberId = Array.from(battleState.players.keys()).find(id => id !== "guard");
         const player = battleState.players.get(playerMemberId);
         
         activeKnightPlayers.delete(player.member.id);
 
-        const getLevelRes = await db.query("SELECT * FROM levels WHERE userid = $1 AND guildid = $2", [player.member.id, battleState.message.guild.id]);
-        let playerData = getLevelRes.rows[0];
+        // 🔥 تم تحديث الاستعلام للحماية 🔥
+        let playerData;
+        try {
+            const getLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [player.member.id, battleState.message.guild.id]);
+            playerData = getLevelRes.rows[0];
+        } catch(e) {
+            const getLevelRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [player.member.id, battleState.message.guild.id]).catch(()=>({rows:[]}));
+            playerData = getLevelRes.rows[0];
+        }
+        if (!playerData) playerData = { mora: 0, bank: 0 };
+        
         const amount = battleState.amountToSteal;
 
         const embed = new EmbedBuilder();
@@ -786,8 +828,13 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
         await battleState.message.edit({ components: [] }).catch(() => {});
 
         if (resultType === "win") {
-            playerData.mora += amount;
-            await db.query("UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3", [playerData.mora, player.member.id, battleState.message.guild.id]);
+            playerData.mora = (Number(playerData.mora) || 0) + amount;
+            
+            try {
+                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [playerData.mora, player.member.id, battleState.message.guild.id]);
+            } catch(e) {
+                await db.query(`UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3`, [playerData.mora, player.member.id, battleState.message.guild.id]).catch(()=>{});
+            }
             
             const randomWinImage = WIN_IMAGES_LIST[Math.floor(Math.random() * WIN_IMAGES_LIST.length)];
             const randomColor = Colors[Object.keys(Colors)[Math.floor(Math.random() * Object.keys(Colors).length)]];
@@ -797,54 +844,73 @@ async function handleGuardBattleEnd(battleState, winnerId, resultType) {
                  .setDescription(`تمكنت من هزيمة فارس الإمبراطور والفرار بالغنيمة!\n\n💰 **المبلغ المسروق:** ${amount.toLocaleString()} ${EMOJI_MORA}`)
                  .setImage(randomWinImage); 
 
-            try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN knights_defeated INTEGER DEFAULT 0"); } catch(e) {}
-            try { await db.query("ALTER TABLE user_daily_stats ADD COLUMN knight_badge_given INTEGER DEFAULT 0"); } catch(e) {}
+            try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN "knights_defeated" INTEGER DEFAULT 0`); } catch(e) {}
+            try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN "knight_badge_given" INTEGER DEFAULT 0`); } catch(e) {}
 
             const todayStr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" })).toLocaleDateString('en-CA');
             const dailyID = `${player.member.id}-${battleState.message.guild.id}-${todayStr}`;
             
-            await db.query(`
-                INSERT INTO user_daily_stats (id, userid, guildid, date, knights_defeated) 
-                VALUES ($1, $2, $3, $4, 1) 
-                ON CONFLICT(id) DO UPDATE SET knights_defeated = user_daily_stats.knights_defeated + 1
-            `, [dailyID, player.member.id, battleState.message.guild.id, todayStr]);
+            try {
+                await db.query(`
+                    INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "knights_defeated") 
+                    VALUES ($1, $2, $3, $4, 1) 
+                    ON CONFLICT("id") DO UPDATE SET "knights_defeated" = COALESCE(user_daily_stats."knights_defeated", 0) + 1
+                `, [dailyID, player.member.id, battleState.message.guild.id, todayStr]);
+            } catch(e) {}
 
-            const dailyDataRes = await db.query("SELECT knights_defeated, knight_badge_given FROM user_daily_stats WHERE id = $1", [dailyID]);
-            const dailyData = dailyDataRes.rows[0];
+            try {
+                const dailyDataRes = await db.query(`SELECT "knights_defeated", "knight_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyID]);
+                const dailyData = dailyDataRes.rows[0];
 
-            if (dailyData && dailyData.knights_defeated >= 4 && dailyData.knight_badge_given === 0) {
-                await db.query("UPDATE user_daily_stats SET knight_badge_given = 1 WHERE id = $1", [dailyID]);
-                
-                const settingsRes = await db.query("SELECT guildannouncechannelid, roleknightslayer FROM settings WHERE guild = $1", [battleState.message.guild.id]);
-                const settings = settingsRes.rows[0];
-                
-                if (settings && settings.roleknightslayer) {
-                    player.member.roles.add(settings.roleknightslayer).catch(()=>{});
-                }
-
-                if (settings && settings.guildannouncechannelid) {
-                    const announceChannel = battleState.message.guild.channels.cache.get(settings.guildannouncechannelid);
-                    if (announceChannel) {
-                        const badgeEmbed = new EmbedBuilder()
-                            .setTitle('🛡️ انـجـاز يـومـي: قـاهـر الـفـرسـان!')
-                            .setDescription(`🎉 أثبت <@${player.member.id}> قوته الساحقة اليوم!\n\nلقد تمكن من إسقاط **فارس الإمبراطور 4 مرات** في يوم واحد واستحق وسام الشرف بجدارة!`)
-                            .setColor('#C0C0C0')
-                            .setThumbnail(player.member.user.displayAvatarURL());
-                        announceChannel.send({ content: `<@${player.member.id}>`, embeds: [badgeEmbed] }).catch(()=>{});
+                if (dailyData && Number(dailyData.knights_defeated) >= 4 && Number(dailyData.knight_badge_given) === 0) {
+                    await db.query(`UPDATE user_daily_stats SET "knight_badge_given" = 1 WHERE "id" = $1`, [dailyID]);
+                    
+                    let settings;
+                    try {
+                        const settingsRes = await db.query(`SELECT "guildAnnounceChannelID", "roleKnightSlayer" FROM settings WHERE "guild" = $1`, [battleState.message.guild.id]);
+                        settings = settingsRes.rows[0];
+                    } catch (e) {
+                        const settingsRes = await db.query(`SELECT guildannouncechannelid, roleknightslayer FROM settings WHERE guild = $1`, [battleState.message.guild.id]).catch(()=>({rows:[]}));
+                        settings = settingsRes.rows[0];
                     }
-                }
+                    
+                    if (settings && (settings.roleKnightSlayer || settings.roleknightslayer)) {
+                        player.member.roles.add(settings.roleKnightSlayer || settings.roleknightslayer).catch(()=>{});
+                    }
 
-                embed.addFields({ name: '🎖️ إنجاز يومي!', value: 'لقد حصلت على وسام **🛡️ قاهر الفرسان** لليوم!' });
-            }
+                    if (settings && (settings.guildAnnounceChannelID || settings.guildannouncechannelid)) {
+                        const announceChannel = battleState.message.guild.channels.cache.get(settings.guildAnnounceChannelID || settings.guildannouncechannelid);
+                        if (announceChannel) {
+                            const badgeEmbed = new EmbedBuilder()
+                                .setTitle('🛡️ انـجـاز يـومـي: قـاهـر الـفـرسـان!')
+                                .setDescription(`🎉 أثبت <@${player.member.id}> قوته الساحقة اليوم!\n\nلقد تمكن من إسقاط **فارس الإمبراطور 4 مرات** في يوم واحد واستحق وسام الشرف بجدارة!`)
+                                .setColor('#C0C0C0')
+                                .setThumbnail(player.member.user.displayAvatarURL());
+                            announceChannel.send({ content: `<@${player.member.id}>`, embeds: [badgeEmbed] }).catch(()=>{});
+                        }
+                    }
+
+                    embed.addFields({ name: '🎖️ إنجاز يومي!', value: 'لقد حصلت على وسام **🛡️ قاهر الفرسان** لليوم!' });
+                }
+            } catch(e) {}
 
         } else {
-            if (playerData.mora >= amount) playerData.mora -= amount;
+            let pMora = Number(playerData.mora) || 0;
+            let pBank = Number(playerData.bank) || 0;
+            
+            if (pMora >= amount) pMora -= amount;
             else {
-                const remaining = amount - playerData.mora;
-                playerData.mora = 0;
-                playerData.bank = Math.max(0, playerData.bank - remaining);
+                const remaining = amount - pMora;
+                pMora = 0;
+                pBank = Math.max(0, pBank - remaining);
             }
-            await db.query("UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4", [playerData.mora, playerData.bank, player.member.id, battleState.message.guild.id]);
+            
+            try {
+                await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "user" = $3 AND "guild" = $4`, [pMora, pBank, player.member.id, battleState.message.guild.id]);
+            } catch(e) {
+                await db.query(`UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4`, [pMora, pBank, player.member.id, battleState.message.guild.id]).catch(()=>{});
+            }
+            
             embed.setTitle(`💀 هـُزمـت!`).setColor(Colors.DarkRed)
                  .setDescription(` قـتـلـك فارس الإمبراطور... \n\n**الغرامة المدفوعة ✶ :** ${amount.toLocaleString()} ${EMOJI_MORA}`)
                  .setImage(KNIGHT_IMAGES.LOSE);
