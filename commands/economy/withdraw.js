@@ -14,7 +14,7 @@ module.exports = {
     name: 'withdraw',
     aliases: ['سحب', 'with'],
     category: "Economy",
-    cooldown: 5, 
+    cooldown: 3, 
     description: 'سحب المورا من البنك إلى رصيدك الكاش',
 
     async execute(interactionOrMessage, args) {
@@ -29,7 +29,7 @@ module.exports = {
             client = interaction.client;
             user = interaction.user;
             amountArg = interaction.options.getString('المبلغ');
-            await interaction.deferReply();
+            await interaction.deferReply(); 
         } else {
             message = interactionOrMessage;
             guild = message.guild;
@@ -39,95 +39,78 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.channel.send(payload);
-            }
+            if (isSlash) return interaction.editReply(payload);
+            return message.channel.send(payload);
         };
 
         const replyError = async (content) => {
             const payload = { content, ephemeral: true };
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.reply(payload);
-            }
+            if (isSlash) return interaction.editReply(payload);
+            return message.reply(payload);
         };
+
+        if (!amountArg) return replyError(`الاستخدام: \`/سحب <المبلغ | الكل>\``);
 
         const guildId = guild.id;
         const db = client.sql; 
 
+        // تحديث الكاش فقط لضمان وجود الحساب في الذاكرة
         let data = await client.getLevel(user.id, guildId);
-        if (!data) {
-             data = { ...client.defaultData, user: user.id, guild: guildId };
-             await client.setLevel(data); 
-        }
+        if (!data) data = { ...client.defaultData, user: user.id, guild: guildId };
 
-        const userBank = Number(data.bank) || 0;
-        let amountToWithdraw;
+        let amountToWithdraw = 0;
+        let isAll = ['all', 'الكل'].includes(amountArg.toLowerCase());
 
-        if (!amountArg || ['all', 'الكل'].includes(amountArg.toLowerCase())) {
-            amountToWithdraw = userBank;
-        } else {
+        if (!isAll) {
             amountToWithdraw = parseInt(amountArg.replace(/,/g, ''));
-            if (isNaN(amountToWithdraw)) {
-                 return replyError(`الاستخدام: \`/سحب <المبلغ | الكل>\` (المبلغ الذي أدخلته ليس رقماً).`);
+            if (isNaN(amountToWithdraw) || amountToWithdraw <= 0) {
+                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر.`);
             }
-        }
-
-        if (amountToWithdraw <= 0) {
-            return replyError(`ليس لديك أي مورا في البنك لسحبها!`);
-        }
-
-        if (userBank < amountToWithdraw) {
-            return replyError(` <:stop:1436337453098340442> ليس لديك هذا المبلغ في البنك لسحبه! (رصيدك البنكي: ${userBank.toLocaleString()} ${EMOJI_MORA}) `);
         }
 
         try {
             let result;
-            // 🔥 نظام الحماية المزدوج لعملية السحب 🔥
-            try {
-                // المحاولة الأولى (تتوافق مع "user" و "guild")
-                const query1 = `
-                    UPDATE levels 
-                    SET "bank" = "bank" - CAST($1 AS BIGINT), 
-                        "mora" = "mora" + CAST($2 AS BIGINT) 
-                    WHERE "user" = $3 AND "guild" = $4 AND "bank" >= CAST($5 AS BIGINT)
-                    RETURNING "bank", "mora"
-                `;
-                result = await db.query(query1, [String(amountToWithdraw), String(amountToWithdraw), user.id, guildId, String(amountToWithdraw)]);
-            } catch (e) {
-                // المحاولة الثانية (تتوافق مع userid و guildid) في حال فشل الأولى
-                const query2 = `
-                    UPDATE levels 
-                    SET bank = bank - CAST($1 AS BIGINT), 
-                        mora = mora + CAST($2 AS BIGINT) 
-                    WHERE userid = $3 AND guildid = $4 AND bank >= CAST($5 AS BIGINT)
-                    RETURNING bank, mora
-                `;
-                result = await db.query(query2, [String(amountToWithdraw), String(amountToWithdraw), user.id, guildId, String(amountToWithdraw)]);
+            
+            // 🔥 ضربة واحدة (Atomic Query): تحديث وفحص وإرجاع البيانات في أجزاء من الثانية! 🔥
+            if (isAll) {
+                // سحب الكل
+                try {
+                    const q1 = `UPDATE levels SET "mora" = "mora" + "bank", "bank" = 0 WHERE "user" = $1 AND "guild" = $2 AND "bank" > 0 RETURNING "bank", "mora"`;
+                    result = await db.query(q1, [user.id, guildId]);
+                } catch(e) {
+                    const q2 = `UPDATE levels SET mora = mora + bank, bank = 0 WHERE userid = $1 AND guildid = $2 AND bank > 0 RETURNING bank, mora`;
+                    result = await db.query(q2, [user.id, guildId]);
+                }
+            } else {
+                // سحب مبلغ محدد
+                try {
+                    const q1 = `UPDATE levels SET "bank" = "bank" - CAST($1 AS BIGINT), "mora" = "mora" + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3 AND "bank" >= CAST($1 AS BIGINT) RETURNING "bank", "mora"`;
+                    result = await db.query(q1, [String(amountToWithdraw), user.id, guildId]);
+                } catch (e) {
+                    const q2 = `UPDATE levels SET bank = bank - CAST($1 AS BIGINT), mora = mora + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3 AND bank >= CAST($1 AS BIGINT) RETURNING bank, mora`;
+                    result = await db.query(q2, [String(amountToWithdraw), user.id, guildId]);
+                }
             }
 
             if (!result || result.rowCount === 0) {
-                return replyError(`❌ فشلت العملية: يبدو أن رصيدك تغير أثناء المحاولة أو أنه غير كافٍ.`);
+                return replyError(`❌ فشلت العملية: يبدو أن رصيدك البنكي غير كافٍ أو صفر! <:stop:1436337453098340442>`);
             }
 
-            // سحب البيانات المحدثة كـ BigInt لضمان دقتها
             const finalBank = BigInt(result.rows[0].bank || 0);
             const finalMora = BigInt(result.rows[0].mora || 0);
             
-            // تحديث الكاش الداخلي للبوت
+            // تحديث الكاش الداخلي بصمت لكي لا نعطل البوت
             data.bank = String(finalBank);
             data.mora = String(finalMora);
-            if (client.setLevel) await client.setLevel(data);
+
+            const displayAmount = isAll ? "كـل المـبـلـغ" : amountToWithdraw.toLocaleString();
 
             const embed = new EmbedBuilder()
                 .setColor("Random")
                 .setTitle('✶ تـمت عمليـة السحـب !')
                 .setThumbnail(user.displayAvatarURL())
                 .setDescription(
-                    `❖ تـم سـحـب: **${amountToWithdraw.toLocaleString()}** ${EMOJI_MORA}\n` +
+                    `❖ تـم سـحـب: **${displayAmount}** ${EMOJI_MORA}\n` +
                     `❖ رصـيد البـنك: **${finalBank.toLocaleString()}** ${EMOJI_MORA}\n` +
                     `❖ رصـيـدك الكـاش: **${finalMora.toLocaleString()}** ${EMOJI_MORA}`
                 );
@@ -136,7 +119,7 @@ module.exports = {
 
         } catch (error) {
             console.error("Withdraw Error:", error);
-            return replyError("حدث خطأ غير متوقع أثناء عملية السحب.");
+            return replyError("حدث خطأ داخلي أثناء السحب.");
         }
     }
 };
