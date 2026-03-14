@@ -1,33 +1,25 @@
 const { EmbedBuilder } = require('discord.js');
 const { getRandomImage } = require('../utils'); 
-const { 
-    EMOJI_MORA, 
-    EMOJI_XP, 
-    EMOJI_BUFF, 
-    EMOJI_NERF, 
-    WIN_IMAGES, 
-    LOSE_IMAGES 
-} = require('../constants'); 
+const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF, WIN_IMAGES, LOSE_IMAGES } = require('../constants'); 
 
 let updateGuildStat;
-try {
-    ({ updateGuildStat } = require('../../guild-board-handler.js'));
-} catch (e) {}
+try { ({ updateGuildStat } = require('../../guild-board-handler.js')); } catch (e) {}
 
-// 🔥 نظام التحديث الآمن  ورادار الفحص 🔥
-async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context) {
-    console.log(`\n[🕵️ DUNGEON DEBUG - ${context}] Starting update for User: ${userId} | Mora: +${addMora} | XP: +${addXp}`);
+async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, client) {
     if (!db) return;
     try {
         let currentMora = 0, currentXp = 0;
         let useQuotes = true;
+
         try {
             const res = await db.query(`SELECT "mora", "xp" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
             if (res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
+            else await db.query(`INSERT INTO levels ("user", "guild", "mora", "xp", "level") VALUES ($1, $2, 0, 0, 1)`, [userId, guildId]).catch(()=>{});
         } catch (e1) {
             useQuotes = false;
             const res = await db.query(`SELECT mora, xp FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>{});
             if (res && res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
+            else if (res) await db.query(`INSERT INTO levels (userid, guildid, mora, xp, level) VALUES ($1, $2, 0, 0, 1)`, [userId, guildId]).catch(()=>{});
         }
 
         const newMora = currentMora + addMora;
@@ -35,9 +27,13 @@ async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context) {
 
         if (useQuotes) await db.query(`UPDATE levels SET "mora" = $1, "xp" = $2 WHERE "user" = $3 AND "guild" = $4`, [String(newMora), String(newXp), userId, guildId]);
         else await db.query(`UPDATE levels SET mora = $1, xp = $2 WHERE userid = $3 AND guildid = $4`, [String(newMora), String(newXp), userId, guildId]);
-        console.log(`[✅ DUNGEON DEBUG] Successfully updated DB -> New Mora: ${newMora}, New XP: ${newXp}`);
+        
+        // 🔥 مسح الكاش ليظهر الرصيد فوراً 🔥
+        if (client && client.levelCache) {
+            client.levelCache.delete(`${guildId}-${userId}`);
+        }
     } catch (e) {
-        console.error(`[🚨 DUNGEON DEBUG FATAL ERROR]`, e);
+        console.error(`[🚨 DUNGEON ERROR]`, e);
     }
 }
 
@@ -87,6 +83,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         if (p.rewardsClaimed) {
             finalMora = p.finalMora || 0;
             finalXp = p.finalXp || 0;
+            // 🔥 لا نقوم بتحديث الداتابيز هنا لأن اللاعب أخذ جائزته بالفعل عند الانسحاب!
         } else {
             if (status === 'lose' && floor > 20) {
                 finalMora = 1000;
@@ -97,8 +94,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                 if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
             }
             
-            // استخدام الفحص المطور للتوزيع
-            await safeUpdateLevels(sql, p.id, guildId, finalMora, finalXp, "END GAME WIN/LOSE");
+            await safeUpdateLevels(sql, p.id, guildId, finalMora, finalXp, "END GAME", client);
         }
 
         let effectiveEndFloor = floor;
@@ -130,9 +126,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                         ON CONFLICT (userid, guildid) 
                         DO UPDATE SET rep_points = COALESCE(user_reputation.rep_points, 0) + $4
                     `, [p.id, guildId, repReward, repReward]);
-                } catch (err2) {
-                    console.log(`[❌ DUNGEON DEBUG] Failed to add Rep:`, err2.message);
-                }
+                } catch (err2) {}
             }
         }
 
@@ -153,7 +147,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            await safeUpdateLevels(sql, mvpPlayer.id, guildId, 500, 0, "MVP REWARD");
+            await safeUpdateLevels(sql, mvpPlayer.id, guildId, 500, 0, "MVP REWARD", client);
         }
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
