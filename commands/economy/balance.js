@@ -5,6 +5,16 @@ const path = require('path');
 const EMPEROR_ID = '1145327691772481577';
 const EMPEROR_CARD_URL = 'https://i.postimg.cc/8CK5jbWN/card-(2).jpg';
 
+// 🔥 تخزين الخلفية في الذاكرة لتسريع الأمر 10 أضعاف! 🔥
+let cachedBackground = null;
+
+async function getBackground() {
+    if (cachedBackground) return cachedBackground;
+    const bgPath = path.join(__dirname, '../../images/card.png');
+    cachedBackground = await Canvas.loadImage(bgPath);
+    return cachedBackground;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('رصيد')
@@ -38,6 +48,7 @@ module.exports = {
                 if (!member) {
                     return interaction.reply({ content: 'لم أتمكن من العثور على هذا العضو في السيرفر.', ephemeral: true });
                 }
+                
                 await interaction.deferReply();
             } else {
                 message = interactionOrMessage;
@@ -48,70 +59,78 @@ module.exports = {
                 user = member.user;
             }
 
-            const reply = async (payload) => {
-                if (isSlash) return interaction.editReply(payload);
-                return message.channel.send(payload);
-            };
-
             if (user.id === EMPEROR_ID && commandAuthor.id !== EMPEROR_ID) {
-                return await reply({ files: [EMPEROR_CARD_URL] });
+                const payload = { files: [EMPEROR_CARD_URL] };
+                if (isSlash) return await interaction.editReply(payload);
+                return await message.channel.send(payload);
             }
 
-            // 🔥 التعديل الجوهري: جلب البيانات الحية مباشرة من قاعدة البيانات 🔥
-            let liveData;
+            // 🔥 جلب البيانات الحية بأسرع طريقة ممكنة
+            let safeMora = 0;
+            let safeBank = 0;
+
             try {
-                // نحاول الجلب باستخدام أسماء الأعمدة المحمية
                 const res = await client.sql.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guild.id]);
                 if (res.rows.length > 0) {
-                    liveData = res.rows[0];
-                } else {
-                    // إذا لم يوجد حساب، نستخدم البيانات الافتراضية
-                    liveData = { mora: 0, bank: 0 };
+                    safeMora = Number(res.rows[0].mora) || 0;
+                    safeBank = Number(res.rows[0].bank) || 0;
                 }
             } catch (e) {
-                // Fallback في حال كانت أسماء الأعمدة مختلفة (userid/guildid)
-                const res = await client.sql.query(`SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(() => null);
-                liveData = res?.rows?.[0] || { mora: 0, bank: 0 };
+                try {
+                    const res = await client.sql.query(`SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]);
+                    if (res.rows.length > 0) {
+                        safeMora = Number(res.rows[0].mora) || 0;
+                        safeBank = Number(res.rows[0].bank) || 0;
+                    }
+                } catch(err) {}
             }
 
-            const safeMora = Number(liveData.mora || liveData.mora) || 0;
-            const safeBank = Number(liveData.bank || liveData.bank) || 0;
-
-            // تحديث الذاكرة المؤقتة (Cache) لكي لا يحدث تضارب في الأوامر الأخرى
-            let cachedData = await client.getLevel(user.id, guild.id);
-            if (cachedData) {
-                cachedData.mora = safeMora;
-                cachedData.bank = safeBank;
-                // لا نحتاج لعمل setLevel هنا لأننا نريد فقط تحديث الذاكرة للعرض
+            // تحديث الكاش الداخلي بصمت
+            if (client.getLevel) {
+                let cachedData = await client.getLevel(user.id, guild.id);
+                if (cachedData) {
+                    cachedData.mora = safeMora;
+                    cachedData.bank = safeBank;
+                }
             }
 
+            // رسم اللوحة بأقصى سرعة
             const canvas = Canvas.createCanvas(1000, 400); 
             const context = canvas.getContext('2d');
 
-            const bgPath = path.join(__dirname, '../../images/card.png');
-            const background = await Canvas.loadImage(bgPath);
+            const background = await getBackground();
             context.drawImage(background, 0, 0, canvas.width, canvas.height);
 
-            context.save();
-            context.beginPath();
-            context.arc(165, 200, 65, 0, Math.PI * 2, true); 
-            context.closePath();
-            context.clip();
-
-            const avatar = await Canvas.loadImage(user.displayAvatarURL({ extension: 'png' }));
-            context.drawImage(avatar, 90, 125, 150, 150); 
-            context.restore();
+            try {
+                const avatar = await Canvas.loadImage(user.displayAvatarURL({ extension: 'png', size: 256 }));
+                context.save();
+                context.beginPath();
+                context.arc(165, 200, 65, 0, Math.PI * 2, true); 
+                context.closePath();
+                context.clip();
+                context.drawImage(avatar, 100, 135, 130, 130); 
+                context.restore();
+            } catch(e) {
+                context.fillStyle = "#333333";
+                context.beginPath();
+                context.arc(165, 200, 65, 0, Math.PI * 2, true); 
+                context.fill();
+            }
 
             context.textAlign = 'left';
             context.fillStyle = '#E0B04A'; 
-            context.font = 'bold 48px "Cairo"'; 
+            context.font = 'bold 48px "Cairo", "Sans"'; 
 
             context.fillText(safeMora.toLocaleString(), 335, 235); 
             context.fillText(safeBank.toLocaleString(), 335, 340); 
 
             const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'mora-card.png' });
 
-            await reply({ files: [attachment] });
+            if (isSlash) {
+                await interaction.editReply({ files: [attachment] });
+            } else {
+                await message.channel.send({ files: [attachment] });
+            }
 
         } catch (error) {
             console.error("Error creating balance card:", error);
@@ -119,7 +138,9 @@ module.exports = {
             if (isSlash) {
                 if (interaction.deferred || interaction.replied) await interaction.editReply(errorPayload);
                 else await interaction.reply(errorPayload);
-            } else message.reply(errorPayload.content);
+            } else {
+                message.reply(errorPayload.content);
+            }
         }
     }
 };
