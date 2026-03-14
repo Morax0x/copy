@@ -24,9 +24,9 @@ if (typeof pvpCore.getUserActiveSkill !== 'function') pvpCore.getUserActiveSkill
 if (typeof pvpCore.startPveBattle !== 'function') pvpCore.startPveBattle = async (i) => { await i.followUp({ content: "⚠️ حدث خطأ: نظام القتال غير جاهز.", flags: [MessageFlags.Ephemeral] }); };
 
 const fishItems = fishingConfig.fishItems || [];
-const rodsConfig = fishingConfig.rods;
-const boatsConfig = fishingConfig.boats;
-const locationsConfig = fishingConfig.locations;
+const rodsConfig = fishingConfig.rods || [];
+const boatsConfig = fishingConfig.boats || [];
+const locationsConfig = fishingConfig.locations || [];
 const monstersConfig = fishingConfig.monsters || [];
 
 const OWNER_ID = "1145327691772481577";
@@ -168,24 +168,28 @@ module.exports = {
             };
 
             const sendUpdate = async (isFinal = false) => {
-                const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText);
-                const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
-                
-                const updatePayload = {
-                    content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
-                    files: [attachment],
-                    components: isFinal ? [] : [getControlRows()]
-                };
-                
-                if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
-                else await loadingMsg.edit(updatePayload).catch(()=>{});
+                try {
+                    const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText);
+                    const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
+                    
+                    const updatePayload = {
+                        content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
+                        files: [attachment],
+                        components: isFinal ? [] : [getControlRows()]
+                    };
+                    
+                    if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
+                    else await loadingMsg.edit(updatePayload).catch(()=>{});
+                } catch(err) {
+                    console.error("Error generating fishing card:", err);
+                }
             };
 
             await sendUpdate();
 
             const collector = (isSlash ? interactionOrMessage : loadingMsg).createMessageComponentCollector({
                 filter: i => i.user.id === user.id && i.customId.startsWith('fish_'),
-                time: 60000
+                time: 60000 
             });
 
             collector.on('collect', async i => {
@@ -214,7 +218,6 @@ module.exports = {
                 if (gameData.tension < 0) gameData.tension = 0;
                 if (gameData.distance < 0) gameData.distance = 0;
 
-                // 🔥 إرسال التحديث النهائي وانتظاره قبل إيقاف المجمع لمنع تضارب الرسائل 🔥
                 if (gameData.tension >= gameData.maxTension) {
                     gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
                     await sendUpdate(true);
@@ -240,114 +243,124 @@ module.exports = {
             });
 
             collector.on('end', async (collected, reason) => {
-                if (reason === 'time') {
-                    gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
-                    await sendUpdate(true); 
-                }
-                
-                if (reason === 'success') {
-                    const isOwner = user.id === OWNER_ID;
-                    const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
-                    const monsterTriggered = Math.random() < monsterChance;
-                    let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
-                    if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
+                try {
+                    if (reason === 'time') {
+                        gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
+                        await sendUpdate(true); 
+                    }
                     
-                    if (possibleMonsters.length > 0 && monsterTriggered) {
-                        const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        let playerWeapon = await pvpCore.getWeaponData(sql, (isSlash ? interactionOrMessage.member : message.member));
-                        if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
+                    if (reason === 'success') {
+                        const isOwner = user.id === OWNER_ID;
+                        const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
+                        const monsterTriggered = Math.random() < monsterChance;
+                        let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
+                        if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
+                        
+                        if (possibleMonsters.length > 0 && monsterTriggered) {
+                            const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
+                            let playerWeapon = await pvpCore.getWeaponData(sql, (isSlash ? interactionOrMessage.member : message.member));
+                            if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
-                        if (pvpCore.startPveBattle) {
-                            activeFishingSessions.delete(user.id);
-                            const iObject = isSlash ? interactionOrMessage : message;
-                            await pvpCore.startPveBattle(iObject, client, sql, (isSlash ? interactionOrMessage.member : message.member), monster, playerWeapon);
-                            return; 
-                        }
-                    }
-
-                    let isFisherKing = false;
-                    try {
-                        const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
-                        const settings = settingsRes.rows[0];
-                        if (settings && (settings.roleFisherKing || settings.rolefisherking) && (isSlash ? interactionOrMessage.member : message.member).roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
-                            isFisherKing = true;
-                        }
-                    } catch (e) {}
-
-                    let totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
-                    let kingBuffText = "";
-                    if (isFisherKing) {
-                        totalLuck += 20;
-                        kingBuffText = "\n👑 **بركة ملك القنص:** حظ الصيد +20%";
-                    }
-
-                    const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
-                    let caughtFish = [];
-                    let totalValue = 0;
-                    const allowedRarities = currentLocation.fish_types;
-                    const maxRarity = currentRod.max_rarity || 2;
-
-                    // 🔥 تمت إزالة TRANSACTION (BEGIN/COMMIT) لتجنب توقف قاعدة البيانات عند فشل الأعمدة القديمة
-                    for (let k = 0; k < fishCount; k++) {
-                        const rerolls = 1 + Math.floor(totalLuck / 20);
-                        let bestFish = null;
-                        for(let r=0; r<rerolls; r++) {
-                            let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
-                            if (rarity > maxRarity) rarity = maxRarity;
-                            const possibleFishList = fishItems.filter(f => f.rarity === rarity);
-                            if (possibleFishList.length > 0) {
-                                const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
-                                if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
-                                    bestFish = candidate;
-                                }
+                            if (pvpCore.startPveBattle) {
+                                activeFishingSessions.delete(user.id);
+                                const iObject = isSlash ? interactionOrMessage : message;
+                                await pvpCore.startPveBattle(iObject, client, sql, (isSlash ? interactionOrMessage.member : message.member), monster, playerWeapon);
+                                return; 
                             }
                         }
-                        if (bestFish) {
-                            caughtFish.push(bestFish);
-                            totalValue += bestFish.price;
-                            try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]); }
-                            catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [guild.id, user.id, bestFish.id]).catch(()=>{}); }
+
+                        let isFisherKing = false;
+                        try {
+                            const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
+                            const settings = settingsRes.rows[0];
+                            if (settings && (settings.roleFisherKing || settings.rolefisherking) && (isSlash ? interactionOrMessage.member : message.member).roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
+                                isFisherKing = true;
+                            }
+                        } catch (e) {}
+
+                        let totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
+                        let kingBuffText = "";
+                        if (isFisherKing) {
+                            totalLuck += 20;
+                            kingBuffText = "\n👑 **بركة ملك القنص:** حظ الصيد +20%";
+                        }
+
+                        const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
+                        let caughtFish = [];
+                        let totalValue = 0;
+                        const allowedRarities = currentLocation.fish_types || [1, 2];
+                        const maxRarity = currentRod.max_rarity || 2;
+
+                        for (let k = 0; k < fishCount; k++) {
+                            const rerolls = 1 + Math.floor(totalLuck / 20);
+                            let bestFish = null;
+                            for(let r=0; r<rerolls; r++) {
+                                let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
+                                if (rarity > maxRarity) rarity = maxRarity;
+                                const possibleFishList = fishItems.filter(f => f.rarity === rarity);
+                                if (possibleFishList.length > 0) {
+                                    const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
+                                    if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
+                                        bestFish = candidate;
+                                    }
+                                }
+                            }
+                            if (bestFish) {
+                                caughtFish.push(bestFish);
+                                totalValue += bestFish.price;
+                                try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]); }
+                                catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [guild.id, user.id, bestFish.id]).catch(()=>{}); }
+                            }
+                        }
+                        
+                        try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
+                        catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
+                        
+                        if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                            let cache = await client.getLevel(user.id, guild.id);
+                            if (cache) {
+                                cache.mora = String(Number(cache.mora || 0) + totalValue);
+                                await client.setLevel(cache);
+                            }
+                        }
+                        
+                        try {
+                            if (updateGuildStat) await updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
+                        } catch(err) { console.error("Guild Stat Error", err); }
+
+                        const summary = {};
+                        caughtFish.forEach(f => {
+                            summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
+                        });
+
+                        let description = "✶ قمـت بصيـد:\n";
+                        if (caughtFish.length === 0) description += "لا شيء! لم يكن الحظ حليفك هذه المرة.\n";
+                        
+                        for (const [name, info] of Object.entries(summary)) {
+                            let rarityStar = info.rarity >= 5 ? "🌟" : (info.rarity === 4 ? "✨" : "");
+                            description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
+                        }
+                        description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
+                        description += kingBuffText;
+
+                        const resultEmbed = new EmbedBuilder()
+                            .setTitle(`✥ الغنيمــة !`) 
+                            .setDescription(description)
+                            .setColor(Colors.Green)
+                            .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png');
+
+                        // 🔥 التحديث الجذري هنا للإرسال الآمن 🔥
+                        if (isSlash) {
+                            await interactionOrMessage.followUp({ content: `<@${user.id}>`, embeds: [resultEmbed] }).catch(console.error);
+                        } else {
+                            await interactionOrMessage.channel.send({ content: `<@${user.id}>`, embeds: [resultEmbed] }).catch(console.error);
                         }
                     }
-                    
-                    try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
-                    catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
-                    
-                    if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
-                        let cache = await client.getLevel(user.id, guild.id);
-                        if (cache) {
-                            cache.mora = String(Number(cache.mora || 0) + totalValue);
-                            await client.setLevel(cache);
-                        }
-                    }
-                    
-                    if (updateGuildStat) updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
-
-                    const summary = {};
-                    caughtFish.forEach(f => {
-                        summary[f.name] = summary[f.name] ? { count: summary[f.name].count + 1, emoji: f.emoji, rarity: f.rarity } : { count: 1, emoji: f.emoji, rarity: f.rarity };
-                    });
-
-                    let description = "✶ قمـت بصيـد:\n";
-                    for (const [name, info] of Object.entries(summary)) {
-                        let rarityStar = info.rarity >= 5 ? "🌟" : (info.rarity === 4 ? "✨" : "");
-                        description += `✶ ${info.emoji} ${name} ${rarityStar} **x${info.count}**\n`;
-                    }
-                    description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-                    description += kingBuffText;
-
-                    const resultEmbed = new EmbedBuilder()
-                        .setTitle(`✥ الغنيمــة !`) 
-                        .setDescription(description)
-                        .setColor(Colors.Green)
-                        .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png');
-
-                    // 🔥 إرسال الرسالة كرسالة جديدة في الشات لتجنب أخطاء توقف التحديث
-                    const channel = isSlash ? interactionOrMessage.channel : interactionOrMessage.channel;
-                    await channel.send({ content: `<@${user.id}>`, embeds: [resultEmbed] }).catch(console.error);
+                } catch (err) {
+                    console.error("End Event Error in Fish:", err);
+                } finally {
+                    activeFishingSessions.delete(user.id);
                 }
-
-                activeFishingSessions.delete(user.id);
             });
 
         }, waitTime);
