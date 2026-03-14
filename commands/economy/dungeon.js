@@ -3,7 +3,7 @@ const { startDungeon } = require("../../handlers/dungeon-handler.js");
 const { manageTickets } = require("../../handlers/dungeon/utils.js");
 
 const OWNER_ID = "1145327691772481577";
-const COOLDOWN_MS = 1 * 60 * 60 * 1000; 
+const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 🔥 تم زيادة وقت الانتظار إلى 3 ساعات
 
 module.exports = {
     data: new SlashCommandBuilder()
