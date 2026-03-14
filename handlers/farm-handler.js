@@ -235,7 +235,7 @@ async function checkFarmIncome(client, db) {
 
             // 🔥 تنبيه للحيوانات الجائعة التي لم تنتج مورا
             if (hungryAnimalsCount > 0) {
-                description += `\n\n⚠️ **تنبـيه:**${hungryAnimalsCount}** حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
+                description += `\n\n⚠️ تنبـيه:${hungryAnimalsCount} من حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
             }
 
             if (oldDeaths.length > 0) {
