@@ -79,8 +79,16 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                 }
             }
             
-            // 🔥 الإصلاح: إضافة علامات التنصيص
-            await sql.query(`UPDATE levels SET "xp" = "xp" + $1, "mora" = "mora" + $2 WHERE "user" = $3 AND "guild" = $4`, [finalXp, finalMora, p.id, guildId]).catch(()=>{});
+            // 🛡️ حماية إضافة المورا والـ XP
+            try {
+                await sql.query(`UPDATE levels SET "xp" = "xp" + $1, "mora" = "mora" + $2 WHERE "user" = $3 AND "guild" = $4`, [finalXp, finalMora, p.id, guildId]);
+            } catch (err1) {
+                try {
+                    await sql.query(`UPDATE levels SET xp = xp + $1, mora = mora + $2 WHERE userid = $3 AND guildid = $4`, [finalXp, finalMora, p.id, guildId]);
+                } catch (err2) {
+                    console.error(`[End Game] Failed to add Mora/XP to ${p.id}:`, err2.message);
+                }
+            }
         }
 
         let effectiveEndFloor = floor;
@@ -99,15 +107,26 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         }
 
         if (repReward > 0) {
+            // 🛡️ حماية إضافة السمعة
             try {
-                // 🔥 الإصلاح: إضافة علامات التنصيص
                 await sql.query(`
                     INSERT INTO user_reputation ("userID", "guildID", "rep_points") 
                     VALUES ($1, $2, $3) 
                     ON CONFLICT ("userID", "guildID") 
                     DO UPDATE SET "rep_points" = COALESCE(user_reputation."rep_points", 0) + $4
                 `, [p.id, guildId, repReward, repReward]);
-            } catch (err) {}
+            } catch (err1) {
+                try {
+                    await sql.query(`
+                        INSERT INTO user_reputation (userid, guildid, rep_points) 
+                        VALUES ($1, $2, $3) 
+                        ON CONFLICT (userid, guildid) 
+                        DO UPDATE SET rep_points = COALESCE(user_reputation.rep_points, 0) + $4
+                    `, [p.id, guildId, repReward, repReward]);
+                } catch (err2) {
+                    console.error(`[End Game] Failed to add Rep to ${p.id}:`, err2.message);
+                }
+            }
         }
 
         if (updateGuildStat && client) {
@@ -146,8 +165,16 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            // 🔥 الإصلاح: إضافة علامات التنصيص
-            await sql.query(`UPDATE levels SET "mora" = "mora" + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]).catch(()=>{});
+            // 🛡️ حماية مكافأة النجم الإضافية
+            try {
+                await sql.query(`UPDATE levels SET "mora" = "mora" + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]);
+            } catch (e1) {
+                try {
+                    await sql.query(`UPDATE levels SET mora = mora + 500 WHERE userid = $1 AND guildid = $2`, [mvpPlayer.id, guildId]);
+                } catch (e2) {
+                    console.error(`[End Game] Failed to add MVP bonus to ${mvpPlayer.id}:`, e2.message);
+                }
+            }
         }
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
@@ -158,18 +185,34 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         const expiresAt = Date.now() + debuffDuration;
         
         for (const p of allParticipants) {
-            // 🔥 الإصلاح السحري: استخدام علامات التنصيص المزدوجة حول الأسماء لـ PostgreSQL
-            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'mora', -0.15]).catch(()=>{});
-            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'xp', -0.15]).catch(()=>{});
+            try {
+                await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'mora', -0.15]);
+                await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'xp', -0.15]);
+            } catch(e1) {
+                try {
+                    await sql.query(`INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'mora', -0.15]);
+                    await sql.query(`INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, p.id, -15, expiresAt, 'xp', -0.15]);
+                } catch(e2) {
+                    console.error(`[End Game] Failed to add Debuff to ${p.id}:`, e2.message);
+                }
+            }
         }
     }
 
     if (floor >= 10 && status !== 'lose' && status !== 'camp' && mvpPlayer) {
         const buffDuration = 15 * 60 * 1000; 
         const expiresAt = Date.now() + buffDuration;
-        // 🔥 الإصلاح: إضافة علامات التنصيص
-        await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15]).catch(()=>{});
-        await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15]).catch(()=>{});
+        try {
+            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15]);
+            await sql.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15]);
+        } catch(e1) {
+            try {
+                await sql.query(`INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'mora', 0.15]);
+                await sql.query(`INSERT INTO user_buffs (guildid, userid, buffpercent, expiresat, bufftype, multiplier) VALUES ($1, $2, $3, $4, $5, $6)`, [guildId, mvpPlayer.id, 15, expiresAt, 'xp', 0.15]);
+            } catch(e2) {
+                console.error(`[End Game] Failed to add Buff to ${mvpPlayer.id}:`, e2.message);
+            }
+        }
     }
 
     const embed = new EmbedBuilder()
