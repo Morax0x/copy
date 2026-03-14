@@ -1,5 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags, AttachmentBuilder } = require("discord.js");
 const path = require('path');
+
+// استدعاء محرك الرسم الجديد!
+const { generateFishingCard } = require('../../generators/fishing-card-generator.js');
 
 let updateGuildStat;
 try {
@@ -13,7 +16,6 @@ let pvpCore;
 try {
     pvpCore = require(path.join(rootDir, 'handlers', 'pvp-core.js'));
 } catch (e) {
-    console.error("[Fish Cmd] Error loading pvp-core.js:", e.message);
     pvpCore = {}; 
 }
 
@@ -30,29 +32,14 @@ const monstersConfig = fishingConfig.monsters || [];
 const OWNER_ID = "1145327691772481577";
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-const ARROW_GAME_OPTIONS = [
-    { id: 'up', emoji: '⬆️', label: 'فوق' }, 
-    { id: 'down', emoji: '⬇️', label: 'تحت' }, 
-    { id: 'left', emoji: '⬅️', label: 'يسار' }, 
-    { id: 'right', emoji: '➡️', label: 'يمين' }
-];
-
-const FISHING_GIFS = [
-    "https://i.postimg.cc/CMRynd7X/DIYGl5S.gif",
-    "https://i.postimg.cc/kGzfWJJm/e741917b220a9f554ea765a7c4f9294d.gif",
-    "https://i.postimg.cc/VNWG2PRD/original-e9123b1d533d02beb5d566d087247ab5.gif",
-    "https://i.postimg.cc/m2PnkqLb/6b22a575b0c783615c2b77e67951758c.gif",
-    "https://i.postimg.cc/NMbn2v26/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f776174747061642d6d656469612d736572766963652f53746f.gif"
-];
-
 const activeFishingSessions = new Set();
 
 module.exports = {
-    data: new SlashCommandBuilder().setName('صيد').setDescription('ابـدأ رحـلـة صيد'),
+    data: new SlashCommandBuilder().setName('صيد').setDescription('ابـدأ رحـلـة صيد تفاعلية جديدة'),
     name: 'fish',
     aliases: ['صيد', 'ص', 'fishing'],
     category: "Economy",
-    description: "صيد الأسماك مع مواجهات وحوش.",
+    description: "صيد الأسماك بنظام الشد والجذب الرسومي.",
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -74,22 +61,23 @@ module.exports = {
             return reply({ content: "⚠️ **لديك رحلة صيد جارية!** ركز على سنارتك.", ephemeral: true });
         }
 
-        let userDataRes = await sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]);
+        let userDataRes;
+        try { userDataRes = await sql.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [user.id, guild.id]); }
+        catch(e) { userDataRes = await sql.query('SELECT * FROM levels WHERE userid = $1 AND guildid = $2', [user.id, guild.id]).catch(()=>({rows:[]})); }
+        
         let userData = userDataRes.rows[0];
 
         if (!userData) {
             userData = { user: user.id, guild: guild.id, rodLevel: 1, boatLevel: 1, currentLocation: 'beach', lastFish: 0 };
-            await sql.query('INSERT INTO levels ("user", "guild", "rodLevel", "boatLevel", "currentLocation", "lastFish") VALUES ($1, $2, 1, 1, $3, $4)', [user.id, guild.id, 'beach', '0']);
+            try { await sql.query('INSERT INTO levels ("user", "guild", "rodLevel", "boatLevel", "currentLocation", "lastFish") VALUES ($1, $2, 1, 1, $3, $4)', [user.id, guild.id, 'beach', '0']); }
+            catch(e) { await sql.query('INSERT INTO levels (userid, guildid, rodlevel, boatlevel, currentlocation, lastfish) VALUES ($1, $2, 1, 1, $3, $4)', [user.id, guild.id, 'beach', '0']).catch(()=>{}); }
         }
 
         const now = Date.now();
         const nowStr = String(now);
-        // 🔥 تثبيت الكوول داون لساعة كاملة (3600000 مللي ثانية) لجميع اللاعبين!
         const cooldown = 3600000; 
-
         const lastFish = Number(userData.lastFish || userData.lastfish) || 0;
         
-        // التحقق من وقت الانتظار
         if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
             const remaining = lastFish + cooldown - now;
             const minutes = Math.floor((remaining % 3600000) / 60000);
@@ -97,32 +85,25 @@ module.exports = {
             return reply({ content: `⏳ رميت السنارة مؤخراً! الأسماك حذرة الآن، انتظر **${minutes}:${seconds}** دقيقة لتعود للصيد.` });
         }
 
-        const woundedDebuffRes = await sql.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'pvp_wounded' AND "expiresAt" > $3`, [user.id, guild.id, now]);
-        const woundedDebuff = woundedDebuffRes.rows[0];
+        let woundedDebuffRes;
+        try { woundedDebuffRes = await sql.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'pvp_wounded' AND "expiresAt" > $3`, [user.id, guild.id, now]); }
+        catch(e) { woundedDebuffRes = await sql.query(`SELECT expiresat FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'pvp_wounded' AND expiresat > $3`, [user.id, guild.id, now]).catch(()=>({rows:[]})); }
         
+        const woundedDebuff = woundedDebuffRes.rows[0];
         if (woundedDebuff) {
             const minutesLeft = Math.ceil((Number(woundedDebuff.expiresAt || woundedDebuff.expiresat) - now) / 60000);
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
-        // =========================================================================
-        // 🔥 الحل الجذري للثغرة: تحديث قاعدة البيانات + الكاش الداخلي للبوت فوراً
-        // =========================================================================
         if (user.id !== OWNER_ID) {
             try {
-                // 1. تحديث السحابة
                 await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [nowStr, user.id, guild.id]);
-                
-                // 2. تحديث كاش البوت لمنعه من الكتابة فوق السحابة
-                if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
-                    let cacheData = await client.getLevel(user.id, guild.id);
-                    if (cacheData) {
-                        cacheData.lastFish = nowStr;
-                        await client.setLevel(cacheData);
-                    }
-                }
             } catch (err) {
-                console.error("Fish Cooldown Fix Error:", err);
+                await sql.query(`UPDATE levels SET lastfish = $1 WHERE userid = $2 AND guildid = $3`, [nowStr, user.id, guild.id]).catch(()=>{});
+            }
+            if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                let cacheData = await client.getLevel(user.id, guild.id);
+                if (cacheData) { cacheData.lastFish = nowStr; await client.setLevel(cacheData); }
             }
         }
 
@@ -134,9 +115,11 @@ module.exports = {
         let usedBaitName = null;
         let baitLuckBonus = 0;
         
-        const userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
-        const userBaits = userBaitsRes.rows;
+        let userBaitsRes;
+        try { userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+        catch(e) { userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
         
+        const userBaits = userBaitsRes.rows;
         const availableBaits = userBaits.filter(invItem => fishingConfig.baits.some(b => b.id === (invItem.itemID || invItem.itemid) && Number(invItem.quantity) > 0));
 
         if (availableBaits.length > 0) {
@@ -149,168 +132,162 @@ module.exports = {
             usedBaitName = bestBait.name;
             baitLuckBonus = bestBait.luck;
             
-            if (Number(bestBait.quantity) > 1) {
-                await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "id" = $1`, [bestBait.id]);
-            } else {
-                await sql.query(`DELETE FROM user_inventory WHERE "id" = $1`, [bestBait.id]);
+            try {
+                if (Number(bestBait.quantity) > 1) await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "id" = $1`, [bestBait.id]);
+                else await sql.query(`DELETE FROM user_inventory WHERE "id" = $1`, [bestBait.id]);
+            } catch(e) {
+                if (Number(bestBait.quantity) > 1) await sql.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`, [bestBait.id]).catch(()=>{});
+                else await sql.query(`DELETE FROM user_inventory WHERE id = $1`, [bestBait.id]).catch(()=>{});
             }
         }
 
         activeFishingSessions.add(user.id);
         if (isSlash) await interactionOrMessage.deferReply();
 
-        const randomGif = FISHING_GIFS[Math.floor(Math.random() * FISHING_GIFS.length)];
         let desc = `**العدة:** 🎣 ${currentRod.name} | 🚤 ${currentBoat.name}\n🌊 **الموقع:** ${currentLocation.name}`;
-        
-        if (usedBaitName) {
-            desc += `\n🪱 **الطعم:** ${usedBaitName}`;
-        } else {
-            desc += `\n🪱 **الطعم:** لا يوجد`; 
-        }
+        desc += usedBaitName ? `\n🪱 **الطعم:** ${usedBaitName}` : `\n🪱 **الطعم:** لا يوجد`; 
 
-        const waitingEmbed = new EmbedBuilder()
-            .setTitle(`🎣 رحلة صيد: ${currentLocation.name}`)
-            .setDescription(desc + "\n\n🌊 **السنارة في الماء...**\nانتظر... لا تسحب السنارة حتى تشعر بالاهتزاز!")
-            .setColor(Colors.Blue)
-            .setImage(randomGif);
+        const loadingMsg = await reply({ content: `**🌊 يرمي السنارة في الماء...**\n${desc}` });
 
-        const disabledRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('pull_rod_placeholder').setLabel('...').setStyle(ButtonStyle.Secondary).setDisabled(true)
-        );
-
-        let msg;
-        try {
-            msg = await reply({ 
-                embeds: [waitingEmbed], 
-                components: [disabledRow] 
-            });
-        } catch (err) {
-            activeFishingSessions.delete(user.id);
-            return;
-        }
-
-        const waitTime = Math.floor(Math.random() * 3000) + 3500; 
+        // انتظار وهمي لكي تعلق سمكة
+        const waitTime = Math.floor(Math.random() * 3000) + 2000; 
 
         setTimeout(async () => {
-            let requiredSequenceLength = 1; 
-            if (currentRod.level === 2) requiredSequenceLength = 2; 
-            if (currentRod.level >= 3) requiredSequenceLength = 3; 
+            // 🎣 بداية اللعبة المصغرة
+            let gameData = {
+                distance: 100, // المسافة الابتدائية للسمكة
+                tension: 10,   // توتر الخيط الابتدائي
+                statusText: "عـلـقـت سمـكـة! اسـحـب الآن!",
+                maxTension: 100 + (currentRod.level * 10), // السنارة القوية تتحمل توتراً أعلى (تصل لـ 140)
+            };
 
-            const sequence = [];
-            for(let k=0; k<requiredSequenceLength; k++) {
-                sequence.push(ARROW_GAME_OPTIONS[Math.floor(Math.random() * ARROW_GAME_OPTIONS.length)]);
-            }
+            // إنشاء أزرار التحكم
+            const getControlRows = (disabled = false) => {
+                return new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('fish_hard').setLabel('سحب قوي').setStyle(ButtonStyle.Danger).setEmoji('🔴').setDisabled(disabled),
+                    new ButtonBuilder().setCustomId('fish_steady').setLabel('سحب متوازن').setStyle(ButtonStyle.Primary).setEmoji('🟡').setDisabled(disabled),
+                    new ButtonBuilder().setCustomId('fish_relax').setLabel('إرخاء الخيط').setStyle(ButtonStyle.Success).setEmoji('🟢').setDisabled(disabled)
+                );
+            };
 
-            const rowVertical = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fish_click_up`).setEmoji('⬆️').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId(`fish_click_down`).setEmoji('⬇️').setStyle(ButtonStyle.Secondary)
-            );
-            
-            const rowHorizontal = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`fish_click_left`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId(`fish_click_right`).setEmoji('➡️').setStyle(ButtonStyle.Secondary)
-            );
-
-            const sequenceEmojis = sequence.map(s => s.emoji).join('  ');
-            
-            const biteEmbed = new EmbedBuilder()
-                .setTitle("🎣 السنارة تسحب بقوة!")
-                .setDescription(`**وازن السنارة واضغط الأسهم بالترتيب:**\n# ${sequenceEmojis}`)
-                .setColor(Colors.Orange);
-
-            try {
-                const updatePayload = { 
-                    content: `**${sequenceEmojis}**`, 
-                    embeds: [biteEmbed], 
-                    components: [rowVertical, rowHorizontal] 
-                };
-                if (isSlash) await interactionOrMessage.editReply(updatePayload);
-                else await msg.edit(updatePayload);
-            } catch (error) {
-                activeFishingSessions.delete(user.id);
-                return; 
-            }
-
-            let reactionTime = 13000; 
-            
-            if (currentRod.level === 1) {
-                reactionTime = 5000;      
-            } else if (currentRod.level === 2) {
-                reactionTime = 8000;      
-            } else if (currentRod.level >= 3 && currentRod.level <= 4) {
-                reactionTime = 10000;     
-            }
-
-            const pullCollector = msg.createMessageComponentCollector({ 
-                filter: j => j.user.id === user.id && j.customId.startsWith('fish_click_'), 
-                time: reactionTime, 
-                max: requiredSequenceLength 
-            }); 
-
-            let currentStep = 0;
-            let failed = false;
-
-            pullCollector.on('collect', async j => {
-                await j.deferUpdate().catch(()=>{});
+            const sendUpdate = async (isFinal = false) => {
+                // توليد الصورة بناءً على الحالة الحالية
+                const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText);
+                const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
                 
-                if (failed) return; 
+                const updatePayload = {
+                    content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
+                    files: [attachment],
+                    components: [getControlRows(isFinal)]
+                };
+                
+                if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
+                else await loadingMsg.edit(updatePayload).catch(()=>{});
+            };
 
-                const clickedBtnId = j.customId.replace('fish_click_', '');
-                const expectedBtn = sequence[currentStep];
+            await sendUpdate();
 
-                if (clickedBtnId !== expectedBtn.id) {
-                    failed = true;
-                    pullCollector.stop('wrong_input');
-                    
-                    const clickedButtonObj = ARROW_GAME_OPTIONS.find(c => c.id === clickedBtnId);
-                    const wrongEmoji = clickedButtonObj ? clickedButtonObj.emoji : '❓';
-                    
-                    const failEmbed = new EmbedBuilder()
-                        .setTitle("❌ انقطع الخيط!")
-                        .setDescription(`ضغطت ${wrongEmoji} والمطلوب كان ${expectedBtn.emoji}\nحاول التركيز أكثر!`)
-                        .setColor(Colors.Red);
-                    
-                    activeFishingSessions.delete(user.id);
-                    await j.editReply({ content: '', embeds: [failEmbed], components: [] }).catch(()=>{});
+            const collector = (isSlash ? interactionOrMessage : loadingMsg).createMessageComponentCollector({
+                filter: i => i.user.id === user.id && i.customId.startsWith('fish_'),
+                time: 30000 // 30 ثانية للصيد كحد أقصى
+            });
+
+            collector.on('collect', async i => {
+                await i.deferUpdate().catch(()=>{});
+
+                // منطق أزرار الصيد
+                if (i.customId === 'fish_hard') {
+                    gameData.distance -= Math.floor(Math.random() * 15) + 15; // يسحب من 15 لـ 30 متر
+                    gameData.tension += Math.floor(Math.random() * 20) + 20; // يزيد التوتر من 20 لـ 40
+                    gameData.statusText = "سحب عنيف! الخيط يهتز!";
+                } else if (i.customId === 'fish_steady') {
+                    gameData.distance -= Math.floor(Math.random() * 10) + 5; // يسحب 5 لـ 15 متر
+                    gameData.tension += Math.floor(Math.random() * 10) + 5; // يزيد التوتر من 5 لـ 15
+                    gameData.statusText = "سحب متوازن.. السمكة تقترب.";
+                } else if (i.customId === 'fish_relax') {
+                    gameData.distance += Math.floor(Math.random() * 15) + 5; // السمكة تبتعد
+                    gameData.tension -= Math.floor(Math.random() * 30) + 20; // التوتر يقل جداً
+                    gameData.statusText = "إرخاء الخيط! السمكة تبتعد لتستريح.";
+                }
+
+                // ذكاء السمكة (مقاومة عشوائية بعد كل ضغطة)
+                const fishAI = Math.random();
+                if (fishAI > 0.6) {
+                    gameData.tension += 15;
+                    gameData.statusText += " (السمكة تقاوم بشدة!)";
+                }
+
+                // تأمين القيم
+                if (gameData.tension < 0) gameData.tension = 0;
+                if (gameData.distance < 0) gameData.distance = 0;
+
+                // التحقق من الخسارة (انقطاع الخيط أو هروب السمكة)
+                if (gameData.tension >= gameData.maxTension) {
+                    gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
+                    collector.stop('snapped');
+                    await sendUpdate(true);
+                    return;
+                }
+                
+                if (gameData.distance >= 120) {
+                    gameData.statusText = "💨 السمكة ابتعدت جداً وأفلتت السنارة!";
+                    collector.stop('escaped');
+                    await sendUpdate(true);
                     return;
                 }
 
-                currentStep++;
+                // التحقق من الفوز (المسافة وصلت 0)
+                if (gameData.distance <= 0) {
+                    gameData.statusText = "✅ تم الصيد بنجاح!";
+                    collector.stop('success');
+                    await sendUpdate(true);
+                    return;
+                }
+
+                // تحديث الصورة العادية
+                await sendUpdate();
+            });
+
+            collector.on('end', async (collected, reason) => {
+                if (reason === 'time') {
+                    gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
+                    await sendUpdate(true);
+                }
                 
-                if (currentStep === requiredSequenceLength) {
-                    pullCollector.stop('success');
-                    
+                if (reason === 'success') {
+                    // ====== إعطاء الجوائز (الكود القديم الخاص بالأسماك يعمل هنا) ======
                     const isOwner = user.id === OWNER_ID;
                     const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
                     const monsterTriggered = Math.random() < monsterChance;
                     let possibleMonsters = monstersConfig.filter(m => m.locations.includes(locationId));
                     if (isOwner && possibleMonsters.length === 0) possibleMonsters = monstersConfig; 
                     
+                    // تحدي الوحوش (PVE)
                     if (possibleMonsters.length > 0 && monsterTriggered) {
                         const monster = possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
-                        let playerWeapon = await pvpCore.getWeaponData(sql, j.member);
+                        let playerWeapon = await pvpCore.getWeaponData(sql, (isSlash ? interactionOrMessage.member : message.member));
                         if (!playerWeapon || playerWeapon.currentLevel === 0) playerWeapon = { name: "سكين صيد صدئة", currentDamage: 15, currentLevel: 1 };
 
                         if (pvpCore.startPveBattle) {
                             activeFishingSessions.delete(user.id);
-                            await j.editReply({ content: '' }).catch(()=>{}); 
-                            await pvpCore.startPveBattle(j, client, sql, j.member, monster, playerWeapon);
+                            const iObject = isSlash ? interactionOrMessage : message;
+                            await pvpCore.startPveBattle(iObject, client, sql, (isSlash ? interactionOrMessage.member : message.member), monster, playerWeapon);
                             return; 
                         }
                     }
 
+                    // جوائز الأسماك العادية
                     let isFisherKing = false;
                     try {
                         const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
                         const settings = settingsRes.rows[0];
-                        if (settings && (settings.roleFisherKing || settings.rolefisherking) && j.member.roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
+                        if (settings && (settings.roleFisherKing || settings.rolefisherking) && (isSlash ? interactionOrMessage.member : message.member).roles.cache.has(settings.roleFisherKing || settings.rolefisherking)) {
                             isFisherKing = true;
                         }
                     } catch (e) {}
 
                     let totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
                     let kingBuffText = "";
-                    
                     if (isFisherKing) {
                         totalLuck += 20;
                         kingBuffText = "\n👑 **بركة ملك القنص:** حظ الصيد +20%";
@@ -342,30 +319,27 @@ module.exports = {
                             if (bestFish) {
                                 caughtFish.push(bestFish);
                                 totalValue += bestFish.price;
-                                await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]);
+                                try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]); }
+                                catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [guild.id, user.id, bestFish.id]).catch(()=>{}); }
                             }
                         }
                         
-                        // 🔥 تحديث المورا مع تحويلها لـ BIGINT لحماية الداتابيس
-                        await sql.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]);
+                        try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
+                        catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
                         
-                        // تحديث كاش البوت لزيادة المورا حتى لا تُمسح
                         if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
                             let cache = await client.getLevel(user.id, guild.id);
                             if (cache) {
-                                cache.mora = String(BigInt(cache.mora || 0) + BigInt(totalValue));
+                                cache.mora = String(Number(cache.mora || 0) + totalValue);
                                 await client.setLevel(cache);
                             }
                         }
                         
-                        if (updateGuildStat) {
-                            updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
-                        }
+                        if (updateGuildStat) updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
                         
                         await sql.query("COMMIT");
                     } catch (e) {
-                        await sql.query("ROLLBACK");
-                        console.error("Fish DB Error:", e);
+                        await sql.query("ROLLBACK").catch(()=>{});
                     }
 
                     const summary = {};
@@ -382,32 +356,16 @@ module.exports = {
                     description += kingBuffText;
 
                     const resultEmbed = new EmbedBuilder()
-                        .setTitle(`✥ رحـلـة صيـد فـي المحيـط !`) 
+                        .setTitle(`✥ الغنيمــة !`) 
                         .setDescription(description)
                         .setColor(Colors.Green)
-                        .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png')
-                        .setFooter({ text: `السنارة: ${currentRod.name}` });
+                        .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png');
 
-                    activeFishingSessions.delete(user.id);
-                    await j.editReply({ content: '', embeds: [resultEmbed], components: [] }).catch(()=>{});
+                    if (isSlash) await interactionOrMessage.followUp({ embeds: [resultEmbed] }).catch(()=>{});
+                    else await interactionOrMessage.channel.send({ embeds: [resultEmbed] }).catch(()=>{});
                 }
-            });
 
-            pullCollector.on('end', async (collected, reason) => {
-                try {
-                    if (reason !== 'success' && reason !== 'wrong_input') {
-                        const failEmbed = new EmbedBuilder()
-                            .setTitle("💨 هربت السمكة!")
-                            .setDescription("كنت بطيئاً جداً! حاول أن تكون أسرع في المرة القادمة.)")
-                            .setColor(Colors.Red);
-                        
-                        const failPayload = { content: '', embeds: [failEmbed], components: [] };
-                        if (isSlash) await interactionOrMessage.editReply(failPayload).catch(() => {});
-                        else await msg.edit(failPayload).catch(() => {});
-                    }
-                } finally {
-                    activeFishingSessions.delete(user.id);
-                }
+                activeFishingSessions.delete(user.id);
             });
 
         }, waitTime);
