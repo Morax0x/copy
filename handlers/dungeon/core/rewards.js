@@ -5,7 +5,7 @@ async function handleMemberRetreat(member, floor, db, guildId, thread) {
     const earnedXp = Math.floor(member.loot.xp || 0);
 
     if (db && (earnedMora > 0 || earnedXp > 0)) {
-        // 🛡️ حماية الاستعلام ضد حساسية حالة الأحرف في PostgreSQL
+        // 🛡️ حماية الاستعلام ض د حساسية حالة الأحرف في PostgreSQL
         try {
             await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2 WHERE "user" = $3 AND "guild" = $4`, [earnedMora, earnedXp, member.id, guildId]);
         } catch (e) {
