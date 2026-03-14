@@ -142,7 +142,7 @@ module.exports = {
                 if (todayMessages < 20) {
                     const msgEmbed = new EmbedBuilder()
                         .setTitle('✥ لا تسـتوفـي شـروط التزكيـة ..')
-                        .setDescription('✦ يجـب ان تكـون متفـاعـل بالدردشـة لهـذا اليوم (20 رسالة على الأقل)')
+                        .setDescription('✦ يجـب ان تكـون متفـاعـل بالدردشـة لهـذا اليوم')
                         .setThumbnail('https://i.postimg.cc/mrLwL056/ayqwnt-(3).png')
                         .setColor(getRandomColor());
                     return message.reply({ embeds: [msgEmbed] });
@@ -156,7 +156,7 @@ module.exports = {
             const nextRepTime = getNextResetTime();
             const cooldownEmbed = new EmbedBuilder()
                 .setTitle('✥ استفـدت صـوتـك لهـذا اليـوم .. ⏳')
-                .setDescription(`✦ يمـكنـك التـزكيـة مـجـددًا: <t:${nextRepTime}:R>`)
+                .setDescription(`✦ يمـكنـك التـزكيـة مـجـددًا:\n ✦<t:${nextRepTime}:R>`)
                 .setThumbnail('https://i.postimg.cc/66YzP12B/ayqwnt-(2).png')
                 .setColor(getRandomColor());
             return message.reply({ embeds: [cooldownEmbed] });
