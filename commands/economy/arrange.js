@@ -95,8 +95,15 @@ module.exports = {
 
         const startGame = async (finalBetAmount) => {
             try {
-                const userCheckRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
-                const userCheck = userCheckRes.rows[0];
+                // 🔥 حماية استعلام فحص الرصيد
+                let userCheck;
+                try {
+                    const userCheckRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+                    userCheck = userCheckRes.rows[0];
+                } catch(e) {
+                    const userCheckRes = await db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]}));
+                    userCheck = userCheckRes.rows[0];
+                }
                 
                 if (userCheck && Number(userCheck.mora) < finalBetAmount && !betArg) {
                      finalBetAmount = Number(userCheck.mora);
@@ -112,13 +119,20 @@ module.exports = {
                     return replyError(`❌ **الحد الأدنى للرهان هو ${MIN_BET} ${MORA_EMOJI}**`);
                 }
 
-                await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [finalBetAmount, userId, guildId]);
+                // 🔥 حماية خصم الرهان من الرصيد
+                try {
+                    await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [finalBetAmount, userId, guildId]);
+                } catch(e) {
+                    await db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [finalBetAmount, userId, guildId]).catch(console.error);
+                }
 
                 if (userId !== OWNER_ID) cooldowns.set(userId, Date.now());
                 
                 try {
                     await db.query(`UPDATE levels SET "lastArrange" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), userId, guildId]);
-                } catch (e) {}
+                } catch (e) {
+                    await db.query(`UPDATE levels SET lastArrange = $1 WHERE userid = $2 AND guildid = $3`, [Date.now(), userId, guildId]).catch(()=>{});
+                }
 
                 const numbersCount = 9;
                 const randomNumbers = new Set();
@@ -181,8 +195,16 @@ module.exports = {
                             let casinoTax = 0;
                             let taxText = "";
 
-                            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
-                            const settings = settingsRes.rows[0];
+                            // 🔥 حماية إعدادات الكازينو
+                            let settings;
+                            try {
+                                const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
+                                settings = settingsRes.rows[0];
+                            } catch(e) {
+                                const settingsRes = await db.query(`SELECT rolecasinoking FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]}));
+                                settings = settingsRes.rows[0];
+                            }
+
                             if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !memberObj.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
                                 const kingMembers = guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
                                 if (kingMembers && kingMembers.size > 0) {
@@ -191,7 +213,12 @@ module.exports = {
                                     if (casinoTax > 0) {
                                         profit -= casinoTax;
                                         taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                        await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
+                                        // 🔥 حماية إضافة ضريبة الملك
+                                        try {
+                                            await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
+                                        } catch(e) {
+                                            await db.query(`UPDATE levels SET bank = bank + $1 WHERE userid = $2 AND guildid = $3`, [casinoTax, king.id, guildId]).catch(()=>{});
+                                        }
                                     }
                                 }
                             }
@@ -202,7 +229,12 @@ module.exports = {
                             let buffText = "";
                             if (buffOnlyPercent > 0) buffText = ` (+${buffOnlyPercent}%)`; 
 
-                            await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrize, userId, guildId]);
+                            // 🔥 حماية إضافة أرباح اللاعب (السبب الرئيسي للمشكلة)
+                            try {
+                                await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrize, userId, guildId]);
+                            } catch(e) {
+                                await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalPrize, userId, guildId]).catch(console.error);
+                            }
 
                             if (updateGuildStat) {
                                 updateGuildStat(client, guildId, userId, 'casino_profit', profit);
@@ -312,8 +344,15 @@ module.exports = {
             return startGame(finalBetAmount);
         }
 
-        let userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
-        let userData = userDataRes.rows[0];
+        // 🔥 حماية استعلام الرصيد الافتراضي
+        let userData;
+        try {
+            const userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+            userData = userDataRes.rows[0];
+        } catch(e) {
+            const userDataRes = await db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]}));
+            userData = userDataRes.rows[0];
+        }
         
         if (!userData || Number(userData.mora) < MIN_BET) {
             clearActive();
