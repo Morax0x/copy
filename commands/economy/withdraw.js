@@ -8,8 +8,8 @@ module.exports = {
         .setDescription('سحب المورا من البنك إلى رصيدك (الكاش).')
         .addStringOption(option =>
             option.setName('المبلغ')
-            .setDescription('المبلغ الذي تريد سحبه أو "all" / "الكل"')
-            .setRequired(true)),
+            .setDescription('المبلغ الذي تريد سحبه (اتركه فارغاً لسحب الكل)')
+            .setRequired(false)), // 🔥 جعلنا الخيار اختيارياً لكي يسحب الكل تلقائياً 🔥
 
     name: 'withdraw',
     aliases: ['سحب', 'with'],
@@ -49,8 +49,6 @@ module.exports = {
             return message.reply(payload);
         };
 
-        if (!amountArg) return replyError(`الاستخدام: \`/سحب <المبلغ | الكل>\``);
-
         const guildId = guild.id;
         const db = client.sql; 
 
@@ -59,12 +57,17 @@ module.exports = {
         if (!data) data = { ...client.defaultData, user: user.id, guild: guildId };
 
         let amountToWithdraw = 0;
-        let isAll = ['all', 'الكل'].includes(amountArg.toLowerCase());
+        
+        // 🔥 التعديل هنا: إذا لم يكتب رقم أو كتب "الكل"، سيسحب الرصيد بالكامل 🔥
+        let isAll = false;
+        if (!amountArg || ['all', 'الكل'].includes(amountArg.toLowerCase())) {
+            isAll = true;
+        }
 
         if (!isAll) {
             amountToWithdraw = parseInt(amountArg.replace(/,/g, ''));
             if (isNaN(amountToWithdraw) || amountToWithdraw <= 0) {
-                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر.`);
+                 return replyError(`❌ الرجاء إدخال مبلغ صحيح أكبر من صفر، أو اترك الأمر فارغاً لسحب الكل.`);
             }
         }
 
