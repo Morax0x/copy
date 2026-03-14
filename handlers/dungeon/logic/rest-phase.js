@@ -143,7 +143,6 @@ async function handleRestMenu(context) {
                 return decCollector.stop('continue');
             }
 
-            // 🔥 التعديل والحماية في زر نصب الخيمة 🔥
             if (i.customId === 'camp') {
                 let p = players.find(pl => pl.id === i.user.id);
                 if (!p || p.class !== 'Leader') return i.reply({ content: "⛺ **فقط القائد يمكنه نصب الخيمة!**", flags: [MessageFlags.Ephemeral] });
@@ -160,7 +159,6 @@ async function handleRestMenu(context) {
 
                 const nextFloor = floor + 1;
                 
-                // 🛡️ الاستعلام المحمي والمتوافق تماماً مع PRIMARY KEY لجدولك
                 try {
                     await db.query(`
                         INSERT INTO dungeon_saves ("hostID", "guildID", "floor", "timestamp") 
