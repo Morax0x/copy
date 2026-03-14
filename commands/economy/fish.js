@@ -23,7 +23,7 @@ if (typeof pvpCore.getWeaponData !== 'function') pvpCore.getWeaponData = () => (
 if (typeof pvpCore.getUserActiveSkill !== 'function') pvpCore.getUserActiveSkill = () => null;
 if (typeof pvpCore.startPveBattle !== 'function') pvpCore.startPveBattle = async (i) => { await i.followUp({ content: "⚠️ حدث خطأ: نظام القتال غير جاهز.", flags: [MessageFlags.Ephemeral] }); };
 
-const fishItems = fishingConfig.fishItems;
+const fishItems = fishingConfig.fishItems || [];
 const rodsConfig = fishingConfig.rods;
 const boatsConfig = fishingConfig.boats;
 const locationsConfig = fishingConfig.locations;
@@ -95,7 +95,6 @@ module.exports = {
             return reply({ content: `🩹 | أنت **جريح** حالياً! عليك الراحة لمدة **${minutesLeft}** دقيقة.`, flags: [MessageFlags.Ephemeral] });
         }
 
-        // 🔥 تسجيل الكولداون فورا بمجرد استخدام الأمر لمنع الاستغلال 🔥
         if (user.id !== OWNER_ID) {
             try {
                 await sql.query(`UPDATE levels SET "lastFish" = $1 WHERE "user" = $2 AND "guild" = $3`, [nowStr, user.id, guild.id]);
@@ -153,7 +152,6 @@ module.exports = {
         const waitTime = Math.floor(Math.random() * 3000) + 2000; 
 
         setTimeout(async () => {
-            // 🎣 بداية اللعبة المصغرة
             let gameData = {
                 distance: 100, 
                 tension: 10,   
@@ -176,7 +174,7 @@ module.exports = {
                 const updatePayload = {
                     content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
                     files: [attachment],
-                    components: isFinal ? [] : [getControlRows()] // 🔥 إخفاء الأزرار بالكامل إذا كانت اللعبة منتهية
+                    components: isFinal ? [] : [getControlRows()]
                 };
                 
                 if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
@@ -187,7 +185,7 @@ module.exports = {
 
             const collector = (isSlash ? interactionOrMessage : loadingMsg).createMessageComponentCollector({
                 filter: i => i.user.id === user.id && i.customId.startsWith('fish_'),
-                time: 60000 // 🔥 زيادة الوقت إلى 60 ثانية لتوفير تجربة لعب أفضل
+                time: 60000
             });
 
             collector.on('collect', async i => {
@@ -216,24 +214,25 @@ module.exports = {
                 if (gameData.tension < 0) gameData.tension = 0;
                 if (gameData.distance < 0) gameData.distance = 0;
 
+                // 🔥 إرسال التحديث النهائي وانتظاره قبل إيقاف المجمع لمنع تضارب الرسائل 🔥
                 if (gameData.tension >= gameData.maxTension) {
                     gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
+                    await sendUpdate(true);
                     collector.stop('snapped');
-                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
                 
                 if (gameData.distance >= 120) {
                     gameData.statusText = "💨 السمكة ابتعدت جداً وأفلتت السنارة!";
+                    await sendUpdate(true);
                     collector.stop('escaped');
-                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
 
                 if (gameData.distance <= 0) {
                     gameData.statusText = "✅ تم الصيد بنجاح!";
+                    await sendUpdate(true);
                     collector.stop('success');
-                    await sendUpdate(true); // إرسال تحديث نهائي وإخفاء الأزرار
                     return;
                 }
 
@@ -243,11 +242,10 @@ module.exports = {
             collector.on('end', async (collected, reason) => {
                 if (reason === 'time') {
                     gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
-                    await sendUpdate(true); // إخفاء الأزرار
+                    await sendUpdate(true); 
                 }
                 
                 if (reason === 'success') {
-                    // ====== إعطاء الجوائز ======
                     const isOwner = user.id === OWNER_ID;
                     const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
                     const monsterTriggered = Math.random() < monsterChance;
@@ -289,51 +287,41 @@ module.exports = {
                     const allowedRarities = currentLocation.fish_types;
                     const maxRarity = currentRod.max_rarity || 2;
 
-                    try {
-                        await sql.query("BEGIN");
-                        
-                        for (let k = 0; k < fishCount; k++) {
-                            const rerolls = 1 + Math.floor(totalLuck / 20);
-                            let bestFish = null;
-                            for(let r=0; r<rerolls; r++) {
-                                let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
-                                if (rarity > maxRarity) rarity = maxRarity;
-                                const possibleFishList = fishItems.filter(f => f.rarity === rarity);
-                                if (possibleFishList.length > 0) {
-                                    const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
-                                    if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
-                                        bestFish = candidate;
-                                    }
+                    // 🔥 تمت إزالة TRANSACTION (BEGIN/COMMIT) لتجنب توقف قاعدة البيانات عند فشل الأعمدة القديمة
+                    for (let k = 0; k < fishCount; k++) {
+                        const rerolls = 1 + Math.floor(totalLuck / 20);
+                        let bestFish = null;
+                        for(let r=0; r<rerolls; r++) {
+                            let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
+                            if (rarity > maxRarity) rarity = maxRarity;
+                            const possibleFishList = fishItems.filter(f => f.rarity === rarity);
+                            if (possibleFishList.length > 0) {
+                                const candidate = possibleFishList[Math.floor(Math.random() * possibleFishList.length)];
+                                if (!bestFish || (candidate.rarity > bestFish.rarity || (candidate.rarity === bestFish.rarity && candidate.price > bestFish.price))) {
+                                    bestFish = candidate;
                                 }
                             }
-                            if (bestFish) {
-                                caughtFish.push(bestFish);
-                                totalValue += bestFish.price;
-                                try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]); }
-                                catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [guild.id, user.id, bestFish.id]).catch(()=>{}); }
-                            }
                         }
-                        
-                        // 🔥 تحديث المورا مع الحماية 🔥
-                        try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
-                        catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
-                        
-                        // 🔥 إصلاح تحديث الكاش: التعامل مع القيم بشكل رقمي طبيعي لمنع أخطاء الـ BigInt 🔥
-                        if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
-                            let cache = await client.getLevel(user.id, guild.id);
-                            if (cache) {
-                                cache.mora = Number(cache.mora || 0) + totalValue;
-                                await client.setLevel(cache);
-                            }
+                        if (bestFish) {
+                            caughtFish.push(bestFish);
+                            totalValue += bestFish.price;
+                            try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [guild.id, user.id, bestFish.id]); }
+                            catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [guild.id, user.id, bestFish.id]).catch(()=>{}); }
                         }
-                        
-                        if (updateGuildStat) updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
-                        
-                        await sql.query("COMMIT");
-                    } catch (e) {
-                        await sql.query("ROLLBACK").catch(()=>{});
-                        console.error("Fish Reward Error: ", e);
                     }
+                    
+                    try { await sql.query(`UPDATE levels SET "mora" = COALESCE("mora", 0) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3`, [String(totalValue), user.id, guild.id]); }
+                    catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(mora, 0) + CAST($1 AS BIGINT) WHERE userid = $2 AND guildid = $3`, [String(totalValue), user.id, guild.id]).catch(()=>{}); }
+                    
+                    if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                        let cache = await client.getLevel(user.id, guild.id);
+                        if (cache) {
+                            cache.mora = String(Number(cache.mora || 0) + totalValue);
+                            await client.setLevel(cache);
+                        }
+                    }
+                    
+                    if (updateGuildStat) updateGuildStat(client, guild.id, user.id, 'fish_caught', caughtFish.length);
 
                     const summary = {};
                     caughtFish.forEach(f => {
@@ -354,8 +342,9 @@ module.exports = {
                         .setColor(Colors.Green)
                         .setThumbnail('https://i.postimg.cc/Wz0g0Zg0/fishing.png');
 
-                    if (isSlash) await interactionOrMessage.followUp({ embeds: [resultEmbed] }).catch(()=>{});
-                    else await interactionOrMessage.channel.send({ embeds: [resultEmbed] }).catch(()=>{});
+                    // 🔥 إرسال الرسالة كرسالة جديدة في الشات لتجنب أخطاء توقف التحديث
+                    const channel = isSlash ? interactionOrMessage.channel : interactionOrMessage.channel;
+                    await channel.send({ content: `<@${user.id}>`, embeds: [resultEmbed] }).catch(console.error);
                 }
 
                 activeFishingSessions.delete(user.id);
