@@ -1,213 +1,15 @@
 const { SlashCommandBuilder, AttachmentBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require("discord.js");
-const { createCanvas, loadImage } = require('canvas');
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js');
 const skillsConfig = require('../../json/skills-config.json');
 const weaponsConfig = require('../../json/weapons-config.json');
 const potionItems = require('../../json/potions.json');
 
-// إعدادات التصميم
-const IMAGE_URL = "https://i.postimg.cc/8cm7X398/design.png";
-const OWNER_ID = "1145327691772481577"; // آيدي الأونر
+// استدعاء المصمم الفخم الذي بنيناه للتو!
+const { generateSkillsCard } = require('../../generators/skills-card-generator.js'); 
+
+const OWNER_ID = "1145327691772481577"; 
 const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
-
-// دالة مساعدة لرسم النصوص الطويلة (الوصف) داخل مربع محدد
-function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
-    const words = text.split(' ');
-    let line = '';
-    let testFnnt = ctx.font;
-    
-    if (text.length > 100) ctx.font = ctx.font.replace(/\d+px/, '14px');
-    else if (text.length > 60) ctx.font = ctx.font.replace(/\d+px/, '16px');
-
-    for (let n = 0; n < words.length; n++) {
-        let testLine = line + words[n] + ' ';
-        let metrics = ctx.measureText(testLine);
-        let testWidth = metrics.width;
-        if (testWidth > maxWidth && n > 0) {
-            ctx.fillText(line, x, y);
-            line = words[n] + ' ';
-            y += lineHeight;
-        } else {
-            line = testLine;
-        }
-    }
-    ctx.fillText(line, x, y);
-    ctx.font = testFnnt; 
-}
-
-async function generateSkillsImage(targetUser, cleanName, weaponData, userRace, skillsListSlice, potionsList, totalSpent, currentPage, totalPages) {
-    // 1. تحميل الصور مع حماية ضد خطأ 404
-    let baseImage;
-    try {
-        baseImage = await loadImage(IMAGE_URL);
-    } catch (e) {
-        // خلفية بديلة (تدرج لوني فخم) في حال تعطل الرابط
-        const tempCanvas = createCanvas(1000, 600);
-        const tempCtx = tempCanvas.getContext('2d');
-        const gradient = tempCtx.createLinearGradient(0, 0, 1000, 600);
-        gradient.addColorStop(0, '#0f172a'); // كحلي غامق
-        gradient.addColorStop(1, '#1e293b'); // كحلي فاتح قليلاً
-        tempCtx.fillStyle = gradient;
-        tempCtx.fillRect(0, 0, 1000, 600);
-        baseImage = tempCanvas;
-    }
-
-    let avatar;
-    try {
-        // forceStatic تمنع الصور المتحركة من التسبب بمشكلة
-        avatar = await loadImage(targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }));
-    } catch (e) {
-        // صورة رمزية رمادية في حال فشل جلب صورة اللاعب
-        const tempCanvas = createCanvas(256, 256);
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.fillStyle = '#4752c4';
-        tempCtx.fillRect(0, 0, 256, 256);
-        avatar = tempCanvas;
-    }
-
-    const canvas = createCanvas(baseImage.width, baseImage.height);
-    const ctx = canvas.getContext('2d');
-
-    ctx.patternQuality = 'best';
-    ctx.quality = 'best';
-    ctx.imageSmoothingEnabled = true;
-
-    // رسم الخلفية
-    ctx.drawImage(baseImage, 0, 0);
-
-    // تأثير توهج خلف الرمز الشخصي
-    ctx.shadowColor = 'rgba(255, 215, 0, 0.5)'; 
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-
-    // رسم الرمز الشخصي (دائري مع إطار ذهبي)
-    const avatarX = 66;
-    const avatarY = 88;
-    const avatarSize = 145;
-
-    ctx.save(); 
-    ctx.beginPath();
-    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2, true);
-    ctx.closePath();
-    ctx.clip(); 
-    ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
-    ctx.restore(); 
-    
-    ctx.shadowBlur = 0; 
-
-    ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2, true);
-    ctx.stroke();
-
-    // كتابة اسم المستخدم
-    ctx.fillStyle = '#ffffff'; 
-    ctx.font = 'bold 28px Sans-Serif'; 
-    ctx.textAlign = 'center';
-    ctx.fillText(cleanName, avatarX + avatarSize / 2, avatarY - 20);
-
-    // بيانات العتاد والجرعات
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#e0e0e0';
-    let currentY = 320;
-    const leftX = 70;
-    const lineHeight = 35;
-
-    ctx.font = 'bold 24px Sans-Serif';
-    ctx.fillStyle = '#FFD700'; 
-    ctx.fillText("❖ العـتـاد القتالي", leftX, currentY);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '20px Sans-Serif';
-    currentY += lineHeight + 5;
-
-    if (userRace && weaponData) {
-        ctx.fillText(`✶ السلاح: ${weaponData.name}`, leftX, currentY);
-        currentY += lineHeight;
-        ctx.fillText(`✶ المستوى: Lv.${weaponData.currentLevel}`, leftX, currentY);
-        currentY += lineHeight;
-        ctx.fillStyle = '#ff4d4d'; 
-        ctx.fillText(`✶ الضرر: ${weaponData.currentDamage} DMG`, leftX, currentY);
-        ctx.fillStyle = '#ffffff';
-    } else if (userRace && !weaponData) {
-        ctx.fillText(`✶ العرق: ${userRace.raceName || userRace.racename}`, leftX, currentY);
-        currentY += lineHeight;
-        ctx.fillText(`(بدون سلاح مجهز)`, leftX, currentY);
-    } else {
-        ctx.fillText(`لم يتم اختيار عرق بعد.`, leftX, currentY);
-    }
-
-    currentY += 50;
-    ctx.font = 'bold 24px Sans-Serif';
-    ctx.fillStyle = '#FFD700';
-    ctx.fillText("❖ حقـيبـة الجرعـات", leftX, currentY);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '20px Sans-Serif';
-    currentY += lineHeight + 5;
-
-    if (potionsList.length > 0) {
-        potionsList.slice(0, 4).forEach(p => {
-            ctx.fillText(`✬ ${p.name}: (${p.qty})`, leftX, currentY);
-            currentY += lineHeight;
-        });
-        if (potionsList.length > 4) ctx.fillText(`... وخيارات أخرى`, leftX, currentY);
-    } else {
-        ctx.fillText("لا توجد جرعات.", leftX, currentY);
-    }
-
-    // رسم المهارات (بالصفحة الحالية)
-    const rightX = 325;
-    let skillY = 95;
-    const skillBoxWidth = 580;
-
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 22px Sans-Serif';
-    ctx.fillStyle = '#bebebe';
-    ctx.fillText(`قيمة التطويرات: ${totalSpent.toLocaleString()} مورا`, canvas.width - 60, 50);
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 28px Sans-Serif';
-    ctx.fillText("❖ المهارات والقـدرات المكتسبة", rightX, skillY);
-    skillY += 50;
-
-    if (skillsListSlice.length > 0) {
-        skillsListSlice.forEach((skill, index) => {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.fillRect(rightX - 10, skillY - 30, skillBoxWidth, 120);
-            
-            ctx.fillStyle = (index === 0) ? '#ffcc00' : (index === 1) ? '#00ccff' : '#cc33ff'; 
-            ctx.fillRect(rightX - 10, skillY - 30, 5, 120);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 22px Sans-Serif';
-            ctx.fillText(`${skill.emoji} ${skill.name} (Lv.${skill.level})`, rightX + 10, skillY);
-            
-            skillY += 30;
-            ctx.fillStyle = '#b0b0b0';
-            ctx.font = '18px Sans-Serif';
-            wrapText(ctx, skill.description, rightX + 10, skillY, skillBoxWidth - 20, 22);
-            
-            skillY += 90; 
-        });
-    } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '22px Sans-Serif';
-        ctx.fillText("لا توجد مهارات مكتسبة حالياً.", rightX, skillY);
-    }
-
-    // كتابة رقم الصفحة أسفل يمين الصورة إذا كان هناك أكثر من صفحة
-    if (totalPages > 1) {
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'italic 18px Sans-Serif';
-        ctx.fillText(`صفحة ${currentPage + 1} من ${totalPages}`, canvas.width - 40, canvas.height - 30);
-    }
-
-    return new AttachmentBuilder(canvas.toBuffer(), { name: `skills-${targetUser.id}-${currentPage}.png` });
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -241,18 +43,13 @@ module.exports = {
             client = message.client;
             user = message.author;
             targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
-            // يعطي مؤشر أن البوت يكتب (يغني عن الرسالة المؤقتة)
             message.channel.sendTyping().catch(()=>{}); 
         }
 
         const reply = async (payload) => {
             if (isSlash) {
-                if (interaction.replied || interaction.deferred) {
-                    const msg = await interaction.editReply(payload);
-                    return msg;
-                }
-                const msg = await interaction.reply({ ...payload, fetchReply: true });
-                return msg;
+                if (interaction.replied || interaction.deferred) return await interaction.editReply(payload);
+                return await interaction.reply({ ...payload, fetchReply: true });
             }
             return await message.reply(payload);
         };
@@ -260,40 +57,45 @@ module.exports = {
         const sql = client.sql;
         const targetUser = targetMember.user;
         const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
+        const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 });
 
         const userRace = await getUserRace(targetMember, sql);
         const weaponData = await getWeaponData(sql, targetMember);
         
-        const userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]);
+        let userSkillsRes;
+        try { userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]); }
+        catch(e) { userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
+        
         const userSkillsDB = userSkillsRes.rows;
         
         let potionsList = [];
         try {
-            const userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]);
+            let userInventoryRes;
+            try { userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]); }
+            catch(e) { userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2 AND quantity > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
+            
             const userInventory = userInventoryRes.rows;
-
             if (userInventory && userInventory.length > 0) {
                 for (const item of userInventory) {
-                    const potionInfo = potionItems.find(p => p.id === (item.itemID || item.itemid));
+                    const itemId = item.itemID || item.itemid;
+                    const potionInfo = potionItems.find(p => String(p.id) === String(itemId));
                     if (potionInfo) {
-                        potionsList.push({ name: potionInfo.name, emoji: potionInfo.emoji, qty: Number(item.quantity) });
+                        potionsList.push({ name: potionInfo.name, qty: Number(item.quantity) });
                     }
                 }
             }
-        } catch (e) {
-            console.error("Error fetching inventory:", e);
-        }
+        } catch (e) { }
 
         let totalSpent = 0;
-        let finalSkillsForImage = [];
+        let allSkills = [];
         let raceSkillId = null;
 
         if (userRace && weaponData) {
-            const originalWeaponConfig = weaponsConfig.find(w => w.race === (userRace.raceName || userRace.racename));
+            const rName = userRace.raceName || userRace.racename;
+            const originalWeaponConfig = weaponsConfig.find(w => w.race === rName);
             if (originalWeaponConfig) {
                 for (let i = 0; i < weaponData.currentLevel; i++) {
-                    let levelPrice = originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
-                    totalSpent += levelPrice;
+                    totalSpent += originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
                 }
             }
         }
@@ -317,16 +119,14 @@ module.exports = {
 
                     if (raceSkillId && skillID === raceSkillId) hasRaceSkillInDB = true;
 
-                    finalSkillsForImage.push({
+                    allSkills.push({
                         name: skillConfig.name,
-                        emoji: skillConfig.emoji,
                         level: skillLevel,
                         description: skillConfig.description
                     });
                     
                     for (let i = 0; i < skillLevel; i++) {
-                        let skillLevelPrice = skillConfig.base_price + (skillConfig.price_increment * i);
-                        totalSpent += skillLevelPrice;
+                        totalSpent += skillConfig.base_price + (skillConfig.price_increment * i);
                     }
                 }
             }
@@ -334,48 +134,49 @@ module.exports = {
 
         if (userRace && raceSkillId && !hasRaceSkillInDB) {
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
-            if (raceSkillConfig) {
-                if (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID) {
-                    finalSkillsForImage.push({
-                        name: raceSkillConfig.name,
-                        emoji: raceSkillConfig.emoji,
-                        level: 1, 
-                        description: raceSkillConfig.description + " [غير مطورة]"
-                    });
-                }
+            if (raceSkillConfig && (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID)) {
+                allSkills.push({
+                    name: raceSkillConfig.name,
+                    level: 1, 
+                    description: raceSkillConfig.description + " [غير مطورة]"
+                });
             }
         }
 
-        finalSkillsForImage.sort((a, b) => b.level - a.level);
+        allSkills.sort((a, b) => b.level - a.level);
 
-        // إعدادات الصفحات
         let currentPage = 0;
         const ITEMS_PER_PAGE = 3;
-        const totalPages = Math.max(1, Math.ceil(finalSkillsForImage.length / ITEMS_PER_PAGE));
+        const totalPages = Math.max(1, Math.ceil(allSkills.length / ITEMS_PER_PAGE));
 
         const getButtons = (page) => {
             if (totalPages <= 1) return [];
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('prev_skills_page')
-                    .setEmoji(LEFT_EMOJI)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(page === 0),
-                new ButtonBuilder()
-                    .setCustomId('next_skills_page')
-                    .setEmoji(RIGHT_EMOJI)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(page === totalPages - 1)
+                new ButtonBuilder().setCustomId('prev_skills_page').setEmoji(LEFT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('next_skills_page').setEmoji(RIGHT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages - 1)
             );
             return [row];
         };
 
         try {
-            // رسم الصورة للصفحة الأولى
-            const currentSkillsSlice = finalSkillsForImage.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
-            let attachment = await generateSkillsImage(targetUser, cleanName, weaponData, userRace, currentSkillsSlice, potionsList, totalSpent, currentPage, totalPages);
+            const currentSkillsSlice = allSkills.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
+            
+            const cardData = {
+                user: targetUser,
+                avatarUrl: avatarUrl,
+                cleanName: cleanName,
+                weaponData: weaponData,
+                raceName: userRace ? (userRace.raceName || userRace.racename) : "مجهول",
+                potionsList: potionsList,
+                skillsList: currentSkillsSlice,
+                totalSpent: totalSpent,
+                currentPage: currentPage,
+                totalPages: totalPages
+            };
 
-            // الإرسال المباشر
+            const buffer = await generateSkillsCard(cardData);
+            let attachment = new AttachmentBuilder(buffer, { name: `skills-${targetUser.id}-${currentPage}.png` });
+
             const responseMsg = await reply({ files: [attachment], components: getButtons(currentPage) });
 
             if (totalPages > 1 && responseMsg) {
@@ -389,15 +190,17 @@ module.exports = {
 
                     await i.deferUpdate();
 
-                    const newSlice = finalSkillsForImage.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
-                    const newAttachment = await generateSkillsImage(targetUser, cleanName, weaponData, userRace, newSlice, potionsList, totalSpent, currentPage, totalPages);
+                    const newSlice = allSkills.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
+                    cardData.skillsList = newSlice;
+                    cardData.currentPage = currentPage;
+
+                    const newBuffer = await generateSkillsCard(cardData);
+                    const newAttachment = new AttachmentBuilder(newBuffer, { name: `skills-${targetUser.id}-${currentPage}.png` });
 
                     await i.editReply({ files: [newAttachment], components: getButtons(currentPage), attachments: [] });
                 });
                 
-                collector.on('end', () => {
-                    responseMsg.edit({ components: [] }).catch(()=>{});
-                });
+                collector.on('end', () => { responseMsg.edit({ components: [] }).catch(()=>{}); });
             }
 
         } catch (error) {
