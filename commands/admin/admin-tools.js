@@ -139,6 +139,7 @@ module.exports = {
                     { label: '⛺ منح خيمة (دانجون)', value: 'dungeon_tent', description: 'تحديد طابق الحفظ في الدانجون', emoji: '⛺' },
                     { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض', emoji: '🎒' },
                     { label: '⚔️ تعديل الأسلحة والمهارات', value: 'combat_gear', description: 'تغيير لفل السلاح، المهارة، السنارة، أو القارب', emoji: '⚔️' },
+                    { label: '🗑️ تصفير الأسلحة والمهارات', value: 'reset_combat', description: 'مسح جميع مهارات وأسلحة اللاعب بالكامل', emoji: '🗑️' },
                     { label: '🛡️ إعطاء درع ميديا', value: 'media_shield', emoji: '🛡️' },
                     { label: '⚠️ تصفير الحساب', value: 'reset', description: 'مسح جميع البيانات!', emoji: '⚠️' }
                 ])
@@ -374,6 +375,21 @@ module.exports = {
                     await modalSubmit.editReply({ content: successMessage, embeds: [summaryEmbed] });
 
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
+            }
+            // 🔥 إضافة خيار التصفير السريع للأسلحة والمهارات 🔥
+            else if (val === 'reset_combat') {
+                try { await interaction.deferReply(); } catch(e){}
+                
+                try {
+                    await db.query(`DELETE FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
+                    await db.query(`DELETE FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
+                } catch(e) {
+                    await db.query(`DELETE FROM user_weapons WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{});
+                    await db.query(`DELETE FROM user_skills WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{});
+                }
+                
+                const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
+                await interaction.editReply({ content: `✅ **تم تصفير جميع الأسلحة والمهارات لـ ${targetUser} بنجاح!**`, embeds: [summaryEmbed] });
             }
             else if (val === 'dungeon_tent') {
                 const modalId = `mod_tent_${Date.now()}`;
