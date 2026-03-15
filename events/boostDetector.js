@@ -31,7 +31,10 @@ module.exports = {
         try {
             const res = await db.query(`SELECT "boostChannelID" FROM settings WHERE "guild" = $1`, [message.guild.id]);
             settings = res.rows[0];
-        } catch (e) { return; }
+        } catch (e) {
+            const res = await db.query(`SELECT boostchannelid FROM settings WHERE guild = $1`, [message.guild.id]).catch(()=>({rows:[]}));
+            settings = res.rows[0];
+        }
 
         if (!settings || (!settings.boostchannelid && !settings.boostChannelID)) return;
         const targetChannelID = settings.boostChannelID || settings.boostchannelid;
@@ -56,28 +59,59 @@ module.exports = {
                 const userID = message.author.id;
                 const guildID = message.guild.id;
 
-                await db.query(`
-                    INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
-                    VALUES ($1, $2, $3, $4, $5, 1) 
-                    ON CONFLICT ("user", "guild") DO UPDATE SET 
-                    "mora" = levels."mora" + EXCLUDED."mora", 
-                    "xp" = levels."xp" + EXCLUDED."xp", 
-                    "totalXP" = levels."totalXP" + EXCLUDED."totalXP"
-                `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]);
+                // 🔥 1. تحديث الذاكرة العشوائية (الكاش) لمنع ضياع الجوائز
+                let userData = null;
+                if (typeof client.getLevel === 'function') {
+                    userData = await client.getLevel(userID, guildID);
+                }
+                
+                if (!userData) {
+                    userData = { ...client.defaultData, user: userID, guild: guildID, mora: 0, xp: 0, totalXP: 0, level: 1 };
+                }
+
+                // تحديث الأرقام بأمان في الكاش
+                userData.mora = String(Number(userData.mora || 0) + REWARD_MORA);
+                userData.xp = String(Number(userData.xp || 0) + REWARD_XP);
+                userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + REWARD_XP);
+
+                if (typeof client.setLevel === 'function') {
+                    await client.setLevel(userData);
+                }
+
+                // 🔥 2. تحديث قاعدة البيانات المباشر بأمان تام ضد مشكلة الـ BIGINT
+                try {
+                    await db.query(`
+                        INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
+                        VALUES ($1, $2, $3, $4, $5, 1) 
+                        ON CONFLICT ("user", "guild") DO UPDATE SET 
+                        "mora" = CAST(COALESCE(levels."mora", '0') AS BIGINT) + $3, 
+                        "xp" = CAST(COALESCE(levels."xp", '0') AS BIGINT) + $4, 
+                        "totalXP" = CAST(COALESCE(levels."totalXP", '0') AS BIGINT) + $5
+                    `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]);
+                } catch (e) {
+                    await db.query(`
+                        INSERT INTO levels (user, guild, mora, xp, totalxp, level) 
+                        VALUES ($1, $2, $3, $4, $5, 1) 
+                        ON CONFLICT (user, guild) DO UPDATE SET 
+                        mora = CAST(COALESCE(levels.mora, '0') AS BIGINT) + $3, 
+                        xp = CAST(COALESCE(levels.xp, '0') AS BIGINT) + $4, 
+                        totalxp = CAST(COALESCE(levels.totalxp, '0') AS BIGINT) + $5
+                    `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]).catch(()=>{});
+                }
 
             } catch (err) {
                 console.error("[Boost Reward Error]:", err);
             }
 
             const randomImage = BOOST_IMAGES[Math.floor(Math.random() * BOOST_IMAGES.length)];
-
             const boosterName = message.member ? message.member.displayName : message.author.username; 
 
+            // إضافة الفواصل للأرقام لتصبح أجمل (مثال: 25,000)
             const msgContent = 
                 `✥ **${boosterName}**\n` +
                 `✬ مـعـزز جديـد ارتقـى لمصـاف العظمـاء <:sboosting:1439665969864773663>!\n\n` +
                 `✶ شكـرا عـلى دعـم الامبراطـوريـة استمتـع بمميزاتـك الخاصـة <a:NekoCool:1435572459276337245>\n\n` +
-                `✬ Mora: **${REWARD_MORA}** ${EMOJI_MORA} | XP: **${REWARD_XP}** <a:levelup:1437805366048985290>`;
+                `✬ Mora: **${REWARD_MORA.toLocaleString()}** ${EMOJI_MORA} | XP: **${REWARD_XP.toLocaleString()}** <a:levelup:1437805366048985290>`;
 
             await message.channel.send({ 
                 content: msgContent,
