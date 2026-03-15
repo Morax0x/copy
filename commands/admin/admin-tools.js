@@ -37,9 +37,8 @@ async function getUserRace(member, db) {
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleID || r.roleid)) || null;
 }
 
-// 🔥 دالة جديدة لجلب جرد معدات القتال والصيد وعرضها بشكل جميل 🔥
+// 🔥 دالة جلب الجرد 🔥
 async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
-    // جلب مستويات السنارة والقارب
     let levelsRes;
     try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
     catch(e) { levelsRes = await db.query(`SELECT rodlevel, boatlevel FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
@@ -47,7 +46,6 @@ async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     const rodLvl = levelsData.rodLevel || levelsData.rodlevel || 1;
     const boatLvl = levelsData.boatLevel || levelsData.boatlevel || 1;
 
-    // جلب السلاح
     let weaponRes;
     try { weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
     catch(e) { weaponRes = await db.query(`SELECT racename, weaponlevel FROM user_weapons WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
@@ -56,7 +54,6 @@ async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     const wLvl = weaponData ? (weaponData.weaponLevel || weaponData.weaponlevel) : null;
     const weaponText = weaponData ? `**${wRace}** (Lv.${wLvl})` : "لا يوجد سلاح";
 
-    // جلب المهارات
     let skillsRes;
     try { skillsRes = await db.query(`SELECT "skillID", "skillLevel" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
     catch(e) { skillsRes = await db.query(`SELECT skillid, skilllevel FROM user_skills WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
@@ -103,13 +100,22 @@ module.exports = {
             return this.sendMarketPanel(message, db);
         }
 
-        const targetUser = message.mentions.users.first() || client.users.cache.get(args[0]);
+        // 🔥 التعديل الجوهري للبحث بالآيدي (ID) أو المنشن 🔥
+        let targetUser = message.mentions.users.first();
+        if (!targetUser && args[0]) {
+            const possibleId = args[0].replace(/[<@!>]/g, ''); // إزالة العلامات لو كان منشن غير مفعل
+            if (/^\d+$/.test(possibleId)) {
+                try {
+                    targetUser = await client.users.fetch(possibleId);
+                } catch (e) {}
+            }
+        }
 
         if (!targetUser) {
             const embed = new EmbedBuilder()
                 .setTitle('🛠️ لوحة تحكم الإمبراطورية')
                 .setColor(Colors.DarkGrey)
-                .setDescription("لإدارة عضو معين:\n`-ادمن @منشن`\n\nلإدارة الاقتصاد والسوق:\n`-ادمن سوق`");
+                .setDescription("لإدارة عضو معين:\n`-ادمن @منشن` أو `-ادمن [ID]`\n\nلإدارة الاقتصاد والسوق:\n`-ادمن سوق`");
             return message.reply({ embeds: [embed] });
         }
 
@@ -311,7 +317,6 @@ module.exports = {
 
                     let successMessage = "";
 
-                    // 🔥 1. تعديل الأسلحة (تعرف تلقائي على العرق)
                     if (type.includes('سلاح')) {
                         const userRace = await getUserRace(targetMember, db);
                         if (!userRace) return modalSubmit.editReply({ content: "❌ هذا اللاعب لا يمتلك أي عرق حالياً، لا يمكن ترقية سلاحه! أعطه رتبة عرق أولاً." });
@@ -331,7 +336,6 @@ module.exports = {
                             successMessage = `✅ تم ضبط مستوى سلاح (${raceName}) لـ ${targetUser} إلى **Lv.${level}**.`;
                         }
                     } 
-                    // 🔥 2. البحث الذكي عن المهارات
                     else if (type.includes('مهارة') || type.includes('مهاره')) {
                         if (!name) return modalSubmit.editReply({ content: "❌ يرجى كتابة اسم المهارة أو أي تلميح للبحث عنها." });
                         
@@ -355,7 +359,6 @@ module.exports = {
                             successMessage = `✅ تم ضبط مستوى مهارة (${foundSkill.name}) لـ ${targetUser} إلى **Lv.${level}**.`;
                         }
                     }
-                    // 3. السنارة والقارب
                     else if (type.includes('سنارة') || type.includes('صيد') || type.includes('صنارة')) {
                         try { await db.query(`UPDATE levels SET "rodLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
                         catch(e) { await db.query(`UPDATE levels SET rodLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
@@ -370,13 +373,11 @@ module.exports = {
                         return modalSubmit.editReply({ content: "❌ نوع غير معروف. استخدم (سلاح / مهارة / سنارة / قارب)" });
                     }
 
-                    // 🔥 بعد نجاح التعديل، جلب الجرد الحالي وإرساله للمشرف 🔥
                     const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
                     await modalSubmit.editReply({ content: successMessage, embeds: [summaryEmbed] });
 
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 إضافة خيار التصفير السريع للأسلحة والمهارات 🔥
             else if (val === 'reset_combat') {
                 try { await interaction.deferReply(); } catch(e){}
                 
