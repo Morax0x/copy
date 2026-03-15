@@ -334,7 +334,21 @@ module.exports = {
                 }
 
                 const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
-                if (!usageStatus.canChat && !isOwnerMentioning && !isWisdomKing) {
+                let canChat = true;
+                
+                // 🔥 حل مشكلة رفض اللاعبين الجدد للذكاء الاصطناعي وإعطائهم 10 رسائل مجانية يومياً
+                if (usageStatus && usageStatus.canChat === false) {
+                    const daily = usageStatus.dailyUsage || 0;
+                    const limit = usageStatus.roleLimit || 0;
+                    const bal = usageStatus.purchasedBalance || 0;
+                    if (limit === 0 && bal === 0 && daily < 10) {
+                        canChat = true; 
+                    } else {
+                        canChat = false;
+                    }
+                }
+
+                if (!canChat && !isOwnerMentioning && !isWisdomKing) {
                     if (paymentCooldowns.has(message.author.id)) return; 
                     paymentCooldowns.add(message.author.id);
                     setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
@@ -522,6 +536,16 @@ module.exports = {
             let getXpfromDB = settings?.customXP || settings?.customxp || 25;
             let getCooldownfromDB = settings?.customCooldown || settings?.customcooldown || 60000;
 
+            // 🔥 حل مشكلة الأرقام النصية (191) 🔥
+            let currentLevelData = await client.getLevel(userID, guildID);
+            if (!currentLevelData) {
+                currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
+            } else {
+                currentLevelData.level = Number(currentLevelData.level) || 1;
+                currentLevelData.xp = Number(currentLevelData.xp) || 0;
+                currentLevelData.totalXP = Number(currentLevelData.totalXP || currentLevelData.totalxp || 0);
+            }
+
             if (!client.talkedRecently.get(message.author.id)) {
                 let buff = await calculateBuffMultiplier(message.member, db);
 
@@ -531,22 +555,15 @@ module.exports = {
 
                 const xpGained = Math.floor((Math.random() * getXpfromDB + 1) * buff);
                 
-                let currentLevelData = await client.getLevel(userID, guildID);
-                
-                if (!currentLevelData) {
-                    currentLevelData = { user: userID, guild: guildID, level: 1, xp: xpGained, totalXP: xpGained };
-                } else {
-                    currentLevelData.xp = Number(currentLevelData.xp) + xpGained;
-                    currentLevelData.totalXP = Number(currentLevelData.totalXP || currentLevelData.totalxp || 0) + xpGained;
-                    currentLevelData.level = Number(currentLevelData.level);
-                }
+                currentLevelData.xp += xpGained;
+                currentLevelData.totalXP += xpGained;
                 
                 const nextXP = 5 * (currentLevelData.level ** 2) + (50 * currentLevelData.level) + 100;
                 
                 if (currentLevelData.xp >= nextXP) {
                     const oldLvl = currentLevelData.level;
                     currentLevelData.xp -= nextXP; 
-                    currentLevelData.level++;
+                    currentLevelData.level++; // 🔥 الجمع الرياضي الآمن
                     
                     client.setLevel(currentLevelData).catch(()=>{});
                     
@@ -580,18 +597,26 @@ module.exports = {
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
             
+            // 🔥 حل مشكلة رتب اللفل: فحص مع كل رسالة، وإعطاء أعلى رتبة يستحقها 🔥
             try {
-                const finalLvl = currentLevelData ? Number(currentLevelData.level) : 1;
-                let currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" = $2`, [message.guild.id, finalLvl]);
+                const finalLvl = Number(currentLevelData.level);
+                let currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" <= $2 ORDER BY "level" DESC LIMIT 1`, [message.guild.id, finalLvl]);
                 let currentLevelRole = currentLevelRoleRes.rows[0];
+                
                 if (currentLevelRole && message.member) {
-                    if (!message.member.roles.cache.has(currentLevelRole.roleID || currentLevelRole.roleid)) {
-                        message.member.roles.add(currentLevelRole.roleID || currentLevelRole.roleid).catch(e => {});
-                        const oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, finalLvl]);
-                        for (const roleData of oldRolesRes.rows) {
-                            if (message.member.roles.cache.has(roleData.roleID || roleData.roleid)) {
-                                message.member.roles.remove(roleData.roleID || roleData.roleid).catch(e => {});
-                            }
+                    const targetRoleID = currentLevelRole.roleID || currentLevelRole.roleid;
+                    if (!message.member.roles.cache.has(targetRoleID)) {
+                        message.member.roles.add(targetRoleID).catch(e => {});
+                    }
+                    
+                    // سحب الرتب القديمة الأقل من رتبته الحالية
+                    const currentRoleReqLevel = currentLevelRole.level;
+                    const oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, currentRoleReqLevel]);
+                    
+                    for (const roleData of oldRolesRes.rows) {
+                        const oldRoleID = roleData.roleID || roleData.roleid;
+                        if (oldRoleID !== targetRoleID && message.member.roles.cache.has(oldRoleID)) {
+                            message.member.roles.remove(oldRoleID).catch(e => {});
                         }
                     }
                 }
@@ -612,7 +637,6 @@ module.exports = {
                 const targetName = (shortcut.commandName || shortcut.commandname).toLowerCase();
                 const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
                 if (cmd) {
-                    // 🔥 تم إرجاع الـ await هنا
                     if (await checkPermissions(message, cmd)) {
                         const cooldownMsg = await checkCooldown(message, cmd);
                         if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); return; }
@@ -650,7 +674,6 @@ module.exports = {
                             if (isBlacklistedRes.rows.length > 0) return; 
                         } catch(e) {}
                         
-                        // 🔥 تم إرجاع الـ await هنا
                         if (await checkPermissions(message, command)) {
                             const cooldownMsg = await checkCooldown(message, command);
                             if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
@@ -667,7 +690,6 @@ module.exports = {
             const commandName = args.shift().toLowerCase();
             const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
             if (command && command.category === "Economy") {
-                // 🔥 تم إرجاع الـ await هنا
                 if (!(await checkPermissions(message, command))) return;
                 try { await command.execute(message, args); } catch (error) {}
             }
