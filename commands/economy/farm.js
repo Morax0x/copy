@@ -121,11 +121,17 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
     let currentCapacityUsed = 0;
 
     if (category === 'animals') {
-        const userFarmQueryRes = await sql.query(`SELECT SUM("quantity") as totalQty FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, item.id]);
+        let userFarmQueryRes;
+        try { userFarmQueryRes = await sql.query(`SELECT SUM("quantity") as totalQty FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, item.id]); }
+        catch(e) { userFarmQueryRes = await sql.query(`SELECT SUM(quantity) as totalqty FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]})); }
+        
         const userFarmQuery = userFarmQueryRes.rows[0];
-        userQuantity = userFarmQuery && userFarmQuery.totalqty ? Number(userFarmQuery.totalqty) : 0;
+        userQuantity = userFarmQuery && (userFarmQuery.totalqty || userFarmQuery.totalQty) ? Number(userFarmQuery.totalqty || userFarmQuery.totalQty) : 0;
 
-        const userFarmRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+        let userFarmRowsRes;
+        try { userFarmRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { userFarmRowsRes = await sql.query(`SELECT animalid, quantity FROM user_farm WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const userFarmRows = userFarmRowsRes.rows;
         
         for (const row of userFarmRows) {
@@ -135,7 +141,10 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
         maxCapacity = await getPlayerCapacity(client, userId, guildId);
         isFull = (currentCapacityUsed + (item.size || 1)) > maxCapacity;
     } else {
-        const invQueryRes = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
+        let invQueryRes;
+        try { invQueryRes = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]); }
+        catch(e) { invQueryRes = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]})); }
+        
         const invQuery = invQueryRes.rows[0];
         userQuantity = invQuery ? Number(invQuery.quantity) : 0;
     }
@@ -279,7 +288,10 @@ module.exports = {
 
                     let currentCap = 0;
                     if (currentCategory === 'animals') {
-                        const userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+                        let userRowsRes;
+                        try { userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                        catch(e) { userRowsRes = await sql.query(`SELECT animalid, quantity FROM user_farm WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                        
                         const userRows = userRowsRes.rows;
                         for (const row of userRows) {
                             const fa = farmAnimals.find(a => a.id === (row.animalID || row.animalid));
@@ -321,7 +333,10 @@ module.exports = {
                         
                         let currentCap = 0;
                         if (currentCategory === 'animals') {
-                            const userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+                            let userRowsRes;
+                            try { userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                            catch(e) { userRowsRes = await sql.query(`SELECT animalid, quantity FROM user_farm WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                            
                             const userRows = userRowsRes.rows;
                             for (const row of userRows) {
                                 const fa = farmAnimals.find(a => a.id === (row.animalID || row.animalid));
@@ -341,7 +356,10 @@ module.exports = {
 
                         let currentCap = 0;
                         if (currentCategory === 'animals') {
-                            const userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+                            let userRowsRes;
+                            try { userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                            catch(e) { userRowsRes = await sql.query(`SELECT animalid, quantity FROM user_farm WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                            
                             const userRows = userRowsRes.rows;
                             for (const row of userRows) {
                                 const fa = farmAnimals.find(a => a.id === (row.animalID || row.animalid));
@@ -398,7 +416,10 @@ module.exports = {
 
                             if (action === 'buy') {
                                 if (currentCategory === 'animals') {
-                                    const userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]);
+                                    let userRowsRes;
+                                    try { userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                                    catch(e) { userRowsRes = await sql.query(`SELECT animalid, quantity FROM user_farm WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                                    
                                     const userRows = userRowsRes.rows;
                                     let currentCap = 0;
                                     for (const row of userRows) {
@@ -415,22 +436,34 @@ module.exports = {
                                 }
 
                                 const totalCost = itemData.price * qty;
-                                if (Number(userData.mora) < totalCost) return submit.reply({ content: `❌ رصيد غير كافي! تحتاج **${totalCost.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
+                                if (Number(userData.mora || 0) < totalCost) return submit.reply({ content: `❌ رصيد غير كافي! تحتاج **${totalCost.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
                                 
-                                userData.mora = Number(userData.mora) - totalCost;
-                                await client.setLevel(userData);
+                                // 🔥 خصم آمن ومباشر من الداتا بيز 🔥
+                                try {
+                                    await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, user.id, guild.id]);
+                                } catch(e) {
+                                    await sql.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [totalCost, user.id, guild.id]).catch(()=>{});
+                                }
+                                
+                                userData.mora = String(Number(userData.mora || 0) - totalCost);
+                                if (typeof client.setLevel === 'function') await client.setLevel(userData);
                                 
                                 if (currentCategory === 'animals') {
-                                    await sql.query(`INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastFedTimestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, user.id, itemId, qty, Date.now(), Date.now()]);
+                                    try { await sql.query(`INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastFedTimestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, user.id, itemId, qty, Date.now(), Date.now()]); }
+                                    catch(e) { await sql.query(`INSERT INTO user_farm (guildid, userid, animalid, quantity, purchasetimestamp, lastfedtimestamp) VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, user.id, itemId, qty, Date.now(), Date.now()]).catch(()=>{}); }
                                 } else {
-                                    await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $5`, [guild.id, user.id, itemId, qty, qty]);
+                                    try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $5`, [guild.id, user.id, itemId, qty, qty]); }
+                                    catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = COALESCE(quantity, 0) + $5`, [guild.id, user.id, itemId, qty, qty]).catch(()=>{}); }
                                 }
                                 
                                 await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: MessageFlags.Ephemeral });
 
-                            } else { 
+                            } else { // حالة البيع
                                 if (currentCategory === 'animals') {
-                                    const userAnimalsRes = await sql.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [user.id, guild.id, itemId]);
+                                    let userAnimalsRes;
+                                    try { userAnimalsRes = await sql.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [user.id, guild.id, itemId]); }
+                                    catch(e) { userAnimalsRes = await sql.query(`SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 ORDER BY purchasetimestamp ASC`, [user.id, guild.id, itemId]).catch(()=>({rows:[]})); }
+                                    
                                     const userAnimals = userAnimalsRes.rows;
                                     
                                     let totalOwned = 0;
@@ -465,33 +498,47 @@ module.exports = {
                                         soldCount += sellFromRow;
 
                                         if (Number(row.quantity) === sellFromRow) {
-                                            await sql.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
+                                            try { await sql.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id]); }
+                                            catch(e) { await sql.query(`DELETE FROM user_farm WHERE id = $1`, [row.id]).catch(()=>{}); }
                                         } else {
-                                            await sql.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]);
+                                            try { await sql.query(`UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]); }
+                                            catch(e) { await sql.query(`UPDATE user_farm SET quantity = quantity - $1 WHERE id = $2`, [sellFromRow, row.id]).catch(()=>{}); }
                                         }
                                     }
 
                                     if (soldCount === 0) return submit.reply({ content: `🚫 فشل البيع! حيواناتك كبيرة في السن ولا يقبلها السوق.`, flags: MessageFlags.Ephemeral });
 
-                                    userData.mora = Number(userData.mora) + totalRefund;
-                                    await client.setLevel(userData);
+                                    try { await sql.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalRefund, user.id, guild.id]); }
+                                    catch(e) { await sql.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalRefund, user.id, guild.id]).catch(()=>{}); }
+                                    
+                                    userData.mora = String(Number(userData.mora || 0) + totalRefund);
+                                    if (typeof client.setLevel === 'function') await client.setLevel(userData);
+                                    
                                     await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
 
                                 } else {
-                                    const invItemRes = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]);
+                                    let invItemRes;
+                                    try { invItemRes = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]); }
+                                    catch(e) { invItemRes = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guild.id, itemId]).catch(()=>({rows:[]})); }
+                                    
                                     const invItem = invItemRes.rows[0];
                                     if (!invItem || Number(invItem.quantity) < qty) return submit.reply({ content: `❌ لا تملك الكمية.`, flags: MessageFlags.Ephemeral });
                                     
                                     const sellPrice = Math.floor(itemData.price * 0.5); 
-
                                     const totalGain = sellPrice * qty;
-                                    userData.mora = Number(userData.mora) + totalGain;
-                                    await client.setLevel(userData);
+
+                                    try { await sql.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, user.id, guild.id]); }
+                                    catch(e) { await sql.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, user.id, guild.id]).catch(()=>{}); }
+
+                                    userData.mora = String(Number(userData.mora || 0) + totalGain);
+                                    if (typeof client.setLevel === 'function') await client.setLevel(userData);
 
                                     if (Number(invItem.quantity) === qty) {
-                                        await sql.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]);
+                                        try { await sql.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]); }
+                                        catch(e) { await sql.query(`DELETE FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guild.id, itemId]).catch(()=>{}); }
                                     } else {
-                                        await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, user.id, guild.id, itemId]);
+                                        try { await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [qty, user.id, guild.id, itemId]); }
+                                        catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [qty, user.id, guild.id, itemId]).catch(()=>{}); }
                                     }
 
                                     await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
