@@ -37,6 +37,54 @@ async function getUserRace(member, db) {
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleID || r.roleid)) || null;
 }
 
+// 🔥 دالة جديدة لجلب جرد معدات القتال والصيد وعرضها بشكل جميل 🔥
+async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
+    // جلب مستويات السنارة والقارب
+    let levelsRes;
+    try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
+    catch(e) { levelsRes = await db.query(`SELECT rodlevel, boatlevel FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+    const levelsData = levelsRes.rows[0] || { rodLevel: 1, boatLevel: 1 };
+    const rodLvl = levelsData.rodLevel || levelsData.rodlevel || 1;
+    const boatLvl = levelsData.boatLevel || levelsData.boatlevel || 1;
+
+    // جلب السلاح
+    let weaponRes;
+    try { weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
+    catch(e) { weaponRes = await db.query(`SELECT racename, weaponlevel FROM user_weapons WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+    const weaponData = weaponRes.rows[0];
+    const wRace = weaponData ? (weaponData.raceName || weaponData.racename) : null;
+    const wLvl = weaponData ? (weaponData.weaponLevel || weaponData.weaponlevel) : null;
+    const weaponText = weaponData ? `**${wRace}** (Lv.${wLvl})` : "لا يوجد سلاح";
+
+    // جلب المهارات
+    let skillsRes;
+    try { skillsRes = await db.query(`SELECT "skillID", "skillLevel" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
+    catch(e) { skillsRes = await db.query(`SELECT skillid, skilllevel FROM user_skills WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+    const skillsData = skillsRes.rows;
+
+    let skillsText = "لا يوجد مهارات مكتسبة";
+    if (skillsData.length > 0) {
+        skillsText = skillsData.map(s => {
+            const sId = s.skillID || s.skillid;
+            const sLvl = s.skillLevel || s.skilllevel;
+            const sConf = skillsConfig.find(sc => sc.id === sId);
+            return `🔹 **${sConf ? sConf.name : sId}** (Lv.${sLvl})`;
+        }).join('\n');
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🛡️ الجرد الحالي لمعدات: ${targetUser.username}`)
+        .setColor(Colors.DarkGold)
+        .setThumbnail(targetUser.displayAvatarURL())
+        .addFields(
+            { name: '⚔️ السلاح الحالي', value: weaponText, inline: true },
+            { name: '🎣 معدات الصيد', value: `السنارة: **Lv.${rodLvl}**\nالقارب: **Lv.${boatLvl}**`, inline: true },
+            { name: '✨ المهارات القتالية', value: skillsText, inline: false }
+        );
+
+    return embed;
+}
+
 module.exports = {
     name: 'admin-tools',
     description: 'لـوحـة الامبراطـور',
@@ -260,6 +308,8 @@ module.exports = {
                     
                     if (isNaN(level) || level < 0) return modalSubmit.editReply({ content: "❌ مستوى غير صالح." });
 
+                    let successMessage = "";
+
                     // 🔥 1. تعديل الأسلحة (تعرف تلقائي على العرق)
                     if (type.includes('سلاح')) {
                         const userRace = await getUserRace(targetMember, db);
@@ -270,14 +320,14 @@ module.exports = {
                         if (level === 0) {
                             try { await db.query(`DELETE FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [userID, guildID, raceName]); }
                             catch(e) { await db.query(`DELETE FROM user_weapons WHERE userid = $1 AND guildid = $2 AND racename = $3`, [userID, guildID, raceName]).catch(()=>{}); }
-                            await modalSubmit.editReply({ content: `✅ تم إزالة سلاح العرق (${raceName}) لـ ${targetUser}.` });
+                            successMessage = `✅ تم إزالة سلاح العرق (${raceName}) لـ ${targetUser}.`;
                         } else {
                             try {
                                 await db.query(`INSERT INTO user_weapons ("userID", "guildID", "raceName", "weaponLevel") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "raceName") DO UPDATE SET "weaponLevel" = EXCLUDED."weaponLevel"`, [userID, guildID, raceName, level]);
                             } catch(e) {
                                 await db.query(`INSERT INTO user_weapons (userid, guildid, racename, weaponlevel) VALUES ($1, $2, $3, $4) ON CONFLICT (userid, guildid, racename) DO UPDATE SET weaponlevel = EXCLUDED.weaponlevel`, [userID, guildID, raceName, level]).catch(()=>{});
                             }
-                            await modalSubmit.editReply({ content: `✅ تم ضبط مستوى سلاح (${raceName}) لـ ${targetUser} إلى **Lv.${level}**.` });
+                            successMessage = `✅ تم ضبط مستوى سلاح (${raceName}) لـ ${targetUser} إلى **Lv.${level}**.`;
                         }
                     } 
                     // 🔥 2. البحث الذكي عن المهارات
@@ -294,30 +344,35 @@ module.exports = {
                         if (level === 0) {
                             try { await db.query(`DELETE FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillID" = $3`, [userID, guildID, skillId]); }
                             catch(e) { await db.query(`DELETE FROM user_skills WHERE userid = $1 AND guildid = $2 AND skillid = $3`, [userID, guildID, skillId]).catch(()=>{}); }
-                            await modalSubmit.editReply({ content: `✅ تم إزالة المهارة (${foundSkill.name}) لـ ${targetUser}.` });
+                            successMessage = `✅ تم إزالة المهارة (${foundSkill.name}) لـ ${targetUser}.`;
                         } else {
                             try {
                                 await db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "skillID") DO UPDATE SET "skillLevel" = EXCLUDED."skillLevel"`, [userID, guildID, skillId, level]);
                             } catch(e) {
                                 await db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, $4) ON CONFLICT (userid, guildid, skillid) DO UPDATE SET skilllevel = EXCLUDED.skilllevel`, [userID, guildID, skillId, level]).catch(()=>{});
                             }
-                            await modalSubmit.editReply({ content: `✅ تم ضبط مستوى مهارة (${foundSkill.name}) لـ ${targetUser} إلى **Lv.${level}**.` });
+                            successMessage = `✅ تم ضبط مستوى مهارة (${foundSkill.name}) لـ ${targetUser} إلى **Lv.${level}**.`;
                         }
                     }
                     // 3. السنارة والقارب
                     else if (type.includes('سنارة') || type.includes('صيد') || type.includes('صنارة')) {
                         try { await db.query(`UPDATE levels SET "rodLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
                         catch(e) { await db.query(`UPDATE levels SET rodLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
-                        await modalSubmit.editReply({ content: `✅ تم ضبط مستوى السنارة لـ ${targetUser} إلى **Lv.${level}**.` });
+                        successMessage = `✅ تم ضبط مستوى السنارة لـ ${targetUser} إلى **Lv.${level}**.`;
                     }
                     else if (type.includes('قارب')) {
                         try { await db.query(`UPDATE levels SET "boatLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
                         catch(e) { await db.query(`UPDATE levels SET boatLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
-                        await modalSubmit.editReply({ content: `✅ تم ضبط مستوى القارب لـ ${targetUser} إلى **Lv.${level}**.` });
+                        successMessage = `✅ تم ضبط مستوى القارب لـ ${targetUser} إلى **Lv.${level}**.`;
                     }
                     else {
                         return modalSubmit.editReply({ content: "❌ نوع غير معروف. استخدم (سلاح / مهارة / سنارة / قارب)" });
                     }
+
+                    // 🔥 بعد نجاح التعديل، جلب الجرد الحالي وإرساله للمشرف 🔥
+                    const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
+                    await modalSubmit.editReply({ content: successMessage, embeds: [summaryEmbed] });
+
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'dungeon_tent') {
@@ -588,7 +643,6 @@ module.exports = {
             const dungeonStats = dungeonStatsRes.rows[0];
             tickets = dungeonStats ? dungeonStats.tickets : 0;
         } catch(e) {
-            // صمام أمان في حال كانت الأسماء بحروف صغيرة
             const streakDataRes = await db.query(`SELECT * FROM streaks WHERE guildid = $1 AND userid = $2`, [guildID, userID]).catch(()=>({rows:[]}));
             streakData = streakDataRes.rows[0] || {};
             
