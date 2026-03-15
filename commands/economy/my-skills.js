@@ -37,8 +37,34 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 async function generateSkillsImage(targetUser, cleanName, weaponData, userRace, skillsListSlice, potionsList, totalSpent, currentPage, totalPages) {
-    const baseImage = await loadImage(IMAGE_URL);
-    const avatar = await loadImage(targetUser.displayAvatarURL({ extension: 'png', size: 256 }));
+    // 1. تحميل الصور مع حماية ضد خطأ 404
+    let baseImage;
+    try {
+        baseImage = await loadImage(IMAGE_URL);
+    } catch (e) {
+        // خلفية بديلة (تدرج لوني فخم) في حال تعطل الرابط
+        const tempCanvas = createCanvas(1000, 600);
+        const tempCtx = tempCanvas.getContext('2d');
+        const gradient = tempCtx.createLinearGradient(0, 0, 1000, 600);
+        gradient.addColorStop(0, '#0f172a'); // كحلي غامق
+        gradient.addColorStop(1, '#1e293b'); // كحلي فاتح قليلاً
+        tempCtx.fillStyle = gradient;
+        tempCtx.fillRect(0, 0, 1000, 600);
+        baseImage = tempCanvas;
+    }
+
+    let avatar;
+    try {
+        // forceStatic تمنع الصور المتحركة من التسبب بمشكلة
+        avatar = await loadImage(targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }));
+    } catch (e) {
+        // صورة رمزية رمادية في حال فشل جلب صورة اللاعب
+        const tempCanvas = createCanvas(256, 256);
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.fillStyle = '#4752c4';
+        tempCtx.fillRect(0, 0, 256, 256);
+        avatar = tempCanvas;
+    }
 
     const canvas = createCanvas(baseImage.width, baseImage.height);
     const ctx = canvas.getContext('2d');
@@ -215,6 +241,8 @@ module.exports = {
             client = message.client;
             user = message.author;
             targetMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
+            // يعطي مؤشر أن البوت يكتب (يغني عن الرسالة المؤقتة)
+            message.channel.sendTyping().catch(()=>{}); 
         }
 
         const reply = async (payload) => {
@@ -343,20 +371,13 @@ module.exports = {
         };
 
         try {
-            let waitingMsg = null;
-            if (!isSlash) {
-                waitingMsg = await message.reply("🛠️ جاري صقل عتادك وعرضه...");
-            }
-
-            // رسم وقطع المهارات للصفحة الحالية
+            // رسم الصورة للصفحة الأولى
             const currentSkillsSlice = finalSkillsForImage.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
             let attachment = await generateSkillsImage(targetUser, cleanName, weaponData, userRace, currentSkillsSlice, potionsList, totalSpent, currentPage, totalPages);
 
+            // الإرسال المباشر
             const responseMsg = await reply({ files: [attachment], components: getButtons(currentPage) });
 
-            if (waitingMsg) waitingMsg.delete().catch(()=>{});
-
-            // تفعيل نظام الأزرار والتنقل
             if (totalPages > 1 && responseMsg) {
                 const collector = responseMsg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120000 });
                 
