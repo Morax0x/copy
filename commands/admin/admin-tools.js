@@ -37,7 +37,6 @@ async function getUserRace(member, db) {
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleID || r.roleid)) || null;
 }
 
-// 🔥 دالة جلب الجرد 🔥
 async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     let levelsRes;
     try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
@@ -100,10 +99,9 @@ module.exports = {
             return this.sendMarketPanel(message, db);
         }
 
-        // 🔥 التعديل الجوهري للبحث بالآيدي (ID) أو المنشن 🔥
         let targetUser = message.mentions.users.first();
         if (!targetUser && args[0]) {
-            const possibleId = args[0].replace(/[<@!>]/g, ''); // إزالة العلامات لو كان منشن غير مفعل
+            const possibleId = args[0].replace(/[<@!>]/g, ''); 
             if (/^\d+$/.test(possibleId)) {
                 try {
                     targetUser = await client.users.fetch(possibleId);
@@ -139,6 +137,7 @@ module.exports = {
                 .addOptions([
                     { label: '📋 فحص الحساب', value: 'check', description: 'عرض إحصائيات اللاعب' },
                     { label: '💰 إدارة المورا والخبرة', value: 'economy', emoji: '🪙' },
+                    { label: '👑 تعيين ملك يدوي', value: 'set_king', description: 'تتويج العضو كأحد ملوك الإمبراطورية', emoji: '👑' },
                     { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
                     { label: '🗳️ فرص التزكية', value: 'rep_chances', description: 'منح فرص تصويت (تزكية) إضافية لليوم', emoji: '🗳️' },
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
@@ -194,6 +193,55 @@ module.exports = {
                     await client.setLevel(ud);
                     await modalSubmit.editReply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
+            }
+            // 🔥 إضافة خيار التتويج اليدوي 🔥
+            else if (val === 'set_king') {
+                const kingMenu = new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId(`mod_king_${Date.now()}`)
+                        .setPlaceholder('👑 اختر العرش لتقليده إياه...')
+                        .addOptions([
+                            { label: 'ملك الكازينو', value: 'roleCasinoKing', emoji: '🎰' },
+                            { label: 'ملك الهاوية', value: 'roleAbyss', emoji: '🌑' },
+                            { label: 'ملك البلاغة', value: 'roleChatter', emoji: '🗣️' },
+                            { label: 'ملك الكرم', value: 'rolePhilanthropist', emoji: '🤝' },
+                            { label: 'ملك الحكمة', value: 'roleAdvisor', emoji: '🧠' },
+                            { label: 'ملك القنص', value: 'roleFisherKing', emoji: '🎣' },
+                            { label: 'ملك النزاع', value: 'rolePvPKing', emoji: '⚔️' },
+                            { label: 'ملك الحصاد', value: 'roleFarmKing', emoji: '🌾' }
+                        ])
+                );
+                
+                await interaction.update({ content: `👑 اختر اللقب الذي تريد إعطاءه لـ ${targetUser}:`, embeds: [], components: [kingMenu] });
+
+                const kingCollector = panelMsg.createMessageComponentCollector({ filter: i => i.user.id === message.author.id && i.customId.startsWith('mod_king_'), time: 60000 });
+                
+                kingCollector.on('collect', async i => {
+                    await i.deferUpdate();
+                    const selectedRoleColumn = i.values[0];
+                    
+                    let settingsRes;
+                    try { settingsRes = await db.query(`SELECT "${selectedRoleColumn}" FROM settings WHERE "guild" = $1`, [guildID]); }
+                    catch(e) { settingsRes = await db.query(`SELECT ${selectedRoleColumn} FROM settings WHERE guild = $1`, [guildID]).catch(()=>({rows:[]})); }
+                    
+                    const roleId = settingsRes.rows[0] ? settingsRes.rows[0][selectedRoleColumn] : null;
+                    
+                    if (!roleId) return await i.editReply({ content: `❌ لم يتم إعداد رتبة لهذا الملك في إعدادات السيرفر.`, components: [] });
+
+                    const targetRole = message.guild.roles.cache.get(roleId);
+                    if (!targetRole) return await i.editReply({ content: `❌ الرتبة المطلوبة غير موجودة في السيرفر.`, components: [] });
+
+                    targetRole.members.forEach(async (member) => {
+                        if (member.id !== userID) await member.roles.remove(targetRole).catch(() => {});
+                    });
+
+                    if (!targetMember.roles.cache.has(roleId)) {
+                        await targetMember.roles.add(targetRole).catch(() => {});
+                    }
+
+                    await i.editReply({ content: `👑 **تم تتويج ${targetUser} بلقب ${targetRole.name} وسحب الرتبة من الملك السابق بنجاح!**`, components: [] });
+                    kingCollector.stop();
+                });
             }
             else if (val === 'reputation') {
                 const modalId = `mod_rep_${Date.now()}`;
