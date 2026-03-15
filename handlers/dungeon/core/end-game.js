@@ -5,35 +5,50 @@ const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF, WIN_IMAGES, LOSE_IMAGES } 
 let updateGuildStat;
 try { ({ updateGuildStat } = require('../../guild-board-handler.js')); } catch (e) {}
 
+// 🔥 تم إعادة بناء دالة الحفظ لتكون محصنة وآمنة 100% وتتزامن مع الكاش 🔥
 async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, client) {
-    if (!db) return;
+    if (!db || (addMora === 0 && addXp === 0)) return;
     try {
-        let currentMora = 0, currentXp = 0;
-        let useQuotes = true;
-
-        try {
-            const res = await db.query(`SELECT "mora", "xp" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
-            if (res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
-            else await db.query(`INSERT INTO levels ("user", "guild", "mora", "xp", "level") VALUES ($1, $2, 0, 0, 1)`, [userId, guildId]).catch(()=>{});
-        } catch (e1) {
-            useQuotes = false;
-            const res = await db.query(`SELECT mora, xp FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>{});
-            if (res && res.rows.length > 0) { currentMora = Number(res.rows[0].mora) || 0; currentXp = Number(res.rows[0].xp) || 0; }
-            else if (res) await db.query(`INSERT INTO levels (userid, guildid, mora, xp, level) VALUES ($1, $2, 0, 0, 1)`, [userId, guildId]).catch(()=>{});
+        let userData = null;
+        if (client && typeof client.getLevel === 'function') {
+            userData = await client.getLevel(userId, guildId);
+        }
+        
+        if (!userData) {
+            userData = { ...client.defaultData, user: userId, guild: guildId, level: 1, xp: 0, totalXP: 0, mora: 0, bank: 0 };
         }
 
-        const newMora = currentMora + addMora;
-        const newXp = currentXp + addXp;
+        // تحديث الكاش فوراً
+        userData.mora = String(Number(userData.mora || 0) + addMora);
+        userData.xp = String(Number(userData.xp || 0) + addXp);
+        userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + addXp);
 
-        if (useQuotes) await db.query(`UPDATE levels SET "mora" = $1, "xp" = $2 WHERE "user" = $3 AND "guild" = $4`, [String(newMora), String(newXp), userId, guildId]);
-        else await db.query(`UPDATE levels SET mora = $1, xp = $2 WHERE userid = $3 AND guildid = $4`, [String(newMora), String(newXp), userId, guildId]);
-        
-        // 🔥 مسح الكاش ليظهر الرصيد فوراً 🔥
-        if (client && client.levelCache) {
-            client.levelCache.delete(`${guildId}-${userId}`);
+        if (client && typeof client.setLevel === 'function') {
+            await client.setLevel(userData);
+        }
+
+        // تحديث الداتابيز بطريقة مباشرة لمنع القلتشات
+        try {
+            await db.query(`
+                INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
+                VALUES ($1, $2, $3, $4, $4, 1) 
+                ON CONFLICT ("user", "guild") DO UPDATE SET 
+                "mora" = CAST(COALESCE(levels."mora", '0') AS BIGINT) + $3, 
+                "xp" = CAST(COALESCE(levels."xp", '0') AS BIGINT) + $4, 
+                "totalXP" = CAST(COALESCE(levels."totalXP", '0') AS BIGINT) + $4
+            `, [userId, guildId, addMora, addXp]);
+        } catch(e) {
+            await db.query(`
+                INSERT INTO levels (userid, guildid, mora, xp, totalxp, level) 
+                VALUES ($1, $2, $3, $4, $4, 1) 
+                ON CONFLICT (userid, guildid) DO UPDATE SET 
+                mora = CAST(COALESCE(levels.mora, '0') AS BIGINT) + $3, 
+                xp = CAST(COALESCE(levels.xp, '0') AS BIGINT) + $4, 
+                totalxp = CAST(COALESCE(levels.totalxp, '0') AS BIGINT) + $4
+            `, [userId, guildId, addMora, addXp]).catch(()=>{});
         }
     } catch (e) {
-        console.error(`[🚨 DUNGEON ERROR]`, e);
+        console.error(`[🚨 DUNGEON ERROR] in safeUpdateLevels:`, e);
     }
 }
 
@@ -83,24 +98,25 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         if (p.rewardsClaimed) {
             finalMora = p.finalMora || 0;
             finalXp = p.finalXp || 0;
-            // 🔥 لا نقوم بتحديث الداتابيز هنا لأن اللاعب أخذ جائزته بالفعل عند الانسحاب!
+            // اللاعب أخذ جائزته عند الانسحاب المبكر
         } else {
             if (status === 'lose' && floor > 20) {
                 finalMora = 1000;
                 finalXp = 100;
             } else {
-                finalMora = Math.floor(p.loot.mora || 0);
-                finalXp = Math.floor(p.loot.xp || 0);
+                finalMora = Math.floor(p.loot?.mora || 0);
+                finalXp = Math.floor(p.loot?.xp || 0);
                 if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
             }
             
             await safeUpdateLevels(sql, p.id, guildId, finalMora, finalXp, "END GAME", client);
         }
 
+        // 🔥 إنصاف اللاعب المضحي: يُحسب له الطابق الذي مات فيه ولن ننقص منه 1 إذا ساعد فريقه بالانتحار
         let effectiveEndFloor = floor;
-        if (p.isDead && p.deathFloor) effectiveEndFloor = p.deathFloor - 1; 
+        if (status === 'lose') effectiveEndFloor = Math.max(1, floor - 1); 
         else if (p.retreatFloor) effectiveEndFloor = p.retreatFloor; 
-        else if (status === 'lose') effectiveEndFloor = Math.max(1, floor - 1); 
+        else if (p.isDead && p.deathFloor) effectiveEndFloor = p.deathFloor; 
 
         let playerStartFloor = p.startFloor || sessionStartFloor;
         if (playerStartFloor > effectiveEndFloor) playerStartFloor = effectiveEndFloor;
