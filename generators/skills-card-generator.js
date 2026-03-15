@@ -44,24 +44,24 @@ async function generateSkillsCard(data) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const primaryColor = '#FFD700'; // لون ذهبي امبراطوري
-    const secondaryColor = '#b8860b'; // لون برونزي
+    const primaryColor = '#FFD700'; // ذهبي
+    const secondaryColor = '#b8860b'; // برونزي
 
-    // 1. رسم الخلفية الفخمة (تدرج لوني داكن)
+    // 1. رسم الخلفية الأساسية
     const bgBase = ctx.createLinearGradient(0, 0, width, height);
     bgBase.addColorStop(0, '#0a0a14'); 
     bgBase.addColorStop(1, '#1a1a2e');
     ctx.fillStyle = bgBase;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. إضافة تأثيرات إضاءة (Vignette & Glow)
+    // 2. تأثير الإضاءة
     const glow = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 600);
     glow.addColorStop(0, 'rgba(255, 215, 0, 0.05)');
     glow.addColorStop(1, 'rgba(0, 0, 0, 0.8)'); 
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, width, height);
 
-    // 3. رسم الإطار الخارجي المزخرف
+    // 3. الإطار الخارجي
     const borderGradient = ctx.createLinearGradient(0, 0, width, height);
     borderGradient.addColorStop(0, primaryColor);
     borderGradient.addColorStop(0.5, '#ffffff');
@@ -75,174 +75,111 @@ async function generateSkillsCard(data) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // 4. رسم الرمز الشخصي (Avatar)
-    const avatarSize = 160;
-    const avatarX = width - 190; 
-    const avatarY = 50; 
-    
-    ctx.save();
-    ctx.shadowColor = primaryColor;
-    ctx.shadowBlur = 30; 
-    ctx.beginPath();
-    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, (avatarSize / 2) + 6, 0, Math.PI * 2);
-    ctx.fillStyle = primaryColor;
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    try {
-        const avatarImage = await loadImage(data.avatarUrl);
-        ctx.drawImage(avatarImage, avatarX, avatarY, avatarSize, avatarSize);
-    } catch (e) {
-        ctx.fillStyle = '#333'; ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
-    }
-    ctx.restore();
-
-    // 5. كتابة اسم اللاعب
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 50px "Bein", sans-serif';
-    ctx.shadowColor = 'rgba(0,0,0,1)';
-    ctx.shadowBlur = 10;
-    
-    let dName = data.cleanName;
-    if (dName.length > 15) dName = dName.substring(0, 15) + '..';
-    ctx.fillText(dName, width - 210, 100);
-    ctx.shadowBlur = 0;
-
-    // صندوق إجمالي التطويرات تحت الاسم
-    ctx.fillStyle = 'rgba(20, 20, 25, 0.85)';
-    ctx.beginPath(); roundRect(ctx, width - 450, 130, 230, 45, 10); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = secondaryColor; ctx.stroke();
-    
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 20px "Bein", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`قيمة العتاد: ${data.totalSpent.toLocaleString()}`, width - 335, 160);
-
-    // ==========================================
-    // 6. قسم العتاد القتالي (يسار)
-    // ==========================================
-    const leftX = 40;
-    let leftY = 60;
-    const leftBoxW = 400;
-
-    // صندوق السلاح
-    ctx.fillStyle = 'rgba(15, 15, 20, 0.8)';
-    ctx.beginPath(); roundRect(ctx, leftX, leftY, leftBoxW, 160, 15); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = primaryColor; ctx.stroke();
-
-    ctx.fillStyle = primaryColor;
-    ctx.font = 'bold 28px "Bein", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText('⚔️ العـتـاد والأسلحـة', leftX + leftBoxW - 20, leftY + 40);
-    
-    ctx.beginPath(); ctx.moveTo(leftX + 20, leftY + 55); ctx.lineTo(leftX + leftBoxW - 20, leftY + 55);
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
-
-    ctx.font = '22px "Bein", sans-serif';
-    ctx.fillStyle = '#ffffff';
-    if (data.weaponData) {
-        ctx.fillText(`السلاح: ${data.weaponData.name}`, leftX + leftBoxW - 20, leftY + 90);
-        ctx.fillStyle = '#00BFFF';
-        ctx.fillText(`المستوى: Lv.${data.weaponData.currentLevel}`, leftX + leftBoxW - 20, leftY + 120);
-        ctx.fillStyle = '#FF4500';
-        ctx.fillText(`الضرر: ${data.weaponData.currentDamage} DMG`, leftX + leftBoxW - 20, leftY + 150);
-    } else {
-        ctx.fillText(`العرق: ${data.raceName}`, leftX + leftBoxW - 20, leftY + 100);
-        ctx.fillStyle = '#aaaaaa';
-        ctx.fillText(`(بدون سلاح مجهز)`, leftX + leftBoxW - 20, leftY + 135);
-    }
-
-    // صندوق الجرعات
-    leftY += 190;
-    ctx.fillStyle = 'rgba(15, 15, 20, 0.8)';
-    ctx.beginPath(); roundRect(ctx, leftX, leftY, leftBoxW, 180, 15); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = secondaryColor; ctx.stroke();
-
-    ctx.fillStyle = secondaryColor;
-    ctx.font = 'bold 28px "Bein", sans-serif';
-    ctx.fillText('⚗️ حقـيبـة الجرعـات', leftX + leftBoxW - 20, leftY + 40);
-    
-    ctx.beginPath(); ctx.moveTo(leftX + 20, leftY + 55); ctx.lineTo(leftX + leftBoxW - 20, leftY + 55);
-    ctx.stroke();
-
-    ctx.font = '20px "Bein", sans-serif';
-    ctx.fillStyle = '#e0e0e0';
-    let pY = leftY + 90;
-    if (data.potionsList.length > 0) {
-        data.potionsList.slice(0, 3).forEach(p => {
-            ctx.fillText(`(x${p.qty}) : ${p.name}`, leftX + leftBoxW - 20, pY);
-            pY += 30;
-        });
-        if (data.potionsList.length > 3) {
-            ctx.fillStyle = '#888888';
-            ctx.fillText(`... وجرعات أخرى في الحقيبة`, leftX + leftBoxW - 20, pY);
-        }
-    } else {
-        ctx.fillText("الحقيبة فارغة.", leftX + leftBoxW - 20, pY);
-    }
-
-    // ==========================================
-    // 7. قسم المهارات (يمين ووسط وأسفل)
-    // ==========================================
-    let rightY = 260;
-    const rightBoxW = width - 80; // عرض كامل للمهارات
+    // 4. رسم المهارات (تم تقديمها لتكون في الخلفية بالنسبة للمربعات الجانبية)
+    let skillY = 290;
+    const skillBoxW = width - 80;
     const skillX = 40;
 
     ctx.fillStyle = primaryColor;
     ctx.font = 'bold 30px "Bein", sans-serif';
     ctx.textAlign = 'right';
-    ctx.shadowColor = primaryColor; ctx.shadowBlur = 10;
-    ctx.fillText('❖ المهارات والقـدرات المكتسبة', width - 40, rightY);
-    ctx.shadowBlur = 0;
-
-    rightY += 30;
+    ctx.fillText('❖ المهارات والقـدرات المكتسبة', width - 40, 260);
 
     if (data.skillsList.length > 0) {
         data.skillsList.forEach((skill, index) => {
-            // صندوق المهارة
             ctx.fillStyle = 'rgba(15, 15, 20, 0.9)';
-            ctx.beginPath(); roundRect(ctx, skillX, rightY, rightBoxW, 110, 12); ctx.fill();
+            ctx.beginPath(); roundRect(ctx, skillX, skillY, skillBoxW, 110, 12); ctx.fill();
             
-            // خط ملون جانبي للمهارة
             const colors = ['#FFD700', '#00FFFF', '#FF00FF'];
             ctx.fillStyle = colors[index % colors.length];
-            ctx.beginPath(); roundRect(ctx, skillX + rightBoxW - 10, rightY, 10, 110, 5); ctx.fill();
+            ctx.beginPath(); roundRect(ctx, skillX + skillBoxW - 10, skillY, 10, 110, 5); ctx.fill();
 
-            // اسم المهارة والمستوى
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 24px "Bein", sans-serif';
             ctx.textAlign = 'right';
-            ctx.fillText(`${skill.name} (Lv.${skill.level})`, skillX + rightBoxW - 25, rightY + 35);
+            ctx.fillText(`${skill.name} (Lv.${skill.level})`, skillX + skillBoxW - 25, skillY + 35);
             
-            // الوصف
             ctx.fillStyle = '#cccccc';
             ctx.font = '18px "Bein", sans-serif';
-            wrapText(ctx, skill.description, skillX + rightBoxW - 25, rightY + 70, rightBoxW - 50, 25);
-
-            rightY += 130;
+            wrapText(ctx, skill.description, skillX + skillBoxW - 25, skillY + 70, skillBoxW - 50, 25);
+            skillY += 130;
         });
-    } else {
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = 'italic 24px "Bein", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText("لا توجد مهارات مكتسبة حتى الآن.", width / 2, rightY + 100);
     }
 
-    // 8. شريط ترقيم الصفحات
+    // ==========================================================
+    // 5. رسم الطبقة الأمامية (السلاح + الجرعات + الأفاتار)
+    // نضعها هنا لترسم "فوق" أي تداخل من المهارات
+    // ==========================================================
+    
+    // الأفاتار واسم اللاعب
+    const avatarSize = 160;
+    const avatarX = width - 190; 
+    const avatarY = 50; 
+    
+    ctx.save();
+    ctx.shadowColor = primaryColor; ctx.shadowBlur = 30; 
+    ctx.beginPath(); ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, (avatarSize / 2) + 6, 0, Math.PI * 2);
+    ctx.fillStyle = primaryColor; ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
+    try {
+        const avatarImage = await loadImage(data.avatarUrl);
+        ctx.drawImage(avatarImage, avatarX, avatarY, avatarSize, avatarSize);
+    } catch (e) { ctx.fillStyle = '#333'; ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize); }
+    ctx.restore();
+
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'right'; ctx.font = 'bold 50px "Bein", sans-serif';
+    let dName = data.cleanName; if (dName.length > 15) dName = dName.substring(0, 15) + '..';
+    ctx.fillText(dName, width - 210, 100);
+
+    // صندوق السلاح (أمام المهارات)
+    const leftX = 40;
+    const leftBoxW = 400;
+    
+    ctx.fillStyle = 'rgba(15, 15, 20, 0.95)'; // زيادة الشفافية لضمان التغطية
+    ctx.beginPath(); roundRect(ctx, leftX, 60, leftBoxW, 160, 15); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = primaryColor; ctx.stroke();
+
+    ctx.fillStyle = primaryColor; ctx.font = 'bold 28px "Bein", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('⚔️ العـتـاد والأسلحـة', leftX + leftBoxW - 20, 100);
+
+    ctx.font = '22px "Bein", sans-serif'; ctx.fillStyle = '#ffffff';
+    if (data.weaponData) {
+        ctx.fillText(`السلاح: ${data.weaponData.name}`, leftX + leftBoxW - 20, 150);
+        ctx.fillStyle = '#00BFFF'; ctx.fillText(`المستوى: Lv.${data.weaponData.currentLevel}`, leftX + leftBoxW - 20, 180);
+    }
+
+    // صندوق الجرعات (أمام المهارات)
+    ctx.fillStyle = 'rgba(15, 15, 20, 0.95)';
+    ctx.beginPath(); roundRect(ctx, leftX, 250, leftBoxW, 180, 15); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = secondaryColor; ctx.stroke();
+
+    ctx.fillStyle = secondaryColor; ctx.font = 'bold 28px "Bein", sans-serif';
+    ctx.fillText('⚗️ حقـيبـة الجرعـات', leftX + leftBoxW - 20, 290);
+
+    ctx.font = '20px "Bein", sans-serif'; ctx.fillStyle = '#e0e0e0';
+    let pY = 340;
+    if (data.potionsList.length > 0) {
+        data.potionsList.slice(0, 3).forEach(p => {
+            ctx.fillText(`(x${p.qty}) : ${p.name}`, leftX + leftBoxW - 20, pY);
+            pY += 30;
+        });
+    } else { ctx.fillText("الحقيبة فارغة.", leftX + leftBoxW - 20, pY); }
+
+    // قيمة العتاد
+    ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
+    ctx.beginPath(); roundRect(ctx, width - 450, 130, 230, 45, 10); ctx.fill();
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 20px "Bein", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`قيمة العتاد: ${data.totalSpent.toLocaleString()}`, width - 335, 160);
+
+    // 8. ترقيم الصفحات
     if (data.totalPages > 1) {
         ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
         ctx.beginPath(); roundRect(ctx, width/2 - 80, height - 50, 160, 35, 10); ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = primaryColor; ctx.stroke();
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '18px "Bein", sans-serif';
-        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff'; ctx.font = '18px "Bein", sans-serif'; ctx.textAlign = 'center';
         ctx.fillText(`صفحة ${data.currentPage + 1} / ${data.totalPages}`, width/2, height - 26);
     }
 
