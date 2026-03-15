@@ -27,7 +27,7 @@ try { GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_STAR = '⭐';
-const OWNER_ID = "1145327691772481577";
+const OWNER_ID = "1145327691772481577"; // 👑 آيدي الإمبراطور الذي سيتم استثناؤه من المنافسة
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
@@ -537,7 +537,7 @@ async function handleQuestPanel(i, client, db) {
     } 
     else if (section === 'hall_of_fame') {
         try {
-            const topUsersRes = await db.query(`SELECT "userID", "rep_points" as rp FROM user_reputation WHERE "guildID" = $1 AND "rep_points" > 0 ORDER BY rp DESC LIMIT 10`, [guildId]);
+            const topUsersRes = await db.query(`SELECT "userID", "rep_points" as rp FROM user_reputation WHERE "guildID" = $1 AND "rep_points" > 0 AND "userID" != $2 ORDER BY rp DESC LIMIT 10`, [guildId, OWNER_ID]);
             const topUsers = topUsersRes.rows;
             
             let topUsersData = [];
@@ -622,29 +622,29 @@ async function autoUpdateKingsBoard(client, db) {
 
             const todayStr = getTodayDateString();
 
-            // 🔥 تم إضافة "ORDER BY val DESC, "userID" ASC" لمنع التعادل العشوائي
-            const casinoDataRes = await db.query(`SELECT "userID", SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            // 🔥 تم استثناء الآيدي الخاص بك (OWNER_ID) من كل هذه الاستعلامات 🔥
+            const casinoDataRes = await db.query(`SELECT "userID", SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const casinoData = casinoDataRes.rows[0];
             
-            const abyssDataRes = await db.query(`SELECT "userID", "dungeon_floor" as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const abyssDataRes = await db.query(`SELECT "userID", "dungeon_floor" as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const abyssData = abyssDataRes.rows[0];
             
-            const chatterDataRes = await db.query(`SELECT "userID", SUM(COALESCE("messages", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const chatterDataRes = await db.query(`SELECT "userID", SUM(COALESCE("messages", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const chatterData = chatterDataRes.rows[0];
             
-            const philanDataRes = await db.query(`SELECT "userID", SUM(COALESCE("mora_donated", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("mora_donated", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const philanDataRes = await db.query(`SELECT "userID", SUM(COALESCE("mora_donated", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("mora_donated", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const philanData = philanDataRes.rows[0];
             
-            const advisorDataRes = await db.query(`SELECT "userID", SUM(COALESCE("ai_interactions", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("ai_interactions", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const advisorDataRes = await db.query(`SELECT "userID", SUM(COALESCE("ai_interactions", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("ai_interactions", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const advisorData = advisorDataRes.rows[0];
             
-            const fisherDataRes = await db.query(`SELECT "userID", SUM(COALESCE("fish_caught", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("fish_caught", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const fisherDataRes = await db.query(`SELECT "userID", SUM(COALESCE("fish_caught", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("fish_caught", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const fisherData = fisherDataRes.rows[0];
             
-            const pvpDataRes = await db.query(`SELECT "userID", SUM(COALESCE("pvp_wins", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("pvp_wins", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const pvpDataRes = await db.query(`SELECT "userID", SUM(COALESCE("pvp_wins", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("pvp_wins", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const pvpData = pvpDataRes.rows[0];
             
-            const farmDataRes = await db.query(`SELECT "userID", SUM(COALESCE("crops_harvested", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("crops_harvested", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr]);
+            const farmDataRes = await db.query(`SELECT "userID", SUM(COALESCE("crops_harvested", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("crops_harvested", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const farmData = farmDataRes.rows[0];
 
             const currentHashArray = [
@@ -791,23 +791,24 @@ async function rewardDailyKings(client, db) {
             const settings = settingsRes.rows[0];
             if (!settings || !settings.guildAnnounceChannelID) continue;
 
-            const casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            // 🔥 تم استثناء الآيدي الخاص بك (OWNER_ID) من الجوائز اليومية أيضاً 🔥
+            const casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const casinoData = casinoDataRes.rows[0];
             
-            const abyssDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const abyssDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const abyssData = abyssDataRes.rows[0];
             
-            const chatterDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY SUM(COALESCE("messages", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const chatterDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("messages", 0)) > 0 ORDER BY SUM(COALESCE("messages", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const chatterData = chatterDataRes.rows[0];
-            const philanDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("mora_donated", 0)) > 0 ORDER BY SUM(COALESCE("mora_donated", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const philanDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("mora_donated", 0)) > 0 ORDER BY SUM(COALESCE("mora_donated", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const philanData = philanDataRes.rows[0];
-            const advisorDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("ai_interactions", 0)) > 0 ORDER BY SUM(COALESCE("ai_interactions", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const advisorDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("ai_interactions", 0)) > 0 ORDER BY SUM(COALESCE("ai_interactions", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const advisorData = advisorDataRes.rows[0];
-            const fisherDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("fish_caught", 0)) > 0 ORDER BY SUM(COALESCE("fish_caught", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const fisherDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("fish_caught", 0)) > 0 ORDER BY SUM(COALESCE("fish_caught", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const fisherData = fisherDataRes.rows[0];
-            const pvpDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("pvp_wins", 0)) > 0 ORDER BY SUM(COALESCE("pvp_wins", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const pvpDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("pvp_wins", 0)) > 0 ORDER BY SUM(COALESCE("pvp_wins", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const pvpData = pvpDataRes.rows[0];
-            const farmDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" HAVING SUM(COALESCE("crops_harvested", 0)) > 0 ORDER BY SUM(COALESCE("crops_harvested", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr]);
+            const farmDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("crops_harvested", 0)) > 0 ORDER BY SUM(COALESCE("crops_harvested", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const farmData = farmDataRes.rows[0];
 
             const winnersRaw = [
