@@ -83,9 +83,13 @@ async function ensureLandTable(db) {
 
 async function getGrowthMultiplier(member, guildId, db) {
     try {
-        const settingsRes = await db.query(`SELECT "roleFarmKing" FROM settings WHERE "guild" = $1`, [guildId]);
+        let settingsRes;
+        try { settingsRes = await db.query(`SELECT "roleFarmKing" FROM settings WHERE "guild" = $1`, [guildId]); }
+        catch(e) { settingsRes = await db.query(`SELECT rolefarmking FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]})); }
+        
         const settings = settingsRes.rows[0];
-        if (settings && settings.roleFarmKing && member && member.roles && member.roles.cache.has(settings.roleFarmKing)) {
+        const roleId = settings ? (settings.roleFarmKing || settings.rolefarmking) : null;
+        if (roleId && member && member.roles && member.roles.cache.has(roleId)) {
             return 0.70; 
         }
     } catch(e) {}
@@ -104,8 +108,11 @@ async function renderLand(interaction, client, db) {
     let unlockedPlots = await getLandPlots(client, userId, guildId);
     if (unlockedPlots >= 30) unlockedPlots = 36; 
 
-    const userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+    let userPlotsRes;
+    try { userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+    catch(e) { userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
     const userPlots = userPlotsRes.rows;
+    
     const now = Date.now();
 
     const member = interaction.member || await interaction.guild.members.fetch(userId).catch(()=>null);
@@ -119,7 +126,7 @@ async function renderLand(interaction, client, db) {
     let totalPlowCost = 0;
 
     for (let i = 1; i <= unlockedPlots; i++) {
-        const p = userPlots.find(x => Number(x.plotID) === i);
+        const p = userPlots.find(x => Number(x.plotID || x.plotid) === i);
         
         if (!p || p.status === 'empty') {
             totalPlowCost += PLOW_COST_BULK;
@@ -130,11 +137,12 @@ async function renderLand(interaction, client, db) {
             hasTilled = true;
         }
 
-        if (p && p.status === 'planted' && p.seedID) {
-            const seed = seedsData.find(s => s.id === p.seedID);
+        if (p && p.status === 'planted' && (p.seedID || p.seedid)) {
+            const sID = p.seedID || p.seedid;
+            const seed = seedsData.find(s => s.id === sID);
             if (seed) {
                 const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
-                const age = now - Number(p.plantTime);
+                const age = now - Number(p.plantTime || p.planttime);
                 const remaining = growthMs - age;
 
                 if (remaining > 0 && remaining < minRemainingTime) {
@@ -191,7 +199,7 @@ async function renderLand(interaction, client, db) {
                 ctx.drawImage(images.lock, x, y, TILE_SIZE, TILE_SIZE);
             }
         } else {
-            const plotData = userPlots.find(p => Number(p.plotID) === i);
+            const plotData = userPlots.find(p => Number(p.plotID || p.plotid) === i);
             
             if (plotData && plotData.status === 'tilled') {
                 if (images.tilled) ctx.drawImage(images.tilled, x, y, TILE_SIZE, TILE_SIZE);
@@ -199,11 +207,12 @@ async function renderLand(interaction, client, db) {
             else if (plotData && plotData.status === 'planted') {
                 if (images.tilled) ctx.drawImage(images.tilled, x, y, TILE_SIZE, TILE_SIZE);
 
-                const seed = seedsData.find(s => s.id === plotData.seedID);
+                const sID = plotData.seedID || plotData.seedid;
+                const seed = seedsData.find(s => s.id === sID);
                 if (seed) {
                     const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                     const witherMs = seed.wither_time_hours * 3600000;
-                    const age = now - Number(plotData.plantTime);
+                    const age = now - Number(plotData.plantTime || plotData.planttime);
 
                     if (age >= (growthMs + witherMs)) {
                         if (images.withered) ctx.drawImage(images.withered, x, y, TILE_SIZE, TILE_SIZE);
@@ -266,11 +275,14 @@ async function renderLand(interaction, client, db) {
     }
 
     try {
-        const workerBuffRes = await db.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'farm_worker' AND "expiresAt" > $3`, [userId, guildId, now]);
+        let workerBuffRes;
+        try { workerBuffRes = await db.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'farm_worker' AND "expiresAt" > $3`, [userId, guildId, now]); }
+        catch(e) { workerBuffRes = await db.query(`SELECT expiresat FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'farm_worker' AND expiresat > $3`, [userId, guildId, now]).catch(()=>({rows:[]})); }
+        
         const workerBuff = workerBuffRes.rows[0];
         
         if (workerBuff) {
-            const timeLeft = Number(workerBuff.expiresAt) - now;
+            const timeLeft = Number(workerBuff.expiresAt || workerBuff.expiresat) - now;
             const daysLeft = Math.floor(timeLeft / (24 * 60 * 60 * 1000));
             const hoursLeft = Math.floor((timeLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
             
@@ -330,25 +342,36 @@ async function handleLandInteractions(i, client, db) {
         if (maxPlots >= 30) maxPlots = 36;
         
         let targetPlot = null;
-        const userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+        let userPlotsRes;
+        try { userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { userPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const userPlots = userPlotsRes.rows;
-        const recordedIds = userPlots.map(p => Number(p.plotID));
+        const recordedIds = userPlots.map(p => Number(p.plotID || p.plotid));
 
         for (let pid = 1; pid <= maxPlots; pid++) {
             if (!recordedIds.includes(pid)) { targetPlot = pid; break; } 
             else {
-                const plot = userPlots.find(p => Number(p.plotID) === pid);
+                const plot = userPlots.find(p => Number(p.plotID || p.plotid) === pid);
                 if (plot.status === 'empty') { targetPlot = pid; break; }
             }
         }
 
         if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: [MessageFlags.Ephemeral] });
 
-        await db.query(`
-            INSERT INTO user_lands ("userID", "guildID", "plotID", "status") 
-            VALUES ($1, $2, $3, 'tilled')
-            ON CONFLICT ("userID", "guildID", "plotID") DO UPDATE SET "status" = 'tilled'
-        `, [userId, guildId, targetPlot]);
+        try {
+            await db.query(`
+                INSERT INTO user_lands ("userID", "guildID", "plotID", "status") 
+                VALUES ($1, $2, $3, 'tilled')
+                ON CONFLICT ("userID", "guildID", "plotID") DO UPDATE SET "status" = 'tilled'
+            `, [userId, guildId, targetPlot]);
+        } catch(e) {
+            await db.query(`
+                INSERT INTO user_lands (userid, guildid, plotid, status) 
+                VALUES ($1, $2, $3, 'tilled')
+                ON CONFLICT (userid, guildid, plotid) DO UPDATE SET status = 'tilled'
+            `, [userId, guildId, targetPlot]).catch(()=>{});
+        }
 
         await updateView();
         return;
@@ -359,15 +382,18 @@ async function handleLandInteractions(i, client, db) {
         let maxPlots = await getLandPlots(client, userId, guildId);
         if (maxPlots >= 30) maxPlots = 36;
 
-        const existingPlotsRes = await db.query(`SELECT "plotID", "status" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+        let existingPlotsRes;
+        try { existingPlotsRes = await db.query(`SELECT "plotID", "status" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { existingPlotsRes = await db.query(`SELECT plotid, status FROM user_lands WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const existingPlots = existingPlotsRes.rows;
-        const existingIds = existingPlots.map(p => Number(p.plotID));
+        const existingIds = existingPlots.map(p => Number(p.plotID || p.plotid));
         let plotsToPlow = [];
 
         for (let pid = 1; pid <= maxPlots; pid++) {
             if (!existingIds.includes(pid)) plotsToPlow.push(pid);
             else {
-                const plot = existingPlots.find(p => Number(p.plotID) === pid);
+                const plot = existingPlots.find(p => Number(p.plotID || p.plotid) === pid);
                 if (plot && plot.status === 'empty') plotsToPlow.push(pid);
             }
         }
@@ -377,17 +403,16 @@ async function handleLandInteractions(i, client, db) {
         const totalCost = plotsToPlow.length * PLOW_COST_BULK;
         
         let userData = await client.getLevel(userId, guildId);
-        
-        if (!userData) {
-            return await i.followUp({ content: "❌ **لم يتم العثور على بياناتك!** حاول كتابة رسالة في الشات أولاً لتسجيل دخولك.", flags: [MessageFlags.Ephemeral] });
-        }
+        if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
 
-        if (Number(userData.mora) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
+        if (Number(userData.mora || 0) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
         
-        userData.mora = Number(userData.mora) - totalCost;
-        await client.setLevel(userData);
-
+        // 🔥 خصم المورا بطريقة آمنة من الداتا بيز 🔥
         try {
+            await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
+            userData.mora = String(Number(userData.mora || 0) - totalCost);
+            if (typeof client.setLevel === 'function') await client.setLevel(userData);
+            
             await db.query("BEGIN");
             for (const pid of plotsToPlow) {
                 await db.query(`
@@ -398,8 +423,24 @@ async function handleLandInteractions(i, client, db) {
             }
             await db.query("COMMIT");
         } catch (e) {
-            await db.query("ROLLBACK");
-            console.error("Error plowing all lands:", e);
+            await db.query("ROLLBACK").catch(()=>{});
+            try {
+                await db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [totalCost, userId, guildId]);
+                userData.mora = String(Number(userData.mora || 0) - totalCost);
+                if (typeof client.setLevel === 'function') await client.setLevel(userData);
+                
+                await db.query("BEGIN");
+                for (const pid of plotsToPlow) {
+                    await db.query(`
+                        INSERT INTO user_lands (userid, guildid, plotid, status) 
+                        VALUES ($1, $2, $3, 'tilled')
+                        ON CONFLICT (userid, guildid, plotid) DO UPDATE SET status = 'tilled'
+                    `, [userId, guildId, pid]);
+                }
+                await db.query("COMMIT");
+            } catch(err) {
+                await db.query("ROLLBACK").catch(()=>{});
+            }
         }
 
         await updateView();
@@ -458,10 +499,16 @@ async function handleLandInteractions(i, client, db) {
 
         if (isNaN(qtyInput) || qtyInput <= 0) return await i.editReply("❌ رقم خطأ.");
 
-        const tilledPlotsRes = await db.query(`SELECT "plotID" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'tilled'`, [userId, guildId]);
+        let tilledPlotsRes;
+        try { tilledPlotsRes = await db.query(`SELECT "plotID" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'tilled'`, [userId, guildId]); }
+        catch(e) { tilledPlotsRes = await db.query(`SELECT plotid FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'tilled'`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const tilledPlots = tilledPlotsRes.rows;
         
-        const invItemRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
+        let invItemRes;
+        try { invItemRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]); }
+        catch(e) { invItemRes = await db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, seedId]).catch(()=>({rows:[]})); }
+        
         const invItem = invItemRes.rows[0];
         const seedStock = invItem ? Number(invItem.quantity) : 0;
 
@@ -469,10 +516,18 @@ async function handleLandInteractions(i, client, db) {
 
         if (countToPlant === 0) return await i.editReply("❌ لا يمكن الزراعة (نقص بذور أو أرض غير محروثة).");
 
-        if (seedStock === countToPlant) {
-            await db.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
-        } else {
-            await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [countToPlant, userId, guildId, seedId]);
+        try {
+            if (seedStock === countToPlant) {
+                await db.query(`DELETE FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
+            } else {
+                await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [countToPlant, userId, guildId, seedId]);
+            }
+        } catch(e) {
+            if (seedStock === countToPlant) {
+                await db.query(`DELETE FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, seedId]).catch(()=>{});
+            } else {
+                await db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [countToPlant, userId, guildId, seedId]).catch(()=>{});
+            }
         }
 
         const now = Date.now();
@@ -480,12 +535,18 @@ async function handleLandInteractions(i, client, db) {
         try {
             await db.query("BEGIN");
             for (let k = 0; k < countToPlant; k++) {
-                await db.query(`UPDATE user_lands SET "status" = 'planted', "seedID" = $1, "plantTime" = $2 WHERE "userID" = $3 AND "guildID" = $4 AND "plotID" = $5`, [seed.id, now, userId, guildId, tilledPlots[k].plotID]);
+                await db.query(`UPDATE user_lands SET "status" = 'planted', "seedID" = $1, "plantTime" = $2 WHERE "userID" = $3 AND "guildID" = $4 AND "plotID" = $5`, [seed.id, now, userId, guildId, tilledPlots[k].plotID || tilledPlots[k].plotid]);
             }
             await db.query("COMMIT");
         } catch (e) {
             await db.query("ROLLBACK");
-            console.error("Error planting seeds:", e);
+            try {
+                await db.query("BEGIN");
+                for (let k = 0; k < countToPlant; k++) {
+                    await db.query(`UPDATE user_lands SET status = 'planted', seedid = $1, planttime = $2 WHERE userid = $3 AND guildid = $4 AND plotid = $5`, [seed.id, now, userId, guildId, tilledPlots[k].plotID || tilledPlots[k].plotid]);
+                }
+                await db.query("COMMIT");
+            } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
         await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
@@ -501,33 +562,36 @@ async function handleLandInteractions(i, client, db) {
                     files: newData.files
                 });
             }
-        } catch (err) {
-            console.error("Failed to update farm image after planting:", err);
-        }
+        } catch (err) {}
         
         return;
     }
 
     if (baseAction === 'land_harvest_all') {
         await i.deferUpdate();
-        const plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]);
+        
+        let plantedPlotsRes;
+        try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
+        catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const plantedPlots = plantedPlotsRes.rows;
         const now = Date.now();
         let totalRevenue = 0, totalXP = 0, harvestedCount = 0;
         const plotsToReset = [];
 
         for (const plot of plantedPlots) {
-            const seed = seedsData.find(s => s.id === plot.seedID);
+            const sID = plot.seedID || plot.seedid;
+            const seed = seedsData.find(s => s.id === sID);
             if (!seed) continue;
             const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
             const witherMs = seed.wither_time_hours * 3600000;
-            const age = now - Number(plot.plantTime);
+            const age = now - Number(plot.plantTime || plot.planttime);
 
             if (age >= growthMs && age < (growthMs + witherMs)) {
                 totalRevenue += seed.sell_price;
                 totalXP += seed.xp_reward;
                 harvestedCount++;
-                plotsToReset.push(plot.plotID);
+                plotsToReset.push(plot.plotID || plot.plotid);
             }
         }
 
@@ -541,20 +605,32 @@ async function handleLandInteractions(i, client, db) {
             await db.query("COMMIT");
         } catch (e) {
             await db.query("ROLLBACK");
-            console.error("Error harvesting crops:", e);
+            try {
+                await db.query("BEGIN");
+                for (const pid of plotsToReset) {
+                    await db.query(`UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3`, [userId, guildId, pid]);
+                }
+                await db.query("COMMIT");
+            } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
+        // 🔥 إعطاء الجوائز بقوة وبطريقة آمنة تمنع القلتشات 🔥
         let userData = await client.getLevel(userId, guildId);
-        
         if (!userData) {
-            userData = { user: userId, guild: guildId, xp: 0, level: 1, mora: 0, totalXP: 0 };
+            userData = { ...client.defaultData, user: userId, guild: guildId };
         }
 
-        userData.mora = Number(userData.mora) + totalRevenue;
-        userData.xp = Number(userData.xp) + totalXP;
-        userData.totalXP = Number(userData.totalXP) + totalXP;
+        userData.mora = String(Number(userData.mora || 0) + totalRevenue);
+        userData.xp = String(Number(userData.xp || 0) + totalXP);
+        userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + totalXP);
         
-        await client.setLevel(userData);
+        try {
+            await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2, "totalXP" = "totalXP" + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]);
+        } catch(e) {
+            await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2, totalxp = COALESCE(totalxp, 0) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{});
+        }
+        
+        if (typeof client.setLevel === 'function') await client.setLevel(userData);
 
         if (updateGuildStat) {
             updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue);
@@ -567,18 +643,23 @@ async function handleLandInteractions(i, client, db) {
 
     if (baseAction === 'land_clean_all') {
         await i.deferUpdate();
-        const plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]);
+        
+        let plantedPlotsRes;
+        try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
+        catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
         const plantedPlots = plantedPlotsRes.rows;
         const now = Date.now();
         const plotsToReset = [];
 
         for (const plot of plantedPlots) {
-            const seed = seedsData.find(s => s.id === plot.seedID);
-            if (!seed) { plotsToReset.push(plot.plotID); continue; }
+            const sID = plot.seedID || plot.seedid;
+            const seed = seedsData.find(s => s.id === sID);
+            if (!seed) { plotsToReset.push(plot.plotID || plot.plotid); continue; }
             const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
             const witherMs = seed.wither_time_hours * 3600000;
-            const age = now - Number(plot.plantTime);
-            if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID);
+            const age = now - Number(plot.plantTime || plot.planttime);
+            if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID || plot.plotid);
         }
 
         try {
@@ -589,7 +670,13 @@ async function handleLandInteractions(i, client, db) {
             await db.query("COMMIT");
         } catch (e) {
             await db.query("ROLLBACK");
-            console.error("Error cleaning withered crops:", e);
+            try {
+                await db.query("BEGIN");
+                for (const pid of plotsToReset) {
+                    await db.query(`UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3`, [userId, guildId, pid]);
+                }
+                await db.query("COMMIT");
+            } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
         await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: [MessageFlags.Ephemeral] });
@@ -600,7 +687,10 @@ async function handleLandInteractions(i, client, db) {
 
 async function getSeedCount(db, userId, guildId, seedId) {
     try {
-        const invItemRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]);
+        let invItemRes;
+        try { invItemRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]); }
+        catch(e) { invItemRes = await db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, seedId]).catch(()=>({rows:[]})); }
+        
         const invItem = invItemRes.rows[0];
         return invItem ? Number(invItem.quantity) : 0;
     } catch(e) {
