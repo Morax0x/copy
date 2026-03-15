@@ -22,6 +22,21 @@ function normalize(str) {
         .trim();
 }
 
+function getTodayDateString() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+}
+
+const kingStatsMap = {
+    'roleCasinoKing': 'casino_profit',
+    'roleAbyss': 'dungeon_floor',
+    'roleChatter': 'messages',
+    'rolePhilanthropist': 'mora_donated',
+    'roleAdvisor': 'ai_interactions',
+    'roleFisherKing': 'fish_caught',
+    'rolePvPKing': 'pvp_wins',
+    'roleFarmKing': 'crops_harvested'
+};
+
 async function getUserRace(member, db) {
     if (!member || !member.guild) return null;
     let allRaceRoles = [];
@@ -37,6 +52,7 @@ async function getUserRace(member, db) {
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleID || r.roleid)) || null;
 }
 
+// 🔥 دالة جلب الجرد 🔥
 async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     let levelsRes;
     try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
@@ -137,7 +153,8 @@ module.exports = {
                 .addOptions([
                     { label: '📋 فحص الحساب', value: 'check', description: 'عرض إحصائيات اللاعب' },
                     { label: '💰 إدارة المورا والخبرة', value: 'economy', emoji: '🪙' },
-                    { label: '👑 تعيين ملك يدوي', value: 'set_king', description: 'تتويج العضو كأحد ملوك الإمبراطورية', emoji: '👑' },
+                    { label: '👑 تعيين ملك يدوي', value: 'set_king', description: 'تتويج العضو ورفع نقاطه في اللوحة', emoji: '👑' },
+                    { label: '🗑️ إخلاء عرش ملك', value: 'empty_king', description: 'تصفير نقاط عرش معين وطرد الملك الحالي', emoji: '🗑️' },
                     { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
                     { label: '🗳️ فرص التزكية', value: 'rep_chances', description: 'منح فرص تصويت (تزكية) إضافية لليوم', emoji: '🗳️' },
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
@@ -194,12 +211,13 @@ module.exports = {
                     await modalSubmit.editReply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 إضافة خيار التتويج اليدوي 🔥
-            else if (val === 'set_king') {
+            // 🔥 نظام التتويج الذكي والإخلاء 🔥
+            else if (val === 'set_king' || val === 'empty_king') {
+                const isEmpting = val === 'empty_king';
                 const kingMenu = new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder()
                         .setCustomId(`mod_king_${Date.now()}`)
-                        .setPlaceholder('👑 اختر العرش لتقليده إياه...')
+                        .setPlaceholder(isEmpting ? '🗑️ اختر العرش لإخلائه وتصفيره...' : '👑 اختر العرش لتقليده إياه...')
                         .addOptions([
                             { label: 'ملك الكازينو', value: 'roleCasinoKing', emoji: '🎰' },
                             { label: 'ملك الهاوية', value: 'roleAbyss', emoji: '🌑' },
@@ -212,7 +230,7 @@ module.exports = {
                         ])
                 );
                 
-                await interaction.update({ content: `👑 اختر اللقب الذي تريد إعطاءه لـ ${targetUser}:`, embeds: [], components: [kingMenu] });
+                await interaction.update({ content: isEmpting ? `🗑️ **اختر العرش الذي تريد إخلائه بالكامل:**` : `👑 **اختر اللقب الذي تريد إعطاءه لـ ${targetUser}:**`, embeds: [], components: [kingMenu] });
 
                 const kingCollector = panelMsg.createMessageComponentCollector({ filter: i => i.user.id === message.author.id && i.customId.startsWith('mod_king_'), time: 60000 });
                 
@@ -225,21 +243,66 @@ module.exports = {
                     catch(e) { settingsRes = await db.query(`SELECT ${selectedRoleColumn} FROM settings WHERE guild = $1`, [guildID]).catch(()=>({rows:[]})); }
                     
                     const roleId = settingsRes.rows[0] ? settingsRes.rows[0][selectedRoleColumn] : null;
-                    
                     if (!roleId) return await i.editReply({ content: `❌ لم يتم إعداد رتبة لهذا الملك في إعدادات السيرفر.`, components: [] });
 
                     const targetRole = message.guild.roles.cache.get(roleId);
                     if (!targetRole) return await i.editReply({ content: `❌ الرتبة المطلوبة غير موجودة في السيرفر.`, components: [] });
 
-                    targetRole.members.forEach(async (member) => {
-                        if (member.id !== userID) await member.roles.remove(targetRole).catch(() => {});
-                    });
+                    const todayStr = getTodayDateString();
+                    const statName = kingStatsMap[selectedRoleColumn];
 
-                    if (!targetMember.roles.cache.has(roleId)) {
-                        await targetMember.roles.add(targetRole).catch(() => {});
+                    if (isEmpting) {
+                        targetRole.members.forEach(async (member) => {
+                            await member.roles.remove(targetRole).catch(() => {});
+                        });
+
+                        if (selectedRoleColumn === 'roleCasinoKing') {
+                            await db.query(`UPDATE kings_board_tracker SET "casino_profit" = 0, "mora_earned" = 0 WHERE "guildID" = $1 AND "date" = $2`, [guildID, todayStr]).catch(()=>{});
+                        } else {
+                            await db.query(`UPDATE kings_board_tracker SET "${statName}" = 0 WHERE "guildID" = $1 AND "date" = $2`, [guildID, todayStr]).catch(()=>{});
+                        }
+
+                        await i.editReply({ content: `🗑️ **تم إخلاء عرش (${targetRole.name}) وتصفير جميع نقاطه لليوم بنجاح!**`, components: [] });
+                    } else {
+                        let currentMax = 0;
+                        if (selectedRoleColumn === 'roleCasinoKing') {
+                            const res = await db.query(`SELECT SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" ORDER BY val DESC LIMIT 1`, [guildID, todayStr]).catch(()=>({rows:[]}));
+                            currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
+                        } else if (selectedRoleColumn === 'roleAbyss') {
+                            const res = await db.query(`SELECT "dungeon_floor" as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildID, todayStr]).catch(()=>({rows:[]}));
+                            currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
+                        } else {
+                            const res = await db.query(`SELECT SUM(COALESCE("${statName}", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" ORDER BY val DESC LIMIT 1`, [guildID, todayStr]).catch(()=>({rows:[]}));
+                            currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
+                        }
+
+                        const newVal = currentMax + 1; // يكسر الرقم القياسي بـ 1
+                        const trackerId = `${userID}-${guildID}-${todayStr}`;
+
+                        try {
+                            await db.query(`
+                                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "${statName}") 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT("id") DO UPDATE SET "${statName}" = $5
+                            `, [trackerId, userID, guildID, todayStr, newVal]);
+                        } catch(e) {
+                            await db.query(`
+                                INSERT INTO kings_board_tracker (id, userid, guildid, date, ${statName}) 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT(id) DO UPDATE SET ${statName} = $5
+                            `, [trackerId, userID, guildID, todayStr, newVal]).catch(()=>{});
+                        }
+
+                        targetRole.members.forEach(async (member) => {
+                            if (member.id !== userID) await member.roles.remove(targetRole).catch(() => {});
+                        });
+
+                        if (!targetMember.roles.cache.has(roleId)) {
+                            await targetMember.roles.add(targetRole).catch(() => {});
+                        }
+
+                        await i.editReply({ content: `👑 **تم تتويج ${targetUser} بلقب (${targetRole.name}) ورفعه في اللوحة بنقاط (${newVal}) بنجاح!**`, components: [] });
                     }
-
-                    await i.editReply({ content: `👑 **تم تتويج ${targetUser} بلقب ${targetRole.name} وسحب الرتبة من الملك السابق بنجاح!**`, components: [] });
                     kingCollector.stop();
                 });
             }
