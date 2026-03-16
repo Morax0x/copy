@@ -13,6 +13,10 @@ const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
 const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
+// 💡 استدعاء ملف الاقتراحات الجديد
+let handleSuggestionButtons;
+try { ({ handleSuggestionButtons } = require('./handlers/suggestion-handler.js')); } catch (e) {}
+
 const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -133,6 +137,15 @@ module.exports = (client, db, antiRolesCache) => {
 
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
+
+                // 💡 نظام أزرار الاقتراحات (مع التخطي الإداري الصامت للزر)
+                if (id.startsWith('sugg_')) {
+                    if (id === 'sugg_admin' && !i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                        return; // تجاهل العضو العادي بصمت تام
+                    }
+                    if (handleSuggestionButtons) await handleSuggestionButtons(i, client, db);
+                    return;
+                }
 
                 if (id.startsWith('notify_afk_')) {
                     const targetID = id.split('_')[2];
