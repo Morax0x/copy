@@ -102,32 +102,33 @@ module.exports = {
                 const maxHungerMs = (animalData.max_hunger_days || 3) * DAY_MS; 
                 const fullUntil = lastFed + maxHungerMs; 
                 const timeLeftMs = fullUntil - now;
+                const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
                 
                 let hungerStatusText = "";
                 
                 // حساب الدخل (فقط إذا بقي له أكثر من 12 ساعة شبع)
-                if (timeLeftMs >= (12 * 60 * 60 * 1000)) {
+                if (timeLeftMs > TWELVE_HOURS_MS) {
                     totalFarmIncome += (animalData.income_per_day * qty);
                 }
 
-                // تجهيز نص الشبع للديسكورد
-                if (timeLeftMs > 0) {
+                // تجهيز نص الشبع للديسكورد (12 ساعة وأقل يعني جائع)
+                if (timeLeftMs > TWELVE_HOURS_MS) {
                     const timestampSeconds = Math.floor(fullUntil / 1000);
                     hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
                 } else {
-                    hungerStatusText = `🔴 جـائـع - بـدون دخـل`;
+                    hungerStatusText = `🔴 جـائـع - بـدون دخـل (تحتاج إطعام)`;
                 }
 
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
                     existing.quantity += qty;
                     // تجميع الدخل فقط إذا كان الحيوان مدمجاً وحالته شبعان
-                    if (timeLeftMs >= (12 * 60 * 60 * 1000)) existing.income += (animalData.income_per_day * qty);
+                    if (timeLeftMs > TWELVE_HOURS_MS) existing.income += (animalData.income_per_day * qty);
                     if (ageDays > existing.age) { existing.age = ageDays; existing.lifeRemaining = lifeRemaining; }
                 } else {
                     animalsMap.set(animalData.id, {
                         ...animalData, quantity: qty, 
-                        income: (timeLeftMs >= (12 * 60 * 60 * 1000)) ? (animalData.income_per_day * qty) : 0,
+                        income: (timeLeftMs > TWELVE_HOURS_MS) ? (animalData.income_per_day * qty) : 0,
                         hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
                     });
                 }
