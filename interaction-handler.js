@@ -13,9 +13,13 @@ const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
 const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
-// 💡 استدعاء ملف الاقتراحات الجديد
-let handleSuggestionButtons;
-try { ({ handleSuggestionButtons } = require('./handlers/suggestion-handler.js')); } catch (e) {}
+// 💡 استدعاء ملف الاقتراحات الجديد مع الـ Modal
+let handleSuggestionButtons, handleSuggestionModals;
+try { 
+    const suggModule = require('./handlers/suggestion-handler.js');
+    handleSuggestionButtons = suggModule.handleSuggestionButtons;
+    handleSuggestionModals = suggModule.handleSuggestionModals;
+} catch (e) {}
 
 const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -262,6 +266,13 @@ module.exports = (client, db, antiRolesCache) => {
             }
 
             if (i.isModalSubmit()) {
+                
+                // 💡 التقاط رسالة الرد الإداري للاقتراحات
+                if (i.customId.startsWith('sugg_modal_reply_')) {
+                    if (handleSuggestionModals) await handleSuggestionModals(i, client, db);
+                    return;
+                }
+
                 if (i.customId.startsWith('modal_afk_msg_')) {
                     const targetID = i.customId.split('_')[3];
                     const content = i.fields.getTextInputValue('msg_content');
@@ -312,7 +323,6 @@ module.exports = (client, db, antiRolesCache) => {
                 } else if (i.customId.startsWith('farm_plant_modal_')) {
                     await handleLandInteractions(i, client, db);
                 } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
-                    // 🔥 تم توجيه طلبات السوق إلى الدالة المصلحة الجديدة بالأسفل 🔥
                     await handleMarketInteraction(i, client, db);
                 } else if (await handleShopModal(i, client, db)) {
 
