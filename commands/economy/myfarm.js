@@ -116,7 +116,7 @@ module.exports = {
                     const timestampSeconds = Math.floor(fullUntil / 1000);
                     hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
                 } else {
-                    hungerStatusText = `🔴 جـائـع - بـدون دخـل (تحتاج إطعام)`;
+                    hungerStatusText = `🔴 جـائـع - بـدون دخـل`;
                 }
 
                 if (animalsMap.has(animalData.id)) {
