@@ -1,7 +1,7 @@
 const { EmbedBuilder, Colors } = require("discord.js");
-const farmAnimals = require('../json/farm-animals.json');
-const seedsData = require('../json/seeds.json'); 
-const feedItems = require('../json/feed-items.json');
+const farmAnimals = require('../../json/farm-animals.json'); // مسار معدل ليطابق الهيكل الجديد
+const seedsData = require('../../json/seeds.json'); 
+const feedItems = require('../../json/feed-items.json');
 
 let updateGuildStat;
 try {
@@ -13,7 +13,7 @@ async function checkFarmIncome(client, db) {
 
     const now = Date.now();
     const ONE_DAY = 24 * 60 * 60 * 1000;
-    const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 🔥 شرط الـ 12 ساعة للدخل
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 🔥 شرط الـ 12 ساعة
 
     try {
         await db.query(`CREATE TABLE IF NOT EXISTS farm_last_payout ("id" TEXT PRIMARY KEY, "lastPayoutDate" BIGINT)`);
@@ -111,8 +111,6 @@ async function checkFarmIncome(client, db) {
                 const fullUntil = lastFed + maxHungerMs; 
                 const timeLeft = fullUntil - now; 
 
-                // 🔥 النظام الاقتصادي الجديد للعامل:
-                // لا يطعم الحيوان إلا إذا نزل شبعه إلى 25%، وبحد أدنى 14 ساعة للحفاظ على الدخل!
                 const feedThreshold = Math.max(14 * 60 * 60 * 1000, maxHungerMs * 0.25);
 
                 if (hasWorker && timeLeft <= feedThreshold) {
@@ -144,7 +142,6 @@ async function checkFarmIncome(client, db) {
                     }
                 }
 
-                // 🍂 الموت من الكبر
                 const purchaseTimestamp = Number(row.purchaseTimestamp || row.purchasetimestamp) || now; 
                 const ageInMs = now - purchaseTimestamp;
                 const lifespanInMs = animal.lifespan_days * ONE_DAY;
@@ -193,7 +190,8 @@ async function checkFarmIncome(client, db) {
                     const fullUntil = lastFed + maxHungerMs; 
                     const timeLeft = fullUntil - now; 
 
-                    if (timeLeft >= TWELVE_HOURS) {
+                    // 🔥 التعديل هنا: صار أكبر من 12 ساعة بالضبط يعطي دخل، و 12 وأقل يعني جائع!
+                    if (timeLeft > TWELVE_HOURS) {
                         dailyAnimalIncome += (Number(animal.income_per_day) * qty);
                     } else {
                         hungryAnimalsCount += qty; 
@@ -293,7 +291,7 @@ async function checkFarmIncome(client, db) {
                            `✶ عـدد الحـيوانات الحية في مزرعتك: **${currentAnimalsCount.toLocaleString()}**`;
 
             if (hungryAnimalsCount > 0) {
-                description += `\n\n⚠️ تنبـيه:${hungryAnimalsCount} من حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
+                description += `\n\n⚠️ تنبـيه: ${hungryAnimalsCount} من حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
             }
 
             if (oldDeaths.length > 0) {
