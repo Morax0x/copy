@@ -53,7 +53,10 @@ async function getSettings(db, guildId) {
         return settingsCache.get(guildId);
     }
     try {
-        const res = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]);
+        let res;
+        try { res = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]); }
+        catch(e) { res = await db.query(`SELECT * FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]})); }
+        
         const data = res.rows[0];
         if (data) {
             settingsCache.set(guildId, data);
@@ -103,7 +106,10 @@ module.exports = {
 
         try {
             if (message.member) {
-                const conflictRulesRes = await db.query(`SELECT "role_id", "anti_roles" FROM role_settings WHERE "anti_roles" IS NOT NULL AND "anti_roles" != ''`);
+                let conflictRulesRes;
+                try { conflictRulesRes = await db.query(`SELECT "role_id", "anti_roles" FROM role_settings WHERE "anti_roles" IS NOT NULL AND "anti_roles" != ''`); }
+                catch(e) { conflictRulesRes = await db.query(`SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''`).catch(()=>({rows:[]})); }
+                
                 const conflictRules = conflictRulesRes.rows;
                 if (conflictRules.length > 0) {
                     const memberRoleIds = message.member.roles.cache.map(r => r.id);
@@ -121,7 +127,10 @@ module.exports = {
         } catch (error) {}
 
         try {
-            const afkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]);
+            let afkDataRes;
+            try { afkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]); }
+            catch(e) { afkDataRes = await db.query(`SELECT * FROM afk WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>({rows:[]})); }
+            
             const afkData = afkDataRes.rows[0];
 
             if (afkData) {
@@ -141,7 +150,8 @@ module.exports = {
                     const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
                     if (reward > 0) {
-                        db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [reward, message.author.id, message.guild.id]).catch(()=>{});
+                        try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [reward, message.author.id, message.guild.id]); }
+                        catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [reward, message.author.id, message.guild.id]).catch(()=>{}); }
                     }
 
                     const storedMessages = JSON.parse(afkData.messages || '[]');
@@ -160,7 +170,8 @@ module.exports = {
                         );
                     }
 
-                    db.query(`DELETE FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]).catch(()=>{});
+                    try { await db.query(`DELETE FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]); }
+                    catch(e) { await db.query(`DELETE FROM afk WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>{}); }
                     
                     ghostModeUsers.delete(ghostKey);
 
@@ -209,11 +220,15 @@ module.exports = {
                 mentionedIds.forEach(async targetID => {
                     if (targetID === message.author.id) return;
 
-                    const targetAfkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]);
+                    let targetAfkDataRes;
+                    try { targetAfkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]); }
+                    catch(e) { targetAfkDataRes = await db.query(`SELECT * FROM afk WHERE userid = $1 AND guildid = $2`, [targetID, message.guild.id]).catch(()=>({rows:[]})); }
+                    
                     const targetAfkData = targetAfkDataRes.rows[0];
 
                     if (targetAfkData) {
-                        db.query(`UPDATE afk SET "mentionsCount" = "mentionsCount" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]).catch(()=>{});
+                        try { await db.query(`UPDATE afk SET "mentionsCount" = "mentionsCount" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]); }
+                        catch(e) { await db.query(`UPDATE afk SET mentionscount = mentionscount + 1 WHERE userid = $1 AND guildid = $2`, [targetID, message.guild.id]).catch(()=>{}); }
 
                         const member = message.guild.members.cache.get(targetID);
                         const timeAgo = `<t:${targetAfkData.timestamp}:R>`;
@@ -262,7 +277,7 @@ module.exports = {
             }
 
             if (bumperID) {
-                recordBump(client, message.guild.id, bumperID); // لا ننتظر النتيجة للسرعة
+                recordBump(client, message.guild.id, bumperID); 
                 message.react('👊').catch(() => {});
                 const nextBumpTime = Date.now() + 7200000;
                 const nextBumpTimeSec = Math.floor(nextBumpTime / 1000);
@@ -287,7 +302,10 @@ module.exports = {
             const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
             let isShortcut = false;
             try {
-                const scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]);
+                let scRes;
+                try { scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]); }
+                catch(e) { scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE guildid = $1 AND channelid = $2 AND shortcutword = $3`, [message.guild.id, message.channel.id, firstWord]).catch(()=>({rows:[]})); }
+                
                 if(scRes.rows.length > 0) isShortcut = true;
             } catch(e) {}
 
@@ -336,7 +354,6 @@ module.exports = {
                 const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
                 let canChat = true;
                 
-                // 🔥 حل مشكلة رفض اللاعبين الجدد للذكاء الاصطناعي وإعطائهم 10 رسائل مجانية يومياً
                 if (usageStatus && usageStatus.canChat === false) {
                     const daily = usageStatus.dailyUsage || 0;
                     const limit = usageStatus.roleLimit || 0;
@@ -437,7 +454,10 @@ module.exports = {
 
         if (db) {
             try {
-                const isChannelIgnoredRes = await db.query(`SELECT * FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [message.guild.id, message.channel.id]);
+                let isChannelIgnoredRes;
+                try { isChannelIgnoredRes = await db.query(`SELECT * FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [message.guild.id, message.channel.id]); }
+                catch(e) { isChannelIgnoredRes = await db.query(`SELECT * FROM xp_ignore WHERE guildid = $1 AND id = $2`, [message.guild.id, message.channel.id]).catch(()=>({rows:[]})); }
+                
                 if (isChannelIgnoredRes.rows.length > 0) return; 
             } catch (e) {}
         }
@@ -453,17 +473,29 @@ module.exports = {
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
                 
                 try {
-                    await db.query(`
-                        INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") 
-                        VALUES ($1, $2, $3, $4, 1) 
-                        ON CONFLICT("id") DO UPDATE SET "main_chat_messages" = COALESCE(user_daily_stats."main_chat_messages", 0) + 1
-                    `, [dailyIdForBadge, userID, guildID, todayDate]);
+                    try {
+                        await db.query(`
+                            INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") 
+                            VALUES ($1, $2, $3, $4, 1) 
+                            ON CONFLICT("id") DO UPDATE SET "main_chat_messages" = COALESCE(user_daily_stats."main_chat_messages", 0) + 1
+                        `, [dailyIdForBadge, userID, guildID, todayDate]);
+                    } catch(e) {
+                        await db.query(`
+                            INSERT INTO user_daily_stats (id, userid, guildid, date, main_chat_messages) 
+                            VALUES ($1, $2, $3, $4, 1) 
+                            ON CONFLICT(id) DO UPDATE SET main_chat_messages = COALESCE(user_daily_stats.main_chat_messages, 0) + 1
+                        `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
+                    }
 
-                    const dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]);
+                    let dailyDataCheckRes;
+                    try { dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
+                    catch(e) { dailyDataCheckRes = await db.query(`SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = $1`, [dailyIdForBadge]).catch(()=>({rows:[]})); }
+                    
                     const dailyDataCheck = dailyDataCheckRes.rows[0];
                     
                     if (dailyDataCheck && Number(dailyDataCheck.main_chat_messages) >= 100 && Number(dailyDataCheck.chatter_badge_given || 0) === 0) {
-                        await db.query(`UPDATE user_daily_stats SET "chatter_badge_given" = 1 WHERE "id" = $1`, [dailyIdForBadge]);
+                        try { await db.query(`UPDATE user_daily_stats SET "chatter_badge_given" = 1 WHERE "id" = $1`, [dailyIdForBadge]); }
+                        catch(e) { await db.query(`UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = $1`, [dailyIdForBadge]).catch(()=>{}); }
                         
                         let roleToGive = settings.roleChatterBadge || settings.rolechatterbadge || settings.roleChatter || settings.rolechatter;
                         if (roleToGive) message.member.roles.add(roleToGive).catch(()=>{});
@@ -517,15 +549,22 @@ module.exports = {
             if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
                 if (client.incrementQuestStats) client.incrementQuestStats(userID, guildID, 'meow_count', 1).catch(()=>{});
                 
-                await db.query(`INSERT INTO levels ("user", "guild", "total_meow_count") VALUES ($1, $2, 1) ON CONFLICT ("user", "guild") DO UPDATE SET "total_meow_count" = COALESCE(levels."total_meow_count", 0) + 1`, [userID, guildID]).catch(()=>{});
+                try { await db.query(`INSERT INTO levels ("user", "guild", "total_meow_count") VALUES ($1, $2, 1) ON CONFLICT ("user", "guild") DO UPDATE SET "total_meow_count" = COALESCE(levels."total_meow_count", 0) + 1`, [userID, guildID]); }
+                catch(e) { await db.query(`INSERT INTO levels (userid, guildid, total_meow_count) VALUES ($1, $2, 1) ON CONFLICT (userid, guildid) DO UPDATE SET total_meow_count = COALESCE(levels.total_meow_count, 0) + 1`, [userID, guildID]).catch(()=>{}); }
                 
                 if (client.checkAchievements) {
-                    const updatedLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]);
+                    let updatedLevelRes;
+                    try { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
+                    catch(e) { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+                    
                     client.checkAchievements(client, message.member, updatedLevelRes.rows[0], null).catch(()=>{});
                 }
             }
             
-            const isMediaChannelRes = await db.query(`SELECT * FROM media_streak_channels WHERE "guildID" = $1 AND "channelID" = $2`, [guildID, message.channel.id]);
+            let isMediaChannelRes;
+            try { isMediaChannelRes = await db.query(`SELECT * FROM media_streak_channels WHERE "guildID" = $1 AND "channelID" = $2`, [guildID, message.channel.id]); }
+            catch(e) { isMediaChannelRes = await db.query(`SELECT * FROM media_streak_channels WHERE guildid = $1 AND channelid = $2`, [guildID, message.channel.id]).catch(()=>({rows:[]})); }
+            
             if (isMediaChannelRes.rows.length > 0) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
                     handleMediaStreakMessage(message).catch(()=>{}); 
@@ -536,7 +575,7 @@ module.exports = {
             let getXpfromDB = settings?.customXP || settings?.customxp || 25;
             let getCooldownfromDB = settings?.customCooldown || settings?.customcooldown || 60000;
 
-            // 🔥 حل مشكلة الأرقام النصية (191) 🔥
+            // 🔥 الحل الجذري لمشكلة التلفيل (Number Conversion) 🔥
             let currentLevelData = await client.getLevel(userID, guildID);
             if (!currentLevelData) {
                 currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
@@ -553,7 +592,7 @@ module.exports = {
                     buff += 0.50; 
                 }
 
-                const xpGained = Math.floor((Math.random() * getXpfromDB + 1) * buff);
+                const xpGained = Math.floor((Math.random() * Number(getXpfromDB) + 1) * buff);
                 
                 currentLevelData.xp += xpGained;
                 currentLevelData.totalXP += xpGained;
@@ -563,7 +602,7 @@ module.exports = {
                 if (currentLevelData.xp >= nextXP) {
                     const oldLvl = currentLevelData.level;
                     currentLevelData.xp -= nextXP; 
-                    currentLevelData.level++; // 🔥 الجمع الرياضي الآمن
+                    currentLevelData.level = Number(currentLevelData.level) + 1; // 🔥 هنا كان الغلط وانحل!
                     
                     client.setLevel(currentLevelData).catch(()=>{});
                     
@@ -593,15 +632,18 @@ module.exports = {
                 } else {
                     client.setLevel(currentLevelData).catch(()=>{}); 
                 }
-                client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
-                setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
+                client.talkedRecently.set(message.author.id, Date.now() + Number(getCooldownfromDB));
+                setTimeout(() => client.talkedRecently.delete(message.author.id), Number(getCooldownfromDB));
             }
             
-            // 🔥 حل مشكلة رتب اللفل: فحص مع كل رسالة، وإعطاء أعلى رتبة يستحقها 🔥
+            // 🔥 تحديث رتب المستويات التلقائي مع حماية الكيس (Case) 🔥
             try {
                 const finalLvl = Number(currentLevelData.level);
-                let currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" <= $2 ORDER BY "level" DESC LIMIT 1`, [message.guild.id, finalLvl]);
-                let currentLevelRole = currentLevelRoleRes.rows[0];
+                let currentLevelRoleRes;
+                try { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" <= $2 ORDER BY "level" DESC LIMIT 1`, [message.guild.id, finalLvl]); }
+                catch(e) { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE guildid = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`, [message.guild.id, finalLvl]).catch(()=>({rows:[]})); }
+                
+                let currentLevelRole = currentLevelRoleRes && currentLevelRoleRes.rows ? currentLevelRoleRes.rows[0] : null;
                 
                 if (currentLevelRole && message.member) {
                     const targetRoleID = currentLevelRole.roleID || currentLevelRole.roleid;
@@ -609,14 +651,17 @@ module.exports = {
                         message.member.roles.add(targetRoleID).catch(e => {});
                     }
                     
-                    // سحب الرتب القديمة الأقل من رتبته الحالية
                     const currentRoleReqLevel = currentLevelRole.level;
-                    const oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, currentRoleReqLevel]);
+                    let oldRolesRes;
+                    try { oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, currentRoleReqLevel]); }
+                    catch(e) { oldRolesRes = await db.query(`SELECT roleid FROM level_roles WHERE guildid = $1 AND level < $2`, [message.guild.id, currentRoleReqLevel]).catch(()=>({rows:[]})); }
                     
-                    for (const roleData of oldRolesRes.rows) {
-                        const oldRoleID = roleData.roleID || roleData.roleid;
-                        if (oldRoleID !== targetRoleID && message.member.roles.cache.has(oldRoleID)) {
-                            message.member.roles.remove(oldRoleID).catch(e => {});
+                    if(oldRolesRes && oldRolesRes.rows) {
+                        for (const roleData of oldRolesRes.rows) {
+                            const oldRoleID = roleData.roleID || roleData.roleid;
+                            if (oldRoleID !== targetRoleID && message.member.roles.cache.has(oldRoleID)) {
+                                message.member.roles.remove(oldRoleID).catch(e => {});
+                            }
                         }
                     }
                 }
@@ -624,15 +669,71 @@ module.exports = {
 
         } catch (err) {}
 
+        // ==========================================
+        // 🔥 حل مشكلة تنفيذ الأوامر وتداخلها 🔥
+        // ==========================================
+        if (message.content.startsWith(Prefix)) {
+            const args = message.content.slice(Prefix.length).trim().split(/ +/);
+            const commandName = args.shift().toLowerCase();
+            if (commandName.length > 0) {
+                const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
+                if (command) {
+                    args.prefix = Prefix;
+                    let isAllowed = false;
+                    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) { isAllowed = true; } 
+                    else if (settings && ((settings.casinoChannelID || settings.casinochannelid) === message.channel.id || (settings.casinoChannelID2 || settings.casinochannelid2) === message.channel.id) && command.category === 'Economy') { isAllowed = true; }
+                    else {
+                        try {
+                            let channelPermRes;
+                            try { channelPermRes = await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.id]); }
+                            catch(e) { channelPermRes = await db.query(`SELECT 1 FROM command_permissions WHERE guildid = $1 AND commandname = $2 AND channelid = $3`, [message.guild.id, command.name, message.channel.id]).catch(()=>({rows:[]})); }
+                            
+                            let categoryPermRes = {rows: []};
+                            if (message.channel.parentId) {
+                                try { categoryPermRes = await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.parentId]); }
+                                catch(e) { categoryPermRes = await db.query(`SELECT 1 FROM command_permissions WHERE guildid = $1 AND commandname = $2 AND channelid = $3`, [message.guild.id, command.name, message.channel.parentId]).catch(()=>({rows:[]})); }
+                            }
+                            
+                            if (channelPermRes.rows.length > 0 || categoryPermRes.rows.length > 0) { isAllowed = true; }
+                        } catch (err) { isAllowed = false; }
+                    }
+                    if (isAllowed) {
+                        try {
+                            let isBlacklistedRes;
+                            try { isBlacklistedRes = await db.query(`SELECT 1 FROM blacklistTable WHERE "id" = $1`, [message.author.id]); }
+                            catch(e) { isBlacklistedRes = await db.query(`SELECT 1 FROM blacklistTable WHERE id = $1`, [message.author.id]).catch(()=>({rows:[]})); }
+                            if (isBlacklistedRes.rows.length > 0) return; 
+                        } catch(e) {}
+                        
+                        if (await checkPermissions(message, command)) {
+                            const cooldownMsg = await checkCooldown(message, command);
+                            if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
+                            else { try { await command.execute(message, args); } catch (error) { message.reply("❌ حدث خطأ."); } }
+                        }
+                    }
+                    return; // 🔥 إيقاف الكود هنا إذا تم إيجاد أمر لكي لا يتداخل مع الباقي
+                }
+            }
+        }
+
+        // ==========================================
+        // اختصارات الأوامر (Shortcuts)
+        // ==========================================
         try {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
-            let shortcutRes = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, shortcutWord]);
-            let shortcut = shortcutRes.rows[0];
+            
+            let shortcutRes;
+            try { shortcutRes = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, shortcutWord]); }
+            catch(e) { shortcutRes = await db.query(`SELECT commandname as "commandName" FROM command_shortcuts WHERE guildid = $1 AND channelid = $2 AND shortcutword = $3`, [message.guild.id, message.channel.id, shortcutWord]).catch(()=>({rows:[]})); }
+            
+            let shortcut = shortcutRes && shortcutRes.rows ? shortcutRes.rows[0] : null;
             if (!shortcut) {
-                 shortcutRes = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "shortcutWord" = $2 AND ("channelID" IS NULL OR "channelID" = 'null' OR "channelID" = '')`, [message.guild.id, shortcutWord]);
-                 shortcut = shortcutRes.rows[0];
+                 try { shortcutRes = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "shortcutWord" = $2 AND ("channelID" IS NULL OR "channelID" = 'null' OR "channelID" = '')`, [message.guild.id, shortcutWord]); }
+                 catch(e) { shortcutRes = await db.query(`SELECT commandname as "commandName" FROM command_shortcuts WHERE guildid = $1 AND shortcutword = $2 AND (channelid IS NULL OR channelid = 'null' OR channelid = '')`, [message.guild.id, shortcutWord]).catch(()=>({rows:[]})); }
+                 shortcut = shortcutRes && shortcutRes.rows ? shortcutRes.rows[0] : null;
             }
+            
             if (shortcut) {
                 const targetName = (shortcut.commandName || shortcut.commandname).toLowerCase();
                 const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
@@ -651,40 +752,9 @@ module.exports = {
             }
         } catch (err) {}
 
-        if (message.content.startsWith(Prefix)) {
-            const args = message.content.slice(Prefix.length).trim().split(/ +/);
-            const commandName = args.shift().toLowerCase();
-            if (commandName.length > 0) {
-                const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
-                if (command) {
-                    args.prefix = Prefix;
-                    let isAllowed = false;
-                    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) { isAllowed = true; } 
-                    else if (settings && ((settings.casinoChannelID || settings.casinochannelid) === message.channel.id || (settings.casinoChannelID2 || settings.casinochannelid2) === message.channel.id) && command.category === 'Economy') { isAllowed = true; }
-                    else {
-                        try {
-                            const channelPermRes = await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.id]);
-                            const categoryPermRes = message.channel.parentId ? await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.parentId]) : {rows: []};
-                            if (channelPermRes.rows.length > 0 || categoryPermRes.rows.length > 0) { isAllowed = true; }
-                        } catch (err) { isAllowed = false; }
-                    }
-                    if (isAllowed) {
-                        try {
-                            const isBlacklistedRes = await db.query(`SELECT 1 FROM blacklistTable WHERE "id" = $1`, [message.author.id]);
-                            if (isBlacklistedRes.rows.length > 0) return; 
-                        } catch(e) {}
-                        
-                        if (await checkPermissions(message, command)) {
-                            const cooldownMsg = await checkCooldown(message, command);
-                            if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
-                            else { try { await command.execute(message, args); } catch (error) { message.reply("❌ حدث خطأ."); } }
-                        }
-                    }
-                    return; 
-                }
-            }
-        }
-
+        // ==========================================
+        // أوامر الكازينو بدون برفكس
+        // ==========================================
         if (settings && (((settings.casinoChannelID || settings.casinochannelid) && message.channel.id === (settings.casinoChannelID || settings.casinochannelid)) || ((settings.casinoChannelID2 || settings.casinochannelid2) && message.channel.id === (settings.casinoChannelID2 || settings.casinochannelid2)))) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -692,33 +762,44 @@ module.exports = {
             if (command && command.category === "Economy") {
                 if (!(await checkPermissions(message, command))) return;
                 try { await command.execute(message, args); } catch (error) {}
+                return;
             }
-            return;
         }
 
+        // ==========================================
+        // الردود التلقائية (Auto Responders)
+        // ==========================================
         try {
             const content = message.content.trim();
-            const autoReplyRes = await db.query(`SELECT * FROM auto_responses WHERE "guildID" = $1 AND "trigger" = $2`, [message.guild.id, content]);
-            const autoReply = autoReplyRes.rows[0];
+            let autoReplyRes;
+            try { autoReplyRes = await db.query(`SELECT * FROM auto_responses WHERE "guildID" = $1 AND "trigger" = $2`, [message.guild.id, content]); }
+            catch(e) { autoReplyRes = await db.query(`SELECT * FROM auto_responses WHERE guildid = $1 AND trigger = $2`, [message.guild.id, content]).catch(()=>({rows:[]})); }
+            
+            const autoReply = autoReplyRes && autoReplyRes.rows ? autoReplyRes.rows[0] : null;
             if (autoReply) {
-                if (autoReply.expiresAt && Date.now() > autoReply.expiresAt) {
-                    db.query(`DELETE FROM auto_responses WHERE "id" = $1`, [autoReply.id]).catch(()=>{});
+                const expires = autoReply.expiresAt || autoReply.expiresat;
+                if (expires && Date.now() > Number(expires)) {
+                    try { await db.query(`DELETE FROM auto_responses WHERE "id" = $1`, [autoReply.id]); }
+                    catch(e) { await db.query(`DELETE FROM auto_responses WHERE id = $1`, [autoReply.id]).catch(()=>{}); }
                 } 
                 else {
                     let isAllowedChannel = true;
                     try {
-                        if (autoReply.allowedChannels || autoReply.allowedchannels) {
-                            const allowed = JSON.parse(autoReply.allowedChannels || autoReply.allowedchannels);
+                        const allowC = autoReply.allowedChannels || autoReply.allowedchannels;
+                        if (allowC) {
+                            const allowed = JSON.parse(allowC);
                             if (allowed.length > 0 && !allowed.includes(message.channel.id)) isAllowedChannel = false;
                         }
-                        if (autoReply.ignoredChannels || autoReply.ignoredchannels) {
-                            const ignored = JSON.parse(autoReply.ignoredChannels || autoReply.ignoredchannels);
+                        const ignoreC = autoReply.ignoredChannels || autoReply.ignoredchannels;
+                        if (ignoreC) {
+                            const ignored = JSON.parse(ignoreC);
                             if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
                         }
                     } catch (e) {} 
+                    
                     if (isAllowedChannel) {
                         const cooldownKey = `ar_${autoReply.id}_${message.channel.id}`;
-                        const cooldownTime = (autoReply.cooldown || 600) * 1000;
+                        const cooldownTime = (Number(autoReply.cooldown) || 600) * 1000;
                         const now = Date.now();
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
                             const files = autoReply.images ? JSON.parse(autoReply.images) : [];
