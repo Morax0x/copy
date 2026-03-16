@@ -17,7 +17,7 @@ module.exports = {
         .setDescription('يعرض مزرعتك وحالة الحيوانات ومخزن الأعلاف والأراضي.')
         .addUserOption(option => 
             option.setName('المستخدم')
-            .setDescription('المستخدم الذي تريد عرض مزرعته')
+            .setDescription('المستخدم الذي تريد عـرض مزرعته')
             .setRequired(false)),
 
     name: 'myfarm',
