@@ -1,4 +1,4 @@
-const { EmbedBuilder, Colors, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require("discord.js");
+const { EmbedBuilder, Colors, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags } = require("discord.js");
 const { updateNickname } = require('../streak-handler.js');
 
 async function buildTopStreaksEmbed(interaction, db, page = 1) {
@@ -95,18 +95,22 @@ async function handleStreakPanel(i, client, db) {
     let currentPage = 1;
     const selection = i.isStringSelectMenu() ? i.values[0] : i.customId;
 
-    if (i.isButton()) {
-        await i.deferUpdate();
-        if (i.customId.includes('_prev_') || i.customId.includes('_next_')) {
+    // 🔥 ضمان المخفية والتحديث السليم 🔥
+    try {
+        if (i.isButton() && (i.customId.includes('_prev_') || i.customId.includes('_next_'))) {
+            await i.deferUpdate();
             const pageData = i.customId.split('_');
             currentPage = parseInt(pageData[pageData.length - 1]);
             if (i.customId.includes('_prev_')) currentPage--;
             if (i.customId.includes('_next_')) currentPage++;
+        } else if (i.isStringSelectMenu() && i.customId === 'streak_panel_select_sep') {
+            await i.deferUpdate();
+        } else {
+            // استخدام الطريقة الأكثر أماناً لإخفاء الرد في الديسكورد للنسخ الحديثة
+            await i.deferReply({ flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         }
-    } else if (i.isStringSelectMenu() && i.customId === 'streak_panel_select_sep') {
-        await i.deferUpdate();
-    } else {
-        await i.deferReply({ flags: [2] }); // MessageFlags.Ephemeral (Flag 2)
+    } catch(err) {
+        console.log("Interaction already handled or expired");
     }
 
     const guildID = i.guild.id;
@@ -172,7 +176,6 @@ async function handleStreakPanel(i, client, db) {
         };
         await saveStreak(streakData);
     } else {
-        // توحيد المسميات لتتطابق مع الـ Update
         streakData = {
             id: streakData.id,
             guildID: streakData.guildID || streakData.guildid,
@@ -181,21 +184,31 @@ async function handleStreakPanel(i, client, db) {
             lastMessageTimestamp: streakData.lastMessageTimestamp || streakData.lastmessagetimestamp,
             hasGracePeriod: streakData.hasGracePeriod || streakData.hasgraceperiod,
             hasItemShield: streakData.hasItemShield || streakData.hasitemshield,
-            nicknameActive: streakData.nicknameActive || streakData.nicknameactive,
+            nicknameActive: streakData.nicknameActive !== undefined ? streakData.nicknameActive : streakData.nicknameactive,
             hasReceivedFreeShield: streakData.hasReceivedFreeShield || streakData.hasreceivedfreeshield,
             separator: streakData.separator,
-            dmNotify: streakData.dmNotify || streakData.dmnotify,
+            dmNotify: streakData.dmNotify !== undefined ? streakData.dmNotify : streakData.dmnotify,
             highestStreak: streakData.highestStreak || streakData.higheststreak,
             has12hWarning: streakData.has12hWarning || streakData.has12hwarning
         };
     }
 
+    const editReplySafe = async (payload) => {
+        try {
+            if (i.deferred && !i.replied) await i.editReply(payload);
+            else if (!i.replied) await i.reply({ ...payload, flags: [MessageFlags.Ephemeral] });
+            else await i.followUp({ ...payload, flags: [MessageFlags.Ephemeral] });
+        } catch(e) {}
+    };
+
     if (selection === 'streak_panel_toggle') {
         const newState = streakData.nicknameActive === 1 ? 0 : 1;
         streakData.nicknameActive = newState;
+        
         await saveStreak(streakData);
         await updateNickname(i.member, db);
-        await i.editReply({ content: newState === 0 ? "✅ تم **إخفاء** الستريك." : "✅ تم **إظهار** الستريك.", components: [] });
+        
+        await editReplySafe({ content: newState === 0 ? "✅ تم **إخفاء** الستريك من اسمك." : "✅ تم **إظهار** الستريك بجانب اسمك.", components: [] });
 
     } else if (selection === 'streak_panel_change_sep') {
         const currentSep = streakData.separator || '|';
@@ -226,31 +239,29 @@ async function handleStreakPanel(i, client, db) {
             );
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        await i.editReply({ content: 'اختر مظهر الفاصل الجديد لاسمك:', components: [row] });
+        await editReplySafe({ content: 'اختر مظهر الفاصل الجديد لاسمك:', components: [row] });
 
     } else if (i.customId === 'streak_panel_select_sep') {
         const newSeparator = i.values[0];
 
         streakData.separator = newSeparator;
         await saveStreak(streakData);
-
         await updateNickname(i.member, db);
 
-        await i.editReply({ content: `✅ تم تغيير فاصل الستريك الخاص بك إلى: \`${newSeparator}\``, components: [] });
+        await editReplySafe({ content: `✅ تم تغيير فاصل الستريك الخاص بك إلى: \`${newSeparator}\``, components: [] });
 
     } else if (selection.startsWith('streak_panel_top')) {
         const topData = await buildTopStreaksEmbed(i, db, currentPage);
-        await i.editReply(topData);
+        await editReplySafe(topData);
 
     } else if (selection === 'streak_panel_notifications') {
         const newState = streakData.dmNotify === 1 ? 0 : 1;
         streakData.dmNotify = newState;
         await saveStreak(streakData);
 
-        const status = newState === 1 ? "مفعلة" : "معطلة";
-        await i.editReply({ content: `✅ تم ضبط إشعارات الستريك الخاصة بك إلى: **${status}**.` });
+        const status = newState === 1 ? "مفعلة 🔔" : "معطلة 🔕";
+        await editReplySafe({ content: `✅ تم ضبط إشعارات الستريك في الخاص إلى: **${status}**.` });
     }
-    return;
 }
 
 module.exports = {
