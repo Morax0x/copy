@@ -95,22 +95,19 @@ async function handleStreakPanel(i, client, db) {
     let currentPage = 1;
     const selection = i.isStringSelectMenu() ? i.values[0] : i.customId;
 
-    // 🔥 ضمان المخفية والتحديث السليم 🔥
-    try {
-        if (i.isButton() && (i.customId.includes('_prev_') || i.customId.includes('_next_'))) {
-            await i.deferUpdate();
+    // تم إرجاع نظام التخفي بالضبط كما كان في الكود القديم الخاص بك
+    if (i.isButton()) {
+        await i.deferUpdate().catch(()=>{});
+        if (i.customId.includes('_prev_') || i.customId.includes('_next_')) {
             const pageData = i.customId.split('_');
             currentPage = parseInt(pageData[pageData.length - 1]);
             if (i.customId.includes('_prev_')) currentPage--;
             if (i.customId.includes('_next_')) currentPage++;
-        } else if (i.isStringSelectMenu() && i.customId === 'streak_panel_select_sep') {
-            await i.deferUpdate();
-        } else {
-            // استخدام الطريقة الأكثر أماناً لإخفاء الرد في الديسكورد للنسخ الحديثة
-            await i.deferReply({ flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         }
-    } catch(err) {
-        console.log("Interaction already handled or expired");
+    } else if (i.isStringSelectMenu() && i.customId === 'streak_panel_select_sep') {
+        await i.deferUpdate().catch(()=>{});
+    } else {
+        await i.deferReply({ flags: [MessageFlags.Ephemeral] }).catch(()=>{});
     }
 
     const guildID = i.guild.id;
@@ -193,22 +190,15 @@ async function handleStreakPanel(i, client, db) {
         };
     }
 
-    const editReplySafe = async (payload) => {
-        try {
-            if (i.deferred && !i.replied) await i.editReply(payload);
-            else if (!i.replied) await i.reply({ ...payload, flags: [MessageFlags.Ephemeral] });
-            else await i.followUp({ ...payload, flags: [MessageFlags.Ephemeral] });
-        } catch(e) {}
-    };
-
     if (selection === 'streak_panel_toggle') {
-        const newState = streakData.nicknameActive === 1 ? 0 : 1;
-        streakData.nicknameActive = newState;
+        // 🔥 تم إصلاح عكس البوصلة: أصبح الآن يقرأ الـ true/false والـ 1/0 بشكل صحيح ليقلب الحالة 🔥
+        const isActive = (streakData.nicknameActive == 1 || streakData.nicknameActive === true);
+        const newState = isActive ? 0 : 1;
         
+        streakData.nicknameActive = newState;
         await saveStreak(streakData);
         await updateNickname(i.member, db);
-        
-        await editReplySafe({ content: newState === 0 ? "✅ تم **إخفاء** الستريك من اسمك." : "✅ تم **إظهار** الستريك بجانب اسمك.", components: [] });
+        await i.editReply({ content: newState === 0 ? "✅ تم **إخفاء** الستريك." : "✅ تم **إظهار** الستريك.", components: [] });
 
     } else if (selection === 'streak_panel_change_sep') {
         const currentSep = streakData.separator || '|';
@@ -239,29 +229,33 @@ async function handleStreakPanel(i, client, db) {
             );
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        await editReplySafe({ content: 'اختر مظهر الفاصل الجديد لاسمك:', components: [row] });
+        await i.editReply({ content: 'اختر مظهر الفاصل الجديد لاسمك:', components: [row] });
 
     } else if (i.customId === 'streak_panel_select_sep') {
         const newSeparator = i.values[0];
 
         streakData.separator = newSeparator;
         await saveStreak(streakData);
+
         await updateNickname(i.member, db);
 
-        await editReplySafe({ content: `✅ تم تغيير فاصل الستريك الخاص بك إلى: \`${newSeparator}\``, components: [] });
+        await i.editReply({ content: `✅ تم تغيير فاصل الستريك الخاص بك إلى: \`${newSeparator}\``, components: [] });
 
-    } else if (selection.startsWith('streak_panel_top')) {
+    } else if (selection?.startsWith('streak_panel_top')) {
         const topData = await buildTopStreaksEmbed(i, db, currentPage);
-        await editReplySafe(topData);
+        await i.editReply(topData);
 
     } else if (selection === 'streak_panel_notifications') {
-        const newState = streakData.dmNotify === 1 ? 0 : 1;
+        const isActive = (streakData.dmNotify == 1 || streakData.dmNotify === true);
+        const newState = isActive ? 0 : 1;
+        
         streakData.dmNotify = newState;
         await saveStreak(streakData);
 
-        const status = newState === 1 ? "مفعلة 🔔" : "معطلة 🔕";
-        await editReplySafe({ content: `✅ تم ضبط إشعارات الستريك في الخاص إلى: **${status}**.` });
+        const status = newState === 1 ? "مفعلة" : "معطلة";
+        await i.editReply({ content: `✅ تم ضبط إشعارات الستريك الخاصة بك إلى: **${status}**.` });
     }
+    return;
 }
 
 module.exports = {
