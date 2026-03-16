@@ -76,7 +76,7 @@ module.exports = {
 
                     const guildID = newMessage.guild.id;
 
-                    console.log(`[TREE TRACKER] ✅ Water detected for user: ${userID}`);
+                    // تمت إزالة الـ console.log المزعجة من هنا ✔️
 
                     if (client.incrementQuestStats) {
                         await client.incrementQuestStats(userID, guildID, 'water_tree', 1).catch(()=>{});
