@@ -285,10 +285,14 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                     
                     if (result && !result.ongoing) {
                         ongoing = false;
+                        collector.stop('battle_won'); // 🔥 إيقاف الكوليكتر عند الفوز ليتفعل الـ resolve
                     }
                 });
                 
-                collector.on('end', () => { clearTimeout(turnTimeout); resolve(); });
+                collector.on('end', () => { 
+                    clearTimeout(turnTimeout); 
+                    resolve(); // 🔥 هذه كانت مفقودة إذا اللعبة لم تنتهِ بـ TimeOut
+                });
             });
 
             if (monster.hp <= 0) { 
@@ -433,7 +437,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         await deleteDungeonState(db, threadChannel.id);
         statusCollector.stop(); 
 
-        // 🔥 تم حماية الصورة هنا! 
         const bossImage = (dungeonConfig.final_boss && dungeonConfig.final_boss.image) 
             ? dungeonConfig.final_boss.image 
             : 'https://i.postimg.cc/WzRGhgJ9/mwraks.png';
