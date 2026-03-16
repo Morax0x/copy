@@ -54,8 +54,8 @@ async function handleNewSuggestion(message, client, db) {
         .setColor('Random') 
         .setThumbnail(message.author.displayAvatarURL({ dynamic: true })) 
         .addFields(
-            { name: 'الإحصائيـات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
-            { name: 'الحـالــة', value: '🟡 قيد المراجعة', inline: true }
+            { name: 'الإحصائيات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
+            { name: 'الحالة', value: '🟡 قيد المراجعة', inline: true }
         )
         .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: message.guild.iconURL({ dynamic: true }) });
 
@@ -222,7 +222,7 @@ async function handleSuggestionButtons(interaction, client, db) {
         if (action === 'accept') {
             newStatus = 'accepted';
             newColor = '#2ECC71'; 
-            newStatusText = '🟢 مـقبـول'; 
+            newStatusText = 'مـقبـول'; 
         } else if (action === 'reject') {
             newStatus = 'rejected';
             newColor = '#E74C3C'; 
