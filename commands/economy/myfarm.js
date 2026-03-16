@@ -17,7 +17,7 @@ module.exports = {
         .setDescription('يعرض مزرعتك وحالة الحيوانات ومخزن الأعلاف والأراضي.')
         .addUserOption(option => 
             option.setName('المستخدم')
-            .setDescription('المستخدم الذي تريد عـرض مزرعته')
+            .setDescription('المستخدم الذي تريد عرض مزرعته')
             .setRequired(false)),
 
     name: 'myfarm',
@@ -111,12 +111,14 @@ module.exports = {
                     totalFarmIncome += (animalData.income_per_day * qty);
                 }
 
-                // تجهيز نص الشبع للديسكورد (12 ساعة وأقل يعني جائع)
+                // تجهيز نص الشبع للديسكورد (تم إضافة العداد لحالة الجوع)
+                const timestampSeconds = Math.floor(fullUntil / 1000);
                 if (timeLeftMs > TWELVE_HOURS_MS) {
-                    const timestampSeconds = Math.floor(fullUntil / 1000);
                     hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
+                } else if (timeLeftMs > 0) {
+                    hungerStatusText = `🔴 جـائـع - بـدون دخـل ينفد <t:${timestampSeconds}:R>`;
                 } else {
-                    hungerStatusText = `🔴 جـائـع - بـدون دخـل`;
+                    hungerStatusText = `🔴 جـائـع تمـاماً - بـدون دخـل (0%)`;
                 }
 
                 if (animalsMap.has(animalData.id)) {
@@ -151,7 +153,7 @@ module.exports = {
             const desc = currentItems.map(item => 
                 `**✥ ${item.name} ${item.emoji}**\n` +
                 `✶ الـعـدد: \`${item.quantity.toLocaleString()}\`\n` +
-                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA} ${item.income === 0 ? ' متوقف بسبب الجوع' : ''}\n` +
+                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA} ${item.income === 0 ? ' (متوقف بسبب الجوع)' : ''}\n` +
                 `✥ حالـة الجـوع: ${item.hungerText}\n` +
                 `✥ اقـدم حـيـوان عمـره: \`${item.age}\` يوم - متبقي \`${item.lifeRemaining}\``
             ).join('\n\n');
