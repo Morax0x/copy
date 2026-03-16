@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionsBitField } = require('discord.js');
 
 const SUGGESTION_COOLDOWN = new Map();
 
@@ -48,17 +48,16 @@ async function handleNewSuggestion(message, client, db) {
         console.error("Error creating suggestions table:", e);
     }
 
+    // بناء الإيمبد الفخم حسب التصميم المطلوب
     const embed = new EmbedBuilder()
-        .setAuthor({ name: `💡 اقتراح من: ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-        .setDescription(`>>> ${content}`)
-        .setColor('#F1C40F') 
-        .setThumbnail('https://i.postimg.cc/mgsVcw27/1234.png') 
+        .setDescription(`✶ اقتـرح: <@${message.author.id}>\n\n> ✦ ${content}`)
+        .setColor('Random') // لون عشوائي
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true })) // صورة العضو
         .addFields(
-            { name: '📊 التصويت', value: '👍 مؤيد: `0`\n👎 معارض: `0`', inline: true },
-            { name: '📌 الحالة', value: '🟡 قيد المراجعة', inline: true }
+            { name: 'الإحصائيات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
+            { name: 'الحالة', value: '🟡 قيد المراجعة', inline: true }
         )
-        .setTimestamp()
-        .setFooter({ text: `معرف العضو: ${message.author.id}` });
+        .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: message.guild.iconURL({ dynamic: true }) }); // أيقونة السيرفر والنص
 
     if (message.attachments.size > 0) {
         const attachment = message.attachments.first();
@@ -67,10 +66,11 @@ async function handleNewSuggestion(message, client, db) {
         }
     }
 
+    // الأزرار بدون نص (ايموجيات فقط)
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('sugg_upvote').setLabel('أؤيد').setStyle(ButtonStyle.Success).setEmoji('👍'),
-        new ButtonBuilder().setCustomId('sugg_downvote').setLabel('أرفض').setStyle(ButtonStyle.Danger).setEmoji('👎'),
-        new ButtonBuilder().setCustomId('sugg_admin').setLabel('إدارة الاقتراح').setStyle(ButtonStyle.Secondary).setEmoji('⚙️')
+        new ButtonBuilder().setCustomId('sugg_upvote').setStyle(ButtonStyle.Secondary).setEmoji('1483055245310296265'),
+        new ButtonBuilder().setCustomId('sugg_downvote').setStyle(ButtonStyle.Secondary).setEmoji('1483055246933757963'),
+        new ButtonBuilder().setCustomId('sugg_admin').setStyle(ButtonStyle.Secondary).setEmoji('1437804676224516146')
     );
 
     try {
@@ -122,7 +122,6 @@ async function handleSuggestionButtons(interaction, client, db) {
             new ButtonBuilder().setCustomId(`sugg_status_accept_${targetMsgId}`).setLabel('قبول/تنفيذ').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId(`sugg_status_reject_${targetMsgId}`).setLabel('رفض').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId(`sugg_status_review_${targetMsgId}`).setLabel('قيد العمل').setStyle(ButtonStyle.Primary),
-            // 🔥 الزر الجديد لإضافة الرد
             new ButtonBuilder().setCustomId(`sugg_status_reply_${targetMsgId}`).setLabel('إضافة رد').setStyle(ButtonStyle.Secondary).setEmoji('✍️')
         );
 
@@ -183,13 +182,15 @@ async function handleSuggestionButtons(interaction, client, db) {
         const newStats = updatedSuggRes.rows[0];
         const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
         
-        // 🔥 الحفاظ على الرد الإداري إذا كان موجوداً أثناء التصويت
         const fields = originalEmbed.data.fields;
         const statusField = fields[1];
         const replyField = fields.length > 2 ? fields[2] : null; 
         
+        const upvotesCount = newStats.upvotes !== undefined ? newStats.upvotes : 0;
+        const downvotesCount = newStats.downvotes !== undefined ? newStats.downvotes : 0;
+
         const newFields = [
-            { name: '📊 التصويت', value: `👍 مؤيد: \`${newStats.upvotes || newStats.upvotes}\`\n👎 معارض: \`${newStats.downvotes || newStats.downvotes}\``, inline: true },
+            { name: 'الإحصائيات', value: `✶ <:like:1483055245310296265> : \`${upvotesCount}\`\n✶ <:dislike:1483055246933757963> : \`${downvotesCount}\``, inline: true },
             statusField
         ];
         if (replyField) newFields.push(replyField);
@@ -201,7 +202,6 @@ async function handleSuggestionButtons(interaction, client, db) {
     if (interaction.customId.startsWith('sugg_status_')) {
         const action = interaction.customId.split('_')[2]; 
         
-        // 🔥 التعامل مع زر كتابة الرد
         if (action === 'reply') {
             const modal = new ModalBuilder()
                 .setCustomId(`sugg_modal_reply_${targetMsgId}`)
@@ -242,14 +242,13 @@ async function handleSuggestionButtons(interaction, client, db) {
         if(suggestionMsg) {
             const originalEmbed = EmbedBuilder.from(suggestionMsg.embeds[0]);
             
-            // 🔥 الحفاظ على الرد الإداري عند تغيير الحالة
             const fields = originalEmbed.data.fields;
             const voteField = fields[0]; 
             const replyField = fields.length > 2 ? fields[2] : null;
 
             const newFields = [
                 voteField,
-                { name: '📌 الحالة', value: newStatusText, inline: true }
+                { name: 'الحالة', value: newStatusText, inline: true }
             ];
             if (replyField) newFields.push(replyField);
 
@@ -265,13 +264,12 @@ async function handleSuggestionButtons(interaction, client, db) {
                 try { await db.query(`UPDATE levels SET "mora" = "mora" + 500 WHERE "user" = $1 AND "guild" = $2`, [suggesterId, interaction.guild.id]); }
                 catch(e) { await db.query(`UPDATE levels SET mora = mora + 500 WHERE userid = $1 AND guildid = $2`, [suggesterId, interaction.guild.id]).catch(()=>{}); }
                 
-                interaction.channel.send(`🎉 تم تطبيق اقتراح <@${suggesterId}>! وقد حصل على **500** <:mora:1435647151349698621> كمكافأة إبداع!`);
+                interaction.channel.send(`🎉 تم تطبيق اقتراح <@${suggesterId}>! وقد حصل على **500** <:mora:1435647151349698621> كمكافأة إبداع!`).catch(()=>{});
             } catch(e) {}
         }
     }
 }
 
-// 🔥 دالة معالجة النافذة (Modal) وإضافة الرد
 async function handleSuggestionModals(interaction, client, db) {
     if (!interaction.isModalSubmit() || !interaction.customId.startsWith('sugg_modal_reply_')) return;
     
@@ -284,10 +282,9 @@ async function handleSuggestionModals(interaction, client, db) {
     const originalEmbed = EmbedBuilder.from(suggestionMsg.embeds[0]);
     const fields = originalEmbed.data.fields;
     
-    // إضافة الرد كحقل ثالث، أو استبداله إذا كان موجوداً مسبقاً
     const newFields = [
-        fields[0], // التصويت
-        fields[1], // الحالة
+        fields[0], 
+        fields[1], 
         { name: `💬 رد الإدارة (${interaction.user.username}):`, value: replyText, inline: false }
     ];
     
