@@ -78,7 +78,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         if (players.length === 0 || players.every(p => p.isDead)) {
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            await handleTeamWipe(players, floor, db, guild.id);
+            // 🔥 تم تمرير client هنا
+            await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
@@ -285,13 +286,13 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                     
                     if (result && !result.ongoing) {
                         ongoing = false;
-                        collector.stop('battle_won'); // 🔥 إيقاف الكوليكتر عند الفوز ليتفعل الـ resolve
+                        collector.stop('battle_won'); 
                     }
                 });
                 
                 collector.on('end', () => { 
                     clearTimeout(turnTimeout); 
-                    resolve(); // 🔥 هذه كانت مفقودة إذا اللعبة لم تنتهِ بـ TimeOut
+                    resolve(); 
                 });
             });
 
@@ -350,7 +351,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             const finalFloor = isTrapActive ? trapStartFloor : floor;
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            await handleTeamWipe(players, floor, db, guild.id);
+            // 🔥 تم تمرير client هنا
+            await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
@@ -393,7 +395,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             players.forEach(p => { p.isDead = true; p.hp = 0; p.deathFloor = floor; });
             await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
             statusCollector.stop(); 
-            await handleTeamWipe(players, floor, db, guild.id);
+            // 🔥 تم تمرير client هنا
+            await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
         } 
@@ -403,14 +406,16 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             
             await threadChannel.send(`⛺ **تم نصب الخيام بنجاح!**\nتم حفظ تقدمكم عند الطابق **${floor + 1}**. سيتم الآن توزيع الغنائم وإغلاق البوابة.`).catch(()=>{});
 
-            await handleLeaderRetreat(players, db, guild.id);
+            // 🔥 تم تمرير client هنا
+            await handleLeaderRetreat(players, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
         }
         else if (decision === 'retreat') {
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            await handleLeaderRetreat(players, db, guild.id);
+            // 🔥 تم تمرير client هنا
+            await handleLeaderRetreat(players, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
         } 
@@ -456,7 +461,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             console.log("⚠️ تعذر إرسال رسالة الفوز (الثريد محذوف).");
         }
 
-        await handleLeaderRetreat(alivePlayers, db, guild.id);
+        // 🔥 تم تمرير client هنا
+        await handleLeaderRetreat(alivePlayers, db, guild.id, client);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", db, guild.id, hostId, activeDungeonRequests, client);
     }
 } 
