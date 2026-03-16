@@ -3,7 +3,7 @@ const { PermissionsBitField, SlashCommandBuilder, ChannelType } = require("disco
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('setup-channels')
-        .setDescription('إعداد وتحديد قنوات البوت الأساسية (بومب، تعزيز، لوجات، لفل)')
+        .setDescription('إعداد وتحديد قنوات البوت الأساسية (بومب، تعزيز، لوجات، لفل، اقتراحات)')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
         .addSubcommand(subcommand => subcommand
             .setName('boost')
@@ -26,6 +26,11 @@ module.exports = {
             .addChannelOption(option => option.setName('channel').setDescription('قناة سجلات المتجر').setRequired(true).addChannelTypes(ChannelType.GuildText))
         )
         .addSubcommand(subcommand => subcommand
+            .setName('suggestions')
+            .setDescription('تعيين قناة الاقتراحات (أي رسالة فيها ستتحول لاقتراح تلقائياً).')
+            .addChannelOption(option => option.setName('channel').setDescription('قناة الاقتراحات').setRequired(true).addChannelTypes(ChannelType.GuildText))
+        )
+        .addSubcommand(subcommand => subcommand
             .setName('timers')
             .setDescription('إنشاء قنوات صوتية تعرض الوقت المتبقي للستريك والمهام.')
         )
@@ -36,7 +41,7 @@ module.exports = {
         ),
 
     name: 'setup-channels',
-    aliases: ['setboost', 'setbump', 'setmodlog', 'setshoplog', 'تحديد-التعزيز', 'تحديد-قناة-البومب'],
+    aliases: ['setboost', 'setbump', 'setmodlog', 'setshoplog', 'setsuggestions', 'تحديد-التعزيز', 'تحديد-قناة-البومب'],
     category: "Admin",
     description: "إعداد وتحديد قنوات البوت (مجمع للإدارة)",
 
@@ -62,8 +67,12 @@ module.exports = {
                 "shopLogChannelID" TEXT, 
                 "streakTimerChannelID" TEXT, 
                 "dailyTimerChannelID" TEXT, 
-                "weeklyTimerChannelID" TEXT
+                "weeklyTimerChannelID" TEXT,
+                "suggestionChannelID" TEXT
             )`);
+            // 🔥 إضافة العمود تلقائياً في حال كان الجدول موجوداً مسبقاً
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "suggestionChannelID" TEXT`).catch(() => {});
+            
             await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guild.id]);
         } catch(e) {
             console.error("Error creating tables in setup-channels:", e);
@@ -75,13 +84,14 @@ module.exports = {
         if (isSlash) {
             subcommand = interactionOrMessage.options.getSubcommand();
             targetChannel = interactionOrMessage.options.getChannel('channel') || interactionOrMessage.options.getChannel('target');
-            await interactionOrMessage.deferReply({ ephemeral: subcommand !== 'modlog' && subcommand !== 'shoplog' }); 
+            await interactionOrMessage.deferReply({ ephemeral: subcommand !== 'modlog' && subcommand !== 'shoplog' && subcommand !== 'suggestions' }); 
         } else {
             const cmdName = interactionOrMessage.content.split(' ')[0].toLowerCase().slice(1);
             if (cmdName.includes('setboost') || cmdName.includes('تحديد-التعزيز')) subcommand = 'boost';
             else if (cmdName.includes('setbump') || cmdName.includes('تحديد-قناة-البومب')) subcommand = 'bump';
             else if (cmdName.includes('setmodlog')) subcommand = 'modlog';
             else if (cmdName.includes('setshoplog') || cmdName.includes('set-shop-log')) subcommand = 'shoplog';
+            else if (cmdName.includes('setsuggestions')) subcommand = 'suggestions';
             else if (cmdName.includes('setup-timer-channels') || cmdName.includes('تثبيت-قنوات-التوقيت')) subcommand = 'timers';
             else if (cmdName.includes('xp-ignore')) subcommand = 'xp-ignore';
 
@@ -113,9 +123,20 @@ module.exports = {
             }
 
             if (subcommand === 'shoplog') {
-                if (!targetChannel) return reply("حدد القناة.");
+                if (!targetChannel || targetChannel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة نصية فقط.");
                 await db.query(`UPDATE settings SET "shopLogChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
                 return reply(`✅ تم تعيين قناة سجلات المتجر: ${targetChannel}`);
+            }
+
+            // 💡 نظام الاقتراحات الجديد
+            if (subcommand === 'suggestions') {
+                if (!targetChannel || targetChannel.type !== ChannelType.GuildText) return reply("الرجاء تحديد قناة نصية فقط.");
+                try {
+                    await db.query(`UPDATE settings SET "suggestionChannelID" = $1 WHERE "guild" = $2`, [targetChannel.id, guild.id]);
+                } catch(e) {
+                    await db.query(`UPDATE settings SET suggestionchannelid = $1 WHERE guild = $2`, [targetChannel.id, guild.id]).catch(()=>{});
+                }
+                return reply(`✅ تم تعيين قناة الاقتراحات: ${targetChannel}\n💡 *(الآن أي رسالة تُرسل في تلك القناة سيتم تحويلها تلقائياً لاقتراح احترافي!)*`);
             }
 
             if (subcommand === 'timers') {
