@@ -51,18 +51,22 @@ async function handleNewSuggestion(message, client, db) {
     // بناء الإيمبد الفخم حسب التصميم المطلوب
     const embed = new EmbedBuilder()
         .setDescription(`✶ اقتـرح: <@${message.author.id}>\n\n> ✦ ${content}`)
-        .setColor('Random') // لون عشوائي
-        .setThumbnail(message.author.displayAvatarURL({ dynamic: true })) // صورة العضو
+        .setColor('Random') 
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true })) 
         .addFields(
-            { name: 'الإحصائيات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
-            { name: 'الحالة', value: '🟡 قيد المراجعة', inline: true }
+            { name: 'الإحصائيـات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
+            { name: 'الحـالــة', value: '🟡 قيد المراجعة', inline: true }
         )
-        .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: message.guild.iconURL({ dynamic: true }) }); // أيقونة السيرفر والنص
+        .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: message.guild.iconURL({ dynamic: true }) });
 
+    // 🔥 الحل الجذري لمشكلة الصور المعطلة
+    const files = [];
     if (message.attachments.size > 0) {
         const attachment = message.attachments.first();
         if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-            embed.setImage(attachment.url);
+            // نأمر البوت برفع الصورة كملف مرفق جديد بدلاً من الاعتماد على رابط الرسالة القديمة
+            files.push({ attachment: attachment.url, name: attachment.name });
+            embed.setImage(`attachment://${attachment.name}`);
         }
     }
 
@@ -74,7 +78,8 @@ async function handleNewSuggestion(message, client, db) {
     );
 
     try {
-        const suggestionMsg = await message.channel.send({ embeds: [embed], components: [row] });
+        // 🔥 نرسل الإيمبد مع مصفوفة الـ files لكي يستضيف ديسكورد الصورة من جديد
+        const suggestionMsg = await message.channel.send({ embeds: [embed], components: [row], files: files });
         message.delete().catch(() => {});
 
         try {
@@ -89,8 +94,9 @@ async function handleNewSuggestion(message, client, db) {
             `, [suggestionMsg.id, message.guild.id, message.author.id, content, now]).catch(()=>{});
         }
 
+        // اسم الثريد بالتصميم الجديد
         await suggestionMsg.startThread({
-            name: `💬 مناقشة اقتراح ${message.author.username}`,
+            name: `ᗢ〢💭・اقتـراح・${message.author.username}`,
             autoArchiveDuration: 1440, 
             reason: 'نقاش اقتراح جديد'
         });
@@ -183,19 +189,11 @@ async function handleSuggestionButtons(interaction, client, db) {
         const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
         
         const fields = originalEmbed.data.fields;
-        const statusField = fields[1];
-        const replyField = fields.length > 2 ? fields[2] : null; 
         
-        const upvotesCount = newStats.upvotes !== undefined ? newStats.upvotes : 0;
-        const downvotesCount = newStats.downvotes !== undefined ? newStats.downvotes : 0;
+        // تحديث حقل الإحصائيات (الحقل الأول)
+        fields[0].value = `✶ <:like:1483055245310296265> : \`${newStats.upvotes || newStats.upvotes}\`\n✶ <:dislike:1483055246933757963> : \`${newStats.downvotes || newStats.downvotes}\``;
 
-        const newFields = [
-            { name: 'الإحصائيات', value: `✶ <:like:1483055245310296265> : \`${upvotesCount}\`\n✶ <:dislike:1483055246933757963> : \`${downvotesCount}\``, inline: true },
-            statusField
-        ];
-        if (replyField) newFields.push(replyField);
-
-        originalEmbed.setFields(newFields);
+        originalEmbed.setFields(fields);
         await interaction.message.edit({ embeds: [originalEmbed] });
     }
 
@@ -224,7 +222,7 @@ async function handleSuggestionButtons(interaction, client, db) {
         if (action === 'accept') {
             newStatus = 'accepted';
             newColor = '#2ECC71'; 
-            newStatusText = '🟢 تم التنفيذ / مقـبول';
+            newStatusText = '🟢 مـقبـول'; 
         } else if (action === 'reject') {
             newStatus = 'rejected';
             newColor = '#E74C3C'; 
@@ -242,17 +240,21 @@ async function handleSuggestionButtons(interaction, client, db) {
         if(suggestionMsg) {
             const originalEmbed = EmbedBuilder.from(suggestionMsg.embeds[0]);
             
-            const fields = originalEmbed.data.fields;
-            const voteField = fields[0]; 
-            const replyField = fields.length > 2 ? fields[2] : null;
+            let fields = [...originalEmbed.data.fields];
+            
+            // تحديث حقل الحالة (الحقل الثاني)
+            fields[1] = { name: 'الحالة', value: newStatusText, inline: true };
 
-            const newFields = [
-                voteField,
-                { name: 'الحالة', value: newStatusText, inline: true }
-            ];
-            if (replyField) newFields.push(replyField);
+            if (action === 'accept') {
+                const hasReward = fields.some(f => f.value && f.value.includes('مكافـأة المفـكـر'));
+                if (!hasReward) {
+                    fields.push({ name: '\u200B', value: '⌯ مكافـأة المفـكـر: 500 <:mora:1435647151349698621>', inline: false });
+                }
+            } else {
+                fields = fields.filter(f => !(f.value && f.value.includes('مكافـأة المفـكـر')));
+            }
 
-            originalEmbed.setColor(newColor).setFields(newFields);
+            originalEmbed.setColor(newColor).setFields(fields);
             await suggestionMsg.edit({ embeds: [originalEmbed] });
         }
         
@@ -263,8 +265,6 @@ async function handleSuggestionButtons(interaction, client, db) {
                 const suggesterId = suggData.userID || suggData.userid;
                 try { await db.query(`UPDATE levels SET "mora" = "mora" + 500 WHERE "user" = $1 AND "guild" = $2`, [suggesterId, interaction.guild.id]); }
                 catch(e) { await db.query(`UPDATE levels SET mora = mora + 500 WHERE userid = $1 AND guildid = $2`, [suggesterId, interaction.guild.id]).catch(()=>{}); }
-                
-                interaction.channel.send(`🎉 تم تطبيق اقتراح <@${suggesterId}>! وقد حصل على **500** <:mora:1435647151349698621> كمكافأة إبداع!`).catch(()=>{});
             } catch(e) {}
         }
     }
@@ -280,15 +280,18 @@ async function handleSuggestionModals(interaction, client, db) {
     if (!suggestionMsg) return interaction.reply({ content: '❌ لم أتمكن من العثور على رسالة الاقتراح.', flags: [MessageFlags.Ephemeral] });
     
     const originalEmbed = EmbedBuilder.from(suggestionMsg.embeds[0]);
-    const fields = originalEmbed.data.fields;
+    let fields = [...originalEmbed.data.fields];
     
-    const newFields = [
-        fields[0], 
-        fields[1], 
-        { name: `💬 رد الإدارة (${interaction.user.username}):`, value: replyText, inline: false }
-    ];
+    fields = fields.filter(f => f.name !== 'ᗢ رد الامـبراطـور');
     
-    originalEmbed.setFields(newFields);
+    const rewardField = fields.find(f => f.value && f.value.includes('مكافـأة المفـكـر'));
+    fields = fields.filter(f => !(f.value && f.value.includes('مكافـأة المفـكـر')));
+
+    fields.push({ name: 'ᗢ رد الامـبراطـور', value: `> ✶ ${replyText}`, inline: false });
+    
+    if (rewardField) fields.push(rewardField);
+    
+    originalEmbed.setFields(fields);
     
     await suggestionMsg.edit({ embeds: [originalEmbed] });
     await interaction.reply({ content: '✅ تم إضافة الرد إلى الاقتراح بنجاح!', flags: [MessageFlags.Ephemeral] });
