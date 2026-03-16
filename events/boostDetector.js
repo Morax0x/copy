@@ -19,6 +19,9 @@ module.exports = {
     name: 'messageCreate',
     async execute(message) {
         
+        // 🔥 الحماية ضد رسائل الخاص (تمنع انهيار البوت تماماً) 🔥
+        if (!message.guild) return;
+        
         const client = message.client; 
 
         // تجاهل رسائل البوتات العادية، مع السماح لرسائل النظام الخاصة بالبوست
