@@ -3,7 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// 1. الاتصال بقاعدة البيانات مع إعدادات حماية الـ Pool
+// 1. الاتصال بقاعدة البيانات مع إعدادات حماية الـ  Pool
 const db = require('./database.js');
 
 const aiConfig = require('./utils/aiConfig');
