@@ -10,6 +10,10 @@ const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
+// 🔥 إضافة استدعاء مدير الاقتراحات (بشكل آمن)
+let handleNewSuggestion;
+try { ({ handleNewSuggestion } = require('../handlers/suggestion-handler.js')); } catch (e) { }
+
 const DISBOARD_BOT_ID = '302050872383242240'; 
 const autoResponderCooldowns = new Collection();
 const treeCooldowns = new Set();
@@ -103,6 +107,16 @@ module.exports = {
         // ⚡ جلب الإعدادات من الذاكرة العشوائية (سريع جداً)
         const settings = await getSettings(db, message.guild.id);
         let Prefix = settings?.prefix || "-";
+
+        // ==========================================
+        // 💡 نظام الاقتراحات التلقائي (اقتناص الرسائل)
+        // ==========================================
+        if (!message.author.bot && settings && (settings.suggestionChannelID || settings.suggestionchannelid) && message.channel.id === (settings.suggestionChannelID || settings.suggestionchannelid)) {
+            if (handleNewSuggestion) {
+                await handleNewSuggestion(message, client, db);
+            }
+            return; // نتوقف هنا لكي لا تُحسب الرسالة في الرانك أو نظام الـ AI
+        }
 
         try {
             if (message.member) {
@@ -575,7 +589,6 @@ module.exports = {
             let getXpfromDB = settings?.customXP || settings?.customxp || 25;
             let getCooldownfromDB = settings?.customCooldown || settings?.customcooldown || 60000;
 
-            // 🔥 الحل الجذري لمشكلة التلفيل (Number Conversion) 🔥
             let currentLevelData = await client.getLevel(userID, guildID);
             if (!currentLevelData) {
                 currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
@@ -602,7 +615,7 @@ module.exports = {
                 if (currentLevelData.xp >= nextXP) {
                     const oldLvl = currentLevelData.level;
                     currentLevelData.xp -= nextXP; 
-                    currentLevelData.level = Number(currentLevelData.level) + 1; // 🔥 هنا كان الغلط وانحل!
+                    currentLevelData.level = Number(currentLevelData.level) + 1;
                     
                     client.setLevel(currentLevelData).catch(()=>{});
                     
@@ -636,7 +649,6 @@ module.exports = {
                 setTimeout(() => client.talkedRecently.delete(message.author.id), Number(getCooldownfromDB));
             }
             
-            // 🔥 تحديث رتب المستويات التلقائي مع حماية الكيس (Case) 🔥
             try {
                 const finalLvl = Number(currentLevelData.level);
                 let currentLevelRoleRes;
@@ -669,9 +681,6 @@ module.exports = {
 
         } catch (err) {}
 
-        // ==========================================
-        // 🔥 حل مشكلة تنفيذ الأوامر وتداخلها 🔥
-        // ==========================================
         if (message.content.startsWith(Prefix)) {
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -711,14 +720,11 @@ module.exports = {
                             else { try { await command.execute(message, args); } catch (error) { message.reply("❌ حدث خطأ."); } }
                         }
                     }
-                    return; // 🔥 إيقاف الكود هنا إذا تم إيجاد أمر لكي لا يتداخل مع الباقي
+                    return; 
                 }
             }
         }
 
-        // ==========================================
-        // اختصارات الأوامر (Shortcuts)
-        // ==========================================
         try {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
@@ -752,9 +758,6 @@ module.exports = {
             }
         } catch (err) {}
 
-        // ==========================================
-        // أوامر الكازينو بدون برفكس
-        // ==========================================
         if (settings && (((settings.casinoChannelID || settings.casinochannelid) && message.channel.id === (settings.casinoChannelID || settings.casinochannelid)) || ((settings.casinoChannelID2 || settings.casinochannelid2) && message.channel.id === (settings.casinoChannelID2 || settings.casinochannelid2)))) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -766,9 +769,6 @@ module.exports = {
             }
         }
 
-        // ==========================================
-        // الردود التلقائية (Auto Responders)
-        // ==========================================
         try {
             const content = message.content.trim();
             let autoReplyRes;
