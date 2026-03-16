@@ -3,11 +3,17 @@ const { updateNickname } = require('../streak-handler.js');
 
 async function buildTopStreaksEmbed(interaction, db, page = 1) {
     try {
-        const settingsRes = await db.query("SELECT streakemoji FROM settings WHERE guild = $1", [interaction.guild.id]);
-        const streakEmoji = settingsRes.rows[0]?.streakemoji || '🔥';
+        let settingsRes;
+        try { settingsRes = await db.query(`SELECT "streakEmoji" FROM settings WHERE "guild" = $1`, [interaction.guild.id]); }
+        catch(e) { settingsRes = await db.query(`SELECT streakemoji FROM settings WHERE guild = $1`, [interaction.guild.id]).catch(()=>({rows:[]})); }
+        
+        const streakEmoji = settingsRes && settingsRes.rows[0] ? (settingsRes.rows[0].streakEmoji || settingsRes.rows[0].streakemoji || '🔥') : '🔥';
 
-        const allUsersRes = await db.query("SELECT * FROM streaks WHERE guildid = $1 AND streakcount > 0 ORDER BY streakcount DESC;", [interaction.guild.id]);
-        const allUsers = allUsersRes.rows;
+        let allUsersRes;
+        try { allUsersRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "streakCount" > 0 ORDER BY "streakCount" DESC`, [interaction.guild.id]); }
+        catch(e) { allUsersRes = await db.query(`SELECT * FROM streaks WHERE guildid = $1 AND streakcount > 0 ORDER BY streakcount DESC`, [interaction.guild.id]).catch(()=>({rows:[]})); }
+        
+        const allUsers = allUsersRes && allUsersRes.rows ? allUsersRes.rows : [];
 
         if (allUsers.length === 0) {
             const embed = new EmbedBuilder()
@@ -37,13 +43,15 @@ async function buildTopStreaksEmbed(interaction, db, page = 1) {
         for (let i = 0; i < pageData.length; i++) {
             const streakData = pageData[i];
             const rank = start + i + 1;
+            const uId = streakData.userID || streakData.userid;
+            const sCount = streakData.streakCount || streakData.streakcount;
 
             let memberName;
             try {
-                const userObj = await interaction.guild.members.fetch(streakData.userid);
-                memberName = `<@${streakData.userid}>`;
+                const userObj = await interaction.guild.members.fetch(uId);
+                memberName = `<@${uId}>`;
             } catch (error) {
-                memberName = `User Left (${streakData.userid})`;
+                memberName = `User Left (${uId})`;
             }
 
             let rankEmoji = '';
@@ -52,7 +60,7 @@ async function buildTopStreaksEmbed(interaction, db, page = 1) {
             else if (rank === 3) rankEmoji = '🥉';
             else rankEmoji = `#${rank}`;
 
-            descriptionText += `${rankEmoji} ${memberName}\n> **Streak**: \`${streakData.streakcount}\` ${streakEmoji}\n\n`;
+            descriptionText += `${rankEmoji} ${memberName}\n> **Streak**: \`${sCount}\` ${streakEmoji}\n\n`;
         }
 
         embed.setDescription(descriptionText);
@@ -98,55 +106,93 @@ async function handleStreakPanel(i, client, db) {
     } else if (i.isStringSelectMenu() && i.customId === 'streak_panel_select_sep') {
         await i.deferUpdate();
     } else {
-        await i.deferReply({ ephemeral: true });
+        await i.deferReply({ flags: [2] }); // MessageFlags.Ephemeral (Flag 2)
     }
 
     const guildID = i.guild.id;
     const userID = i.user.id;
     
-    const streakRes = await db.query("SELECT * FROM streaks WHERE guildid = $1 AND userid = $2", [guildID, userID]);
-    let streakData = streakRes.rows[0];
+    let streakRes;
+    try { streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildID, userID]); }
+    catch(e) { streakRes = await db.query(`SELECT * FROM streaks WHERE guildid = $1 AND userid = $2`, [guildID, userID]).catch(()=>({rows:[]})); }
+    
+    let streakData = streakRes && streakRes.rows ? streakRes.rows[0] : null;
 
     const saveStreak = async (data) => {
-        await db.query(`
-            INSERT INTO streaks (id, guildid, userid, streakcount, lastmessagetimestamp, hasgraceperiod, hasitemshield, nicknameactive, hasreceivedfreeshield, separator, dmnotify, higheststreak, has12hwarning) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            ON CONFLICT (id) DO UPDATE SET 
-                streakcount = EXCLUDED.streakcount, 
-                lastmessagetimestamp = EXCLUDED.lastmessagetimestamp, 
-                hasgraceperiod = EXCLUDED.hasgraceperiod, 
-                hasitemshield = EXCLUDED.hasitemshield, 
-                nicknameactive = EXCLUDED.nicknameactive, 
-                hasreceivedfreeshield = EXCLUDED.hasreceivedfreeshield, 
-                separator = EXCLUDED.separator, 
-                dmnotify = EXCLUDED.dmnotify, 
-                higheststreak = EXCLUDED.higheststreak, 
-                has12hwarning = EXCLUDED.has12hwarning
-        `, [data.id, data.guildid, data.userid, data.streakcount, data.lastmessagetimestamp, data.hasgraceperiod, data.hasitemshield, data.nicknameactive, data.hasreceivedfreeshield, data.separator, data.dmnotify, data.higheststreak, data.has12hwarning]);
+        try {
+            await db.query(`
+                INSERT INTO streaks ("id", "guildID", "userID", "streakCount", "lastMessageTimestamp", "hasGracePeriod", "hasItemShield", "nicknameActive", "hasReceivedFreeShield", "separator", "dmNotify", "highestStreak", "has12hWarning") 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                ON CONFLICT ("id") DO UPDATE SET 
+                    "streakCount" = EXCLUDED."streakCount", 
+                    "lastMessageTimestamp" = EXCLUDED."lastMessageTimestamp", 
+                    "hasGracePeriod" = EXCLUDED."hasGracePeriod", 
+                    "hasItemShield" = EXCLUDED."hasItemShield", 
+                    "nicknameActive" = EXCLUDED."nicknameActive", 
+                    "hasReceivedFreeShield" = EXCLUDED."hasReceivedFreeShield", 
+                    "separator" = EXCLUDED."separator", 
+                    "dmNotify" = EXCLUDED."dmNotify", 
+                    "highestStreak" = EXCLUDED."highestStreak", 
+                    "has12hWarning" = EXCLUDED."has12hWarning"
+            `, [data.id, data.guildID, data.userID, data.streakCount, data.lastMessageTimestamp, data.hasGracePeriod, data.hasItemShield, data.nicknameActive, data.hasReceivedFreeShield, data.separator, data.dmNotify, data.highestStreak, data.has12hWarning]);
+        } catch(e) {
+            await db.query(`
+                INSERT INTO streaks (id, guildid, userid, streakcount, lastmessagetimestamp, hasgraceperiod, hasitemshield, nicknameactive, hasreceivedfreeshield, separator, dmnotify, higheststreak, has12hwarning) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                ON CONFLICT (id) DO UPDATE SET 
+                    streakcount = EXCLUDED.streakcount, 
+                    lastmessagetimestamp = EXCLUDED.lastmessagetimestamp, 
+                    hasgraceperiod = EXCLUDED.hasgraceperiod, 
+                    hasitemshield = EXCLUDED.hasitemshield, 
+                    nicknameactive = EXCLUDED.nicknameactive, 
+                    hasreceivedfreeshield = EXCLUDED.hasreceivedfreeshield, 
+                    separator = EXCLUDED.separator, 
+                    dmnotify = EXCLUDED.dmnotify, 
+                    higheststreak = EXCLUDED.higheststreak, 
+                    has12hwarning = EXCLUDED.has12hwarning
+            `, [data.id, data.guildID, data.userID, data.streakCount, data.lastMessageTimestamp, data.hasGracePeriod, data.hasItemShield, data.nicknameActive, data.hasReceivedFreeShield, data.separator, data.dmNotify, data.highestStreak, data.has12hWarning]).catch(()=>{});
+        }
     };
 
     if (!streakData) {
         streakData = {
             id: `${guildID}-${userID}`,
-            guildid: guildID,
-            userid: userID,
-            streakcount: 0,
-            lastmessagetimestamp: 0,
-            hasgraceperiod: 0,
-            hasitemshield: 0,
-            nicknameactive: 1,
-            hasreceivedfreeshield: 0,
+            guildID: guildID,
+            userID: userID,
+            streakCount: 0,
+            lastMessageTimestamp: 0,
+            hasGracePeriod: 0,
+            hasItemShield: 0,
+            nicknameActive: 1,
+            hasReceivedFreeShield: 0,
             separator: '|',
-            dmnotify: 1,
-            higheststreak: 0,
-            has12hwarning: 0
+            dmNotify: 1,
+            highestStreak: 0,
+            has12hWarning: 0
         };
         await saveStreak(streakData);
+    } else {
+        // توحيد المسميات لتتطابق مع الـ Update
+        streakData = {
+            id: streakData.id,
+            guildID: streakData.guildID || streakData.guildid,
+            userID: streakData.userID || streakData.userid,
+            streakCount: streakData.streakCount || streakData.streakcount,
+            lastMessageTimestamp: streakData.lastMessageTimestamp || streakData.lastmessagetimestamp,
+            hasGracePeriod: streakData.hasGracePeriod || streakData.hasgraceperiod,
+            hasItemShield: streakData.hasItemShield || streakData.hasitemshield,
+            nicknameActive: streakData.nicknameActive || streakData.nicknameactive,
+            hasReceivedFreeShield: streakData.hasReceivedFreeShield || streakData.hasreceivedfreeshield,
+            separator: streakData.separator,
+            dmNotify: streakData.dmNotify || streakData.dmnotify,
+            highestStreak: streakData.highestStreak || streakData.higheststreak,
+            has12hWarning: streakData.has12hWarning || streakData.has12hwarning
+        };
     }
 
     if (selection === 'streak_panel_toggle') {
-        const newState = streakData.nicknameactive === 1 ? 0 : 1;
-        streakData.nicknameactive = newState;
+        const newState = streakData.nicknameActive === 1 ? 0 : 1;
+        streakData.nicknameActive = newState;
         await saveStreak(streakData);
         await updateNickname(i.member, db);
         await i.editReply({ content: newState === 0 ? "✅ تم **إخفاء** الستريك." : "✅ تم **إظهار** الستريك.", components: [] });
@@ -197,8 +243,8 @@ async function handleStreakPanel(i, client, db) {
         await i.editReply(topData);
 
     } else if (selection === 'streak_panel_notifications') {
-        const newState = streakData.dmnotify === 1 ? 0 : 1;
-        streakData.dmnotify = newState;
+        const newState = streakData.dmNotify === 1 ? 0 : 1;
+        streakData.dmNotify = newState;
         await saveStreak(streakData);
 
         const status = newState === 1 ? "مفعلة" : "معطلة";
