@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, Colors, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, Colors, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require('discord.js');
 const shopItems = require('../../json/shop-items.json');
 const farmAnimals = require('../../json/farm-animals.json');
 const marketItems = require('../../json/market-items.json');
@@ -190,7 +190,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply(); 
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] }); // جعلناها مخفية
 
                     const type = normalize(modalSubmit.fields.getTextInputValue('eco_type'));
                     const action = normalize(modalSubmit.fields.getTextInputValue('eco_action'));
@@ -276,7 +276,7 @@ module.exports = {
                             currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
                         }
 
-                        const newVal = currentMax + 1; // يكسر الرقم القياسي بـ 1
+                        const newVal = currentMax + 1; 
                         const trackerId = `${userID}-${guildID}-${todayStr}`;
 
                         try {
@@ -316,7 +316,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const action = normalize(modalSubmit.fields.getTextInputValue('rep_action'));
                     const amount = parseInt(modalSubmit.fields.getTextInputValue('rep_amount'));
@@ -354,7 +354,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const amount = parseInt(modalSubmit.fields.getTextInputValue('repchan_amount'));
                     if (isNaN(amount) || amount <= 0) return modalSubmit.editReply({ content: "❌ الرجاء إدخال رقم صحيح وموجب." });
@@ -387,7 +387,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const amount = parseInt(modalSubmit.fields.getTextInputValue('tkt_amount'));
                     if (isNaN(amount)) return modalSubmit.editReply({ content: "❌ الرجاء إدخال رقم صحيح." });
@@ -418,7 +418,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const type = normalize(modalSubmit.fields.getTextInputValue('gear_type'));
                     const name = modalSubmit.fields.getTextInputValue('gear_name');
@@ -490,7 +490,7 @@ module.exports = {
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'reset_combat') {
-                try { await interaction.deferReply(); } catch(e){}
+                try { await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); } catch(e){}
                 
                 try {
                     await db.query(`DELETE FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
@@ -512,7 +512,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const targetFloor = parseInt(modalSubmit.fields.getTextInputValue('tent_floor'));
                     
@@ -550,7 +550,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const action = normalize(modalSubmit.fields.getTextInputValue('itm_action'));
                     const name = modalSubmit.fields.getTextInputValue('itm_name');
@@ -660,7 +660,7 @@ module.exports = {
                     
                     report.push(`${item.name || item.id}: ${item.currentPrice || item.currentprice} ➔ ${newPrice}`);
                 }
-                await interaction.reply({ content: `📉 **انهيار السوق!**\n\`\`\`\n${report.join('\n')}\n\`\`\`` });
+                await interaction.reply({ content: `📉 **انهيار السوق!**\n\`\`\`\n${report.join('\n')}\n\`\`\``, flags: [MessageFlags.Ephemeral] });
             }
             else if (val === 'boom') {
                 const allItemsRes = await db.query("SELECT * FROM market_items");
@@ -676,7 +676,7 @@ module.exports = {
                     
                     report.push(`${item.name || item.id}: ${item.currentPrice || item.currentprice} ➔ ${newPrice}`);
                 }
-                await interaction.reply({ content: `📈 **انتعاش السوق!**\n\`\`\`\n${report.join('\n')}\n\`\`\`` });
+                await interaction.reply({ content: `📈 **انتعاش السوق!**\n\`\`\`\n${report.join('\n')}\n\`\`\``, flags: [MessageFlags.Ephemeral] });
             }
             else if (val === 'status') {
                 const modalId = `mod_mrkt_status_${Date.now()}`;
@@ -687,7 +687,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const status = normalize(modalSubmit.fields.getTextInputValue('m_status'));
                     let statusKey = 'normal';
@@ -713,7 +713,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply();
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const itemID = modalSubmit.fields.getTextInputValue('m_name');
                     const price = parseInt(modalSubmit.fields.getTextInputValue('m_price'));
@@ -736,13 +736,13 @@ module.exports = {
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'reset_market') {
-                await interaction.reply({ content: "☢️ سيتم تنفيذ تصفير السوق يدوياً، يرجى كتابة `-ادمن تصفير-السوق` للتأكيد." });
+                await interaction.reply({ content: "☢️ سيتم تنفيذ تصفير السوق يدوياً، يرجى كتابة `-ادمن تصفير-السوق` للتأكيد.", flags: [MessageFlags.Ephemeral] });
             }
         });
     },
 
     async checkUser(interaction, client, db, targetUser) {
-        try { await interaction.deferReply(); } catch(e){}
+        try { await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); } catch(e){}
 
         const guildID = interaction.guild.id;
         const userID = targetUser.id;
@@ -807,7 +807,7 @@ module.exports = {
     },
 
     async giveMediaShield(interaction, client, db, targetUser) {
-        try { await interaction.deferReply(); } catch(e){}
+        try { await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); } catch(e){}
         const id = `${interaction.guild.id}-${targetUser.id}`;
         try {
             await db.query(`INSERT INTO media_streaks ("id", "guildID", "userID", "hasItemShield") VALUES ($1, $2, $3, 1) ON CONFLICT("id") DO UPDATE SET "hasItemShield" = 1`, [id, interaction.guild.id, targetUser.id]);
@@ -818,7 +818,7 @@ module.exports = {
     },
 
     async resetUser(interaction, client, db, targetUser) {
-        try { await interaction.deferReply(); } catch(e){}
+        try { await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); } catch(e){}
         const guildID = interaction.guild.id;
         const userID = targetUser.id;
 
