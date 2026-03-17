@@ -11,7 +11,8 @@ const {
     AttachmentBuilder,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    MessageFlags
 } = require('discord.js');
 
 const { generateMainQuestBoardImage, generateKingsBoardImage } = require('../../generators/guild-boards-generator.js');
@@ -47,7 +48,10 @@ module.exports = {
         }
 
         const generateDashboardEmbed = async () => {
-            const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]);
+            let settingsRes;
+            try { settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]); }
+            catch(e) { settingsRes = await db.query(`SELECT * FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]})); }
+            
             const settings = settingsRes.rows[0] || {};
             
             const getCh = (id) => id ? `<#${id}>` : '❌ غير محدد';
@@ -55,7 +59,9 @@ module.exports = {
             const getTxt = (val) => val ? `\`${val}\`` : '❌ غير محدد';
             
             const getAchRole = async (achId) => {
-                const res = await db.query(`SELECT "roleID" FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, achId]);
+                let res;
+                try { res = await db.query(`SELECT "roleID" FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, achId]); }
+                catch(e) { res = await db.query(`SELECT roleid FROM quest_achievement_roles WHERE guildid = $1 AND achievementid = $2`, [guildId, achId]).catch(()=>({rows:[]})); }
                 return res.rows[0] ? `<@&${res.rows[0].roleID || res.rows[0].roleid}>` : '❌ غير محدد';
             };
 
@@ -164,7 +170,7 @@ module.exports = {
 
         collector.on('collect', async interaction => {
             if (interaction.user.id !== message.author.id) {
-                return interaction.reply({ content: '❌ هذا الأمر ليس لك.', flags: 64 });
+                return interaction.reply({ content: '❌ هذا الأمر ليس لك.', flags: [MessageFlags.Ephemeral] });
             }
 
             if (interaction.customId === 'tree_text_settings') {
@@ -226,26 +232,44 @@ module.exports = {
 
                     try {
                         if (dbColumn.startsWith('ach_')) {
-                            await db.query(`
-                                INSERT INTO quest_achievement_roles ("guildID", "roleID", "achievementID") 
-                                VALUES ($1, $2, $3) 
-                                ON CONFLICT("guildID", "achievementID") 
-                                DO UPDATE SET "roleID" = EXCLUDED."roleID"
-                            `, [guildId, selectedId, dbColumn]);
+                            try {
+                                await db.query(`
+                                    INSERT INTO quest_achievement_roles ("guildID", "roleID", "achievementID") 
+                                    VALUES ($1, $2, $3) 
+                                    ON CONFLICT("guildID", "achievementID") 
+                                    DO UPDATE SET "roleID" = EXCLUDED."roleID"
+                                `, [guildId, selectedId, dbColumn]);
+                            } catch(e) {
+                                await db.query(`
+                                    INSERT INTO quest_achievement_roles (guildid, roleid, achievementid) 
+                                    VALUES ($1, $2, $3) 
+                                    ON CONFLICT(guildid, achievementid) 
+                                    DO UPDATE SET roleid = EXCLUDED.roleid
+                                `, [guildId, selectedId, dbColumn]).catch(()=>{});
+                            }
                         } else {
-                            await db.query(`
-                                INSERT INTO settings ("guild", "${dbColumn}") 
-                                VALUES ($1, $2) 
-                                ON CONFLICT("guild") 
-                                DO UPDATE SET "${dbColumn}" = EXCLUDED."${dbColumn}"
-                            `, [guildId, selectedId]);
+                            try {
+                                await db.query(`
+                                    INSERT INTO settings ("guild", "${dbColumn}") 
+                                    VALUES ($1, $2) 
+                                    ON CONFLICT("guild") 
+                                    DO UPDATE SET "${dbColumn}" = EXCLUDED."${dbColumn}"
+                                `, [guildId, selectedId]);
+                            } catch(e) {
+                                await db.query(`
+                                    INSERT INTO settings (guild, ${dbColumn}) 
+                                    VALUES ($1, $2) 
+                                    ON CONFLICT(guild) 
+                                    DO UPDATE SET ${dbColumn} = EXCLUDED.${dbColumn}
+                                `, [guildId, selectedId]).catch(()=>{});
+                            }
                         }
                         
                         const updatedEmbed = await generateDashboardEmbed();
                         await interaction.update({ embeds: [updatedEmbed], components: getMainMenuComponents() });
                     } catch (err) {
                         console.error(err);
-                        await interaction.reply({ content: `❌ حدث خطأ أثناء الحفظ.`, flags: 64 });
+                        await interaction.reply({ content: `❌ حدث خطأ أثناء الحفظ.`, flags: [MessageFlags.Ephemeral] });
                     }
                     return;
                 }
@@ -261,9 +285,11 @@ module.exports = {
                     const dbColumn = interaction.customId.replace('clear_', '');
                     try {
                         if (dbColumn.startsWith('ach_')) {
-                            await db.query(`DELETE FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, dbColumn]);
+                            try { await db.query(`DELETE FROM quest_achievement_roles WHERE "guildID" = $1 AND "achievementID" = $2`, [guildId, dbColumn]); }
+                            catch(e) { await db.query(`DELETE FROM quest_achievement_roles WHERE guildid = $1 AND achievementid = $2`, [guildId, dbColumn]).catch(()=>{}); }
                         } else {
-                            await db.query(`UPDATE settings SET "${dbColumn}" = NULL WHERE "guild" = $1`, [guildId]);
+                            try { await db.query(`UPDATE settings SET "${dbColumn}" = NULL WHERE "guild" = $1`, [guildId]); }
+                            catch(e) { await db.query(`UPDATE settings SET ${dbColumn} = NULL WHERE guild = $1`, [guildId]).catch(()=>{}); }
                         }
                         const updatedEmbed = await generateDashboardEmbed();
                         await interaction.update({ embeds: [updatedEmbed], components: getMainMenuComponents() });
@@ -274,9 +300,12 @@ module.exports = {
                 }
 
                 if (interaction.customId === 'send_guild_board') {
-                    await interaction.deferReply({ flags: 64 });
+                    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-                    const settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]);
+                    let settingsRes;
+                    try { settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [guildId]); }
+                    catch(e) { settingsRes = await db.query(`SELECT * FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]})); }
+                    
                     const settings = settingsRes.rows[0];
                     if (!settings || (!settings.guildboardchannelid && !settings.guildBoardChannelID)) {
                         return interaction.editReply({ content: '❌ يجب عليك تحديد **روم لوحة النقابة (الثابتة)** أولاً لكي أرسلها!' });
@@ -293,28 +322,44 @@ module.exports = {
                         const ksaTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
                         const todayStr = ksaTime.toISOString().split('T')[0];
                         
-                        const casinoDataRes = await db.query(`SELECT "userID", (COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as "totalProfit" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND ("casino_profit" > 0 OR "mora_earned" > 0) ORDER BY "totalProfit" DESC LIMIT 1`, [guildId, todayStr]);
+                        let casinoDataRes;
+                        try { casinoDataRes = await db.query(`SELECT "userID", (COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as "totalProfit" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND ("casino_profit" > 0 OR "mora_earned" > 0) ORDER BY "totalProfit" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { casinoDataRes = await db.query(`SELECT userid as "userID", (COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) as "totalProfit" FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND (casino_profit > 0 OR mora_earned > 0) ORDER BY "totalProfit" DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const casinoData = casinoDataRes.rows[0];
                         
-                        const abyssDataRes = await db.query(`SELECT "user" AS "userID", "max_dungeon_floor" FROM levels WHERE "guild" = $1 AND "max_dungeon_floor" > 0 ORDER BY "max_dungeon_floor" DESC LIMIT 1`, [guildId]);
+                        let abyssDataRes;
+                        try { abyssDataRes = await db.query(`SELECT "userID", "dungeon_floor" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "dungeon_floor" > 0 ORDER BY "dungeon_floor" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { abyssDataRes = await db.query(`SELECT userid as "userID", dungeon_floor as "dungeon_floor" FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND dungeon_floor > 0 ORDER BY dungeon_floor DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const abyssData = abyssDataRes.rows[0];
 
-                        const chatterDataRes = await db.query(`SELECT "userID", "messages" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "messages" > 0 ORDER BY "messages" DESC LIMIT 1`, [guildId, todayStr]);
+                        let chatterDataRes;
+                        try { chatterDataRes = await db.query(`SELECT "userID", "messages" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "messages" > 0 ORDER BY "messages" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { chatterDataRes = await db.query(`SELECT userid as "userID", messages FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND messages > 0 ORDER BY messages DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const chatterData = chatterDataRes.rows[0];
 
-                        const philanDataRes = await db.query(`SELECT "userID", "mora_donated" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "mora_donated" > 0 ORDER BY "mora_donated" DESC LIMIT 1`, [guildId, todayStr]);
+                        let philanDataRes;
+                        try { philanDataRes = await db.query(`SELECT "userID", "mora_donated" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "mora_donated" > 0 ORDER BY "mora_donated" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { philanDataRes = await db.query(`SELECT userid as "userID", mora_donated FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND mora_donated > 0 ORDER BY mora_donated DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const philanData = philanDataRes.rows[0];
 
-                        const advisorDataRes = await db.query(`SELECT "userID", "ai_interactions" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "ai_interactions" > 0 ORDER BY "ai_interactions" DESC LIMIT 1`, [guildId, todayStr]);
+                        let advisorDataRes;
+                        try { advisorDataRes = await db.query(`SELECT "userID", "ai_interactions" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "ai_interactions" > 0 ORDER BY "ai_interactions" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { advisorDataRes = await db.query(`SELECT userid as "userID", ai_interactions FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND ai_interactions > 0 ORDER BY ai_interactions DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const advisorData = advisorDataRes.rows[0];
 
-                        const fisherDataRes = await db.query(`SELECT "userID", "fish_caught" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "fish_caught" > 0 ORDER BY "fish_caught" DESC LIMIT 1`, [guildId, todayStr]);
+                        let fisherDataRes;
+                        try { fisherDataRes = await db.query(`SELECT "userID", "fish_caught" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "fish_caught" > 0 ORDER BY "fish_caught" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { fisherDataRes = await db.query(`SELECT userid as "userID", fish_caught FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND fish_caught > 0 ORDER BY fish_caught DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const fisherData = fisherDataRes.rows[0];
 
-                        const pvpDataRes = await db.query(`SELECT "userID", "pvp_wins" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "pvp_wins" > 0 ORDER BY "pvp_wins" DESC LIMIT 1`, [guildId, todayStr]);
+                        let pvpDataRes;
+                        try { pvpDataRes = await db.query(`SELECT "userID", "pvp_wins" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "pvp_wins" > 0 ORDER BY "pvp_wins" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { pvpDataRes = await db.query(`SELECT userid as "userID", pvp_wins FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND pvp_wins > 0 ORDER BY pvp_wins DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const pvpData = pvpDataRes.rows[0];
 
-                        const farmDataRes = await db.query(`SELECT "userID", "crops_harvested" FROM user_daily_stats WHERE "guildID" = $1 AND "date" = $2 AND "crops_harvested" > 0 ORDER BY "crops_harvested" DESC LIMIT 1`, [guildId, todayStr]);
+                        let farmDataRes;
+                        try { farmDataRes = await db.query(`SELECT "userID", "crops_harvested" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "crops_harvested" > 0 ORDER BY "crops_harvested" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { farmDataRes = await db.query(`SELECT userid as "userID", crops_harvested FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND crops_harvested > 0 ORDER BY crops_harvested DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const farmData = farmDataRes.rows[0];
 
                         async function getKingInfo(dataObj, valueKey, suffix, title, emoji) {
@@ -337,7 +382,7 @@ module.exports = {
 
                         const kingsArray = [
                             await getKingInfo(casinoData, 'totalProfit', 'مورا', 'ملك الكازينو', '🎰'),
-                            await getKingInfo(abyssData, 'max_dungeon_floor', 'طابق', 'ملك الهاوية', '🌑'),
+                            await getKingInfo(abyssData, 'dungeon_floor', 'طابق', 'ملك الهاوية', '🌑'),
                             await getKingInfo(chatterData, 'messages', 'رسالة', 'ملك البلاغة', '🗣️'), 
                             await getKingInfo(philanData, 'mora_donated', 'مورا', 'ملك الكرم', '🤝'),
                             await getKingInfo(advisorData, 'ai_interactions', 'تفاعل', 'ملك الحكمة', '🧠'),
@@ -387,7 +432,11 @@ module.exports = {
                         const kingsMsg = await targetChannel.send({ files: [kingsBoardAttachment] });
                         const boardMsg = await targetChannel.send({ files: [mainBoardAttachment], components: [menuRow] });
                         
-                        await db.query(`UPDATE settings SET "guildBoardMessageID" = $1, "kingsBoardMessageID" = $2 WHERE "guild" = $3`, [boardMsg.id, kingsMsg.id, guildId]);
+                        try {
+                            await db.query(`UPDATE settings SET "guildBoardMessageID" = $1, "kingsBoardMessageID" = $2 WHERE "guild" = $3`, [boardMsg.id, kingsMsg.id, guildId]);
+                        } catch(e) {
+                            await db.query(`UPDATE settings SET guildboardmessageid = $1, kingsboardmessageid = $2 WHERE guild = $3`, [boardMsg.id, kingsMsg.id, guildId]).catch(()=>{});
+                        }
 
                         await interaction.editReply({ content: `✅ **تم تحديث وإرسال اللوحات بنجاح في <#${targetChannel.id}>!**` });
                     } catch (err) {
@@ -398,28 +447,41 @@ module.exports = {
             }
         });
 
-        client.on('interactionCreate', async modalInteraction => {
-            if (!modalInteraction.isModalSubmit()) return;
-            if (modalInteraction.customId === 'tree_settings_modal') {
-                const botId = modalInteraction.fields.getTextInputValue('tree_bot_id_input');
-                const msgId = modalInteraction.fields.getTextInputValue('tree_msg_id_input');
-                
-                try {
-                    await db.query(`
-                        INSERT INTO settings ("guild", "treeBotID", "treeMessageID") 
-                        VALUES ($1, $2, $3) 
-                        ON CONFLICT("guild") 
-                        DO UPDATE SET "treeBotID" = EXCLUDED."treeBotID", "treeMessageID" = EXCLUDED."treeMessageID"
-                    `, [guildId, botId, msgId]);
+        // 🔥 نقل معالج النوافذ خارج الـ collector لتفادي تكرار التسجيل
+        if (!client._treeSettingsModalRegistered) {
+            client.on('interactionCreate', async modalInteraction => {
+                if (!modalInteraction.isModalSubmit()) return;
+                if (modalInteraction.customId === 'tree_settings_modal') {
+                    const botId = modalInteraction.fields.getTextInputValue('tree_bot_id_input');
+                    const msgId = modalInteraction.fields.getTextInputValue('tree_msg_id_input');
                     
-                    await modalInteraction.reply({ content: '✅ تم حفظ إعدادات رسالة وبوت الشجرة بنجاح.', flags: 64 });
-                    const updatedEmbed = await generateDashboardEmbed();
-                    dashboardMsg.edit({ embeds: [updatedEmbed] }).catch(()=>{});
-                } catch (e) {
-                    await modalInteraction.reply({ content: '❌ حدث خطأ في الحفظ.', flags: 64 });
+                    try {
+                        try {
+                            await db.query(`
+                                INSERT INTO settings ("guild", "treeBotID", "treeMessageID") 
+                                VALUES ($1, $2, $3) 
+                                ON CONFLICT("guild") 
+                                DO UPDATE SET "treeBotID" = EXCLUDED."treeBotID", "treeMessageID" = EXCLUDED."treeMessageID"
+                            `, [guildId, botId, msgId]);
+                        } catch(e) {
+                            await db.query(`
+                                INSERT INTO settings (guild, treebotid, treemessageid) 
+                                VALUES ($1, $2, $3) 
+                                ON CONFLICT(guild) 
+                                DO UPDATE SET treebotid = EXCLUDED.treebotid, treemessageid = EXCLUDED.treemessageid
+                            `, [guildId, botId, msgId]).catch(()=>{});
+                        }
+                        
+                        await modalInteraction.reply({ content: '✅ تم حفظ إعدادات رسالة وبوت الشجرة بنجاح.', flags: [MessageFlags.Ephemeral] });
+                        const updatedEmbed = await generateDashboardEmbed();
+                        dashboardMsg.edit({ embeds: [updatedEmbed] }).catch(()=>{});
+                    } catch (e) {
+                        await modalInteraction.reply({ content: '❌ حدث خطأ في الحفظ.', flags: [MessageFlags.Ephemeral] });
+                    }
                 }
-            }
-        });
+            });
+            client._treeSettingsModalRegistered = true;
+        }
 
         collector.on('end', () => {
             dashboardMsg.edit({ components: [] }).catch(() => {});
