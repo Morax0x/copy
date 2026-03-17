@@ -247,15 +247,6 @@
       "emoji": "🎟️"
     },
     {
-      "id": "w_ai_talk_100",
-      "name": "تحدث مع الامبراطورة",
-      "description": "تحدث مع الامبراطورة واحصل على 100 رد",
-      "stat": "ai_interactions",
-      "goal": 100,
-      "reward": { "mora": 777, "xp": 200 },
-      "emoji": "👑"
-    },
-    {
       "id": "weekly_vote_topgg",
       "name": "صوت للسيرفر 8 مرات",
       "description": "ادعم السيرفر بالتصويت طوال الأسبوع لرفع التقييم",
