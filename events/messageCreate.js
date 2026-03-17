@@ -10,7 +10,17 @@ const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
-// 🔥 إضافة استدعاء مدير الاقتراحات (بشكل آمن)
+// 🔥 استدعاء دالة حساب الخبرة المركزية 
+let calculateRequiredXP;
+try {
+    ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
+} catch (e) {
+    calculateRequiredXP = function(lvl) {
+        if (lvl < 35) return 5 * (lvl ** 2) + (50 * lvl) + 100;
+        return 15 * (lvl ** 2) + (150 * lvl);
+    };
+}
+
 let handleNewSuggestion;
 try { ({ handleNewSuggestion } = require('../handlers/suggestion-handler.js')); } catch (e) { }
 
@@ -20,11 +30,8 @@ const treeCooldowns = new Set();
 const paymentCooldowns = new Set();
 
 const ghostModeUsers = new Set();
-
-// 🔥 قفل الذاكرة العشوائية لمنع سبام الأوسمة نهائياً 🔥
 const chatterBadgeCache = new Set();
 
-// ⚡ ذاكرة الإعدادات السريعة (تمنع البطء مع كل رسالة)
 const settingsCache = new Map();
 let lastSettingsUpdate = 0;
 
@@ -53,7 +60,6 @@ async function safeReply(message, options) {
     }
 }
 
-// ⚡ دالة قراءة الإعدادات بسرعة الضوء
 async function getSettings(db, guildId) {
     const now = Date.now();
     if (settingsCache.has(guildId) && now - lastSettingsUpdate < 300000) {
@@ -107,18 +113,14 @@ module.exports = {
 
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
 
-        // ⚡ جلب الإعدادات من الذاكرة العشوائية (سريع جداً)
         const settings = await getSettings(db, message.guild.id);
         let Prefix = settings?.prefix || "-";
 
-        // ==========================================
-        // 💡 نظام الاقتراحات التلقائي (اقتناص الرسائل)
-        // ==========================================
         if (!message.author.bot && settings && (settings.suggestionChannelID || settings.suggestionchannelid) && message.channel.id === (settings.suggestionChannelID || settings.suggestionchannelid)) {
             if (handleNewSuggestion) {
                 await handleNewSuggestion(message, client, db);
             }
-            return; // نتوقف هنا لكي لا تُحسب الرسالة في الرانك أو نظام الـ AI
+            return; 
         }
 
         try {
@@ -314,6 +316,13 @@ module.exports = {
 
         if (message.mentions.has(client.user) && !message.author.bot && !message.content.startsWith(Prefix)) {
             
+            // 🔥 الفحص المخفي (Zero-Width Space) لمنع الإمبراطورة من الرد على ردود الشجرة
+            if (message.reference) {
+                if (message.client.ignoredTreeMessages && message.client.ignoredTreeMessages.has(message.reference.messageId)) {
+                    return; 
+                }
+            }
+
             const argsRaw = message.content.trim().split(/ +/);
             const firstWord = argsRaw[0].toLowerCase();
             const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
@@ -489,7 +498,6 @@ module.exports = {
                 const todayDate = getTodayDateString();
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
                 
-                // 1. إضافة الرسالة دائماً إلى قاعدة البيانات لكي لا يتوقف العد
                 try {
                     await db.query(`
                         INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") 
@@ -504,7 +512,6 @@ module.exports = {
                     `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
                 }
 
-                // 2. فحص الوسام وتسليمه إذا لم يكن العضو قد استلمه مسبقاً في الذاكرة (لمنع السبام)
                 if (!chatterBadgeCache.has(dailyIdForBadge)) {
                     let dailyDataCheckRes;
                     try { dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
@@ -514,7 +521,6 @@ module.exports = {
                     
                     if (dailyDataCheck && Number(dailyDataCheck.main_chat_messages) >= 100 && Number(dailyDataCheck.chatter_badge_given || 0) === 0) {
                         
-                        // 🔒 قفل الذاكرة العشوائية فوراً
                         chatterBadgeCache.add(dailyIdForBadge);
                         
                         try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
@@ -621,7 +627,8 @@ module.exports = {
                 currentLevelData.xp += xpGained;
                 currentLevelData.totalXP += xpGained;
                 
-                const nextXP = 5 * (currentLevelData.level ** 2) + (50 * currentLevelData.level) + 100;
+                // 🔥 تحديث المعادلة للمستوى بناءً على الدالة المركزية 🔥
+                const nextXP = calculateRequiredXP(currentLevelData.level);
                 
                 if (currentLevelData.xp >= nextXP) {
                     const oldLvl = currentLevelData.level;
