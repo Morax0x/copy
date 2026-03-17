@@ -878,57 +878,121 @@ async function rewardDailyKings(client, db) {
     } catch (e) { console.error("Reward Daily Kings Error:", e); }
 }
 
-async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
+const statsQueue = new Map();
+let isProcessingQueue = false;
+let processorInterval = null;
+
+async function processStatsQueue(client) {
+    const db = client.sql;
+    if (!db || isProcessingQueue || statsQueue.size === 0) return;
+    isProcessingQueue = true;
+
+    const currentBatch = new Map(statsQueue);
+    statsQueue.clear();
+
     try {
-        const db = client.sql; 
-        if (!db) return;
         await ensureKingTrackerTable(db);
-
-        const todayStr = getTodayDateString(); 
-        const addedVal = parseInt(valueToAdd) || 0;
         
-        if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
+        const queries = [];
 
-        if (statName === 'max_dungeon_floor') {
-            // 1. تحديث الرقم القياسي الأبدي للبروفايل وبطاقة اللاعب
-            const rowRes = await db.query(`SELECT "max_dungeon_floor" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
-            const row = rowRes.rows[0];
-            if (row) {
-                if (addedVal > (Number(row.max_dungeon_floor) || 0)) {
-                    await db.query(`UPDATE levels SET "max_dungeon_floor" = $1 WHERE "user" = $2 AND "guild" = $3`, [addedVal, userId, guildId]);
+        for (const [key, stats] of currentBatch.entries()) {
+            const [userId, guildId, todayStr] = key.split('|');
+            const dailyID = `${userId}-${guildId}-${todayStr}`;
+
+            for (const [statName, addedVal] of Object.entries(stats)) {
+                if (statName === 'max_dungeon_floor') {
+                    queries.push((async () => {
+                        try {
+                            const rowRes = await db.query(`SELECT "max_dungeon_floor" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+                            const row = rowRes.rows[0];
+                            if (row) {
+                                if (addedVal > (Number(row.max_dungeon_floor) || 0)) {
+                                    await db.query(`UPDATE levels SET "max_dungeon_floor" = $1 WHERE "user" = $2 AND "guild" = $3`, [addedVal, userId, guildId]);
+                                }
+                            } else {
+                                await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora", "max_dungeon_floor") VALUES ($1, $2, 0, 1, 0, 0, $3)`, [userId, guildId, addedVal]);
+                            }
+                        } catch(e){}
+
+                        try {
+                            await db.query(`
+                                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "dungeon_floor") 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT("id") DO UPDATE SET "dungeon_floor" = GREATEST(COALESCE(kings_board_tracker."dungeon_floor", 0), $6)
+                            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                        } catch(e){}
+                    })());
+                } else {
+                    queries.push((async () => {
+                        try {
+                            await db.query(`
+                                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "${statName}") 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT("id") DO UPDATE SET "${statName}" = COALESCE(kings_board_tracker."${statName}", 0) + $6
+                            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                        } catch(e) {
+                            try {
+                                await db.query(`
+                                    INSERT INTO kings_board_tracker (id, userid, guildid, date, ${statName}) 
+                                    VALUES ($1, $2, $3, $4, $5)
+                                    ON CONFLICT(id) DO UPDATE SET ${statName} = COALESCE(kings_board_tracker.${statName}, 0) + $6
+                                `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                            } catch(e2) {}
+                        }
+
+                        try {
+                            await db.query(`
+                                INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "${statName}") 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT("id") DO UPDATE SET "${statName}" = COALESCE(user_daily_stats."${statName}", 0) + $6
+                            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                        } catch(e) {
+                            try {
+                                await db.query(`
+                                    INSERT INTO user_daily_stats (id, userid, guildid, date, ${statName}) 
+                                    VALUES ($1, $2, $3, $4, $5)
+                                    ON CONFLICT(id) DO UPDATE SET ${statName} = COALESCE(user_daily_stats.${statName}, 0) + $6
+                                `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                            } catch(e2) {}
+                        }
+                    })());
                 }
-            } else {
-                await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora", "max_dungeon_floor") VALUES ($1, $2, 0, 1, 0, 0, $3)`, [userId, guildId, addedVal]);
             }
-
-            // 2. 🔥 التحديث الجديد: حساب أعلى طابق "لليوم فقط" لمنافسة الملوك باستخدام GREATEST
-            const dailyID = `${userId}-${guildId}-${todayStr}`;
-            await db.query(`
-                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "dungeon_floor") 
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT("id") DO UPDATE SET "dungeon_floor" = GREATEST(COALESCE(kings_board_tracker."dungeon_floor", 0), $6)
-            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
-
-        } else {
-            const dailyID = `${userId}-${guildId}-${todayStr}`;
-            const colName = statName;
-            
-            await db.query(`
-                INSERT INTO kings_board_tracker ("id", "userID", "guildID", "date", "${colName}") 
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT("id") DO UPDATE SET "${colName}" = COALESCE(kings_board_tracker."${colName}", 0) + $6
-            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
-
-            try {
-                await db.query(`
-                    INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "${colName}") 
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT("id") DO UPDATE SET "${colName}" = COALESCE(user_daily_stats."${colName}", 0) + $6
-                `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
-            } catch(e){}
         }
+
+        await Promise.allSettled(queries);
+
+        // 🔥 تحديث اللوحة والإشعارات فوراً بعد اكتمال الحفظ السريع
+        await autoUpdateKingsBoard(client, db).catch(()=>{});
+
     } catch (error) {
-        console.error("[Guild Stat Update Error]:", error);
+        console.error("❌ [Stats Processor DB Error]:", error.message);
+    } finally {
+        isProcessingQueue = false;
+    }
+}
+
+async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
+    const addedVal = parseInt(valueToAdd) || 0;
+    if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
+
+    const todayStr = getTodayDateString(); 
+    const queueKey = `${userId}|${guildId}|${todayStr}`;
+
+    if (!processorInterval && client.sql) {
+        // 🔥 تم ربط المحرك ليعمل بتحديث مباشر (يمرر client)
+        processorInterval = setInterval(() => processStatsQueue(client), 10000); 
+    }
+
+    if (!statsQueue.has(queueKey)) {
+        statsQueue.set(queueKey, {});
+    }
+    const userUpdates = statsQueue.get(queueKey);
+
+    if (statName === 'max_dungeon_floor') {
+        userUpdates[statName] = Math.max(userUpdates[statName] || 0, addedVal);
+    } else {
+        userUpdates[statName] = (userUpdates[statName] || 0) + addedVal;
     }
 }
 
