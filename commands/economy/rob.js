@@ -1,5 +1,11 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
+
+// 🔥 استدعاء دالة تحديث الإحصائيات للملوك الجدد 🔥
+let updateGuildStat;
+try {
+    ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
+} catch (e) {}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMPRESS_BOT_ID = "1434804075484020755";
@@ -333,28 +339,61 @@ module.exports = {
             const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
             
             if (Number(victimData.hasGuard || victimData.hasguard) > 0) {
-                deductFromRobber(robberData, amountToSteal);
-                victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
-                
-                victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
-                const guardLeft = victimData.hasGuard;
-                if (guardLeft === 0) victimData.guardExpires = 0;
-                
-                await client.setLevel(victimData);
-                await client.setLevel(robberData);
+                // 🔥 فحص هل السارق يمتلك رتبة ملك اللصوص (سيد الظلال) 🔥
+                let isThiefKing = false;
+                try {
+                    const settingsRes = await sql.query(`SELECT "roleThief" FROM settings WHERE "guild" = $1`, [guild.id]);
+                    const roleThief = settingsRes.rows[0]?.roleThief || settingsRes.rows[0]?.rolethief;
+                    if (roleThief && robber.roles.cache.has(roleThief)) {
+                        isThiefKing = true;
+                    }
+                } catch (e) {}
 
-                let guardStatusMsg = guardLeft === 0 
-                    ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
-                    : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
+                if (isThiefKing) {
+                    // الهروب الشبح لملك اللصوص
+                    victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
+                    const guardLeft = victimData.hasGuard;
+                    if (guardLeft === 0) victimData.guardExpires = 0;
+                    
+                    await client.setLevel(victimData);
 
-                const guardEmbed = new EmbedBuilder()
-                    .setTitle('✶ تــم الـقـبـض :shield: !')
-                    .setColor('#46455f')
-                    .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                    .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
-                
-                await i.update({ embeds: [guardEmbed], components: [] });
-                sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
+                    let guardStatusMsg = guardLeft === 0 
+                        ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
+                        : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
+
+                    const ghostEmbed = new EmbedBuilder()
+                        .setTitle('🥷 الـهـروب الـشـبـح !')
+                        .setColor(Colors.DarkVividPink)
+                        .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
+                        .setDescription(`✬ حاولت الدخول ولكن وجدت الحارس الشخصي بانتظارك!\n\nبصفتك **سيد الظلال (ملك اللصوص)**، تمكنت من التمويه والفرار كالشبح قبل أن يمسك بك الحارس! لم تخسر أي مورا، ولكنك دمرت محاولة حماية واحدة للضحية.`);
+                    
+                    await i.update({ embeds: [ghostEmbed], components: [] });
+                    sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك.. تصدى له الحارس، ولكنه هرب كالشبح بفضل لقبه (سيد الظلال) ولم يدفع لك أي غرامة!\n${guardStatusMsg}`);
+                } else {
+                    // القبض العادي
+                    deductFromRobber(robberData, amountToSteal);
+                    victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
+                    
+                    victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
+                    const guardLeft = victimData.hasGuard;
+                    if (guardLeft === 0) victimData.guardExpires = 0;
+                    
+                    await client.setLevel(victimData);
+                    await client.setLevel(robberData);
+
+                    let guardStatusMsg = guardLeft === 0 
+                        ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
+                        : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
+
+                    const guardEmbed = new EmbedBuilder()
+                        .setTitle('✶ تــم الـقـبـض :shield: !')
+                        .setColor('#46455f')
+                        .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
+                        .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
+                    
+                    await i.update({ embeds: [guardEmbed], components: [] });
+                    sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
+                }
 
             } else {
                 if (clickedIndex === correctButtonIndex) {
@@ -378,6 +417,11 @@ module.exports = {
                             victimData.mora = 0;
                             victimData.bank = Math.max(0, Number(victimData.bank) - remainder);
                         }
+                    }
+
+                    // 🔥 تحديث إحصائيات ملك اللصوص (سيد الظلال) للسرقات الناجحة بين الأعضاء 🔥
+                    if (updateGuildStat) {
+                        updateGuildStat(client, guild.id, robber.id, 'mora_stolen', amountToSteal);
                     }
 
                     const winEmbed = new EmbedBuilder()
