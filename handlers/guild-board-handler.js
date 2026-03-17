@@ -27,7 +27,7 @@ try { GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_STAR = '⭐';
-const OWNER_ID = "1145327691772481577"; // 👑 آيدي الإمبراطور الذي سيتم استثناؤه من المنافسة
+const OWNER_ID = "1145327691772481577"; 
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
@@ -64,6 +64,10 @@ async function ensureKingTrackerTable(db) {
             "dungeon_floor" BIGINT DEFAULT 0
         )`);
         try { await db.query(`ALTER TABLE kings_board_tracker ADD COLUMN IF NOT EXISTS "dungeon_floor" BIGINT DEFAULT 0`); } catch(e){}
+        
+        // 🔥 إصلاح مشكلة سبام الأوسمة (بإنشاء العمود المفقود) 🔥
+        try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
+        try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS chatter_badge_given INTEGER DEFAULT 0`); } catch(e){}
     } catch (e) {}
 }
 
@@ -622,7 +626,6 @@ async function autoUpdateKingsBoard(client, db) {
 
             const todayStr = getTodayDateString();
 
-            // 🔥 تم استثناء الآيدي الخاص بك (OWNER_ID) من كل هذه الاستعلامات 🔥
             const casinoDataRes = await db.query(`SELECT "userID", SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY val DESC, "userID" ASC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const casinoData = casinoDataRes.rows[0];
             
@@ -782,7 +785,13 @@ async function rewardDailyKings(client, db) {
         yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
         const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
 
-        const isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "dateStr" = $1`, [yesterdayStr]);
+        let isPaidRes = { rows: [] };
+        try {
+            isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "dateStr" = $1`, [yesterdayStr]);
+        } catch(e) {
+            isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE datestr = $1`, [yesterdayStr]).catch(()=>({rows:[]}));
+        }
+        
         if (isPaidRes.rows.length > 0) return; 
 
         for (const guild of client.guilds.cache.values()) {
@@ -791,7 +800,6 @@ async function rewardDailyKings(client, db) {
             const settings = settingsRes.rows[0];
             if (!settings || !settings.guildAnnounceChannelID) continue;
 
-            // 🔥 تم استثناء الآيدي الخاص بك (OWNER_ID) من الجوائز اليومية أيضاً 🔥
             const casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC, "userID" ASC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]);
             const casinoData = casinoDataRes.rows[0];
             
@@ -844,7 +852,11 @@ async function rewardDailyKings(client, db) {
                 }
 
                 if (user) {
-                    await db.query(`INSERT INTO user_reputation ("userID", "guildID", "rep_points") VALUES ($1, $2, $3) ON CONFLICT("userID", "guildID") DO UPDATE SET "rep_points" = user_reputation."rep_points" + $4`, [w.id, guildId, w.rep, w.rep]);
+                    try {
+                        await db.query(`INSERT INTO user_reputation ("userID", "guildID", "rep_points") VALUES ($1, $2, $3) ON CONFLICT("userID", "guildID") DO UPDATE SET "rep_points" = COALESCE(user_reputation."rep_points",0) + $4`, [w.id, guildId, w.rep, w.rep]);
+                    } catch(e) {
+                        await db.query(`INSERT INTO user_reputation (userid, guildid, rep_points) VALUES ($1, $2, $3) ON CONFLICT(userid, guildid) DO UPDATE SET rep_points = COALESCE(user_reputation.rep_points,0) + $4`, [w.id, guildId, w.rep, w.rep]).catch(()=>{});
+                    }
                     kingsToAnnounce.push({
                         title: w.title,
                         name: member ? member.displayName : user.username,
@@ -871,25 +883,24 @@ async function rewardDailyKings(client, db) {
                 }
             }
         }
-
-        await db.query(`INSERT INTO kings_daily_payout ("dateStr") VALUES ($1)`, [yesterdayStr]);
+        
+        try {
+            await db.query(`INSERT INTO kings_daily_payout ("dateStr") VALUES ($1)`, [yesterdayStr]);
+        } catch(e) {
+            await db.query(`INSERT INTO kings_daily_payout (datestr) VALUES ($1)`, [yesterdayStr]).catch(()=>{});
+        }
+        
     } catch (e) { console.error("Reward Daily Kings Error:", e); }
 }
-
-// =========================================================================
-// 🚀 نظام الطابور والحزم (Queue & Batching System) لتخفيف الضغط
-// =========================================================================
 
 const statsQueue = new Map();
 let isProcessingQueue = false;
 let processorInterval = null;
 
-// معالج الحزم يعمل في الخلفية كل 10 ثواني لحفظ مئات الطلبات كاستعلام واحد
 async function processStatsQueue(db) {
     if (!db || isProcessingQueue || statsQueue.size === 0) return;
     isProcessingQueue = true;
 
-    // استنساخ الطابور الحالي وتفريغ الأساسي لاستقبال رسائل جديدة فوراً
     const currentBatch = new Map(statsQueue);
     statsQueue.clear();
 
@@ -934,7 +945,6 @@ async function processStatsQueue(db) {
                                 ON CONFLICT("id") DO UPDATE SET "${statName}" = COALESCE(kings_board_tracker."${statName}", 0) + $6
                             `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
                         } catch(e) {
-                            // حماية الداتابيز من الحروف الكبيرة/الصغيرة (CamelCase)
                             try {
                                 await db.query(`
                                     INSERT INTO kings_board_tracker (id, userid, guildid, date, ${statName}) 
@@ -943,12 +953,27 @@ async function processStatsQueue(db) {
                                 `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
                             } catch(e2) {}
                         }
+
+                        try {
+                            await db.query(`
+                                INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "${statName}") 
+                                VALUES ($1, $2, $3, $4, $5)
+                                ON CONFLICT("id") DO UPDATE SET "${statName}" = COALESCE(user_daily_stats."${statName}", 0) + $6
+                            `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                        } catch(e) {
+                            try {
+                                await db.query(`
+                                    INSERT INTO user_daily_stats (id, userid, guildid, date, ${statName}) 
+                                    VALUES ($1, $2, $3, $4, $5)
+                                    ON CONFLICT(id) DO UPDATE SET ${statName} = COALESCE(user_daily_stats.${statName}, 0) + $6
+                                `, [dailyID, userId, guildId, todayStr, addedVal, addedVal]);
+                            } catch(e2) {}
+                        }
                     })());
                 }
             }
         }
 
-        // 🔥 تنفيذ كل الاستعلامات بضمان وبدون انهيار النظام بأكمله
         await Promise.allSettled(queries);
 
     } catch (error) {
@@ -958,8 +983,6 @@ async function processStatsQueue(db) {
     }
 }
 
-// الدالة الأساسية التي تستدعيها باقي الملفات 
-// أصبحت تخزن في الذاكرة المؤقتة (RAM) بدلاً من الاتصال بقاعدة البيانات لسرعة البرق!
 async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     const addedVal = parseInt(valueToAdd) || 0;
     if (addedVal === 0 && statName !== 'max_dungeon_floor') return;
@@ -967,12 +990,10 @@ async function updateGuildStat(client, guildId, userId, statName, valueToAdd) {
     const todayStr = getTodayDateString(); 
     const queueKey = `${userId}|${guildId}|${todayStr}`;
 
-    // تشغيل المعالج الخلفي (مرة واحدة فقط)
     if (!processorInterval && client.sql) {
-        processorInterval = setInterval(() => processStatsQueue(client.sql), 10000); // إرسال للقاعدة كل 10 ثواني
+        processorInterval = setInterval(() => processStatsQueue(client.sql), 10000); 
     }
 
-    // الإضافة للطابور المؤقت
     if (!statsQueue.has(queueKey)) {
         statsQueue.set(queueKey, {});
     }
