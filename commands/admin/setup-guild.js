@@ -84,8 +84,9 @@ module.exports = {
                         inline: false 
                     },
                     { 
+                        // 🔥 تحديث الملوك الجدد في واجهة اللوحة
                         name: '👑 ألقاب الملوك (8 ألقاب)', 
-                        value: `🎰 **الكازينو:** ${getRl(settings.roleCasinoKing || settings.rolecasinoking)} | 🌑 **الهاوية:** ${getRl(settings.roleAbyss || settings.roleabyss)}\n🗣️ **البلاغة:** ${getRl(settings.roleChatter || settings.rolechatter)} | 🤝 **الكرم:** ${getRl(settings.rolePhilanthropist || settings.rolephilanthropist)}\n🧠 **الحكمة:** ${getRl(settings.roleAdvisor || settings.roleadvisor)} | 🎣 **القنص:** ${getRl(settings.roleFisherKing || settings.rolefisherking)}\n⚔️ **النزاع:** ${getRl(settings.rolePvPKing || settings.rolepvpking)} | 🌾 **الحصاد:** ${getRl(settings.roleFarmKing || settings.rolefarmking)}`, 
+                        value: `🎰 **الكازينو:** ${getRl(settings.roleCasinoKing || settings.rolecasinoking)} | 🌑 **الهاوية:** ${getRl(settings.roleAbyss || settings.roleabyss)}\n🗣️ **البلاغة:** ${getRl(settings.roleChatter || settings.rolechatter)} | 🤝 **الكرم:** ${getRl(settings.rolePhilanthropist || settings.rolephilanthropist)}\n🎙️ **سيد المجالس:** ${getRl(settings.roleVoice || settings.rolevoice)} | 🎣 **القنص:** ${getRl(settings.roleFisherKing || settings.rolefisherking)}\n⚔️ **النزاع:** ${getRl(settings.rolePvPKing || settings.rolepvpking)} | 🥷 **سيد الظلال:** ${getRl(settings.roleThief || settings.rolethief)}`, 
                         inline: false 
                     },
                     { 
@@ -123,10 +124,11 @@ module.exports = {
                         { label: 'رتبة ملك الهاوية', value: 'edit_roleAbyss', emoji: '🌑' },
                         { label: 'رتبة ملك البلاغة', value: 'edit_roleChatter', emoji: '🗣️' },
                         { label: 'رتبة ملك الكرم', value: 'edit_rolePhilanthropist', emoji: '🤝' },
-                        { label: 'رتبة ملك الحكمة', value: 'edit_roleAdvisor', emoji: '🧠' },
+                        // 🔥 تحديث خيارات التحديد للملوك الجدد
+                        { label: 'رتبة سيد المجالس (الصوت)', value: 'edit_roleVoice', emoji: '🎙️' },
                         { label: 'رتبة ملك القنص', value: 'edit_roleFisherKing', emoji: '🎣' },
                         { label: 'رتبة ملك النزاع', value: 'edit_rolePvPKing', emoji: '⚔️' },
-                        { label: 'رتبة ملك الحصاد', value: 'edit_roleFarmKing', emoji: '🌾' }
+                        { label: 'رتبة سيد الظلال (اللصوص)', value: 'edit_roleThief', emoji: '🥷' }
                     ])
             );
 
@@ -342,10 +344,10 @@ module.exports = {
                         catch(e) { philanDataRes = await db.query(`SELECT userid as "userID", mora_donated FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND mora_donated > 0 ORDER BY mora_donated DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const philanData = philanDataRes.rows[0];
 
-                        let advisorDataRes;
-                        try { advisorDataRes = await db.query(`SELECT "userID", "ai_interactions" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "ai_interactions" > 0 ORDER BY "ai_interactions" DESC LIMIT 1`, [guildId, todayStr]); }
-                        catch(e) { advisorDataRes = await db.query(`SELECT userid as "userID", ai_interactions FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND ai_interactions > 0 ORDER BY ai_interactions DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
-                        const advisorData = advisorDataRes.rows[0];
+                        let voiceDataRes;
+                        try { voiceDataRes = await db.query(`SELECT "userID", "vc_minutes" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "vc_minutes" > 0 ORDER BY "vc_minutes" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { voiceDataRes = await db.query(`SELECT userid as "userID", vc_minutes FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND vc_minutes > 0 ORDER BY vc_minutes DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
+                        const voiceData = voiceDataRes.rows[0];
 
                         let fisherDataRes;
                         try { fisherDataRes = await db.query(`SELECT "userID", "fish_caught" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "fish_caught" > 0 ORDER BY "fish_caught" DESC LIMIT 1`, [guildId, todayStr]); }
@@ -357,10 +359,10 @@ module.exports = {
                         catch(e) { pvpDataRes = await db.query(`SELECT userid as "userID", pvp_wins FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND pvp_wins > 0 ORDER BY pvp_wins DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const pvpData = pvpDataRes.rows[0];
 
-                        let farmDataRes;
-                        try { farmDataRes = await db.query(`SELECT "userID", "crops_harvested" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "crops_harvested" > 0 ORDER BY "crops_harvested" DESC LIMIT 1`, [guildId, todayStr]); }
-                        catch(e) { farmDataRes = await db.query(`SELECT userid as "userID", crops_harvested FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND crops_harvested > 0 ORDER BY crops_harvested DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
-                        const farmData = farmDataRes.rows[0];
+                        let thiefDataRes;
+                        try { thiefDataRes = await db.query(`SELECT "userID", "mora_stolen" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "mora_stolen" > 0 ORDER BY "mora_stolen" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { thiefDataRes = await db.query(`SELECT userid as "userID", mora_stolen FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND mora_stolen > 0 ORDER BY mora_stolen DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
+                        const thiefData = thiefDataRes.rows[0];
 
                         async function getKingInfo(dataObj, valueKey, suffix, title, emoji) {
                             if (!dataObj) return { title, emoji, displayName: 'لا أحد حتى الآن', avatarUrl: null, valueText: `0 ${suffix}` };
@@ -380,15 +382,16 @@ module.exports = {
                             return { title, emoji, displayName: 'مغامر مجهول', avatarUrl: null, valueText: `${parseInt(dataObj[valueKey] || dataObj[valueKey.toLowerCase()] || 0).toLocaleString()} ${suffix}` };
                         }
 
+                        // 🔥 التحديث لترتيب وألقاب الملوك الجدد
                         const kingsArray = [
                             await getKingInfo(casinoData, 'totalProfit', 'مورا', 'ملك الكازينو', '🎰'),
                             await getKingInfo(abyssData, 'dungeon_floor', 'طابق', 'ملك الهاوية', '🌑'),
                             await getKingInfo(chatterData, 'messages', 'رسالة', 'ملك البلاغة', '🗣️'), 
                             await getKingInfo(philanData, 'mora_donated', 'مورا', 'ملك الكرم', '🤝'),
-                            await getKingInfo(advisorData, 'ai_interactions', 'تفاعل', 'ملك الحكمة', '🧠'),
+                            await getKingInfo(voiceData, 'vc_minutes', 'دقيقة', 'سيد المجالس', '🎙️'),
                             await getKingInfo(fisherData, 'fish_caught', 'سمكة', 'ملك القنص', '🎣'),
                             await getKingInfo(pvpData, 'pvp_wins', 'انتصار', 'ملك النزاع', '⚔️'),
-                            await getKingInfo(farmData, 'crops_harvested', 'محصول', 'ملك الحصاد', '🌾')
+                            await getKingInfo(thiefData, 'mora_stolen', 'مورا', 'سيد الظلال', '🥷')
                         ];
 
                         const oldKingsMsgID = settings.kingsBoardMessageID || settings.kingsboardmessageid;
@@ -447,7 +450,6 @@ module.exports = {
             }
         });
 
-        // 🔥 نقل معالج النوافذ خارج الـ collector لتفادي تكرار التسجيل
         if (!client._treeSettingsModalRegistered) {
             client.on('interactionCreate', async modalInteraction => {
                 if (!modalInteraction.isModalSubmit()) return;
