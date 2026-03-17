@@ -1,6 +1,18 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const { RankCardBuilder } = require("discord-card-canvas");
 
+// 🔥 استدعاء دالة حساب الخبرة المركزية الجديدة
+let calculateRequiredXP;
+try {
+    ({ calculateRequiredXP } = require('../../handlers/handler-utils.js'));
+} catch (e) {
+    // كود احتياطي في حال فشل الاستدعاء
+    calculateRequiredXP = function(lvl) {
+        if (lvl < 35) return 5 * (lvl ** 2) + (50 * lvl) + 100;
+        return 15 * (lvl ** 2) + (150 * lvl);
+    };
+}
+
 function getRandomColorHex() {
     const randomColor = Math.floor(Math.random() * 16777215).toString(16);
     return `#${randomColor.padStart(6, '0')}`;
@@ -53,7 +65,9 @@ module.exports = {
 
             const currentLevel = Number(score.level) || 0;
             const currentXp = Number(score.xp) || 0;
-            const requiredXP = 5 * (currentLevel ** 2) + (50 * currentLevel) + 100;
+            
+            // 🔥 استخدام الدالة المركزية لضبط صعوبة المستوى
+            const requiredXP = calculateRequiredXP(currentLevel);
 
             const randomAccentColor = getRandomColorHex(); 
             const hardcodedBlue = "#0CA7FF"; 
