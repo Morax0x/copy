@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder, Colors, MessageFlags } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 // 🔥 استدعاء دالة تحديث الإحصائيات للملوك الجدد 🔥
@@ -115,7 +115,7 @@ module.exports = {
 
         if (victim.id === REAL_OWNER_ID) {
             if (!isSlash && message) await message.delete().catch(() => {});
-            if (isSlash) await interaction.reply({ content: `🏰`, ephemeral: true });
+            if (isSlash) await interaction.reply({ content: `🏰`, flags: [MessageFlags.Ephemeral] });
 
             const redirectMsg = await interactionOrMessage.channel.send({
                 content: `🏰 **تـم نـقـل قـصـر الامبراطـور الى حسـاب الامبراطورة!**\nحاول مجـددا ولكن منشن البوت <@${EMPRESS_BOT_ID}> ..`
