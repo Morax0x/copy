@@ -13,13 +13,8 @@ const { handleAuctionSystem } = require('./handlers/auction-handler.js');
 const { handleGuildBoard, handleQuestPanel } = require('./handlers/guild-board-handler.js');
 const { generateNotificationControlPanel } = require('./generators/notification-generator.js');
 
-// 💡 استدعاء ملف الاقتراحات الجديد مع الـ Modal
-let handleSuggestionButtons, handleSuggestionModals;
-try { 
-    const suggModule = require('./handlers/suggestion-handler.js');
-    handleSuggestionButtons = suggModule.handleSuggestionButtons;
-    handleSuggestionModals = suggModule.handleSuggestionModals;
-} catch (e) {}
+// 💡 الاستدعاء الصحيح لملف الاقتراحات
+const { handleNewSuggestion, handleSuggestionButtons, handleSuggestionModals } = require('./handlers/suggestion-handler.js');
 
 const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -142,11 +137,8 @@ module.exports = (client, db, antiRolesCache) => {
             if (i.isButton() || i.isStringSelectMenu()) {
                 const id = i.customId;
 
-                // 💡 نظام أزرار الاقتراحات (مع التخطي الإداري الصامت للزر)
+                // 💡 نظام أزرار الاقتراحات (تم التصحيح)
                 if (id.startsWith('sugg_')) {
-                    if (id === 'sugg_admin' && !i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                        return; // تجاهل العضو العادي بصمت تام
-                    }
                     if (handleSuggestionButtons) await handleSuggestionButtons(i, client, db);
                     return;
                 }
@@ -349,7 +341,7 @@ async function handleMarketInteraction(interaction, client, db) {
     const guild = interaction.guild;
 
     if (interaction.customId.startsWith('buy_modal_')) {
-        await interaction.deferReply({ ephemeral: false }); // ليكون ظاهراً للجميع
+        await interaction.deferReply({ ephemeral: false }); 
 
         const assetId = interaction.customId.replace('buy_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
@@ -373,7 +365,6 @@ async function handleMarketInteraction(interaction, client, db) {
             itemName = configItem.name;
         }
 
-        // 🔥 الاعتماد الكامل على الكاش لمعرفة الرصيد 
         let userData = await client.getLevel(user.id, guild.id);
         if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
         const userMora = Number(userData.mora) || 0;
@@ -396,11 +387,9 @@ async function handleMarketInteraction(interaction, client, db) {
         }
 
         try {
-            // 🔥 الخصم الذري المتزامن بين الداتابيز والكاش!
             const updateRes = await db.query('UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"', [totalCost, user.id, guild.id]);
             const exactNewMora = updateRes.rows[0] ? updateRes.rows[0].mora : (userMora - totalCost);
             
-            // نثبت الرصيد الجديد في الكاش لكي لا يمسحه نظام interaction-handler الأساسي
             userData.mora = Number(exactNewMora);
             await client.setLevel(userData);
 
@@ -423,7 +412,7 @@ async function handleMarketInteraction(interaction, client, db) {
             await interaction.editReply({ content: '❌ حدث خطأ أثناء معالجة العملية.' });
         }
     } else if (interaction.customId.startsWith('sell_modal_')) {
-        await interaction.deferReply({ ephemeral: false }); // ليكون ظاهراً للجميع
+        await interaction.deferReply({ ephemeral: false }); 
 
         const assetId = interaction.customId.replace('sell_modal_', '');
         const quantityInput = interaction.fields.getTextInputValue('quantity_input');
@@ -453,11 +442,9 @@ async function handleMarketInteraction(interaction, client, db) {
         if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
         try {
-            // 🔥 الإضافة الذرية المتزامنة بين الداتابيز والكاش!
             const updateRes = await db.query('UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"', [totalEarned, user.id, guild.id]);
             const exactNewMora = updateRes.rows[0] ? updateRes.rows[0].mora : (Number(userData.mora) + totalEarned);
             
-            // نثبت الرصيد الجديد في الكاش لكي لا يمسحه نظام interaction-handler الأساسي
             userData.mora = Number(exactNewMora);
             await client.setLevel(userData);
 
