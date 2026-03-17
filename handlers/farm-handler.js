@@ -1,5 +1,5 @@
 const { EmbedBuilder, Colors } = require("discord.js");
-const farmAnimals = require('../../json/farm-animals.json'); // مسار معدل ليطابق الهيكل الجديد
+const farmAnimals = require('../../json/farm-animals.json'); 
 const seedsData = require('../../json/seeds.json'); 
 const feedItems = require('../../json/feed-items.json');
 
@@ -13,7 +13,7 @@ async function checkFarmIncome(client, db) {
 
     const now = Date.now();
     const ONE_DAY = 24 * 60 * 60 * 1000;
-    const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 🔥 شرط الـ 12 ساعة
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000; 
 
     try {
         await db.query(`CREATE TABLE IF NOT EXISTS farm_last_payout ("id" TEXT PRIMARY KEY, "lastPayoutDate" BIGINT)`);
@@ -30,11 +30,14 @@ async function checkFarmIncome(client, db) {
     }
     
     const farmOwners = farmOwnersRes.rows;
-    if (!farmOwners.length) return;
+    if (!farmOwners || !farmOwners.length) return;
     
     for (const owner of farmOwners) {
         try {
-            const { userID, guildID } = owner;
+            // 🔥 الإصلاح: التوافق مع الأحرف الصغيرة والكبيرة من الداتابيز
+            const userID = owner.userID || owner.userid;
+            const guildID = owner.guildID || owner.guildid;
+            
             if (!userID || !guildID) continue;
             
             let workerBuffRes;
@@ -76,8 +79,8 @@ async function checkFarmIncome(client, db) {
                         userData.xp = String(Number(userData.xp || 0) + extraXp);
                         userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + extraXp);
                         
-                        try { await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2, "totalXP" = "totalXP" + $2 WHERE "user" = $3 AND "guild" = $4`, [extraMora, extraXp, userID, guildID]); }
-                        catch(e) { await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2, totalxp = COALESCE(totalxp, 0) + $2 WHERE userid = $3 AND guildid = $4`, [extraMora, extraXp, userID, guildID]).catch(()=>{}); }
+                        try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1, "xp" = CAST(COALESCE("xp", '0') AS BIGINT) + $2, "totalXP" = CAST(COALESCE("totalXP", '0') AS BIGINT) + $2 WHERE "user" = $3 AND "guild" = $4`, [extraMora, extraXp, userID, guildID]); }
+                        catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1, xp = CAST(COALESCE(xp, '0') AS BIGINT) + $2, totalxp = CAST(COALESCE(totalxp, '0') AS BIGINT) + $2 WHERE userid = $3 AND guildid = $4`, [extraMora, extraXp, userID, guildID]).catch(()=>{}); }
 
                         if (typeof client.setLevel === 'function') await client.setLevel(userData);
 
@@ -190,7 +193,6 @@ async function checkFarmIncome(client, db) {
                     const fullUntil = lastFed + maxHungerMs; 
                     const timeLeft = fullUntil - now; 
 
-                    // 🔥 التعديل هنا: صار أكبر من 12 ساعة بالضبط يعطي دخل، و 12 وأقل يعني جائع!
                     if (timeLeft > TWELVE_HOURS) {
                         dailyAnimalIncome += (Number(animal.income_per_day) * qty);
                     } else {
@@ -206,8 +208,8 @@ async function checkFarmIncome(client, db) {
                 
                 userData.mora = String(Number(userData.mora || 0) + dailyAnimalIncome);
                 
-                try { await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [dailyAnimalIncome, userID, guildID]); }
-                catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [dailyAnimalIncome, userID, guildID]).catch(()=>{}); }
+                try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3`, [dailyAnimalIncome, userID, guildID]); }
+                catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3`, [dailyAnimalIncome, userID, guildID]).catch(()=>{}); }
 
                 if (typeof client.setLevel === 'function') await client.setLevel(userData);
             }
@@ -291,7 +293,7 @@ async function checkFarmIncome(client, db) {
                            `✶ عـدد الحـيوانات الحية في مزرعتك: **${currentAnimalsCount.toLocaleString()}**`;
 
             if (hungryAnimalsCount > 0) {
-                description += `\n\n⚠️ تنبـيه: ${hungryAnimalsCount} من حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
+                description += `\n\n⚠️ تنبـيه:  ${hungryAnimalsCount} من حيواناتك جائـعة - اطعمهم ليعود الانتـاج`;
             }
 
             if (oldDeaths.length > 0) {
@@ -313,7 +315,7 @@ async function checkFarmIncome(client, db) {
             catch(e) { await db.query(`INSERT INTO farm_last_payout (id, lastpayoutdate) VALUES ($1, $2) ON CONFLICT(id) DO UPDATE SET lastpayoutdate = $3`, [payoutID, now, now]).catch(()=>{}); }
 
         } catch (err) {
-            console.error(`[Farm Critical Error] User: ${owner.userID}`, err);
+            console.error(`[Farm Critical Error] User: ${owner.userID || owner.userid}`, err);
         }
     }
 }
