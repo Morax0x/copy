@@ -7,13 +7,6 @@ const aiConfig = require('../utils/aiConfig');
 const { checkSecurity } = require('./ai/security'); 
 require('dotenv').config();
 
-let updateGuildStat;
-try {
-    ({ updateGuildStat } = require('./guild-board-handler.js'));
-} catch (e) {
-    console.log("Could not load updateGuildStat for AI Tracker.");
-}
-
 const OWNER_ID = "1145327691772481577"; 
 
 function sanitizeOutput(text) {
@@ -122,7 +115,6 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                         await db.query('INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora") VALUES ($1, $2, 0, 1, 0, 0) ON CONFLICT ("user", "guild") DO NOTHING', [targetUser.id, message.guild.id]);
                     }
 
-                    // 🔥 تم إصلاح تحويلات الـ المورا لتتوافق مع نوع BIGINT!
                     if (isGive) {
                         await db.query('UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + CAST($1 AS BIGINT) WHERE "user" = $2 AND "guild" = $3', [String(amount), targetUser.id, message.guild.id]);
                         await message.react('💸').catch(()=>{});
@@ -133,7 +125,6 @@ async function detectAndExecuteCommands(message, aiResponseText, db) {
                         feedback = `\n\n✅ **تم التنفيذ:** تم سحب **${amount}** مورا من **${targetUser.username}**.`;
                     }
                     
-                    // تحديث الكاش ليقرأ الرصيد الجديد مباشرة
                     if (message.client.getLevel) {
                         let cache = await message.client.getLevel(targetUser.id, message.guild.id);
                         if (cache) {
@@ -203,7 +194,7 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
         const finalNsfwStatus = channelSettings ? Boolean(channelSettings.nsfw) : Boolean(isDiscordNsfw);
         const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey;
         
-        const db = messageObject ? messageObject.client.sql : null; // 🔥 تصحيح: استخدام client.sql بدلاً من client.db
+        const db = messageObject ? messageObject.client.sql : null; 
         
         const userData = await getUserData(userId, guildId, db);
 
@@ -296,28 +287,6 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     try { await db.query('INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "ai_interactions") VALUES ($1, $2, $3, $4, 1) ON CONFLICT ("id") DO NOTHING', [dailyIdToUse, userId, guildId, dateStr]); } catch (e) { }
                 }
 
-                if (updateGuildStat) {
-                    await updateGuildStat(client, guildId, userId, 'ai_interactions', 1);
-                }
-
-                const dayOfWeek = nowKSA.getDay(); 
-                const diff = nowKSA.getDate() - dayOfWeek;
-                const weekStartKSA = new Date(nowKSA);
-                weekStartKSA.setDate(diff);
-                const weekStart = weekStartKSA.toLocaleDateString('en-CA'); 
-                
-                let weeklyIdToUse = `${userId}-${guildId}-${weekStart}`;
-
-                const weeklyRes = await db.query('SELECT "id" FROM user_weekly_stats WHERE "userID" = $1 AND "guildID" = $2 AND "weekStartDate" = $3', [userId, guildId, weekStart]);
-                let weekly = weeklyRes.rows[0];
-
-                if (weekly) {
-                    await db.query('UPDATE user_weekly_stats SET "ai_interactions" = COALESCE("ai_interactions", 0) + 1 WHERE "id" = $1', [weekly.id]);
-                    weeklyIdToUse = weekly.id;
-                } else {
-                    try { await db.query('INSERT INTO user_weekly_stats ("id", "userID", "guildID", "weekStartDate", "ai_interactions") VALUES ($1, $2, $3, $4, 1) ON CONFLICT ("id") DO NOTHING', [weeklyIdToUse, userId, guildId, weekStart]); } catch (e) { }
-                }
-
                 let totalIdToUse = `${userId}-${guildId}`;
                 const totalRes = await db.query('SELECT "id" FROM user_total_stats WHERE "userID" = $1 AND "guildID" = $2', [userId, guildId]);
                 let total = totalRes.rows[0];
@@ -333,14 +302,10 @@ async function askMorax(userId, guildId, channelId, messageText, username, image
                     const updatedDailyStatsRes = await db.query('SELECT * FROM user_daily_stats WHERE "id" = $1', [dailyIdToUse]);
                     const updatedDailyStats = updatedDailyStatsRes.rows[0];
                     
-                    const updatedWeeklyStatsRes = await db.query('SELECT * FROM user_weekly_stats WHERE "id" = $1', [weeklyIdToUse]);
-                    const updatedWeeklyStats = updatedWeeklyStatsRes.rows[0];
-                    
                     const updatedTotalStatsRes = await db.query('SELECT * FROM user_total_stats WHERE "id" = $1', [totalIdToUse]);
                     const updatedTotalStats = updatedTotalStatsRes.rows[0];
 
                     if (updatedDailyStats) await client.checkQuests(client, messageObject.member, updatedDailyStats, 'daily', dateStr);
-                    if (updatedWeeklyStats) await client.checkQuests(client, messageObject.member, updatedWeeklyStats, 'weekly', weekStart);
                     if (updatedTotalStats) await client.checkAchievements(client, messageObject.member, null, updatedTotalStats);
                 }
 
