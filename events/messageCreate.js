@@ -21,6 +21,9 @@ const paymentCooldowns = new Set();
 
 const ghostModeUsers = new Set();
 
+// 🔥 قفل الذاكرة العشوائية لمنع سبام الأوسمة نهائياً 🔥
+const chatterBadgeCache = new Set();
+
 // ⚡ ذاكرة الإعدادات السريعة (تمنع البطء مع كل رسالة)
 const settingsCache = new Map();
 let lastSettingsUpdate = 0;
@@ -486,21 +489,23 @@ module.exports = {
                 const todayDate = getTodayDateString();
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
                 
+                // 1. إضافة الرسالة دائماً إلى قاعدة البيانات لكي لا يتوقف العد
                 try {
-                    try {
-                        await db.query(`
-                            INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") 
-                            VALUES ($1, $2, $3, $4, 1) 
-                            ON CONFLICT("id") DO UPDATE SET "main_chat_messages" = COALESCE(user_daily_stats."main_chat_messages", 0) + 1
-                        `, [dailyIdForBadge, userID, guildID, todayDate]);
-                    } catch(e) {
-                        await db.query(`
-                            INSERT INTO user_daily_stats (id, userid, guildid, date, main_chat_messages) 
-                            VALUES ($1, $2, $3, $4, 1) 
-                            ON CONFLICT(id) DO UPDATE SET main_chat_messages = COALESCE(user_daily_stats.main_chat_messages, 0) + 1
-                        `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
-                    }
+                    await db.query(`
+                        INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") 
+                        VALUES ($1, $2, $3, $4, 1) 
+                        ON CONFLICT("id") DO UPDATE SET "main_chat_messages" = COALESCE(user_daily_stats."main_chat_messages", 0) + 1
+                    `, [dailyIdForBadge, userID, guildID, todayDate]);
+                } catch(e) {
+                    await db.query(`
+                        INSERT INTO user_daily_stats (id, userid, guildid, date, main_chat_messages) 
+                        VALUES ($1, $2, $3, $4, 1) 
+                        ON CONFLICT(id) DO UPDATE SET main_chat_messages = COALESCE(user_daily_stats.main_chat_messages, 0) + 1
+                    `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
+                }
 
+                // 2. فحص الوسام وتسليمه إذا لم يكن العضو قد استلمه مسبقاً في الذاكرة (لمنع السبام)
+                if (!chatterBadgeCache.has(dailyIdForBadge)) {
                     let dailyDataCheckRes;
                     try { dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
                     catch(e) { dailyDataCheckRes = await db.query(`SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = $1`, [dailyIdForBadge]).catch(()=>({rows:[]})); }
@@ -508,6 +513,12 @@ module.exports = {
                     const dailyDataCheck = dailyDataCheckRes.rows[0];
                     
                     if (dailyDataCheck && Number(dailyDataCheck.main_chat_messages) >= 100 && Number(dailyDataCheck.chatter_badge_given || 0) === 0) {
+                        
+                        // 🔒 قفل الذاكرة العشوائية فوراً
+                        chatterBadgeCache.add(dailyIdForBadge);
+                        
+                        try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
+
                         try { await db.query(`UPDATE user_daily_stats SET "chatter_badge_given" = 1 WHERE "id" = $1`, [dailyIdForBadge]); }
                         catch(e) { await db.query(`UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = $1`, [dailyIdForBadge]).catch(()=>{}); }
                         
@@ -528,7 +539,7 @@ module.exports = {
                             message.channel.send(`🗣️ **وســام جديــد!**\n<@${userID}> أرسل 100 رسالة وحصل على وسام **🗣️ ثرثار الحانة**!`).catch(()=>{});
                         }
                     }
-                } catch(e) {}
+                }
             }
 
             if (client.incrementQuestStats) {
