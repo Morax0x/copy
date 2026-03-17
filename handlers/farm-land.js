@@ -81,21 +81,6 @@ async function ensureLandTable(db) {
     `);
 }
 
-async function getGrowthMultiplier(member, guildId, db) {
-    try {
-        let settingsRes;
-        try { settingsRes = await db.query(`SELECT "roleFarmKing" FROM settings WHERE "guild" = $1`, [guildId]); }
-        catch(e) { settingsRes = await db.query(`SELECT rolefarmking FROM settings WHERE guild = $1`, [guildId]).catch(()=>({rows:[]})); }
-        
-        const settings = settingsRes.rows[0];
-        const roleId = settings ? (settings.roleFarmKing || settings.rolefarmking) : null;
-        if (roleId && member && member.roles && member.roles.cache.has(roleId)) {
-            return 0.70; 
-        }
-    } catch(e) {}
-    return 1.0;
-}
-
 async function renderLand(interaction, client, db) {
     await ensureLandTable(db);
     
@@ -114,9 +99,6 @@ async function renderLand(interaction, client, db) {
     const userPlots = userPlotsRes.rows;
     
     const now = Date.now();
-
-    const member = interaction.member || await interaction.guild.members.fetch(userId).catch(()=>null);
-    const growthMultiplier = await getGrowthMultiplier(member, guildId, db);
 
     let canPlow = false;        
     let hasTilled = false;      
@@ -141,7 +123,7 @@ async function renderLand(interaction, client, db) {
             const sID = p.seedID || p.seedid;
             const seed = seedsData.find(s => s.id === sID);
             if (seed) {
-                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+                const growthMs = (seed.growth_time_hours * 3600000);
                 const age = now - Number(p.plantTime || p.planttime);
                 const remaining = growthMs - age;
 
@@ -210,7 +192,7 @@ async function renderLand(interaction, client, db) {
                 const sID = plotData.seedID || plotData.seedid;
                 const seed = seedsData.find(s => s.id === sID);
                 if (seed) {
-                    const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+                    const growthMs = (seed.growth_time_hours * 3600000);
                     const witherMs = seed.wither_time_hours * 3600000;
                     const age = now - Number(plotData.plantTime || plotData.planttime);
 
@@ -263,12 +245,10 @@ async function renderLand(interaction, client, db) {
         const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
-        let kingBuffText = growthMultiplier < 1.0 ? "👑 " : "";
-
         rowActions.addComponents(
             new ButtonBuilder()
                 .setCustomId('info_growth_time') 
-                .setLabel(`${kingBuffText}⏳ النـمو: ${timeString}`)
+                .setLabel(`⏳ النـمو: ${timeString}`)
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true) 
         );
@@ -323,7 +303,6 @@ async function handleLandInteractions(i, client, db) {
 
     const userId = i.user.id;
     const guildId = i.guild.id;
-    const growthMultiplier = await getGrowthMultiplier(i.member, guildId, db);
 
     const updateView = async () => {
         const data = await renderLand(i, client, db);
@@ -407,7 +386,6 @@ async function handleLandInteractions(i, client, db) {
 
         if (Number(userData.mora || 0) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
         
-        // 🔥 خصم المورا بطريقة آمنة من الداتا بيز 🔥
         try {
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
             userData.mora = String(Number(userData.mora || 0) - totalCost);
@@ -583,7 +561,7 @@ async function handleLandInteractions(i, client, db) {
             const sID = plot.seedID || plot.seedid;
             const seed = seedsData.find(s => s.id === sID);
             if (!seed) continue;
-            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+            const growthMs = (seed.growth_time_hours * 3600000);
             const witherMs = seed.wither_time_hours * 3600000;
             const age = now - Number(plot.plantTime || plot.planttime);
 
@@ -614,7 +592,6 @@ async function handleLandInteractions(i, client, db) {
             } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
-        // 🔥 إعطاء الجوائز بقوة وبطريقة آمنة تمنع القلتشات 🔥
         let userData = await client.getLevel(userId, guildId);
         if (!userData) {
             userData = { ...client.defaultData, user: userId, guild: guildId };
@@ -631,10 +608,6 @@ async function handleLandInteractions(i, client, db) {
         }
         
         if (typeof client.setLevel === 'function') await client.setLevel(userData);
-
-        if (updateGuildStat) {
-            updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue);
-        }
 
         await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] });
         await updateView();
@@ -656,7 +629,7 @@ async function handleLandInteractions(i, client, db) {
             const sID = plot.seedID || plot.seedid;
             const seed = seedsData.find(s => s.id === sID);
             if (!seed) { plotsToReset.push(plot.plotID || plot.plotid); continue; }
-            const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
+            const growthMs = (seed.growth_time_hours * 3600000);
             const witherMs = seed.wither_time_hours * 3600000;
             const age = now - Number(plot.plantTime || plot.planttime);
             if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID || plot.plotid);
