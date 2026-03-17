@@ -27,7 +27,7 @@ try { GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_STAR = '⭐';
-const OWNER_ID = "1145327691772481577"; // 👑 الإمبراطور مستثنى من المنافسة
+const OWNER_ID = "1145327691772481577"; // 👑 الإمبراطور مس تثنى من المنافسة
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
