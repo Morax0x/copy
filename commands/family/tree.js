@@ -86,7 +86,7 @@ async function drawTreePage(treeData, pageIndex) {
     const leftSiblingsWidth = treeData.siblings.left.length * (DIMS.SIBLING * 2 + 15);
     const rightSiblingsWidth = treeData.siblings.right.length * (DIMS.SIBLING * 2 + 15);
     
-    // حساب عرض الآباء والأجداد (تم تعديله لاستيعاب أجداد كل أب/أم)
+    // حساب عرض الآباء والأجداد
     let parentsWidth = 0;
     for (const p of treeData.parents) {
         const gpCount = p.grandparents ? p.grandparents.length : 0;
@@ -194,7 +194,6 @@ async function drawTreePage(treeData, pageIndex) {
 
     // --- رسم الخطوط ---
     
-    // الآباء والأجداد (محسنة)
     let currentPX = centerX - (parentsWidth / 2) + 20;
     for(const p of treeData.parents) {
         const gpCount = p.grandparents ? p.grandparents.length : 0;
@@ -281,7 +280,6 @@ async function drawTreePage(treeData, pageIndex) {
     }
 
     // --- رسم الصور ---
-    
     currentPX = centerX - (parentsWidth / 2) + 20;
     for(const p of treeData.parents) {
         const gpCount = p.grandparents ? p.grandparents.length : 0;
@@ -412,7 +410,6 @@ module.exports = {
             pPartners.forEach(id => { addId(id); allParentFigures.add(id); });
         }
 
-        // 🔥 التعديل هنا: جلب أجداد (آباء الآباء) لكل أب/أم 🔥
         const parentDataMap = new Map();
         for (const pid of allParentFigures) {
             const gpIds = await getParents(pid);
@@ -500,7 +497,6 @@ module.exports = {
             siblings: { left: [], right: [] }
         };
 
-        // تجميع بيانات الآباء والأجداد ودمجها
         for (const pid of allParentFigures) {
             const u = await prepareUserObj(pid);
             if (u) {
@@ -584,6 +580,15 @@ module.exports = {
             files: [img],
             components: totalPages > 1 ? [getButtons(currentPage)] : []
         });
+
+        // 🔥 إضافة رسالة الشجرة للذاكرة المؤقتة لمنع الإمبراطورة من الرد عليها 🔥
+        if (!client.ignoredTreeMessages) client.ignoredTreeMessages = new Set();
+        client.ignoredTreeMessages.add(msg.id);
+        
+        // حذف الآيدي من الذاكرة بعد 10 دقائق لتخفيف الضغط
+        setTimeout(() => {
+            client.ignoredTreeMessages.delete(msg.id);
+        }, 10 * 60 * 1000);
 
         if (totalPages <= 1) return;
 
