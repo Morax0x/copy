@@ -362,10 +362,10 @@ module.exports = {
                         : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
 
                     const ghostEmbed = new EmbedBuilder()
-                        .setTitle('🥷 الـهـروب الـشـبـح !')
+                        .setTitle('🥷 مـلـك اللصـوص !')
                         .setColor(Colors.DarkVividPink)
-                        .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
-                        .setDescription(`✬ حاولت الدخول ولكن وجدت الحارس الشخصي بانتظارك!\n\nبصفتك **سيد الظلال (ملك اللصوص)**، تمكنت من التمويه والفرار كالشبح قبل أن يمسك بك الحارس! لم تخسر أي مورا، ولكنك دمرت محاولة حماية واحدة للضحية.`);
+                        .setImage('https://i.postimg.cc/R0d0XSbV/run.gif')
+                        .setDescription(`✬ حاولت الدخول ولكن وجدت الحارس الشخصي بانتظارك!\n\nبصفتك **ملك اللصوص**، تمكنت من التمويه والفرار كالشبح قبل أن يمسك بك الحارس!.`);
                     
                     await i.update({ embeds: [ghostEmbed], components: [] });
                     sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك.. تصدى له الحارس، ولكنه هرب كالشبح بفضل لقبه (سيد الظلال) ولم يدفع لك أي غرامة!\n${guardStatusMsg}`);
