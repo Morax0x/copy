@@ -4,6 +4,17 @@ const { getUserRace, getWeaponData } = require('../handlers/pvp-core.js');
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 const weaponsConfig = require('../json/weapons-config.json');
 
+// 🔥 استدعاء دالة حساب الخبرة المركزية الجديدة
+let calculateRequiredXP;
+try {
+    ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
+} catch (e) {
+    calculateRequiredXP = function(lvl) {
+        if (lvl < 35) return 5 * (lvl ** 2) + (50 * lvl) + 100;
+        return 15 * (lvl ** 2) + (150 * lvl);
+    };
+}
+
 const TARGET_OWNER_ID = "1145327691772481577";
 
 const PROFILE_BASE_HP = 100;
@@ -114,7 +125,8 @@ module.exports = {
             const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
             
             const currentXP = Number(levelData.xp) || 0;
-            const requiredXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
+            // 🔥 استخدام دالة حساب الخبرة المركزية هنا 🔥
+            const requiredXP = calculateRequiredXP(levelData.level);
 
             const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
             const repData = repRes.rows[0] || { rep_points: 0 };
