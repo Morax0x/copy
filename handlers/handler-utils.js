@@ -1,5 +1,17 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 
+// 🔥 الدالة المركزية الجديدة لحساب الـ XP المطلوب (المعادلة المزدوجة) 🔥
+function calculateRequiredXP(level) {
+    const lvl = Number(level) || 0;
+    if (lvl < 35) {
+        // المعادلة العادية للمبتدئين
+        return 5 * (lvl ** 2) + (50 * lvl) + 100;
+    } else {
+        // المعادلة الصعبة (الجحيم) للمحترفين فوق 35
+        return 15 * (lvl ** 2) + (150 * lvl);
+    }
+}
+
 async function getFreeBalance(member, db) {
     if (!db) return 0;
     
@@ -80,5 +92,6 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
 
 module.exports = {
     sendLevelUpMessage,
-    getFreeBalance 
+    getFreeBalance,
+    calculateRequiredXP // 🔥 تم تصدير الدالة لتستخدمها باقي الملفات
 };
