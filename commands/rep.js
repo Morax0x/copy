@@ -53,6 +53,30 @@ module.exports = {
             }
         }
 
+        // 🔥 نظام الجدار الفولاذي لملك الصوت (سيد المجالس) 🔥
+        try {
+            // جلب تاريخ البارحة لمعرفة الفائز المتوج لليوم الحالي
+            const yesterdayKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+            yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
+            const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
+
+            let voiceKingRes;
+            try { 
+                voiceKingRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("vc_minutes", 0)) > 0 ORDER BY SUM(COALESCE("vc_minutes", 0)) DESC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]); 
+            } catch(e) { 
+                voiceKingRes = await db.query(`SELECT userid as "userID" FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND userid != $3 GROUP BY userid HAVING SUM(COALESCE(vc_minutes, 0)) > 0 ORDER BY SUM(COALESCE(vc_minutes, 0)) DESC LIMIT 1`, [guildId, yesterdayStr, OWNER_ID]).catch(()=>({rows:[]})); 
+            }
+            
+            const voiceKingId = voiceKingRes.rows[0]?.userID || voiceKingRes.rows[0]?.userid;
+
+            // إذا كان المستخدم هو الفائز الشرعي، نعطيه 3 فرص إضافية
+            if (voiceKingId === senderId) {
+                maxVotes += 3;
+            }
+        } catch (err) {
+            console.error("Error checking Voice King status:", err.message);
+        }
+
         let senderRep;
         try {
             const senderRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [senderId, guildId]);
