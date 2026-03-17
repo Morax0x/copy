@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionsBitField } = require('discord.js');
 
 const SUGGESTION_COOLDOWN = new Map();
+const OWNER_ID = "1145327691772481577"; // آيدي الإمبراطور للتحكم بالاقتراحات
 
 async function handleNewSuggestion(message, client, db) {
     if (message.author.bot) return;
@@ -8,7 +9,7 @@ async function handleNewSuggestion(message, client, db) {
     const content = message.content.trim();
     if (content.length < 10) {
         message.delete().catch(() => {});
-        return message.author.send("❌ **عذراً،** يجب أن يكون الاقتراح واضحاً ويحتوي على الأقل 10 أحرف!").catch(() => {});
+        return message.author.send("❌ **اقتـراح مرفـوض،** يجب أن يكون الاقتراح واضحاً ويحتوي على الأقل 10 أحرف!").catch(() => {});
     }
 
     const cooldownTime = 15 * 60 * 1000; 
@@ -48,29 +49,26 @@ async function handleNewSuggestion(message, client, db) {
         console.error("Error creating suggestions table:", e);
     }
 
-    // بناء الإيمبد الفخم حسب التصميم المطلوب
+    // بناء الإيمبد بالتصميم الجديد (وضع صورة المؤلف بدلا من الـ Thumbnail)
     const embed = new EmbedBuilder()
+        .setAuthor({ name: message.member?.displayName || message.author.username, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
         .setDescription(`✶ اقتـرح: <@${message.author.id}>\n\n> ✦ ${content}`)
         .setColor('Random') 
-        .setThumbnail(message.author.displayAvatarURL({ dynamic: true })) 
         .addFields(
             { name: 'الإحصائيات', value: '✶ <:like:1483055245310296265> : `0`\n✶ <:dislike:1483055246933757963> : `0`', inline: true },
             { name: 'الحالة', value: '🟡 قيد المراجعة', inline: true }
         )
         .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: message.guild.iconURL({ dynamic: true }) });
 
-    // 🔥 الحل الجذري لمشكلة الصور المعطلة
     const files = [];
     if (message.attachments.size > 0) {
         const attachment = message.attachments.first();
         if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-            // نأمر البوت برفع الصورة كملف مرفق جديد بدلاً من الاعتماد على رابط الرسالة القديمة
             files.push({ attachment: attachment.url, name: attachment.name });
             embed.setImage(`attachment://${attachment.name}`);
         }
     }
 
-    // الأزرار بدون نص (ايموجيات فقط)
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('sugg_upvote').setStyle(ButtonStyle.Secondary).setEmoji('1483055245310296265'),
         new ButtonBuilder().setCustomId('sugg_downvote').setStyle(ButtonStyle.Secondary).setEmoji('1483055246933757963'),
@@ -78,7 +76,6 @@ async function handleNewSuggestion(message, client, db) {
     );
 
     try {
-        // 🔥 نرسل الإيمبد مع مصفوفة الـ files لكي يستضيف ديسكورد الصورة من جديد
         const suggestionMsg = await message.channel.send({ embeds: [embed], components: [row], files: files });
         message.delete().catch(() => {});
 
@@ -94,7 +91,6 @@ async function handleNewSuggestion(message, client, db) {
             `, [suggestionMsg.id, message.guild.id, message.author.id, content, now]).catch(()=>{});
         }
 
-        // اسم الثريد بالتصميم الجديد
         await suggestionMsg.startThread({
             name: `ᗢ〢💭・اقتـراح・${message.author.username}`,
             autoArchiveDuration: 1440, 
@@ -120,18 +116,41 @@ async function handleSuggestionButtons(interaction, client, db) {
     if (!suggData) return interaction.reply({ content: '❌ هذا الاقتراح غير مسجل أو محذوف.', flags: [MessageFlags.Ephemeral] });
 
     if (interaction.customId === 'sugg_admin') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: '❌ هذا الزر مخصص لإدارة السيرفر فقط!', flags: [MessageFlags.Ephemeral] });
+        // 🔥 فحص الآيدي: إذا كان الإمبراطور (أو الآيدي المحدد)، تظهر اللوحة. وإلا يظهر كشف التصويتات.
+        if (userId === OWNER_ID) {
+            const adminRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`sugg_status_accept_${targetMsgId}`).setLabel('قبول/تنفيذ').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`sugg_status_reject_${targetMsgId}`).setLabel('رفض').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`sugg_status_review_${targetMsgId}`).setLabel('قيد العمل').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`sugg_status_reply_${targetMsgId}`).setLabel('إضافة رد').setStyle(ButtonStyle.Secondary).setEmoji('✍️')
+            );
+            return interaction.reply({ content: '⚙️ **خيارات إدارة الاقتراح:**', components: [adminRow], flags: [MessageFlags.Ephemeral] });
+        } else {
+            // كشف التصويتات المخفي للعامة
+            let votesRes;
+            try { votesRes = await db.query(`SELECT "userID", "voteType" FROM suggestion_votes WHERE "messageID" = $1`, [targetMsgId]); }
+            catch(e) { votesRes = await db.query(`SELECT userid as "userID", votetype as "voteType" FROM suggestion_votes WHERE messageid = $1`, [targetMsgId]).catch(()=>({rows: []})); }
+            
+            const votes = votesRes.rows;
+            let votersDesc = "";
+            
+            if (votes.length === 0) {
+                votersDesc = "لا توجد تصويتات حتى الآن.";
+            } else {
+                votersDesc = votes.map(v => {
+                    const emoji = v.voteType === 'up' ? '<:like:1483055245310296265>' : '<:dislike:1483055246933757963>';
+                    return `✦ <@${v.userID}> : ${emoji}`;
+                }).join('\n');
+            }
+
+            const statsEmbed = new EmbedBuilder()
+                .setTitle('❖ كـشـف الاحصـائيـات')
+                .setDescription(votersDesc.substring(0, 4096))
+                .setColor('Random')
+                .setFooter({ text: 'Empire | الامبراطورية ™', iconURL: interaction.guild.iconURL({ dynamic: true }) });
+
+            return interaction.reply({ embeds: [statsEmbed], flags: [MessageFlags.Ephemeral] });
         }
-
-        const adminRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`sugg_status_accept_${targetMsgId}`).setLabel('قبول/تنفيذ').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`sugg_status_reject_${targetMsgId}`).setLabel('رفض').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId(`sugg_status_review_${targetMsgId}`).setLabel('قيد العمل').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`sugg_status_reply_${targetMsgId}`).setLabel('إضافة رد').setStyle(ButtonStyle.Secondary).setEmoji('✍️')
-        );
-
-        return interaction.reply({ content: '⚙️ **خيارات إدارة الاقتراح:**', components: [adminRow], flags: [MessageFlags.Ephemeral] });
     }
 
     if (interaction.customId === 'sugg_upvote' || interaction.customId === 'sugg_downvote') {
@@ -186,12 +205,25 @@ async function handleSuggestionButtons(interaction, client, db) {
         catch(e) { updatedSuggRes = await db.query(`SELECT upvotes, downvotes, status FROM suggestions WHERE messageid = $1`, [targetMsgId]).catch(()=>({rows:[{upvotes:0, downvotes:0}]})); }
         
         const newStats = updatedSuggRes.rows[0];
+        const upCount = Number(newStats.upvotes ?? newStats.upvotes ?? 0);
+        const downCount = Number(newStats.downvotes ?? newStats.downvotes ?? 0);
+        const totalVotes = upCount + downCount;
+
+        // 🔥 تحديث حساب النسبة المئوية للإحصائيات 🔥
+        let statsFieldName = 'الإحصائيات';
+        if (totalVotes > 0) {
+            const percentage = Math.round((upCount / totalVotes) * 100);
+            statsFieldName = `الإحصائيات \`(${percentage}%)\``;
+        }
+
         const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
+        let fields = [...originalEmbed.data.fields];
         
-        const fields = originalEmbed.data.fields;
-        
-        // تحديث حقل الإحصائيات (الحقل الأول)
-        fields[0].value = `✶ <:like:1483055245310296265> : \`${newStats.upvotes || newStats.upvotes}\`\n✶ <:dislike:1483055246933757963> : \`${newStats.downvotes || newStats.downvotes}\``;
+        fields[0] = { 
+            name: statsFieldName, 
+            value: `✶ <:like:1483055245310296265> : \`${upCount}\`\n✶ <:dislike:1483055246933757963> : \`${downCount}\``, 
+            inline: true 
+        };
 
         originalEmbed.setFields(fields);
         await interaction.message.edit({ embeds: [originalEmbed] });
@@ -242,7 +274,6 @@ async function handleSuggestionButtons(interaction, client, db) {
             
             let fields = [...originalEmbed.data.fields];
             
-            // تحديث حقل الحالة (الحقل الثاني)
             fields[1] = { name: 'الحالة', value: newStatusText, inline: true };
 
             if (action === 'accept') {
