@@ -62,6 +62,10 @@ async function ensureKingTrackerTable(db) {
             "dungeon_floor" BIGINT DEFAULT 0
         )`);
         try { await db.query(`ALTER TABLE kings_board_tracker ADD COLUMN IF NOT EXISTS "dungeon_floor" BIGINT DEFAULT 0`); } catch(e){}
+        
+        // 🔥 إصلاح مشكلة سبام الأوسمة (بإنشاء العمود المفقود لتجنب تكرار الإشعار) 🔥
+        try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
+        try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS chatter_badge_given INTEGER DEFAULT 0`); } catch(e){}
     } catch (e) {}
 }
 
@@ -658,7 +662,6 @@ async function autoUpdateKingsBoard(client, db) {
             const currentHash = currentHashArray.join('|');
             const oldHash = lastKingsHash.get(guildId);
 
-            // 🔥 المزامنة المطلقة للرتب دائماً لضمان عدم ضياعها (دون الاعتماد على الهاتش)
             const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleAdvisor', 'roleFisherKing', 'rolePvPKing', 'roleFarmKing'];
             const currentLeaders = [casinoData?.userID, abyssData?.userID, chatterData?.userID, philanData?.userID, advisorData?.userID, fisherData?.userID, pvpData?.userID, farmData?.userID];
             
@@ -669,14 +672,12 @@ async function autoUpdateKingsBoard(client, db) {
                     if (targetRole) {
                         const leaderId = currentLeaders[i];
                         
-                        // سحب الرتبة من أي شخص ليس هو المتصدر
                         for (const member of targetRole.members.values()) {
                             if (member.id !== leaderId) {
                                 member.roles.remove(targetRole).catch(() => {});
                             }
                         }
                         
-                        // إعطاء الرتبة للمتصدر
                         if (leaderId) {
                             const leaderMem = await guild.members.fetch(leaderId).catch(() => null);
                             if (leaderMem && !leaderMem.roles.cache.has(roleId)) {
@@ -687,7 +688,6 @@ async function autoUpdateKingsBoard(client, db) {
                 }
             }
 
-            // تحديث الصورة والإعلانات فقط عند وجود تغيير
             if (oldHash !== currentHash) {
                 const boardChannel = guild.channels.cache.get(settings.guildBoardChannelID);
                 if (boardChannel) {
@@ -729,7 +729,6 @@ async function autoUpdateKingsBoard(client, db) {
                     } catch(e) { console.error("Kings Image Edit Error:", e); }
                 }
 
-                // إعلانات تغيير الملوك
                 if (oldHash) {
                     const oldParts = oldHash.split('|');
                     const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الحكمة', 'ملك القنص', 'ملك النزاع', 'ملك الحصاد'];
@@ -778,6 +777,9 @@ async function autoUpdateKingsBoard(client, db) {
     }
 }
 
+// 🔥 قفل الذاكرة العشوائية لجوائز الملوك اليومية 🔥
+const paidDaysCache = new Set();
+
 async function rewardDailyKings(client, db) {
     if (!db) return;
     try {
@@ -787,6 +789,9 @@ async function rewardDailyKings(client, db) {
         yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
         const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
 
+        // الحماية الأولى عبر الكاش
+        if (paidDaysCache.has(yesterdayStr)) return;
+
         let isPaidRes = { rows: [] };
         try {
             isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "dateStr" = $1`, [yesterdayStr]);
@@ -794,7 +799,10 @@ async function rewardDailyKings(client, db) {
             isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE datestr = $1`, [yesterdayStr]).catch(()=>({rows:[]}));
         }
         
-        if (isPaidRes.rows.length > 0) return; 
+        if (isPaidRes.rows.length > 0) {
+            paidDaysCache.add(yesterdayStr); 
+            return; 
+        }
 
         for (const guild of client.guilds.cache.values()) {
             const guildId = guild.id;
@@ -871,6 +879,9 @@ async function rewardDailyKings(client, db) {
             }
         }
         
+        // 🔥 الحماية الثانية: إغلاق الكاش لمنع التكرار حتى لو فشلت الداتابيز
+        paidDaysCache.add(yesterdayStr);
+
         try {
             await db.query(`INSERT INTO kings_daily_payout ("dateStr") VALUES ($1)`, [yesterdayStr]);
         } catch(e) {
