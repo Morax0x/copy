@@ -27,7 +27,7 @@ try { GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_STAR = '⭐';
-const OWNER_ID = "1145327691772481577"; // 👑 الإمبراطور مس تثنى من المنافسة
+const OWNER_ID = "1145327691772481577"; // 👑 الإمبراطور مستثنى من المنافسة
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
@@ -637,7 +637,6 @@ async function autoUpdateKingsBoard(client, db) {
             const philanDataRes = await db.query(`SELECT "userID", SUM(COALESCE("mora_donated", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("mora_donated", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const philanData = philanDataRes.rows[0];
             
-            // 🎙️ ملك الصوت (سيد المجالس)
             const voiceDataRes = await db.query(`SELECT "userID", SUM(COALESCE("vc_minutes", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("vc_minutes", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const voiceData = voiceDataRes.rows[0];
             
@@ -647,7 +646,6 @@ async function autoUpdateKingsBoard(client, db) {
             const pvpDataRes = await db.query(`SELECT "userID", SUM(COALESCE("pvp_wins", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("pvp_wins", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const pvpData = pvpDataRes.rows[0];
             
-            // 🥷 ملك اللصوص (سيد الظلال)
             const thiefDataRes = await db.query(`SELECT "userID", SUM(COALESCE("mora_stolen", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("mora_stolen", 0)) > 0 ORDER BY val DESC LIMIT 1`, [guildId, todayStr, OWNER_ID]);
             const thiefData = thiefDataRes.rows[0];
 
@@ -697,10 +695,10 @@ async function autoUpdateKingsBoard(client, db) {
                         await getKingInfo(abyssData, 'طابق', 'ملك الهاوية', '🌑'),
                         await getKingInfo(chatterData, 'رسالة', 'ملك البلاغة', '🗣️'), 
                         await getKingInfo(philanData, 'مورا', 'ملك الكرم', '🤝'),
-                        await getKingInfo(voiceData, 'دقيقة', 'سيد المجالس', '🎙️'),
+                        await getKingInfo(voiceData, 'دقيقة', 'ملك الصوت', '🎙️'),
                         await getKingInfo(fisherData, 'سمكة', 'ملك القنص', '🎣'),
                         await getKingInfo(pvpData, 'انتصار', 'ملك النزاع', '⚔️'),
-                        await getKingInfo(thiefData, 'مورا', 'سيد الظلال', '🥷')
+                        await getKingInfo(thiefData, 'مورا', 'ملك اللصوص', '🥷')
                     ];
 
                     const kingsBoardBuffer = await generateKingsBoardImage(kingsArray);
@@ -709,7 +707,7 @@ async function autoUpdateKingsBoard(client, db) {
 
                     if (oldHash) {
                         const oldParts = oldHash.split('|');
-                        const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'سيد المجالس', 'ملك القنص', 'ملك النزاع', 'سيد الظلال'];
+                        const titles = ['ملك الكازينو', 'ملك الهاوية', 'ملك البلاغة', 'ملك الكرم', 'ملك الصوت', 'ملك القنص', 'ملك النزاع', 'ملك اللصوص'];
                         const suffixes = ['مورا', 'طابق', 'رسالة', 'مورا', 'دقيقة', 'سمكة', 'انتصار', 'مورا'];
                         const colors = ['#FFD700', '#9D00FF', '#00BFFF', '#FF8C00', '#00FF88', '#00CED1', '#DC143C', '#32CD32'];
                         const roleCols = ['roleCasinoKing', 'roleAbyss', 'roleChatter', 'rolePhilanthropist', 'roleVoice', 'roleFisherKing', 'rolePvPKing', 'roleThief'];
@@ -824,10 +822,10 @@ async function rewardDailyKings(client, db) {
                 { id: abyssData?.userID, title: 'ملك الهاوية', rep: 4, roleCol: 'roleAbyss' },
                 { id: chatterData?.userID, title: 'ملك البلاغة', rep: 7, roleCol: 'roleChatter' },
                 { id: philanData?.userID, title: 'ملك الكرم', rep: 1, roleCol: 'rolePhilanthropist' },
-                { id: voiceData?.userID, title: 'سيد المجالس', rep: 3, roleCol: 'roleVoice' },
+                { id: voiceData?.userID, title: 'ملك الصوت', rep: 4, roleCol: 'roleVoice' },
                 { id: fisherData?.userID, title: 'ملك القنص', rep: 2, roleCol: 'roleFisherKing' },
                 { id: pvpData?.userID, title: 'ملك النزاع', rep: 3, roleCol: 'rolePvPKing' },
-                { id: thiefData?.userID, title: 'سيد الظلال', rep: 3, roleCol: 'roleThief' }
+                { id: thiefData?.userID, title: 'ملك اللصوص', rep: 3, roleCol: 'roleThief' }
             ].filter(w => w.id && w.id !== 'none');
 
             if (winnersRaw.length === 0) continue;
@@ -871,7 +869,7 @@ async function rewardDailyKings(client, db) {
                             const attachment = new AttachmentBuilder(buffer, { name: 'kings-board.png' });
                             
                             await announceChannel.send({
-                                content: `## 👑 || تـتـويـج مـلـوك الإمـبـراطـوريـة || 👑\nانتهى اليوم، وتم تتويج هؤلاء الأبطال بألقاب الملوك لجهودهم العظيمة!`,
+                                content: `👑 تـتـويـج مـلـوك الإمـبـراطـوريـة 👑`,
                                 files: [attachment]
                             }).catch(()=>{});
                         }
