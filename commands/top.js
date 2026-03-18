@@ -23,7 +23,8 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
     
     try {
         if (type === 'level') {
-            const res = await sql.query(`SELECT * FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY "totalXP" DESC`, [guild.id, OWNER_ID]);
+            // 🔥 تم التعديل: تحويل totalXP إلى BIGINT لترتيب الأرقام حسابياً وليس أبجدياً 🔥
+            const res = await sql.query(`SELECT * FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY CAST(COALESCE("totalXP", '0') AS BIGINT) DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows;
         } else if (type === 'rep') {
             const res = await sql.query(`SELECT "userID" as "user", CAST("rep_points" AS INTEGER) as rp FROM user_reputation WHERE "guildID" = $1 AND "userID" != $2 AND CAST("rep_points" AS INTEGER) > 0 ORDER BY rp DESC`, [guild.id, OWNER_ID]);
@@ -41,19 +42,21 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             const res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
             allUsers = res.rows;
         } else if (type === 'mora') {
+            // 🔥 تم التعديل مسبقاً وتأكيده: تحويل الكاش والبنك لأرقام قبل جمعهم 🔥
             const res = await sql.query(`
                 SELECT "user", "mora", "bank", 
-                (CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as total_wealth 
+                (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC))::TEXT as total_wealth 
                 FROM levels 
                 WHERE "guild" = $1 AND "user" != $2 
-                ORDER BY (CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC)) DESC`, [guild.id, OWNER_ID]);
+                ORDER BY (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows;
         } else if (type === 'streak') {
-            const res = await sql.query(`SELECT "userID" as "user", "streakCount" FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND "streakCount" > 0 ORDER BY "streakCount" DESC`, [guild.id, OWNER_ID]);
-            allUsers = res.rows;
+            // 🔥 تم التعديل: تحويل الستريك لرقم لتجنب الأخطاء الأبجدية 🔥
+            const res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+            allUsers = res.rows.map(r => ({ ...r, streakCount: r.sc }));
         } else if (type === 'media_streak') {
-            const res = await sql.query(`SELECT "userID" as "user", "streakCount" FROM media_streaks WHERE "guildID" = $1 AND "userID" != $2 AND "streakCount" > 0 ORDER BY "streakCount" DESC`, [guild.id, OWNER_ID]);
-            allUsers = res.rows;
+            const res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM media_streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+            allUsers = res.rows.map(r => ({ ...r, streakCount: r.sc }));
         } else if (type === 'achievements') {
             const res = await sql.query(`SELECT "userID" as "user", COUNT(*) as count FROM user_achievements WHERE "guildID" = $1 AND "userID" != $2 GROUP BY "userID" ORDER BY count DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows;
@@ -91,7 +94,7 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            const tmRes = await sql.query(`SELECT SUM(CAST("mora" AS NUMERIC) + CAST("bank" AS NUMERIC))::TEXT as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
+            const tmRes = await sql.query(`SELECT SUM(CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC))::TEXT as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
             totalMora = tmRes.rows[0]?.t ? BigInt(tmRes.rows[0].t).toLocaleString() : "0";
         }
 
@@ -184,7 +187,6 @@ module.exports = {
             user = message.author;
             channelId = message.channel.id;
             
-            // 🔥 تم إصلاح الخطأ هنا: تمرير guild.id لتجنب "حدث خطأ"
             const settingsRes = await client.sql.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guild.id]);
             const settings = settingsRes.rows[0];
             if (settings && (settings.casinoChannelID || settings.casinochannelid) === channelId) argType = 'mora'; 
