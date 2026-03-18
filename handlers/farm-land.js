@@ -291,7 +291,8 @@ async function handleLandInteractions(i, client, db) {
     
     if (!i.customId.startsWith('land_') && !i.customId.startsWith('farm_plant_modal_')) return;
 
-    if (!i.deferred && !i.replied && !i.customId.startsWith('farm_plant_modal_') && !i.customId.startsWith('land_start_plant_')) {
+    // 🔥 تم إضافة استثناء القائمة المنسدلة هنا (land_plant_select_seed_) لمنع تعطيل النافذة المنبثقة 🔥
+    if (!i.deferred && !i.replied && !i.customId.startsWith('farm_plant_modal_') && !i.customId.startsWith('land_start_plant_') && !i.customId.startsWith('land_plant_select_seed_')) {
         await i.deferUpdate().catch(()=>{});
     }
 
