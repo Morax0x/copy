@@ -4,15 +4,15 @@ const path = require('path');
 const seedsData = require('../json/seeds.json');
 const { getLandPlots } = require('../utils/farmUtils.js');
 
-let sendLevelUpMessage;
-let updateGuildStat;
+// 🔥 استدعاء دالة التلفيل وإضافة الخبرة الموحدة 🔥
+let updateGuildStat, addXPAndCheckLevel;
 try {
-    ({ sendLevelUpMessage } = require('./handler-utils.js')); 
     ({ updateGuildStat } = require('./guild-board-handler.js'));
+    ({ addXPAndCheckLevel } = require('./handler-utils.js')); 
 } catch (e) {
     try { 
-        ({ sendLevelUpMessage } = require('../handlers/handler-utils.js')); 
         ({ updateGuildStat } = require('../handlers/guild-board-handler.js'));
+        ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
     } catch (e2) {}
 }
 
@@ -290,15 +290,19 @@ async function handleLandInteractions(i, client, db) {
     
     if (!i.customId.startsWith('land_') && !i.customId.startsWith('farm_plant_modal_')) return;
 
+    if (!i.deferred && !i.replied && !i.customId.startsWith('farm_plant_modal_') && !i.customId.startsWith('land_start_plant_')) {
+        await i.deferUpdate().catch(()=>{});
+    }
+
     const parts = i.customId.split('_');
     const ownerId = parts[parts.length - 1]; 
     const baseAction = parts.slice(0, parts.length - 1).join('_'); 
 
     if (i.user.id !== ownerId) {
-        return await i.reply({ 
+        return await i.followUp({ 
             content: `🚫 **هذه المزرعة ليست لك!**\nاستخدم أمر \`/مزرعتي\` لعرض مزرعتك الخاصة.`, 
             flags: [MessageFlags.Ephemeral] 
-        });
+        }).catch(()=>{});
     }
 
     const userId = i.user.id;
@@ -311,12 +315,10 @@ async function handleLandInteractions(i, client, db) {
             components: data.components, 
             files: data.files,
             embeds: [] 
-        });
+        }).catch(()=>{});
     };
 
     if (baseAction === 'land_plow_one') {
-        await i.deferUpdate();
-
         let maxPlots = await getLandPlots(client, userId, guildId);
         if (maxPlots >= 30) maxPlots = 36;
         
@@ -336,7 +338,7 @@ async function handleLandInteractions(i, client, db) {
             }
         }
 
-        if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: [MessageFlags.Ephemeral] });
+        if (!targetPlot) return await i.followUp({ content: "🚫 **لا توجد أرض فارغة!**", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
         try {
             await db.query(`
@@ -357,7 +359,6 @@ async function handleLandInteractions(i, client, db) {
     }
 
     if (baseAction === 'land_plow_all') {
-        await i.deferUpdate();
         let maxPlots = await getLandPlots(client, userId, guildId);
         if (maxPlots >= 30) maxPlots = 36;
 
@@ -377,14 +378,14 @@ async function handleLandInteractions(i, client, db) {
             }
         }
 
-        if (plotsToPlow.length === 0) return await i.followUp({ content: "🚫 **لا توجد أراضي بور!**", flags: [MessageFlags.Ephemeral] });
+        if (plotsToPlow.length === 0) return await i.followUp({ content: "🚫 **لا توجد أراضي بور!**", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
         const totalCost = plotsToPlow.length * PLOW_COST_BULK;
         
         let userData = await client.getLevel(userId, guildId);
         if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
 
-        if (Number(userData.mora || 0) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
+        if (Number(userData.mora || 0) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         
         try {
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
@@ -443,7 +444,7 @@ async function handleLandInteractions(i, client, db) {
                 .addOptions(seedOptions)
         );
 
-        await i.reply({ content: '🌱 **اختر البذور:**', components: [row], flags: [MessageFlags.Ephemeral] });
+        await i.reply({ content: '🌱 **اختر البذور:**', components: [row], flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         return;
     }
 
@@ -458,12 +459,12 @@ async function handleLandInteractions(i, client, db) {
         const modal = new ModalBuilder().setCustomId(`farm_plant_modal_${msgId}_${seedId}_${userId}`).setTitle(`زراعة ${seed.name}`);
         const input = new TextInputBuilder().setCustomId('plant_qty').setLabel('العدد').setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
-        await i.showModal(modal);
+        await i.showModal(modal).catch(()=>{});
         return; 
     }
 
     if (i.isModalSubmit() && i.customId.startsWith('farm_plant_modal_')) {
-        await i.deferReply({ flags: [MessageFlags.Ephemeral] });
+        await i.deferReply({ flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         
         const rawModalId = i.customId.replace('farm_plant_modal_', ''); 
         const firstUnderscore = rawModalId.indexOf('_');
@@ -475,7 +476,7 @@ async function handleLandInteractions(i, client, db) {
         const qtyInput = parseInt(i.fields.getTextInputValue('plant_qty'));
         const seed = seedsData.find(s => s.id === seedId);
 
-        if (isNaN(qtyInput) || qtyInput <= 0) return await i.editReply("❌ رقم خطأ.");
+        if (isNaN(qtyInput) || qtyInput <= 0) return await i.editReply("❌ رقم خطأ.").catch(()=>{});
 
         let tilledPlotsRes;
         try { tilledPlotsRes = await db.query(`SELECT "plotID" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'tilled'`, [userId, guildId]); }
@@ -492,7 +493,7 @@ async function handleLandInteractions(i, client, db) {
 
         const countToPlant = Math.min(qtyInput, tilledPlots.length, seedStock);
 
-        if (countToPlant === 0) return await i.editReply("❌ لا يمكن الزراعة (نقص بذور أو أرض غير محروثة).");
+        if (countToPlant === 0) return await i.editReply("❌ لا يمكن الزراعة (نقص بذور أو أرض غير محروثة).").catch(()=>{});
 
         try {
             if (seedStock === countToPlant) {
@@ -527,7 +528,7 @@ async function handleLandInteractions(i, client, db) {
             } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
-        await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`);
+        await i.editReply(`✅ **تم زراعة ${countToPlant}x ${seed.name}**`).catch(()=>{});
 
         try {
             const mainMsg = await i.channel.messages.fetch(msgId).catch(() => null);
@@ -538,7 +539,7 @@ async function handleLandInteractions(i, client, db) {
                     embeds: [], 
                     components: newData.components,
                     files: newData.files
-                });
+                }).catch(()=>{});
             }
         } catch (err) {}
         
@@ -546,8 +547,6 @@ async function handleLandInteractions(i, client, db) {
     }
 
     if (baseAction === 'land_harvest_all') {
-        await i.deferUpdate();
-        
         let plantedPlotsRes;
         try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
         catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
@@ -573,7 +572,7 @@ async function handleLandInteractions(i, client, db) {
             }
         }
 
-        if (harvestedCount === 0) return await i.followUp({ content: "🚫 لا يوجد حصاد جاهز.", flags: [MessageFlags.Ephemeral] });
+        if (harvestedCount === 0) return await i.followUp({ content: "🚫 لا يوجد حصاد جاهز.", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
         try {
             await db.query("BEGIN");
@@ -592,31 +591,25 @@ async function handleLandInteractions(i, client, db) {
             } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
-        let userData = await client.getLevel(userId, guildId);
-        if (!userData) {
-            userData = { ...client.defaultData, user: userId, guild: guildId };
+        // 🔥 استخدام الدالة المركزية الآمنة لدمج הـ XP وتحديث اللفل لتفادي تخطي التلفيل
+        if (addXPAndCheckLevel && totalXP > 0) {
+             await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue).catch(()=>{});
+        } else {
+             // في حال لم تكن الدالة متوفرة (لا يُفترض أن يحدث)
+             try { await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2, "totalXP" = "totalXP" + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]); }
+             catch(e) { await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2, totalxp = COALESCE(totalxp, 0) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{}); }
         }
 
-        userData.mora = String(Number(userData.mora || 0) + totalRevenue);
-        userData.xp = String(Number(userData.xp || 0) + totalXP);
-        userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + totalXP);
-        
-        try {
-            await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2, "totalXP" = "totalXP" + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]);
-        } catch(e) {
-            await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2, totalxp = COALESCE(totalxp, 0) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{});
+        if (updateGuildStat) {
+            updateGuildStat(client, guildId, userId, 'crops_harvested', totalRevenue).catch(()=>{});
         }
-        
-        if (typeof client.setLevel === 'function') await client.setLevel(userData);
 
-        await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] });
+        await i.followUp({ content: `🌾 **تم الحصاد!** (+${totalRevenue} مورا, +${totalXP} XP)`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         await updateView();
         return;
     }
 
     if (baseAction === 'land_clean_all') {
-        await i.deferUpdate();
-        
         let plantedPlotsRes;
         try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
         catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
@@ -652,7 +645,7 @@ async function handleLandInteractions(i, client, db) {
             } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
         }
 
-        await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: [MessageFlags.Ephemeral] });
+        await i.followUp({ content: `🚿 **تم التنظيف.**`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         await updateView();
         return;
     }
