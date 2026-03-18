@@ -195,7 +195,7 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
                 }
 
                 if (targetIsKing && !party.includes(i.user.id)) {
-                    await i.followUp({ content: "👑 **بصفتك سيد الهاوية، تم تخطي شروط وتذاكر الدخول لك!**", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                    await i.followUp({ content: "👑 **بصفتك ملك الهاوية، تم تخطي شروط وتذاكر الدخول لك!**", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
                 }
 
                 const takenClasses = [];
@@ -304,7 +304,7 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
             }
 
             try {
-                // 🔥 تحسين إنشاء الثريد: إضافة محاولة التأكد من الجاهزية
+                // 🔥 إنشاء الثريد بأمان تام
                 const thread = await msg.channel.threads.create({
                     name: `🏰-دانجون-${theme.name.replace(/ /g, '-')}`,
                     autoArchiveDuration: 60,
@@ -314,19 +314,23 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
 
                 if (msg.editable) await msg.edit({ content: `✅ **بوابة الـدانـجون فُتحت!** <#${thread.id}>`, components: [] });
 
-                // 💡 سر المهنة: انتظار قصير لضمان أن ديسكورد استوعب وجود الثريد
                 await new Promise(r => setTimeout(r, 1500));
 
                 for (const uid of validParty) { 
                     try { await thread.members.add(uid); } catch(e){} 
                 }
 
-                // رسالة تأكيدية داخل الثريد لتنشيطه
                 const startMsg = await thread.send(`🔔 **يتم الآن استدعاء وحوش ${theme.name}.. استعدوا!**`);
 
-                // التحقق من وجود دالة runDungeon وبدء اللعبة
+                // 🛑 هنا الإصلاح الأكبر لتجنب تعليق اللوبي: نضع استدعاء المعركة في `try/catch` محمي!
                 if (typeof runDungeon === 'function') {
-                    await runDungeon(thread, msg.channel, validParty, theme, db, host.id, partyClasses, activeDungeonRequests, startFloor);
+                    try {
+                        await runDungeon(thread, msg.channel, validParty, theme, db, host.id, partyClasses, activeDungeonRequests, startFloor);
+                    } catch (battleError) {
+                        console.error("[Dungeon] Battle Error:", battleError);
+                        activeDungeonRequests.delete(host.id);
+                        thread.send("❌ **فشل في استدعاء الوحوش. الرجاء إعادة المحاولة!**").catch(()=>{});
+                    }
                 } else {
                     throw new Error("Dungeon battle logic (runDungeon) is not loaded correctly.");
                 }
@@ -334,7 +338,7 @@ async function lobbyPhase(interaction, oldMsg, theme, db, startFloor = 1) {
             } catch (e) {
                 console.error("Dungeon Start Fatal Error:", e);
                 activeDungeonRequests.delete(host.id);
-                msg.channel.send(`❌ **فشل في استكمال طقوس الدانجون:** ${e.message}`);
+                msg.channel.send(`❌ **فشل في استكمال طقوس الدانجون:** ${e.message}`).catch(()=>{});
             }
         } else {
             activeDungeonRequests.delete(host.id);
