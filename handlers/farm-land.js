@@ -291,7 +291,6 @@ async function handleLandInteractions(i, client, db) {
     
     if (!i.customId.startsWith('land_') && !i.customId.startsWith('farm_plant_modal_')) return;
 
-    // 🔥 تم إضافة استثناء القائمة المنسدلة هنا (land_plant_select_seed_) لمنع تعطيل النافذة المنبثقة 🔥
     if (!i.deferred && !i.replied && !i.customId.startsWith('farm_plant_modal_') && !i.customId.startsWith('land_start_plant_') && !i.customId.startsWith('land_plant_select_seed_')) {
         await i.deferUpdate().catch(()=>{});
     }
@@ -602,8 +601,9 @@ async function handleLandInteractions(i, client, db) {
                 } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
             }
 
+            // 🔥 استخدام دالة الإضافة الصامتة لحصاد اللاعب اليدوي 🔥
             if (addXPAndCheckLevel && totalXP > 0) {
-                 await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue).catch(()=>{});
+                 await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue, false).catch(()=>{});
             } else {
                  try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1, "xp" = CAST(COALESCE("xp", '0') AS BIGINT) + $2, "totalXP" = CAST(COALESCE("totalXP", '0') AS BIGINT) + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]); }
                  catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1, xp = CAST(COALESCE(xp, '0') AS BIGINT) + $2, totalxp = CAST(COALESCE(totalxp, '0') AS BIGINT) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{}); }
