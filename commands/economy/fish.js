@@ -110,7 +110,6 @@ module.exports = {
                 }
             }
 
-            // 1. تجهيز العدة (سنارة، قارب، موقع)
             const currentRod = rodsConfig.find(r => r.level === (Number(userData.rodLevel || userData.rodlevel) || 1)) || rodsConfig[0];
             const currentBoat = boatsConfig.find(b => b.level === (Number(userData.boatLevel || userData.boatlevel) || 1)) || boatsConfig[0];
             const locationId = userData.currentLocation || userData.currentlocation || 'beach';
@@ -119,7 +118,6 @@ module.exports = {
             let usedBaitName = null;
             let baitLuckBonus = 0;
             
-            // 2. فحص وخصم الطعم
             let userBaitsRes;
             try { userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
             catch(e) { userBaitsRes = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
@@ -153,7 +151,6 @@ module.exports = {
                 }
             }
 
-            // 3. 🎯 تحديد الصيد مسبقاً (Pre-determine Catch)
             let isFisherKing = false;
             try {
                 const settingsRes = await sql.query(`SELECT "roleFisherKing" FROM settings WHERE "guild" = $1`, [guild.id]);
@@ -173,12 +170,11 @@ module.exports = {
             let allowedRarities = currentLocation.fish_types || [1, 2];
             let maxRarity = currentRod.max_rarity || 2;
 
-            // 🔥 عقوبة عدم استخدام الطعم 🔥
             if (!usedBaitName) {
-                maxRarity = Math.max(1, maxRarity - 1); // يخفض الحد الأقصى للندرة
+                maxRarity = Math.max(1, maxRarity - 1); 
                 allowedRarities = allowedRarities.filter(r => r <= maxRarity);
                 if (allowedRarities.length === 0) allowedRarities = [1];
-                totalLuck = Math.max(0, totalLuck - 15); // تقليل الحظ
+                totalLuck = Math.max(0, totalLuck - 15); 
             }
 
             const fishCount = Math.floor(Math.random() * currentRod.max_fish) + 1;
@@ -205,16 +201,15 @@ module.exports = {
                 }
             }
 
-            // إذا فشل الصيد لسبب ما (نادر جداً)، نعطيه سمكة قمامة لكي تعمل اللعبة
             if (caughtFish.length === 0) {
                 const trashFish = fishItems.find(f => f.rarity === 1);
                 caughtFish.push(trashFish);
                 totalValue += trashFish.price;
             }
 
-            // 4. 🧮 حساب الصعوبة بناءً على قيمة الأسماك الإجمالية!
-            // كلما زادت قيمة السمكة، زادت الصعوبة. (مثال: سمكة 50 مورا = صعوبة 1.1x)
-            const difficultyMultiplier = 1.0 + (totalValue / 500);
+            // 🔥 تم وزن الصعوبة هنا: وضعنا سقف أقصى للصعوبة (Cap) عشان مستحيل تنقطع من ضغطة واحدة 🔥
+            let difficultyMultiplier = 1.0 + (totalValue / 2000); 
+            difficultyMultiplier = Math.min(1.5, Math.max(1.0, difficultyMultiplier)); // أقصى صعوبة هي 1.5x فقط!
 
             if (isSlash) await interactionOrMessage.deferReply();
 
@@ -225,7 +220,6 @@ module.exports = {
             const waitTime = Math.floor(Math.random() * 3000) + 2000; 
 
             setTimeout(async () => {
-                // تأثير القارب: يقلل المسافة الابتدائية بينك وبين السمكة (كل ما كان القارب لفل أعلى، السمكة أقرب)
                 const baseStartDistance = 120;
                 const boatAdvantage = (currentBoat.level * 8);
                 const startDistance = Math.max(40, baseStartDistance - boatAdvantage);
@@ -234,7 +228,7 @@ module.exports = {
                     distance: startDistance, 
                     tension: 10,   
                     statusText: "عـلـقـت سمـكـة! اسـحـب الآن!",
-                    maxTension: 100 + (currentRod.level * 15), // تأثير السنارة على متانة الخيط
+                    maxTension: 100 + (currentRod.level * 15), 
                 };
 
                 const getControlRows = () => {
@@ -271,28 +265,26 @@ module.exports = {
                 collector.on('collect', async i => {
                     await i.deferUpdate().catch(()=>{});
 
-                    // 🔥 ميكانيكيات الصعوبة الجديدة بناءً على قيمة السمكة 🔥
+                    // 🔥 تعديل ميكانيكيات الأزرار لتكون أكثر انصافاً للمحترفين 🔥
                     if (i.customId === 'fish_hard') {
-                        // كلما زادت الصعوبة، يقل تأثير سحبك وتزيد نسبة التوتر
-                        gameData.distance -= (Math.floor(Math.random() * 15) + 15 + currentRod.level) / difficultyMultiplier; 
-                        gameData.tension += (Math.floor(Math.random() * 20) + 20) * difficultyMultiplier; 
+                        gameData.distance -= Math.floor(Math.random() * 12) + 8 + currentRod.level; // سحب جيد ومستقر
+                        gameData.tension += (Math.floor(Math.random() * 15) + 15) * difficultyMultiplier; // التوتر معقول وليس مدمراً
                         gameData.statusText = "سحب عنيف! الخيط يهتز!";
                     } else if (i.customId === 'fish_steady') {
-                        gameData.distance -= (Math.floor(Math.random() * 10) + 5) / Math.max(1, difficultyMultiplier * 0.8); 
-                        gameData.tension += (Math.floor(Math.random() * 10) + 5) * difficultyMultiplier; 
+                        gameData.distance -= Math.floor(Math.random() * 6) + 4; 
+                        gameData.tension += (Math.floor(Math.random() * 8) + 4) * difficultyMultiplier; 
                         gameData.statusText = "سحب متوازن.. السمكة تقترب.";
                     } else if (i.customId === 'fish_relax') {
-                        // السمكة الغالية تهرب أسرع بكثير عند إرخاء الخيط!
-                        gameData.distance += (Math.floor(Math.random() * 15) + 5) * difficultyMultiplier; 
-                        gameData.tension -= Math.floor(Math.random() * 30) + 20; 
+                        gameData.distance += Math.floor(Math.random() * 8) + 4; 
+                        gameData.tension -= Math.floor(Math.random() * 35) + 25; // 🔥 إرخاء قوي جداً لإنقاذ الخيط!
                         gameData.statusText = "إرخاء الخيط! السمكة تبتعد لتستريح.";
                     }
 
-                    // ذكاء السمكة وشراستها (Fish AI)
-                    const fishAggression = Math.min(0.85, 0.3 + (difficultyMultiplier * 0.15)); 
+                    // شراسة السمكة العشوائية أصبحت أخف ولن تدمر الخيط فجأة
+                    const fishAggression = Math.min(0.40, 0.15 + (difficultyMultiplier * 0.10)); 
                     if (Math.random() < fishAggression) {
-                        gameData.tension += 12 * difficultyMultiplier;
-                        gameData.statusText += " (السمكة تقاوم بشراسة!)";
+                        gameData.tension += 10 * difficultyMultiplier;
+                        gameData.statusText += " (السمكة تقاوم!)";
                     }
 
                     if (gameData.tension < 0) gameData.tension = 0;
@@ -330,7 +322,6 @@ module.exports = {
                         }
                         
                         if (reason === 'success') {
-                            // نظام الوحوش (Monsters)
                             const isOwner = user.id === OWNER_ID;
                             const monsterChance = isOwner ? 0.50 : (0.10 + (baitLuckBonus / 1000));
                             const monsterTriggered = Math.random() < monsterChance;
@@ -349,7 +340,6 @@ module.exports = {
                                 }
                             }
 
-                            // تجميع الأسماك وإدخالها بطلب واحد آمن (لحماية الداتابيز)
                             const summary = {};
                             caughtFish.forEach(f => {
                                 summary[f.id] = summary[f.id] 
@@ -362,7 +352,6 @@ module.exports = {
                                 catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $4`, [guild.id, user.id, fId, info.count]).catch(()=>{}); }
                             }
                             
-                            // تأمين الخبرة والمورا باستخدام الدالة المركزية
                             if (addXPAndCheckLevel && totalValue > 0) {
                                 await addXPAndCheckLevel(client, member, sql, 0, totalValue).catch(()=>{});
                             } else {
