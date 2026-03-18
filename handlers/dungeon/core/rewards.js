@@ -1,9 +1,33 @@
 const { EmbedBuilder, Colors } = require('discord.js');
 
-// 🔥 نظام الحفظ المحصن: تحديث ذري لقاعدة البيانات ومزامنة فورية للكاش 🔥
+// 🔥 استيراد الدالة السحرية لإضافة الـ XP بصمت 🔥
+let addXPAndCheckLevel;
+try {
+    ({ addXPAndCheckLevel } = require('../../handler-utils.js'));
+} catch (e) {
+    try {
+        ({ addXPAndCheckLevel } = require('../../../handlers/handler-utils.js'));
+    } catch(err) {}
+}
+
+// 🔥 نظام الحفظ المحصن: تم تحويله لاستخدام الدالة المركزية والصامتة 🔥
 async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, client) {
     if (!db || (addMora === 0 && addXp === 0)) return;
+    
     try {
+        if (addXPAndCheckLevel && client) {
+            const guildObj = client.guilds.cache.get(guildId);
+            if (guildObj) {
+                const member = await guildObj.members.fetch(userId).catch(()=>null);
+                if (member) {
+                    // نمرر false لمنع إرسال التهنئة باللفل
+                    await addXPAndCheckLevel(client, member, db, addXp, addMora, false).catch(()=>{});
+                    return; // انتهينا، الدالة المركزية تكفلت بكل شيء
+                }
+            }
+        }
+        
+        // كود احتياطي (Fallback) في حال كان العضو قد غادر السيرفر أثناء المعركة
         let userData = null;
         if (client && typeof client.getLevel === 'function') {
             userData = await client.getLevel(userId, guildId);
@@ -13,7 +37,6 @@ async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, cl
             userData = { ...client.defaultData, user: userId, guild: guildId, level: 1, xp: 0, totalXP: 0, mora: 0, bank: 0 };
         }
 
-        // 1. تحديث ذاكرة البوت المؤقتة (RAM Cache) فوراً لمنع تضارب البيانات
         userData.mora = String(Number(userData.mora || 0) + addMora);
         userData.xp = String(Number(userData.xp || 0) + addXp);
         userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + addXp);
@@ -22,7 +45,6 @@ async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, cl
             await client.setLevel(userData);
         }
 
-        // 2. تحديث قاعدة البيانات باستخدام نظام الحماية من القلتشات (Atomic Update)
         try {
             await db.query(`
                 INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
@@ -33,7 +55,6 @@ async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, cl
                 "totalXP" = CAST(COALESCE(levels."totalXP", '0') AS BIGINT) + $4
             `, [userId, guildId, addMora, addXp]);
         } catch(e) {
-            // نسخة احتياطية في حال كانت أسماء الأعمدة بحروف صغيرة في الداتابيز
             await db.query(`
                 INSERT INTO levels (userid, guildid, mora, xp, totalxp, level) 
                 VALUES ($1, $2, $3, $4, $4, 1) 
