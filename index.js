@@ -111,6 +111,12 @@ async function bootstrap() {
         try { await loadRoleSettings(client.sql, client.antiRolesCache); } catch(e) { console.log("⚠️ Role Settings skipped:", e.message); }
         try { require('./handlers/cron-jobs.js')(client, client.sql); } catch(e) { console.log("⚠️ Cron Jobs skipped:", e.message); }
 
+        // 🔥🔥 استدعاء إنعاش الدانجون بعد تشغيل البوت 🔥🔥
+        try { 
+            const { resumeActiveDungeons } = require('./handlers/dungeon-handler.js');
+            if (resumeActiveDungeons) await resumeActiveDungeons(client, client.sql);
+        } catch(e) { console.log("⚠️ Resume Dungeons skipped:", e.message); }
+
         const rest = new REST({ version: '10' }).setToken(botToken);
         const commands = [];
         const loadedCommandNames = new Set();
@@ -159,7 +165,7 @@ bootstrap();
 // 🛡️ نظام الإغلاق الآمن المطوّر
 // ==========================================
 async function shutdownGracefully(signal) {
-    console.log(`\n🛑 [${signal}] الإمبراطور أمر بإنهاء البوت... جاري التوقف بسلام وإنقاذ البيانات!`);
+    console.log(`\n🛑 [${signal}] الإمبراطور أمر بإنهاء البوت... جاري التوقف !`);
     
     try {
         if (client.user) {
