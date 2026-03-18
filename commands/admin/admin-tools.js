@@ -264,6 +264,7 @@ module.exports = {
 
                         await i.editReply({ content: `🗑️ **تم إخلاء عرش (${targetRole.name}) وتصفير جميع نقاطه لليوم بنجاح!**`, components: [] });
                     } else {
+                        // 🔥 التتويج (يعطي نقاطاً أعلى من الأول ليضمن الصدارة لليوم الحالي فقط)
                         let currentMax = 0;
                         if (selectedRoleColumn === 'roleCasinoKing') {
                             const res = await db.query(`SELECT SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" ORDER BY val DESC LIMIT 1`, [guildID, todayStr]).catch(()=>({rows:[]}));
@@ -276,7 +277,8 @@ module.exports = {
                             currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
                         }
 
-                        const newVal = currentMax + 1; 
+                        // ضمان الصدارة المؤقتة
+                        const newVal = currentMax + 10; 
                         const trackerId = `${userID}-${guildID}-${todayStr}`;
 
                         try {
@@ -293,6 +295,7 @@ module.exports = {
                             `, [trackerId, userID, guildID, todayStr, newVal]).catch(()=>{});
                         }
 
+                        // إزالة الرتبة من الملوك القدامى وإعطاؤها للملك الجديد
                         targetRole.members.forEach(async (member) => {
                             if (member.id !== userID) await member.roles.remove(targetRole).catch(() => {});
                         });
@@ -301,7 +304,7 @@ module.exports = {
                             await targetMember.roles.add(targetRole).catch(() => {});
                         }
 
-                        await i.editReply({ content: `👑 **تم تتويج ${targetUser} بلقب (${targetRole.name}) ورفعه في اللوحة بنقاط (${newVal}) بنجاح!**`, components: [] });
+                        await i.editReply({ content: `👑 **تم تتويج ${targetUser} بلقب (${targetRole.name}) لليوم!**\nسيتم سحب الرتبة وتصفير المنافسة غداً لبدء سباق جديد.`, components: [] });
                     }
                     kingCollector.stop();
                 });
