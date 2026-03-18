@@ -126,12 +126,22 @@ module.exports = {
                     await db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [finalBetAmount, userId, guildId]).catch(console.error);
                 }
 
-                if (userId !== OWNER_ID) cooldowns.set(userId, Date.now());
+                const nowTime = Date.now();
+                if (userId !== OWNER_ID) cooldowns.set(userId, nowTime);
                 
                 try {
-                    await db.query(`UPDATE levels SET "lastArrange" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), userId, guildId]);
+                    await db.query(`UPDATE levels SET "lastArrange" = $1 WHERE "user" = $2 AND "guild" = $3`, [nowTime, userId, guildId]);
                 } catch (e) {
-                    await db.query(`UPDATE levels SET lastArrange = $1 WHERE userid = $2 AND guildid = $3`, [Date.now(), userId, guildId]).catch(()=>{});
+                    await db.query(`UPDATE levels SET lastArrange = $1 WHERE userid = $2 AND guildid = $3`, [nowTime, userId, guildId]).catch(()=>{});
+                }
+
+                // 🔥 الحل هنا: تحديث الكاش لكي يقرأه أمر الوقت 🔥
+                if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
+                    let cacheData = await client.getLevel(userId, guildId);
+                    if (!cacheData) cacheData = { ...client.defaultData, user: userId, guild: guildId };
+                    
+                    cacheData.lastArrange = nowTime;
+                    await client.setLevel(cacheData);
                 }
 
                 const numbersCount = 9;
