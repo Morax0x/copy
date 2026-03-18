@@ -10,23 +10,21 @@ const THEME = {
     BAR_BG: "rgba(0, 0, 0, 0.6)"
 };
 
+// مسار المجلدات الأساسية للصور حسب الترتيب الجديد
 const BASE_IMG_PATH = path.join(process.cwd(), 'images', 'fish');
 
-// 🔥 الذاكرة العشوائية لتخزين الصور 🔥
+// 🔥 الذاكرة العشوائية لتخزين الصور لضمان سرعة 0 تأخير 🔥
 const imageCache = new Map();
 
 // 🚀 دالة التحميل المسبق (تعمل تلقائياً عند التشغيل)
 async function preloadAssets() {
     console.log("[Fishing Generator] Starting asset preload into RAM...");
+    
     const foldersToLoad = [
-        { folder: 'beach', files: ['beach.png'] },
-        { folder: 'shallow', files: ['shallow.png'] },
-        { folder: 'deep', files: ['deep.png'] },
-        { folder: 'bermuda', files: ['bermuda.png'] },
-        { folder: 'trench', files: ['trench.png'] },
-        { folder: 'atlantis', files: ['atlantis.png'] },
-        { folder: 'dark_sea', files: ['dark_sea.png'] },
-        { folder: '', files: ['ordinary_fish.png', 'shadow_fish.png', 'fish.png'] } // المجلد الرئيسي
+        // 🔥 التعديل هنا: جميع الشواطئ والأماكن موجودة داخل مجلد beach 🔥
+        { folder: 'beach', files: ['beach.png', 'shallow.png', 'deep.png', 'bermuda.png', 'trench.png', 'atlantis.png', 'dark_sea.png'] },
+        // السمكة في المجلد الرئيسي fish
+        { folder: '', files: ['ordinary_fish.png', 'shadow_fish.png', 'fish.png'] } 
     ];
 
     // جلب أسماء القوارب والسنارات ديناميكياً
@@ -36,6 +34,7 @@ async function preloadAssets() {
         if(i <= 7) shipFiles.push(`boat_${i}.png`);
         rodFiles.push(`rod_${i}.png`);
     }
+    
     foldersToLoad.push({ folder: 'ships', files: shipFiles });
     foldersToLoad.push({ folder: 'fishing', files: rodFiles });
 
@@ -46,11 +45,15 @@ async function preloadAssets() {
                 try {
                     const img = await Canvas.loadImage(fullPath);
                     imageCache.set(fullPath, img);
-                } catch (e) {}
+                } catch (e) {
+                    console.error(`[Fishing] ❌ خطأ في قراءة الصورة: ${fullPath}`, e);
+                }
+            } else {
+                console.warn(`[Fishing] ⚠️ تنبيه: الصورة مفقودة ولم يتم العثور عليها: ${fullPath}`);
             }
         }
     }
-    console.log(`[Fishing Generator] Successfully loaded ${imageCache.size} assets into RAM.`);
+    console.log(`[Fishing Generator] ✅ Successfully loaded ${imageCache.size} assets into RAM.`);
 }
 
 // استدعاء التحميل المسبق فور قراءة الملف
@@ -79,7 +82,8 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     const ctx = canvas.getContext('2d');
 
     // 1. جلب الصور من الـ RAM مباشرة
-    const bgImage = getCachedImage(locationId, `${locationId}.png`);
+    // 🔥 التعديل هنا: جلبنا الخلفية دائماً من مجلد beach 🔥
+    const bgImage = getCachedImage('beach', `${locationId}.png`);
     const boatImage = getCachedImage('ships', `boat_${boatLevel}.png`);
     const rodImage = getCachedImage('fishing', `rod_${rodLevel}.png`);
     
@@ -92,6 +96,7 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     if (bgImage) {
         ctx.drawImage(bgImage, 0, 0, canvasWidth, canvasHeight);
     } else {
+        // خلفية احتياطية زرقاء في حال ضياع الصورة
         const grad = ctx.createLinearGradient(0, 0, 0, canvasHeight);
         grad.addColorStop(0, "#0B1D3A");
         grad.addColorStop(1, "#1A3B5C");
