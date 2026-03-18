@@ -207,9 +207,8 @@ module.exports = {
                 totalValue += trashFish.price;
             }
 
-            // 🔥 تم وزن الصعوبة هنا: وضعنا سقف أقصى للصعوبة (Cap) عشان مستحيل تنقطع من ضغطة واحدة 🔥
             let difficultyMultiplier = 1.0 + (totalValue / 2000); 
-            difficultyMultiplier = Math.min(1.5, Math.max(1.0, difficultyMultiplier)); // أقصى صعوبة هي 1.5x فقط!
+            difficultyMultiplier = Math.min(1.5, Math.max(1.0, difficultyMultiplier)); 
 
             if (isSlash) await interactionOrMessage.deferReply();
 
@@ -241,7 +240,8 @@ module.exports = {
 
                 const sendUpdate = async (isFinal = false) => {
                     try {
-                        const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText);
+                        // 🔥 استدعاء دالة الرسم السريعة والمحدثة وتمرير المتغيرات 🔥
+                        const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText, locationId, currentBoat.level, currentRod.level);
                         const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
                         
                         const updatePayload = {
@@ -265,10 +265,9 @@ module.exports = {
                 collector.on('collect', async i => {
                     await i.deferUpdate().catch(()=>{});
 
-                    // 🔥 تعديل ميكانيكيات الأزرار لتكون أكثر انصافاً للمحترفين 🔥
                     if (i.customId === 'fish_hard') {
-                        gameData.distance -= Math.floor(Math.random() * 12) + 8 + currentRod.level; // سحب جيد ومستقر
-                        gameData.tension += (Math.floor(Math.random() * 15) + 15) * difficultyMultiplier; // التوتر معقول وليس مدمراً
+                        gameData.distance -= Math.floor(Math.random() * 12) + 8 + currentRod.level; 
+                        gameData.tension += (Math.floor(Math.random() * 15) + 15) * difficultyMultiplier; 
                         gameData.statusText = "سحب عنيف! الخيط يهتز!";
                     } else if (i.customId === 'fish_steady') {
                         gameData.distance -= Math.floor(Math.random() * 6) + 4; 
@@ -276,11 +275,10 @@ module.exports = {
                         gameData.statusText = "سحب متوازن.. السمكة تقترب.";
                     } else if (i.customId === 'fish_relax') {
                         gameData.distance += Math.floor(Math.random() * 8) + 4; 
-                        gameData.tension -= Math.floor(Math.random() * 35) + 25; // 🔥 إرخاء قوي جداً لإنقاذ الخيط!
+                        gameData.tension -= Math.floor(Math.random() * 35) + 25; 
                         gameData.statusText = "إرخاء الخيط! السمكة تبتعد لتستريح.";
                     }
 
-                    // شراسة السمكة العشوائية أصبحت أخف ولن تدمر الخيط فجأة
                     const fishAggression = Math.min(0.40, 0.15 + (difficultyMultiplier * 0.10)); 
                     if (Math.random() < fishAggression) {
                         gameData.tension += 10 * difficultyMultiplier;
