@@ -2,54 +2,15 @@ const { EmbedBuilder } = require('discord.js');
 const { getRandomImage } = require('../utils'); 
 const { EMOJI_MORA, EMOJI_XP, EMOJI_BUFF, EMOJI_NERF, WIN_IMAGES, LOSE_IMAGES } = require('../constants'); 
 
-let updateGuildStat;
-try { ({ updateGuildStat } = require('../../guild-board-handler.js')); } catch (e) {}
-
-// 🔥 تم إعادة بناء دالة الحفظ لتكون محصنة وآمنة 100% وتتزامن مع الكاش 🔥
-async function safeUpdateLevels(db, userId, guildId, addMora, addXp, context, client) {
-    if (!db || (addMora === 0 && addXp === 0)) return;
+let updateGuildStat, addXPAndCheckLevel;
+try { 
+    ({ updateGuildStat } = require('../../guild-board-handler.js'));
+    ({ addXPAndCheckLevel } = require('../../handler-utils.js')); // 🔥 استدعاء الدالة السحرية المركزية
+} catch (e) {
     try {
-        let userData = null;
-        if (client && typeof client.getLevel === 'function') {
-            userData = await client.getLevel(userId, guildId);
-        }
-        
-        if (!userData) {
-            userData = { ...client.defaultData, user: userId, guild: guildId, level: 1, xp: 0, totalXP: 0, mora: 0, bank: 0 };
-        }
-
-        // تحديث الكاش فوراً
-        userData.mora = String(Number(userData.mora || 0) + addMora);
-        userData.xp = String(Number(userData.xp || 0) + addXp);
-        userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + addXp);
-
-        if (client && typeof client.setLevel === 'function') {
-            await client.setLevel(userData);
-        }
-
-        // تحديث الداتابيز بطريقة مباشرة لمنع القلتشات
-        try {
-            await db.query(`
-                INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
-                VALUES ($1, $2, $3, $4, $4, 1) 
-                ON CONFLICT ("user", "guild") DO UPDATE SET 
-                "mora" = CAST(COALESCE(levels."mora", '0') AS BIGINT) + $3, 
-                "xp" = CAST(COALESCE(levels."xp", '0') AS BIGINT) + $4, 
-                "totalXP" = CAST(COALESCE(levels."totalXP", '0') AS BIGINT) + $4
-            `, [userId, guildId, addMora, addXp]);
-        } catch(e) {
-            await db.query(`
-                INSERT INTO levels (userid, guildid, mora, xp, totalxp, level) 
-                VALUES ($1, $2, $3, $4, $4, 1) 
-                ON CONFLICT (userid, guildid) DO UPDATE SET 
-                mora = CAST(COALESCE(levels.mora, '0') AS BIGINT) + $3, 
-                xp = CAST(COALESCE(levels.xp, '0') AS BIGINT) + $4, 
-                totalxp = CAST(COALESCE(levels.totalxp, '0') AS BIGINT) + $4
-            `, [userId, guildId, addMora, addXp]).catch(()=>{});
-        }
-    } catch (e) {
-        console.error(`[🚨 DUNGEON ERROR] in safeUpdateLevels:`, e);
-    }
+        ({ updateGuildStat } = require('../../../handlers/guild-board-handler.js'));
+        ({ addXPAndCheckLevel } = require('../../../handlers/handler-utils.js'));
+    } catch(err) {}
 }
 
 async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlayers, floor, status, sql, guildId, hostId, activeDungeonRequests, client) {
@@ -109,7 +70,17 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                 if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
             }
             
-            await safeUpdateLevels(sql, p.id, guildId, finalMora, finalXp, "END GAME", client);
+            // 🔥 الحل الجذري: استخدام دالة الإضافة المركزية لمعالجة اللفل بأمان!
+            try {
+                const guildObj = client.guilds.cache.get(guildId);
+                const member = await guildObj.members.fetch(p.id).catch(()=>null);
+                if (member && addXPAndCheckLevel) {
+                    await addXPAndCheckLevel(client, member, sql, finalXp, finalMora);
+                } else {
+                    // كود احتياطي لو العضو غادر السيرفر أو لم يجد الدالة
+                    await sql.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1, "xp" = CAST(COALESCE("xp", '0') AS BIGINT) + $2, "totalXP" = CAST(COALESCE("totalXP", '0') AS BIGINT) + $2 WHERE "user" = $3 AND "guild" = $4`, [finalMora, finalXp, p.id, guildId]).catch(()=>{});
+                }
+            } catch(e) {}
         }
 
         // 🔥 إنصاف اللاعب المضحي: يُحسب له الطابق الذي مات فيه ولن ننقص منه 1 إذا ساعد فريقه بالانتحار
@@ -147,7 +118,7 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         }
 
         if (updateGuildStat && client) {
-            await updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor);
+            await updateGuildStat(client, guildId, p.id, 'max_dungeon_floor', effectiveEndFloor).catch(()=>{});
         }
         
         let statusEmoji = p.isDead ? `💀 ${p.deathFloor ? `(مات في ${p.deathFloor})` : ""}` : p.retreatFloor ? `🏃‍♂️ (انسحب في ${p.retreatFloor})` : status === 'camp' ? "⛺ (مخيم)" : "✅";
@@ -163,7 +134,16 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            await safeUpdateLevels(sql, mvpPlayer.id, guildId, 500, 0, "MVP REWARD", client);
+            // MVP Extra Reward Update
+            try {
+                const guildObj = client.guilds.cache.get(guildId);
+                const mvpMem = await guildObj.members.fetch(mvpPlayer.id).catch(()=>null);
+                if (mvpMem && addXPAndCheckLevel) {
+                    await addXPAndCheckLevel(client, mvpMem, sql, 0, 500);
+                } else {
+                    await sql.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]).catch(()=>{});
+                }
+            } catch(e) {}
         }
         description += `\n\n<a:mTrophy:1438797228826300518> **نجـم المعركـة:**\n✶ <@${mvpPlayer.id}> (الـضـرر: ${mvpPlayer.totalDamage.toLocaleString()})\nحـصـل عـلى تعـزيـز 15% مورا واكس بي لـ 15د${extraRewardText} <a:buff:1438796257522094081>`;
     }
