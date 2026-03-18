@@ -13,11 +13,12 @@ const {
     MessageFlags 
 } = require("discord.js");
 
-let sendLevelUpMessage;
+// 🔥 استيراد الدالة السحرية المركزية للتلفيل الصامت 🔥
+let addXPAndCheckLevel;
 try {
-    ({ sendLevelUpMessage } = require('../handler-utils.js')); 
+    ({ addXPAndCheckLevel } = require('../handler-utils.js')); 
 } catch (e) {
-    try { ({ sendLevelUpMessage } = require('./handler-utils.js')); } catch (e2) {}
+    try { ({ addXPAndCheckLevel } = require('./handler-utils.js')); } catch (e2) {}
 }
 
 let utils;
@@ -900,7 +901,7 @@ async function handleShopModal(i, client, db) {
     return false;
 }
 
-// 🔥 الحل الجذري لمشكلة التلفيل 191 بسبب دمج النصوص 🔥
+// 🔥 الحل الجذري لمشكلة التلفيل بسبب المودال في المتجر 🔥
 async function _handleXpExchangeModal(i, client, db) {
     try {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -930,31 +931,19 @@ async function _handleXpExchangeModal(i, client, db) {
             return await i.editReply({ content: msg });
         }
         
-        // استخدام الجمع والطرح الرياضي الصارم
         userData.mora = Number(userData.mora) - totalCost; 
-        userData.xp = Number(userData.xp) + amountToBuy; 
-        userData.totalXP = Number(userData.totalXP || userData.totalxp || 0) + amountToBuy;
-        userData.level = Number(userData.level) || 1;
         
-        let nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
-        let levelUpOccurred = false;
-        let oldLevel = userData.level;
-        
-        while (userData.xp >= nextXP) {
-             userData.level += 1; // زيادة آمنة
-             userData.xp -= nextXP;
-             nextXP = 5 * (userData.level ** 2) + (50 * userData.level) + 100;
-             levelUpOccurred = true;
-        }
-        
-        if (levelUpOccurred) {
-             await sendLevelUpMessage(i, i.member, userData.level, oldLevel, userData, db);
+        // 🔥 إضافة الـ XP الصامت بواسطة الدالة المركزية السحرية 🔥
+        if (addXPAndCheckLevel) {
+            // نمرر false لمنع إرسال صورة التلفيل والمنشن
+            await addXPAndCheckLevel(client, i.member, db, amountToBuy, 0, false).catch(()=>{});
+        } else {
+            userData.xp = Number(userData.xp) + amountToBuy; 
+            userData.totalXP = Number(userData.totalXP || userData.totalxp || 0) + amountToBuy;
+            await client.setLevel(userData);
         }
 
-        userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
-        await client.setLevel(userData);
-        let msg = `✅ تم شراء **${amountToBuy} XP** بـ **${totalCost}** مورا.`;
-        if (levelUpOccurred) msg += `\n🎉 مبروك المستوى الجديد ${userData.level}!`;
+        let msg = `✅ تم شراء **${amountToBuy} XP** بـ **${totalCost}** مورا.\n(سيتم ترقية مستواك تلقائياً عند أول رسالة ترسلها في الشات العام!)`;
         await i.editReply({ content: msg });
         sendShopLog(client, guildId, i.member, `شراء ${amountToBuy} XP`, totalCost, "تبديل");
     } catch (e) { console.error(e); }
