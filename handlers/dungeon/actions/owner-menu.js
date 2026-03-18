@@ -122,7 +122,7 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                      ownerPlayer.name = cleanName(ownerPlayer.name);
                      players.push(ownerPlayer);
                      p = ownerPlayer;
-                     log.push(`👑 **الأمبراطـور انضم للمعركة عبر القائمة السرية!**`);
+                     log.push(`👑 **الأمبراطـور انضم للمعركة !**`);
                  }
             }
 
@@ -203,8 +203,8 @@ async function handleOwnerMenu(i, players, monster, log, threadChannel, sql, gui
                     players.splice(playerIndex, 1); 
                 }
 
-                await subI.update({ content: "✋ **تم تنفيذ الرمق الأخير! تركت الوحش يحتضر وغادرت المعركة...**", components: [] });
-                log.push(`✋ **الإمبراطور** جعل الوحش بـ 1 HP وغادر المعركة وحيداً!`);
+                await subI.update({ content: "✋ **تم تنفيذ الرمق الأخير!...**", components: [] });
+                log.push(`✋ **الإمبراطور** جعل الوحش بـ 1 HP وغادر المعركة!`);
                 
                 await battleMsg.edit({ embeds: [generateBattleEmbed(players, monster, 0, 'theme', log, [])] }).catch(()=>{});
                 return;
