@@ -23,7 +23,6 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
     
     try {
         if (type === 'level') {
-            // 🔥 تم التعديل: تحويل totalXP إلى BIGINT لترتيب الأرقام حسابياً وليس أبجدياً 🔥
             const res = await sql.query(`SELECT * FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY CAST(COALESCE("totalXP", '0') AS BIGINT) DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows;
         } else if (type === 'rep') {
@@ -42,16 +41,21 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             const res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
             allUsers = res.rows;
         } else if (type === 'mora') {
-            // 🔥 تم التعديل مسبقاً وتأكيده: تحويل الكاش والبنك لأرقام قبل جمعهم 🔥
+            // 🔥 إصلاح خطير: الترتيب أصبح كـ BIGINT وليس TEXT لضمان ترتيب الأثرياء بشكل صحيح 🔥
             const res = await sql.query(`
                 SELECT "user", "mora", "bank", 
-                (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC))::TEXT as total_wealth 
+                (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as total_wealth_num
                 FROM levels 
                 WHERE "guild" = $1 AND "user" != $2 
                 ORDER BY (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) DESC`, [guild.id, OWNER_ID]);
-            allUsers = res.rows;
+            
+            allUsers = res.rows.map(row => {
+                return {
+                    ...row,
+                    total_wealth: row.total_wealth_num.toString() // تحويله لنص فقط للاستخدام في العرض
+                };
+            });
         } else if (type === 'streak') {
-            // 🔥 تم التعديل: تحويل الستريك لرقم لتجنب الأخطاء الأبجدية 🔥
             const res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
             allUsers = res.rows.map(r => ({ ...r, streakCount: r.sc }));
         } else if (type === 'media_streak') {
@@ -94,8 +98,8 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            const tmRes = await sql.query(`SELECT SUM(CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC))::TEXT as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
-            totalMora = tmRes.rows[0]?.t ? BigInt(tmRes.rows[0].t).toLocaleString() : "0";
+            const tmRes = await sql.query(`SELECT SUM(CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
+            totalMora = tmRes.rows[0]?.t ? BigInt(Math.floor(Number(tmRes.rows[0].t))).toLocaleString() : "0";
         }
 
         const pageDataRaw = allUsers.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
@@ -108,7 +112,7 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
             }
             
             if (type === 'mora' && u.total_wealth) {
-                u.total_wealth_formatted = BigInt(u.total_wealth).toLocaleString();
+                u.total_wealth_formatted = BigInt(Math.floor(Number(u.total_wealth))).toLocaleString();
             }
 
             return {
@@ -248,12 +252,21 @@ module.exports = {
             
             await i.deferUpdate(); 
 
-            if (i.customId === 'leaderboard_next') currentPage++;
-            else if (i.customId === 'leaderboard_prev') currentPage--;
+            let shouldFetchData = false;
+
+            if (i.customId === 'leaderboard_next') {
+                currentPage++;
+                shouldFetchData = true;
+            }
+            else if (i.customId === 'leaderboard_prev') {
+                currentPage--;
+                shouldFetchData = true;
+            }
             else if (i.customId === 'leaderboard_find_me') {
                 const findData = await fetchLeaderboardData(client, sql, guild, argType, 1, user.id);
                 if (findData.totalPages === 0) return i.followUp({ content: "لست موجوداً في هذا التصنيف!", ephemeral: true });
                 currentPage = findData.currentPage; 
+                shouldFetchData = true;
             } 
             else if (i.customId.startsWith('top_')) {
                 const clicked = i.customId.replace('top_', '');
@@ -271,20 +284,23 @@ module.exports = {
                     argType = clicked;
                 }
                 currentPage = 1;
+                shouldFetchData = true;
             }
 
-            const newData = await fetchLeaderboardData(client, sql, guild, argType, currentPage, (i.customId === 'leaderboard_find_me' ? user.id : null));
-            
-            let updatePayload = { components: createButtons(argType, newData.currentPage, newData.totalPages), content: '' };
-            if (newData.imageBuffer) {
-                updatePayload.files = [new AttachmentBuilder(newData.imageBuffer, { name: 'leaderboard.png' })];
-            } else {
-                updatePayload.content = "❌ لا توجد بيانات.";
-                updatePayload.files = [];
-            }
+            if (shouldFetchData) {
+                const newData = await fetchLeaderboardData(client, sql, guild, argType, currentPage, (i.customId === 'leaderboard_find_me' ? user.id : null));
+                
+                let updatePayload = { components: createButtons(argType, newData.currentPage, newData.totalPages), content: '' };
+                if (newData.imageBuffer) {
+                    updatePayload.files = [new AttachmentBuilder(newData.imageBuffer, { name: 'leaderboard.png' })];
+                } else {
+                    updatePayload.content = "❌ لا توجد بيانات.";
+                    updatePayload.files = [];
+                }
 
-            await i.editReply(updatePayload);
-            currentPage = newData.currentPage; 
+                await i.editReply(updatePayload);
+                currentPage = newData.currentPage; 
+            }
         });
 
         collector.on('end', () => msg.edit({ components: [] }).catch(() => {}));
