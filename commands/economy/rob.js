@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags, Colors } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 // 🔥 استدعاء دالة تحديث الإحصائيات للملوك الجدد 🔥
@@ -168,7 +168,6 @@ module.exports = {
             }
         }
 
-        // حساب المبلغ المراد سرقته قبل بدء العملية (حماية من التهرب من الغرامة)
         const victimMora = Number(victimData.mora) || 0;
         const victimBank = Number(victimData.bank) || 0;
         let amountToSteal = 0;
@@ -205,13 +204,11 @@ module.exports = {
                  }
             }
             
-            // 🔥 حماية أمنية: إذا كان الضمان أقل من الغرامة المحتملة، نرفض العملية 🔥
             if (robberTotalWealth < amountToSteal) {
                 return reply(`❌ **رصيدك لا يكفي لدفع الغرامة المحتملة!** تحتاج كضمان على الأقل **${amountToSteal.toLocaleString()}** ${EMOJI_MORA}.`);
             }
         }
 
-        // تحديث الكوول داون و قفل اللاعب
         activeRobberies.add(robber.id);
         robberData.lastRob = now;
         await client.setLevel(robberData);
@@ -315,7 +312,6 @@ module.exports = {
             return; 
         }
 
-        // للاعبين العاديين
         let descArray = [
             `✦ انـت تسـطو علـى ممتـلكـات: ${victim} <:thief:1436331309961187488>`,
             `⌕ اخـتـر البـاب الصحـيـح الـذي يحـوي عـلـى ${amountToSteal.toLocaleString()} ${EMOJI_MORA} (من ${poolName})!`,
@@ -350,7 +346,6 @@ module.exports = {
 
         collector.on('collect', async i => {
             try {
-                // فحص البيانات مجدداً لتجنب الاختفاء
                 robberData = await client.getLevel(robber.id, guild.id) || robberData;
                 victimData = await client.getLevel(victim.id, guild.id) || victimData;
                 
@@ -470,7 +465,6 @@ module.exports = {
         collector.on('end', async (collected, reason) => {
             activeRobberies.delete(robber.id);
             if (reason === 'time' && collected.size === 0) {
-                // إعادة جلب البيانات لضمان دقتها
                 robberData = await client.getLevel(robber.id, guild.id) || robberData;
                 victimData = await client.getLevel(victim.id, guild.id) || victimData;
 
