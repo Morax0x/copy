@@ -1,3 +1,5 @@
+const { EmbedBuilder } = require('discord.js');
+
 const REWARD_MORA = 25000; 
 const REWARD_XP = 5000;    
 const EMOJI_MORA = '<:mora:1435647151349698621>'; 
@@ -14,6 +16,14 @@ const REACTIONS = [
     '1439665966354268201', 
     '1435572329039007889'  
 ];
+
+// 🔥 استيراد دالة التلفيل السحرية 🔥
+let addXPAndCheckLevel;
+try {
+    ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
+} catch (e) {
+    console.error("Missing handler-utils.js in boostDetector", e);
+}
 
 module.exports = {
     name: 'messageCreate',
@@ -59,49 +69,11 @@ module.exports = {
             } catch (err) {}
 
             try {
-                const userID = message.author.id;
-                const guildID = message.guild.id;
-
-                // 🔥 1. تحديث الذاكرة العشوائية (الكاش) لمنع ضياع الجوائز
-                let userData = null;
-                if (typeof client.getLevel === 'function') {
-                    userData = await client.getLevel(userID, guildID);
+                // 🔥 استخدام الدالة المركزية لإضافة الجوائز بصمت تام (بدون رفع لفل أو إرسال تهنئة) 🔥
+                if (addXPAndCheckLevel && message.member) {
+                    // نمرر false في النهاية لكي لا يقوم برفع اللفل وإرسال صورة
+                    await addXPAndCheckLevel(client, message.member, db, REWARD_XP, REWARD_MORA, false);
                 }
-                
-                if (!userData) {
-                    userData = { ...client.defaultData, user: userID, guild: guildID, mora: 0, xp: 0, totalXP: 0, level: 1 };
-                }
-
-                // تحديث الأرقام بأمان في الكاش
-                userData.mora = String(Number(userData.mora || 0) + REWARD_MORA);
-                userData.xp = String(Number(userData.xp || 0) + REWARD_XP);
-                userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + REWARD_XP);
-
-                if (typeof client.setLevel === 'function') {
-                    await client.setLevel(userData);
-                }
-
-                // 🔥 2. تحديث قاعدة البيانات المباشر بأمان تام ضد مشكلة الـ BIGINT
-                try {
-                    await db.query(`
-                        INSERT INTO levels ("user", "guild", "mora", "xp", "totalXP", "level") 
-                        VALUES ($1, $2, $3, $4, $5, 1) 
-                        ON CONFLICT ("user", "guild") DO UPDATE SET 
-                        "mora" = CAST(COALESCE(levels."mora", '0') AS BIGINT) + $3, 
-                        "xp" = CAST(COALESCE(levels."xp", '0') AS BIGINT) + $4, 
-                        "totalXP" = CAST(COALESCE(levels."totalXP", '0') AS BIGINT) + $5
-                    `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]);
-                } catch (e) {
-                    await db.query(`
-                        INSERT INTO levels (user, guild, mora, xp, totalxp, level) 
-                        VALUES ($1, $2, $3, $4, $5, 1) 
-                        ON CONFLICT (user, guild) DO UPDATE SET 
-                        mora = CAST(COALESCE(levels.mora, '0') AS BIGINT) + $3, 
-                        xp = CAST(COALESCE(levels.xp, '0') AS BIGINT) + $4, 
-                        totalxp = CAST(COALESCE(levels.totalxp, '0') AS BIGINT) + $5
-                    `, [userID, guildID, REWARD_MORA, REWARD_XP, REWARD_XP]).catch(()=>{});
-                }
-
             } catch (err) {
                 console.error("[Boost Reward Error]:", err);
             }
