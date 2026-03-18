@@ -11,10 +11,15 @@ try {
     feedItems = require('../json/feed-items.json');
 }
 
-let updateGuildStat;
+let updateGuildStat, addXPAndCheckLevel;
 try {
     ({ updateGuildStat } = require('./guild-board-handler.js'));
-} catch (e) {}
+    ({ addXPAndCheckLevel } = require('./handler-utils.js'));
+} catch (e) {
+    try {
+        ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
+    } catch(e2) {}
+}
 
 async function checkFarmIncome(client, db) {
     if (!db) return;
@@ -55,7 +60,6 @@ async function checkFarmIncome(client, db) {
             const lastPayoutData = lastPayoutDataRes.rows[0];
             const payoutTime = lastPayoutData ? (Number(lastPayoutData.lastPayoutDate || lastPayoutData.lastpayoutdate) || 0) : 0;
             
-            // 🔥 التحقق الدقيق: إذا استلم الدخل في آخر 24 ساعة، نتخطاه فوراً!
             if (payoutTime > 0 && (now - payoutTime) < ONE_DAY) {
                 continue; 
             }
@@ -89,21 +93,21 @@ async function checkFarmIncome(client, db) {
                         try { await db.query(`UPDATE user_lands SET "status" = 'empty', "seedID" = NULL, "plantTime" = NULL WHERE "userID" = $1 AND "guildID" = $2 AND "plotID" = $3`, [userID, guildID, plot.plotID || plot.plotid]); }
                         catch(e) { await db.query(`UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3`, [userID, guildID, plot.plotID || plot.plotid]).catch(()=>{}); }
                         
-                        let userData = await client.getLevel(userID, guildID);
-                        if (!userData) userData = { ...client.defaultData, user: userID, guild: guildID };
-                        
                         const extraMora = Number(seed.sell_price) || 0;
                         const extraXp = Number(seed.xp_reward) || 0;
                         
-                        userData.mora = String(Number(userData.mora || 0) + extraMora);
-                        userData.xp = String(Number(userData.xp || 0) + extraXp);
-                        userData.totalXP = String(Number(userData.totalXP || userData.totalxp || 0) + extraXp);
-                        
-                        // 🔥 تحديث آمن تماماً للرصيد يتوافق مع كل أنواع الداتابيز 🔥
-                        try { await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1, "xp" = COALESCE(CAST("xp" AS BIGINT), 0) + $2, "totalXP" = COALESCE(CAST("totalXP" AS BIGINT), 0) + $2 WHERE "user" = $3 AND "guild" = $4`, [extraMora, extraXp, userID, guildID]); }
-                        catch(e) { await db.query(`UPDATE levels SET mora = COALESCE(CAST(mora AS BIGINT), 0) + $1, xp = COALESCE(CAST(xp AS BIGINT), 0) + $2, totalxp = COALESCE(CAST(totalxp AS BIGINT), 0) + $2 WHERE userid = $3 AND guildid = $4`, [extraMora, extraXp, userID, guildID]).catch(()=>{}); }
-
-                        if (typeof client.setLevel === 'function') await client.setLevel(userData);
+                        // 🔥 الحل الجذري: إرسال الـ XP بصمت لدالة التلفيل 🔥
+                        try {
+                            const guildObj = client.guilds.cache.get(guildID);
+                            const memberObj = guildObj ? await guildObj.members.fetch(userID).catch(()=>null) : null;
+                            if (memberObj && addXPAndCheckLevel) {
+                                // إضافة بصمت تام (false)
+                                await addXPAndCheckLevel(client, memberObj, db, extraXp, extraMora, false).catch(()=>{});
+                            } else {
+                                // كود احتياطي آمن لو غادر العضو السيرفر
+                                await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1, "xp" = COALESCE(CAST("xp" AS BIGINT), 0) + $2, "totalXP" = COALESCE(CAST("totalXP" AS BIGINT), 0) + $2 WHERE "user" = $3 AND "guild" = $4`, [extraMora, extraXp, userID, guildID]).catch(()=>{});
+                            }
+                        } catch(e) {}
 
                         if (updateGuildStat) {
                             updateGuildStat(client, guildID, userID, 'crops_harvested', seed.sell_price);
@@ -213,16 +217,15 @@ async function checkFarmIncome(client, db) {
             }
 
             if (dailyAnimalIncome > 0) {
-                let userData = await client.getLevel(userID, guildID);
-                if (!userData) userData = { ...client.defaultData, user: userID, guild: guildID };
-                
-                userData.mora = String(Number(userData.mora || 0) + dailyAnimalIncome);
-                
-                // 🔥 تحديث آمن للمورا 🔥
-                try { await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1 WHERE "user" = $2 AND "guild" = $3`, [dailyAnimalIncome, userID, guildID]); }
-                catch(e) { await db.query(`UPDATE levels SET mora = COALESCE(CAST(mora AS BIGINT), 0) + $1 WHERE userid = $2 AND guildid = $3`, [dailyAnimalIncome, userID, guildID]).catch(()=>{}); }
-
-                if (typeof client.setLevel === 'function') await client.setLevel(userData);
+                try {
+                    const guildObj = client.guilds.cache.get(guildID);
+                    const memberObj = guildObj ? await guildObj.members.fetch(userID).catch(()=>null) : null;
+                    if (memberObj && addXPAndCheckLevel) {
+                        await addXPAndCheckLevel(client, memberObj, db, 0, dailyAnimalIncome, false).catch(()=>{});
+                    } else {
+                        await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1 WHERE "user" = $2 AND "guild" = $3`, [dailyAnimalIncome, userID, guildID]).catch(()=>{});
+                    }
+                } catch(e) {}
             }
 
             let dailyLogsRes;
@@ -253,16 +256,13 @@ async function checkFarmIncome(client, db) {
             try { await db.query(`DELETE FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
             catch(e) { await db.query(`DELETE FROM farm_daily_log WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{}); }
 
-            // 🔥 أهم سطر: نثبت الدفع قبل أن نقوم بأي تحقق للرومات (لمنع السبااام والتخطي) 🔥
             try { await db.query(`INSERT INTO farm_last_payout ("id", "lastPayoutDate") VALUES ($1, $2) ON CONFLICT("id") DO UPDATE SET "lastPayoutDate" = $3`, [payoutID, now, now]); }
             catch(e) { await db.query(`INSERT INTO farm_last_payout (id, lastpayoutdate) VALUES ($1, $2) ON CONFLICT(id) DO UPDATE SET lastpayoutdate = $3`, [payoutID, now, now]).catch(()=>{}); }
 
-            // إذا لم يكن لديه دخل ولا حيوانات، لا نرسل رسالة فارغة
             if (dailyAnimalIncome <= 0 && dailyLogs.length === 0 && hungryAnimalsCount === 0 && oldDeaths.length === 0) {
                 continue;
             }
 
-            // الآن نرسل الإشعار إن أمكن
             const guildObj = client.guilds.cache.get(guildID);
             if (!guildObj) continue;
             
