@@ -56,7 +56,8 @@ async function applyPostBattleUpdates(players, floor, threadChannel, totals) {
     });
 }
 
-function calculateAccumulatedRep(startFloor, currentFloor) {
+// 🔥 إصلاح السمعة: الحساب التراكمي يبدأ دائماً من الطابق 1 🔥
+function calculateAccumulatedRep(currentFloor) {
     const repMilestones = {
         20: 1, 30: 1, 35: 1, 40: 1, 45: 1, 50: 1,
         55: 2, 60: 2, 65: 3, 70: 3, 75: 4, 
@@ -64,7 +65,8 @@ function calculateAccumulatedRep(startFloor, currentFloor) {
     };
 
     let totalRep = 0;
-    for (let f = startFloor; f <= currentFloor; f++) {
+    // الحساب يبدأ من 1 دائماً حتى لو استخدم خيمة، لأنه قطع هذه الطوابق مسبقاً
+    for (let f = 1; f <= currentFloor; f++) {
         if (repMilestones[f]) {
             totalRep += repMilestones[f];
         }
@@ -81,15 +83,8 @@ async function handleRestMenu(context) {
         restImage 
     } = context;
 
-    let sessionStartFloor = 1;
-    const leader = players.find(p => p.class === 'Leader');
-    if (leader && leader.startFloor) {
-        sessionStartFloor = leader.startFloor;
-    } else if (players.length > 0 && players[0].startFloor) {
-        sessionStartFloor = players[0].startFloor;
-    }
-
-    const currentRep = calculateAccumulatedRep(sessionStartFloor, floor);
+    // 🔥 استدعاء الحساب الصحيح التراكمي للسمعة
+    const currentRep = calculateAccumulatedRep(floor);
     
     let restDesc = `✶ نجحتـم في تصفية الطابق الـ: **${floor}**\n✶ تم استعادة صحة المغامرين بنسبة **%30**\n\n**✶ الغنـائـم المتراكمة:**\n✬ Mora: **${totalAccumulatedCoins.toLocaleString()}** ${EMOJI_MORA}\n✬ XP: **${totalAccumulatedXP.toLocaleString()}** ${EMOJI_XP}`;
     
@@ -196,8 +191,7 @@ async function handleRestMenu(context) {
                         players.splice(pIndex, 1); 
                         
                         let repMsg = "";
-                        const pStart = leavingPlayer.startFloor || sessionStartFloor;
-                        const pRep = calculateAccumulatedRep(pStart, floor);
+                        const pRep = calculateAccumulatedRep(floor); // 🔥 حساب السمعة الصحيح
                         if (pRep > 0) repMsg = ` و **${pRep}** 🌟 سمعة`;
 
                         await i.reply({ content: `👋 **انسحبت!** وحصلت على: **${rewards.mora}** مورا و **${rewards.xp}** XP${repMsg}.`, flags: [MessageFlags.Ephemeral] });
