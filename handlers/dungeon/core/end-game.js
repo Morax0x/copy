@@ -86,11 +86,9 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         else if (p.retreatFloor) effectiveEndFloor = p.retreatFloor; 
         else if (p.isDead && p.deathFloor) effectiveEndFloor = p.deathFloor; 
 
-        let playerStartFloor = p.startFloor || sessionStartFloor;
-        if (playerStartFloor > effectiveEndFloor) playerStartFloor = effectiveEndFloor;
-
+        // 🔥 التعديل الجذري: حساب السمعة يتم من الطابق 1 دائماً حتى لو كانت الجلسة مستكملة بخيمة! 🔥
         let repReward = 0;
-        for (let f = playerStartFloor; f <= effectiveEndFloor; f++) {
+        for (let f = 1; f <= effectiveEndFloor; f++) {
             if (repMilestones[f]) repReward += repMilestones[f];
         }
 
