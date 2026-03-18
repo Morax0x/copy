@@ -20,57 +20,113 @@ function getMonthStartDateString() {
 
 async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId = null) {
     let allUsers = [];
+    let res;
     
     try {
         if (type === 'level') {
-            const res = await sql.query(`SELECT * FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY CAST(COALESCE("totalXP", '0') AS BIGINT) DESC`, [guild.id, OWNER_ID]);
+            try {
+                res = await sql.query(`SELECT * FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY CAST(COALESCE("totalXP", '0') AS BIGINT) DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`SELECT *, userid as "user" FROM levels WHERE guildid = $1 AND userid != $2 ORDER BY CAST(COALESCE(totalxp, '0') AS BIGINT) DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'rep') {
-            const res = await sql.query(`SELECT "userID" as "user", CAST("rep_points" AS INTEGER) as rp FROM user_reputation WHERE "guildID" = $1 AND "userID" != $2 AND CAST("rep_points" AS INTEGER) > 0 ORDER BY rp DESC`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'rep') {
+            try {
+                res = await sql.query(`SELECT "userID" as "user", CAST("rep_points" AS INTEGER) as rp FROM user_reputation WHERE "guildID" = $1 AND "userID" != $2 AND CAST("rep_points" AS INTEGER) > 0 ORDER BY rp DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`SELECT userid as "user", CAST(rep_points AS INTEGER) as rp FROM user_reputation WHERE guildid = $1 AND userid != $2 AND CAST(rep_points AS INTEGER) > 0 ORDER BY rp DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'weekly_xp') {
+        } 
+        else if (type === 'weekly_xp') {
             const weekStart = getWeekStartDateString();
-            const res = await sql.query(`SELECT *, ("messages" * 15 + "vc_minutes" * 10) as score FROM user_weekly_stats WHERE "guildID" = $1 AND "userID" != $2 AND "weekStartDate" = $3 AND ("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, weekStart]);
+            try {
+                res = await sql.query(`SELECT *, "userID" as "user", ("messages" * 15 + "vc_minutes" * 10) as score FROM user_weekly_stats WHERE "guildID" = $1 AND "userID" != $2 AND "weekStartDate" = $3 AND ("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, weekStart]);
+            } catch(e) {
+                res = await sql.query(`SELECT *, userid as "user", (messages * 15 + vc_minutes * 10) as score FROM user_weekly_stats WHERE guildid = $1 AND userid != $2 AND weekstartdate = $3 AND (messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, weekStart]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'daily_xp') {
+        } 
+        else if (type === 'daily_xp') {
             const today = getTodayDateString();
-            const res = await sql.query(`SELECT *, ("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" = $3 AND ("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, today]);
+            try {
+                res = await sql.query(`SELECT *, "userID" as "user", ("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" = $3 AND ("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, today]);
+            } catch(e) {
+                res = await sql.query(`SELECT *, userid as "user", (messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildid = $1 AND userid != $2 AND date = $3 AND (messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, today]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'monthly_xp') {
+        } 
+        else if (type === 'monthly_xp') {
             const monthStart = getMonthStartDateString();
-            const res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
+            try {
+                res = await sql.query(`SELECT "userID" as "user", SUM("messages") as total_messages, SUM("vc_minutes") as total_vc, SUM("messages" * 15 + "vc_minutes" * 10) as score FROM user_daily_stats WHERE "guildID" = $1 AND "userID" != $2 AND "date" >= $3 GROUP BY "userID" HAVING SUM("messages" * 15 + "vc_minutes" * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]);
+            } catch(e) {
+                res = await sql.query(`SELECT userid as "user", SUM(messages) as total_messages, SUM(vc_minutes) as total_vc, SUM(messages * 15 + vc_minutes * 10) as score FROM user_daily_stats WHERE guildid = $1 AND userid != $2 AND date >= $3 GROUP BY userid HAVING SUM(messages * 15 + vc_minutes * 10) > 0 ORDER BY score DESC`, [guild.id, OWNER_ID, monthStart]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'mora') {
-            // 🔥 إصلاح خطير: الترتيب أصبح كـ BIGINT وليس TEXT لضمان ترتيب الأثرياء بشكل صحيح 🔥
-            const res = await sql.query(`
-                SELECT "user", "mora", "bank", 
-                (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as total_wealth_num
-                FROM levels 
-                WHERE "guild" = $1 AND "user" != $2 
-                ORDER BY (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) DESC`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'mora') {
+            // 🔥 حماية الترتيب الرقمي للأثرياء 🔥
+            try {
+                res = await sql.query(`
+                    SELECT "user", "mora", "bank", 
+                    (CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as total_wealth_num
+                    FROM levels 
+                    WHERE "guild" = $1 AND "user" != $2 
+                    ORDER BY total_wealth_num DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`
+                    SELECT userid as "user", mora, bank, 
+                    (CAST(COALESCE(mora, '0') AS NUMERIC) + CAST(COALESCE(bank, '0') AS NUMERIC)) as total_wealth_num
+                    FROM levels 
+                    WHERE guildid = $1 AND userid != $2 
+                    ORDER BY total_wealth_num DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             
             allUsers = res.rows.map(row => {
-                return {
-                    ...row,
-                    total_wealth: row.total_wealth_num.toString() // تحويله لنص فقط للاستخدام في العرض
-                };
+                return { ...row, total_wealth: row.total_wealth_num.toString() };
             });
-        } else if (type === 'streak') {
-            const res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'streak') {
+            try {
+                res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`SELECT userid as "user", CAST(streakcount AS INTEGER) as sc FROM streaks WHERE guildid = $1 AND userid != $2 AND CAST(streakcount AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows.map(r => ({ ...r, streakCount: r.sc }));
-        } else if (type === 'media_streak') {
-            const res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM media_streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'media_streak') {
+            try {
+                res = await sql.query(`SELECT "userID" as "user", CAST("streakCount" AS INTEGER) as sc FROM media_streaks WHERE "guildID" = $1 AND "userID" != $2 AND CAST("streakCount" AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`SELECT userid as "user", CAST(streakcount AS INTEGER) as sc FROM media_streaks WHERE guildid = $1 AND userid != $2 AND CAST(streakcount AS INTEGER) > 0 ORDER BY sc DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows.map(r => ({ ...r, streakCount: r.sc }));
-        } else if (type === 'achievements') {
-            const res = await sql.query(`SELECT "userID" as "user", COUNT(*) as count FROM user_achievements WHERE "guildID" = $1 AND "userID" != $2 GROUP BY "userID" ORDER BY count DESC`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'achievements') {
+            try {
+                res = await sql.query(`SELECT "userID" as "user", COUNT(*) as count FROM user_achievements WHERE "guildID" = $1 AND "userID" != $2 GROUP BY "userID" ORDER BY count DESC`, [guild.id, OWNER_ID]);
+            } catch(e) {
+                res = await sql.query(`SELECT userid as "user", COUNT(*) as count FROM user_achievements WHERE guildid = $1 AND userid != $2 GROUP BY userid ORDER BY count DESC`, [guild.id, OWNER_ID]).catch(()=>({rows:[]}));
+            }
             allUsers = res.rows;
-        } else if (type === 'strongest') {
-            const weaponsRes = await sql.query(`SELECT * FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guild.id, OWNER_ID]);
+        } 
+        else if (type === 'strongest') {
+            let weaponsRes, lvlRes, skillsRes;
+            try { weaponsRes = await sql.query(`SELECT * FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guild.id, OWNER_ID]); }
+            catch(e) { weaponsRes = await sql.query(`SELECT * FROM user_weapons WHERE guildid = $1 AND userid != $2`, [guild.id, OWNER_ID]).catch(()=>({rows:[]})); }
+            
+            try { lvlRes = await sql.query(`SELECT "user", "level" FROM levels WHERE "guild" = $1`, [guild.id]); }
+            catch(e) { lvlRes = await sql.query(`SELECT userid as "user", level FROM levels WHERE guildid = $1`, [guild.id]).catch(()=>({rows:[]})); }
+            
+            try { skillsRes = await sql.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guild.id]); }
+            catch(e) { skillsRes = await sql.query(`SELECT userid as "userID", SUM(skilllevel) as "totalLevels" FROM user_skills WHERE guildid = $1 GROUP BY userid`, [guild.id]).catch(()=>({rows:[]})); }
+            
             const weapons = weaponsRes.rows;
-            const lvlRes = await sql.query(`SELECT "user", "level" FROM levels WHERE "guild" = $1`, [guild.id]);
             const levelsMap = new Map(lvlRes.rows.map(r => [r.user, Number(r.level)]));
-            const skillsRes = await sql.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guild.id]);
             const skillsMap = new Map(skillsRes.rows.map(r => [r.userID || r.userid, parseInt(r.totalLevels || r.totallevels) || 0]));
+            
             let stats = [];
             for (const w of weapons) {
                 const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
@@ -98,7 +154,9 @@ async function fetchLeaderboardData(client, sql, guild, type, page, targetUserId
 
         let totalMora = null;
         if (type === 'mora') {
-            const tmRes = await sql.query(`SELECT SUM(CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]);
+            let tmRes;
+            try { tmRes = await sql.query(`SELECT SUM(CAST(COALESCE("mora", '0') AS NUMERIC) + CAST(COALESCE("bank", '0') AS NUMERIC)) as t FROM levels WHERE "guild" = $1 AND "user" != $2`, [guild.id, OWNER_ID]); }
+            catch(e) { tmRes = await sql.query(`SELECT SUM(CAST(COALESCE(mora, '0') AS NUMERIC) + CAST(COALESCE(bank, '0') AS NUMERIC)) as t FROM levels WHERE guildid = $1 AND userid != $2`, [guild.id, OWNER_ID]).catch(()=>({rows:[]})); }
             totalMora = tmRes.rows[0]?.t ? BigInt(Math.floor(Number(tmRes.rows[0].t))).toLocaleString() : "0";
         }
 
