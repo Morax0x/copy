@@ -240,7 +240,6 @@ module.exports = {
 
                 const sendUpdate = async (isFinal = false) => {
                     try {
-                        // 🔥 استدعاء دالة الرسم السريعة والمحدثة وتمرير المتغيرات 🔥
                         const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText, locationId, currentBoat.level, currentRod.level);
                         const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
                         
@@ -350,8 +349,10 @@ module.exports = {
                                 catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $4`, [guild.id, user.id, fId, info.count]).catch(()=>{}); }
                             }
                             
+                            // 🔥 إضافة المورا و 15 XP لكل سمكة (بصمت تام بفضل false) 🔥
                             if (addXPAndCheckLevel && totalValue > 0) {
-                                await addXPAndCheckLevel(client, member, sql, 0, totalValue).catch(()=>{});
+                                const xpEarned = caughtFish.length * 15;
+                                await addXPAndCheckLevel(client, member, sql, xpEarned, totalValue, false).catch(()=>{});
                             } else {
                                 try { await sql.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1 WHERE "user" = $2 AND "guild" = $3`, [totalValue, user.id, guild.id]); }
                                 catch(e) { await sql.query(`UPDATE levels SET mora = COALESCE(CAST(mora AS BIGINT), 0) + $1 WHERE userid = $2 AND guildid = $3`, [totalValue, user.id, guild.id]).catch(()=>{}); }
