@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, Collection } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, Colors, Collection, MessageFlags } = require("discord.js");
 const { calculateMoraBuff } = require('../../streak-handler.js'); 
 
 let updateGuildStat;
@@ -151,7 +151,7 @@ module.exports = {
                     const user = interaction.options.getUser(`الخصم${i}`);
                     if (user) {
                         const member = await guild.members.fetch(user.id).catch(() => null);
-                        if (member) opponents.set(member.id, member);
+                        if (member && !member.user.bot && member.id !== author.id) opponents.set(member.id, member);
                     }
                 }
                 await interaction.deferReply();
@@ -164,9 +164,15 @@ module.exports = {
                 db = client.sql; 
                 if (args[0] && !isNaN(parseInt(args[0]))) {
                     betInput = parseInt(args[0]);
-                    if (message.mentions.members.size > 0) opponents = message.mentions.members;
+                    if (message.mentions.members.size > 0) {
+                        message.mentions.members.forEach(member => {
+                            if (!member.user.bot && member.id !== author.id) opponents.set(member.id, member);
+                        });
+                    }
                 } else if (message.mentions.members.size > 0) {
-                    opponents = message.mentions.members;
+                    message.mentions.members.forEach(member => {
+                        if (!member.user.bot && member.id !== author.id) opponents.set(member.id, member);
+                    });
                     if (args[1] && !isNaN(parseInt(args[1]))) betInput = parseInt(args[1]);
                 }
             }
@@ -218,24 +224,83 @@ module.exports = {
                 }
             }
 
+            // تحديد الرهان الافتراضي إذا لم يتم إدخاله
             if (!betInput) {
-                let proposedBet = 100;
                 const userBalance = Number(row.mora) || 0;
-
                 if (userBalance < MIN_BET) return replyError(`❌ لا تملك مورا كافية للعب (الحد الأدنى ${MIN_BET})!`);
-                if (userBalance < 100) proposedBet = userBalance;
+                betInput = userBalance < 100 ? userBalance : 100;
+            }
+
+            // 🔥 فحص حماية الأرصدة (الرهان يجب أن يكون رقماً صحيحاً) 🔥
+            if (isNaN(betInput) || betInput < MIN_BET || !Number.isInteger(betInput)) {
+                return replyError(`الحد الأدنى للرهان هو **${MIN_BET}** ${EMOJI_MORA} !`);
+            }
+
+            const gameKey = `${channel.id}-${author.id}`; 
+            
+            if (opponents.size === 0) {
+                // 🐎 سباق فردي
+                if (betInput > MAX_BET_SOLO) {
+                    return replyError(`🚫 **تنبيه:** الحد الأقصى للرهان في السباق الفردي (ضد البوت) هو **${MAX_BET_SOLO}** ${EMOJI_MORA}!\n(للعب بمبالغ أكبر، تحدى لاعبين آخرين).`);
+                }
+                
+                if (Number(row.mora) < betInput) {
+                    return replyError(`ليس لديك مورا كافية لهذا الرهان! (رصيدك: ${row.mora})`);
+                }
 
                 client.activePlayers.add(raceKey);
                 client.raceTimestamps.set(raceKey, Date.now());
-                const gameKey = `${channel.id}-${author.id}`; 
                 client.activeGames.add(gameKey);
 
-                return startRaceGame(channel, author, opponents, proposedBet, client, guild, db, replyError, reply);
+                return await playSoloRaceSelection(channel, author, betInput, row, db, replyError, reply, client, gameKey);
+
             } else {
+                // 🐎🐎 سباق جماعي
+                if (betInput > MAX_LOAN_BET) {
+                    const authorLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [author.id, guild.id]);
+                    const authorLoan = authorLoanRes.rows[0];
+                    if (authorLoan && Number(authorLoan.remainingAmount || authorLoan.remainingamount) > 0) {
+                        return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
+                    }
+                    
+                    for (const opponent of opponents.values()) {
+                        const opponentLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opponent.id, guild.id]);
+                        const opponentLoan = opponentLoanRes.rows[0];
+                        if (opponentLoan && Number(opponentLoan.remainingAmount || opponentLoan.remainingamount) > 0) {
+                            return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
+                        }
+                    }
+                }
+
+                // فحص أرصدة جميع المشاركين قبل بدء التحدي لمنع الثغرات
+                if (Number(row.mora) < betInput) return replyError(`❌ ليس لديك مورا كافية للرهان! (تحتاج ${betInput})`);
+                
+                for (const opponent of opponents.values()) {
+                    let opData = await client.getLevel(opponent.id, guild.id);
+                    if (!opData || Number(opData.mora) < betInput) return replyError(`❌ اللاعب ${opponent.displayName} لا يملك ${betInput} مورا للمشاركة!`);
+                    
+                    const opKey = `race_${opponent.id}`;
+                    if (client.activePlayers.has(opKey)) {
+                        const startTime = client.raceTimestamps.get(opKey) || 0;
+                        if (Date.now() - startTime < STUCK_TIMEOUT && startTime !== 0) {
+                            return replyError(`❌ اللاعب ${opponent.displayName} مشغول في سباق آخر حالياً!`);
+                        }
+                    }
+                }
+
+                client.activeGames.add(gameKey);
                 client.activePlayers.add(raceKey);
                 client.raceTimestamps.set(raceKey, Date.now());
-                return startRaceGame(channel, author, opponents, betInput, client, guild, db, replyError, reply);
+                
+                opponents.forEach(o => {
+                    const opKey = `race_${o.id}`;
+                    client.activePlayers.add(opKey);
+                    client.raceTimestamps.set(opKey, Date.now());
+                });
+
+                return await playChallengeRace(channel, author, opponents, betInput, row, db, reply, client, gameKey);
             }
+
         } catch (err) {
             console.error("[Race Command Error]", err);
             if (author) safeCleanup(client, `${channel?.id}-${author.id}`, author.id);
@@ -246,76 +311,17 @@ module.exports = {
     }
 };
 
-async function startRaceGame(channel, author, opponents, bet, client, guild, db, replyError, replyFunction) {
-    const gameKey = `${channel.id}-${author.id}`; 
-
-    if (client.activeGames.has(gameKey)) client.activeGames.delete(gameKey);
-
+// ==========================================
+// 🐎 السباق الفردي
+// ==========================================
+async function playSoloRaceSelection(channel, author, bet, authorData, db, replyError, replyFunction, client, gameKey) {
     try {
-        if (bet < MIN_BET) {
-            safeCleanup(client, gameKey, author.id);
-            return replyError(`الحد الأدنى للرهان هو **${MIN_BET}** ${EMOJI_MORA} !`);
-        }
+        // 🔥 حماية خصم مبكر (Early Deduction)
+        authorData.mora = String(Number(authorData.mora) - bet);
+        try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) - $1 WHERE "user" = $2 AND "guild" = $3`, [bet, author.id, channel.guild.id]); }
+        catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) - $1 WHERE userid = $2 AND guildid = $3`, [bet, author.id, channel.guild.id]).catch(()=>{}); }
+        await client.setLevel(authorData);
 
-        let authorData = await client.getLevel(author.id, guild.id);
-        if (!authorData) {
-            authorData = { ...client.defaultData, user: author.id, guild: guild.id };
-            await client.setLevel(authorData);
-        }
-
-        if (Number(authorData.mora) < bet) {
-            safeCleanup(client, gameKey, author.id);
-            return replyError(`ليس لديك مورا كافية لهذا الرهان! (رصيدك: ${authorData.mora})`);
-        }
-
-        if (opponents.size === 0) {
-            if (bet > MAX_BET_SOLO) {
-                safeCleanup(client, gameKey, author.id);
-                return replyError(`🚫 **تنبيه:** الحد الأقصى للرهان في السباق الفردي (ضد البوت) هو **${MAX_BET_SOLO}** ${EMOJI_MORA}!\n(للعب بمبالغ أكبر، تحدى لاعبين آخرين).`);
-            }
-            client.activeGames.add(gameKey);
-            
-            await playSoloRaceSelection(channel, author, bet, authorData, db, replyFunction, client, gameKey);
-
-        } else {
-            if (bet > MAX_LOAN_BET) {
-                const authorLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [author.id, guild.id]);
-                const authorLoan = authorLoanRes.rows[0];
-                if (authorLoan && Number(authorLoan.remainingAmount || authorLoan.remainingamount) > 0) {
-                    safeCleanup(client, gameKey, author.id);
-                    return replyError(`❌ **عذراً!** عليك قرض. حدك الأقصى للرهان الجماعي هو **${MAX_LOAN_BET}** ${EMOJI_MORA} حتى تسدد قرضك.`);
-                }
-            }
-
-            if (bet > MAX_LOAN_BET) {
-                for (const opponent of opponents.values()) {
-                    const opponentLoanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [opponent.id, guild.id]);
-                    const opponentLoan = opponentLoanRes.rows[0];
-                    if (opponentLoan && Number(opponentLoan.remainingAmount || opponentLoan.remainingamount) > 0) {
-                        safeCleanup(client, gameKey, author.id);
-                        return replyError(`❌ اللاعب ${opponent.displayName} عليه قرض ولا يمكنه المشاركة برهان أعلى من **${MAX_LOAN_BET}**.`);
-                    }
-                }
-            }
-
-            client.activeGames.add(gameKey);
-            opponents.forEach(o => {
-                const opKey = `race_${o.id}`;
-                client.activePlayers.add(opKey);
-                client.raceTimestamps.set(opKey, Date.now());
-            });
-
-            await playChallengeRace(channel, author, opponents, bet, authorData, db, replyFunction, client, gameKey);
-        }
-    } catch (err) {
-        console.error("[Start Race Game Error]", err);
-        safeCleanup(client, gameKey, [author.id, ...opponents.map(o => o.id)]);
-        replyError("حدث خطأ أثناء بدء اللعبة.");
-    }
-}
-
-async function playSoloRaceSelection(channel, author, bet, authorData, db, replyFunction, client, gameKey) {
-    try {
         const shuffledIcons = shuffleArray([...RACE_ICONS]);
         const raceOptions = shuffledIcons.slice(0, 2); 
         
@@ -333,7 +339,7 @@ async function playSoloRaceSelection(channel, author, bet, authorData, db, reply
 
         const embed = new EmbedBuilder()
             .setTitle('🐎 اختر متسابقك!')
-            .setDescription(`الرهان: **${bet}** ${EMOJI_MORA}\n\nاضغط على الزر الخاص بالحصان الذي تراهن عليه!`)
+            .setDescription(`تم خصم الرهان: **${bet}** ${EMOJI_MORA}\n\nاضغط على الزر الخاص بالحصان الذي تراهن عليه! لديك 30 ثانية.`)
             .setColor("Blue");
 
         const msg = await replyFunction({ embeds: [embed], components: [row], fetchReply: true });
@@ -342,7 +348,7 @@ async function playSoloRaceSelection(channel, author, bet, authorData, db, reply
         
         try {
             const selection = await msg.awaitMessageComponent({ filter, time: 30000 });
-            await selection.deferUpdate();
+            await selection.deferUpdate().catch(()=>{});
             
             const selectedIndex = parseInt(selection.customId.split('_')[2]);
             
@@ -354,12 +360,17 @@ async function playSoloRaceSelection(channel, author, bet, authorData, db, reply
             }
 
             await msg.delete().catch(()=>{});
-            
-            await playSoloRace(channel, author, bet, authorData, db, replyFunction, client, gameKey, raceOptions, selectedIndex);
+            await playSoloRace(channel, author, bet, authorData, db, client, gameKey, raceOptions, selectedIndex);
 
         } catch (e) {
+            // 🔥 إعادة المبلغ المخصوم إذا تأخر اللاعب (Refund) 🔥
+            authorData.mora = String(Number(authorData.mora) + bet);
+            try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3`, [bet, author.id, channel.guild.id]); }
+            catch(e2) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3`, [bet, author.id, channel.guild.id]).catch(()=>{}); }
+            await client.setLevel(authorData);
+
             safeCleanup(client, gameKey, author.id);
-            await msg.edit({ content: '⏰ انتهى وقت الاختيار.', components: [] }).catch(()=>{});
+            await msg.edit({ content: `⏰ انتهى وقت الاختيار. تم استرجاع **${bet}** ${EMOJI_MORA} لمحفظتك.`, embeds: [], components: [] }).catch(()=>{});
         }
 
     } catch (err) {
@@ -368,11 +379,8 @@ async function playSoloRaceSelection(channel, author, bet, authorData, db, reply
     }
 }
 
-async function playSoloRace(channel, author, bet, authorData, db, replyFunction, client, gameKey, raceOptions, selectedIndex) {
+async function playSoloRace(channel, author, bet, authorData, db, client, gameKey, raceOptions, selectedIndex) {
     try {
-        authorData.mora = Number(authorData.mora) - bet;
-        await client.setLevel(authorData);
-
         const participants = raceOptions.map((icon, index) => ({
             id: index === selectedIndex ? author.id : `bot_${index}`,
             name: index === selectedIndex ? author.displayName : `المنافس ${index + 1}`,
@@ -442,18 +450,17 @@ async function playSoloRace(channel, author, bet, authorData, db, replyFunction,
                                 if (casinoTax > 0) {
                                     totalWin -= casinoTax;
                                     taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                    await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, channel.guild.id]);
+                                    await db.query(`UPDATE levels SET "bank" = CAST(COALESCE("bank", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, channel.guild.id]).catch(()=>{});
                                 }
                             }
                         }
 
                         const finalPayout = bet + totalWin;
 
-                        let currentData = await client.getLevel(author.id, channel.guild.id);
-                        if (currentData) {
-                            currentData.mora = Number(currentData.mora) + finalPayout;
-                            await client.setLevel(currentData);
-                        }
+                        authorData.mora = String(Number(authorData.mora) + finalPayout);
+                        try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3`, [finalPayout, author.id, channel.guild.id]); }
+                        catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3`, [finalPayout, author.id, channel.guild.id]).catch(()=>{}); }
+                        await client.setLevel(authorData);
 
                         if (updateGuildStat) {
                             updateGuildStat(client, channel.guild.id, author.id, 'casino_profit', totalWin);
@@ -488,55 +495,50 @@ async function playSoloRace(channel, author, bet, authorData, db, replyFunction,
     }
 }
 
-async function playChallengeRace(channel, author, opponents, bet, authorData, getScore, setScore, db, replyFunction, client, gameKey) {
+// ==========================================
+// 🐎🐎 السباق الجماعي
+// ==========================================
+async function playChallengeRace(channel, author, opponents, bet, authorData, db, replyFunction, client, gameKey) {
     const allPlayerIds = [author.id, ...opponents.map(o => o.id)];
+    const totalPot = bet * (opponents.size + 1);
 
     try {
         const requiredOpponentsIDs = opponents.map(o => o.id);
-
-        for (const opponent of opponents.values()) {
-            const opKey = `race_${opponent.id}`;
-            if (client.activePlayers.has(opKey)) { 
-                const startTime = client.raceTimestamps.get(opKey) || 0;
-                if (Date.now() - startTime > STUCK_TIMEOUT) {
-                    safeCleanup(client, `${channel.id}-${opponent.id}`, opponent.id);
-                } else {
-                    safeCleanup(client, gameKey, author.id); 
-                    return replyFunction({ content: `اللاعب ${opponent.displayName} مشغول في سباق آخر!`, ephemeral: true });
-                }
-            }
-
-            if (opponent.user.bot) return replyFunction({ content: "لا يمكنك تحدي البوت!", ephemeral: true });
-            let opponentData = await client.getLevel(opponent.id, channel.guild.id);
-            if (!opponentData || Number(opponentData.mora) < bet) return replyFunction({ content: `اللاعب ${opponent.displayName} مفلس!`, ephemeral: true });
-        }
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('race_pvp_accept').setLabel('قبول').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('race_pvp_decline').setLabel('رفض').setStyle(ButtonStyle.Danger)
         );
 
-        const totalPot = bet * (opponents.size + 1);
         const embed = new EmbedBuilder()
             .setTitle(`🏁 تـحـدي سباق الخيول!`)
             .setDescription(`✥ قـام ${author}\n✶ بدعـوتـك ${opponents.map(o => o.toString()).join(', ')}\nعلى سـباق خيول جماعي! 🐎\nمـبـلغ الـرهـان ${bet} ${EMOJI_MORA} (لكل شخص)\nالجائـزة الكـبرى: **${totalPot.toLocaleString()}** ${EMOJI_MORA}`)
             .setColor("Orange");
 
         const challengeMsg = await replyFunction({ content: opponents.map(o => o.toString()).join(' '), embeds: [embed], components: [row], fetchReply: true });
+        
         const acceptedOpponentsIDs = new Set(); 
+        let raceHasStarted = false;
+
         const challengeCollector = challengeMsg.createMessageComponentCollector({ time: 60000 });
 
         const startRace = async () => {
+            raceHasStarted = true;
             challengeCollector.stop('started');
-            const finalPlayers = [author];
-            opponents.forEach(o => finalPlayers.push(o));
+            const finalPlayers = [author, ...opponents.values()];
 
+            // 🔥 خصم الرهان بشكل آمن من الجميع عند بدء السباق
             for (const player of finalPlayers) {
                 let data = await client.getLevel(player.id, channel.guild.id);
                 if (!data) data = { ...channel.client.defaultData, user: player.id, guild: channel.guild.id };
-                data.mora = Number(data.mora) - bet;
+                
+                data.mora = String(Number(data.mora) - bet);
+                try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) - $1 WHERE "user" = $2 AND "guild" = $3`, [bet, player.id, channel.guild.id]); }
+                catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) - $1 WHERE userid = $2 AND guildid = $3`, [bet, player.id, channel.guild.id]).catch(()=>{}); }
+                
                 if (player.id !== OWNER_ID) {
-                     try { await db.query(`UPDATE levels SET "lastRace" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), player.id, guild.id]); } catch(e){}
+                     try { await db.query(`UPDATE levels SET "lastRace" = $1 WHERE "user" = $2 AND "guild" = $3`, [Date.now(), player.id, channel.guild.id]); } catch(e){}
+                     data.lastRace = Date.now();
                 }
                 await client.setLevel(data);
             }
@@ -580,17 +582,17 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
                         clearInterval(raceInterval);
                         safeCleanup(client, gameKey, allPlayerIds);
 
-                        let finalWinnings = totalPot;
-
                         let winnerData = await client.getLevel(winner.id, channel.guild.id);
                         if (winnerData) {
-                            winnerData.mora = Number(winnerData.mora) + finalWinnings;
+                            winnerData.mora = String(Number(winnerData.mora) + totalPot);
+                            try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPot, winner.id, channel.guild.id]); }
+                            catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3`, [totalPot, winner.id, channel.guild.id]).catch(()=>{}); }
                             await client.setLevel(winnerData);
                         }
 
                         const winEmbed = new EmbedBuilder()
                             .setTitle(`🏆 الفائز هو ${winner.name}!`)
-                            .setDescription(`🎉 **${winner.name}** اكتسح السباق وحصل على الجائزة الكبرى **${finalWinnings.toLocaleString()}** ${EMOJI_MORA}!`)
+                            .setDescription(`🎉 **${winner.name}** اكتسح السباق وحصل على الجائزة الكبرى **${totalPot.toLocaleString()}** ${EMOJI_MORA}!`)
                             .setColor("Gold")
                             .setThumbnail(winner.avatar);
                         channel.send({ content: `<@${winner.id}>`, embeds: [winEmbed] });
@@ -603,28 +605,34 @@ async function playChallengeRace(channel, author, opponents, bet, authorData, ge
         };
 
         challengeCollector.on('collect', async i => {
-            if (!requiredOpponentsIDs.includes(i.user.id)) return i.reply({ content: `التحدي ليس مرسلاً لك!`, ephemeral: true });
+            if (!requiredOpponentsIDs.includes(i.user.id)) return i.reply({ content: `التحدي ليس مرسلاً لك!`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+            
             if (i.customId === 'race_pvp_decline') {
                 challengeCollector.stop('decline');
-                return i.update({ content: `✬ رفـض ${i.member.displayName} التـحدي. تم الإلغاء.`, embeds: [], components: [] });
+                await i.update({ content: `✬ رفـض ${i.member.displayName} التـحدي. تم الإلغاء.`, embeds: [], components: [] }).catch(()=>{});
+                return;
             }
+            
             if (i.customId === 'race_pvp_accept') {
                 if (!acceptedOpponentsIDs.has(i.user.id)) {
                     acceptedOpponentsIDs.add(i.user.id);
-                    await i.reply({ content: `✦ تـم قبول التحدي!`, ephemeral: true });
-                    if (acceptedOpponentsIDs.size === requiredOpponentsIDs.length) await startRace();
+                    // 🔥 إصلاح خطأ الـ Interaction للرسائل المقبولة
+                    await i.reply({ content: `✦ لقد قبلت التحدي! بانتظار البقية...`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                    if (acceptedOpponentsIDs.size === requiredOpponentsIDs.length && !raceHasStarted) {
+                        await startRace();
+                    }
                 } else {
-                     await i.reply({ content: `أنت قبلت بالفعل!`, ephemeral: true });
+                     await i.reply({ content: `أنت قبلت بالفعل!`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
                 }
             }
         });
 
         challengeCollector.on('end', async (collected, reason) => {
-            if (reason === 'decline' || reason !== 'started') {
+            if (!raceHasStarted) {
                 safeCleanup(client, gameKey, allPlayerIds);
-            }
-            if (reason !== 'started' && reason !== 'decline') {
-                return challengeMsg.edit({ content: `✶ انتـهـى الـوقـت لـم يقـبل الجـميع التحـدي!`, embeds: [], components: [] });
+                if (reason !== 'decline') {
+                    challengeMsg.edit({ content: `✶ انتـهـى الـوقـت، لـم يقـبل الجـميع التحـدي!`, embeds: [], components: [] }).catch(()=>{});
+                }
             }
         });
     } catch (err) {
