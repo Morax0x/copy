@@ -1,45 +1,71 @@
 const Canvas = require('canvas');
 const path = require('path');
+const fs = require('fs');
 
 const THEME = {
-    BG_TOP: "#0B1D3A",
-    BG_BOT: "#1A3B5C",
     TEXT: "#FFFFFF",
     TENSION_LOW: "#00FF88",
     TENSION_MID: "#FFD700",
     TENSION_HIGH: "#FF3333",
-    BAR_BG: "rgba(0, 0, 0, 0.6)",
-    BOAT_COLOR: "#8B4513",
-    FISH_COLOR: "#4682B4"
+    BAR_BG: "rgba(0, 0, 0, 0.6)"
 };
+
+// مسار المجلدات الأساسية للصور
+const BASE_IMG_PATH = path.join(process.cwd(), 'images', 'fish');
+
+// كاش لتخزين الصور في الذاكرة لتسريع عملية الرسم (Render)
+const imageCache = new Map();
+
+/**
+ * دالة مساعدة لتحميل الصورة بأمان من المسار المحدد
+ */
+async function safeLoadImage(folder, imageName) {
+    const fullPath = path.join(BASE_IMG_PATH, folder, imageName);
+    if (imageCache.has(fullPath)) return imageCache.get(fullPath);
+
+    if (fs.existsSync(fullPath)) {
+        try {
+            const img = await Canvas.loadImage(fullPath);
+            imageCache.set(fullPath, img);
+            return img;
+        } catch (e) {
+            console.error(`Error loading image: ${fullPath}`, e);
+            return null;
+        }
+    }
+    return null;
+}
 
 /**
  * @param {number} tension - مستوى التوتر (0 إلى 100)
  * @param {number} distance - المسافة المتبقية (0 إلى 100)
- * @param {string} statusText - رسالة الحالة (مثلاً: "السمكة تقاوم!")
+ * @param {string} statusText - رسالة الحالة
+ * @param {string} locationId - (مثل: beach, deep, atlantis)
+ * @param {number} boatLevel - مستوى القارب (1 إلى 7)
+ * @param {number} rodLevel - مستوى السنارة (1 إلى 10)
  */
-async function generateFishingCard(tension, distance, statusText) {
+async function generateFishingCard(tension, distance, statusText, locationId = 'beach', boatLevel = 1, rodLevel = 1) {
     const canvasWidth = 800;
     const canvasHeight = 400;
     const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
 
-    // 1. رسم الخلفية (تدرج لوني للمحيط)
-    const grad = ctx.createLinearGradient(0, 0, 0, canvasHeight);
-    grad.addColorStop(0, THEME.BG_TOP);
-    grad.addColorStop(1, THEME.BG_BOT);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    // 1. تحميل الصور المطلوبة
+    const bgImage = await safeLoadImage(locationId, `${locationId}.png`);
+    const boatImage = await safeLoadImage('ships', `boat_${boatLevel}.png`);
+    const rodImage = await safeLoadImage('fishing', `rod_${rodLevel}.png`);
+    const fishImage = await safeLoadImage('', 'fish.png'); // السمكة في המجلد الرئيسي fish
 
-    // إضافة تأثير أمواج خفيف
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 5; i++) {
-        ctx.beginPath();
-        ctx.moveTo(0, 100 + (i * 60));
-        ctx.quadraticCurveTo(200, 80 + (i * 60), 400, 100 + (i * 60));
-        ctx.quadraticCurveTo(600, 120 + (i * 60), 800, 100 + (i * 60));
-        ctx.stroke();
+    // 2. رسم الخلفية
+    if (bgImage) {
+        ctx.drawImage(bgImage, 0, 0, canvasWidth, canvasHeight);
+    } else {
+        // خلفية احتياطية في حال لم تتوفر الصورة
+        const grad = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+        grad.addColorStop(0, "#0B1D3A");
+        grad.addColorStop(1, "#1A3B5C");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     }
 
     // تحديد لون التوتر
@@ -47,20 +73,18 @@ async function generateFishingCard(tension, distance, statusText) {
     if (tension > 50) tensionColor = THEME.TENSION_MID;
     if (tension > 80) tensionColor = THEME.TENSION_HIGH;
 
-    // 2. رسم عداد التوتر (Tension Gauge) على اليمين
+    // 3. رسم عداد التوتر (Tension Gauge) على اليمين
     const tensionBarX = 730;
     const tensionBarY = 50;
     const tensionBarW = 30;
     const tensionBarH = 250;
 
-    // خلفية العداد
     ctx.fillStyle = THEME.BAR_BG;
     ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(tensionBarX, tensionBarY, tensionBarW, tensionBarH, 10);
     else ctx.rect(tensionBarX, tensionBarY, tensionBarW, tensionBarH);
     ctx.fill();
 
-    // ملء العداد حسب التوتر
     const fillHeight = (tension / 100) * tensionBarH;
     const fillY = tensionBarY + (tensionBarH - fillHeight);
     
@@ -71,71 +95,62 @@ async function generateFishingCard(tension, distance, statusText) {
     if(ctx.roundRect) ctx.roundRect(tensionBarX, fillY, tensionBarW, fillHeight, 10);
     else ctx.rect(tensionBarX, fillY, tensionBarW, fillHeight);
     ctx.fill();
-    ctx.shadowBlur = 0; // إعادة تعيين الظل
+    ctx.shadowBlur = 0;
 
-    // نص التوتر
     ctx.fillStyle = THEME.TEXT;
     ctx.font = 'bold 16px "Arial"';
     ctx.textAlign = 'center';
     ctx.fillText('توتر الخيط', tensionBarX + 15, tensionBarY - 15);
     ctx.fillText(`${Math.floor(tension)}%`, tensionBarX + 15, tensionBarY + tensionBarH + 25);
 
-    // 3. رسم القارب والسمكة
+    // 4. رسم القارب، السنارة، والسمكة
     const boatX = 100;
-    const boatY = 200;
+    const boatY = 220; 
     
-    // حساب موقع السمكة (تبدأ من اليمين وتقترب لليسار كلما قلت المسافة)
-    // المسافة 100 تعني أقصى اليمين (x = 600)
-    // المسافة 0 تعني عند القارب (x = 150)
+    // حساب موقع السمكة بناءً على المسافة
     const fishX = 150 + ((distance / 100) * 450);
-    const fishY = 250;
+    const fishY = 270;
 
-    // رسم الخيط بين القارب والسمكة
+    // رسم الخيط قبل السنارة والسمكة ليكون بالخلف
     ctx.beginPath();
-    ctx.moveTo(boatX + 20, boatY - 30); // قمة السنارة
-    ctx.lineTo(fishX, fishY);
-    ctx.lineWidth = tension > 80 ? 4 : 2; // الخيط يسمك إذا كان متوتراً
+    ctx.moveTo(boatX + 70, boatY - 50); // إحداثيات افتراضية لقمة السنارة 
+    ctx.lineTo(fishX + 10, fishY + 10); // إحداثيات فم السمكة
+    ctx.lineWidth = tension > 80 ? 4 : 2;
     ctx.strokeStyle = tensionColor;
     
-    // إذا كان التوتر عالي جداً، نرسم الخيط متعرجاً قليلاً ليدل على الاهتزاز
     if (tension > 85) {
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([5, 5]); // خيط يهتز
     }
     ctx.stroke();
-    ctx.setLineDash([]); // إعادة الخط لطبيعته
+    ctx.setLineDash([]);
 
-    // رسم القارب (شكل بسيط)
-    ctx.fillStyle = THEME.BOAT_COLOR;
-    ctx.beginPath();
-    ctx.moveTo(boatX - 40, boatY);
-    ctx.lineTo(boatX + 40, boatY);
-    ctx.lineTo(boatX + 20, boatY + 30);
-    ctx.lineTo(boatX - 20, boatY + 30);
-    ctx.closePath();
-    ctx.fill();
-    
-    // السنارة
-    ctx.strokeStyle = "#CCCCCC";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(boatX, boatY);
-    ctx.lineTo(boatX + 20, boatY - 30);
-    ctx.stroke();
+    // رسم القارب
+    if (boatImage) {
+        ctx.drawImage(boatImage, boatX - 60, boatY - 40, 160, 100);
+    } else {
+        // قارب احتياطي
+        ctx.fillStyle = "#8B4513";
+        ctx.fillRect(boatX - 40, boatY, 80, 30);
+    }
 
-    // رسم السمكة (ظل غامض)
-    ctx.fillStyle = THEME.FISH_COLOR;
-    ctx.beginPath();
-    ctx.ellipse(fishX, fishY, 30, 15, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // ذيل السمكة
-    ctx.beginPath();
-    ctx.moveTo(fishX + 30, fishY);
-    ctx.lineTo(fishX + 50, fishY - 15);
-    ctx.lineTo(fishX + 50, fishY + 15);
-    ctx.closePath();
-    ctx.fill();
+    // رسم السنارة
+    if (rodImage) {
+        // نضع السنارة فوق القارب وتميل لليمين
+        ctx.drawImage(rodImage, boatX + 10, boatY - 80, 80, 80);
+    }
 
-    // 4. رسم شريط المسافة السفلي
+    // رسم السمكة
+    if (fishImage) {
+        ctx.drawImage(fishImage, fishX - 30, fishY - 20, 80, 60);
+    } else {
+        // سمكة احتياطية
+        ctx.fillStyle = "#4682B4";
+        ctx.beginPath();
+        ctx.ellipse(fishX, fishY, 30, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // 5. رسم شريط المسافة السفلي
     const distBarX = 50;
     const distBarY = 350;
     const distBarW = 600;
@@ -146,8 +161,8 @@ async function generateFishingCard(tension, distance, statusText) {
     else ctx.rect(distBarX, distBarY, distBarW, distBarH);
     ctx.fill();
 
-    const distFillW = ((100 - distance) / 100) * distBarW;
-    ctx.fillStyle = "#00a8ff"; // لون أزرق للمسافة
+    const distFillW = ((100 - Math.min(distance, 100)) / 100) * distBarW;
+    ctx.fillStyle = "#00a8ff"; 
     ctx.shadowColor = "#00a8ff";
     ctx.shadowBlur = 10;
     if(ctx.roundRect) ctx.roundRect(distBarX, distBarY, distFillW, distBarH, 7);
@@ -159,7 +174,7 @@ async function generateFishingCard(tension, distance, statusText) {
     ctx.textAlign = 'left';
     ctx.fillText(`المسافة المتبقية: ${Math.floor(distance)}m`, distBarX, distBarY - 10);
 
-    // 5. طباعة نص الحالة في الأعلى
+    // 6. طباعة نص الحالة في الأعلى
     ctx.textAlign = 'center';
     ctx.font = 'bold 24px "Arial"';
     ctx.fillStyle = THEME.TEXT;
