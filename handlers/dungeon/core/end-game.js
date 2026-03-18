@@ -59,7 +59,6 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         if (p.rewardsClaimed) {
             finalMora = p.finalMora || 0;
             finalXp = p.finalXp || 0;
-            // اللاعب أخذ جائزته عند الانسحاب المبكر
         } else {
             if (status === 'lose' && floor > 20) {
                 finalMora = 1000;
@@ -70,20 +69,18 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
                 if (p.isDead) { finalMora = Math.floor(finalMora * 0.5); finalXp = Math.floor(finalXp * 0.5); }
             }
             
-            // 🔥 الحل الجذري: استخدام دالة الإضافة المركزية لمعالجة اللفل بأمان!
+            // 🔥 إضافة الـ XP بصمت تام (بدون رسالة لفل اب) بفضل الـ false
             try {
                 const guildObj = client.guilds.cache.get(guildId);
                 const member = await guildObj.members.fetch(p.id).catch(()=>null);
                 if (member && addXPAndCheckLevel) {
-                    await addXPAndCheckLevel(client, member, sql, finalXp, finalMora);
+                    await addXPAndCheckLevel(client, member, sql, finalXp, finalMora, false);
                 } else {
-                    // كود احتياطي لو العضو غادر السيرفر أو لم يجد الدالة
                     await sql.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1, "xp" = CAST(COALESCE("xp", '0') AS BIGINT) + $2, "totalXP" = CAST(COALESCE("totalXP", '0') AS BIGINT) + $2 WHERE "user" = $3 AND "guild" = $4`, [finalMora, finalXp, p.id, guildId]).catch(()=>{});
                 }
             } catch(e) {}
         }
 
-        // 🔥 إنصاف اللاعب المضحي: يُحسب له الطابق الذي مات فيه ولن ننقص منه 1 إذا ساعد فريقه بالانتحار
         let effectiveEndFloor = floor;
         if (status === 'lose') effectiveEndFloor = Math.max(1, floor - 1); 
         else if (p.retreatFloor) effectiveEndFloor = p.retreatFloor; 
@@ -134,12 +131,12 @@ async function sendEndMessage(mainChannel, thread, activePlayers, retreatedPlaye
         let extraRewardText = "";
         if (mvpPlayer.totalDamage > 10000) {
             extraRewardText = " + 500 مـورا";
-            // MVP Extra Reward Update
             try {
                 const guildObj = client.guilds.cache.get(guildId);
                 const mvpMem = await guildObj.members.fetch(mvpPlayer.id).catch(()=>null);
+                // 🔥 إضافة جائزة المورا (500) و(0 XP) للـ MVP بصمت تام
                 if (mvpMem && addXPAndCheckLevel) {
-                    await addXPAndCheckLevel(client, mvpMem, sql, 0, 500);
+                    await addXPAndCheckLevel(client, mvpMem, sql, 0, 500, false);
                 } else {
                     await sql.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + 500 WHERE "user" = $1 AND "guild" = $2`, [mvpPlayer.id, guildId]).catch(()=>{});
                 }
