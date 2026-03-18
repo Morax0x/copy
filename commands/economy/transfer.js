@@ -78,8 +78,12 @@ module.exports = {
             return replyError("🚫 **لا يمكنك التحويل الآن!** أنت مشغول في لعبة أو عملية أخرى.");
         }
 
-        if (!receiver || isNaN(amount) || amount <= 0) {
+        // 🔥 حماية الأرصدة السالبة وإيقاف التخريب
+        if (!receiver || isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
             return replyError(`طريقة التحويل الصحيحة:\n- \`تحويل <@user> <المبلغ>\``);
+        }
+        if (amount > 1000000000000) {
+            return replyError("❌ **المبلغ كبير جداً!** لا يمكن تحويل هذا الرقم الفلكي دفعة واحدة.");
         }
 
         if (receiver.id === sender.id) return replyError("❌ لا يمكنك التحويل لنفسك!");
@@ -123,7 +127,10 @@ module.exports = {
             return replyError(`❌ ليس لديك مورا كافية! (رصيدك الإجمالي بالكاش والبنك: **${(pMora + pBank).toLocaleString()}** فقط)`);
         }
 
-        // 🔥 فحص رتبة ملك الكرم 🔥
+        // حفظ الأرصدة الأصلية لاستعادتها في حالة فشل التحويل (Rollback Cache)
+        const originalMora = pMora;
+        const originalBank = pBank;
+
         let isPhilanthropistKing = false;
         try {
             let settingsRes;
@@ -134,7 +141,6 @@ module.exports = {
             if (roleId && senderMember.roles.cache.has(roleId)) isPhilanthropistKing = true;
         } catch(e) {}
 
-        // حساب الضرائب
         const saudiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
         let tempDailyCount = Number(senderData.dailyTransferCount || senderData.dailytransfercount) || 0;
         if (senderData.lastTransferDate !== saudiDate && senderData.lasttransferdate !== saudiDate) tempDailyCount = 0;
@@ -143,22 +149,20 @@ module.exports = {
         const displayTaxAmount = Math.floor(amount * displayTaxRate);
         const displayAmountReceived = amount - displayTaxAmount;
 
-        // تنفيذ الخصم الذكي
+        // 🔥 إصلاح منطق الخصم الجذري لمنع الأرصدة السالبة 🔥
         if (pMora >= amount) {
-            pMora -= amount; // خصم من الكاش فقط
+            pMora -= amount; // الكاش يغطي المبلغ بالكامل
         } else {
-            const remaining = amount - pMora;
-            pMora = 0; // تصفير الكاش
-            pBank -= remaining; // سحب الباقي من البنك
+            const remainingToPay = amount - pMora; // المبلغ الذي يجب سحبه من البنك
+            pMora = 0; // تصفير الكاش بالكامل
+            pBank -= remainingToPay; // خصم المتبقي من البنك
         }
 
-        // حماية البوت أثناء تنفيذ التحويل
         client.activePlayers.add(sender.id);
 
         try {
             await db.query('BEGIN'); // بدء المعاملة لضمان أمان النقل
 
-            // تحديث بيانات المرسل
             senderData.mora = String(pMora);
             senderData.bank = String(pBank);
             senderData.dailyTransferCount = tempDailyCount + 1;
@@ -174,7 +178,6 @@ module.exports = {
             }
             if (client.setLevel) await client.setLevel(senderData);
 
-            // تحديث بيانات المستلم
             let receiverData = await client.getLevel(receiver.id, guild.id);
             if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
             
@@ -188,11 +191,17 @@ module.exports = {
             }
             if (client.setLevel) await client.setLevel(receiverData);
 
-            await db.query('COMMIT'); // تأكيد النقل
+            await db.query('COMMIT'); 
         } catch (e) {
-            await db.query('ROLLBACK'); // إرجاع كل شيء إذا فشل لكي لا تضيع الأموال
+            await db.query('ROLLBACK'); 
+            
+            // 🔥 إصلاح الكاش: إرجاع الرصيد للمرسل في الذاكرة العشوائية لكي لا يبقى مفلساً بعد فشل العملية 🔥
+            senderData.mora = String(originalMora);
+            senderData.bank = String(originalBank);
+            if (client.setLevel) await client.setLevel(senderData);
+
             client.activePlayers.delete(sender.id);
-            return replyError("❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل.");
+            return replyError("❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل وتم استرجاع أموالك.");
         }
 
         client.activePlayers.delete(sender.id);
