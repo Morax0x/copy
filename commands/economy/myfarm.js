@@ -334,12 +334,13 @@ module.exports = {
                             
                             const sample = sampleRes.rows[0];
                             
-                            // 🔥 حماية الإطعام المبكر الجديدة (يسمح لك بالإطعام بأي وقت إلا لو لسه ماكل من شوي)
+                            // 🔥 حماية الإطعام المبكر المصلحة: يجب أن يكون الحيوان قد استهلك على الأقل 10% من طعامه ليتم إطعامه مرة أخرى
                             if (sample && (sample.lastFedTimestamp || sample.lastfedtimestamp)) {
                                 const lastFed = Number(sample.lastFedTimestamp || sample.lastfedtimestamp);
                                 const timeSinceFed = Date.now() - lastFed;
-                                if (timeSinceFed < (maxHungerMs * 0.05)) { // 5% حماية من السبام بالغلط
-                                    return subI.reply({ content: `✋ **${animal.name}** شبعان تماماً!\nلا يمكنك إطعامه الآن، فقد تخسر العلف بدون فائدة.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                                
+                                if (timeSinceFed < (maxHungerMs * 0.10)) { 
+                                    return subI.reply({ content: `✋ **${animal.name}** ما زال شبعاناً!\nالرجاء الانتظار حتى يهضم طعامه قليلاً لتجنب إهدار العلف.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                                 }
                             }
 
