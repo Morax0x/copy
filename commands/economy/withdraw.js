@@ -102,11 +102,14 @@ module.exports = {
             const finalBank = BigInt(result.rows[0].bank || 0);
             const finalMora = BigInt(result.rows[0].mora || 0);
             
+            // 🔥 حساب المبلغ الفعلي الذي تم سحبه بدقة وطباعته بدلاً من كلمة "كل المبلغ" 🔥
+            const actualWithdrawn = isAll ? (finalMora - BigInt(data.mora || 0)) : BigInt(amountToWithdraw);
+
             // تحديث الكاش الداخلي بصمت لكي لا نعطل البوت
             data.bank = String(finalBank);
             data.mora = String(finalMora);
 
-            const displayAmount = isAll ? "كـل المـبـلـغ" : amountToWithdraw.toLocaleString();
+            const displayAmount = actualWithdrawn.toLocaleString();
 
             const embed = new EmbedBuilder()
                 .setColor("Random")
