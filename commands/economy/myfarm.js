@@ -95,9 +95,6 @@ module.exports = {
                 const ageDays = Math.floor(ageMS / DAY_MS);
                 const lifeRemaining = Math.max(0, animalData.lifespan_days - ageDays);
 
-                // ----------------------------------------------------
-                // 🟢 نظام العداد الزمني للشبع
-                // ----------------------------------------------------
                 const lastFed = Number(row.lastFedTimestamp || row.lastfedtimestamp) || now;
                 const maxHungerMs = (animalData.max_hunger_days || 3) * DAY_MS; 
                 const fullUntil = lastFed + maxHungerMs; 
@@ -106,12 +103,10 @@ module.exports = {
                 
                 let hungerStatusText = "";
                 
-                // حساب الدخل (فقط إذا بقي له أكثر من 12 ساعة شبع)
                 if (timeLeftMs > TWELVE_HOURS_MS) {
                     totalFarmIncome += (animalData.income_per_day * qty);
                 }
 
-                // تجهيز نص الشبع للديسكورد (تم إضافة العداد لحالة الجوع)
                 const timestampSeconds = Math.floor(fullUntil / 1000);
                 if (timeLeftMs > TWELVE_HOURS_MS) {
                     hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
@@ -124,7 +119,6 @@ module.exports = {
                 if (animalsMap.has(animalData.id)) {
                     const existing = animalsMap.get(animalData.id);
                     existing.quantity += qty;
-                    // تجميع الدخل فقط إذا كان الحيوان مدمجاً وحالته شبعان
                     if (timeLeftMs > TWELVE_HOURS_MS) existing.income += (animalData.income_per_day * qty);
                     if (ageDays > existing.age) { existing.age = ageDays; existing.lifeRemaining = lifeRemaining; }
                 } else {
@@ -340,12 +334,12 @@ module.exports = {
                             
                             const sample = sampleRes.rows[0];
                             
-                            // 🔥 حماية الإطعام المبكر: لا يمكن إطعامه إلا إذا نقص الشبع عن النصف
+                            // 🔥 حماية الإطعام المبكر الجديدة (يسمح لك بالإطعام بأي وقت إلا لو لسه ماكل من شوي)
                             if (sample && (sample.lastFedTimestamp || sample.lastfedtimestamp)) {
                                 const lastFed = Number(sample.lastFedTimestamp || sample.lastfedtimestamp);
                                 const timeSinceFed = Date.now() - lastFed;
-                                if (timeSinceFed < (maxHungerMs * 0.5)) {
-                                    return subI.reply({ content: `✋ **${animal.name}** ما زال شبعاناً!\nيرجى الانتظار حتى يجوع قليلاً لعدم تبذير الأعلاف.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                                if (timeSinceFed < (maxHungerMs * 0.05)) { // 5% حماية من السبام بالغلط
+                                    return subI.reply({ content: `✋ **${animal.name}** شبعان تماماً!\nلا يمكنك إطعامه الآن، فقد تخسر العلف بدون فائدة.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                                 }
                             }
 
