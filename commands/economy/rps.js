@@ -84,7 +84,6 @@ module.exports = {
             return message.channel.send(payload);
         };
 
-        if (!client.activeGames) client.activeGames = new Set();
         if (!client.activePlayers) client.activePlayers = new Set();
 
         if (client.activePlayers.has(user.id)) {
@@ -125,14 +124,6 @@ module.exports = {
 };
 
 async function startGame(channel, user, member, opponent, bet, client, guild, db, interaction) {
-    if (client.activeGames.has(channel.id)) {
-        client.activePlayers.delete(user.id); 
-        const msg = "🚫 هناك لعبة جارية في هذه القناة.";
-        if (interaction && !interaction.replied) await interaction.followUp({ content: msg, ephemeral: true });
-        else channel.send(msg);
-        return;
-    }
-    
     let userData = await client.getLevel(user.id, guild.id);
     if (!userData || Number(userData.mora) < bet) {
         client.activePlayers.delete(user.id); 
@@ -183,7 +174,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
             return;
         }
 
-        client.activeGames.add(channel.id);
         client.activePlayers.add(opponent.id);
 
         const inviteEmbed = new EmbedBuilder()
@@ -209,7 +199,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
             const response = await inviteMsg.awaitMessageComponent({ filter, time: 30000 });
             
             if (response.customId === 'rps_decline') {
-                client.activeGames.delete(channel.id);
                 client.activePlayers.delete(user.id);
                 client.activePlayers.delete(opponent.id);
                 await response.update({ content: `❌ تم رفض التحدي.`, embeds: [], components: [] });
@@ -222,7 +211,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
             opponentData = await client.getLevel(opponent.id, guild.id);
             
             if (Number(userData.mora) < bet || Number(opponentData.mora) < bet) {
-                client.activeGames.delete(channel.id);
                 client.activePlayers.delete(user.id);
                 client.activePlayers.delete(opponent.id);
                 return inviteMsg.edit({ content: "❌ أحد اللاعبين صرف أمواله قبل بدء اللعبة!", embeds: [], components: [] });
@@ -237,7 +225,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
             await runRPSRound(inviteMsg, user, member, opponent, bet, true, client, guild, db);
 
         } catch (e) {
-            client.activeGames.delete(channel.id);
             client.activePlayers.delete(user.id);
             client.activePlayers.delete(opponent.id);
             await inviteMsg.edit({ content: "⏰ انتهى وقت قبول التحدي.", embeds: [], components: [] });
@@ -257,8 +244,6 @@ async function startGame(channel, user, member, opponent, bet, client, guild, db
              return;
         }
 
-        client.activeGames.add(channel.id);
-        
         userData.mora = Number(userData.mora) - bet;
         if (user.id !== OWNER_ID) userData.lastRPS = Date.now();
         await client.setLevel(userData);
@@ -335,7 +320,6 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
     });
 
     collector.on('end', async (collected, reason) => {
-        client.activeGames.delete(message.channel.id);
         client.activePlayers.delete(player1.id);
         if (player2) client.activePlayers.delete(player2.id);
 
