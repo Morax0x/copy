@@ -47,9 +47,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         players = resumeData.players;
         merchantState = resumeData.merchantState || merchantState;
         retreatState = resumeData.retreatState || retreatState; 
-        totalAccumulatedCoins = resumeData.loot.coins;
-        totalAccumulatedXP = resumeData.loot.xp;
-        startFloor = resumeData.floor; 
+        
+        // 🔥 حل المشكلة: حماية ضد الـ Undefined للغنائم المحفوظة القديمة 🔥
+        if (resumeData.loot) {
+            totalAccumulatedCoins = Number(resumeData.loot.coins) || 0;
+            totalAccumulatedXP = Number(resumeData.loot.xp) || 0;
+        } else {
+            totalAccumulatedCoins = 0;
+            totalAccumulatedXP = 0;
+        }
+
+        startFloor = resumeData.floor || 1; 
         retreatedPlayers = resumeData.retreatedPlayers || [];
         isTrapActive = resumeData.isTrapActive || false;
         resumedMonsterData = resumeData.monsterData || null;
