@@ -110,13 +110,16 @@ module.exports = {
             const finalBank = BigInt(result.rows[0].bank || 0);
             const finalMora = BigInt(result.rows[0].mora || 0);
             
+            // 🔥 حساب المبلغ الفعلي الذي تم إيداعه بدقة وطباعته بالأرقام 🔥
+            const actualDeposited = isAll ? (finalBank - BigInt(data.bank || 0)) : BigInt(amountToDeposit);
+
             // تحديث الكاش الداخلي بصمت
             data.bank = String(finalBank);
             data.mora = String(finalMora);
             data.lastDeposit = now;
 
             const interestAmount = Math.floor(Number(finalBank) * 0.0005);
-            const displayAmount = isAll ? "كـل المـبـلـغ" : amountToDeposit.toLocaleString();
+            const displayAmount = actualDeposited.toLocaleString(); // طباعة المبلغ الفعلي كرقم
 
             const embed = new EmbedBuilder()
                 .setColor("Random")
