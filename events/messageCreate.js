@@ -3,21 +3,18 @@ const config = require('../config.json');
 const { handleStreakMessage, handleMediaStreakMessage, calculateBuffMultiplier } = require("../streak-handler.js");
 const { checkPermissions, checkCooldown } = require("../permission-handler.js");
 const { processReportLogic, sendReportError } = require("../handlers/report-handler.js");
-const { generateLevelUpCard } = require('../generators/levelup-card-generator');
 const { askMorax } = require('../handlers/ai-handler');
 const aiConfig = require('../utils/aiConfig'); 
 const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
-let calculateRequiredXP;
+// 🔥 استيراد الدالة السحرية للتلفيل بدلاً من الحساب اليدوي القديم 🔥
+let addXPAndCheckLevel;
 try {
-    ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
+    ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
 } catch (e) {
-    calculateRequiredXP = function(lvl) {
-        if (lvl < 35) return 5 * (lvl ** 2) + (50 * lvl) + 100;
-        return 15 * (lvl ** 2) + (150 * lvl);
-    };
+    console.error("Missing handler-utils.js", e);
 }
 
 let handleNewSuggestion;
@@ -172,7 +169,6 @@ module.exports = {
                         catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [reward, message.author.id, message.guild.id]).catch(()=>{}); }
                     }
 
-                    // 🔥 إصلاح انهيار الـ JSON Parsing
                     let storedMessages = [];
                     try {
                         storedMessages = JSON.parse(afkData.messages || '[]');
@@ -224,7 +220,6 @@ module.exports = {
                         setTimeout(() => welcomeMsg.delete().catch(() => {}), deleteTime);
                     }
 
-                    // 🔥 إصلاح آخر للـ JSON
                     let subscribers = [];
                     try { subscribers = JSON.parse(afkData.subscribers || '[]'); } catch(e) {}
                     
@@ -238,7 +233,6 @@ module.exports = {
                     }
                 } else {
                     ghostModeUsers.add(ghostKey);
-                    // 🔥 حماية تسريب الذاكرة: تنظيف بعد ساعتين
                     setTimeout(() => {
                         ghostModeUsers.delete(ghostKey);
                     }, 2 * 60 * 60 * 1000); 
@@ -359,7 +353,6 @@ module.exports = {
                 if (message.content.includes("@everyone") || message.content.includes("@here")) return;
 
                 let aiChannelData = aiConfig.getChannelSettings(message.channel.id);
-                
                 const OWNER_ID = "1145327691772481577"; 
                 const isOwnerMentioning = message.author.id === OWNER_ID;
 
@@ -370,12 +363,15 @@ module.exports = {
                     }
                 } catch(e) {}
 
-                if (!isOwnerMentioning && !isWisdomKing) {
-                    if (!aiChannelData && message.channel.parentId) {
-                        if (aiConfig.isRestrictedCategory(message.channel.parentId)) {
-                            const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
-                            if (paidStatus) {
-                                aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                // 🔥 منع الذكاء الصناعي من الرد في الأماكن غير المخصصة له 🔥
+                if (!aiChannelData) {
+                    if (message.channel.parentId && aiConfig.isRestrictedCategory(message.channel.parentId)) {
+                        const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
+                        if (paidStatus) {
+                            aiChannelData = { nsfw: paidStatus.mode === 'NSFW' ? 1 : 0 };
+                        } else {
+                            if (isOwnerMentioning || isWisdomKing) {
+                                aiChannelData = { nsfw: 0 };
                             } else {
                                 if (paymentCooldowns.has(message.channel.id)) return; 
                                 paymentCooldowns.add(message.channel.id);
@@ -384,8 +380,9 @@ module.exports = {
                                 return message.reply({ content: `🚫 **هذه الدردشة خارج نطاق صلاحياتي..**\nلفتح ميزة الدردشة معي هنا لمدة **يوم كامل (24 ساعة)**، عليك دفع **1000 مـورا**.`, components: [payBtn] }).catch(()=>{});
                             }
                         }
+                    } else {
+                        return; // 🛑 خروج فوري! لن يتم تفعيل البوت إذا لم تكن القناة مدعومة
                     }
-                    if (!aiChannelData) return;
                 }
 
                 const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
@@ -435,7 +432,6 @@ module.exports = {
 
                     if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
 
-                    // 🔥 حل ثغرة نزيف الإمبراطورة (يخصم الاستخدام قبل إرسال الطلب للـ API)
                     if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
 
                     const reply = await askMorax(
@@ -449,11 +445,7 @@ module.exports = {
                         message 
                     );
                     
-                    if (!reply) {
-                        // إذا فشل في الرد، نعيد له المحاولة 
-                        // (إذا كنت لا تملك دالة decrementUsage، يفضل إضافتها لاحقاً في aiLimitHandler)
-                        return;
-                    }
+                    if (!reply) return;
 
                     const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
                     const replyOptions = { repliedUser: true, parse: ['users'] };
@@ -528,9 +520,8 @@ module.exports = {
                     `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
                 }
 
-                // 🔥 إصلاح التعارض وتكرار استلام الجائزة (Race Condition Lock)
                 if (!chatterBadgeCache.has(dailyIdForBadge)) {
-                    chatterBadgeCache.add(dailyIdForBadge); // قفل فوري
+                    chatterBadgeCache.add(dailyIdForBadge); 
                     
                     let dailyDataCheckRes;
                     try { dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
@@ -561,7 +552,6 @@ module.exports = {
                             message.channel.send(`🗣️ **وســام جديــد!**\n<@${userID}> أرسل 100 رسالة وحصل على وسام **🗣️ ثرثار الحانة**!`).catch(()=>{});
                         }
                     } else {
-                        // إذا لم تكتمل الـ 100 رسالة أو أخذها مسبقاً، افتح القفل مرة أخرى
                         chatterBadgeCache.delete(dailyIdForBadge);
                     }
                 }
@@ -610,10 +600,8 @@ module.exports = {
             let getXpfromDB = settings?.customXP || settings?.customxp || 25;
             let getCooldownfromDB = settings?.customCooldown || settings?.customcooldown || 60000;
 
-            // 🔥 حل ثغرة "مواء الملايين" (تم نقله للداخل ليطبق عليه الـ Cooldown ويمنع السبام والتخريب)
             if (!client.talkedRecently.get(message.author.id)) {
                 
-                // إضافة ميزة المياو الآمنة هنا
                 if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
                     if (client.incrementQuestStats) client.incrementQuestStats(userID, guildID, 'meow_count', 1).catch(()=>{});
                     try { await db.query(`INSERT INTO levels ("user", "guild", "total_meow_count") VALUES ($1, $2, 1) ON CONFLICT ("user", "guild") DO UPDATE SET "total_meow_count" = COALESCE(levels."total_meow_count", 0) + 1`, [userID, guildID]); }
@@ -635,86 +623,43 @@ module.exports = {
 
                 const xpGained = Math.floor((Math.random() * Number(getXpfromDB) + 1) * buff);
                 
-                let currentLevelData = await client.getLevel(userID, guildID);
-                if (!currentLevelData) {
-                    currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
-                } else {
-                    currentLevelData.level = Number(currentLevelData.level) || 1;
-                    currentLevelData.xp = Number(currentLevelData.xp) || 0;
-                    currentLevelData.totalXP = Number(currentLevelData.totalXP || currentLevelData.totalxp || 0);
+                // 🔥 استدعاء الدالة السحرية الجديدة للتلفيل 🔥
+                if (addXPAndCheckLevel) {
+                    await addXPAndCheckLevel(client, message.member, db, xpGained, 0, true);
                 }
 
-                currentLevelData.xp += xpGained;
-                currentLevelData.totalXP += xpGained;
-                
-                let nextXP = calculateRequiredXP(currentLevelData.level);
-                const oldLvl = currentLevelData.level;
-                let leveledUp = false;
-                
-                while (currentLevelData.xp >= nextXP) {
-                    currentLevelData.xp -= nextXP;
-                    currentLevelData.level++;
-                    leveledUp = true;
-                    nextXP = calculateRequiredXP(currentLevelData.level);
-                }
-                
-                if (leveledUp) {
-                    client.setLevel(currentLevelData).catch(()=>{});
-                    
-                    try {
-                        const card = await generateLevelUpCard(message.member, oldLvl, currentLevelData.level, { mora: 0, hp: 0 });
-                        const channelId = settings?.levelChannel || settings?.levelchannel || message.channel.id;
-                        const channel = message.guild.channels.cache.get(channelId);
-                        if (channel) {
-                            const notifData = await client.getQuestNotif(`${message.author.id}-${message.guild.id}`);
-                            const isMentionOn = notifData ? (notifData.levelNotif || notifData.levelnotif) : 1; 
-                            const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
-                            let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
-                                             `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                             `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${currentLevelData.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
-                            const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
-                            if (milestones.includes(currentLevelData.level)) {
-                                contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
-                            }
-                            await channel.send({ content: contentMsg, files: [card] });
-                        }
-                    } catch (error) {
-                        let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
-                                        `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${currentLevelData.level}〃`;
-                        message.channel.send(backupMsg).catch(()=>{});
-                    }
-                } else {
-                    client.setLevel(currentLevelData).catch(()=>{}); 
-                }
                 client.talkedRecently.set(message.author.id, Date.now() + Number(getCooldownfromDB));
                 setTimeout(() => client.talkedRecently.delete(message.author.id), Number(getCooldownfromDB));
             }
             
+            // 🔥 نظام تحديث رتب اللفلات (Level Roles) 🔥
             try {
-                const finalLvl = Number(currentLevelData.level);
-                let currentLevelRoleRes;
-                try { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" <= $2 ORDER BY "level" DESC LIMIT 1`, [message.guild.id, finalLvl]); }
-                catch(e) { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE guildid = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`, [message.guild.id, finalLvl]).catch(()=>({rows:[]})); }
-                
-                let currentLevelRole = currentLevelRoleRes && currentLevelRoleRes.rows ? currentLevelRoleRes.rows[0] : null;
-                
-                if (currentLevelRole && message.member) {
-                    const targetRoleID = currentLevelRole.roleID || currentLevelRole.roleid;
-                    if (!message.member.roles.cache.has(targetRoleID)) {
-                        message.member.roles.add(targetRoleID).catch(e => {});
-                    }
+                let currentLevelData = await client.getLevel(userID, guildID);
+                if (currentLevelData) {
+                    const finalLvl = Number(currentLevelData.level) || 1;
+                    let currentLevelRoleRes;
+                    try { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" <= $2 ORDER BY "level" DESC LIMIT 1`, [message.guild.id, finalLvl]); }
+                    catch(e) { currentLevelRoleRes = await db.query(`SELECT * FROM level_roles WHERE guildid = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`, [message.guild.id, finalLvl]).catch(()=>({rows:[]})); }
                     
-                    const currentRoleReqLevel = currentLevelRole.level;
-                    let oldRolesRes;
-                    try { oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, currentRoleReqLevel]); }
-                    catch(e) { oldRolesRes = await db.query(`SELECT roleid FROM level_roles WHERE guildid = $1 AND level < $2`, [message.guild.id, currentRoleReqLevel]).catch(()=>({rows:[]})); }
+                    let currentLevelRole = currentLevelRoleRes && currentLevelRoleRes.rows ? currentLevelRoleRes.rows[0] : null;
                     
-                    if(oldRolesRes && oldRolesRes.rows) {
-                        for (const roleData of oldRolesRes.rows) {
-                            const oldRoleID = roleData.roleID || roleData.roleid;
-                            if (oldRoleID !== targetRoleID && message.member.roles.cache.has(oldRoleID)) {
-                                message.member.roles.remove(oldRoleID).catch(e => {});
+                    if (currentLevelRole && message.member) {
+                        const targetRoleID = currentLevelRole.roleID || currentLevelRole.roleid;
+                        if (!message.member.roles.cache.has(targetRoleID)) {
+                            message.member.roles.add(targetRoleID).catch(e => {});
+                        }
+                        
+                        const currentRoleReqLevel = currentLevelRole.level;
+                        let oldRolesRes;
+                        try { oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, currentRoleReqLevel]); }
+                        catch(e) { oldRolesRes = await db.query(`SELECT roleid FROM level_roles WHERE guildid = $1 AND level < $2`, [message.guild.id, currentRoleReqLevel]).catch(()=>({rows:[]})); }
+                        
+                        if(oldRolesRes && oldRolesRes.rows) {
+                            for (const roleData of oldRolesRes.rows) {
+                                const oldRoleID = roleData.roleID || roleData.roleid;
+                                if (oldRoleID !== targetRoleID && message.member.roles.cache.has(oldRoleID)) {
+                                    message.member.roles.remove(oldRoleID).catch(e => {});
+                                }
                             }
                         }
                     }
