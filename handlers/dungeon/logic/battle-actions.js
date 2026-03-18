@@ -36,7 +36,6 @@ const { saveDungeonState } = require('../core/state-manager');
 const { getFloorCaps } = require('./seal-system'); 
 
 async function handlePlayerBattleInteraction(i, context) {
-    // 🔥 التعديل هنا: جلبنا db بدلاً من sql
     const {
         players, monster, floor, theme, log, threadChannel, db, guild, hostId,
         activeDungeonRequests, merchantState, retreatState, retreatedPlayers, isTrapActive,
@@ -44,7 +43,6 @@ async function handlePlayerBattleInteraction(i, context) {
         ongoingRef, actedPlayers, processingUsers
     } = context;
 
-    // 🔥 الحل السحري: تعريف sql لتطابق db
     const sql = db;
 
     const isOwnerDefend = (i.customId === 'def' && i.user.id === OWNER_ID);
@@ -64,13 +62,24 @@ async function handlePlayerBattleInteraction(i, context) {
         return { ongoing: true };
     }
 
+    // 🔥🔥 إصلاح اقتحام الإمبراطور للدانجون 🔥🔥
     if (i.user.id === OWNER_ID && !players.find(p => p.id === OWNER_ID)) {
         const member = await i.guild.members.fetch(OWNER_ID).catch(() => null);
         if (member) {
-             const ownerPlayer = getRealPlayerData(member, sql, '???'); 
-             ownerPlayer.name = cleanName(ownerPlayer.name);
-             players.push(ownerPlayer);
-             log.push(`👑 **الأمبراطـور اقتحـم المعركـة!**`);
+            try {
+                let ownerPlayer = getRealPlayerData(member, sql, 'Leader'); 
+                if (ownerPlayer instanceof Promise) ownerPlayer = await ownerPlayer; // للتأكد إذا كانت الدالة غير متزامنة
+                
+                ownerPlayer.id = OWNER_ID; // 🔥 السر هنا! يجب تثبيت الـ ID
+                ownerPlayer.name = cleanName(ownerPlayer.name || member.displayName);
+                ownerPlayer.isDead = false;
+                if (!ownerPlayer.hp) ownerPlayer.hp = ownerPlayer.maxHp || 999999;
+                
+                players.push(ownerPlayer);
+                log.push(`👑 **الإمبـراطـور اقتحـم المعركـة ليساند فريقه!**`);
+            } catch (e) {
+                console.error("[Emperor Join Error]", e);
+            }
         }
     }
         
@@ -78,7 +87,7 @@ async function handlePlayerBattleInteraction(i, context) {
     if (!p) return i.followUp({ content: "🚫 لست مشاركاً!", ephemeral: true }).catch(()=>{});
     if (p.isDead || actedPlayers.includes(p.id)) return { ongoing: true };
 
-    if (p.effects.some(e => e.type === 'stun')) {
+    if (p.effects && p.effects.some(e => e.type === 'stun')) {
         await i.followUp({ content: "🚫 **أنت مشلول ولا تستطيع الحركة هذا الدور!**", ephemeral: true });
         actedPlayers.push(p.id); p.skipCount = 0; 
         log.push(`❄️ **${p.name}** مشلول ولم يستطع التحرك!`);
@@ -112,7 +121,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 let skillObj = { id: skillId, name: 'Skill', effectValue: 0, level: 1 };
                 
                 if (!skillId.startsWith('class_') && skillId !== 'class_special_skill' && skillId !== 'skill_secret_owner' && skillId !== 'skill_owner_leave') {
-                     if (p.skills[skillId]) { skillObj = { ...p.skills[skillId] }; if (skillObj.level > levelCap) skillObj.level = levelCap; }
+                     if (p.skills && p.skills[skillId]) { skillObj = { ...p.skills[skillId] }; if (skillObj.level > levelCap) skillObj.level = levelCap; }
                 }
 
                 const monsterHpBefore = monster.hp;
@@ -153,9 +162,6 @@ async function handlePlayerBattleInteraction(i, context) {
 
             } catch (err) { processingUsers.delete(i.user.id); return { ongoing: true }; }
         } 
-        // ==========================================
-        // 🔥🔥 نظام الجرعات والمتجر السريع الجديد 🔥🔥
-        // ==========================================
         else if (i.customId === 'heal') {
             const potionRow = await buildPotionSelector(p, sql, guild.id);
             if (!potionRow) {
@@ -169,7 +175,6 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 const selectedValue = selection.values[0];
 
-                // 🛒 المتجر السريع
                 if (selectedValue === 'buy_potions_action') {
                     let currentMora = 0;
                     try {
@@ -215,8 +220,8 @@ async function handlePlayerBattleInteraction(i, context) {
                         if (Number(currentMora) < targetItem.price) {
                             await buyInteraction.followUp({ content: `❌ **لا تملك مورا كافية!** تحتاج ${targetItem.price} مورا.`, ephemeral: true });
                         } else {
-                            try { await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]); } 
-                            catch(e) { await sql.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [targetItem.price, p.id, guild.id]).catch(()=>{}); }
+                            try { await sql.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) - $1 WHERE "user" = $2 AND "guild" = $3`, [targetItem.price, p.id, guild.id]); } 
+                            catch(e) { await sql.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) - $1 WHERE userid = $2 AND guildid = $3`, [targetItem.price, p.id, guild.id]).catch(()=>{}); }
                             
                             try {
                                 const check = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, targetItem.id]);
@@ -244,7 +249,6 @@ async function handlePlayerBattleInteraction(i, context) {
                     return { ongoing: true }; 
                 }
 
-                // 🧪 استخدام الجرعة 
                 const potionId = selectedValue.replace('use_potion_', '');
                 
                 if (potionId === 'potion_titan') {
@@ -258,7 +262,6 @@ async function handlePlayerBattleInteraction(i, context) {
                     p.titanPotionUses++; 
                 }
                 
-                // 3. خصم الجرعة من الحقيبة (PostgreSQL)
                 if (sql) {
                     try {
                         await sql.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [p.id, guild.id, potionId]);
@@ -275,6 +278,7 @@ async function handlePlayerBattleInteraction(i, context) {
                     p.threat = (p.threat || 0) + threatGen;
 
                 } else if (potionId === 'potion_reflect') {
+                    if (!p.effects) p.effects = [];
                     p.effects.push({ type: 'rebound_active', val: 0.5, turns: 2 });
                     actionMsg = "🌵 جهز درع الأشواك!";
                 
@@ -285,6 +289,7 @@ async function handlePlayerBattleInteraction(i, context) {
                 
                 } else if (potionId === 'potion_titan') {
                     p.maxHp *= 2; p.hp = p.maxHp;
+                    if (!p.effects) p.effects = [];
                     p.effects.push({ type: 'titan', floors: 5 }); 
                     monster.targetFocusId = p.id;
                     const used = p.titanPotionUses || 1;
@@ -328,14 +333,14 @@ async function handlePlayerBattleInteraction(i, context) {
             actedPlayers.push(p.id); p.skipCount = 0; 
             if (i.customId === 'atk') {
                 let canAttack = true;
-                const confusion = p.effects.find(e => e.type === 'confusion');
+                const confusion = p.effects ? p.effects.find(e => e.type === 'confusion') : null;
                 if (confusion && Math.random() < confusion.val) {
                     canAttack = false;
                     const selfDmg = Math.floor(p.maxHp * 0.15); 
                     applyDamageToPlayer(p, selfDmg);
                     log.push(`😵 **${p.name}** في حالة ارتباك وضرب نفسه! (-${selfDmg})`);
                 } 
-                else if (p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
+                else if (p.effects && p.effects.some(e => e.type === 'blind' && Math.random() < e.val)) {
                     canAttack = false;
                     log.push(`☁️ **${p.name}** هاجم ولكن أخطأ الهدف بسبب العمى!`);
                 }
