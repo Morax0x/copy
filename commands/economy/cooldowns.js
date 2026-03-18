@@ -47,7 +47,6 @@ function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
-// ⚠️ تم التعديل لتشمل الأسماء بالحروف الصغيرة كاحتمال احتياطي
 const COMMANDS_TO_CHECK = [
     { name: 'work', db_column: 'lastWork', fallback: 'lastwork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
     { name: 'rob', db_column: 'lastRob', fallback: 'lastrob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
@@ -58,7 +57,7 @@ const COMMANDS_TO_CHECK = [
     { name: 'arrange', db_column: 'lastArrange', fallback: 'lastarrange', cooldown: 1 * 60 * 60 * 1000, label: 'رتب' },
     { name: 'pvp', db_column: 'lastPVP', fallback: 'lastpvp', cooldown: 5 * 60 * 1000, label: 'تحدي' },
     { name: 'race', db_column: 'lastRace', fallback: 'lastrace', cooldown: 1 * 60 * 60 * 1000, label: 'سباق' }, 
-    { name: 'dungeon', db_column: 'last_dungeon', fallback: 'last_dungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' } // 🔥 تم تعديل الوقت هنا إلى 3 ساعات
+    { name: 'dungeon', db_column: 'last_dungeon', fallback: 'last_dungeon', cooldown: 3 * 60 * 60 * 1000, label: 'دانجون' }
 ];
 
 module.exports = {
@@ -100,6 +99,17 @@ module.exports = {
                 let data = await client.getLevel(userToCheck.id, guild.id);
                 if (!data) data = { ...client.defaultData, user: userToCheck.id, guild: guild.id };
 
+                // 🔥 جلب البيانات الطازجة من قاعدة البيانات مباشرة للتغلب على مشكلة الكاش 🔥
+                try {
+                    let dbRes;
+                    try { dbRes = await client.sql.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userToCheck.id, guild.id]); }
+                    catch(e) { dbRes = await client.sql.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userToCheck.id, guild.id]).catch(()=>({rows:[]})); }
+                    
+                    if (dbRes && dbRes.rows.length > 0) {
+                        data = { ...data, ...dbRes.rows[0] }; // دمج البيانات الحقيقية
+                    }
+                } catch (err) {}
+
                 const now = Date.now();
                 const readyGames = [];
                 const waitGames = [];
@@ -130,13 +140,8 @@ module.exports = {
                 }
 
                 // 3. الصيد
-                const userRodLevel = Number(data.rodLevel || data.rodlevel) || 1;
-                const userBoatLevel = Number(data.boatLevel || data.boatlevel) || 1;
-                const currentRod = fishingConfig.rods.find(r => r.level === userRodLevel) || fishingConfig.rods[0];
-                const currentBoat = fishingConfig.boats.find(b => b.level === userBoatLevel) || fishingConfig.boats[0];
-                
-                let fishCooldown = currentRod.cooldown - (currentBoat.speed_bonus || 0);
-                if (fishCooldown < 10000) fishCooldown = 10000;
+                // 🔥 تم توحيد الكولداون ليكون ساعة واحدة ليطابق ملف الصيد الفعلي 🔥
+                const fishCooldown = 3600000; 
                 
                 const lastFish = Number(data.lastFish || data.lastfish) || 0;
                 const fishTimeLeft = (lastFish + fishCooldown) - now;
