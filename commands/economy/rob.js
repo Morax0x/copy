@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, SlashCommandBuilder, Colors, MessageFlags } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
 // 🔥 استدعاء دالة تحديث الإحصائيات للملوك الجدد 🔥
@@ -49,17 +49,21 @@ function formatTime(ms) {
     return `${mm}:${ss}`;
 }
 
+// دالة محدثة وآمنة لخصم المبلغ من الحرامي دون أن ينزل بالسالب
 function deductFromRobber(data, amount) {
-    data.mora = Number(data.mora) || 0;
-    data.bank = Number(data.bank) || 0;
+    let mora = Number(data.mora) || 0;
+    let bank = Number(data.bank) || 0;
     
-    if (data.mora >= amount) {
-        data.mora -= amount;
+    if (mora >= amount) {
+        mora -= amount;
     } else {
-        const remaining = amount - data.mora;
-        data.mora = 0;
-        data.bank = Math.max(0, data.bank - remaining);
+        const remaining = amount - mora;
+        mora = 0;
+        bank = Math.max(0, bank - remaining);
     }
+    
+    data.mora = String(mora);
+    data.bank = String(bank);
     return data;
 }
 
@@ -115,7 +119,7 @@ module.exports = {
 
         if (victim.id === REAL_OWNER_ID) {
             if (!isSlash && message) await message.delete().catch(() => {});
-            if (isSlash) await interaction.reply({ content: `🏰`, flags: [MessageFlags.Ephemeral] });
+            if (isSlash && !interaction.replied && !interaction.deferred) await interaction.reply({ content: `🏰`, flags: [MessageFlags.Ephemeral] });
 
             const redirectMsg = await interactionOrMessage.channel.send({
                 content: `🏰 **تـم نـقـل قـصـر الامبراطـور الى حسـاب الامبراطورة!**\nحاول مجـددا ولكن منشن البوت <@${EMPRESS_BOT_ID}> ..`
@@ -160,10 +164,54 @@ module.exports = {
         if (victim.id !== EMPRESS_BOT_ID) {
             const victimTotalWealth = (Number(victimData.mora) || 0) + (Number(victimData.bank) || 0);
             if (victimTotalWealth < MIN_REQUIRED_CASH) {
-                return reply(`❌ الضحية **${victim.displayName}** فقير جداً!`);
+                return reply(`❌ الضحية **${victim.displayName}** فقير جداً! لا يملك ما يكفي لسرقته.`);
             }
         }
 
+        // حساب المبلغ المراد سرقته قبل بدء العملية (حماية من التهرب من الغرامة)
+        const victimMora = Number(victimData.mora) || 0;
+        const victimBank = Number(victimData.bank) || 0;
+        let amountToSteal = 0;
+        let targetPool, poolName, victimPoolAmount;
+        
+        if (victim.id !== EMPRESS_BOT_ID) {
+            if (victimBank >= MIN_REQUIRED_CASH && victimMora >= MIN_REQUIRED_CASH) {
+                targetPool = Math.random() < 0.5 ? 'mora' : 'bank';
+            } else if (victimBank >= MIN_REQUIRED_CASH) {
+                targetPool = 'bank';
+            } else {
+                targetPool = 'mora';
+            }
+
+            victimPoolAmount = targetPool === 'bank' ? victimBank : victimMora;
+            poolName = targetPool === 'bank' ? "البنك" : "الكاش";
+
+            const robberCap = Math.floor(robberTotalWealth * ROBBER_FINE_PERCENT);
+            let victimCap;
+
+            if (targetPool === 'bank') {
+                const randomPercent = Math.random() * (MAX_BANK_PERCENT - MIN_BANK_PERCENT) + MIN_BANK_PERCENT;
+                victimCap = Math.floor(victimPoolAmount * randomPercent);
+            } else {
+                const randomPercent = Math.random() * (MAX_CASH_PERCENT - MIN_CASH_PERCENT) + MIN_CASH_PERCENT;
+                victimCap = Math.floor(victimPoolAmount * randomPercent);
+            }
+
+            amountToSteal = Math.min(robberCap, victimCap);
+            if (amountToSteal < MIN_ROB_AMOUNT) {
+                 if (victimPoolAmount >= MIN_ROB_AMOUNT) amountToSteal = MIN_ROB_AMOUNT;
+                 else {
+                     return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
+                 }
+            }
+            
+            // 🔥 حماية أمنية: إذا كان الضمان أقل من الغرامة المحتملة، نرفض العملية 🔥
+            if (robberTotalWealth < amountToSteal) {
+                return reply(`❌ **رصيدك لا يكفي لدفع الغرامة المحتملة!** تحتاج كضمان على الأقل **${amountToSteal.toLocaleString()}** ${EMOJI_MORA}.`);
+            }
+        }
+
+        // تحديث الكوول داون و قفل اللاعب
         activeRobberies.add(robber.id);
         robberData.lastRob = now;
         await client.setLevel(robberData);
@@ -171,7 +219,7 @@ module.exports = {
         if (victim.id === EMPRESS_BOT_ID) {
             const minEmperor = 100;
             const maxEmperor = 9999;
-            let amountToSteal = Math.floor(Math.random() * (maxEmperor - minEmperor + 1)) + minEmperor;
+            amountToSteal = Math.floor(Math.random() * (maxEmperor - minEmperor + 1)) + minEmperor;
             
             if (amountToSteal > robberTotalWealth) {
                 amountToSteal = robberTotalWealth;
@@ -205,7 +253,7 @@ module.exports = {
                 const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
 
                 if (clickedIndex === correctIndex) {
-                    robberData.mora = (Number(robberData.mora) || 0) + amountToSteal;
+                    robberData.mora = String((Number(robberData.mora) || 0) + amountToSteal);
                     await client.setLevel(robberData);
 
                     const winEmbed = new EmbedBuilder()
@@ -223,7 +271,7 @@ module.exports = {
                     const canBePardoned = lastPardonDate !== todayDate;
 
                     if (canBePardoned) {
-                        robberData.mora = (Number(robberData.mora) || 0) + 100;
+                        robberData.mora = String((Number(robberData.mora) || 0) + 100);
                         await client.setLevel(robberData);
                         robberyPardons.set(robber.id, todayDate);
 
@@ -251,7 +299,7 @@ module.exports = {
 
             collector.on('end', async (collected, reason) => {
                 activeRobberies.delete(robber.id);
-                if (reason === 'time') {
+                if (reason === 'time' && collected.size === 0) {
                     deductFromRobber(robberData, amountToSteal);
                     await client.setLevel(robberData);
                     
@@ -267,42 +315,7 @@ module.exports = {
             return; 
         }
 
-        const victimMora = Number(victimData.mora) || 0;
-        const victimBank = Number(victimData.bank) || 0;
-        let amountToSteal = 0;
-        let targetPool, poolName, victimPoolAmount;
-        
-        if (victimBank >= MIN_REQUIRED_CASH && victimMora >= MIN_REQUIRED_CASH) {
-            targetPool = Math.random() < 0.5 ? 'mora' : 'bank';
-        } else if (victimBank >= MIN_REQUIRED_CASH) {
-            targetPool = 'bank';
-        } else {
-            targetPool = 'mora';
-        }
-
-        victimPoolAmount = targetPool === 'bank' ? victimBank : victimMora;
-        poolName = targetPool === 'bank' ? "البنك" : "الكاش";
-
-        const robberCap = Math.floor(robberTotalWealth * ROBBER_FINE_PERCENT);
-        let victimCap;
-
-        if (targetPool === 'bank') {
-            const randomPercent = Math.random() * (MAX_BANK_PERCENT - MIN_BANK_PERCENT) + MIN_BANK_PERCENT;
-            victimCap = Math.floor(victimPoolAmount * randomPercent);
-        } else {
-            const randomPercent = Math.random() * (MAX_CASH_PERCENT - MIN_CASH_PERCENT) + MIN_CASH_PERCENT;
-            victimCap = Math.floor(victimPoolAmount * randomPercent);
-        }
-
-        amountToSteal = Math.min(robberCap, victimCap);
-        if (amountToSteal < MIN_ROB_AMOUNT) {
-             if (victimPoolAmount >= MIN_ROB_AMOUNT) amountToSteal = MIN_ROB_AMOUNT;
-             else {
-                 activeRobberies.delete(robber.id);
-                 return reply(`❌ الضحية لا يملك ما يكفي لسرقته في ${poolName}!`);
-             }
-        }
-
+        // للاعبين العاديين
         let descArray = [
             `✦ انـت تسـطو علـى ممتـلكـات: ${victim} <:thief:1436331309961187488>`,
             `⌕ اخـتـر البـاب الصحـيـح الـذي يحـوي عـلـى ${amountToSteal.toLocaleString()} ${EMOJI_MORA} (من ${poolName})!`,
@@ -336,126 +349,134 @@ module.exports = {
         const collector = msg.createMessageComponentCollector({ filter, componentType: ComponentType.Button, time: 15000, max: 1 });
 
         collector.on('collect', async i => {
-            const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
-            
-            if (Number(victimData.hasGuard || victimData.hasguard) > 0) {
-                // 🔥 فحص هل السارق يمتلك رتبة ملك اللصوص (سيد الظلال) 🔥
-                let isThiefKing = false;
-                try {
-                    const settingsRes = await sql.query(`SELECT "roleThief" FROM settings WHERE "guild" = $1`, [guild.id]);
-                    const roleThief = settingsRes.rows[0]?.roleThief || settingsRes.rows[0]?.rolethief;
-                    if (roleThief && robber.roles.cache.has(roleThief)) {
-                        isThiefKing = true;
-                    }
-                } catch (e) {}
-
-                if (isThiefKing) {
-                    // الهروب الشبح لملك اللصوص
-                    victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
-                    const guardLeft = victimData.hasGuard;
-                    if (guardLeft === 0) victimData.guardExpires = 0;
-                    
-                    await client.setLevel(victimData);
-
-                    let guardStatusMsg = guardLeft === 0 
-                        ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
-                        : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
-
-                    const ghostEmbed = new EmbedBuilder()
-                        .setTitle('🥷 مـلـك اللصـوص !')
-                        .setColor(Colors.DarkVividPink)
-                        .setImage('https://i.postimg.cc/R0d0XSbV/run.gif')
-                        .setDescription(`✬ حاولت الدخول ولكن وجدت الحارس الشخصي بانتظارك!\n\nبصفتك **ملك اللصوص**، تمكنت من التمويه والفرار كالشبح قبل أن يمسك بك الحارس!.`);
-                    
-                    await i.update({ embeds: [ghostEmbed], components: [] });
-                    sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك.. تصدى له الحارس، ولكنه هرب كالشبح بفضل لقبه (سيد الظلال) ولم يدفع لك أي غرامة!\n${guardStatusMsg}`);
-                } else {
-                    // القبض العادي
-                    deductFromRobber(robberData, amountToSteal);
-                    victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
-                    
-                    victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
-                    const guardLeft = victimData.hasGuard;
-                    if (guardLeft === 0) victimData.guardExpires = 0;
-                    
-                    await client.setLevel(victimData);
-                    await client.setLevel(robberData);
-
-                    let guardStatusMsg = guardLeft === 0 
-                        ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
-                        : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
-
-                    const guardEmbed = new EmbedBuilder()
-                        .setTitle('✶ تــم الـقـبـض :shield: !')
-                        .setColor('#46455f')
-                        .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
-                        .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
-                    
-                    await i.update({ embeds: [guardEmbed], components: [] });
-                    sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
-                }
-
-            } else {
-                if (clickedIndex === correctButtonIndex) {
-                    robberData.mora = (Number(robberData.mora) || 0) + amountToSteal;
-                    
-                    if (targetPool === 'bank') {
-                        if (Number(victimData.bank) >= amountToSteal) {
-                            victimData.bank = Number(victimData.bank) - amountToSteal;
+            try {
+                // فحص البيانات مجدداً لتجنب الاختفاء
+                robberData = await client.getLevel(robber.id, guild.id) || robberData;
+                victimData = await client.getLevel(victim.id, guild.id) || victimData;
+                
+                const clickedIndex = parseInt(i.customId.split('_')[1]) - 1;
+                
+                if (Number(victimData.hasGuard || victimData.hasguard) > 0) {
+                    let isThiefKing = false;
+                    try {
+                        const settingsRes = await sql.query(`SELECT "roleThief" FROM settings WHERE "guild" = $1`, [guild.id]);
+                        const roleThief = settingsRes.rows[0]?.roleThief || settingsRes.rows[0]?.rolethief;
+                        if (roleThief && robber.roles.cache.has(roleThief)) {
+                            isThiefKing = true;
                         }
-                        else {
-                            const remainder = amountToSteal - Number(victimData.bank);
-                            victimData.bank = 0;
-                            victimData.mora = Math.max(0, Number(victimData.mora) - remainder);
-                        }
+                    } catch (e) {}
+
+                    if (isThiefKing) {
+                        victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
+                        const guardLeft = victimData.hasGuard;
+                        if (guardLeft === 0) victimData.guardExpires = 0;
+                        
+                        await client.setLevel(victimData);
+
+                        let guardStatusMsg = guardLeft === 0 
+                            ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
+                            : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
+
+                        const ghostEmbed = new EmbedBuilder()
+                            .setTitle('🥷 مـلـك اللصـوص !')
+                            .setColor(Colors.DarkVividPink)
+                            .setImage('https://i.postimg.cc/R0d0XSbV/run.gif')
+                            .setDescription(`✬ حاولت الدخول ولكن وجدت الحارس الشخصي بانتظارك!\n\nبصفتك **ملك اللصوص**، تمكنت من التمويه والفرار كالشبح قبل أن يمسك بك الحارس!.`);
+                        
+                        await i.update({ embeds: [ghostEmbed], components: [] }).catch(()=>{});
+                        sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك.. تصدى له الحارس، ولكنه هرب كالشبح بفضل لقبه (سيد الظلال) ولم يدفع لك أي غرامة!\n${guardStatusMsg}`);
                     } else {
-                        if (Number(victimData.mora) >= amountToSteal) {
-                            victimData.mora = Number(victimData.mora) - amountToSteal;
-                        }
-                        else {
-                            const remainder = amountToSteal - Number(victimData.mora);
-                            victimData.mora = 0;
-                            victimData.bank = Math.max(0, Number(victimData.bank) - remainder);
-                        }
-                    }
+                        deductFromRobber(robberData, amountToSteal);
+                        victimData.mora = String((Number(victimData.mora) || 0) + amountToSteal);
+                        
+                        victimData.hasGuard = (Number(victimData.hasGuard || victimData.hasguard) || 0) - 1; 
+                        const guardLeft = victimData.hasGuard;
+                        if (guardLeft === 0) victimData.guardExpires = 0;
+                        
+                        await client.setLevel(victimData);
+                        await client.setLevel(robberData);
 
-                    // 🔥 تحديث إحصائيات ملك اللصوص (سيد الظلال) للسرقات الناجحة بين الأعضاء 🔥
-                    if (updateGuildStat) {
-                        updateGuildStat(client, guild.id, robber.id, 'mora_stolen', amountToSteal);
-                    }
+                        let guardStatusMsg = guardLeft === 0 
+                            ? "- انتهى عقـد الحراسـة يسعدنـا ان توقـع عقد حراسـة جديد معنا لحماية ممتلكاتك" 
+                            : `- ينتهي عقد الحراسة بعد: ${guardLeft} مرات`;
 
-                    const winEmbed = new EmbedBuilder()
-                        .setTitle('✅ حـرامـي مـحـتـرف <:thief:1436331309961187488>')
-                        .setColor(Colors.Orange)
-                        .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
-                        .setDescription(`لقد اخترت الباب الصحيح وسرقت **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من ${victim.displayName}!`);
-                    
-                    await i.update({ embeds: [winEmbed], components: [] });
-                    sendDMToVictim(victim, `✥ قـام ${robber} بالسـطو عـلى ممتلـكـاتك وسـرق **${amountToSteal}**`);
+                        const guardEmbed = new EmbedBuilder()
+                            .setTitle('✶ تــم الـقـبـض :shield: !')
+                            .setColor('#46455f')
+                            .setImage('https://i.postimg.cc/Hx6tZnJv/nskht-mn-ambratwryt-alanmy.jpg')
+                            .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
+                        
+                        await i.update({ embeds: [guardEmbed], components: [] }).catch(()=>{});
+                        sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
+                    }
 
                 } else {
-                    deductFromRobber(robberData, amountToSteal);
-                    victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
+                    if (clickedIndex === correctButtonIndex) {
+                        robberData.mora = String((Number(robberData.mora) || 0) + amountToSteal);
+                        
+                        if (targetPool === 'bank') {
+                            if (Number(victimData.bank) >= amountToSteal) {
+                                victimData.bank = String(Number(victimData.bank) - amountToSteal);
+                            } else {
+                                const remainder = amountToSteal - Number(victimData.bank);
+                                victimData.bank = '0';
+                                victimData.mora = String(Math.max(0, Number(victimData.mora) - remainder));
+                            }
+                        } else {
+                            if (Number(victimData.mora) >= amountToSteal) {
+                                victimData.mora = String(Number(victimData.mora) - amountToSteal);
+                            } else {
+                                const remainder = amountToSteal - Number(victimData.mora);
+                                victimData.mora = '0';
+                                victimData.bank = String(Math.max(0, Number(victimData.bank) - remainder));
+                            }
+                        }
 
-                    const loseEmbed = new EmbedBuilder()
-                        .setTitle('💥 بــــووم !')
-                        .setColor(Colors.Red)
-                        .setImage('https://i.postimg.cc/HkdZWrG5/boom.gif')
-                        .setDescription(`لقد اخترت الباب الخطأ وانفجرت القنبلة!\n\nفشلت السرقة، وتم تغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} وإعطاؤها للضحية.`);
-                    await i.update({ embeds: [loseEmbed], components: [] });
-                    sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
+                        if (updateGuildStat) {
+                            updateGuildStat(client, guild.id, robber.id, 'mora_stolen', amountToSteal).catch(()=>{});
+                        }
+
+                        const winEmbed = new EmbedBuilder()
+                            .setTitle('✅ حـرامـي مـحـتـرف <:thief:1436331309961187488>')
+                            .setColor(Colors.Orange)
+                            .setImage('https://i.postimg.cc/QVLQyyDK/rob.gif')
+                            .setDescription(`لقد اخترت الباب الصحيح وسرقت **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} من ${victim.displayName}!`);
+                        
+                        await i.update({ embeds: [winEmbed], components: [] }).catch(()=>{});
+                        sendDMToVictim(victim, `✥ قـام ${robber} بالسـطو عـلى ممتلـكـاتك وسـرق **${amountToSteal}**`);
+
+                    } else {
+                        deductFromRobber(robberData, amountToSteal);
+                        victimData.mora = String((Number(victimData.mora) || 0) + amountToSteal);
+
+                        const loseEmbed = new EmbedBuilder()
+                            .setTitle('💥 بــــووم !')
+                            .setColor(Colors.Red)
+                            .setImage('https://i.postimg.cc/HkdZWrG5/boom.gif')
+                            .setDescription(`لقد اخترت الباب الخطأ وانفجرت القنبلة!\n\nفشلت السرقة، وتم تغريمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} وإعطاؤها للضحية.`);
+                        
+                        await i.update({ embeds: [loseEmbed], components: [] }).catch(()=>{});
+                        sendDMToVictim(victim, `✥ حـاول ${robber} السـطـو عـلى ممتلكـاتك ولكنـه فـشل وحصـلت علـى **${amountToSteal}** كـ تعويض`);
+                    }
                 }
+                
+                await client.setLevel(robberData);
+                await client.setLevel(victimData);
+            } catch (e) {} finally {
+                activeRobberies.delete(robber.id);
             }
-            await client.setLevel(robberData);
-            await client.setLevel(victimData);
-            activeRobberies.delete(robber.id);
         });
 
         collector.on('end', async (collected, reason) => {
             activeRobberies.delete(robber.id);
-            if (reason === 'time') {
+            if (reason === 'time' && collected.size === 0) {
+                // إعادة جلب البيانات لضمان دقتها
+                robberData = await client.getLevel(robber.id, guild.id) || robberData;
+                victimData = await client.getLevel(victim.id, guild.id) || victimData;
+
                 deductFromRobber(robberData, amountToSteal);
-                victimData.mora = (Number(victimData.mora) || 0) + amountToSteal;
+                victimData.mora = String((Number(victimData.mora) || 0) + amountToSteal);
+                
                 await client.setLevel(robberData);
                 await client.setLevel(victimData);
 
