@@ -388,7 +388,7 @@ async function handleLandInteractions(i, client, db) {
         if (Number(userData.mora || 0) < totalCost) return await i.followUp({ content: `❌ **رصيدك غير كافي!** تحتاج **${totalCost}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
         
         try {
-            await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
+            await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
             userData.mora = String(Number(userData.mora || 0) - totalCost);
             if (typeof client.setLevel === 'function') await client.setLevel(userData);
             
@@ -404,7 +404,7 @@ async function handleLandInteractions(i, client, db) {
         } catch (e) {
             await db.query("ROLLBACK").catch(()=>{});
             try {
-                await db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [totalCost, userId, guildId]);
+                await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) - $1 WHERE userid = $2 AND guildid = $3`, [totalCost, userId, guildId]);
                 userData.mora = String(Number(userData.mora || 0) - totalCost);
                 if (typeof client.setLevel === 'function') await client.setLevel(userData);
                 
@@ -596,8 +596,8 @@ async function handleLandInteractions(i, client, db) {
              await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue).catch(()=>{});
         } else {
              // في حال لم تكن الدالة متوفرة (لا يُفترض أن يحدث)
-             try { await db.query(`UPDATE levels SET "mora" = "mora" + $1, "xp" = "xp" + $2, "totalXP" = "totalXP" + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]); }
-             catch(e) { await db.query(`UPDATE levels SET mora = mora + $1, xp = xp + $2, totalxp = COALESCE(totalxp, 0) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{}); }
+             try { await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1, "xp" = CAST(COALESCE("xp", '0') AS BIGINT) + $2, "totalXP" = CAST(COALESCE("totalXP", '0') AS BIGINT) + $2 WHERE "user" = $3 AND "guild" = $4`, [totalRevenue, totalXP, userId, guildId]); }
+             catch(e) { await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1, xp = CAST(COALESCE(xp, '0') AS BIGINT) + $2, totalxp = CAST(COALESCE(totalxp, '0') AS BIGINT) + $2 WHERE userid = $3 AND guildid = $4`, [totalRevenue, totalXP, userId, guildId]).catch(()=>{}); }
         }
 
         if (updateGuildStat) {
