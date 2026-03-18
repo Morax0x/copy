@@ -10,7 +10,6 @@ const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
-// 🔥 استدعاء دالة حساب الخبرة المركزية 
 let calculateRequiredXP;
 try {
     ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
@@ -173,9 +172,15 @@ module.exports = {
                         catch(e) { await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [reward, message.author.id, message.guild.id]).catch(()=>{}); }
                     }
 
-                    const storedMessages = JSON.parse(afkData.messages || '[]');
-                    let msgBtnRow = null;
+                    // 🔥 إصلاح انهيار الـ JSON Parsing
+                    let storedMessages = [];
+                    try {
+                        storedMessages = JSON.parse(afkData.messages || '[]');
+                    } catch (e) {
+                        storedMessages = [];
+                    }
 
+                    let msgBtnRow = null;
                     if (storedMessages.length > 0) {
                         global.afkMessagesCache.set(message.author.id, storedMessages);
                         setTimeout(() => global.afkMessagesCache.delete(message.author.id), 5 * 60 * 1000);
@@ -219,7 +224,10 @@ module.exports = {
                         setTimeout(() => welcomeMsg.delete().catch(() => {}), deleteTime);
                     }
 
-                    const subscribers = JSON.parse(afkData.subscribers || '[]');
+                    // 🔥 إصلاح آخر للـ JSON
+                    let subscribers = [];
+                    try { subscribers = JSON.parse(afkData.subscribers || '[]'); } catch(e) {}
+                    
                     if (subscribers.length > 0) {
                         const everyoneRole = message.guild.roles.everyone;
                         const perms = message.channel.permissionsFor(everyoneRole);
@@ -230,6 +238,10 @@ module.exports = {
                     }
                 } else {
                     ghostModeUsers.add(ghostKey);
+                    // 🔥 حماية تسريب الذاكرة: تنظيف بعد ساعتين
+                    setTimeout(() => {
+                        ghostModeUsers.delete(ghostKey);
+                    }, 2 * 60 * 60 * 1000); 
                 } 
             }
 
@@ -316,7 +328,6 @@ module.exports = {
 
         if (message.mentions.has(client.user) && !message.author.bot && !message.content.startsWith(Prefix)) {
             
-            // 🔥 الفحص المخفي (Zero-Width Space) لمنع الإمبراطورة من الرد على ردود الشجرة
             if (message.reference) {
                 if (message.client.ignoredTreeMessages && message.client.ignoredTreeMessages.has(message.reference.messageId)) {
                     return; 
@@ -424,6 +435,9 @@ module.exports = {
 
                     if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
 
+                    // 🔥 حل ثغرة نزيف الإمبراطورة (يخصم الاستخدام قبل إرسال الطلب للـ API)
+                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
+
                     const reply = await askMorax(
                         message.author.id, 
                         message.guild.id, 
@@ -435,9 +449,11 @@ module.exports = {
                         message 
                     );
                     
-                    if (!reply) return;
-
-                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
+                    if (!reply) {
+                        // إذا فشل في الرد، نعيد له المحاولة 
+                        // (إذا كنت لا تملك دالة decrementUsage، يفضل إضافتها لاحقاً في aiLimitHandler)
+                        return;
+                    }
 
                     const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
                     const replyOptions = { repliedUser: true, parse: ['users'] };
@@ -512,7 +528,10 @@ module.exports = {
                     `, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
                 }
 
+                // 🔥 إصلاح التعارض وتكرار استلام الجائزة (Race Condition Lock)
                 if (!chatterBadgeCache.has(dailyIdForBadge)) {
+                    chatterBadgeCache.add(dailyIdForBadge); // قفل فوري
+                    
                     let dailyDataCheckRes;
                     try { dailyDataCheckRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
                     catch(e) { dailyDataCheckRes = await db.query(`SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = $1`, [dailyIdForBadge]).catch(()=>({rows:[]})); }
@@ -520,9 +539,6 @@ module.exports = {
                     const dailyDataCheck = dailyDataCheckRes.rows[0];
                     
                     if (dailyDataCheck && Number(dailyDataCheck.main_chat_messages) >= 100 && Number(dailyDataCheck.chatter_badge_given || 0) === 0) {
-                        
-                        chatterBadgeCache.add(dailyIdForBadge);
-                        
                         try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
 
                         try { await db.query(`UPDATE user_daily_stats SET "chatter_badge_given" = 1 WHERE "id" = $1`, [dailyIdForBadge]); }
@@ -544,6 +560,9 @@ module.exports = {
                         } else {
                             message.channel.send(`🗣️ **وســام جديــد!**\n<@${userID}> أرسل 100 رسالة وحصل على وسام **🗣️ ثرثار الحانة**!`).catch(()=>{});
                         }
+                    } else {
+                        // إذا لم تكتمل الـ 100 رسالة أو أخذها مسبقاً، افتح القفل مرة أخرى
+                        chatterBadgeCache.delete(dailyIdForBadge);
                     }
                 }
             }
@@ -577,21 +596,6 @@ module.exports = {
                 }
             }
             
-            if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
-                if (client.incrementQuestStats) client.incrementQuestStats(userID, guildID, 'meow_count', 1).catch(()=>{});
-                
-                try { await db.query(`INSERT INTO levels ("user", "guild", "total_meow_count") VALUES ($1, $2, 1) ON CONFLICT ("user", "guild") DO UPDATE SET "total_meow_count" = COALESCE(levels."total_meow_count", 0) + 1`, [userID, guildID]); }
-                catch(e) { await db.query(`INSERT INTO levels (userid, guildid, total_meow_count) VALUES ($1, $2, 1) ON CONFLICT (userid, guildid) DO UPDATE SET total_meow_count = COALESCE(levels.total_meow_count, 0) + 1`, [userID, guildID]).catch(()=>{}); }
-                
-                if (client.checkAchievements) {
-                    let updatedLevelRes;
-                    try { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
-                    catch(e) { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
-                    
-                    client.checkAchievements(client, message.member, updatedLevelRes.rows[0], null).catch(()=>{});
-                }
-            }
-            
             let isMediaChannelRes;
             try { isMediaChannelRes = await db.query(`SELECT * FROM media_streak_channels WHERE "guildID" = $1 AND "channelID" = $2`, [guildID, message.channel.id]); }
             catch(e) { isMediaChannelRes = await db.query(`SELECT * FROM media_streak_channels WHERE guildid = $1 AND channelid = $2`, [guildID, message.channel.id]).catch(()=>({rows:[]})); }
@@ -606,16 +610,23 @@ module.exports = {
             let getXpfromDB = settings?.customXP || settings?.customxp || 25;
             let getCooldownfromDB = settings?.customCooldown || settings?.customcooldown || 60000;
 
-            let currentLevelData = await client.getLevel(userID, guildID);
-            if (!currentLevelData) {
-                currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
-            } else {
-                currentLevelData.level = Number(currentLevelData.level) || 1;
-                currentLevelData.xp = Number(currentLevelData.xp) || 0;
-                currentLevelData.totalXP = Number(currentLevelData.totalXP || currentLevelData.totalxp || 0);
-            }
-
+            // 🔥 حل ثغرة "مواء الملايين" (تم نقله للداخل ليطبق عليه الـ Cooldown ويمنع السبام والتخريب)
             if (!client.talkedRecently.get(message.author.id)) {
+                
+                // إضافة ميزة المياو الآمنة هنا
+                if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
+                    if (client.incrementQuestStats) client.incrementQuestStats(userID, guildID, 'meow_count', 1).catch(()=>{});
+                    try { await db.query(`INSERT INTO levels ("user", "guild", "total_meow_count") VALUES ($1, $2, 1) ON CONFLICT ("user", "guild") DO UPDATE SET "total_meow_count" = COALESCE(levels."total_meow_count", 0) + 1`, [userID, guildID]); }
+                    catch(e) { await db.query(`INSERT INTO levels (userid, guildid, total_meow_count) VALUES ($1, $2, 1) ON CONFLICT (userid, guildid) DO UPDATE SET total_meow_count = COALESCE(levels.total_meow_count, 0) + 1`, [userID, guildID]).catch(()=>{}); }
+                    
+                    if (client.checkAchievements) {
+                        let updatedLevelRes;
+                        try { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
+                        catch(e) { updatedLevelRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+                        client.checkAchievements(client, message.member, updatedLevelRes.rows[0], null).catch(()=>{});
+                    }
+                }
+
                 let buff = await calculateBuffMultiplier(message.member, db);
 
                 if (settings && (settings.roleChatter || settings.rolechatter) && message.member.roles.cache.has(settings.roleChatter || settings.rolechatter)) {
@@ -624,17 +635,30 @@ module.exports = {
 
                 const xpGained = Math.floor((Math.random() * Number(getXpfromDB) + 1) * buff);
                 
+                let currentLevelData = await client.getLevel(userID, guildID);
+                if (!currentLevelData) {
+                    currentLevelData = { user: userID, guild: guildID, level: 1, xp: 0, totalXP: 0, mora: 0 };
+                } else {
+                    currentLevelData.level = Number(currentLevelData.level) || 1;
+                    currentLevelData.xp = Number(currentLevelData.xp) || 0;
+                    currentLevelData.totalXP = Number(currentLevelData.totalXP || currentLevelData.totalxp || 0);
+                }
+
                 currentLevelData.xp += xpGained;
                 currentLevelData.totalXP += xpGained;
                 
-                // 🔥 تحديث المعادلة للمستوى بناءً على الدالة المركزية 🔥
-                const nextXP = calculateRequiredXP(currentLevelData.level);
+                let nextXP = calculateRequiredXP(currentLevelData.level);
+                const oldLvl = currentLevelData.level;
+                let leveledUp = false;
                 
-                if (currentLevelData.xp >= nextXP) {
-                    const oldLvl = currentLevelData.level;
-                    currentLevelData.xp -= nextXP; 
-                    currentLevelData.level = Number(currentLevelData.level) + 1;
-                    
+                while (currentLevelData.xp >= nextXP) {
+                    currentLevelData.xp -= nextXP;
+                    currentLevelData.level++;
+                    leveledUp = true;
+                    nextXP = calculateRequiredXP(currentLevelData.level);
+                }
+                
+                if (leveledUp) {
                     client.setLevel(currentLevelData).catch(()=>{});
                     
                     try {
