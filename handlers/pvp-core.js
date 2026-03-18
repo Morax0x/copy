@@ -6,6 +6,12 @@ try {
     ({ updateGuildStat } = require('./guild-board-handler.js'));
 } catch (e) {}
 
+// 🔥 استيراد الدالة السحرية لإضافة الـ XP بصمت 🔥
+let addXPAndCheckLevel;
+try {
+    ({ addXPAndCheckLevel } = require('./handler-utils.js'));
+} catch (e) {}
+
 const rootDir = process.cwd();
 const weaponsConfig = require(path.join(rootDir, 'json', 'weapons-config.json'));
 const skillsConfig = require(path.join(rootDir, 'json', 'skills-config.json'));
@@ -46,7 +52,6 @@ function cleanDisplayName(name) {
 
 async function getUserRace(member, db) {
     if (!member || !member.guild) return null;
-    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [member.guild.id]);
     const allRaceRoles = res.rows;
     if (!member.roles || !member.roles.cache) return null;
@@ -61,7 +66,6 @@ async function getWeaponData(db, member) {
     const weaponConfig = weaponsConfig.find(w => w.race === raceName);
     if (!weaponConfig) return null;
     
-    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [member.id, member.guild.id, raceName]);
     let userWeapon = res.rows[0];
     if (!userWeapon || Number(userWeapon.weaponLevel || userWeapon.weaponlevel) <= 0) return null;
@@ -72,7 +76,6 @@ async function getWeaponData(db, member) {
 async function getAllSkillData(db, member) {
     const userRace = await getUserRace(member, db);
     const skillsOutput = {};
-    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [member.id, member.guild.id]);
     const userSkillsData = res.rows;
       
@@ -99,7 +102,6 @@ async function getAllSkillData(db, member) {
 }
 
 async function getUserActiveSkill(db, userId, guildId) {
-    // 🔥 إصلاح: وضع أسماء الأعمدة بين ""
     const res = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
     const userSkills = res.rows;
     if (userSkills.length > 0) {
@@ -579,12 +581,18 @@ async function endBattle(battleState, winnerId, db, reason = "win", buffCalculat
             const rewardXP = Math.floor(Math.random() * (300 - 50 + 1)) + 50;
 
             const client = battleState.message.client;
-            const userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [winner.member.id, battleState.message.guild.id]);
-            let userData = userDataRes.rows[0];
-            if(userData) {
-                userData.mora = Number(userData.mora) + rewardMora;
-                userData.xp = Number(userData.xp) + rewardXP;
-                await db.query(`UPDATE levels SET "mora" = $1, "xp" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, userData.xp, winner.member.id, battleState.message.guild.id]);
+            
+            // 🔥 استخدام دالة التلفيل الصامتة لبطولات الوحوش (لا ترسل تهنئة، تعطي XP فقط) 🔥
+            if (addXPAndCheckLevel) {
+                await addXPAndCheckLevel(client, winner.member, db, rewardXP, rewardMora, false).catch(()=>{});
+            } else {
+                const userDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [winner.member.id, battleState.message.guild.id]);
+                let userData = userDataRes.rows[0];
+                if(userData) {
+                    userData.mora = Number(userData.mora) + rewardMora;
+                    userData.xp = Number(userData.xp) + rewardXP;
+                    await db.query(`UPDATE levels SET "mora" = $1, "xp" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, userData.xp, winner.member.id, battleState.message.guild.id]);
+                }
             }
 
             await db.query(`INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, $5, $6)`, [battleState.message.guild.id, winner.member.id, 15, expireTime, 'xp', 0.15]);
