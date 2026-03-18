@@ -26,15 +26,16 @@ function getTodayDateString() {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 }
 
+// 🔥 تم تحديث قائمة الملوك هنا وإضافة ملك اللصوص وملك الصوت 🔥
 const kingStatsMap = {
     'roleCasinoKing': 'casino_profit',
     'roleAbyss': 'dungeon_floor',
     'roleChatter': 'messages',
     'rolePhilanthropist': 'mora_donated',
-    'roleAdvisor': 'ai_interactions',
+    'roleThief': 'mora_stolen',
+    'roleVoice': 'voice_time',
     'roleFisherKing': 'fish_caught',
-    'rolePvPKing': 'pvp_wins',
-    'roleFarmKing': 'crops_harvested'
+    'rolePvPKing': 'pvp_wins'
 };
 
 async function getUserRace(member, db) {
@@ -52,14 +53,15 @@ async function getUserRace(member, db) {
     return allRaceRoles.find(r => userRoleIDs.includes(r.roleID || r.roleid)) || null;
 }
 
-// 🔥 دالة جلب الجرد 🔥
 async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     let levelsRes;
-    try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
-    catch(e) { levelsRes = await db.query(`SELECT rodlevel, boatlevel FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
-    const levelsData = levelsRes.rows[0] || { rodLevel: 1, boatLevel: 1 };
+    try { levelsRes = await db.query(`SELECT "rodLevel", "boatLevel", "currentLocation" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
+    catch(e) { levelsRes = await db.query(`SELECT rodlevel, boatlevel, currentlocation FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+    
+    const levelsData = levelsRes.rows[0] || { rodLevel: 1, boatLevel: 1, currentLocation: 'beach' };
     const rodLvl = levelsData.rodLevel || levelsData.rodlevel || 1;
     const boatLvl = levelsData.boatLevel || levelsData.boatlevel || 1;
+    const cLoc = levelsData.currentLocation || levelsData.currentlocation || 'beach'; // 🔥 إضافة فحص الموقع
 
     let weaponRes;
     try { weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
@@ -90,7 +92,7 @@ async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
         .setThumbnail(targetUser.displayAvatarURL())
         .addFields(
             { name: '⚔️ السلاح الحالي', value: weaponText, inline: true },
-            { name: '🎣 معدات الصيد', value: `السنارة: **Lv.${rodLvl}**\nالقارب: **Lv.${boatLvl}**`, inline: true },
+            { name: '🎣 معدات الصيد', value: `السنارة: **Lv.${rodLvl}**\nالقارب: **Lv.${boatLvl}**\nالموقع: **${cLoc}**`, inline: true },
             { name: '✨ المهارات القتالية', value: skillsText, inline: false }
         );
 
@@ -160,7 +162,8 @@ module.exports = {
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
                     { label: '⛺ منح خيمة (دانجون)', value: 'dungeon_tent', description: 'تحديد طابق الحفظ في الدانجون', emoji: '⛺' },
                     { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض', emoji: '🎒' },
-                    { label: '⚔️ تعديل الأسلحة والمهارات', value: 'combat_gear', description: 'تغيير لفل السلاح، المهارة، السنارة، أو القارب', emoji: '⚔️' },
+                    { label: '⚔️ تعديل الأسلحة والمهارات', value: 'combat_gear', description: 'تغيير لفل السلاح أو المهارة', emoji: '⚔️' },
+                    { label: '⛵ معدات وموقع الصيد', value: 'fishing_gear', description: 'تغيير السنارة، القارب، أو موقع الشاطئ', emoji: '🎣' }, // 🔥 خيار جديد ومستقل 🔥
                     { label: '🗑️ تصفير الأسلحة والمهارات', value: 'reset_combat', description: 'مسح جميع مهارات وأسلحة اللاعب بالكامل', emoji: '🗑️' },
                     { label: '🛡️ إعطاء درع ميديا', value: 'media_shield', emoji: '🛡️' },
                     { label: '⚠️ تصفير الحساب', value: 'reset', description: 'مسح جميع البيانات!', emoji: '⚠️' }
@@ -190,7 +193,7 @@ module.exports = {
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
-                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] }); // جعلناها مخفية
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
                     const type = normalize(modalSubmit.fields.getTextInputValue('eco_type'));
                     const action = normalize(modalSubmit.fields.getTextInputValue('eco_action'));
@@ -211,7 +214,6 @@ module.exports = {
                     await modalSubmit.editReply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 نظام التتويج الذكي والإخلاء 🔥
             else if (val === 'set_king' || val === 'empty_king') {
                 const isEmpting = val === 'empty_king';
                 const kingMenu = new ActionRowBuilder().addComponents(
@@ -223,10 +225,10 @@ module.exports = {
                             { label: 'ملك الهاوية', value: 'roleAbyss', emoji: '🌑' },
                             { label: 'ملك البلاغة', value: 'roleChatter', emoji: '🗣️' },
                             { label: 'ملك الكرم', value: 'rolePhilanthropist', emoji: '🤝' },
-                            { label: 'ملك الحكمة', value: 'roleAdvisor', emoji: '🧠' },
+                            { label: 'ملك اللصوص', value: 'roleThief', emoji: '🥷' }, // 🔥 إضافة ملك اللصوص
+                            { label: 'ملك الصوت', value: 'roleVoice', emoji: '🎙️' }, // 🔥 إضافة ملك الصوت
                             { label: 'ملك القنص', value: 'roleFisherKing', emoji: '🎣' },
-                            { label: 'ملك النزاع', value: 'rolePvPKing', emoji: '⚔️' },
-                            { label: 'ملك الحصاد', value: 'roleFarmKing', emoji: '🌾' }
+                            { label: 'ملك النزاع', value: 'rolePvPKing', emoji: '⚔️' }
                         ])
                 );
                 
@@ -264,7 +266,6 @@ module.exports = {
 
                         await i.editReply({ content: `🗑️ **تم إخلاء عرش (${targetRole.name}) وتصفير جميع نقاطه لليوم بنجاح!**`, components: [] });
                     } else {
-                        // 🔥 التتويج (يعطي نقاطاً أعلى من الأول ليضمن الصدارة لليوم الحالي فقط)
                         let currentMax = 0;
                         if (selectedRoleColumn === 'roleCasinoKing') {
                             const res = await db.query(`SELECT SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) as val FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 GROUP BY "userID" ORDER BY val DESC LIMIT 1`, [guildID, todayStr]).catch(()=>({rows:[]}));
@@ -277,7 +278,6 @@ module.exports = {
                             currentMax = res.rows[0] ? Number(res.rows[0].val) : 0;
                         }
 
-                        // ضمان الصدارة المؤقتة
                         const newVal = currentMax + 10; 
                         const trackerId = `${userID}-${guildID}-${todayStr}`;
 
@@ -295,7 +295,6 @@ module.exports = {
                             `, [trackerId, userID, guildID, todayStr, newVal]).catch(()=>{});
                         }
 
-                        // إزالة الرتبة من الملوك القدامى وإعطاؤها للملك الجديد
                         targetRole.members.forEach(async (member) => {
                             if (member.id !== userID) await member.roles.remove(targetRole).catch(() => {});
                         });
@@ -410,10 +409,11 @@ module.exports = {
                     await modalSubmit.editReply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
+            // 🔥 تعديل معدات القتال (أسلحة ومهارات فقط) 🔥
             else if (val === 'combat_gear') {
                 const modalId = `mod_gear_${Date.now()}`;
-                const modal = new ModalBuilder().setCustomId(modalId).setTitle('تعديل معدات القتال والصيد');
-                const typeInput = new TextInputBuilder().setCustomId('gear_type').setLabel('النوع (سلاح / مهارة / سنارة / قارب)').setStyle(TextInputStyle.Short).setRequired(true);
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('تعديل معدات القتال');
+                const typeInput = new TextInputBuilder().setCustomId('gear_type').setLabel('النوع (سلاح / مهارة)').setStyle(TextInputStyle.Short).setRequired(true);
                 const nameInput = new TextInputBuilder().setCustomId('gear_name').setLabel('اسم المهارة (اتركه فارغاً إذا كان سلاحاً)').setStyle(TextInputStyle.Short).setRequired(false);
                 const levelInput = new TextInputBuilder().setCustomId('gear_level').setLabel('المستوى الجديد (أرقام فقط)').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(typeInput), new ActionRowBuilder().addComponents(nameInput), new ActionRowBuilder().addComponents(levelInput));
@@ -472,19 +472,8 @@ module.exports = {
                             }
                             successMessage = `✅ تم ضبط مستوى مهارة (${foundSkill.name}) لـ ${targetUser} إلى **Lv.${level}**.`;
                         }
-                    }
-                    else if (type.includes('سنارة') || type.includes('صيد') || type.includes('صنارة')) {
-                        try { await db.query(`UPDATE levels SET "rodLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
-                        catch(e) { await db.query(`UPDATE levels SET rodLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
-                        successMessage = `✅ تم ضبط مستوى السنارة لـ ${targetUser} إلى **Lv.${level}**.`;
-                    }
-                    else if (type.includes('قارب')) {
-                        try { await db.query(`UPDATE levels SET "boatLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
-                        catch(e) { await db.query(`UPDATE levels SET boatLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
-                        successMessage = `✅ تم ضبط مستوى القارب لـ ${targetUser} إلى **Lv.${level}**.`;
-                    }
-                    else {
-                        return modalSubmit.editReply({ content: "❌ نوع غير معروف. استخدم (سلاح / مهارة / سنارة / قارب)" });
+                    } else {
+                        return modalSubmit.editReply({ content: "❌ نوع غير معروف. استخدم (سلاح / مهارة)." });
                     }
 
                     const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
@@ -492,54 +481,52 @@ module.exports = {
 
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            else if (val === 'reset_combat') {
-                try { await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); } catch(e){}
-                
-                try {
-                    await db.query(`DELETE FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
-                    await db.query(`DELETE FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]);
-                } catch(e) {
-                    await db.query(`DELETE FROM user_weapons WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{});
-                    await db.query(`DELETE FROM user_skills WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{});
-                }
-                
-                const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
-                await interaction.editReply({ content: `✅ **تم تصفير جميع الأسلحة والمهارات لـ ${targetUser} بنجاح!**`, embeds: [summaryEmbed] });
-            }
-            else if (val === 'dungeon_tent') {
-                const modalId = `mod_tent_${Date.now()}`;
-                const modal = new ModalBuilder().setCustomId(modalId).setTitle('منح خيمة حفظ (الدانجون)');
-                const floorInput = new TextInputBuilder().setCustomId('tent_floor').setLabel('رقم الطابق المراد الحفظ عنده').setStyle(TextInputStyle.Short).setRequired(true);
-                modal.addComponents(new ActionRowBuilder().addComponents(floorInput));
+            // 🔥 خيار إدارة الصيد الجديد والمنفصل 🔥
+            else if (val === 'fishing_gear') {
+                const modalId = `mod_fish_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة معدات وموقع الصيد');
+                const typeInput = new TextInputBuilder().setCustomId('fish_type').setLabel('النوع (سنارة / قارب / مكان)').setStyle(TextInputStyle.Short).setRequired(true);
+                const valInput = new TextInputBuilder().setCustomId('fish_val').setLabel('الرقم / اسم المكان (مثال: beach, deep)').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(typeInput), new ActionRowBuilder().addComponents(valInput));
                 await interaction.showModal(modal);
 
                 try {
                     const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
                     await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-                    const targetFloor = parseInt(modalSubmit.fields.getTextInputValue('tent_floor'));
-                    
-                    if (isNaN(targetFloor) || targetFloor <= 0) {
-                        return modalSubmit.editReply({ content: "❌ الرجاء إدخال رقم طابق صحيح وموجب." });
+                    const type = normalize(modalSubmit.fields.getTextInputValue('fish_type'));
+                    const inputVal = modalSubmit.fields.getTextInputValue('fish_val').toLowerCase().trim();
+                    let successMessage = "";
+
+                    if (type.includes('سنارة') || type.includes('صنارة')) {
+                        const level = parseInt(inputVal);
+                        if (isNaN(level) || level <= 0) return modalSubmit.editReply("❌ مستوى السنارة غير صحيح.");
+                        try { await db.query(`UPDATE levels SET "rodLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
+                        catch(e) { await db.query(`UPDATE levels SET rodLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
+                        successMessage = `✅ تم ضبط مستوى السنارة لـ ${targetUser} إلى **Lv.${level}**.`;
+                    }
+                    else if (type.includes('قارب') || type.includes('يخت') || type.includes('سفينة')) {
+                        const level = parseInt(inputVal);
+                        if (isNaN(level) || level <= 0) return modalSubmit.editReply("❌ مستوى القارب غير صحيح.");
+                        try { await db.query(`UPDATE levels SET "boatLevel" = $1 WHERE "user" = $2 AND "guild" = $3`, [level, userID, guildID]); }
+                        catch(e) { await db.query(`UPDATE levels SET boatLevel = $1 WHERE userid = $2 AND guildid = $3`, [level, userID, guildID]).catch(()=>{}); }
+                        successMessage = `✅ تم ضبط مستوى القارب لـ ${targetUser} إلى **Lv.${level}**.`;
+                    }
+                    else if (type.includes('مكان') || type.includes('شاطئ') || type.includes('موقع')) {
+                        // أسماء الشواطئ الموجودة في اللعبة
+                        const locs = ['beach', 'shallow', 'deep', 'bermuda', 'trench', 'atlantis', 'dark_sea'];
+                        if (!locs.includes(inputVal)) return modalSubmit.editReply(`❌ مكان غير صحيح. الأماكن المتاحة:\n${locs.join(', ')}`);
+                        
+                        try { await db.query(`UPDATE levels SET "currentLocation" = $1 WHERE "user" = $2 AND "guild" = $3`, [inputVal, userID, guildID]); }
+                        catch(e) { await db.query(`UPDATE levels SET currentlocation = $1 WHERE userid = $2 AND guildid = $3`, [inputVal, userID, guildID]).catch(()=>{}); }
+                        successMessage = `✅ تم تغيير مكان الصيد لـ ${targetUser} إلى الشاطئ: **${inputVal}**.`;
+                    } else {
+                        return modalSubmit.editReply("❌ نوع غير معروف. استخدم (سنارة / قارب / مكان).");
                     }
 
-                    try {
-                        let existingSaveRes;
-                        try { existingSaveRes = await db.query(`SELECT * FROM dungeon_saves WHERE "hostID" = $1 AND "guildID" = $2`, [userID, guildID]); }
-                        catch(e) { existingSaveRes = await db.query(`SELECT * FROM dungeon_saves WHERE hostid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
-                        
-                        if (existingSaveRes.rows.length > 0) {
-                            try { await db.query(`UPDATE dungeon_saves SET "floor" = $1, "timestamp" = $2 WHERE "hostID" = $3 AND "guildID" = $4`, [targetFloor, Date.now(), userID, guildID]); }
-                            catch(e) { await db.query(`UPDATE dungeon_saves SET floor = $1, timestamp = $2 WHERE hostid = $3 AND guildid = $4`, [targetFloor, Date.now(), userID, guildID]).catch(()=>{}); }
-                        } else {
-                            try { await db.query(`INSERT INTO dungeon_saves ("hostID", "guildID", "floor", "timestamp") VALUES ($1, $2, $3, $4)`, [userID, guildID, targetFloor, Date.now()]); }
-                            catch(e) { await db.query(`INSERT INTO dungeon_saves (hostid, guildid, floor, timestamp) VALUES ($1, $2, $3, $4)`, [userID, guildID, targetFloor, Date.now()]).catch(()=>{}); }
-                        }
-                        
-                        await modalSubmit.editReply({ content: `⛺ ✅ تم منح خيمة سحرية لـ ${targetUser}!\nسيتم استكمال رحلته في الدانجون من **الطابق ${targetFloor}**.` });
-                    } catch (dbError) {
-                        await modalSubmit.editReply({ content: `❌ حدث خطأ برمجي أثناء حفظ الخيمة.` });
-                    }
+                    const summaryEmbed = await getGearSummaryEmbed(userID, guildID, db, targetUser);
+                    await modalSubmit.editReply({ content: successMessage, embeds: [summaryEmbed] });
+
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
             else if (val === 'items') {
