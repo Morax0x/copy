@@ -1,14 +1,17 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { generateLevelUpCard } = require('../generators/levelup-card-generator.js');
+let generateLevelUpCard;
+try {
+    ({ generateLevelUpCard } = require('../generators/levelup-card-generator.js'));
+} catch (e) {
+    console.error("Error loading levelup-card-generator:", e);
+}
 
 // 🔥 1. الدالة المركزية لحساب الـ XP المطلوب (زيادة الصعوبة بعد لفل 35) 🔥
 function calculateRequiredXP(level) {
     const lvl = Number(level) || 0;
     if (lvl < 35) {
-        // المعادلة العادية للمبتدئين
         return 5 * (lvl ** 2) + (50 * lvl) + 100;
     } else {
-        // المعادلة الصعبة (الجحيم) للمحترفين فوق 35
         return 15 * (lvl ** 2) + (150 * lvl);
     }
 }
@@ -33,66 +36,85 @@ async function getFreeBalance(member, db) {
     return Math.max(0, freeBalance);
 }
 
-// 🔥 3. الدالة السحرية المركزية التي تمنع تخطي اللفلات وتحمي الداتابيز من التعارض 🔥
-async function addXPAndCheckLevel(client, member, db, xpToAdd, moraToAdd = 0) {
+// 🔥 3. الدالة السحرية المركزية (تم التعديل لتمنع التلفيل إلا مع الرسائل) 🔥
+// أضفنا متغير isMessageEvent (قيمته الافتراضية false)
+async function addXPAndCheckLevel(client, member, db, xpToAdd, moraToAdd = 0, isMessageEvent = false) {
     if (!member || !db) return;
     const userId = member.id;
     const guildId = member.guild.id;
 
     try {
-        // جلب البيانات من الكاش أولاً لضمان أحدث نسخة
         let userData = null;
         if (client.getLevel) userData = await client.getLevel(userId, guildId);
 
-        // إذا لم يكن بالكاش، نجيبه من الداتابيز
         if (!userData) {
-            let res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+            let res;
+            try { res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]); }
+            catch(e) { res = await db.query(`SELECT *, userid as "user" FROM levels WHERE guildid = $1 AND userid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
             userData = res.rows[0] || { user: userId, guild: guildId, xp: 0, totalXP: 0, level: 1, mora: 0, bank: 0 };
         }
 
-        // تأمين الأرقام لمنع دمج النصوص (مثال: 40 + 1 = 401)
+        // إضافة المورا والخبرة وتراكمها (حتى لو تجاوزت الحد)
         userData.xp = (Number(userData.xp) || 0) + Number(xpToAdd);
         userData.totalXP = (Number(userData.totalXP || userData.totalxp) || 0) + Number(xpToAdd);
         userData.mora = (Number(userData.mora) || 0) + Number(moraToAdd);
         userData.level = Number(userData.level) || 1;
 
-        let nextXP = calculateRequiredXP(userData.level);
         let leveledUp = false;
         let oldLevel = userData.level;
 
-        // التلفيل المتعدد الآمن (للوقاية من جمع آلاف النقاط فجأة)
-        while (userData.xp >= nextXP) {
-            userData.xp -= nextXP;
-            userData.level++;
-            leveledUp = true;
-            nextXP = calculateRequiredXP(userData.level);
+        // 🛑 التعديل السحري: لن نتحقق من التلفيل ولن نرفع اللفل إلا إذا كان هذا الحدث ناتج عن "رسالة بالشات" 🛑
+        if (isMessageEvent) {
+            let nextXP = calculateRequiredXP(userData.level);
+            
+            // سيستمر بالدوران ورفع اللفل طالما الخبرة المتراكمة أكبر من المطلوب
+            while (userData.xp >= nextXP) {
+                userData.xp -= nextXP;
+                userData.level++;
+                leveledUp = true;
+                nextXP = calculateRequiredXP(userData.level);
+            }
         }
 
         // التحديث الآمن في الداتابيز
-        await db.query(`
-            INSERT INTO levels ("user", "guild", "xp", "totalXP", "level", "mora") 
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT ("user", "guild") DO UPDATE SET 
-            "xp" = $3, "totalXP" = $4, "level" = $5, "mora" = $6
-        `, [userId, guildId, userData.xp, userData.totalXP, userData.level, userData.mora]);
+        try {
+            await db.query(`
+                INSERT INTO levels ("user", "guild", "xp", "totalXP", "level", "mora") 
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT ("user", "guild") DO UPDATE SET 
+                "xp" = EXCLUDED."xp", "totalXP" = EXCLUDED."totalXP", "level" = EXCLUDED."level", "mora" = EXCLUDED."mora"
+            `, [userId, guildId, userData.xp, userData.totalXP, userData.level, userData.mora]);
+        } catch(e) {
+            await db.query(`
+                INSERT INTO levels (userid, guildid, xp, totalxp, level, mora) 
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (userid, guildid) DO UPDATE SET 
+                xp = EXCLUDED.xp, totalxp = EXCLUDED.totalxp, level = EXCLUDED.level, mora = EXCLUDED.mora
+            `, [userId, guildId, userData.xp, userData.totalXP, userData.level, userData.mora]).catch(()=>{});
+        }
 
-        // تحديث الكاش
         if (client.setLevel) await client.setLevel(userData);
 
-        // إرسال صورة التلفيل إذا ارتفع مستواه
+        // إرسال صورة التلفيل فقط إذا تم رفع اللفل (والذي لن يحدث إلا مع isMessageEvent = true)
         if (leveledUp) {
             const mockInteraction = { guild: member.guild, channel: member.guild.systemChannel || member.guild.channels.cache.first() };
-            await sendLevelUpMessage(mockInteraction, member, userData.level, oldLevel, userData, db).catch(()=>{});
+            // تأكد من وجود دالة التوليد قبل الاستدعاء
+            if (generateLevelUpCard) {
+                await sendLevelUpMessage(mockInteraction, member, userData.level, oldLevel, userData, db).catch(console.error);
+            }
         }
     } catch (e) {
         console.error("[addXPAndCheckLevel Error]:", e);
     }
 }
 
-// 🔥 4. دالة إرسال التلفيل بالصورة الفخمة بدلاً من الإيمبد 🔥
+// 🔥 4. دالة إرسال التلفيل بالصورة الفخمة 🔥
 async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpData, db) {
      try {
-         const channelRes = await db.query(`SELECT * FROM channel WHERE "guild" = $1`, [interaction.guild.id]);
+         let channelRes;
+         try { channelRes = await db.query(`SELECT * FROM channel WHERE "guild" = $1`, [interaction.guild.id]); }
+         catch(e) { channelRes = await db.query(`SELECT * FROM channel WHERE guild = $1`, [interaction.guild.id]).catch(()=>({rows:[]})); }
+         
          let channelLevel = channelRes.rows[0];
          
          let channelToSend = interaction.channel;
@@ -104,19 +126,19 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
          const permissionFlags = channelToSend.permissionsFor(interaction.guild.members.me);
          if (!permissionFlags || !permissionFlags.has(PermissionsBitField.Flags.SendMessages) || !permissionFlags.has(PermissionsBitField.Flags.ViewChannel)) return;
 
-         // 🎨 توليد الصورة الفخمة
          const card = await generateLevelUpCard(member, oldLevel, newLevel, { mora: 0, hp: 0 });
 
-         // فحص ما إذا كان العضو مقفل منشن التلفيل من الإعدادات
          let isMentionOn = 1;
          try {
-             const notifDataRes = await db.query(`SELECT "levelNotif" FROM quest_notifications WHERE "id" = $1`, [`${member.id}-${interaction.guild.id}`]);
+             let notifDataRes;
+             try { notifDataRes = await db.query(`SELECT "levelNotif" FROM quest_notifications WHERE "id" = $1`, [`${member.id}-${interaction.guild.id}`]); }
+             catch(e) { notifDataRes = await db.query(`SELECT levelnotif as "levelNotif" FROM quest_notifications WHERE id = $1`, [`${member.id}-${interaction.guild.id}`]).catch(()=>({rows:[]})); }
+             
              if (notifDataRes.rows.length > 0) isMentionOn = Number(notifDataRes.rows[0].levelNotif || notifDataRes.rows[0].levelnotif);
          } catch(e) {}
 
          const userReference = isMentionOn ? member.toString() : `**${member.displayName}**`;
          
-         // تجهيز النص المرافق للصورة
          let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                           `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                           `★ فقد كـسرت حـاجـز الـمستوى〃${oldLevel}〃وبلغـت المسـتـوى الـ 〃${newLevel}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد \n<:2KazumaSalut:1437129108806176768>`;
@@ -126,12 +148,10 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
              contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
          }
 
-         // إرسال الصورة
          await channelToSend.send({ content: contentMsg, files: [card] });
 
     } catch (err) {
          console.error(`[LevelUp Error]: ${err.message}`);
-         // رسالة نصية احتياطية في حال فشل توليد الصورة
          try {
              let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${member} <a:wii:1435572329039007889>\n` +
                              `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
@@ -142,7 +162,6 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
     }
 }
 
-// تصدير كل الدوال لاستخدامها في باقي البوت
 module.exports = {
     sendLevelUpMessage,
     getFreeBalance,
