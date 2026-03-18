@@ -42,6 +42,11 @@ module.exports = {
             await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeChannelID" TEXT`);
             await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeBotID" TEXT`);
             await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "treeMessageID" TEXT`);
+            
+            // 🔥 إضافة أعمدة ملوك الصوت واللصوص هنا لكي يحفظهم الداتابيز! 🔥
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "roleVoice" TEXT`);
+            await db.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "roleThief" TEXT`);
+            
             await db.query(`CREATE TABLE IF NOT EXISTS quest_achievement_roles ("guildID" TEXT, "roleID" TEXT, "achievementID" TEXT, PRIMARY KEY ("guildID", "achievementID"))`); 
         } catch (e) {
             console.error("Setup Guild DB Error:", e);
@@ -84,7 +89,6 @@ module.exports = {
                         inline: false 
                     },
                     { 
-                        // 🔥 تحديث الملوك الجدد في واجهة اللوحة
                         name: '👑 ألقاب الملوك (8 ألقاب)', 
                         value: `🎰 **الكازينو:** ${getRl(settings.roleCasinoKing || settings.rolecasinoking)} | 🌑 **الهاوية:** ${getRl(settings.roleAbyss || settings.roleabyss)}\n🗣️ **البلاغة:** ${getRl(settings.roleChatter || settings.rolechatter)} | 🤝 **الكرم:** ${getRl(settings.rolePhilanthropist || settings.rolephilanthropist)}\n🎙️ **سيد المجالس:** ${getRl(settings.roleVoice || settings.rolevoice)} | 🎣 **القنص:** ${getRl(settings.roleFisherKing || settings.rolefisherking)}\n⚔️ **النزاع:** ${getRl(settings.rolePvPKing || settings.rolepvpking)} | 🥷 **سيد الظلال:** ${getRl(settings.roleThief || settings.rolethief)}`, 
                         inline: false 
@@ -124,7 +128,6 @@ module.exports = {
                         { label: 'رتبة ملك الهاوية', value: 'edit_roleAbyss', emoji: '🌑' },
                         { label: 'رتبة ملك البلاغة', value: 'edit_roleChatter', emoji: '🗣️' },
                         { label: 'رتبة ملك الكرم', value: 'edit_rolePhilanthropist', emoji: '🤝' },
-                        // 🔥 تحديث خيارات التحديد للملوك الجدد
                         { label: 'رتبة سيد المجالس (الصوت)', value: 'edit_roleVoice', emoji: '🎙️' },
                         { label: 'رتبة ملك القنص', value: 'edit_roleFisherKing', emoji: '🎣' },
                         { label: 'رتبة ملك النزاع', value: 'edit_rolePvPKing', emoji: '⚔️' },
@@ -345,8 +348,8 @@ module.exports = {
                         const philanData = philanDataRes.rows[0];
 
                         let voiceDataRes;
-                        try { voiceDataRes = await db.query(`SELECT "userID", "vc_minutes" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "vc_minutes" > 0 ORDER BY "vc_minutes" DESC LIMIT 1`, [guildId, todayStr]); }
-                        catch(e) { voiceDataRes = await db.query(`SELECT userid as "userID", vc_minutes FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND vc_minutes > 0 ORDER BY vc_minutes DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
+                        try { voiceDataRes = await db.query(`SELECT "userID", "voice_time" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "voice_time" > 0 ORDER BY "voice_time" DESC LIMIT 1`, [guildId, todayStr]); }
+                        catch(e) { voiceDataRes = await db.query(`SELECT userid as "userID", voice_time FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND voice_time > 0 ORDER BY voice_time DESC LIMIT 1`, [guildId, todayStr]).catch(()=>({rows:[]})); }
                         const voiceData = voiceDataRes.rows[0];
 
                         let fisherDataRes;
@@ -382,13 +385,12 @@ module.exports = {
                             return { title, emoji, displayName: 'مغامر مجهول', avatarUrl: null, valueText: `${parseInt(dataObj[valueKey] || dataObj[valueKey.toLowerCase()] || 0).toLocaleString()} ${suffix}` };
                         }
 
-                        // 🔥 التحديث لترتيب وألقاب الملوك الجدد
                         const kingsArray = [
                             await getKingInfo(casinoData, 'totalProfit', 'مورا', 'ملك الكازينو', '🎰'),
                             await getKingInfo(abyssData, 'dungeon_floor', 'طابق', 'ملك الهاوية', '🌑'),
                             await getKingInfo(chatterData, 'messages', 'رسالة', 'ملك البلاغة', '🗣️'), 
                             await getKingInfo(philanData, 'mora_donated', 'مورا', 'ملك الكرم', '🤝'),
-                            await getKingInfo(voiceData, 'vc_minutes', 'دقيقة', 'سيد المجالس', '🎙️'),
+                            await getKingInfo(voiceData, 'voice_time', 'دقيقة', 'سيد المجالس', '🎙️'),
                             await getKingInfo(fisherData, 'fish_caught', 'سمكة', 'ملك القنص', '🎣'),
                             await getKingInfo(pvpData, 'pvp_wins', 'انتصار', 'ملك النزاع', '⚔️'),
                             await getKingInfo(thiefData, 'mora_stolen', 'مورا', 'سيد الظلال', '🥷')
