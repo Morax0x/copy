@@ -270,12 +270,13 @@ module.exports = {
         const msg = await reply({ embeds: mainData.embeds, components: mainData.components, fetchReply: true });
 
         const filter = i => i.user.id === user.id;
+        // 🔥 زيادة الوقت إلى 5 دقائق بدلاً من توقفه السريع 🔥
         const collector = msg.createMessageComponentCollector({ time: 300000, filter });
 
         collector.on('collect', async i => {
             try {
                 if (i.customId.startsWith('shop_cat_')) {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(()=>{});
                     currentCategory = i.customId.replace('shop_cat_', '');
                     currentView = 'grid';
                     currentPage = 0;
@@ -299,11 +300,11 @@ module.exports = {
                     const currentMax = await getPlayerCapacity(client, user.id, guild.id);
 
                     const data = buildGridView(currentItemsList, currentPage, currentCap, currentMax, currentCategory);
-                    await i.editReply(data);
+                    await i.editReply(data).catch(()=>{});
                 }
 
                 else if (i.isStringSelectMenu() && i.customId === 'farm_select_item') {
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(()=>{});
                     const selectedId = i.values[0];
                     currentItemIndex = currentItemsList.findIndex(it => it.id === selectedId);
                     
@@ -311,22 +312,22 @@ module.exports = {
                         currentView = 'detail';
                         const item = currentItemsList[currentItemIndex];
                         const data = await buildDetailView(item, user.id, guild.id, sql, currentItemIndex, currentItemsList.length, client, currentCategory);
-                        await i.editReply(data);
+                        await i.editReply(data).catch(()=>{});
                     }
                 }
 
                 else if (i.isButton()) {
                     
                     if (i.customId === 'farm_back_main') {
-                        await i.deferUpdate();
+                        await i.deferUpdate().catch(()=>{});
                         currentView = 'main';
                         currentCategory = null;
                         const data = buildMainMenu(user);
-                        await i.editReply(data);
+                        await i.editReply(data).catch(()=>{});
                     }
 
                     else if (i.customId === 'farm_back_to_grid') {
-                        await i.deferUpdate();
+                        await i.deferUpdate().catch(()=>{});
                         currentView = 'grid';
                         
                         let currentCap = 0;
@@ -344,11 +345,11 @@ module.exports = {
                         const currentMax = await getPlayerCapacity(client, user.id, guild.id);
                         
                         const data = buildGridView(currentItemsList, currentPage, currentCap, currentMax, currentCategory);
-                        await i.editReply(data);
+                        await i.editReply(data).catch(()=>{});
                     }
 
                     else if (i.customId === 'farm_page_prev' || i.customId === 'farm_page_next') {
-                        await i.deferUpdate();
+                        await i.deferUpdate().catch(()=>{});
                         if (i.customId === 'farm_page_prev' && currentPage > 0) currentPage--;
                         else if (i.customId === 'farm_page_next') currentPage++;
 
@@ -367,17 +368,17 @@ module.exports = {
                         const currentMax = await getPlayerCapacity(client, user.id, guild.id);
 
                         const data = buildGridView(currentItemsList, currentPage, currentCap, currentMax, currentCategory);
-                        await i.editReply(data);
+                        await i.editReply(data).catch(()=>{});
                     }
 
                     else if (i.customId.startsWith('farm_prev_detail_') || i.customId.startsWith('farm_next_detail_')) {
-                        await i.deferUpdate();
+                        await i.deferUpdate().catch(()=>{});
                         if (i.customId.startsWith('farm_next_detail_')) currentItemIndex = (currentItemIndex + 1) % currentItemsList.length;
                         else currentItemIndex = (currentItemIndex - 1 + currentItemsList.length) % currentItemsList.length;
 
                         const item = currentItemsList[currentItemIndex];
                         const data = await buildDetailView(item, user.id, guild.id, sql, currentItemIndex, currentItemsList.length, client, currentCategory);
-                        await i.editReply(data);
+                        await i.editReply(data).catch(()=>{});
                     }
 
                     else if (i.customId.startsWith('buy_') || i.customId.startsWith('sell_')) {
@@ -402,13 +403,12 @@ module.exports = {
 
                         modal.addComponents(new ActionRowBuilder().addComponents(input));
                         
-                        // 🔥 هنا كان يكمن الخطأ المجهول، تم حماية الرد 100% 🔥
-                        await i.showModal(modal);
+                        // 🔥 عرض المودال للمستخدم 🔥
+                        await i.showModal(modal).catch(()=>{});
 
                         try {
                             const submit = await i.awaitModalSubmit({ time: 60000, filter: s => s.user.id === user.id });
                             
-                            // نؤخر الرد على التحديث حتى ننتهي من معالجة البيانات
                             const qty = parseInt(submit.fields.getTextInputValue('qty_input'));
                             
                             if (isNaN(qty) || qty <= 0) {
@@ -419,6 +419,7 @@ module.exports = {
                             let userData = await client.getLevel(user.id, guild.id);
                             if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
+                            // 🔥 حالة الشراء 🔥
                             if (action === 'buy') {
                                 if (currentCategory === 'animals') {
                                     let userRowsRes;
@@ -459,9 +460,10 @@ module.exports = {
                                     catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = COALESCE(quantity, 0) + $5`, [guild.id, user.id, itemId, qty, qty]).catch(()=>{}); }
                                 }
                                 
-                                await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] });
+                                await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
-                            } else { // حالة البيع
+                            // 🔥 حالة البيع 🔥
+                            } else { 
                                 if (currentCategory === 'animals') {
                                     let userAnimalsRes;
                                     try { userAnimalsRes = await sql.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [user.id, guild.id, itemId]); }
@@ -517,7 +519,7 @@ module.exports = {
                                     userData.mora = String(Number(userData.mora || 0) + totalRefund);
                                     if (typeof client.setLevel === 'function') await client.setLevel(userData);
                                     
-                                    await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] });
+                                    await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
                                 } else {
                                     let invItemRes;
@@ -544,20 +546,19 @@ module.exports = {
                                         catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [qty, user.id, guild.id, itemId]).catch(()=>{}); }
                                     }
 
-                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] });
+                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
                                 }
                             }
 
-                            // 🔄 تحديث بيانات الواجهة (Embed) بصمت وبدون أن يسبب خطأ
+                            // 🔄 تحديث شاشة المتجر بعد البيع والشراء لتعكس البيانات الجديدة بصمت
                             const newData = await buildDetailView(currentItemsList[currentItemIndex], user.id, guild.id, sql, currentItemIndex, currentItemsList.length, client, currentCategory);
                             await msg.edit(newData).catch(() => {});
 
                         } catch (e) {
-                            if (e.code !== 40060 && e.code !== 10062) console.error(e);
+                            if (e.code !== 40060 && e.code !== 10062) console.error("Modal Submit Error:", e);
                         }
                     }
                 }
-
             } catch (error) {
                 console.error("Main Collector Error:", error);
             }
