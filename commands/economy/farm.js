@@ -6,7 +6,7 @@ const { renderLand } = require('../../handlers/farm-land.js');
 
 let farmShop;
 try {
-    farmShop = require('../../handlers/farm-shop.js');
+    farmShop = require('../../handlers/shop_system/farm-shop.js');
 } catch(e) {}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -384,7 +384,7 @@ module.exports = {
                     await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
                 }
 
-            } catch (err) { console.error("Error in farm collector:", err); }
+            } catch (err) {}
         });
 
         collector.on('end', () => { if (msg.editable) msg.edit({ components: [] }).catch(() => {}); });
