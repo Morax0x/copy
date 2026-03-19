@@ -141,7 +141,7 @@ async function sendLevelUpMessage(interaction, member, newLevel, oldLevel, xpDat
          
          let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                           `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                          `★ فقد كـسرت حـاجـز الـمستوى〃${oldLevel}〃وبلغـت المسـتـوى الـ 〃${newLevel}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد \n<:2KazumaSalut:1437129108806176768>`;
+                          `★ فقد كـسرت حـاجـز الـمستوى〃${oldLevel}〃وبلغـت المسـتـوى الـ 〃${newLevel}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد  <:2KazumaSalut:1437129108806176768>`;
          
          const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
          if (milestones.includes(Number(newLevel))) {
