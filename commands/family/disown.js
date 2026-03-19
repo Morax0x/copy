@@ -17,13 +17,45 @@ module.exports = {
 
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
+            setTimeout(() => msg.delete().catch(() => {}), 8000); 
         };
 
-        const childMember = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
+        // 🔥 ميزة التنظيف التلقائي للأبناء المعلقين (الذين غادروا السيرفر) 🔥
+        if (args[0] === 'clean' || args[0] === 'تنظيف') {
+            let childrenRes;
+            try { childrenRes = await db.query(`SELECT "childID" FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+            catch(e) { childrenRes = await db.query(`SELECT childid as "childID" FROM children WHERE parentid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+            
+            let removed = 0;
+            for (const row of childrenRes.rows) {
+                const cId = row.childID || row.childid;
+                const member = await message.guild.members.fetch(cId).catch(()=>null);
+                if (!member) {
+                    try { await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, cId, guildId]); }
+                    catch(e) { await db.query(`DELETE FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [userId, cId, guildId]).catch(()=>{}); }
+                    removed++;
+                }
+            }
+            
+            if (removed > 0) {
+                return replyTemp(`🧹 **تم التنظيف بنجاح!**\nتم مسح **${removed}** أبناء معلقين (غادروا السيرفر) من شجرة عائلتك مجاناً.\nجرب أمر التبني الآن!`);
+            } else {
+                return replyTemp(`✅ **شجرة عائلتك نظيفة!**\nجميع أبنائك متواجدون في السيرفر حالياً.\n*(ملاحظة: البوت لا يفرق بين الابن المعلق والفعلي إذا كانوا جميعاً في السيرفر. لحذف شخص معلق موجود في السيرفر، استخدم \`!disown @الابن\` وسيمسحه الآن بشكل صحيح).*`);
+            }
+        }
+
+        let childMember = message.mentions.members.first();
+        if (!childMember && args[0]) {
+            childMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, '')).catch(()=>null);
+        }
 
         if (!childMember) {
-            return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك تحديد الابن الذي تريد طرده.\nمثال: \`${message.content.split(' ')[0]} @الابن\``);
+            return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك تحديد الابن الذي تريد طرده.\nأو استخدم أمر \`!disown clean\` لمسح الأبناء الذين غادروا السيرفر.`);
+        }
+
+        if (childMember.id === client.user.id || childMember.id === OWNER_ID) {
+            await message.reply({ files: [BOT_REJECT_IMAGE] }).catch(()=>{});
+            return;
         }
 
         try {
