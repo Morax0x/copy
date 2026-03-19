@@ -275,6 +275,10 @@ module.exports = {
                     maxTension: 100 + (currentRod.level * 15), 
                 };
 
+                // 🔥 تم إضافة نظام الإصدارات وحالة اللعبة لتجنب تداخل الطلبات (Race Conditions) 🔥
+                let updateVersion = 0;
+                let isGameOver = false;
+
                 const getControlRows = () => {
                     return new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('fish_hard').setLabel('سحب قوي').setStyle(ButtonStyle.Danger).setEmoji('🔴'),
@@ -283,19 +287,35 @@ module.exports = {
                     );
                 };
 
-                const sendUpdate = async (isFinal = false) => {
+                const sendUpdate = async (isFinal = false, btnInteraction = null) => {
+                    updateVersion++;
+                    const currentVersion = updateVersion;
+                    
                     try {
-                        const imgBuffer = await generateFishingCard(Math.min((gameData.tension / gameData.maxTension) * 100, 100), gameData.distance, gameData.statusText, locationId, currentBoat.level, currentRod.level);
+                        const tensionPercent = Math.min(Math.max((gameData.tension / gameData.maxTension) * 100, 0), 100);
+                        const displayDistance = Math.max(gameData.distance, 0);
+
+                        const imgBuffer = await generateFishingCard(tensionPercent, displayDistance, gameData.statusText, locationId, currentBoat.level, currentRod.level);
+                        
+                        // تجاهل تحديث الصورة إذا صدر طلب أحدث أثناء معالجة هذه الصورة
+                        if (currentVersion !== updateVersion) return; 
+
                         const attachment = new AttachmentBuilder(imgBuffer, { name: 'fishing-game.png' });
+                        const finalContent = isFinal ? `<@${user.id}> **انتهت المحاولة!**` : `<@${user.id}> **انتبه للعداد والمسافة!**`;
                         
                         const updatePayload = {
-                            content: `<@${user.id}> **انتبه للعداد والمسافة!**`,
+                            content: finalContent,
                             files: [attachment],
                             components: isFinal ? [] : [getControlRows()]
                         };
                         
-                        if (isSlash) await interactionOrMessage.editReply(updatePayload).catch(()=>{});
-                        else await loadingMsg.edit(updatePayload).catch(()=>{});
+                        if (btnInteraction) {
+                            await btnInteraction.editReply(updatePayload).catch(()=>{});
+                        } else if (isSlash) {
+                            await interactionOrMessage.editReply(updatePayload).catch(()=>{});
+                        } else {
+                            await loadingMsg.edit(updatePayload).catch(()=>{});
+                        }
                     } catch(err) {}
                 };
 
@@ -307,6 +327,12 @@ module.exports = {
                 });
 
                 collector.on('collect', async i => {
+                    // إذا انتهت اللعبة، تجاهل أي ضغطات إضافية فوراً
+                    if (isGameOver) {
+                        await i.deferUpdate().catch(()=>{});
+                        return;
+                    }
+
                     await i.deferUpdate().catch(()=>{});
 
                     if (i.customId === 'fish_hard') {
@@ -333,32 +359,36 @@ module.exports = {
                     if (gameData.distance < 0) gameData.distance = 0;
 
                     if (gameData.tension >= gameData.maxTension) {
-                        gameData.statusText = "انقطع الخيط! هربت السمكة...";
-                        await sendUpdate(true);
+                        isGameOver = true;
+                        gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
+                        await sendUpdate(true, i);
                         collector.stop('snapped');
                         return;
                     }
                     
                     if (gameData.distance >= 150) {
-                        gameData.statusText = "السمكة ابتعدت جداً وأفلتت السنارة!";
-                        await sendUpdate(true);
+                        isGameOver = true;
+                        gameData.statusText = "💨 السمكة ابتعدت جداً وأفلتت السنارة!";
+                        await sendUpdate(true, i);
                         collector.stop('escaped');
                         return;
                     }
 
                     if (gameData.distance <= 0) {
-                        gameData.statusText = "تم الصيد بنجاح!";
-                        await sendUpdate(true);
+                        isGameOver = true;
+                        gameData.statusText = "✅ تم الصيد بنجاح!";
+                        await sendUpdate(true, i);
                         collector.stop('success');
                         return;
                     }
 
-                    await sendUpdate();
+                    await sendUpdate(false, i);
                 });
 
                 collector.on('end', async (collected, reason) => {
                     try {
                         if (reason === 'time') {
+                            isGameOver = true;
                             gameData.statusText = "⏳ انتهى الوقت! السمكة هربت.";
                             await sendUpdate(true); 
                         }
