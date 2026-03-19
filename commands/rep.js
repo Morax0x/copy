@@ -149,13 +149,14 @@ module.exports = {
         if (senderId !== OWNER_ID) {
             try {
                 let todayMessages = 0;
+                // 🔥 تم إصلاح تنسيق التاريخ هنا ليتطابق مع قاعدة البيانات YYYY-MM-DD 🔥
+                const todayDateKSA = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+                
                 try {
-                    const dailyID = `${senderId}-${guildId}-${todayDateStr}`;
-                    const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "id" = $1`, [dailyID]);
+                    const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "userID" = $1 AND "guildID" = $2 AND "date" = $3`, [senderId, guildId, todayDateKSA]);
                     todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
                 } catch(e) {
-                    const dailyID = `${senderId}-${guildId}-${todayDateStr}`;
-                    const dailyStatsRes = await db.query(`SELECT messages FROM user_daily_stats WHERE id = $1`, [dailyID]).catch(()=>({rows:[]}));
+                    const dailyStatsRes = await db.query(`SELECT messages FROM user_daily_stats WHERE userid = $1 AND guildid = $2 AND date = $3`, [senderId, guildId, todayDateKSA]).catch(()=>({rows:[]}));
                     todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
                 }
 
@@ -189,7 +190,6 @@ module.exports = {
         let repToAdd = 1;
         let isEliteVouch = false;
         
-        // 🔥 التعديل: فقط الرتب S و SS من يحصلون على مضاعفة التزكية 🔥
         if (['S', 'SS'].includes(senderRankData.rank)) {
             repToAdd = 2;
             isEliteVouch = true;
@@ -218,7 +218,7 @@ module.exports = {
         }
 
         const currentTargetPoints = parseInt(targetRep ? (targetRep.rep_points || targetRep.rep_points) : 0, 10) || 0;
-        const newTargetPoints = currentTargetPoints + repToAdd; // يتم إضافة 1 أو 2 هنا
+        const newTargetPoints = currentTargetPoints + repToAdd;
         const newDailyRepsGiven = currentDailyReps + 1;
         
         try {
