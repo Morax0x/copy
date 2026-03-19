@@ -47,6 +47,28 @@ function getKSADateString(timestamp) {
     return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 }
 
+// 🔥 دالة حساب تخفيض وقت الانتظار بناءً على السمعة (صامتة تماماً) 🔥
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;      // SS
+        else if (points >= 500) reductionMinutes = 15;  // S
+        else if (points >= 250) reductionMinutes = 10;  // A
+        else if (points >= 100) reductionMinutes = 8;   // B
+        else if (points >= 50) reductionMinutes = 7;    // C
+        else if (points >= 25) reductionMinutes = 6;    // D
+        else if (points >= 10) reductionMinutes = 5;    // E
+
+        return reductionMinutes * 60 * 1000; // تحويل الدقائق إلى ملي ثانية
+    } catch(e) { return 0; }
+}
+
 const COMMANDS_TO_CHECK = [
     { name: 'work', db_column: 'lastWork', fallback: 'lastwork', cooldown: 1 * 60 * 60 * 1000, label: 'عمل' },
     { name: 'rob', db_column: 'lastRob', fallback: 'lastrob', cooldown: 1 * 60 * 60 * 1000, label: 'سرقة' },
@@ -114,7 +136,10 @@ module.exports = {
                 const readyGames = [];
                 const waitGames = [];
 
-                // 1. الراتب
+                // 🔥 جلب مقدار تخفيض الوقت للمستخدم (بناءً على السمعة) 🔥
+                const cooldownReductionMs = await getCooldownReductionMs(client.sql, userToCheck.id, guild.id);
+
+                // 1. الراتب (يومي، لا يخضع لتخفيض السمعة لأنه يعتمد على منتصف الليل)
                 const lastDaily = Number(data.lastDaily || data.lastdaily) || 0;
                 const todayKSA = getKSADateString(now);
                 const lastDailyKSA = getKSADateString(lastDaily);
@@ -129,8 +154,11 @@ module.exports = {
                 // 2. الأوامر الثابتة
                 for (const cmd of COMMANDS_TO_CHECK) {
                     const lastUsed = Number(data[cmd.db_column] || data[cmd.fallback] || 0);
-                    const cooldownAmount = cmd.cooldown;
-                    const timeLeft = (lastUsed + cooldownAmount) - now;
+                    
+                    // خصم تخفيض السمعة، مع حماية ألا ينزل الكولداون تحت الصفر (في الأوامر القصيرة كالتحدي)
+                    const effectiveCooldown = Math.max(0, cmd.cooldown - cooldownReductionMs);
+                    
+                    const timeLeft = (lastUsed + effectiveCooldown) - now;
 
                     if (timeLeft > 0) {
                         waitGames.push(`${EMOJI_WAIT} **${cmd.label}**: \`${formatTimeSimple(timeLeft)}\``);
@@ -139,12 +167,12 @@ module.exports = {
                     }
                 }
 
-                // 3. الصيد
-                // 🔥 تم توحيد الكولداون ليكون ساعة واحدة ليطابق ملف الصيد الفعلي 🔥
-                const fishCooldown = 3600000; 
+                // 3. الصيد (تم توحيده ليكون ساعة واحدة، وتطبيق التخفيض عليه)
+                const baseFishCooldown = 3600000; 
+                const effectiveFishCooldown = Math.max(0, baseFishCooldown - cooldownReductionMs);
                 
                 const lastFish = Number(data.lastFish || data.lastfish) || 0;
-                const fishTimeLeft = (lastFish + fishCooldown) - now;
+                const fishTimeLeft = (lastFish + effectiveFishCooldown) - now;
 
                 if (fishTimeLeft > 0) {
                     waitGames.push(`${EMOJI_WAIT} **صيد**: \`${formatTimeSimple(fishTimeLeft)}\``);
@@ -164,8 +192,6 @@ module.exports = {
                 .setColor("Random")
                 .setThumbnail('https://i.postimg.cc/zGqbJNzm/ayqwnt.png')
                 .setDescription(`
-✶ اختر الزر المناسب أدناه لعرض الوقت المتبقي لكل لعبة
-
 ✶ الالعاب المتـاحـة: ${EMOJI_READY}
 ✶ الالعاب الغير متـاحة: ${EMOJI_WAIT}
 ✶ عـرض الكل: ${EMOJI_ALL}
