@@ -55,7 +55,6 @@ module.exports = {
 
         // 🔥 نظام الجدار الفولاذي لملك الصوت (سيد المجالس) 🔥
         try {
-            // جلب تاريخ البارحة لمعرفة الفائز المتوج لليوم الحالي
             const yesterdayKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
             yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
             const yesterdayStr = yesterdayKSA.toLocaleDateString('en-CA');
@@ -69,7 +68,6 @@ module.exports = {
             
             const voiceKingId = voiceKingRes.rows[0]?.userID || voiceKingRes.rows[0]?.userid;
 
-            // إذا كان المستخدم هو الفائز الشرعي، نعطيه 3 فرص إضافية
             if (voiceKingId === senderId) {
                 maxVotes += 3;
             }
@@ -147,18 +145,16 @@ module.exports = {
                 .setColor(getRandomColor());
             return message.reply({ embeds: [lvlEmbed] });
         }
-
-        const dbDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
         
         if (senderId !== OWNER_ID) {
             try {
                 let todayMessages = 0;
                 try {
-                    const dailyID = `${senderId}-${guildId}-${dbDateStr}`;
+                    const dailyID = `${senderId}-${guildId}-${todayDateStr}`;
                     const dailyStatsRes = await db.query(`SELECT "messages" FROM user_daily_stats WHERE "id" = $1`, [dailyID]);
                     todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
                 } catch(e) {
-                    const dailyID = `${senderId}-${guildId}-${dbDateStr}`;
+                    const dailyID = `${senderId}-${guildId}-${todayDateStr}`;
                     const dailyStatsRes = await db.query(`SELECT messages FROM user_daily_stats WHERE id = $1`, [dailyID]).catch(()=>({rows:[]}));
                     todayMessages = dailyStatsRes.rows.length > 0 ? (Number(dailyStatsRes.rows[0].messages) || 0) : 0;
                 }
@@ -186,6 +182,19 @@ module.exports = {
             return message.reply({ embeds: [cooldownEmbed] });
         }
 
+        // 🔥 معرفة قوة التزكية بناءً على رتبة المرسل 🔥
+        const currentSenderPoints = parseInt(senderRep ? (senderRep.rep_points || senderRep.rep_points) : 0, 10) || 0;
+        const senderRankData = getRepRank(currentSenderPoints);
+        
+        let repToAdd = 1;
+        let isEliteVouch = false;
+        
+        // 🔥 التعديل: فقط الرتب S و SS من يحصلون على مضاعفة التزكية 🔥
+        if (['S', 'SS'].includes(senderRankData.rank)) {
+            repToAdd = 2;
+            isEliteVouch = true;
+        }
+
         let targetRep;
         try {
             const targetRepRes = await db.query(`SELECT * FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
@@ -209,16 +218,16 @@ module.exports = {
         }
 
         const currentTargetPoints = parseInt(targetRep ? (targetRep.rep_points || targetRep.rep_points) : 0, 10) || 0;
-        const newTargetPoints = currentTargetPoints + 1;
+        const newTargetPoints = currentTargetPoints + repToAdd; // يتم إضافة 1 أو 2 هنا
         const newDailyRepsGiven = currentDailyReps + 1;
         
         try {
             await db.query("BEGIN");
             try {
-                await db.query(`UPDATE user_reputation SET "rep_points" = "rep_points" + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetId, guildId]);
+                await db.query(`UPDATE user_reputation SET "rep_points" = "rep_points" + $1 WHERE "userID" = $2 AND "guildID" = $3`, [repToAdd, targetId, guildId]);
                 await db.query(`UPDATE user_reputation SET "last_rep_given" = $1, "daily_reps_given" = $2, "weekly_reps_given" = "weekly_reps_given" + 1 WHERE "userID" = $3 AND "guildID" = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
             } catch(e) {
-                await db.query(`UPDATE user_reputation SET rep_points = rep_points + 1 WHERE userid = $1 AND guildid = $2`, [targetId, guildId]);
+                await db.query(`UPDATE user_reputation SET rep_points = rep_points + $1 WHERE userid = $2 AND guildid = $3`, [repToAdd, targetId, guildId]);
                 await db.query(`UPDATE user_reputation SET last_rep_given = $1, daily_reps_given = $2, weekly_reps_given = weekly_reps_given + 1 WHERE userid = $3 AND guildid = $4`, [todayDateStr, newDailyRepsGiven, senderId, guildId]);
             }
             await db.query("COMMIT");
@@ -242,12 +251,21 @@ module.exports = {
             const imageBuffer = await generateRepCard(senderAvatar, senderName, receiverAvatar, receiverName, newTargetPoints, targetRankData, isRankUp);
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'reputation.png' });
 
-            await message.reply({ content: `<@${targetId}>`, files: [attachment] });
+            let extraMsg = '';
+            if (isEliteVouch) {
+                extraMsg = `\n👑 **تزكية النخبة!** لأنك مغامر من الرتبة المرموقة (**${senderRankData.rank}**)، تزكيتك تعادل شهادتين! (+2 🌟)`;
+            }
+
+            await message.reply({ content: `<@${targetId}>${extraMsg}`, files: [attachment] });
             
         } catch (error) {
             console.error("Error generating rep card:", error);
+            
+            let extraMsg = '';
+            if (isEliteVouch) extraMsg = `\n👑 **تزكية النخبة!** شهادتك تعادل صوتين (+2 🌟)`;
+            
             const errorEmbed = new EmbedBuilder()
-                .setDescription('✅ **تم منح السمعة بنجاح!**')
+                .setDescription(`✅ **تم منح السمعة بنجاح!**${extraMsg}`)
                 .setColor(getRandomColor());
             message.reply({ embeds: [errorEmbed] });
         }
