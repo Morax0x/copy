@@ -2,9 +2,12 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, Slas
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 const LOANS = [
-    { id: 'loan_5000', label: 'قرض 5,000', amount: 5000, requiredLevel: 5, totalToRepay: 5500, dailyPayment: 184 },
-    { id: 'loan_15000', label: 'قرض 15,000', amount: 15000, requiredLevel: 20, totalToRepay: 16500, dailyPayment: 550 },
-    { id: 'loan_30000', label: 'قرض 30,000', amount: 30000, requiredLevel: 30, totalToRepay: 33000, dailyPayment: 1100 }
+    { id: 'loan_5000', label: 'قرض 5,000', amount: 5000, requiredLevel: 5, totalToRepay: 5500, dailyPayment: 184, isElite: false },
+    { id: 'loan_15000', label: 'قرض 15,000', amount: 15000, requiredLevel: 20, totalToRepay: 16500, dailyPayment: 550, isElite: false },
+    { id: 'loan_30000', label: 'قرض 30,000', amount: 30000, requiredLevel: 30, totalToRepay: 33000, dailyPayment: 1100, isElite: false },
+    // 🔥 قروض النخبة الجديدة 🔥 (السداد على 40 يوم بدلاً من 30)
+    { id: 'loan_50000', label: 'قرض 50,000', amount: 50000, requiredLevel: 40, totalToRepay: 55000, dailyPayment: 1375, isElite: true, eliteLevel: 'A' },
+    { id: 'loan_80000', label: 'قرض 80,000', amount: 80000, requiredLevel: 50, totalToRepay: 88000, dailyPayment: 2200, isElite: true, eliteLevel: 'S' }
 ];
 
 module.exports = {
@@ -49,7 +52,7 @@ module.exports = {
             };
 
             const sendError = async (content) => {
-                const payload = { content, ephemeral: true };
+                const payload = { content, flags: [MessageFlags.Ephemeral] };
                 if (isSlash) {
                     return interaction.editReply(payload);
                 } else {
@@ -71,28 +74,62 @@ module.exports = {
                 return sendError(`❌ لديك قرض سابق لم تقم بسداده. المبلغ المتبقي: **${Number(existingLoan.remainingAmount || existingLoan.remainingamount).toLocaleString()}** ${EMOJI_MORA}.`);
             }
 
+            // 🔥 فحص رتبة السمعة لتحديد القروض المتاحة 🔥
+            let userRepPoints = 0;
+            try {
+                let repRes;
+                try { repRes = await sql.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                catch(e) { repRes = await sql.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                if (repRes.rows.length > 0) userRepPoints = Number(repRes.rows[0].rep_points) || 0;
+            } catch(e) {}
+
+            const isRankA = userRepPoints >= 250; // رتبة A وما فوق
+            const isRankS = userRepPoints >= 500; // رتبة S وما فوق
+
+            const hasRoleA = member.roles.cache.has('1395674235002945636'); // رول مخصص للـ 50 الف
+            const hasRoleS = member.roles.cache.has('1422160802416164885'); // رول مخصص للكل 50 و 80 الف
+
+            const canSeeLoan50k = isRankA || hasRoleA || hasRoleS;
+            const canSeeLoan80k = isRankS || hasRoleS;
+
             const mainEmbed = new EmbedBuilder()
                 .setTitle('بنـك الامـبراطـوريـة')
                 .setDescription(
                     `✬ اهـلا بك بقسم القـروض اختر القرض الذي يناسبك <a:6aMoney:1439572832219693116>\n` +
-                    `✬ جمـيع القـروض بفائـدة 10% وتسداد بشكل آلي على مدار 30 يـوم\n\n` +
+                    `✬ جمـيع القـروض بفائـدة 10% وتسداد بشكل آلي على مدار 30 يـوم ان لم تكن من النخبة\n\n` +
                     `✦ تـأكد من مراجعـة عـقد القرض قبـل توقيعـه <:stop:1436337453098340442>`
                 )
                 .setColor(Colors.Gold)
                 .setImage('https://i.postimg.cc/GmQN2JWF/bank.gif'); 
 
-            const mainRow = new ActionRowBuilder();
-            LOANS.forEach(loan => {
-                mainRow.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(loan.id)
-                        .setLabel(loan.label)
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji(EMOJI_MORA)
-                );
-            });
+            const rows = [];
+            let currentRow = new ActionRowBuilder();
+            let buttonCount = 0;
 
-            const msg = await sendReply({ embeds: [mainEmbed], components: [mainRow], fetchReply: true });
+            LOANS.forEach(loan => {
+                let canShow = true;
+                if (loan.id === 'loan_50000' && !canSeeLoan50k) canShow = false;
+                if (loan.id === 'loan_80000' && !canSeeLoan80k) canShow = false;
+
+                if (canShow) {
+                    if (buttonCount >= 5) {
+                        rows.push(currentRow);
+                        currentRow = new ActionRowBuilder();
+                        buttonCount = 0;
+                    }
+                    currentRow.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(loan.id)
+                            .setLabel(loan.label)
+                            .setStyle(loan.isElite ? ButtonStyle.Danger : ButtonStyle.Primary) // قروض النخبة بلون مختلف
+                            .setEmoji(EMOJI_MORA)
+                    );
+                    buttonCount++;
+                }
+            });
+            if (buttonCount > 0) rows.push(currentRow);
+
+            const msg = await sendReply({ embeds: [mainEmbed], components: rows, fetchReply: true });
 
             const filter = (i) => i.user.id === user.id;
             const collector = msg.createMessageComponentCollector({ filter, time: 180000 });
@@ -100,7 +137,7 @@ module.exports = {
             collector.on('collect', async i => {
                 try {
                     if (i.customId === 'cancel_loan') {
-                        return i.update({ embeds: [mainEmbed], components: [mainRow] });
+                        return i.update({ embeds: [mainEmbed], components: rows });
                     }
 
                     let data = await client.getLevel(user.id, guild.id);
@@ -113,16 +150,18 @@ module.exports = {
                         if (Number(data.level) < selectedLoan.requiredLevel) {
                             return i.reply({
                                 content: `❌ لا يمكنك أخذ هذا القرض. يتطلب لفل **${selectedLoan.requiredLevel}** وأنت لفل **${data.level}**.`,
-                                ephemeral: true
+                                flags: [MessageFlags.Ephemeral]
                             });
                         }
+
+                        const payDays = selectedLoan.isElite ? 40 : 30;
 
                         const confirmationEmbed = new EmbedBuilder()
                             .setTitle(`⚠️ عـقـد الـقـرض: ${selectedLoan.label}`)
                             .setColor(Colors.Red)
                             .setDescription(
                                 `✶ مبلـغ القرض: **${selectedLoan.amount.toLocaleString()}** ${EMOJI_MORA}\n` +
-                                `✦ قيمـة السداد الكاملة على 30 يوم: **${selectedLoan.totalToRepay.toLocaleString()}** ${EMOJI_MORA}\n` +
+                                `✦ قيمـة السداد الكاملة على ${payDays} يوم: **${selectedLoan.totalToRepay.toLocaleString()}** ${EMOJI_MORA}\n` +
                                 `✬ مبـلغ القسـط اليومي: **${selectedLoan.dailyPayment.toLocaleString()}** ${EMOJI_MORA}\n\n` +
                                 `✶ هـل انـت موافـق علـى توقيـع عقد القرض<:mirkk:1435648219488190525>؟\n\n` +
                                 `> **✦ عواقب التخلف عن السداد <:araara:1436297148894412862>:**\n` +
@@ -212,8 +251,9 @@ module.exports = {
                             }
                             await i.update({ components: disabledRows });
 
+                            const payDaysStr = selectedLoan.isElite ? '40' : '30';
                             await i.followUp({
-                                content: `✅ تم استلام قرض بقيمة **${selectedLoan.amount.toLocaleString()}** ${EMOJI_MORA}.\nسيتم خصم **${selectedLoan.dailyPayment}** يومياً لمدة 30 يوما.`
+                                content: `✅ تم استلام قرض بقيمة **${selectedLoan.amount.toLocaleString()}** ${EMOJI_MORA}.\nسيتم خصم **${selectedLoan.dailyPayment}** يومياً لمدة ${payDaysStr} يوما.`
                             });
 
                             collector.stop();
@@ -227,14 +267,14 @@ module.exports = {
                             console.error("Loan Transaction Error:", txError);
                             return i.followUp({ 
                                 content: `❌ حدث خطأ في قاعدة البيانات ولم يتم منح القرض. لم يتم خصم أو إضافة أي شيء.`, 
-                                ephemeral: true 
+                                flags: [MessageFlags.Ephemeral] 
                             });
                         }
                     }
                 } catch (collectorError) {
                     console.error("خطأ في الكوليكتور الخاص بالقرض:", collectorError);
                     try {
-                        await i.followUp({ content: 'حدث خطأ أثناء معالجة طلبك.', ephemeral: true });
+                        await i.followUp({ content: 'حدث خطأ أثناء معالجة طلبك.', flags: [MessageFlags.Ephemeral] });
                     } catch (e) {}
                 }
             });
@@ -257,7 +297,7 @@ module.exports = {
 
         } catch (error) {
             console.error("خطأ في أمر القرض (loan):", error);
-            const errorPayload = { content: "حدث خطأ أثناء محاولة عرض قائمة القروض.", ephemeral: true };
+            const errorPayload = { content: "حدث خطأ أثناء محاولة عرض قائمة القروض.", flags: [MessageFlags.Ephemeral] };
             if (isSlash) {
                 if (interaction.deferred || interaction.replied) {
                     await interaction.editReply(errorPayload);
