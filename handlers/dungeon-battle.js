@@ -44,11 +44,17 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
     let resumedMonsterData = null;
 
     if (resumeData) {
-        players = resumeData.players;
+        // 🔥 نظام التعقيم: إصلاح أي دانجون زومبي قديم وإكمال بياناته الناقصة لمنع الانهيار 🔥
+        players = (resumeData.players || []).map(p => {
+            p.effects = p.effects || [];
+            p.skillCooldowns = p.skillCooldowns || {};
+            p.loot = p.loot || { mora: 0, xp: 0 };
+            return p;
+        });
+
         merchantState = resumeData.merchantState || merchantState;
         retreatState = resumeData.retreatState || retreatState; 
         
-        // 🔥 حل المشكلة: حماية ضد الـ Undefined للغنائم المحفوظة القديمة 🔥
         if (resumeData.loot) {
             totalAccumulatedCoins = Number(resumeData.loot.coins) || 0;
             totalAccumulatedXP = Number(resumeData.loot.xp) || 0;
@@ -86,7 +92,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         if (players.length === 0 || players.every(p => p.isDead)) {
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            // 🔥 تم تمرير client هنا
             await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
@@ -150,7 +155,8 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
                 
                 p.startingShield = 0; 
                 
-                p.effects = p.effects.filter(e => 
+                // 🔥 حماية إضافية للفلترة لكي لا تنهار أبداً 🔥
+                p.effects = (p.effects || []).filter(e => 
                     ['poison', 'atk_buff', 'def_buff', 'weakness', 'titan', 'burn', 'stun', 'rebound_active', 'rebound', 'confusion'].includes(e.type)
                 );
                 
@@ -320,10 +326,11 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             }
 
             players.forEach(p => { 
-                for (const sid in p.skillCooldowns) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
+                for (const sid in (p.skillCooldowns || {})) if (p.skillCooldowns[sid] > 0) p.skillCooldowns[sid]--; 
                 if (p.special_cooldown > 0) p.special_cooldown--; 
                 
-                p.effects = p.effects.filter(e => { 
+                // 🔥 حماية إضافية ثانية 🔥
+                p.effects = (p.effects || []).filter(e => { 
                     if (e.floors) return true; 
                     if (e.turns !== undefined) e.turns--; 
                     if (e.turns <= 0) return false; 
@@ -359,7 +366,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             const finalFloor = isTrapActive ? trapStartFloor : floor;
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            // 🔥 تم تمرير client هنا
             await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, finalFloor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
@@ -403,7 +409,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             players.forEach(p => { p.isDead = true; p.hp = 0; p.deathFloor = floor; });
             await threadChannel.send(`💀 **انتهى الوقت!** ابتلع ظلام الدانجون الفريق بأكمله...`).catch(()=>{});
             statusCollector.stop(); 
-            // 🔥 تم تمرير client هنا
             await handleTeamWipe(players, floor, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "lose", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
@@ -414,7 +419,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             
             await threadChannel.send(`⛺ **تم نصب الخيام بنجاح!**\nتم حفظ تقدمكم عند الطابق **${floor + 1}**. سيتم الآن توزيع الغنائم وإغلاق البوابة.`).catch(()=>{});
 
-            // 🔥 تم تمرير client هنا
             await handleLeaderRetreat(players, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "camp", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
@@ -422,7 +426,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
         else if (decision === 'retreat') {
             await deleteDungeonState(db, threadChannel.id); 
             statusCollector.stop(); 
-            // 🔥 تم تمرير client هنا
             await handleLeaderRetreat(players, db, guild.id, client);
             await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, floor, "retreat", db, guild.id, hostId, activeDungeonRequests, client);
             return; 
@@ -469,7 +472,6 @@ async function runDungeon(threadChannel, mainChannel, partyIDs, theme, db, hostI
             console.log("⚠️ تعذر إرسال رسالة الفوز (الثريد محذوف).");
         }
 
-        // 🔥 تم تمرير client هنا
         await handleLeaderRetreat(alivePlayers, db, guild.id, client);
         await sendEndMessage(mainChannel, threadChannel, players, retreatedPlayers, 100, "win", db, guild.id, hostId, activeDungeonRequests, client);
     }
