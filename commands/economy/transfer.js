@@ -11,7 +11,7 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('تحويل')
-        .setDescription('تحول مورا إلى عضو آخر (أول تحويل يومياً مجاني، ثم تُطبق الضريبة حسب رتبتك).')
+        .setDescription('تحول مورا إلى عضو آخر .')
         .addUserOption(option =>
             option.setName('المستلم')
             .setDescription('العضو الذي تريد التحويل له')
@@ -53,13 +53,15 @@ module.exports = {
             amount = parseInt(args[1]);
         }
 
+        // 🔥 إصلاح جذري لمشكلة الانهيار (Ephemeral Error) 🔥
         const replyError = async (content) => {
-            const payload = { content, flags: [MessageFlags.Ephemeral] };
             if (isSlash) {
-                if (interaction.replied || interaction.deferred) return interaction.editReply(payload);
-                return interaction.reply(payload);
+                if (interaction.replied || interaction.deferred) {
+                    return interaction.editReply({ content, embeds: [], components: [] }).catch(()=>{});
+                }
+                return interaction.reply({ content, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
             } else {
-                return message.reply(payload);
+                return message.reply({ content }).catch(()=>{});
             }
         };
 
@@ -77,7 +79,7 @@ module.exports = {
         }
 
         if (receiver.id === sender.id) return replyError("❌ لا يمكنك التحويل لنفسك!");
-        if (receiver.user.bot) return replyError("❌ لا يمكنك التحويل للبوتات!");
+        if (receiver.user?.bot) return replyError("❌ لا يمكنك التحويل للبوتات!");
 
         try {
             await db.query(`ALTER TABLE levels ADD COLUMN IF NOT EXISTS "lastTransferDate" TEXT DEFAULT ''`);
@@ -150,21 +152,23 @@ module.exports = {
         const displayAmountReceived = amount - displayTaxAmount;
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكيد التحويل').setStyle(ButtonStyle.Success).setEmoji('💸'),
-            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغاء').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكـيد').setStyle(ButtonStyle.Success).setEmoji('💸'),
+            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغـاء').setStyle(ButtonStyle.Danger)
         );
 
-        let footerText = `💡 الضريبة: ${displayTaxRate * 100}% - بناءً على رتبتك: ${rankName})`;
+        let footerText = `💡 الضريبة: ${Math.round(displayTaxRate * 100)}% -بناءً على رتبتك: ${rankName}`;
         if (isPhilanthropistKing) {
             footerText = "👑 إعفاء ملك الكرم: تحويل مجاني بلا رسوم!";
         } else if (tempDailyCount === 0) {
             footerText = "💡 هذا هو تحويلك اليومي المجاني الأول! الضريبة: 0%";
         }
 
+        const receiverName = receiver.user ? receiver.user.username : receiver.displayName;
+
         const confirmEmbed = new EmbedBuilder()
             .setColor(Colors.Orange)
             .setTitle('⏳ تأكيد التحويل')
-            .setDescription(`هل أنت متأكد من تحويل **${amount.toLocaleString()}** ${EMOJI_MORA} إلى ${receiver}؟\n\n` +
+            .setDescription(`هل أنت متأكد من تحويل **${amount.toLocaleString()}** ${EMOJI_MORA} إلى <@${receiver.id}>؟\n\n` +
                             `الرسوم الضريبية: **${displayTaxAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
                             `المبلغ الصافي المستلم: **${displayAmountReceived.toLocaleString()}** ${EMOJI_MORA}`)
             .setFooter({ text: footerText });
@@ -188,7 +192,7 @@ module.exports = {
             });
 
             collector.on('collect', async i => {
-                await i.deferUpdate();
+                await i.deferUpdate().catch(()=>{});
 
                 // تعطيل الأزرار فوراً لمنع السباااام!
                 row.components.forEach(c => c.setDisabled(true));
@@ -196,45 +200,47 @@ module.exports = {
 
                 if (i.customId === 'cancel_transfer') {
                     client.activePlayers.delete(sender.id);
-                    return confirmMsg.edit({ content: `🚫 **تم إلغاء عملية التحويل.**`, embeds: [], components: [] });
+                    return confirmMsg.edit({ content: `🚫 **تم إلغاء عملية التحويل.**`, embeds: [], components: [] }).catch(()=>{});
                 }
 
-                // إعادة قراءة البيانات للتأكد من الرصيد في اللحظة الأخيرة (للحماية من التلاعب)
+                // 🔥 قراءة البيانات بأمان داخل الكولكتور لمنع الأخطاء 🔥
                 senderData = await client.getLevel(sender.id, guild.id);
-                pMora = Number(senderData.mora) || 0;
-                pBank = Number(senderData.bank) || 0;
+                if (!senderData) senderData = { user: sender.id, guild: guild.id, mora: 0, bank: 0 };
+                
+                let currentMora = Number(senderData.mora) || 0;
+                let currentBank = Number(senderData.bank) || 0;
 
-                if (pMora + pBank < amount) {
+                if (currentMora + currentBank < amount) {
                     client.activePlayers.delete(sender.id);
-                    return confirmMsg.edit({ content: `❌ فشل التحويل! لا تملك مورا كافية وقت التأكيد.`, embeds: [], components: [] });
+                    return confirmMsg.edit({ content: `❌ فشل التحويل! لا تملك مورا كافية وقت التأكيد.`, embeds: [], components: [] }).catch(()=>{});
                 }
 
-                const originalMora = pMora;
-                const originalBank = pBank;
+                const originalMora = currentMora;
+                const originalBank = currentBank;
 
-                if (pMora >= amount) {
-                    pMora -= amount;
+                if (currentMora >= amount) {
+                    currentMora -= amount;
                 } else {
-                    const remainingToPay = amount - pMora;
-                    pMora = 0; 
-                    pBank -= remainingToPay;
+                    const remainingToPay = amount - currentMora;
+                    currentMora = 0; 
+                    currentBank -= remainingToPay;
                 }
 
                 try {
                     await db.query('BEGIN');
 
-                    senderData.mora = String(pMora);
-                    senderData.bank = String(pBank);
+                    senderData.mora = String(currentMora);
+                    senderData.bank = String(currentBank);
                     senderData.dailyTransferCount = tempDailyCount + 1;
                     senderData.lastTransferDate = saudiDate;
                     senderData.lastTransfer = Date.now();
 
                     try {
                         await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2, "dailyTransferCount" = $3, "lastTransferDate" = $4, "lastTransfer" = $5 WHERE "user" = $6 AND "guild" = $7`, 
-                            [pMora, pBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]);
+                            [currentMora, currentBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]);
                     } catch(e) {
                         await db.query(`UPDATE levels SET mora = $1, bank = $2, dailytransfercount = $3, lasttransferdate = $4, lasttransfer = $5 WHERE userid = $6 AND guildid = $7`, 
-                            [pMora, pBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]).catch(()=>{});
+                            [currentMora, currentBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]).catch(()=>{});
                     }
                     
                     if (client.setLevel) await client.setLevel(senderData);
@@ -254,12 +260,12 @@ module.exports = {
 
                     await db.query('COMMIT'); 
                 } catch (e) {
-                    await db.query('ROLLBACK'); 
+                    await db.query('ROLLBACK').catch(()=>{}); 
                     senderData.mora = String(originalMora);
                     senderData.bank = String(originalBank);
                     if (client.setLevel) await client.setLevel(senderData);
                     client.activePlayers.delete(sender.id);
-                    return confirmMsg.edit({ content: "❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل وتم استرجاع أموالك.", embeds: [], components: [] });
+                    return confirmMsg.edit({ content: "❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل وتم استرجاع أموالك.", embeds: [], components: [] }).catch(()=>{});
                 }
 
                 client.activePlayers.delete(sender.id);
@@ -273,16 +279,16 @@ module.exports = {
                     .setTitle('✅ تـم التـحويـل بنجـاح')
                     .setDescription([
                         `**المرسل:** ${sender.username}`,
-                        `**المستلم:** ${receiver.user.username}`,
+                        `**المستلم:** ${receiverName}`,
                         `\n**المبلغ المُرسل:** ${amount.toLocaleString()} ${EMOJI_MORA}`,
-                        `**الضريبة (${displayTaxRate * 100}%):** ${displayTaxAmount.toLocaleString()} ${EMOJI_MORA}`,
+                        `**الضريبة (${Math.round(displayTaxRate * 100)}%):** ${displayTaxAmount.toLocaleString()} ${EMOJI_MORA}`,
                         `**المبلغ المستلم:** ${displayAmountReceived.toLocaleString()} ${EMOJI_MORA}`
                     ].join('\n'))
                     .setFooter({ text: footerText })
                     .setImage('https://i.postimg.cc/vHhJTgyx/download-3.jpg')
                     .setTimestamp();
 
-                await confirmMsg.edit({ content: `<@${receiver.id}>`, embeds: [successEmbed], components: [] });
+                await confirmMsg.edit({ content: `<@${receiver.id}>`, embeds: [successEmbed], components: [] }).catch(()=>{});
             });
 
             collector.on('end', collected => {
