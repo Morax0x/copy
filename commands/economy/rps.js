@@ -28,6 +28,27 @@ function formatTime(ms) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;
+        else if (points >= 500) reductionMinutes = 15;
+        else if (points >= 250) reductionMinutes = 10;
+        else if (points >= 100) reductionMinutes = 8;
+        else if (points >= 50) reductionMinutes = 7;
+        else if (points >= 25) reductionMinutes = 6;
+        else if (points >= 10) reductionMinutes = 5;
+
+        return reductionMinutes * 60 * 1000; 
+    } catch(e) { return 0; }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('حجرة')
@@ -98,7 +119,10 @@ module.exports = {
 
         const now = Date.now();
         if (user.id !== OWNER_ID) {
-            const timeLeft = (Number(userData.lastRPS || userData.lastrps) || 0) + COOLDOWN_MS - now;
+            const reductionMs = await getCooldownReductionMs(db, user.id, guild.id);
+            const effectiveCooldown = Math.max(0, COOLDOWN_MS - reductionMs);
+            const timeLeft = (Number(userData.lastRPS || userData.lastrps) || 0) + effectiveCooldown - now;
+            
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
@@ -411,7 +435,11 @@ async function runRPSRound(message, player1, member1, player2, bet, isPvP, clien
                     .setThumbnail(player1.displayAvatarURL({ dynamic: true }));
 
             } else {
-                const multiplier = await calculateMoraBuff(member1, db); 
+                let multiplier = 1.0;
+                try {
+                    if (calculateMoraBuff) multiplier = await calculateMoraBuff(member1, db); 
+                } catch(e) {}
+                
                 winnings = Math.floor((bet * 2) * multiplier); 
                 
                 try {
