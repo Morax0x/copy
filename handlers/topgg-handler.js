@@ -8,16 +8,7 @@ module.exports = (client, db) => {
 
     app.use(express.json());
 
-    app.use((req, res, next) => {
-        console.log(`📨 [Webhook Traffic] ${req.method} request to ${req.path}`);
-        next();
-    });
-
-    console.log(`[Top.gg] Handler initialized on port ${PORT}`);
-
     app.post('/vote', async (req, res) => {
-        console.log("📦 [Payload Received]:", JSON.stringify(req.body, null, 2));
-
         res.status(200).send({ success: true });
 
         try {
@@ -39,11 +30,8 @@ module.exports = (client, db) => {
                 return;
             }
 
-            console.log(`✅ [Server Vote] تم استخراج الآيدي بنجاح: ${userId}`);
-
             if (client.incrementQuestStats) {
-                await client.incrementQuestStats(userId, MY_SERVER_ID, 'topgg_votes', 1);
-                console.log(`📈 [Reward] تم تسجيل نقطة التصويت للعضو ${userId} بنجاح.`);
+                await client.incrementQuestStats(userId, MY_SERVER_ID, 'topgg_votes', 1).catch(() => {});
             }
 
         } catch (error) {
@@ -52,7 +40,7 @@ module.exports = (client, db) => {
     });
 
     app.get('/', (req, res) => {
-        res.send('Emorax Vote Handler is Online (Fixed Payload)');
+        res.send('Emorax Vote Handler is Online');
     });
 
     app.listen(PORT, () => {
