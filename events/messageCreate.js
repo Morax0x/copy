@@ -9,13 +9,10 @@ const aiLimitHandler = require('../utils/aiLimitHandler');
 
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
-// 🔥 استيراد الدالة السحرية للتلفيل بدلاً من الحساب اليدوي القديم 🔥
 let addXPAndCheckLevel;
 try {
     ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
-} catch (e) {
-    console.error("Missing handler-utils.js", e);
-}
+} catch (e) {}
 
 let handleNewSuggestion;
 try { ({ handleNewSuggestion } = require('../handlers/suggestion-handler.js')); } catch (e) { }
@@ -97,7 +94,7 @@ async function recordBump(client, guildID, userID) {
             if (updatedDailyRes.rows[0]) client.checkQuests(client, member, updatedDailyRes.rows[0], 'daily', dateStr).catch(()=>{});
             if (updatedTotalRes.rows[0]) client.checkAchievements(client, member, null, updatedTotalRes.rows[0]).catch(()=>{});
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {}
 }
 
 module.exports = {
@@ -158,9 +155,7 @@ module.exports = {
                 if (!allowGhost) {
                     const now = Math.floor(Date.now() / 1000);
                     const diffSeconds = now - Number(afkData.timestamp);
-                    
                     const minutes = Math.floor(diffSeconds / 60); 
-                    
                     const cappedMinutes = Math.min(minutes, 720); 
                     const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
@@ -203,7 +198,6 @@ module.exports = {
                     } catch (e) {}
 
                     const timeAgo = `<t:${afkData.timestamp}:R>`;
-                    
                     let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount || afkData.mentionscount} مرة أثناء غيابك`;
                     
                     if (reward > 0) {
@@ -330,8 +324,9 @@ module.exports = {
 
             const argsRaw = message.content.trim().split(/ +/);
             const firstWord = argsRaw[0].toLowerCase();
-            const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
+            const isCommand = client.commands.find(cmd => (cmd.name && cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
             let isShortcut = false;
+            
             try {
                 let scRes;
                 try { scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]); }
@@ -363,7 +358,6 @@ module.exports = {
                     }
                 } catch(e) {}
 
-                // 🔥 منع الذكاء الصناعي من الرد في الأماكن غير المخصصة له 🔥
                 if (!aiChannelData) {
                     if (message.channel.parentId && aiConfig.isRestrictedCategory(message.channel.parentId)) {
                         const paidStatus = aiConfig.getPaidChannelStatus(message.channel.id);
@@ -381,25 +375,28 @@ module.exports = {
                             }
                         }
                     } else {
-                        return; // 🛑 خروج فوري! لن يتم تفعيل البوت إذا لم تكن القناة مدعومة
+                        return; 
                     }
                 }
 
-                const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
                 let canChat = true;
-                
-                if (usageStatus && usageStatus.canChat === false) {
-                    const daily = usageStatus.dailyUsage || 0;
-                    const limit = usageStatus.roleLimit || 0;
-                    const bal = usageStatus.purchasedBalance || 0;
-                    if (limit === 0 && bal === 0 && daily < 10) {
-                        canChat = true; 
-                    } else {
-                        canChat = false;
+                let isTrackedUser = !isOwnerMentioning && !isWisdomKing;
+
+                if (isTrackedUser) {
+                    const usageStatus = await aiLimitHandler.checkUserUsage(message.member);
+                    if (usageStatus && usageStatus.canChat === false) {
+                        const daily = usageStatus.dailyUsage || 0;
+                        const limit = usageStatus.roleLimit || 0;
+                        const bal = usageStatus.purchasedBalance || 0;
+                        if (limit === 0 && bal === 0 && daily < 10) {
+                            canChat = true;
+                        } else {
+                            canChat = false;
+                        }
                     }
                 }
 
-                if (!canChat && !isOwnerMentioning && !isWisdomKing) {
+                if (!canChat) {
                     if (paymentCooldowns.has(message.author.id)) return; 
                     paymentCooldowns.add(message.author.id);
                     setTimeout(() => paymentCooldowns.delete(message.author.id), 5 * 60 * 1000);
@@ -430,9 +427,10 @@ module.exports = {
                         }
                     }
 
-                    if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
-
-                    if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id, db);
+                    if (!cleanContent && !imageAttachment) {
+                        if (isTrackedUser) aiLimitHandler.releasePendingUsage(message.author.id);
+                        return message.reply("نـعـم .. ؟");
+                    }
 
                     const reply = await askMorax(
                         message.author.id, 
@@ -445,7 +443,14 @@ module.exports = {
                         message 
                     );
                     
-                    if (!reply) return;
+                    if (!reply) {
+                        if (isTrackedUser) aiLimitHandler.releasePendingUsage(message.author.id);
+                        return;
+                    }
+
+                    if (isTrackedUser) {
+                        await aiLimitHandler.incrementUsage(message.author.id, db);
+                    }
 
                     const safeReplyMsg = reply.replace(/@everyone/g, '@\u200beveryone').replace(/@here/g, '@\u200bhere');
                     const replyOptions = { repliedUser: true, parse: ['users'] };
@@ -459,7 +464,9 @@ module.exports = {
                         await safeReply(message, { content: safeReplyMsg, allowedMentions: replyOptions });
                     }
 
-                } catch (err) {}
+                } catch (err) {
+                    if (isTrackedUser) aiLimitHandler.releasePendingUsage(message.author.id);
+                }
                 return; 
             }
         }
@@ -623,7 +630,6 @@ module.exports = {
 
                 const xpGained = Math.floor((Math.random() * Number(getXpfromDB) + 1) * buff);
                 
-                // 🔥 استدعاء الدالة السحرية الجديدة للتلفيل 🔥
                 if (addXPAndCheckLevel) {
                     await addXPAndCheckLevel(client, message.member, db, xpGained, 0, true);
                 }
@@ -632,7 +638,6 @@ module.exports = {
                 setTimeout(() => client.talkedRecently.delete(message.author.id), Number(getCooldownfromDB));
             }
             
-            // 🔥 نظام تحديث رتب اللفلات (Level Roles) 🔥
             try {
                 let currentLevelData = await client.getLevel(userID, guildID);
                 if (currentLevelData) {
