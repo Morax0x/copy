@@ -138,35 +138,39 @@ module.exports = {
             return replyTemp("<:5gyy:1414564326496534628> **مـا نستقـبل شـواذ اذلـف**");
         }
 
+        // 🔥 حماية وفصل الاستعلامات لمنع الانهيار الكامل 🔥
         try {
-            // 🔥 الحماية المزدوجة لجميع عمليات الفحص 🔥
-            let isParentRes, isChildRes, authorParentsRes, targetParentsRes, authorCountRes, targetCountRes, alreadyMarriedRes;
-            try {
-                isParentRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]);
-                isChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
-                authorParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
-                targetParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
-                authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, guildId]);
-                targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]);
-                alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE "userID" = $1 AND "partnerID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
-            } catch (e) {
-                isParentRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]);
-                isChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
-                authorParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [message.author.id, guildId]);
-                targetParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [targetMember.id, guildId]);
-                authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [message.author.id, guildId]);
-                targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [targetMember.id, guildId]);
-                alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE userid = $1 AND partnerid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]);
-            }
-
+            let isParentRes;
+            try { isParentRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]); }
+            catch(e) { isParentRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [targetMember.id, message.author.id, guildId]).catch(()=>({rows:[]})); }
             if (isParentRes.rows.length > 0) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو والدك/والدتك.`);
+
+            let isChildRes;
+            try { isChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]); }
+            catch(e) { isChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]).catch(()=>({rows:[]})); }
             if (isChildRes.rows.length > 0) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو ابنك/ابنتك.`);
+
+            let authorParentsRes;
+            try { authorParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [message.author.id, guildId]); }
+            catch(e) { authorParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [message.author.id, guildId]).catch(()=>({rows:[]})); }
+            
+            let targetParentsRes;
+            try { targetParentsRes = await db.query(`SELECT "parentID" FROM children WHERE "childID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]); }
+            catch(e) { targetParentsRes = await db.query(`SELECT parentid FROM children WHERE childid = $1 AND guildid = $2`, [targetMember.id, guildId]).catch(()=>({rows:[]})); }
 
             const authorParents = authorParentsRes.rows.map(r => r.parentID || r.parentid);
             const targetParents = targetParentsRes.rows.map(r => r.parentID || r.parentid);
             
             const isSibling = authorParents.some(parent => targetParents.includes(parent));
             if (isSibling) return replyTemp(`🚫 **لا يجوز!** ${targetMember.displayName} هو أخوك/أختك (لديكم نفس الوالدين).`);
+
+            let authorCountRes;
+            try { authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, guildId]); }
+            catch(e) { authorCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [message.author.id, guildId]).catch(()=>({rows:[{count:0}]})); }
+            
+            let targetCountRes;
+            try { targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [targetMember.id, guildId]); }
+            catch(e) { targetCountRes = await db.query(`SELECT count(*) as count FROM marriages WHERE userid = $1 AND guildid = $2`, [targetMember.id, guildId]).catch(()=>({rows:[{count:0}]})); }
 
             const authorCount = Number(authorCountRes.rows[0].count);
             const targetCount = Number(targetCountRes.rows[0].count);
@@ -177,6 +181,10 @@ module.exports = {
             if (isTargetMale && targetCount >= 4) return replyTemp(`🚫 **${targetMember.displayName} وصل للحد الأقصى من الزوجات!**`);
             if (isTargetFemale && targetCount >= 1) return replyTemp(`🚫 **${targetMember.displayName} متزوجة بالفعـل!**`);
 
+            let alreadyMarriedRes;
+            try { alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE "userID" = $1 AND "partnerID" = $2 AND "guildID" = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]); }
+            catch(e) { alreadyMarriedRes = await db.query(`SELECT * FROM marriages WHERE userid = $1 AND partnerid = $2 AND guildid = $3 LIMIT 1`, [message.author.id, targetMember.id, guildId]).catch(()=>({rows:[]})); }
+            
             if (alreadyMarriedRes.rows.length > 0) return replyTemp("❌ **أنتم متزوجين بعض أصـلاً!**");
 
         } catch(e) {
