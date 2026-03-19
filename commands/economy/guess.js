@@ -29,6 +29,27 @@ function getMaxAttempts(level) {
     return 5;
 }
 
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;
+        else if (points >= 500) reductionMinutes = 15;
+        else if (points >= 250) reductionMinutes = 10;
+        else if (points >= 100) reductionMinutes = 8;
+        else if (points >= 50) reductionMinutes = 7;
+        else if (points >= 25) reductionMinutes = 6;
+        else if (points >= 10) reductionMinutes = 5;
+
+        return reductionMinutes * 60 * 1000; 
+    } catch(e) { return 0; }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('تخمين')
@@ -115,7 +136,11 @@ module.exports = {
 
         const now = Date.now();
         if (author.id !== OWNER_ID) {
-            const timeLeft = (Number(userData.lastGuess || userData.lastguess) || 0) + COOLDOWN_MS - now;
+            const lastPlayed = Number(userData.lastGuess || userData.lastguess) || 0;
+            const reductionMs = await getCooldownReductionMs(db, author.id, guild.id);
+            const effectiveCooldown = Math.max(0, COOLDOWN_MS - reductionMs);
+            const timeLeft = lastPlayed + effectiveCooldown - now;
+            
             if (timeLeft > 0) {
                 return reply({ content: `🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.` });
             }
