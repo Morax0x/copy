@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags, Colors } = require("discord.js");
 
 let updateGuildStat;
 try {
@@ -117,7 +117,6 @@ module.exports = {
                 return replyError(`❌ ليس لديك مورا كافية! (رصيدك الإجمالي بالكاش والبنك: **${(pMora + pBank).toLocaleString()}** فقط)`);
             }
 
-            // 🔥 معرفة رتبة المرسل وتحديد الضريبة 🔥
             let senderRepPoints = 0;
             try {
                 let repRes;
@@ -154,11 +153,11 @@ module.exports = {
             const displayAmountReceived = amount - displayTaxAmount;
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكيد التحويل').setStyle(ButtonStyle.Success).setEmoji('💸'),
-                new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغاء').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكـيد').setStyle(ButtonStyle.Success).setEmoji('💸'),
+                new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغـاء').setStyle(ButtonStyle.Danger)
             );
 
-            let footerText = `💡 الضريبة: ${Math.round(displayTaxRate * 100)}% (بناءً على رتبتك: ${rankName})`;
+            let footerText = `💡 الضريبة: ${Math.round(displayTaxRate * 100)}% - بناءً على رتبتك: ${rankName} `;
             if (isPhilanthropistKing) {
                 footerText = "👑 إعفاء ملك الكرم: تحويل مجاني بلا رسوم!";
             } else if (tempDailyCount === 0) {
@@ -176,14 +175,12 @@ module.exports = {
                 .setFooter({ text: footerText });
 
             let confirmMsg;
-            // 🔥 الإصلاح: استخدام fetchReply لضمان عودة الرسالة والسماح للـ Collector بالعمل 🔥
             if (isSlash) {
                 confirmMsg = await interaction.editReply({ content: `<@${sender.id}>`, embeds: [confirmEmbed], components: [row], fetchReply: true });
             } else {
                 confirmMsg = await message.channel.send({ content: `<@${sender.id}>`, embeds: [confirmEmbed], components: [row] });
             }
 
-            // إقفال اللاعب مؤقتاً
             client.activePlayers.add(sender.id);
 
             const collector = confirmMsg.createMessageComponentCollector({
