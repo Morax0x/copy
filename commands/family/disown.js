@@ -3,6 +3,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const TOTAL_DISOWN_FEE = 2000;
 const MORA_EMOJI = '<:mora:1435647151349698621>'; 
 const DISOWN_GIF = "https://media.tenor.com/images/3f3d3263013697669536067759367295/tenor.gif"; 
+const BOT_REJECT_IMAGE = "https://i.postimg.cc/0jQvvNNh/fort.jpg"; 
 
 module.exports = {
     name: 'disown',
@@ -14,13 +15,13 @@ module.exports = {
         const db = client.sql;
         const guildId = message.guild.id;
         const userId = message.author.id;
+        const OWNER_ID = "1145327691772481577"; 
 
         const replyTemp = async (content) => {
             const msg = await message.reply(content);
             setTimeout(() => msg.delete().catch(() => {}), 8000); 
         };
 
-        // 🔥 ميزة التنظيف التلقائي للأبناء المعلقين (الذين غادروا السيرفر) 🔥
         if (args[0] === 'clean' || args[0] === 'تنظيف') {
             let childrenRes;
             try { childrenRes = await db.query(`SELECT "childID" FROM children WHERE "parentID" = $1 AND "guildID" = $2`, [userId, guildId]); }
@@ -31,50 +32,43 @@ module.exports = {
                 const cId = row.childID || row.childid;
                 const member = await message.guild.members.fetch(cId).catch(()=>null);
                 if (!member) {
-                    try { await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, cId, guildId]); }
-                    catch(e) { await db.query(`DELETE FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [userId, cId, guildId]).catch(()=>{}); }
+                    try { await db.query(`DELETE FROM children WHERE "childID" = $1 AND "guildID" = $2`, [cId, guildId]); }
+                    catch(e) { await db.query(`DELETE FROM children WHERE childid = $1 AND guildid = $2`, [cId, guildId]).catch(()=>{}); }
                     removed++;
                 }
             }
             
             if (removed > 0) {
-                return replyTemp(`🧹 **تم التنظيف بنجاح!**\nتم مسح **${removed}** أبناء معلقين (غادروا السيرفر) من شجرة عائلتك مجاناً.\nجرب أمر التبني الآن!`);
+                return replyTemp(`🧹 **تم التنظيف بنجاح!**\nتم مسح **${removed}** أبناء معلقين غادروا السيرفر من شجرة عائلتك.`);
             } else {
-                return replyTemp(`✅ **شجرة عائلتك نظيفة!**\nجميع أبنائك متواجدون في السيرفر حالياً.\n*(ملاحظة: البوت لا يفرق بين الابن المعلق والفعلي إذا كانوا جميعاً في السيرفر. لحذف شخص معلق موجود في السيرفر، استخدم \`!disown @الابن\` وسيمسحه الآن بشكل صحيح).*`);
+                return replyTemp(`✅ **شجرة عائلتك نظيفة!** جميع أبنائك متواجدون في السيرفر.`);
             }
         }
 
         let childMember = message.mentions.members.first();
         if (!childMember && args[0]) {
-            childMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, '')).catch(()=>null);
+            const cleanId = args[0].replace(/[<@!>]/g, '');
+            childMember = await message.guild.members.fetch(cleanId).catch(()=>null);
         }
 
         if (!childMember) {
-            return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك تحديد الابن الذي تريد طرده.\nأو استخدم أمر \`!disown clean\` لمسح الأبناء الذين غادروا السيرفر.`);
+            return replyTemp(`❌ **خطأ في الاستخدام!**\nعليك تحديد الابن: \`!disown @الابن\`\nأو للتنظيف: \`!disown clean\``);
         }
 
         if (childMember.id === client.user.id || childMember.id === OWNER_ID) {
-            await message.reply({ files: [BOT_REJECT_IMAGE] }).catch(()=>{});
-            return;
+            return message.reply({ content: "❌ لا يمكنك التبرؤ من أسياد القلعة!", files: [BOT_REJECT_IMAGE] }).catch(()=>{});
         }
 
-        try {
-            // 🔥 حماية التحقق من الابن
-            let isMyChildRes;
-            try { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, childMember.id, guildId]); }
-            catch(e) { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [userId, childMember.id, guildId]).catch(()=>({rows:[]})); }
-            
-            if (isMyChildRes.rows.length === 0) {
-                return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك! تأكد من الشخص.`);
-            }
-        } catch(e) {
-            console.error(e);
-            return replyTemp(`❌ حدث خطأ في قاعدة البيانات.`);
+        let isMyChildRes;
+        try { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, childMember.id, guildId]); }
+        catch(e) { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [userId, childMember.id, guildId]).catch(()=>({rows:[]})); }
+        
+        if (isMyChildRes.rows.length === 0) {
+            return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك في السجلات.`);
         }
 
         let partnerId = null;
         try {
-            // 🔥 حماية التحقق من الشريك
             let marriageDataRes;
             try { marriageDataRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
             catch(e) { marriageDataRes = await db.query(`SELECT partnerid as "partnerID" FROM marriages WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
@@ -84,154 +78,97 @@ module.exports = {
             }
         } catch(e) {}
         
-        let partnerMember = null;
-        if (partnerId) {
-            partnerMember = await message.guild.members.fetch(partnerId).catch(() => null);
-        }
+        let partnerMember = partnerId ? await message.guild.members.fetch(partnerId).catch(() => null) : null;
 
-        const feePerPerson = partnerId ? (TOTAL_DISOWN_FEE / 2) : TOTAL_DISOWN_FEE;
+        const feePerPerson = partnerMember ? (TOTAL_DISOWN_FEE / 2) : TOTAL_DISOWN_FEE;
 
-        let userData = await client.getLevel(userId, guildId);
-        if (!userData) userData = { id: `${guildId}-${userId}`, user: userId, guild: guildId, xp: 0, level: 1, mora: 0 };
-        userData.mora = Number(userData.mora) || 0;
-
-        if (userData.mora < feePerPerson) {
-            return replyTemp(`💸 **ليس لديك حصتك من التعويض!**\nالمطلوب منك: **${feePerPerson.toLocaleString()}** ${MORA_EMOJI}`);
-        }
-
-        async function performDisown(interaction, parentIds, childId, amountPerPerson, originalMsg) {
+        async function performDisown(interaction, parentIds, childId, amountPerPerson) {
             try {
                 await db.query('BEGIN');
 
                 for (const pid of parentIds) {
                     const pData = await client.getLevel(pid, guildId);
-                    const currentMora = Number(pData.mora) || 0;
-                    if (currentMora < amountPerPerson) {
+                    if (!pData || (Number(pData.mora) || 0) < amountPerPerson) {
                         await db.query('ROLLBACK');
-                        return interaction.update({ content: `❌ **فشلت العملية:** أحد الأطراف لم يعد يملك المال الكافي!`, embeds: [], components: [] });
+                        return interaction.update({ content: `❌ **فشلت العملية:** أحد الآباء لا يملك مورا كافية للتعويض!`, embeds: [], components: [] });
                     }
-                    pData.mora = currentMora - amountPerPerson;
+                    pData.mora = (Number(pData.mora) || 0) - amountPerPerson;
                     await client.setLevel(pData);
                 }
 
                 let childData = await client.getLevel(childId, guildId);
-                if (!childData) childData = { id: `${guildId}-${childId}`, user: childId, guild: guildId, xp: 0, level: 1, mora: 0 };
+                if (!childData) childData = { user: childId, guild: guildId, xp: 0, level: 1, mora: 0 };
                 
                 const totalCompensation = amountPerPerson * parentIds.length; 
                 childData.mora = (Number(childData.mora) || 0) + totalCompensation;
                 await client.setLevel(childData);
 
-                // 🔥 التعديل الجذري: مسح الابن من الداتابيز بشكل آمن ومؤكد 🔥
-                for (const pid of parentIds) {
-                    try {
-                        await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [pid, childId, guildId]);
-                    } catch(e) {
-                        await db.query(`DELETE FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [pid, childId, guildId]).catch(()=>{});
-                    }
+                try {
+                    await db.query(`DELETE FROM children WHERE "childID" = $1 AND "guildID" = $2`, [childId, guildId]);
+                } catch(e) {
+                    await db.query(`DELETE FROM children WHERE childid = $1 AND guildid = $2`, [childId, guildId]).catch(()=>{});
                 }
 
                 await db.query('COMMIT');
 
                 const successEmbed = new EmbedBuilder()
                     .setColor(Colors.Red)
-                    .setTitle(`🚷 تم التبرؤ رسمياً`)
-                    .setDescription(
-                        `تم طرد **${childMember.displayName}** من العائلة بلا رجعة!\n` +
-                        `💸 **التعويض:** تم تحويل **${totalCompensation.toLocaleString()}** ${MORA_EMOJI} لرصيد الابن المطرود.`
-                    )
+                    .setTitle(`🚷 تم التبرؤ من الابن`)
+                    .setDescription(`تم طرد **${childMember.displayName}** من العائلة.\n💸 تم منح الابن **${totalCompensation.toLocaleString()}** ${MORA_EMOJI} كتعويض إجباري.`)
                     .setImage(DISOWN_GIF);
 
-                await interaction.update({ content: `||${originalMsg.author} ${childMember}||`, embeds: [successEmbed], components: [] });
+                await interaction.update({ content: null, embeds: [successEmbed], components: [] });
 
             } catch (error) {
                 await db.query('ROLLBACK');
-                console.error("Disown Transaction Error:", error);
-                return interaction.update({ content: `❌ حدث خطأ داخلي أثناء تنفيذ عملية الطرد.`, embeds: [], components: [] });
+                console.error("Disown Error:", error);
+                return interaction.update({ content: `❌ خطأ في النظام.`, embeds: [], components: [] });
             }
         }
 
-        if (partnerId && partnerMember) {
-            let partnerData = await client.getLevel(partnerId, guildId);
-            if (!partnerData) partnerData = { id: `${guildId}-${partnerId}`, user: partnerId, guild: guildId, xp: 0, level: 1, mora: 0 };
-            partnerData.mora = Number(partnerData.mora) || 0;
-
-            if (partnerData.mora < feePerPerson) {
-                return replyTemp(`🚫 **لا يمكن إتمام العملية!** شريكك **${partnerMember.displayName}** لا يملك حصته من التعويض (${feePerPerson}).`);
-            }
-
+        if (partnerMember) {
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('partner_confirm').setLabel(`موافقة ودفع (${feePerPerson})`).setStyle(ButtonStyle.Danger).setEmoji('🚷'),
-                new ButtonBuilder().setCustomId('partner_reject').setLabel('رفض الطرد').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId('confirm').setLabel(`موافقة ودفع ${feePerPerson}`).setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('cancel').setLabel('رفض').setStyle(ButtonStyle.Secondary)
             );
 
             const confirmMsg = await message.channel.send({
-                content: `${partnerMember}`, 
+                content: `${partnerMember}`,
                 embeds: [new EmbedBuilder()
+                    .setTitle('🚷 تصويت على طرد ابن')
+                    .setDescription(`يريد ${message.author} التبرؤ من **${childMember}**.\nيجب على كل منكما دفع **${feePerPerson}** ${MORA_EMOJI}.\nهل توافق يا ${partnerMember}؟`)
                     .setColor(Colors.Orange)
-                    .setTitle('🚷 قرار عائلي مصيري')
-                    .setDescription(
-                        `يا **${partnerMember.displayName}**، شريكك **${message.member.displayName}** يريد التبرؤ من ابنكم **${childMember.displayName}**.\n\n` +
-                        `💰 **التكلفة:** يجب على كل منكما دفع **${feePerPerson}** ${MORA_EMOJI} (المجموع 2000) كتعويض للابن.\n` +
-                        `⚠️ **هل توافق على طرده ودفع حصتك؟**`
-                    )
                 ],
                 components: [row]
             });
 
-            try {
-                const confirmation = await confirmMsg.awaitMessageComponent({
-                    filter: i => i.user.id === partnerId,
-                    time: 60000,
-                    componentType: ComponentType.Button
-                });
+            const collector = confirmMsg.createMessageComponentCollector({ filter: i => i.user.id === partnerId, time: 60000, max: 1 });
 
-                if (confirmation.customId === 'partner_reject') {
-                    await confirmation.update({ content: `✅ **رفض الشريك طرد الابن.** العائلة ما زالت متماسكة.`, embeds: [], components: [] });
-                    return;
-                }
-
-                await performDisown(confirmation, [userId, partnerId], childMember.id, feePerPerson, message);
-
-            } catch (e) {
-                confirmMsg.edit({ content: `⏳ **انتهى الوقت.** لم يرد الشريك.`, components: [], embeds: [] });
-            }
-        } 
-        
-        else {
+            collector.on('collect', async i => {
+                if (i.customId === 'cancel') return i.update({ content: "✅ تم إلغاء قرار الطرد.", embeds: [], components: [] });
+                await performDisown(i, [userId, partnerId], childMember.id, feePerPerson);
+            });
+        } else {
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('solo_confirm').setLabel(`نعم، ادفع ${feePerPerson} واطرده`).setStyle(ButtonStyle.Danger).setEmoji('🚷'),
+                new ButtonBuilder().setCustomId('solo_confirm').setLabel(`تأكيد الطرد دفع ${feePerPerson}`).setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('solo_cancel').setLabel('تراجع').setStyle(ButtonStyle.Secondary)
             );
 
-            const confirmMsg = await message.reply({
+            const soloMsg = await message.reply({
                 embeds: [new EmbedBuilder()
+                    .setTitle('⚠️ تأكيد التبرؤ')
+                    .setDescription(`هل أنت متأكد من طرد **${childMember.displayName}**؟\nستدفع تعويضاً قدره **${feePerPerson}** ${MORA_EMOJI}.`)
                     .setColor(Colors.DarkRed)
-                    .setTitle('🚷 قرار التبرؤ')
-                    .setDescription(
-                        `هل أنت متأكد من طرد **${childMember.displayName}**؟\n` +
-                        `💸 **التكلفة:** ستدفع **${feePerPerson}** ${MORA_EMOJI} كاملة كتعويض له.`
-                    )
                 ],
                 components: [row]
             });
 
-            try {
-                const confirmation = await confirmMsg.awaitMessageComponent({
-                    filter: i => i.user.id === userId,
-                    time: 60000,
-                    componentType: ComponentType.Button
-                });
+            const collector = soloMsg.createMessageComponentCollector({ filter: i => i.user.id === userId, time: 60000, max: 1 });
 
-                if (confirmation.customId === 'solo_cancel') {
-                    await confirmation.update({ content: `✅ **تراجعت عن القرار.**`, embeds: [], components: [] });
-                    return;
-                }
-
-                await performDisown(confirmation, [userId], childMember.id, feePerPerson, message);
-
-            } catch (e) {
-                confirmMsg.edit({ content: `⏳ **انتهى الوقت.**`, components: [], embeds: [] });
-            }
+            collector.on('collect', async i => {
+                if (i.customId === 'solo_cancel') return i.update({ content: "✅ تم التراجع.", embeds: [], components: [] });
+                await performDisown(i, [userId], childMember.id, feePerPerson);
+            });
         }
     }
 };
