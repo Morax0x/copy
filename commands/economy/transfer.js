@@ -11,7 +11,7 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('تحويل')
-        .setDescription('تحول مورا إلى عضو آخر .')
+        .setDescription('تحول مورا إلى عضو آخر (أول تحويل يومياً مجاني، ثم تُطبق الضريبة حسب رتبتك).')
         .addUserOption(option =>
             option.setName('المستلم')
             .setDescription('العضو الذي تريد التحويل له')
@@ -152,11 +152,11 @@ module.exports = {
         const displayAmountReceived = amount - displayTaxAmount;
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكـيد').setStyle(ButtonStyle.Success).setEmoji('💸'),
-            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغـاء').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكيد التحويل').setStyle(ButtonStyle.Success).setEmoji('💸'),
+            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغاء').setStyle(ButtonStyle.Danger)
         );
 
-        let footerText = `💡 الضريبة: ${Math.round(displayTaxRate * 100)}% -بناءً على رتبتك: ${rankName}`;
+        let footerText = `💡 الضريبة: ${Math.round(displayTaxRate * 100)}% (بناءً على رتبتك: ${rankName})`;
         if (isPhilanthropistKing) {
             footerText = "👑 إعفاء ملك الكرم: تحويل مجاني بلا رسوم!";
         } else if (tempDailyCount === 0) {
