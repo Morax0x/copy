@@ -28,6 +28,24 @@ let GLOBAL_IMAGES = null;
 
 const farmLocks = new Map();
 
+// 🔥 وظيفة حساب ميزة نمو الرتبة 🔥
+async function getGrowthMultiplier(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || 0;
+        
+        if (points >= 1000) return 0.80; // SS: اسرع 20%
+        if (points >= 500)  return 0.85; // S: اسرع 15%
+        if (points >= 250)  return 0.90; // A: اسرع 10%
+        if (points >= 100)  return 0.95; // B: اسرع 5%
+        if (points >= 50)   return 0.97; // C: اسرع 3%
+        return 1.0; // الباقي: سرعة عادية
+    } catch(e) { return 1.0; }
+}
+
 async function loadAllImages() {
     if (GLOBAL_IMAGES) return GLOBAL_IMAGES; 
 
@@ -91,6 +109,8 @@ async function renderLand(interaction, client, db) {
     const userId = user.id;
     const guildId = interaction.guild.id;
     
+    const growthMultiplier = await getGrowthMultiplier(db, userId, guildId);
+
     let unlockedPlots = await getLandPlots(client, userId, guildId);
     if (unlockedPlots >= 30) unlockedPlots = 36; 
 
@@ -124,7 +144,7 @@ async function renderLand(interaction, client, db) {
             const sID = p.seedID || p.seedid;
             const seed = seedsData.find(s => s.id === sID);
             if (seed) {
-                const growthMs = (seed.growth_time_hours * 3600000);
+                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                 const age = now - Number(p.plantTime || p.planttime);
                 const remaining = growthMs - age;
 
@@ -193,7 +213,7 @@ async function renderLand(interaction, client, db) {
                 const sID = plotData.seedID || plotData.seedid;
                 const seed = seedsData.find(s => s.id === sID);
                 if (seed) {
-                    const growthMs = (seed.growth_time_hours * 3600000);
+                    const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                     const witherMs = seed.wither_time_hours * 3600000;
                     const age = now - Number(plotData.plantTime || plotData.planttime);
 
@@ -214,45 +234,51 @@ async function renderLand(interaction, client, db) {
 
     const attachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'farm-view.png' });
 
-    const rowActions = new ActionRowBuilder();
-    
+    const actionRows = [];
+    let currentRow = new ActionRowBuilder();
+
+    const addButton = (btn) => {
+        if (currentRow.components.length >= 5) {
+            actionRows.push(currentRow);
+            currentRow = new ActionRowBuilder();
+        }
+        currentRow.addComponents(btn);
+    };
+
     if (canPlow) {
-        rowActions.addComponents(
-            new ButtonBuilder().setCustomId(`land_plow_one_${userId}`).setLabel(`حـراثـة`).setStyle(ButtonStyle.Secondary).setEmoji('⛏️'),
-            new ButtonBuilder().setCustomId(`land_plow_all_${userId}`).setLabel(`حـراثـة الكـل (${totalPlowCost})`).setStyle(ButtonStyle.Primary).setEmoji('🚜')
-        );
+        addButton(new ButtonBuilder().setCustomId(`land_plow_one_${userId}`).setLabel(`حـراثـة`).setStyle(ButtonStyle.Secondary).setEmoji('⛏️'));
+        addButton(new ButtonBuilder().setCustomId(`land_plow_all_${userId}`).setLabel(`حـراثـة الكـل (${totalPlowCost})`).setStyle(ButtonStyle.Primary).setEmoji('🚜'));
     }
 
     if (hasTilled) {
-        rowActions.addComponents(
-            new ButtonBuilder().setCustomId(`land_start_plant_${userId}`).setLabel(`زراعـة`).setStyle(ButtonStyle.Success).setEmoji('🌱')
-        );
+        addButton(new ButtonBuilder().setCustomId(`land_start_plant_${userId}`).setLabel(`زراعـة`).setStyle(ButtonStyle.Success).setEmoji('🌱'));
     }
 
     if (readyCount > 0) {
-        rowActions.addComponents(
-            new ButtonBuilder().setCustomId(`land_harvest_all_${userId}`).setLabel('حصـاد').setStyle(ButtonStyle.Success).setEmoji('🌾')
-        );
+        addButton(new ButtonBuilder().setCustomId(`land_harvest_all_${userId}`).setLabel('حصـاد').setStyle(ButtonStyle.Success).setEmoji('🌾'));
     }
     
     if (witheredCount > 0) {
-        rowActions.addComponents(
-            new ButtonBuilder().setCustomId(`land_clean_all_${userId}`).setLabel('تنظيـف').setStyle(ButtonStyle.Danger).setEmoji('🚿')
-        );
+        addButton(new ButtonBuilder().setCustomId(`land_clean_all_${userId}`).setLabel('تنظيـف').setStyle(ButtonStyle.Danger).setEmoji('🚿'));
     }
 
+    // 🔥 دمج زر الوقت وزر البونص معاً 🔥
     if (minRemainingTime !== Infinity) {
         const hours = Math.floor(minRemainingTime / (1000 * 60 * 60));
         const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        
+        let label = `⏳ النـمو: ${timeString}`;
+        if (growthMultiplier < 1.0) {
+            const bonusPercent = Math.round((1.0 - growthMultiplier) * 100);
+            label += ` | ⚡ +${bonusPercent}% سرعة`;
+        }
 
-        rowActions.addComponents(
-            new ButtonBuilder()
-                .setCustomId('info_growth_time') 
-                .setLabel(`⏳ النـمو: ${timeString}`)
-                .setStyle(ButtonStyle.Secondary)
-                .setDisabled(true) 
-        );
+        addButton(new ButtonBuilder().setCustomId('info_growth_time').setLabel(label).setStyle(ButtonStyle.Secondary).setDisabled(true));
+    } else if (growthMultiplier < 1.0) {
+        // إذا لم يكن هناك زرع، نعرض ميزة السرعة لوحدها للاستعراض
+        const bonusPercent = Math.round((1.0 - growthMultiplier) * 100);
+        addButton(new ButtonBuilder().setCustomId('info_growth_bonus').setLabel(`⚡ بركة النمو: +${bonusPercent}% سرعة`).setStyle(ButtonStyle.Secondary).setDisabled(true));
     }
 
     try {
@@ -269,19 +295,17 @@ async function renderLand(interaction, client, db) {
             
             const timeString = `${daysLeft} يـ ${hoursLeft} سـ`;
 
-            rowActions.addComponents(
-                new ButtonBuilder()
-                    .setCustomId('info_worker_status')
-                    .setLabel(`👨‍🌾 العامل: ${timeString}`)
-                    .setStyle(ButtonStyle.Secondary) 
-                    .setDisabled(true) 
-            );
+            addButton(new ButtonBuilder().setCustomId('info_worker_status').setLabel(`👨‍🌾 العامل: ${timeString}`).setStyle(ButtonStyle.Secondary).setDisabled(true));
         }
     } catch (e) { console.error("Error fetching worker status:", e); }
 
+    if (currentRow.components.length > 0) {
+        actionRows.push(currentRow);
+    }
+
     return { 
         content: `**🌱 مزرعة ${interaction.member.displayName}**`, 
-        components: rowActions.components.length > 0 ? [rowActions] : [], 
+        components: actionRows, 
         files: [attachment]
     };
 }
@@ -557,6 +581,7 @@ async function handleLandInteractions(i, client, db) {
         }
 
         if (baseAction === 'land_harvest_all') {
+            const growthMultiplier = await getGrowthMultiplier(db, userId, guildId);
             let plantedPlotsRes;
             try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
             catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
@@ -570,7 +595,8 @@ async function handleLandInteractions(i, client, db) {
                 const sID = plot.seedID || plot.seedid;
                 const seed = seedsData.find(s => s.id === sID);
                 if (!seed) continue;
-                const growthMs = (seed.growth_time_hours * 3600000);
+                
+                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                 const witherMs = seed.wither_time_hours * 3600000;
                 const age = now - Number(plot.plantTime || plot.planttime);
 
@@ -601,7 +627,6 @@ async function handleLandInteractions(i, client, db) {
                 } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
             }
 
-            // 🔥 استخدام دالة الإضافة الصامتة لحصاد اللاعب اليدوي 🔥
             if (addXPAndCheckLevel && totalXP > 0) {
                  await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue, false).catch(()=>{});
             } else {
@@ -619,6 +644,7 @@ async function handleLandInteractions(i, client, db) {
         }
 
         if (baseAction === 'land_clean_all') {
+            const growthMultiplier = await getGrowthMultiplier(db, userId, guildId);
             let plantedPlotsRes;
             try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userId, guildId]); }
             catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userId, guildId]).catch(()=>({rows:[]})); }
@@ -631,7 +657,8 @@ async function handleLandInteractions(i, client, db) {
                 const sID = plot.seedID || plot.seedid;
                 const seed = seedsData.find(s => s.id === sID);
                 if (!seed) { plotsToReset.push(plot.plotID || plot.plotid); continue; }
-                const growthMs = (seed.growth_time_hours * 3600000);
+                
+                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
                 const witherMs = seed.wither_time_hours * 3600000;
                 const age = now - Number(plot.plantTime || plot.planttime);
                 if (age >= (growthMs + witherMs)) plotsToReset.push(plot.plotID || plot.plotid);
