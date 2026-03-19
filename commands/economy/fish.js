@@ -35,6 +35,27 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 const activeFishingSessions = new Set();
 
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;
+        else if (points >= 500) reductionMinutes = 15;
+        else if (points >= 250) reductionMinutes = 10;
+        else if (points >= 100) reductionMinutes = 8;
+        else if (points >= 50) reductionMinutes = 7;
+        else if (points >= 25) reductionMinutes = 6;
+        else if (points >= 10) reductionMinutes = 5;
+
+        return reductionMinutes * 60 * 1000;
+    } catch(e) { return 0; }
+}
+
 module.exports = {
     data: new SlashCommandBuilder().setName('صيد').setDescription('ابـدأ رحـلـة صيد تفاعلية جديدة'),
     name: 'fish',
@@ -79,7 +100,9 @@ module.exports = {
 
             const now = Date.now();
             const nowStr = String(now);
-            const cooldown = 3600000; 
+            const baseCooldown = 3600000; 
+            const reductionMs = await getCooldownReductionMs(sql, user.id, guild.id);
+            const cooldown = Math.max(0, baseCooldown - reductionMs);
             const lastFish = Number(userData.lastFish || userData.lastfish) || 0;
             
             if (user.id !== OWNER_ID && (now - lastFish < cooldown)) {
@@ -115,7 +138,6 @@ module.exports = {
             const locationId = userData.currentLocation || userData.currentlocation || 'beach';
             const currentLocation = locationsConfig.find(l => l.id === locationId) || locationsConfig[0];
 
-            // 🔥 فحص حظ الرتبة (السمعة) 🔥
             let repLuckBonus = 0;
             let repRankText = "";
             try {
@@ -204,7 +226,7 @@ module.exports = {
             let totalValue = 0;
 
             for (let k = 0; k < fishCount; k++) {
-                const rerolls = 1 + Math.floor(totalLuck / 20); // الحظ يمنحك فرصاً أكثر لاختيار سمكة أفضل
+                const rerolls = 1 + Math.floor(totalLuck / 20); 
                 let bestFish = null;
                 for(let r=0; r<rerolls; r++) {
                     let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
@@ -236,7 +258,7 @@ module.exports = {
 
             let desc = `**العدة:** 🎣 ${currentRod.name} | 🚤 ${currentBoat.name}\n🌊 **الموقع:** ${currentLocation.name}`;
             desc += usedBaitName ? `\n🪱 **الطعم:** ${usedBaitName}` : `\n🪱 **الطعم:** لا يوجد - الأسماك الثمينة لن تقترب!`; 
-            desc += extraBuffsText; // إضافة نصوص البركة (السمعة والملك)
+            desc += extraBuffsText; 
 
             const loadingMsg = await reply({ content: `**🌊 يرمي السنارة في الماء...**\n${desc}` });
             const waitTime = Math.floor(Math.random() * 3000) + 2000; 
@@ -394,7 +416,7 @@ module.exports = {
                                 description += `✶ ${info.emoji} ${info.name} ${rarityStar} **x${info.count}**\n`;
                             }
                             description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-                            description += extraBuffsText; // إظهار نص البركة في النهاية أيضاً
+                            description += extraBuffsText; 
 
                             const resultEmbed = new EmbedBuilder()
                                 .setTitle(`✥ الغنيمــة !`) 
