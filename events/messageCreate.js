@@ -543,7 +543,7 @@ module.exports = {
                             if (announceChannel) {
                                 const badgeEmbed = new EmbedBuilder()
                                     .setTitle('🗣️ انـجـاز يـومـي: ثـرثـار الـحـانـة!')
-                                    .setDescription(`🎉 أثبت <@${userID}> أنه روح المكان!\n\nلقد أرسل **100 رسالة** في الشات الرئيسي اليوم واستحق وسام الشرف بجدارة!`)
+                                    .setDescription(`🎉 <@${userID}> \n\nلقد أرسل **100 رسالة** في الشات الرئيسي اليوم واستحق وسام الشرف بجدارة!`)
                                     .setColor('#F1C40F')
                                     .setThumbnail(message.author.displayAvatarURL());
                                 announceChannel.send({ content: `<@${userID}>`, embeds: [badgeEmbed] }).catch(()=>{});
