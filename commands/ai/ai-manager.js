@@ -138,7 +138,7 @@ module.exports = {
             }
 
             try {
-                await aiLimitHandler.setRoleLimit(message.guild.id, role.id, limit);
+                await aiLimitHandler.setRoleLimit(message.guild.id, role.id, limit, message.client.sql);
 
                 const embed = new EmbedBuilder()
                     .setColor(0x00FF00)
@@ -148,7 +148,7 @@ module.exports = {
                         { name: '🎭 الرتبة', value: `${role}`, inline: true },
                         { name: '🔢 الحد اليومي', value: `${limit} رسالة`, inline: true }
                     )
-                    .setFooter({ text: 'نظام اقتصاد الإمبراطورية', iconURL: message.guild.iconURL() })
+                    .setFooter({ text: 'نظام الذكاء الاصطناعي', iconURL: message.guild.iconURL() })
                     .setTimestamp();
 
                 return await message.reply({ embeds: [embed] });
@@ -171,7 +171,7 @@ module.exports = {
                 const limit = interaction.options.getInteger('amount');
                 
                 try {
-                    await aiLimitHandler.setRoleLimit(interaction.guild.id, role.id, limit);
+                    await aiLimitHandler.setRoleLimit(interaction.guild.id, role.id, limit, db);
                     const embed = new EmbedBuilder()
                         .setColor(0x00FF00)
                         .setTitle('✅ تم تحديث الحدود بنجاح')
@@ -180,7 +180,7 @@ module.exports = {
                             { name: '🎭 الرتبة', value: `${role}`, inline: true },
                             { name: '🔢 الحد اليومي', value: `${limit} رسالة`, inline: true }
                         )
-                        .setFooter({ text: 'نظام اقتصاد الإمبراطورية', iconURL: interaction.guild.iconURL() })
+                        .setFooter({ text: 'نظام الذكاء الاصطناعي', iconURL: interaction.guild.iconURL() })
                         .setTimestamp();
                     return interaction.reply({ embeds: [embed], ephemeral: true });
                 } catch (e) {
@@ -221,7 +221,7 @@ module.exports = {
             const mode = interaction.options.getString('mode');
             const isNsfw = mode === 'nsfw';
 
-            await aiConfig.addChannel(channel.id, isNsfw); // تأكد من تحويل الدوال في aiConfig لـ async لاحقاً
+            await aiConfig.addChannel(channel.id, isNsfw); 
 
             const embed = new EmbedBuilder()
                 .setColor(isNsfw ? 0xFF0000 : 0x00FF00)
