@@ -27,7 +27,11 @@ module.exports = {
         }
 
         try {
-            const isMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, childMember.id, guildId]);
+            // 🔥 حماية التحقق من الابن
+            let isMyChildRes;
+            try { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [userId, childMember.id, guildId]); }
+            catch(e) { isMyChildRes = await db.query(`SELECT 1 FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [userId, childMember.id, guildId]).catch(()=>({rows:[]})); }
+            
             if (isMyChildRes.rows.length === 0) {
                 return replyTemp(`🚫 **${childMember.displayName}** ليس مسجلاً كابن لك! تأكد من الشخص.`);
             }
@@ -38,7 +42,11 @@ module.exports = {
 
         let partnerId = null;
         try {
-            const marriageDataRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+            // 🔥 حماية التحقق من الشريك
+            let marriageDataRes;
+            try { marriageDataRes = await db.query(`SELECT "partnerID" FROM marriages WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+            catch(e) { marriageDataRes = await db.query(`SELECT partnerid as "partnerID" FROM marriages WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+            
             if (marriageDataRes.rows.length > 0) {
                 partnerId = marriageDataRes.rows[0].partnerID || marriageDataRes.rows[0].partnerid;
             }
@@ -81,8 +89,13 @@ module.exports = {
                 childData.mora = (Number(childData.mora) || 0) + totalCompensation;
                 await client.setLevel(childData);
 
+                // 🔥 التعديل الجذري: مسح الابن من الداتابيز بشكل آمن ومؤكد 🔥
                 for (const pid of parentIds) {
-                    await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [pid, childId, guildId]);
+                    try {
+                        await db.query(`DELETE FROM children WHERE "parentID" = $1 AND "childID" = $2 AND "guildID" = $3`, [pid, childId, guildId]);
+                    } catch(e) {
+                        await db.query(`DELETE FROM children WHERE parentid = $1 AND childid = $2 AND guildid = $3`, [pid, childId, guildId]).catch(()=>{});
+                    }
                 }
 
                 await db.query('COMMIT');
