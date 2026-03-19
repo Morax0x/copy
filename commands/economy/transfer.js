@@ -1,17 +1,17 @@
-const { EmbedBuilder, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require("discord.js");
 
 let updateGuildStat;
 try {
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
 } catch (e) {}
 
-const BASE_TAX_RATE = 0.03; 
 const COOLDOWN_MS = 5 * 60 * 1000; 
+const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('تحويل')
-        .setDescription('تحول مورا إلى عضو آخر (أول تحويل يومياً مجاني، الباقي 3%).')
+        .setDescription('تحول مورا إلى عضو آخر (أول تحويل يومياً مجاني، ثم تُطبق الضريبة حسب رتبتك).')
         .addUserOption(option =>
             option.setName('المستلم')
             .setDescription('العضو الذي تريد التحويل له')
@@ -53,17 +53,8 @@ module.exports = {
             amount = parseInt(args[1]);
         }
 
-        const reply = async (payload) => {
-            if (isSlash) {
-                if (interaction.replied || interaction.deferred) return interaction.editReply(payload);
-                return interaction.reply(payload);
-            } else {
-                return message.channel.send(payload);
-            }
-        };
-
         const replyError = async (content) => {
-            const payload = { content, ephemeral: true };
+            const payload = { content, flags: [MessageFlags.Ephemeral] };
             if (isSlash) {
                 if (interaction.replied || interaction.deferred) return interaction.editReply(payload);
                 return interaction.reply(payload);
@@ -75,10 +66,9 @@ module.exports = {
         if (!client.activePlayers) client.activePlayers = new Set();
 
         if (client.activePlayers.has(sender.id)) {
-            return replyError("🚫 **لا يمكنك التحويل الآن!** أنت مشغول في لعبة أو عملية أخرى.");
+            return replyError("🚫 **لا يمكنك التحويل الآن!** أنت مشغول في عملية أو تأكيد آخر، الرجاء الانتظار.");
         }
 
-        // 🔥 حماية الأرصدة السالبة وإيقاف التخريب
         if (!receiver || isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
             return replyError(`طريقة التحويل الصحيحة:\n- \`تحويل <@user> <المبلغ>\``);
         }
@@ -95,16 +85,13 @@ module.exports = {
         } catch (e) {}
 
         let senderData = await client.getLevel(sender.id, guild.id);
-        if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id };
+        if (!senderData) senderData = { ...client.defaultData, user: sender.id, guild: guild.id, mora: 0, bank: 0 };
 
-        // 🔥 فحص القروض 🔥
         try {
             let loanRes;
-            try {
-                loanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]);
-            } catch (e) {
-                loanRes = await db.query(`SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2`, [sender.id, guild.id]).catch(()=>({rows:[]}));
-            }
+            try { loanRes = await db.query(`SELECT "remainingAmount" FROM user_loans WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]); } 
+            catch (e) { loanRes = await db.query(`SELECT remainingamount FROM user_loans WHERE userid = $1 AND guildid = $2`, [sender.id, guild.id]).catch(()=>({rows:[]})); }
+            
             const loanData = loanRes?.rows[0];
             if (loanData && Number(loanData.remainingAmount || loanData.remainingamount) > 0) {
                 return replyError(`❌ **عذراً!** لا يمكنك التحويل وعليك قرض بقيمة **${Number(loanData.remainingAmount || loanData.remainingamount).toLocaleString()}** مورا.`);
@@ -119,7 +106,6 @@ module.exports = {
             return replyError(`🕐 يرجى الانتظار **${minutes} دقيقة و ${seconds} ثانية** لعمل تحويل جديد.`);
         }
 
-        // 🔥 نظام سحب الرصيد الذكي (كاش + بنك) 🔥
         let pMora = Number(senderData.mora) || 0;
         let pBank = Number(senderData.bank) || 0;
 
@@ -127,9 +113,23 @@ module.exports = {
             return replyError(`❌ ليس لديك مورا كافية! (رصيدك الإجمالي بالكاش والبنك: **${(pMora + pBank).toLocaleString()}** فقط)`);
         }
 
-        // حفظ الأرصدة الأصلية لاستعادتها في حالة فشل التحويل (Rollback Cache)
-        const originalMora = pMora;
-        const originalBank = pBank;
+        // 🔥 معرفة رتبة المرسل وتحديد الضريبة 🔥
+        let senderRepPoints = 0;
+        try {
+            let repRes;
+            try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [sender.id, guild.id]); }
+            catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [sender.id, guild.id]).catch(()=>({rows:[]})); }
+            if (repRes.rows.length > 0) senderRepPoints = Number(repRes.rows[0].rep_points) || 0;
+        } catch(e) {}
+
+        let dynamicTaxRate = 0.06; // E وتحت
+        let rankName = 'E فما دون';
+        if (senderRepPoints >= 1000) { dynamicTaxRate = 0.01; rankName = 'SS'; }
+        else if (senderRepPoints >= 500) { dynamicTaxRate = 0.01; rankName = 'S'; }
+        else if (senderRepPoints >= 250) { dynamicTaxRate = 0.02; rankName = 'A'; }
+        else if (senderRepPoints >= 100) { dynamicTaxRate = 0.03; rankName = 'B'; }
+        else if (senderRepPoints >= 50) { dynamicTaxRate = 0.04; rankName = 'C'; }
+        else if (senderRepPoints >= 25) { dynamicTaxRate = 0.05; rankName = 'D'; }
 
         let isPhilanthropistKing = false;
         try {
@@ -145,92 +145,155 @@ module.exports = {
         let tempDailyCount = Number(senderData.dailyTransferCount || senderData.dailytransfercount) || 0;
         if (senderData.lastTransferDate !== saudiDate && senderData.lasttransferdate !== saudiDate) tempDailyCount = 0;
         
-        let displayTaxRate = (tempDailyCount === 0 || isPhilanthropistKing) ? 0 : BASE_TAX_RATE;
+        let displayTaxRate = (tempDailyCount === 0 || isPhilanthropistKing) ? 0 : dynamicTaxRate;
         const displayTaxAmount = Math.floor(amount * displayTaxRate);
         const displayAmountReceived = amount - displayTaxAmount;
 
-        // 🔥 إصلاح منطق الخصم الجذري لمنع الأرصدة السالبة 🔥
-        if (pMora >= amount) {
-            pMora -= amount; // الكاش يغطي المبلغ بالكامل
-        } else {
-            const remainingToPay = amount - pMora; // المبلغ الذي يجب سحبه من البنك
-            pMora = 0; // تصفير الكاش بالكامل
-            pBank -= remainingToPay; // خصم المتبقي من البنك
-        }
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('confirm_transfer').setLabel('تأكيد التحويل').setStyle(ButtonStyle.Success).setEmoji('💸'),
+            new ButtonBuilder().setCustomId('cancel_transfer').setLabel('إلغاء').setStyle(ButtonStyle.Danger)
+        );
 
-        client.activePlayers.add(sender.id);
-
-        try {
-            await db.query('BEGIN'); // بدء المعاملة لضمان أمان النقل
-
-            senderData.mora = String(pMora);
-            senderData.bank = String(pBank);
-            senderData.dailyTransferCount = tempDailyCount + 1;
-            senderData.lastTransferDate = saudiDate;
-            senderData.lastTransfer = now;
-
-            try {
-                await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2, "dailyTransferCount" = $3, "lastTransferDate" = $4, "lastTransfer" = $5 WHERE "user" = $6 AND "guild" = $7`, 
-                    [pMora, pBank, senderData.dailyTransferCount, saudiDate, now, sender.id, guild.id]);
-            } catch(e) {
-                await db.query(`UPDATE levels SET mora = $1, bank = $2, dailytransfercount = $3, lasttransferdate = $4, lasttransfer = $5 WHERE userid = $6 AND guildid = $7`, 
-                    [pMora, pBank, senderData.dailyTransferCount, saudiDate, now, sender.id, guild.id]).catch(()=>{});
-            }
-            if (client.setLevel) await client.setLevel(senderData);
-
-            let receiverData = await client.getLevel(receiver.id, guild.id);
-            if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id };
-            
-            let rMora = (Number(receiverData.mora) || 0) + displayAmountReceived;
-            receiverData.mora = String(rMora);
-
-            try {
-                await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [rMora, receiver.id, guild.id]);
-            } catch(e) {
-                await db.query(`UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3`, [rMora, receiver.id, guild.id]).catch(()=>{});
-            }
-            if (client.setLevel) await client.setLevel(receiverData);
-
-            await db.query('COMMIT'); 
-        } catch (e) {
-            await db.query('ROLLBACK'); 
-            
-            // 🔥 إصلاح الكاش: إرجاع الرصيد للمرسل في الذاكرة العشوائية لكي لا يبقى مفلساً بعد فشل العملية 🔥
-            senderData.mora = String(originalMora);
-            senderData.bank = String(originalBank);
-            if (client.setLevel) await client.setLevel(senderData);
-
-            client.activePlayers.delete(sender.id);
-            return replyError("❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل وتم استرجاع أموالك.");
-        }
-
-        client.activePlayers.delete(sender.id);
-
-        if (updateGuildStat) {
-            updateGuildStat(client, guild.id, sender.id, 'mora_donated', amount);
-        }
-
-        let footerText = "💡 استهلكت تحويلك المجاني اليوم.";
+        let footerText = `💡 الضريبة: ${displayTaxRate * 100}% - بناءً على رتبتك: ${rankName})`;
         if (isPhilanthropistKing) {
             footerText = "👑 إعفاء ملك الكرم: تحويل مجاني بلا رسوم!";
         } else if (tempDailyCount === 0) {
-            footerText = "💡 هذا هو تحويلك اليومي المجاني!";
+            footerText = "💡 هذا هو تحويلك اليومي المجاني الأول! الضريبة: 0%";
         }
 
-        const successEmbed = new EmbedBuilder()
-            .setColor("Green")
-            .setTitle('✅ تـم التـحويـل بنجـاح')
-            .setDescription([
-                `**المرسل:** ${sender.username}`,
-                `**المستلم:** ${receiver.user.username}`,
-                `\n**المبلغ المُرسل:** ${amount.toLocaleString()} <:mora:1435647151349698621>`,
-                `**الضريبة (${displayTaxRate === 0 ? '0%' : '3%'}):** ${displayTaxAmount.toLocaleString()} <:mora:1435647151349698621>`,
-                `**المبلغ المستلم:** ${displayAmountReceived.toLocaleString()} <:mora:1435647151349698621>`
-            ].join('\n'))
-            .setFooter({ text: footerText })
-            .setImage('https://i.postimg.cc/vHhJTgyx/download-3.jpg')
-            .setTimestamp();
+        const confirmEmbed = new EmbedBuilder()
+            .setColor(Colors.Orange)
+            .setTitle('⏳ تأكيد التحويل')
+            .setDescription(`هل أنت متأكد من تحويل **${amount.toLocaleString()}** ${EMOJI_MORA} إلى ${receiver}؟\n\n` +
+                            `الرسوم الضريبية: **${displayTaxAmount.toLocaleString()}** ${EMOJI_MORA}\n` +
+                            `المبلغ الصافي المستلم: **${displayAmountReceived.toLocaleString()}** ${EMOJI_MORA}`)
+            .setFooter({ text: footerText });
 
-        await reply({ content: `<@${receiver.id}>`, embeds: [successEmbed] });
+        let confirmMsg;
+        if (isSlash) {
+            confirmMsg = await interaction.editReply({ content: `<@${sender.id}>`, embeds: [confirmEmbed], components: [row] });
+        } else {
+            confirmMsg = await message.channel.send({ content: `<@${sender.id}>`, embeds: [confirmEmbed], components: [row] });
+        }
+
+        // إقفال اللاعب مؤقتاً لكي لا يفتح أكثر من رسالة تأكيد بنفس الوقت
+        client.activePlayers.add(sender.id);
+
+        try {
+            const collector = confirmMsg.createMessageComponentCollector({
+                filter: i => i.user.id === sender.id,
+                time: 30000,
+                max: 1,
+                componentType: ComponentType.Button
+            });
+
+            collector.on('collect', async i => {
+                await i.deferUpdate();
+
+                // تعطيل الأزرار فوراً لمنع السباااام!
+                row.components.forEach(c => c.setDisabled(true));
+                await confirmMsg.edit({ components: [row] }).catch(()=>{});
+
+                if (i.customId === 'cancel_transfer') {
+                    client.activePlayers.delete(sender.id);
+                    return confirmMsg.edit({ content: `🚫 **تم إلغاء عملية التحويل.**`, embeds: [], components: [] });
+                }
+
+                // إعادة قراءة البيانات للتأكد من الرصيد في اللحظة الأخيرة (للحماية من التلاعب)
+                senderData = await client.getLevel(sender.id, guild.id);
+                pMora = Number(senderData.mora) || 0;
+                pBank = Number(senderData.bank) || 0;
+
+                if (pMora + pBank < amount) {
+                    client.activePlayers.delete(sender.id);
+                    return confirmMsg.edit({ content: `❌ فشل التحويل! لا تملك مورا كافية وقت التأكيد.`, embeds: [], components: [] });
+                }
+
+                const originalMora = pMora;
+                const originalBank = pBank;
+
+                if (pMora >= amount) {
+                    pMora -= amount;
+                } else {
+                    const remainingToPay = amount - pMora;
+                    pMora = 0; 
+                    pBank -= remainingToPay;
+                }
+
+                try {
+                    await db.query('BEGIN');
+
+                    senderData.mora = String(pMora);
+                    senderData.bank = String(pBank);
+                    senderData.dailyTransferCount = tempDailyCount + 1;
+                    senderData.lastTransferDate = saudiDate;
+                    senderData.lastTransfer = Date.now();
+
+                    try {
+                        await db.query(`UPDATE levels SET "mora" = $1, "bank" = $2, "dailyTransferCount" = $3, "lastTransferDate" = $4, "lastTransfer" = $5 WHERE "user" = $6 AND "guild" = $7`, 
+                            [pMora, pBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]);
+                    } catch(e) {
+                        await db.query(`UPDATE levels SET mora = $1, bank = $2, dailytransfercount = $3, lasttransferdate = $4, lasttransfer = $5 WHERE userid = $6 AND guildid = $7`, 
+                            [pMora, pBank, senderData.dailyTransferCount, saudiDate, senderData.lastTransfer, sender.id, guild.id]).catch(()=>{});
+                    }
+                    
+                    if (client.setLevel) await client.setLevel(senderData);
+
+                    let receiverData = await client.getLevel(receiver.id, guild.id);
+                    if (!receiverData) receiverData = { ...client.defaultData, user: receiver.id, guild: guild.id, mora: 0 };
+                    
+                    let rMora = (Number(receiverData.mora) || 0) + displayAmountReceived;
+                    receiverData.mora = String(rMora);
+
+                    try {
+                        await db.query(`UPDATE levels SET "mora" = $1 WHERE "user" = $2 AND "guild" = $3`, [rMora, receiver.id, guild.id]);
+                    } catch(e) {
+                        await db.query(`UPDATE levels SET mora = $1 WHERE userid = $2 AND guildid = $3`, [rMora, receiver.id, guild.id]).catch(()=>{});
+                    }
+                    if (client.setLevel) await client.setLevel(receiverData);
+
+                    await db.query('COMMIT'); 
+                } catch (e) {
+                    await db.query('ROLLBACK'); 
+                    senderData.mora = String(originalMora);
+                    senderData.bank = String(originalBank);
+                    if (client.setLevel) await client.setLevel(senderData);
+                    client.activePlayers.delete(sender.id);
+                    return confirmMsg.edit({ content: "❌ **فشلت العملية:** حدث خطأ تقني أثناء التحويل وتم استرجاع أموالك.", embeds: [], components: [] });
+                }
+
+                client.activePlayers.delete(sender.id);
+
+                if (updateGuildStat) {
+                    updateGuildStat(client, guild.id, sender.id, 'mora_donated', amount);
+                }
+
+                const successEmbed = new EmbedBuilder()
+                    .setColor(Colors.Green)
+                    .setTitle('✅ تـم التـحويـل بنجـاح')
+                    .setDescription([
+                        `**المرسل:** ${sender.username}`,
+                        `**المستلم:** ${receiver.user.username}`,
+                        `\n**المبلغ المُرسل:** ${amount.toLocaleString()} ${EMOJI_MORA}`,
+                        `**الضريبة (${displayTaxRate * 100}%):** ${displayTaxAmount.toLocaleString()} ${EMOJI_MORA}`,
+                        `**المبلغ المستلم:** ${displayAmountReceived.toLocaleString()} ${EMOJI_MORA}`
+                    ].join('\n'))
+                    .setFooter({ text: footerText })
+                    .setImage('https://i.postimg.cc/vHhJTgyx/download-3.jpg')
+                    .setTimestamp();
+
+                await confirmMsg.edit({ content: `<@${receiver.id}>`, embeds: [successEmbed], components: [] });
+            });
+
+            collector.on('end', collected => {
+                if (collected.size === 0) {
+                    client.activePlayers.delete(sender.id);
+                    confirmMsg.edit({ content: `⏳ **انتهى الوقت.** تم إلغاء عملية التحويل.`, embeds: [], components: [] }).catch(()=>{});
+                }
+            });
+
+        } catch (error) {
+            client.activePlayers.delete(sender.id);
+        }
     }
 };
