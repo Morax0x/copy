@@ -1,6 +1,5 @@
-const DEFAULT_DAILY_LIMIT = 20; // الحد المجاني للكل
+const DEFAULT_DAILY_LIMIT = 20;
 
-// 🚀 ذاكرة الطلبات المعلقة (تمنع تخطي الرصيد بالسبام والخصم الخاطئ)
 const pendingRequests = new Map();
 
 function getTodayDate() {
@@ -8,9 +7,6 @@ function getTodayDate() {
 }
 
 module.exports = {
-    /**
-     * حساب الحد اليومي (أساسي + رتب)
-     */
     getUserDailyLimit: async (member, db) => {
         if (!member || !member.roles) return DEFAULT_DAILY_LIMIT;
 
@@ -33,9 +29,6 @@ module.exports = {
         return baseLimit + totalLimit;
     },
 
-    /**
-     * فحص هل يسمح للعضو بالتحدث؟ (مع حجز الرصيد)
-     */
     checkUserUsage: async (member) => {
         const db = member.client.sql;
         const userId = member.id;
@@ -50,7 +43,6 @@ module.exports = {
             await db.query('INSERT INTO ai_user_usage ("userID", "guildID", "dailyUsage", "purchasedBalance", "lastResetDate") VALUES ($1, $2, 0, 0, $3)', [userId, guildId, today]);
         }
 
-        // تصفير العداد اليومي
         if ((userUsage.lastResetDate || userUsage.lastresetdate) !== today) {
             await db.query('UPDATE ai_user_usage SET "dailyUsage" = 0, "lastResetDate" = $1 WHERE "userID" = $2', [today, userId]);
             userUsage.dailyUsage = 0;
@@ -58,7 +50,6 @@ module.exports = {
 
         const maxDailyLimit = await module.exports.getUserDailyLimit(member, db);
 
-        // حساب الطلبات المعلقة (الرسائل التي يعالجها البوت حالياً ولم تُخصم بعد)
         const userPending = pendingRequests.get(userId) || [];
         const pendingFree = userPending.filter(type => type === 'free').length;
         const pendingPurchased = userPending.filter(type => type === 'purchased').length;
@@ -66,16 +57,14 @@ module.exports = {
         const currentDailyUsage = parseInt(userUsage.dailyUsage || userUsage.dailyusage) + pendingFree;
         const currentPurchasedBalance = parseInt(userUsage.purchasedBalance || userUsage.purchasedbalance) - pendingPurchased;
 
-        // 1. هل بقي لديه رصيد مجاني (مع حساب المعلق)؟
         if (currentDailyUsage < maxDailyLimit) {
-            userPending.push('free'); // حجز خانة مجانية
+            userPending.push('free');
             pendingRequests.set(userId, userPending);
             return { canChat: true, source: 'free' };
         }
 
-        // 2. هل لديه رصيد مدفوع (مع حساب المعلق)؟
         if (currentPurchasedBalance > 0) {
-            userPending.push('purchased'); // حجز خانة مدفوعة
+            userPending.push('purchased');
             pendingRequests.set(userId, userPending);
             return { canChat: true, source: 'purchased' };
         }
@@ -83,20 +72,17 @@ module.exports = {
         return { canChat: false, reason: 'limit_reached' };
     },
 
-    /**
-     * تسجيل استهلاك رسالة (الخصم الدقيق والفعلي)
-     */
     incrementUsage: async (userId, db) => {
         const userPending = pendingRequests.get(userId) || [];
-        // سحب أول طلب تم حجزه لمعرفة من أين نخصم
         const actionType = userPending.shift() || 'free'; 
-        pendingRequests.set(userId, userPending);
+        
+        if (userPending.length === 0) pendingRequests.delete(userId);
+        else pendingRequests.set(userId, userPending);
 
         const userDataRes = await db.query('SELECT * FROM ai_user_usage WHERE "userID" = $1', [userId]);
         const userData = userDataRes.rows[0];
         if (!userData) return;
 
-        // 🔥 الخصم الدقيق بناءً على ما قررته دالة الفحص (بدون أخطاء الرتب)
         if (actionType === 'free') {
             await db.query('UPDATE ai_user_usage SET "dailyUsage" = "dailyUsage" + 1 WHERE "userID" = $1', [userId]);
         } else if (actionType === 'purchased') {
@@ -104,9 +90,15 @@ module.exports = {
         }
     },
     
-    /**
-     * إضافة رصيد مشترى للعضو
-     */
+    releasePendingUsage: (userId) => {
+        const userPending = pendingRequests.get(userId) || [];
+        if (userPending.length > 0) {
+            userPending.shift();
+            if (userPending.length === 0) pendingRequests.delete(userId);
+            else pendingRequests.set(userId, userPending);
+        }
+    },
+
     addPurchasedBalance: async (userId, amount, db) => {
         const today = getTodayDate();
         await db.query(`
@@ -116,9 +108,6 @@ module.exports = {
         `, [userId, amount, today, amount]);
     },
 
-    /**
-     * تحديد حد الاستخدام اليومي لرتبة معينة
-     */
     setRoleLimit: async (guildID, roleID, limit, db) => {
         await db.query(`
             INSERT INTO ai_role_limits ("guildID", "roleID", "limitCount") 
