@@ -1,7 +1,6 @@
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags, Colors } = require("discord.js");
 const { startGuardBattle } = require('../../handlers/knight-battle');
 
-// 🔥 استدعاء دالة تحديث الإحصائيات للملوك الجدد 🔥
 let updateGuildStat;
 try {
     ({ updateGuildStat } = require('../../handlers/guild-board-handler.js'));
@@ -49,7 +48,27 @@ function formatTime(ms) {
     return `${mm}:${ss}`;
 }
 
-// دالة محدثة وآمنة لخصم المبلغ من الحرامي دون أن ينزل بالسالب
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;
+        else if (points >= 500) reductionMinutes = 15;
+        else if (points >= 250) reductionMinutes = 10;
+        else if (points >= 100) reductionMinutes = 8;
+        else if (points >= 50) reductionMinutes = 7;
+        else if (points >= 25) reductionMinutes = 6;
+        else if (points >= 10) reductionMinutes = 5;
+
+        return reductionMinutes * 60 * 1000;
+    } catch(e) { return 0; }
+}
+
 function deductFromRobber(data, amount) {
     let mora = Number(data.mora) || 0;
     let bank = Number(data.bank) || 0;
@@ -156,7 +175,10 @@ module.exports = {
         }
 
         const now = Date.now();
-        const timeLeft = (Number(robberData.lastRob || robberData.lastrob) || 0) + COOLDOWN_MS - now;
+        const reductionMs = await getCooldownReductionMs(sql, robber.id, guild.id);
+        const effectiveCooldown = Math.max(0, COOLDOWN_MS - reductionMs);
+        const timeLeft = (Number(robberData.lastRob || robberData.lastrob) || 0) + effectiveCooldown - now;
+        
         if (timeLeft > 0) {
             return reply(`🕐 حـرامـي مـجتـهد انـت <:stop:1436337453098340442> انتـظـر **\`${formatTime(timeLeft)}\`** عشان تسـوي عمـليـة سـطو ثـانيـة.`);
         }
@@ -402,7 +424,7 @@ module.exports = {
                             .setDescription(`✬ دخلت من الباب الخطـا ووجدت الحارس الشخصي بانتظارك! <:catla:1437335118153781360>\n\n✬ تـم القبض عليك وتغريـمك **${amountToSteal.toLocaleString()}** ${EMOJI_MORA} واعطـائـها للضحـية`);
                         
                         await i.update({ embeds: [guardEmbed], components: [] }).catch(()=>{});
-                        sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
+                        sendDMToVictim(victim, `✥ حـاول ${robber} السـطو عـلى ممتلـكـاتك ولكـن الحـارس امسك به واخذ **${amountToSteal}** منه واعطاها لك\n${guardStatusMsg}`);
                     }
 
                 } else {
