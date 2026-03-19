@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, Colors, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require('discord.js');
 const shopItems = require('../../json/shop-items.json');
 const farmAnimals = require('../../json/farm-animals.json');
+const seedsData = require('../../json/seeds.json');
+const feedItems = require('../../json/feed-items.json');
 const marketItems = require('../../json/market-items.json');
 const questsConfig = require('../../json/quests-config.json');
 const weaponsConfig = require('../../json/weapons-config.json');
@@ -61,7 +63,7 @@ async function getGearSummaryEmbed(userID, guildID, db, targetUser) {
     const levelsData = levelsRes.rows[0] || { rodLevel: 1, boatLevel: 1, currentLocation: 'beach' };
     const rodLvl = levelsData.rodLevel || levelsData.rodlevel || 1;
     const boatLvl = levelsData.boatLevel || levelsData.boatlevel || 1;
-    const cLoc = levelsData.currentLocation || levelsData.currentlocation || 'beach'; // 🔥 إضافة فحص الموقع
+    const cLoc = levelsData.currentLocation || levelsData.currentlocation || 'beach'; 
 
     let weaponRes;
     try { weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
@@ -161,9 +163,9 @@ module.exports = {
                     { label: '🗳️ فرص التزكية', value: 'rep_chances', description: 'منح فرص تصويت (تزكية) إضافية لليوم', emoji: '🗳️' },
                     { label: '🎟️ إدارة التذاكر', value: 'tickets', emoji: '🎟️' },
                     { label: '⛺ منح خيمة (دانجون)', value: 'dungeon_tent', description: 'تحديد طابق الحفظ في الدانجون', emoji: '⛺' },
-                    { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض', emoji: '🎒' },
+                    { label: '🎒 إدارة العناصر', value: 'items', description: 'إعطاء/سحب الأغراض (حيوانات، أسهم، بذور، أعلاف)', emoji: '🎒' },
                     { label: '⚔️ تعديل الأسلحة والمهارات', value: 'combat_gear', description: 'تغيير لفل السلاح أو المهارة', emoji: '⚔️' },
-                    { label: '⛵ معدات وموقع الصيد', value: 'fishing_gear', description: 'تغيير السنارة، القارب، أو موقع الشاطئ', emoji: '🎣' }, // 🔥 خيار جديد ومستقل 🔥
+                    { label: '⛵ معدات وموقع الصيد', value: 'fishing_gear', description: 'تغيير السنارة، القارب، أو موقع الشاطئ', emoji: '🎣' }, 
                     { label: '🗑️ تصفير الأسلحة والمهارات', value: 'reset_combat', description: 'مسح جميع مهارات وأسلحة اللاعب بالكامل', emoji: '🗑️' },
                     { label: '🛡️ إعطاء درع ميديا', value: 'media_shield', emoji: '🛡️' },
                     { label: '⚠️ تصفير الحساب', value: 'reset', description: 'مسح جميع البيانات!', emoji: '⚠️' }
@@ -225,8 +227,8 @@ module.exports = {
                             { label: 'ملك الهاوية', value: 'roleAbyss', emoji: '🌑' },
                             { label: 'ملك البلاغة', value: 'roleChatter', emoji: '🗣️' },
                             { label: 'ملك الكرم', value: 'rolePhilanthropist', emoji: '🤝' },
-                            { label: 'ملك اللصوص', value: 'roleThief', emoji: '🥷' }, // 🔥 إضافة ملك اللصوص
-                            { label: 'ملك الصوت', value: 'roleVoice', emoji: '🎙️' }, // 🔥 إضافة ملك الصوت
+                            { label: 'ملك اللصوص', value: 'roleThief', emoji: '🥷' }, 
+                            { label: 'ملك الصوت', value: 'roleVoice', emoji: '🎙️' }, 
                             { label: 'ملك القنص', value: 'roleFisherKing', emoji: '🎣' },
                             { label: 'ملك النزاع', value: 'rolePvPKing', emoji: '⚔️' }
                         ])
@@ -409,7 +411,6 @@ module.exports = {
                     await modalSubmit.editReply({ content: `✅ تم إضافة **${amount}** 🎟️ تذاكر لـ ${targetUser}.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 تعديل معدات القتال (أسلحة ومهارات فقط) 🔥
             else if (val === 'combat_gear') {
                 const modalId = `mod_gear_${Date.now()}`;
                 const modal = new ModalBuilder().setCustomId(modalId).setTitle('تعديل معدات القتال');
@@ -481,7 +482,6 @@ module.exports = {
 
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 خيار إدارة الصيد الجديد والمنفصل 🔥
             else if (val === 'fishing_gear') {
                 const modalId = `mod_fish_${Date.now()}`;
                 const modal = new ModalBuilder().setCustomId(modalId).setTitle('إدارة معدات وموقع الصيد');
@@ -513,7 +513,6 @@ module.exports = {
                         successMessage = `✅ تم ضبط مستوى القارب لـ ${targetUser} إلى **Lv.${level}**.`;
                     }
                     else if (type.includes('مكان') || type.includes('شاطئ') || type.includes('موقع')) {
-                        // أسماء الشواطئ الموجودة في اللعبة
                         const locs = ['beach', 'shallow', 'deep', 'bermuda', 'trench', 'atlantis', 'dark_sea'];
                         if (!locs.includes(inputVal)) return modalSubmit.editReply(`❌ مكان غير صحيح. الأماكن المتاحة:\n${locs.join(', ')}`);
                         
@@ -547,7 +546,7 @@ module.exports = {
                     const qty = parseInt(modalSubmit.fields.getTextInputValue('itm_qty')) || 1;
 
                     const item = this.findItem(name);
-                    if (!item) return modalSubmit.editReply({ content: `❌ لم يتم العثور على عنصر باسم "${name}".` });
+                    if (!item) return modalSubmit.editReply({ content: `❌ لم يتم العثور على عنصر باسم "${name}".\n*(تلميح: تأكد من كتابة اسم الحيوان، أو السهم، أو العلف بشكل صحيح).*` });
 
                     if (action.includes('اعطاء') || action.includes('اضاف')) {
                         if (item.type === 'market') {
@@ -568,6 +567,9 @@ module.exports = {
                                 try { await db.query(`INSERT INTO user_farm ("guildID", "userID", "animalID", "purchaseTimestamp", "lastFedTimestamp") VALUES ($1, $2, $3, $4, $5)`, [guildID, userID, item.id, now, now]); }
                                 catch(e) { await db.query(`INSERT INTO user_farm (guildid, userid, animalid, purchasetimestamp, lastfedtimestamp) VALUES ($1, $2, $3, $4, $5)`, [guildID, userID, item.id, now, now]).catch(()=>{}); }
                             }
+                        } else if (item.type === 'feed' || item.type === 'seed') {
+                            try { await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = COALESCE(user_inventory."quantity", 0) + $5`, [guildID, userID, item.id, qty, qty]); }
+                            catch(e) { await db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = COALESCE(quantity, 0) + $5`, [guildID, userID, item.id, qty, qty]).catch(()=>{}); }
                         }
                         await modalSubmit.editReply({ content: `✅ تم إضافة **${qty}** × **${item.name}** لـ ${targetUser}.` });
                     } 
@@ -595,6 +597,21 @@ module.exports = {
                             for(const a of animalsRes.rows){
                                 try { await db.query(`DELETE FROM user_farm WHERE "id" = $1`, [a.id]); }
                                 catch(e) { await db.query(`DELETE FROM user_farm WHERE id = $1`, [a.id]).catch(()=>{}); }
+                            }
+                        } else if (item.type === 'feed' || item.type === 'seed') {
+                            let invItemRes;
+                            try { invItemRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userID, guildID, item.id]); }
+                            catch(e) { invItemRes = await db.query(`SELECT quantity, id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userID, guildID, item.id]).catch(()=>({rows:[]})); }
+                            
+                            const invItem = invItemRes.rows[0];
+                            if (!invItem) return modalSubmit.editReply({ content: "❌ لا يمتلك هذا العنصر في المخزن." });
+
+                            if (Number(invItem.quantity) - qty <= 0) {
+                                try { await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [invItem.id || invItem.id]); }
+                                catch(e) { await db.query(`DELETE FROM user_inventory WHERE id = $1`, [invItem.id || invItem.id]).catch(()=>{}); }
+                            } else {
+                                try { await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [qty, invItem.id || invItem.id]); }
+                                catch(e) { await db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [qty, invItem.id || invItem.id]).catch(()=>{}); }
                             }
                         }
                         await modalSubmit.editReply({ content: `✅ تم سحب **${qty}** × **${item.name}** من ${targetUser}.` });
@@ -833,12 +850,22 @@ module.exports = {
 
     findItem(nameOrID) {
         const input = normalize(nameOrID);
+        
         let item = shopItems.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item && !marketItems.some(m => m.id === item.id) && !farmAnimals.some(f => f.id === item.id)) return { ...item, type: 'shop_special' };
+        
         item = marketItems.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'market' };
-        item = farmAnimals.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
+        
+        item = farmAnimals.find(i => normalize(i.name) === input || String(i.id).toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'farm' };
+
+        item = seedsData.find(i => normalize(i.name) === input || String(i.id).toLowerCase() === nameOrID.toLowerCase());
+        if (item) return { ...item, type: 'seed' };
+
+        item = feedItems.find(i => normalize(i.name) === input || String(i.id).toLowerCase() === nameOrID.toLowerCase());
+        if (item) return { ...item, type: 'feed' };
+
         return null;
     }
 };
