@@ -115,6 +115,24 @@ module.exports = {
             const locationId = userData.currentLocation || userData.currentlocation || 'beach';
             const currentLocation = locationsConfig.find(l => l.id === locationId) || locationsConfig[0];
 
+            // 🔥 فحص حظ الرتبة (السمعة) 🔥
+            let repLuckBonus = 0;
+            let repRankText = "";
+            try {
+                let repRes;
+                try { repRes = await sql.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
+                catch(e) { repRes = await sql.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [user.id, guild.id]).catch(()=>({rows:[]})); }
+                
+                const repPoints = repRes.rows[0]?.rep_points || 0;
+                
+                if (repPoints >= 1000) { repLuckBonus = 10; repRankText = "SS"; }
+                else if (repPoints >= 500) { repLuckBonus = 8; repRankText = "S"; }
+                else if (repPoints >= 250) { repLuckBonus = 6; repRankText = "A"; }
+                else if (repPoints >= 100) { repLuckBonus = 5; repRankText = "B"; }
+                else if (repPoints >= 50) { repLuckBonus = 4; repRankText = "C"; }
+                else if (repPoints >= 25) { repLuckBonus = 3; repRankText = "D"; }
+            } catch(e) {}
+
             let usedBaitName = null;
             let baitLuckBonus = 0;
             
@@ -160,11 +178,15 @@ module.exports = {
                 }
             } catch (e) {}
 
-            let totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus;
-            let kingBuffText = "";
+            let totalLuck = (currentRod.luck_bonus || 0) + baitLuckBonus + repLuckBonus;
+            
+            let extraBuffsText = "";
+            if (repLuckBonus > 0) {
+                extraBuffsText += `\n🌟 **بركة السمعة (${repRankText}):** حظ الصيد +${repLuckBonus}%`;
+            }
             if (isFisherKing) {
                 totalLuck += 20;
-                kingBuffText = "\n👑 **بركة ملك القنص:** حظ الصيد +20%";
+                extraBuffsText += `\n👑 **بركة ملك القنص:** حظ الصيد +20%`;
             }
 
             let allowedRarities = currentLocation.fish_types || [1, 2];
@@ -182,7 +204,7 @@ module.exports = {
             let totalValue = 0;
 
             for (let k = 0; k < fishCount; k++) {
-                const rerolls = 1 + Math.floor(totalLuck / 20);
+                const rerolls = 1 + Math.floor(totalLuck / 20); // الحظ يمنحك فرصاً أكثر لاختيار سمكة أفضل
                 let bestFish = null;
                 for(let r=0; r<rerolls; r++) {
                     let rarity = allowedRarities[Math.floor(Math.random() * allowedRarities.length)];
@@ -213,7 +235,8 @@ module.exports = {
             if (isSlash) await interactionOrMessage.deferReply();
 
             let desc = `**العدة:** 🎣 ${currentRod.name} | 🚤 ${currentBoat.name}\n🌊 **الموقع:** ${currentLocation.name}`;
-            desc += usedBaitName ? `\n🪱 **الطعم:** ${usedBaitName}` : `\n🪱 **الطعم:** لا يوجد (الأسماك الثمينة لن تقترب!)`; 
+            desc += usedBaitName ? `\n🪱 **الطعم:** ${usedBaitName}` : `\n🪱 **الطعم:** لا يوجد - الأسماك الثمينة لن تقترب!`; 
+            desc += extraBuffsText; // إضافة نصوص البركة (السمعة والملك)
 
             const loadingMsg = await reply({ content: `**🌊 يرمي السنارة في الماء...**\n${desc}` });
             const waitTime = Math.floor(Math.random() * 3000) + 2000; 
@@ -288,21 +311,21 @@ module.exports = {
                     if (gameData.distance < 0) gameData.distance = 0;
 
                     if (gameData.tension >= gameData.maxTension) {
-                        gameData.statusText = "💥 انقطع الخيط! هربت السمكة...";
+                        gameData.statusText = "انقطع الخيط! هربت السمكة...";
                         await sendUpdate(true);
                         collector.stop('snapped');
                         return;
                     }
                     
                     if (gameData.distance >= 150) {
-                        gameData.statusText = "💨 السمكة ابتعدت جداً وأفلتت السنارة!";
+                        gameData.statusText = "السمكة ابتعدت جداً وأفلتت السنارة!";
                         await sendUpdate(true);
                         collector.stop('escaped');
                         return;
                     }
 
                     if (gameData.distance <= 0) {
-                        gameData.statusText = "✅ تم الصيد بنجاح!";
+                        gameData.statusText = "تم الصيد بنجاح!";
                         await sendUpdate(true);
                         collector.stop('success');
                         return;
@@ -349,7 +372,6 @@ module.exports = {
                                 catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $4`, [guild.id, user.id, fId, info.count]).catch(()=>{}); }
                             }
                             
-                            // 🔥 إضافة المورا و 15 XP لكل سمكة (بصمت تام بفضل false) 🔥
                             if (addXPAndCheckLevel && totalValue > 0) {
                                 const xpEarned = caughtFish.length * 15;
                                 await addXPAndCheckLevel(client, member, sql, xpEarned, totalValue, false).catch(()=>{});
@@ -372,7 +394,7 @@ module.exports = {
                                 description += `✶ ${info.emoji} ${info.name} ${rarityStar} **x${info.count}**\n`;
                             }
                             description += `\n✶ قيـمـة الصيد: \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}`;
-                            description += kingBuffText;
+                            description += extraBuffsText; // إظهار نص البركة في النهاية أيضاً
 
                             const resultEmbed = new EmbedBuilder()
                                 .setTitle(`✥ الغنيمــة !`) 
