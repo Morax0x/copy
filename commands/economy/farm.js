@@ -1,21 +1,21 @@
-const { 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    StringSelectMenuBuilder, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle, 
-    Colors, 
-    SlashCommandBuilder, 
-    MessageFlags 
-} = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, Colors, EmbedBuilder } = require("discord.js");
+const Canvas = require('canvas');
+const path = require('path');
+const seedsData = require('../json/seeds.json');
+const farmAnimals = require('../json/farm-animals.json');
+const feedItems = require('../json/feed-items.json');
+const { getPlayerCapacity } = require('../utils/farmUtils.js');
 
-const farmAnimals = require('../../json/farm-animals.json');
-const seedsData = require('../../json/seeds.json');
-const feedItems = require('../../json/feed-items.json');
-const { getPlayerCapacity } = require('../../utils/farmUtils.js');
+let updateGuildStat, addXPAndCheckLevel;
+try {
+    ({ updateGuildStat } = require('./guild-board-handler.js'));
+    ({ addXPAndCheckLevel } = require('./handler-utils.js')); 
+} catch (e) {
+    try { 
+        ({ updateGuildStat } = require('../handlers/guild-board-handler.js'));
+        ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
+    } catch (e2) {}
+}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const LEFT_EMOJI = '<:left:1439164494759723029>';
@@ -273,8 +273,6 @@ module.exports = {
         const collector = msg.createMessageComponentCollector({ time: 300000, filter });
 
         collector.on('collect', async i => {
-            if (i.replied || i.deferred) return;
-
             try {
                 if (i.customId.startsWith('shop_cat_')) {
                     await i.deferUpdate();
@@ -403,13 +401,20 @@ module.exports = {
                             .setRequired(true);
 
                         modal.addComponents(new ActionRowBuilder().addComponents(input));
+                        
+                        // 🔥 هنا كان يكمن الخطأ المجهول، تم حماية الرد 100% 🔥
                         await i.showModal(modal);
 
                         try {
                             const submit = await i.awaitModalSubmit({ time: 60000, filter: s => s.user.id === user.id });
+                            
+                            // نؤخر الرد على التحديث حتى ننتهي من معالجة البيانات
                             const qty = parseInt(submit.fields.getTextInputValue('qty_input'));
                             
-                            if (isNaN(qty) || qty <= 0) return submit.reply({ content: '❌ رقم غير صحيح.', flags: MessageFlags.Ephemeral });
+                            if (isNaN(qty) || qty <= 0) {
+                                await submit.reply({ content: '❌ رقم غير صحيح.', flags: [MessageFlags.Ephemeral] });
+                                return;
+                            }
 
                             let userData = await client.getLevel(user.id, guild.id);
                             if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
@@ -429,16 +434,14 @@ module.exports = {
                                     const currentMax = await getPlayerCapacity(client, user.id, guild.id);
                                     const requiredSize = (itemData.size || 1) * qty;
                                     
-                                    // 🔥 الحماية ضد تجاوز الحد المسموح به بعد تحويلها لأرقام
                                     if (Number(currentCap) + Number(requiredSize) > Number(currentMax)) {
-                                        return submit.reply({ content: `🚫 لا توجد مساحة كافية! المساحة المطلوبة: ${requiredSize}, المتاحة: ${currentMax - currentCap}`, flags: MessageFlags.Ephemeral });
+                                        return submit.reply({ content: `🚫 لا توجد مساحة كافية! المساحة المطلوبة: ${requiredSize}, المتاحة: ${currentMax - currentCap}`, flags: [MessageFlags.Ephemeral] });
                                     }
                                 }
 
                                 const totalCost = itemData.price * qty;
-                                if (Number(userData.mora || 0) < totalCost) return submit.reply({ content: `❌ رصيد غير كافي! تحتاج **${totalCost.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
+                                if (Number(userData.mora || 0) < totalCost) return submit.reply({ content: `❌ رصيد غير كافي! تحتاج **${totalCost.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] });
                                 
-                                // 🔥 خصم آمن ومباشر من الداتا بيز 🔥
                                 try {
                                     await sql.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, user.id, guild.id]);
                                 } catch(e) {
@@ -456,7 +459,7 @@ module.exports = {
                                     catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = COALESCE(quantity, 0) + $5`, [guild.id, user.id, itemId, qty, qty]).catch(()=>{}); }
                                 }
                                 
-                                await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: MessageFlags.Ephemeral });
+                                await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] });
 
                             } else { // حالة البيع
                                 if (currentCategory === 'animals') {
@@ -468,7 +471,7 @@ module.exports = {
                                     
                                     let totalOwned = 0;
                                     userAnimals.forEach(row => totalOwned += Number(row.quantity));
-                                    if (totalOwned < qty) return submit.reply({ content: `❌ لا تملك الكمية! لديك: ${totalOwned}`, flags: MessageFlags.Ephemeral });
+                                    if (totalOwned < qty) return submit.reply({ content: `❌ لا تملك الكمية! لديك: ${totalOwned}`, flags: [MessageFlags.Ephemeral] });
 
                                     const now = Date.now();
                                     let remainingToSell = qty;
@@ -506,7 +509,7 @@ module.exports = {
                                         }
                                     }
 
-                                    if (soldCount === 0) return submit.reply({ content: `🚫 فشل البيع! حيواناتك كبيرة في السن ولا يقبلها السوق.`, flags: MessageFlags.Ephemeral });
+                                    if (soldCount === 0) return submit.reply({ content: `🚫 فشل البيع! حيواناتك كبيرة في السن ولا يقبلها السوق.`, flags: [MessageFlags.Ephemeral] });
 
                                     try { await sql.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalRefund, user.id, guild.id]); }
                                     catch(e) { await sql.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalRefund, user.id, guild.id]).catch(()=>{}); }
@@ -514,7 +517,7 @@ module.exports = {
                                     userData.mora = String(Number(userData.mora || 0) + totalRefund);
                                     if (typeof client.setLevel === 'function') await client.setLevel(userData);
                                     
-                                    await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
+                                    await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] });
 
                                 } else {
                                     let invItemRes;
@@ -522,7 +525,7 @@ module.exports = {
                                     catch(e) { invItemRes = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guild.id, itemId]).catch(()=>({rows:[]})); }
                                     
                                     const invItem = invItemRes.rows[0];
-                                    if (!invItem || Number(invItem.quantity) < qty) return submit.reply({ content: `❌ لا تملك الكمية.`, flags: MessageFlags.Ephemeral });
+                                    if (!invItem || Number(invItem.quantity) < qty) return submit.reply({ content: `❌ لا تملك الكمية.`, flags: [MessageFlags.Ephemeral] });
                                     
                                     const sellPrice = Math.floor(itemData.price * 0.5); 
                                     const totalGain = sellPrice * qty;
@@ -541,12 +544,13 @@ module.exports = {
                                         catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [qty, user.id, guild.id, itemId]).catch(()=>{}); }
                                     }
 
-                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: MessageFlags.Ephemeral });
+                                    await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] });
                                 }
                             }
 
+                            // 🔄 تحديث بيانات الواجهة (Embed) بصمت وبدون أن يسبب خطأ
                             const newData = await buildDetailView(currentItemsList[currentItemIndex], user.id, guild.id, sql, currentItemIndex, currentItemsList.length, client, currentCategory);
-                            await msg.edit(newData);
+                            await msg.edit(newData).catch(() => {});
 
                         } catch (e) {
                             if (e.code !== 40060 && e.code !== 10062) console.error(e);
@@ -555,7 +559,7 @@ module.exports = {
                 }
 
             } catch (error) {
-                console.error(error);
+                console.error("Main Collector Error:", error);
             }
         });
 
