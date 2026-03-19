@@ -28,7 +28,6 @@ let GLOBAL_IMAGES = null;
 
 const farmLocks = new Map();
 
-// 🔥 وظيفة حساب ميزة نمو الرتبة 🔥
 async function getGrowthMultiplier(db, userId, guildId) {
     try {
         let repRes;
@@ -37,12 +36,12 @@ async function getGrowthMultiplier(db, userId, guildId) {
         
         const points = repRes.rows[0]?.rep_points || 0;
         
-        if (points >= 1000) return 0.80; // SS: اسرع 20%
-        if (points >= 500)  return 0.85; // S: اسرع 15%
-        if (points >= 250)  return 0.90; // A: اسرع 10%
-        if (points >= 100)  return 0.95; // B: اسرع 5%
-        if (points >= 50)   return 0.97; // C: اسرع 3%
-        return 1.0; // الباقي: سرعة عادية
+        if (points >= 1000) return 0.80; 
+        if (points >= 500)  return 0.85; 
+        if (points >= 250)  return 0.90; 
+        if (points >= 100)  return 0.95; 
+        if (points >= 50)   return 0.97; 
+        return 1.0; 
     } catch(e) { return 1.0; }
 }
 
@@ -262,7 +261,6 @@ async function renderLand(interaction, client, db) {
         addButton(new ButtonBuilder().setCustomId(`land_clean_all_${userId}`).setLabel('تنظيـف').setStyle(ButtonStyle.Danger).setEmoji('🚿'));
     }
 
-    // 🔥 دمج زر الوقت وزر البونص معاً 🔥
     if (minRemainingTime !== Infinity) {
         const hours = Math.floor(minRemainingTime / (1000 * 60 * 60));
         const minutes = Math.floor((minRemainingTime % (1000 * 60 * 60)) / (1000 * 60));
@@ -276,7 +274,6 @@ async function renderLand(interaction, client, db) {
 
         addButton(new ButtonBuilder().setCustomId('info_growth_time').setLabel(label).setStyle(ButtonStyle.Secondary).setDisabled(true));
     } else if (growthMultiplier < 1.0) {
-        // إذا لم يكن هناك زرع، نعرض ميزة السرعة لوحدها للاستعراض
         const bonusPercent = Math.round((1.0 - growthMultiplier) * 100);
         addButton(new ButtonBuilder().setCustomId('info_growth_bonus').setLabel(`⚡ بركة النمو: +${bonusPercent}% سرعة`).setStyle(ButtonStyle.Secondary).setDisabled(true));
     }
@@ -343,9 +340,20 @@ async function handleLandInteractions(i, client, db) {
 
     const updateView = async () => {
         const data = await renderLand(i, client, db);
+        
+        // جلب صف الأزرار السفلي الخاص بالتنقل والموجود أصلاً في الرسالة
+        const currentComponents = i.message.components;
+        let navRow = null;
+        if (currentComponents && currentComponents.length > 0) {
+            navRow = currentComponents[currentComponents.length - 1]; 
+        }
+
+        const finalComponents = data.components ? [...data.components] : [];
+        if (navRow) finalComponents.push(navRow);
+
         await i.editReply({ 
             content: data.content, 
-            components: data.components, 
+            components: finalComponents, 
             files: data.files,
             embeds: [] 
         }).catch(()=>{});
@@ -568,10 +576,20 @@ async function handleLandInteractions(i, client, db) {
                 const mainMsg = await i.channel.messages.fetch(msgId).catch(() => null);
                 if (mainMsg) {
                     const newData = await renderLand(i, client, db);
+                    
+                    const currentComponents = mainMsg.components;
+                    let navRow = null;
+                    if (currentComponents && currentComponents.length > 0) {
+                        navRow = currentComponents[currentComponents.length - 1]; 
+                    }
+
+                    const finalComponents = newData.components ? [...newData.components] : [];
+                    if (navRow) finalComponents.push(navRow);
+
                     await mainMsg.edit({
                         content: newData.content,
                         embeds: [], 
-                        components: newData.components,
+                        components: finalComponents,
                         files: newData.files
                     }).catch(()=>{});
                 }
