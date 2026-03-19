@@ -28,6 +28,28 @@ function formatTime(ms) {
     return `${minutes} دقيقة و ${seconds} ثانية`;
 }
 
+// 🔥 دالة حساب تخفيض وقت الانتظار بناءً على السمعة (صامتة تماماً) 🔥
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;      // SS
+        else if (points >= 500) reductionMinutes = 15;  // S
+        else if (points >= 250) reductionMinutes = 10;  // A
+        else if (points >= 100) reductionMinutes = 8;   // B
+        else if (points >= 50) reductionMinutes = 7;    // C
+        else if (points >= 25) reductionMinutes = 6;    // D
+        else if (points >= 10) reductionMinutes = 5;    // E
+
+        return reductionMinutes * 60 * 1000; 
+    } catch(e) { return 0; }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('ايموجي')
@@ -94,7 +116,12 @@ module.exports = {
         const OWNER_ID = "1145327691772481577"; 
         if (user.id !== OWNER_ID) {
             const lastPlayed = Number(userData.lastMemory || userData.lastmemory) || 0; 
-            const timeLeft = lastPlayed + COOLDOWN_MS - now;
+            
+            // 🔥 حساب الوقت المتبقي مع تخفيض السمعة 🔥
+            const reductionMs = await getCooldownReductionMs(db, user.id, guild.id);
+            const effectiveCooldown = Math.max(0, COOLDOWN_MS - reductionMs);
+            const timeLeft = (lastPlayed + effectiveCooldown) - now;
+            
             if (timeLeft > 0) {
                 return replyError(`🕐 انتظر **\`${formatTime(timeLeft)}\`** قبل اللعب مرة أخرى.`);
             }
@@ -133,7 +160,15 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
     client.activePlayers.add(user.id);
     
     userData.mora = Number(userData.mora) - bet;
-    userData.lastMemory = Date.now(); 
+    const nowTime = Date.now();
+    userData.lastMemory = nowTime; 
+    
+    try {
+        await db.query(`UPDATE levels SET "mora" = $1, "lastMemory" = $2 WHERE "user" = $3 AND "guild" = $4`, [userData.mora, nowTime, user.id, guild.id]);
+    } catch(e) {
+        await db.query(`UPDATE levels SET mora = $1, lastmemory = $2 WHERE userid = $3 AND guildid = $4`, [userData.mora, nowTime, user.id, guild.id]).catch(()=>{});
+    }
+
     await client.setLevel(userData);
 
     let gridEmojis = [];
@@ -248,8 +283,14 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
                         let casinoTax = 0;
                         let taxText = "";
 
-                        const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guild.id]);
-                        const settings = settingsRes.rows[0];
+                        let settings;
+                        try {
+                            const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guild.id]);
+                            settings = settingsRes.rows[0];
+                        } catch(e) {
+                            const settingsRes = await db.query(`SELECT rolecasinoking FROM settings WHERE guild = $1`, [guild.id]).catch(()=>({rows:[]}));
+                            settings = settingsRes.rows[0];
+                        }
                         
                         if (settings && (settings.roleCasinoKing || settings.rolecasinoking) && !member.roles.cache.has(settings.roleCasinoKing || settings.rolecasinoking)) {
                             const kingMembers = guild.roles.cache.get(settings.roleCasinoKing || settings.rolecasinoking)?.members;
@@ -259,7 +300,11 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
                                 if (casinoTax > 0) {
                                     winAmount -= casinoTax;
                                     taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                    await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guild.id]);
+                                    try {
+                                        await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guild.id]);
+                                    } catch(e) {
+                                        await db.query(`UPDATE levels SET bank = bank + $1 WHERE userid = $2 AND guildid = $3`, [casinoTax, king.id, guild.id]).catch(()=>{});
+                                    }
                                 }
                             }
                         }
@@ -270,7 +315,11 @@ async function startMemoryGame(channel, user, member, bet, client, guild, db, in
                         const buffPercent = Math.round((moraMultiplier - 1) * 100);
                         if (buffPercent > 0) buffString = ` (+${buffPercent}%)`;
 
-                        await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [payout, user.id, guild.id]);
+                        try {
+                            await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [payout, user.id, guild.id]);
+                        } catch(e) {
+                            await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [payout, user.id, guild.id]).catch(()=>{});
+                        }
 
                         if (updateGuildStat) {
                             updateGuildStat(client, guild.id, user.id, 'casino_profit', winAmount);
