@@ -23,6 +23,28 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// 🔥 دالة حساب تخفيض وقت الانتظار بناءً على السمعة (صامتة تماماً) 🔥
+async function getCooldownReductionMs(db, userId, guildId) {
+    try {
+        let repRes;
+        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+        
+        const points = repRes.rows[0]?.rep_points || repRes.rows[0]?.rep_points || 0;
+        
+        let reductionMinutes = 0;
+        if (points >= 1000) reductionMinutes = 30;      // SS
+        else if (points >= 500) reductionMinutes = 15;  // S
+        else if (points >= 250) reductionMinutes = 10;  // A
+        else if (points >= 100) reductionMinutes = 8;   // B
+        else if (points >= 50) reductionMinutes = 7;    // C
+        else if (points >= 25) reductionMinutes = 6;    // D
+        else if (points >= 10) reductionMinutes = 5;    // E
+
+        return reductionMinutes * 60 * 1000; 
+    } catch(e) { return 0; }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('arrange')
@@ -83,7 +105,11 @@ module.exports = {
 
         if (userId !== OWNER_ID) {
             if (cooldowns.has(userId)) {
-                const expirationTime = cooldowns.get(userId) + 3600000;
+                const baseCooldown = 3600000; // ساعة كاملة
+                const reductionMs = await getCooldownReductionMs(db, userId, guildId);
+                const effectiveCooldown = Math.max(0, baseCooldown - reductionMs);
+
+                const expirationTime = cooldowns.get(userId) + effectiveCooldown;
                 if (Date.now() < expirationTime) {
                     const timeLeft = (expirationTime - Date.now()) / 1000 / 60;
                     return replyError(`<:stop:1436337453098340442> **ريــلاكــس!** يمكنك اللعب مجدداً بعد **${timeLeft.toFixed(0)} دقيقة**.`);
@@ -95,7 +121,6 @@ module.exports = {
 
         const startGame = async (finalBetAmount) => {
             try {
-                // 🔥 حماية استعلام فحص الرصيد
                 let userCheck;
                 try {
                     const userCheckRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
@@ -119,7 +144,6 @@ module.exports = {
                     return replyError(`❌ **الحد الأدنى للرهان هو ${MIN_BET} ${MORA_EMOJI}**`);
                 }
 
-                // 🔥 حماية خصم الرهان من الرصيد
                 try {
                     await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [finalBetAmount, userId, guildId]);
                 } catch(e) {
@@ -135,7 +159,6 @@ module.exports = {
                     await db.query(`UPDATE levels SET lastArrange = $1 WHERE userid = $2 AND guildid = $3`, [nowTime, userId, guildId]).catch(()=>{});
                 }
 
-                // 🔥 الحل هنا: تحديث الكاش لكي يقرأه أمر الوقت 🔥
                 if (typeof client.getLevel === 'function' && typeof client.setLevel === 'function') {
                     let cacheData = await client.getLevel(userId, guildId);
                     if (!cacheData) cacheData = { ...client.defaultData, user: userId, guild: guildId };
@@ -205,7 +228,6 @@ module.exports = {
                             let casinoTax = 0;
                             let taxText = "";
 
-                            // 🔥 حماية إعدادات الكازينو
                             let settings;
                             try {
                                 const settingsRes = await db.query(`SELECT "roleCasinoKing" FROM settings WHERE "guild" = $1`, [guildId]);
@@ -223,7 +245,6 @@ module.exports = {
                                     if (casinoTax > 0) {
                                         profit -= casinoTax;
                                         taxText = `\n👑 ضريبـة ملـك الكازيـنـو (-1%): **${casinoTax}**-`;
-                                        // 🔥 حماية إضافة ضريبة الملك
                                         try {
                                             await db.query(`UPDATE levels SET "bank" = "bank" + $1 WHERE "user" = $2 AND "guild" = $3`, [casinoTax, king.id, guildId]);
                                         } catch(e) {
@@ -239,7 +260,6 @@ module.exports = {
                             let buffText = "";
                             if (buffOnlyPercent > 0) buffText = ` (+${buffOnlyPercent}%)`; 
 
-                            // 🔥 حماية إضافة أرباح اللاعب (السبب الرئيسي للمشكلة)
                             try {
                                 await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrize, userId, guildId]);
                             } catch(e) {
@@ -354,7 +374,6 @@ module.exports = {
             return startGame(finalBetAmount);
         }
 
-        // 🔥 حماية استعلام الرصيد الافتراضي
         let userData;
         try {
             const userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
