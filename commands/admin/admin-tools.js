@@ -28,7 +28,6 @@ function getTodayDateString() {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 }
 
-// 🔥 تم تحديث قائمة الملوك هنا وإضافة ملك اللصوص وملك الصوت 🔥
 const kingStatsMap = {
     'roleCasinoKing': 'casino_profit',
     'roleAbyss': 'dungeon_floor',
@@ -157,6 +156,7 @@ module.exports = {
                 .addOptions([
                     { label: '📋 فحص الحساب', value: 'check', description: 'عرض إحصائيات اللاعب' },
                     { label: '💰 إدارة المورا والخبرة', value: 'economy', emoji: '🪙' },
+                    { label: '🔄 تبديل ونقل حسابين', value: 'swap_accounts', description: 'نقل ممتلكات حسابين بالكامل واستبدالهم', emoji: '🔄' }, // 🔥 خيار التبديل السحري 🔥
                     { label: '👑 تعيين ملك يدوي', value: 'set_king', description: 'تتويج العضو ورفع نقاطه في اللوحة', emoji: '👑' },
                     { label: '🗑️ إخلاء عرش ملك', value: 'empty_king', description: 'تصفير نقاط عرش معين وطرد الملك الحالي', emoji: '🗑️' },
                     { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
@@ -215,6 +215,92 @@ module.exports = {
                     await client.setLevel(ud);
                     await modalSubmit.editReply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
+            }
+            // 🔥 دالة التبديل الذكي بين حسابين 🔥
+            else if (val === 'swap_accounts') {
+                const modalId = `mod_swap_${Date.now()}`;
+                const modal = new ModalBuilder().setCustomId(modalId).setTitle('تبديل ونقل الحسابات');
+                const id1Input = new TextInputBuilder().setCustomId('swap_id1').setLabel('آيدي الحساب الأول').setStyle(TextInputStyle.Short).setRequired(true);
+                const id2Input = new TextInputBuilder().setCustomId('swap_id2').setLabel('آيدي الحساب الثاني (سيتبادل معه)').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(id1Input), new ActionRowBuilder().addComponents(id2Input));
+                await interaction.showModal(modal);
+
+                try {
+                    const modalSubmit = await interaction.awaitModalSubmit({ filter: i => i.customId === modalId && i.user.id === message.author.id, time: 120000 });
+                    await modalSubmit.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+                    const id1 = modalSubmit.fields.getTextInputValue('swap_id1').trim();
+                    const id2 = modalSubmit.fields.getTextInputValue('swap_id2').trim();
+
+                    if (id1 === id2) return modalSubmit.editReply("❌ الآيديات متطابقة.");
+
+                    const tempId = `TEMP_${Date.now()}`;
+
+                    const swapAnyColumn = async (tableName, targetCol, gCol = 'guildID', idColFormat = null) => {
+                        let id1_pk = idColFormat === 1 ? `${guildID}-${id1}` : null;
+                        let id2_pk = idColFormat === 1 ? `${guildID}-${id2}` : null;
+                        let temp_pk = idColFormat === 1 ? `${guildID}-${tempId}` : null;
+
+                        try {
+                            if(idColFormat) {
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1, "id" = $4 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [tempId, id1, guildID, temp_pk]);
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1, "id" = $4 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [id1, id2, guildID, id1_pk]);
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1, "id" = $4 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [id2, tempId, guildID, id2_pk]);
+                            } else {
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [tempId, id1, guildID]);
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [id1, id2, guildID]);
+                                await db.query(`UPDATE ${tableName} SET "${targetCol}" = $1 WHERE "${targetCol}" = $2 AND "${gCol}" = $3`, [id2, tempId, guildID]);
+                            }
+                        } catch(e) {
+                            try {
+                                if(idColFormat) {
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1, id = $4 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [tempId, id1, guildID, temp_pk]);
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1, id = $4 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [id1, id2, guildID, id1_pk]);
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1, id = $4 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [id2, tempId, guildID, id2_pk]);
+                                } else {
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [tempId, id1, guildID]);
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [id1, id2, guildID]);
+                                    await db.query(`UPDATE ${tableName} SET ${targetCol.toLowerCase()} = $1 WHERE ${targetCol.toLowerCase()} = $2 AND ${gCol.toLowerCase()} = $3`, [id2, tempId, guildID]);
+                                }
+                            } catch(e2) {}
+                        }
+                    };
+
+                    await db.query('BEGIN');
+                    
+                    await swapAnyColumn('levels', 'user', 'guild', 1);
+                    await swapAnyColumn('user_inventory', 'userID');
+                    await swapAnyColumn('user_portfolio', 'userID');
+                    await swapAnyColumn('user_farm', 'userID');
+                    await swapAnyColumn('user_lands', 'userID');
+                    await swapAnyColumn('user_achievements', 'userID');
+                    await swapAnyColumn('user_reputation', 'userID');
+                    await swapAnyColumn('user_weapons', 'userID');
+                    await swapAnyColumn('user_skills', 'userID');
+                    await swapAnyColumn('dungeon_stats', 'userID');
+                    await swapAnyColumn('streaks', 'userID', 'guildID', 1);
+                    await swapAnyColumn('media_streaks', 'userID', 'guildID', 1);
+                    await swapAnyColumn('user_buffs', 'userID');
+                    await swapAnyColumn('user_loans', 'userID');
+                    await swapAnyColumn('marriages', 'userID');
+                    await swapAnyColumn('marriages', 'partnerID');
+                    await swapAnyColumn('children', 'parentID');
+                    await swapAnyColumn('children', 'childID');
+
+                    await db.query('COMMIT');
+                    
+                    if (client.levelCache) {
+                        client.levelCache.delete(`${guildID}-${id1}`);
+                        client.levelCache.delete(`${guildID}-${id2}`);
+                    }
+
+                    await modalSubmit.editReply({ content: `✅ **تم نقل وتبديل البيانات بنجاح!**\nتم تبديل جميع البيانات (المورا، المزرعة، العائلة، الأسلحة، الإنجازات) بين <@${id1}> و <@${id2}> بصمت.` });
+
+                } catch(e) { 
+                    await db.query('ROLLBACK').catch(()=>{});
+                    if (e.code !== 'InteractionCollectorError') console.error(e); 
+                    await interaction.followUp({content: "❌ حدث خطأ أثناء التبديل.", flags: [MessageFlags.Ephemeral]}).catch(()=>{});
+                }
             }
             else if (val === 'set_king' || val === 'empty_king') {
                 const isEmpting = val === 'empty_king';
