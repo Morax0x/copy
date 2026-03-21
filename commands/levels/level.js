@@ -1,15 +1,22 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const { RankCardBuilder } = require("discord-card-canvas");
 
-// 🔥 استدعاء دالة حساب الخبرة المركزية الجديدة
-let calculateRequiredXP;
-try {
-    ({ calculateRequiredXP } = require('../../handlers/handler-utils.js'));
-} catch (e) {
-    // كود احتياطي في حال فشل الاستدعاء
-    calculateRequiredXP = function(lvl) {
-        if (lvl < 35) return 5 * (lvl ** 2) + (50 * lvl) + 100;
-        return 15 * (lvl ** 2) + (150 * lvl);
+// 🔥 استدعاء الدالة بشكل آمن ومؤكد 🔥
+function getCalculateRequiredXP() {
+    try {
+        const { calculateRequiredXP } = require('../../handlers/handler-utils.js');
+        if (typeof calculateRequiredXP === 'function') return calculateRequiredXP;
+    } catch (e) {
+        console.error("Failed to load handler-utils.js in level command. Using fallback.");
+    }
+    
+    // معادلة الطوارئ في حال فشل تحميل الملف (نسخة مطابقة للمعادلة القوية)
+    return function(lvl) {
+        const level = Number(lvl) || 0;
+        if (level < 15) return Math.floor(15 * (level ** 2) + (100 * level) + 150);
+        if (level < 35) return Math.floor(35 * (level ** 2) + (300 * level) + 1000);
+        if (level < 60) return Math.floor(85 * (level ** 2.2) + (800 * level) + 5000);
+        return Math.floor(250 * (level ** 2.5) + (2000 * level) + 20000);
     };
 }
 
@@ -59,14 +66,21 @@ module.exports = {
 
             const totalXp = Number(score.totalXP || score.totalxp) || 0;
             
-            // 🔥 حماية أسماء الأعمدة بعلامات تنصيص لتناسب السحابة PostgreSQL
-            const rankRes = await db.query(`SELECT COUNT(*) as count FROM levels WHERE "guild" = $1 AND "totalXP" > $2`, [guildId, totalXp]);
-            const rank = Number(rankRes.rows[0].count) + 1;
+            // 🔥 حماية استعلام الرانك المزدوجة للسحابة 🔥
+            let rank = 1;
+            try {
+                const rankRes = await db.query(`SELECT COUNT(*) as count FROM levels WHERE "guild" = $1 AND "totalXP" > $2`, [guildId, totalXp]);
+                rank = Number(rankRes.rows[0].count) + 1;
+            } catch(e) {
+                const rankRes = await db.query(`SELECT COUNT(*) as count FROM levels WHERE guild = $1 AND totalxp > $2`, [guildId, totalXp]).catch(()=>({rows:[{count:0}]}));
+                rank = Number(rankRes.rows[0].count) + 1;
+            }
 
             const currentLevel = Number(score.level) || 0;
             const currentXp = Number(score.xp) || 0;
             
-            // 🔥 استخدام الدالة المركزية لضبط صعوبة المستوى
+            // استدعاء دالة حساب الإكس بي الموثوقة
+            const calculateRequiredXP = getCalculateRequiredXP();
             const requiredXP = calculateRequiredXP(currentLevel);
 
             const randomAccentColor = getRandomColorHex(); 
