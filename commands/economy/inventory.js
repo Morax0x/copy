@@ -12,13 +12,17 @@ try { farmItems = require('../../json/seeds.json').concat(require('../../json/fe
 // دالة ذكية للبحث عن أي عنصر في كل ملفات الـ JSON وتحديد قسمه
 function resolveItemInfo(itemId) {
     // 1. فحص موارد التطوير والكتب
-    for (const race of upgradeMats.weapon_materials) {
-        const mat = race.materials.find(m => m.id === itemId);
-        if (mat) return { name: mat.name, emoji: mat.emoji, category: 'materials' };
+    if (upgradeMats && upgradeMats.weapon_materials) {
+        for (const race of upgradeMats.weapon_materials) {
+            const mat = race.materials.find(m => m.id === itemId);
+            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'materials' };
+        }
     }
-    for (const cat of upgradeMats.skill_books) {
-        const book = cat.books.find(b => b.id === itemId);
-        if (book) return { name: book.name, emoji: book.emoji, category: 'materials' };
+    if (upgradeMats && upgradeMats.skill_books) {
+        for (const cat of upgradeMats.skill_books) {
+            const book = cat.books.find(b => b.id === itemId);
+            if (book) return { name: book.name, emoji: book.emoji, category: 'materials' };
+        }
     }
 
     // 2. فحص الأسماك ومعدات الصيد
@@ -52,6 +56,9 @@ module.exports = {
         const client = interactionOrMessage.client;
         const db = client.sql;
         const guildId = interactionOrMessage.guild.id;
+
+        // 🔥 هذا هو السطر الذي تم إضافته لإصلاح الخطأ 🔥
+        const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
 
         let targetUser;
         if (isSlash) {
@@ -193,7 +200,7 @@ module.exports = {
                 ])
         );
 
-        // إرسال الصفحة الافتراضية (موارد التطوير أو الأسلحة)
+        // إرسال الصفحة الافتراضية (الأسلحة والمهارات)
         const msg = await reply({ embeds: [embeds['combat']], components: [menuRow] });
 
         // إعداد المستمع (Collector) للتنقل بين الصفحات
