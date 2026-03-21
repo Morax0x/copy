@@ -1,7 +1,8 @@
 const { createRandomDropGiveaway } = require('./giveaway-handler.js');
-const { autoUpdateKingsBoard, rewardDailyKings } = require('./guild-board-handler.js'); 
+// 🔥 استدعاء دوال الملوك من الملف الجديد الصحيح 🔥
+const { autoUpdateKingsBoard, rewardDailyKings } = require('./kings-stats-handler.js'); 
 const { checkLoanPayments } = require('./loan-handler.js'); 
-const { checkFarmIncome } = require('./farm-handler.js');
+const { checkFarmIncome } = require('./farm-income.js'); // تم تغيير اسم الملف إذا كان farm-income.js
 const handleMarketCrash = require('./market-crash-handler.js');
 const { checkDailyStreaks, checkDailyMediaStreaks, sendMediaStreakReminders, sendDailyMediaUpdate, sendStreakWarnings } = require("../streak-handler.js");
 const { checkUnjailTask } = require('./report-handler.js'); 
@@ -220,8 +221,12 @@ module.exports = (client, db) => {
     updateMarketPrices(); 
       
     setInterval(() => checkLoanPayments(client, db), 60 * 60 * 1000); 
-    setInterval(() => checkFarmIncome(client, db), 60 * 60 * 1000); 
-    checkFarmIncome(client, db); 
+    
+    // 🔥 الحماية هنا، في حال كانت الدالة موجودة استدعيها
+    if (checkFarmIncome) {
+        setInterval(() => checkFarmIncome(client, db), 60 * 60 * 1000); 
+        checkFarmIncome(client, db); 
+    }
 
     setInterval(() => checkDailyStreaks(client, db), 3600000); 
     checkDailyStreaks(client, db);
@@ -263,7 +268,6 @@ module.exports = (client, db) => {
         } catch(e) {}
     }, 60 * 1000); 
 
-    // 🔥 تم إزالة OR "expiresat" من هنا أيضاً لتجنب أي خطأ مشابه
     setInterval(async () => {
         const now = Date.now();
         try {
@@ -282,7 +286,10 @@ module.exports = (client, db) => {
         
         if (ksaHour === 0 && client.lastUpdateSentHour !== ksaHour) { 
             sendDailyMediaUpdate(client, db); 
-            rewardDailyKings(client, db);
+            
+            // 🔥 استدعاء دالة التوزيع بشكل سليم 🔥
+            if (rewardDailyKings) rewardDailyKings(client, db);
+            
             client.lastUpdateSentHour = ksaHour; 
         } else if (ksaHour !== 0) client.lastUpdateSentHour = -1; 
         
@@ -331,7 +338,8 @@ module.exports = (client, db) => {
     }, 30 * 60 * 1000); 
 
     setInterval(() => {
-        autoUpdateKingsBoard(client, db).catch(() => {});
+        // 🔥 تحديث لوحة الملوك بشكل سليم كل دقيقة 🔥
+        if (autoUpdateKingsBoard) autoUpdateKingsBoard(client, db).catch(() => {});
     }, 60 * 1000);
 
     sendDailyMediaUpdate(client, db);
