@@ -14,6 +14,8 @@ const { loadRoleSettings } = require('./handlers/reaction-role-handler.js');
 const autoJoin = require('./handlers/auto-join.js'); 
 const { startAuctionSystem } = require('./handlers/auction-handler.js');
 const { startAutoChat } = require('./handlers/ai/auto-chat.js');
+// 🔥 إضافة نظام النسخ الاحتياطي التلقائي 🔥
+const { startAutoBackup } = require('./utils/auto-backup.js');
 
 const MAIN_GUILD_ID = "952732360074494003"; 
 const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -110,6 +112,9 @@ async function bootstrap() {
 
         try { await loadRoleSettings(client.sql, client.antiRolesCache); } catch(e) { console.log("⚠️ Role Settings skipped:", e.message); }
         try { require('./handlers/cron-jobs.js')(client, client.sql); } catch(e) { console.log("⚠️ Cron Jobs skipped:", e.message); }
+
+        // 🔥 تشغيل نظام النسخ الاحتياطي التلقائي بصمت 🔥
+        try { startAutoBackup(client); } catch(e) { console.log("⚠️ AutoBackup skipped:", e.message); }
 
         // 🔥🔥 استدعاء إنعاش الدانجون بعد تشغيل البوت 🔥🔥
         try { 
