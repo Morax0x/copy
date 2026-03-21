@@ -53,7 +53,6 @@ module.exports = {
             }
         }
 
-        // 🔥 نظام الجدار الفولاذي لملك الصوت (سيد المجالس) 🔥
         try {
             const yesterdayKSA = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
             yesterdayKSA.setDate(yesterdayKSA.getDate() - 1);
@@ -128,6 +127,18 @@ module.exports = {
             return message.reply({ embeds: [selfEmbed] });
         }
 
+        // 🔥 الفحص الأول (والأهم): هل يمتلك رصيد شهادات أصلاً؟ 🔥
+        if (senderId !== OWNER_ID && remainingVotes <= 0) {
+            const nextRepTime = getNextResetTime();
+            const cooldownEmbed = new EmbedBuilder()
+                .setTitle('✥ استفـدت صـوتـك لهـذا اليـوم .. ⏳')
+                .setDescription(`✦ يمـكنـك التـزكيـة مـجـددًا:\n ✦<t:${nextRepTime}:R>`)
+                .setThumbnail('https://i.postimg.cc/66YzP12B/ayqwnt-(2).png')
+                .setColor(getRandomColor());
+            return message.reply({ embeds: [cooldownEmbed] });
+        }
+
+        // 🔥 الفحص الثاني: اللفل والتفاعل (فقط إذا كان يملك رصيد شهادات) 🔥
         let senderLevel = 1;
         try {
             const senderLevelRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [senderId, guildId]);
@@ -149,7 +160,6 @@ module.exports = {
         if (senderId !== OWNER_ID) {
             try {
                 let todayMessages = 0;
-                // 🔥 تم إصلاح تنسيق التاريخ هنا ليتطابق مع قاعدة البيانات YYYY-MM-DD 🔥
                 const todayDateKSA = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
                 
                 try {
@@ -173,17 +183,6 @@ module.exports = {
             }
         }
 
-        if (senderId !== OWNER_ID && remainingVotes <= 0) {
-            const nextRepTime = getNextResetTime();
-            const cooldownEmbed = new EmbedBuilder()
-                .setTitle('✥ استفـدت صـوتـك لهـذا اليـوم .. ⏳')
-                .setDescription(`✦ يمـكنـك التـزكيـة مـجـددًا:\n ✦<t:${nextRepTime}:R>`)
-                .setThumbnail('https://i.postimg.cc/66YzP12B/ayqwnt-(2).png')
-                .setColor(getRandomColor());
-            return message.reply({ embeds: [cooldownEmbed] });
-        }
-
-        // 🔥 معرفة قوة التزكية بناءً على رتبة المرسل 🔥
         const currentSenderPoints = parseInt(senderRep ? (senderRep.rep_points || senderRep.rep_points) : 0, 10) || 0;
         const senderRankData = getRepRank(currentSenderPoints);
         
