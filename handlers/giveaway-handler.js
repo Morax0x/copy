@@ -1,5 +1,17 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors } = require("discord.js");
 
+// 🔥 استيراد الدالة المركزية للتلفيل 🔥
+let addXPAndCheckLevel;
+try {
+    ({ addXPAndCheckLevel } = require('./handler-utils.js'));
+} catch (e) {
+    try {
+        ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
+    } catch(e2) {
+        console.error("Missing handler-utils.js in giveaway-handler", e2);
+    }
+}
+
 async function getUserWeight(member, db) {
     if (!member || !db) return 1;
     const userRoles = member.roles.cache.map(r => r.id);
@@ -21,7 +33,7 @@ async function getUserWeight(member, db) {
 }
 
 async function startGiveaway(client, interaction, channel, duration, winnerCount, prize, xpReward, moraReward) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return;
 
     const endsAt = Date.now() + duration;
@@ -63,7 +75,7 @@ async function startGiveaway(client, interaction, channel, duration, winnerCount
 }
 
 async function handleGiveawayInteraction(client, interaction) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return;
 
     const messageID = interaction.message.id;
@@ -113,7 +125,7 @@ async function handleGiveawayInteraction(client, interaction) {
 }
 
 async function endGiveaway(client, messageID, force = false) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return;
 
     const giveawayRes = await db.query('SELECT * FROM active_giveaways WHERE "messageID" = $1', [messageID]);
@@ -192,37 +204,20 @@ async function endGiveaway(client, messageID, force = false) {
     const xpReward = giveaway.xpReward || giveaway.xpreward || 0;
     const guildId = giveaway.guildID || giveaway.guildid;
 
+    // 🔥 التحديث الجذري هنا: توزيع الجوائز بالدالة المركزية الجديدة 🔥
     if (moraReward > 0 || xpReward > 0) {
         for (const winnerID of winnerIDs) {
             try {
-                let levelDataRes = await db.query('SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2', [winnerID, guildId]);
-                let levelData = levelDataRes.rows[0];
-
-                if (!levelData) {
-                    levelData = { user: winnerID, guild: guildId, level: 0, mora: 0, xp: 0, totalXP: 0 };
-                    await db.query('INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora") VALUES ($1, $2, $3, $4, $5, $6)', [winnerID, guildId, 0, 0, 0, 0]);
-                }
+                const guild = channel.guild;
+                const member = await guild.members.fetch(winnerID).catch(() => null);
                 
-                const oldLevel = levelData.level; 
-                levelData.mora = (levelData.mora || 0) + moraReward;
-                levelData.xp = (levelData.xp || 0) + xpReward;
-                levelData.totalXP = (levelData.totalXP || levelData.totalxp || 0) + xpReward;
-                
-                let nextXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
-                while (levelData.xp >= nextXP) {
-                    levelData.level++;
-                    levelData.xp -= nextXP;
-                    nextXP = 5 * (levelData.level ** 2) + (50 * levelData.level) + 100;
-                }
-                
-                await db.query('UPDATE levels SET "mora" = $1, "xp" = $2, "totalXP" = $3, "level" = $4 WHERE "user" = $5 AND "guild" = $6', [levelData.mora, levelData.xp, levelData.totalXP, levelData.level, winnerID, guildId]);
-                
-                if (levelData.level > oldLevel && client.sendLevelUpMessage) {
-                    const member = await channel.guild.members.fetch(winnerID).catch(() => null);
-                    if (member) {
-                        const fakeInteraction = { guild: channel.guild, channel: channel, members: { me: channel.guild.members.me } };
-                        await client.sendLevelUpMessage(fakeInteraction, member, levelData.level, oldLevel, levelData);
-                    }
+                if (member && addXPAndCheckLevel) {
+                    // نمرر false للـ isMessageEvent لكي لا يعطيه كرت تلفيل إذا رفع لفله بسبب الجائزة
+                    await addXPAndCheckLevel(client, member, db, xpReward, moraReward, false);
+                } else {
+                    //Fallback in case member left
+                    try { await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1, "xp" = COALESCE(CAST("xp" AS BIGINT), 0) + $2, "totalXP" = COALESCE(CAST("totalXP" AS BIGINT), 0) + $2 WHERE "user" = $3 AND "guild" = $4`, [moraReward, xpReward, winnerID, guildId]); }
+                    catch(e) { await db.query(`UPDATE levels SET mora = COALESCE(CAST(mora AS BIGINT), 0) + $1, xp = COALESCE(CAST(xp AS BIGINT), 0) + $2, totalxp = COALESCE(CAST(totalxp AS BIGINT), 0) + $2 WHERE userid = $3 AND guildid = $4`, [moraReward, xpReward, winnerID, guildId]).catch(()=>{}); }
                 }
             } catch (err) { console.error(err); }
         }
@@ -255,7 +250,7 @@ async function endGiveaway(client, messageID, force = false) {
 }
 
 async function rerollGiveaway(client, interaction, messageID) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return;
 
     const giveawayRes = await db.query('SELECT * FROM active_giveaways WHERE "messageID" = $1', [messageID]);
@@ -281,7 +276,7 @@ async function rerollGiveaway(client, interaction, messageID) {
 }
 
 async function createRandomDropGiveaway(client, guild) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return false;
 
     const settingsRes = await db.query('SELECT * FROM settings WHERE "guild" = $1', [guild.id]);
@@ -359,7 +354,7 @@ async function createRandomDropGiveaway(client, guild) {
 }
 
 async function initGiveaways(client) {
-    const db = client.sql; // ⚠️ تم التعديل إلى client.sql
+    const db = client.sql; 
     if (!db) return;
 
     try {
