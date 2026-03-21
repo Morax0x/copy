@@ -156,7 +156,7 @@ module.exports = {
                 .addOptions([
                     { label: '📋 فحص الحساب', value: 'check', description: 'عرض إحصائيات اللاعب' },
                     { label: '💰 إدارة المورا والخبرة', value: 'economy', emoji: '🪙' },
-                    { label: '🔄 تبديل ونقل حسابين', value: 'swap_accounts', description: 'نقل ممتلكات حسابين بالكامل واستبدالهم', emoji: '🔄' }, // 🔥 خيار التبديل السحري 🔥
+                    { label: '🔄 تبديل ونقل حسابين', value: 'swap_accounts', description: 'نقل (اللفل، المورا، الستريك، الأسلحة) بين شخصين', emoji: '🔄' }, 
                     { label: '👑 تعيين ملك يدوي', value: 'set_king', description: 'تتويج العضو ورفع نقاطه في اللوحة', emoji: '👑' },
                     { label: '🗑️ إخلاء عرش ملك', value: 'empty_king', description: 'تصفير نقاط عرش معين وطرد الملك الحالي', emoji: '🗑️' },
                     { label: '🌟 إدارة السمعة', value: 'reputation', description: 'إضافة/خصم/تحديد نقاط السمعة', emoji: '🌟' },
@@ -216,7 +216,7 @@ module.exports = {
                     await modalSubmit.editReply({ content: `✅ تم تعديل اقتصاد ${targetUser} بنجاح.` });
                 } catch(e) { if (e.code !== 'InteractionCollectorError') console.error(e); }
             }
-            // 🔥 دالة التبديل الذكي بين حسابين 🔥
+            // 🔥 دالة التبديل الذكي (تشمل تحديث الذاكرة فوراً) 🔥
             else if (val === 'swap_accounts') {
                 const modalId = `mod_swap_${Date.now()}`;
                 const modal = new ModalBuilder().setCustomId(modalId).setTitle('تبديل ونقل الحسابات');
@@ -233,6 +233,10 @@ module.exports = {
                     const id2 = modalSubmit.fields.getTextInputValue('swap_id2').trim();
 
                     if (id1 === id2) return modalSubmit.editReply("❌ الآيديات متطابقة.");
+
+                    // جلب الداتا الحالية قبل التبديل عشان نعكسها في الذاكرة (Cache)
+                    const ud1 = await client.getLevel(id1, guildID);
+                    const ud2 = await client.getLevel(id2, guildID);
 
                     const tempId = `TEMP_${Date.now()}`;
 
@@ -268,6 +272,7 @@ module.exports = {
 
                     await db.query('BEGIN');
                     
+                    // هنا يتم تبديل السطر بالكامل (الليفل، الاكس بي، المورا متضمنة في جدول levels)
                     await swapAnyColumn('levels', 'user', 'guild', 1);
                     await swapAnyColumn('user_inventory', 'userID');
                     await swapAnyColumn('user_portfolio', 'userID');
@@ -278,8 +283,11 @@ module.exports = {
                     await swapAnyColumn('user_weapons', 'userID');
                     await swapAnyColumn('user_skills', 'userID');
                     await swapAnyColumn('dungeon_stats', 'userID');
+                    
+                    // يتم تبديل الستريك بشكل كامل هنا
                     await swapAnyColumn('streaks', 'userID', 'guildID', 1);
                     await swapAnyColumn('media_streaks', 'userID', 'guildID', 1);
+                    
                     await swapAnyColumn('user_buffs', 'userID');
                     await swapAnyColumn('user_loans', 'userID');
                     await swapAnyColumn('marriages', 'userID');
@@ -289,12 +297,17 @@ module.exports = {
 
                     await db.query('COMMIT');
                     
+                    // 🔥 تحديث فوري للذاكرة المؤقتة (Cache) لضمان تغير اللفل والاكس بي والمورا بدون ريستارت 🔥
                     if (client.levelCache) {
                         client.levelCache.delete(`${guildID}-${id1}`);
                         client.levelCache.delete(`${guildID}-${id2}`);
                     }
+                    if (typeof client.setLevel === 'function') {
+                        if (ud1) await client.setLevel({ ...ud1, user: id2, id: `${guildID}-${id2}` });
+                        if (ud2) await client.setLevel({ ...ud2, user: id1, id: `${guildID}-${id1}` });
+                    }
 
-                    await modalSubmit.editReply({ content: `✅ **تم نقل وتبديل البيانات بنجاح!**\nتم تبديل جميع البيانات (المورا، المزرعة، العائلة، الأسلحة، الإنجازات) بين <@${id1}> و <@${id2}> بصمت.` });
+                    await modalSubmit.editReply({ content: `✅ **تم نقل وتبديل البيانات بنجاح!**\nتم تبديل جميع البيانات **(المورا، اللفل، الإكس بي، الستريك، المزرعة، العائلة، وغيرها)** بين <@${id1}> و <@${id2}> بصمت.` });
 
                 } catch(e) { 
                     await db.query('ROLLBACK').catch(()=>{});
@@ -943,8 +956,13 @@ module.exports = {
         item = marketItems.find(i => normalize(i.name) === input || i.id.toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'market' };
         
+        // 🔥 هنا الإضافة: البحث باسم الحيوان يعطيك العلف الخاص فيه مباشرة 🔥
         item = farmAnimals.find(i => normalize(i.name) === input || String(i.id).toLowerCase() === nameOrID.toLowerCase());
-        if (item) return { ...item, type: 'farm' };
+        if (item) {
+            const feedForAnimal = feedItems.find(f => String(f.id) === String(item.feed_id));
+            if (feedForAnimal) return { ...feedForAnimal, type: 'feed' };
+            return { ...item, type: 'farm' };
+        }
 
         item = seedsData.find(i => normalize(i.name) === input || String(i.id).toLowerCase() === nameOrID.toLowerCase());
         if (item) return { ...item, type: 'seed' };
