@@ -27,7 +27,7 @@ try { GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const EMOJI_STAR = '⭐';
-const OWNER_ID = "1145327691772481577"; // 👑 الإمبراطور مستثـنى من المنافسة
+const OWNER_ID = "1145327691772481577"; 
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
@@ -785,22 +785,21 @@ async function autoUpdateKingsBoard(client, db) {
                                 }
                             }
                         }
-
                     } catch (err) {}
                 }
                 
                 lastKingsHash.set(guildId, currentHash);
-        } catch (err) {}
+            } catch (err) {}
+        }
     }
 }
 
-// 🔥 التعديل: تحويل التوزيع ليقرأ بيانات "اليوم الحالي" بناءً على طلبك 🔥
 async function rewardDailyKings(client, db) {
     if (!db) return;
     try {
         await ensureKingTrackerTable(db); 
 
-        const targetDateStr = getTodayDateString(); // اليوم الحالي
+        const targetDateStr = getTodayDateString();
 
         let isPaidRes;
         try { isPaidRes = await db.query(`SELECT * FROM kings_daily_payout WHERE "dateStr" = $1`, [targetDateStr]); }
@@ -817,7 +816,6 @@ async function rewardDailyKings(client, db) {
             const settings = settingsRes.rows[0];
             if (!settings || (!settings.guildAnnounceChannelID && !settings.guildannouncechannelid)) continue;
 
-            // دروع الحماية المنيعة لكل استعلام بناءً على يومنا الحالي (targetDateStr)
             let casinoDataRes;
             try { casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC LIMIT 1`, [guildId, targetDateStr, OWNER_ID]); }
             catch(e) { casinoDataRes = await db.query(`SELECT userid as "userID" FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND userid != $3 GROUP BY userid HAVING SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) > 0 ORDER BY SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) DESC LIMIT 1`, [guildId, targetDateStr, OWNER_ID]).catch(()=>({rows:[]})); }
@@ -934,7 +932,6 @@ async function rewardDailyKings(client, db) {
 
 const statsQueue = new Map();
 let isProcessingQueue = false;
-let processorInterval = null;
 
 async function processStatsQueue(client) {
     const db = client.sql;
