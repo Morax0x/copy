@@ -6,13 +6,25 @@ try {
     console.error("Error loading levelup-card-generator:", e);
 }
 
-// 🔥 1. الدالة المركزية لحساب الـ XP المطلوب (زيادة الصعوبة بعد لفل 35) 🔥
+// 🔥 1. الدالة المركزية لحساب الـ XP (معادلة تصاعدية قوية MMORPG Style) 🔥
 function calculateRequiredXP(level) {
     const lvl = Number(level) || 0;
-    if (lvl < 35) {
-        return 5 * (lvl ** 2) + (50 * lvl) + 100;
-    } else {
-        return 15 * (lvl ** 2) + (150 * lvl);
+    
+    if (lvl < 15) {
+        // اللفلات الابتدائية: سريعة وسهلة جداً (تحفيز)
+        return Math.floor(15 * (lvl ** 2) + (100 * lvl) + 150);
+    } 
+    else if (lvl < 35) {
+        // اللفلات المتوسطة: تبدأ تزداد الصعوبة تدريجياً
+        return Math.floor(35 * (lvl ** 2) + (300 * lvl) + 1000);
+    } 
+    else if (lvl < 60) {
+        // اللفلات الصعبة: قفزة كبيرة في الـ XP المطلوب (الـ 5000 XP بالكاد ترفع جزء بسيط)
+        return Math.floor(85 * (lvl ** 2.2) + (800 * lvl) + 5000);
+    } 
+    else {
+        // لفلات الزعماء (60+): تحتاج أسابيع من الجهد، أرقام فلكية لضمان عدم وصول أي شخص بسهولة
+        return Math.floor(250 * (lvl ** 2.5) + (2000 * lvl) + 20000);
     }
 }
 
@@ -36,8 +48,7 @@ async function getFreeBalance(member, db) {
     return Math.max(0, freeBalance);
 }
 
-// 🔥 3. الدالة السحرية المركزية (تم التعديل لتمنع التلفيل إلا مع الرسائل) 🔥
-// أضفنا متغير isMessageEvent (قيمته الافتراضية false)
+// 🔥 3. الدالة السحرية المركزية 🔥
 async function addXPAndCheckLevel(client, member, db, xpToAdd, moraToAdd = 0, isMessageEvent = false) {
     if (!member || !db) return;
     const userId = member.id;
@@ -54,7 +65,6 @@ async function addXPAndCheckLevel(client, member, db, xpToAdd, moraToAdd = 0, is
             userData = res.rows[0] || { user: userId, guild: guildId, xp: 0, totalXP: 0, level: 1, mora: 0, bank: 0 };
         }
 
-        // إضافة المورا والخبرة وتراكمها (حتى لو تجاوزت الحد)
         userData.xp = (Number(userData.xp) || 0) + Number(xpToAdd);
         userData.totalXP = (Number(userData.totalXP || userData.totalxp) || 0) + Number(xpToAdd);
         userData.mora = (Number(userData.mora) || 0) + Number(moraToAdd);
@@ -95,10 +105,8 @@ async function addXPAndCheckLevel(client, member, db, xpToAdd, moraToAdd = 0, is
 
         if (client.setLevel) await client.setLevel(userData);
 
-        // إرسال صورة التلفيل فقط إذا تم رفع اللفل (والذي لن يحدث إلا مع isMessageEvent = true)
         if (leveledUp) {
             const mockInteraction = { guild: member.guild, channel: member.guild.systemChannel || member.guild.channels.cache.first() };
-            // تأكد من وجود دالة التوليد قبل الاستدعاء
             if (generateLevelUpCard) {
                 await sendLevelUpMessage(mockInteraction, member, userData.level, oldLevel, userData, db).catch(console.error);
             }
