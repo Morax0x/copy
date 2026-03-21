@@ -816,7 +816,6 @@ async function rewardDailyKings(client, db) {
             const settings = settingsRes.rows[0];
             if (!settings || (!settings.guildAnnounceChannelID && !settings.guildannouncechannelid)) continue;
 
-            // دروع الحماية المنيعة لكل استعلام بناءً على يومنا الحالي (targetDateStr)
             let casinoDataRes;
             try { casinoDataRes = await db.query(`SELECT "userID" FROM kings_board_tracker WHERE "guildID" = $1 AND "date" = $2 AND "userID" != $3 GROUP BY "userID" HAVING SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) > 0 ORDER BY SUM(COALESCE("casino_profit", 0) + COALESCE("mora_earned", 0)) DESC LIMIT 1`, [guildId, targetDateStr, OWNER_ID]); }
             catch(e) { casinoDataRes = await db.query(`SELECT userid as "userID" FROM kings_board_tracker WHERE guildid = $1 AND date = $2 AND userid != $3 GROUP BY userid HAVING SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) > 0 ORDER BY SUM(COALESCE(casino_profit, 0) + COALESCE(mora_earned, 0)) DESC LIMIT 1`, [guildId, targetDateStr, OWNER_ID]).catch(()=>({rows:[]})); }
