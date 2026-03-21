@@ -785,11 +785,11 @@ async function autoUpdateKingsBoard(client, db) {
                                 }
                             }
                         }
-                    } catch (err) {}
+                    } catch (err) { console.error("Error inside boardChannel try block:", err); }
                 }
                 
                 lastKingsHash.set(guildId, currentHash);
-            } catch (err) {}
+            } catch (err) { console.error("Error in guild loop:", err); }
         }
     }
 }
