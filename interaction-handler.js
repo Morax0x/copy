@@ -217,7 +217,8 @@ module.exports = (client, db, antiRolesCache) => {
                     await handleFarmInteractions(i, client, db);
                 } else if (id.startsWith('land_')) {
                     await handleLandInteractions(i, client, db);
-                } else if (id.startsWith('farm_') || id.startsWith('shop_cat_')) {
+                } else if (id.startsWith('farm_') || id.startsWith('shop_cat_') || id.startsWith('forge_') || id.startsWith('gacha_') || id.startsWith('inventory_')) {
+                    // 🔥 تم الإضافة هنا: تجاهل تفاعلات أنظمة الـ RPG الجديدة (تُعالج داخلياً في ملفاتها)
                     return;
                 } else if (id.startsWith('streak_panel_')) {
                     await handleStreakPanel(i, client, db);
@@ -226,7 +227,8 @@ module.exports = (client, db, antiRolesCache) => {
                 } else if (id === 'g_reroll_select') {
                     await handleReroll(i, client, db);
                 } 
-                else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu')) {
+                // 🔥 تم إضافة claim_ هنا لدعم استلام مكافآت المهام اليومية والأوسمة
+                else if (id.startsWith('panel_') || id.startsWith('quests_') || id.startsWith('quest_panel_menu') || id.startsWith('claim_')) {
                     await handleQuestPanel(i, client, db);
                 } 
                 else if (id.startsWith('pvp_')) {
