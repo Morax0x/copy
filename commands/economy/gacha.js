@@ -167,15 +167,15 @@ module.exports = {
             }
         } catch (e) { return reply({ content: "❌" }); }
 
-        // 🔥 تعديل الأزرار للأسماء الجديدة 🔥
+        // 🔥 تعديل الأزرار لإضافة الإيموجيات وزر صناديقي الجديد 🔥
         const getPullButtons = (moraBalance) => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1 - 1K').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
-                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10 - 10K').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10)
+                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1 - 1K').setEmoji('📦').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
+                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10 - 10K').setEmoji('🌟').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
+                new ButtonBuilder().setCustomId('gacha_inventory').setLabel('صناديقي').setEmoji('🎒').setStyle(ButtonStyle.Secondary)
             );
         };
 
-        // 🔥 اختيار نص عشوائي للبداية 🔥
         const initialRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
 
         let initialFiles = [];
@@ -185,20 +185,30 @@ module.exports = {
         if (fs.existsSync(chestImagePath)) {
             initialFiles.push(new AttachmentBuilder(chestImagePath, { name: 'main_chest.png' }));
         } else {
-            // Fallback: إرسال رابط الصورة العادية إذا لم يجد ملفك ليظهر كصورة بدون إيمبد
             contentString += `\nhttps://i.postimg.cc/q7d37hdb/gacha-chest.png`;
         }
 
-        // إرسال الرسالة بدون إيمبد، فقط نص وصورة
         const initialMsg = await reply({ content: contentString, components: [getPullButtons(userMora)], files: initialFiles });
         
+        // 🔥 تحديث الفلتر ليشمل زر صناديقي 🔥
         const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
-            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10'].includes(i.customId),
+            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10', 'gacha_inventory'].includes(i.customId),
             time: 300000 
         });
 
         channelCollector.on('collect', async (i) => {
             await i.deferUpdate().catch(()=>{});
+
+            // 🔥 نظام زر صناديقي 🔥
+            if (i.customId === 'gacha_inventory') {
+                let chestCount = 0;
+                try {
+                    const invRes = await db.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
+                    if (invRes?.rows[0]) chestCount = Number(invRes.rows[0].quantity);
+                } catch(e) {}
+                
+                return i.followUp({ content: `🎒 **صناديقك المتاحة:** \`${chestCount}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] });
+            }
 
             await fetchUserData();
             const isTen = i.customId === 'gacha_10';
@@ -207,7 +217,6 @@ module.exports = {
 
             await i.editReply({ components: [] }).catch(()=>{});
 
-            // 🔥 شاشة الاستدعاء (بدون إيمبد) 🔥
             let summonFiles = [];
             let summonImagePath = path.join(process.cwd(), 'images/gacha/summon_magic.png');
             let summonContent = "";
@@ -252,7 +261,6 @@ module.exports = {
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
-            // 🔥 شاشة النيزك (بدون إيمبد) 🔥
             let meteorFiles = [];
             const prefix = isTen ? 'ten_' : 'single_';
             const meteorFileName = `${prefix}${bestResult.rarity}.png`;
@@ -266,7 +274,6 @@ module.exports = {
                 await new Promise(r => setTimeout(r, 1500));
             }
 
-            // 🔥 دالة النتيجة النهائية الصامتة (نص عشوائي جديد + صورة الأداة) 🔥
             const buildSilentSummary = async () => {
                 let files = [];
                 if (generateGachaCard && bestResult && bestResult.item.imgPath) {
