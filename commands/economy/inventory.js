@@ -1,11 +1,13 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, MessageFlags, AttachmentBuilder } = require('discord.js');
 const path = require('path');
 
+// 🔥 استدعاء المولد الفخم اللي صممناه 🔥
 let generateInventoryCard;
 try {
     ({ generateInventoryCard } = require('../../generators/inventory-generator.js'));
 } catch (e) {
     generateInventoryCard = null;
+    console.log("لم يتم العثور على المولد، سيتم استخدام العرض النصي.");
 }
 
 const weaponsConfig = require('../../json/weapons-config.json');
@@ -18,7 +20,6 @@ try { farmItems = require('../../json/seeds.json').concat(require('../../json/fe
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// خريطة الأسماء لتطابق صور الأغراض
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
     'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
@@ -51,13 +52,13 @@ function resolveItemInfo(itemId) {
     }
     if (fishData && fishData.length > 0) {
         const fish = fishData.find(f => f.id === itemId || f.name === itemId);
-        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common' };
+        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
     }
     if (farmItems && farmItems.length > 0) {
         const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) return { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common' };
+        if (farmObj) return { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
     }
-    return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common' };
+    return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
 }
 
 const ITEMS_PER_PAGE = 15;
@@ -88,7 +89,6 @@ module.exports = {
             targetUser = interactionOrMessage.mentions.members.first() || interactionOrMessage.guild.members.cache.get(args[0]) || interactionOrMessage.member;
         }
 
-        // 🔥 تعديل قوي لضمان جلب كائن الرسالة الصحيح وتجنب خطأ createMessageComponentCollector 🔥
         const reply = async (payload) => {
             if (isSlash) {
                 await interactionOrMessage.editReply(payload);
@@ -102,7 +102,6 @@ module.exports = {
         const userId = targetUser.id;
         const isOwnInventory = userId === user.id;
 
-        // 📥 سحب البيانات
         let inventory = [], weapons = [], skills = [];
         try {
             const invRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
@@ -117,7 +116,6 @@ module.exports = {
             return reply({ content: "❌ حدث خطأ أثناء سحب بيانات الحقيبة." });
         }
 
-        // تجهيز الفئات
         const categories = { materials: [], fishing: [], farming: [], others: [] };
         for (const row of inventory) {
             const itemId = row.itemID || row.itemid;
@@ -128,7 +126,6 @@ module.exports = {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         }
 
-        // واجهة المعدات القتالية
         const combatEmbed = new EmbedBuilder().setTitle(`⚔️ المعدات القتالية لـ ${targetUser.displayName}`).setColor(Colors.DarkRed).setThumbnail(targetUser.user.displayAvatarURL({ dynamic: true }));
         let combatDesc = "**🗡️ السلاح الحالي:**\n";
         if (weapons.length > 0) {
@@ -147,7 +144,6 @@ module.exports = {
         } else combatDesc += `> لا يملك أي مهارات.\n`;
         combatEmbed.setDescription(combatDesc);
 
-        // القوائم والأزرار
         const menuRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder().setCustomId(`inv_menu_${user.id}`).setPlaceholder('تصفح أقسام الحقيبة...').addOptions([
                 { label: 'الأسلحة والمهارات', value: 'combat', emoji: '⚔️' },
@@ -167,7 +163,6 @@ module.exports = {
 
         const getComponents = (catItems = []) => {
             const rows = [menuRow];
-            
             if (catItems.length > ITEMS_PER_PAGE) {
                 const totalPages = Math.ceil(catItems.length / ITEMS_PER_PAGE);
                 const pageRow = new ActionRowBuilder().addComponents(
@@ -177,11 +172,11 @@ module.exports = {
                 );
                 rows.push(pageRow);
             }
-            
             if (isOwnInventory) rows.push(tradeBtnRow);
             return rows;
         };
 
+        // 🔥 الدالة السحرية اللي ترسم المربعات وتعرض الصورة 🔥
         const renderCategory = async (catName) => {
             if (catName === 'combat') {
                 return { embeds: [combatEmbed], components: getComponents(), files: [] };
@@ -189,22 +184,24 @@ module.exports = {
 
             const items = categories[catName];
             if (items.length === 0) {
-                const emptyEmbed = new EmbedBuilder().setTitle(`🎒 حقيبة ${targetUser.displayName}`).setDescription('> هذه الحقيبة فارغة في هذا القسم.').setColor(Colors.Grey);
+                const emptyEmbed = new EmbedBuilder().setTitle(`🎒 حقيبة ${targetUser.displayName}`).setDescription('> الحقيبة فارغة في هذا القسم.').setColor(Colors.Grey);
                 return { embeds: [emptyEmbed], components: getComponents(), files: [] };
             }
 
             const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
             if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
             
             const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
             const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
             if (generateInventoryCard) {
                 const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
+                // 🎨 استدعاء المولد ليرسم الصفحة 🎨
                 const imgBuffer = await generateInventoryCard(targetUser.displayName, catTitles[catName], pageItems, currentPage, totalPages);
                 
-                const attachment = new AttachmentBuilder(imgBuffer, { name: 'inventory.png' });
-                const embed = new EmbedBuilder().setColor(Colors.DarkVividPink).setImage('attachment://inventory.png');
+                const attachment = new AttachmentBuilder(imgBuffer, { name: 'inventory_card.png' });
+                const embed = new EmbedBuilder().setColor(Colors.DarkVividPink).setImage('attachment://inventory_card.png');
                 
                 return { embeds: [embed], components: getComponents(items), files: [attachment] };
             } else {
@@ -249,7 +246,7 @@ module.exports = {
                 if (tradableItems.length === 0) return i.reply({ content: '❌ لا تملك أي عناصر في هذا القسم لتبادلها.', flags: [MessageFlags.Ephemeral] });
 
                 const options = tradableItems.slice(0, 25).map(item => {
-                    return { label: item.name, value: item.id, emoji: item.emoji, description: `الكمية المتاحة: ${item.quantity}` };
+                    return { label: item.name, value: item.id, emoji: item.emoji || '📦', description: `الكمية المتاحة: ${item.quantity}` };
                 });
 
                 const itemSelect = new ActionRowBuilder().addComponents(
@@ -297,7 +294,6 @@ module.exports = {
 
                     const itemInfo = resolveItemInfo(tradeState.itemID);
 
-                    // 🎁 نظام الإهداء
                     if (price === 0) {
                         await db.query('BEGIN').catch(()=>{});
                         const newSenderQty = Number(senderInvData.quantity) - qty;
@@ -313,16 +309,13 @@ module.exports = {
                         const giftEmbed = new EmbedBuilder().setColor(Colors.LuminousVividPink).setDescription(`🎁 <@${user.id}> أرسل **${qty}x ${itemInfo.emoji} ${itemInfo.name}** كهدية إلى <@${tradeState.targetID}>!`);
                         await modalSubmit.reply({ embeds: [giftEmbed] });
                         
-                        // 🔥 تحديث الحقيبة في الذاكرة لتجنب ظهور العنصر المرسل مجدداً 🔥
                         inventory = inventory.map(r => r.id === senderInvData.id ? { ...r, quantity: newSenderQty } : r).filter(r => Number(r.quantity) > 0);
                         const cItems = categories[currentCategory];
                         const idx = cItems.findIndex(c => c.id === tradeState.itemID);
                         if(idx > -1) { cItems[idx].quantity -= qty; if(cItems[idx].quantity <= 0) cItems.splice(idx, 1); }
 
                         await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
-                    } 
-                    // ⚖️ نظام المبادلة التجارية
-                    else {
+                    } else {
                         await modalSubmit.deferReply();
                         const tradeEmbed = new EmbedBuilder()
                             .setTitle('⚖️ عـقـد تـجـاري')
@@ -380,9 +373,8 @@ module.exports = {
 
                                 tradeEmbed.setColor(Colors.Green).setDescription(`✅ **تمت الصفقة بنجاح!**\nاشترى <@${tradeState.targetID}> ${qty}x ${itemInfo.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${user.id}>.`);
                                 await tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] });
-                                tradeCollector.stop('accepted'); // 🔥 إيقاف المُجمع لمنع رسالة انتهاء الوقت
+                                tradeCollector.stop('accepted');
 
-                                // 🔥 تحديث الحقيبة في الذاكرة لتجنب ظهور العنصر المباع مجدداً 🔥
                                 inventory = inventory.map(r => r.id === senderInvFinal.id ? { ...r, quantity: finalSenderQty } : r).filter(r => Number(r.quantity) > 0);
                                 const cItems = categories[currentCategory];
                                 const idx = cItems.findIndex(c => c.id === tradeState.itemID);
