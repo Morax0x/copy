@@ -15,13 +15,12 @@ const PULL_PRICE = 1000;
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const OWNER_ID = "1145327691772481577";
 
-// 🔥 الخريطة الذكية لربط الـ ID بأسماء صورك الحقيقية 🔥
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
     'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
     'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
     'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
-    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
+    'mat_seraphim_1': 'seraphim_feather.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
     'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
     'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
     'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
@@ -32,38 +31,24 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-const LOOT_POOL = {
-    Common: [], Uncommon: [], Rare: [], Epic: [], Legendary: []
-};
+const LOOT_POOL = { Common: [], Uncommon: [], Rare: [], Epic: [], Legendary: [] };
 
-// تحميل مسارات الخامات من مجلد images/materials/
 if (upgradeMats.weapon_materials) {
     upgradeMats.weapon_materials.forEach(race => {
         race.materials.forEach(m => {
             const raceFolder = race.race.toLowerCase().replace(' ', '_');
             const imgName = ID_TO_IMAGE[m.id] || `${m.id}.png`;
-            LOOT_POOL[m.rarity].push({ 
-                ...m, 
-                type: 'material', 
-                race: race.race,
-                imgPath: `images/materials/${raceFolder}/${imgName}`
-            });
+            LOOT_POOL[m.rarity].push({ ...m, type: 'material', race: race.race, imgPath: `images/materials/${raceFolder}/${imgName}` });
         });
     });
 }
 
-// تحميل مسارات الكتب من مجلد images/materials/
 if (upgradeMats.skill_books) {
     upgradeMats.skill_books.forEach(cat => {
         cat.books.forEach(b => {
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
             const imgName = ID_TO_IMAGE[b.id] || `${b.id}.png`;
-            LOOT_POOL[b.rarity].push({ 
-                ...b, 
-                type: 'book', 
-                category: cat.category,
-                imgPath: `images/materials/${typeFolder}/${imgName}`
-            });
+            LOOT_POOL[b.rarity].push({ ...b, type: 'book', category: cat.category, imgPath: `images/skill_books/${typeFolder}/${imgName}` });
         });
     });
 }
@@ -105,6 +90,8 @@ function performPull(pityData) {
     return { item, rarity };
 }
 
+const hexColors = { Common: '#95a5a6', Uncommon: '#2ecc71', Rare: '#3498db', Epic: '#9b59b6', Legendary: '#f1c40f' };
+
 module.exports = {
     data: new SlashCommandBuilder().setName('صندوق').setDescription('افتح صناديق السحر للحصول على مهارات وكتب وخامات تطوير'),
     name: 'صندوق',
@@ -127,11 +114,14 @@ module.exports = {
         let userMora = 0;
         let pityData = { epic_pity: 0, legendary_pity: 0 };
 
-        try {
+        const fetchUserMora = async () => {
             const lvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
-            userMora = lvlRes?.rows[0] ? Number(lvlRes.rows[0].mora) : 0;
-            const pityRes = await db.query(`SELECT * FROM user_gacha_pity WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT * FROM user_gacha_pity WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
+            return lvlRes?.rows[0] ? Number(lvlRes.rows[0].mora) : 0;
+        };
 
+        try {
+            userMora = await fetchUserMora();
+            const pityRes = await db.query(`SELECT * FROM user_gacha_pity WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT * FROM user_gacha_pity WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
             if (pityRes?.rows[0]) {
                 pityData.epic_pity = pityRes.rows[0].epic_pity || 0;
                 pityData.legendary_pity = pityRes.rows[0].legendary_pity || 0;
@@ -140,50 +130,58 @@ module.exports = {
             }
         } catch (e) { return reply({ content: "❌ خطأ في قراءة البيانات." }); }
 
-        const buildUI = () => {
-            const embed = new EmbedBuilder()
-                .setTitle('✨ صـنـدوق الـمـعـرفـة الـغـامـضـة')
-                .setDescription(`استخدم المورا لفتح الصناديق واستكشاف كنوز الإمبراطورية!\n\n${EMOJI_MORA} **رصيدك:** ${userMora.toLocaleString()}`)
-                .addFields({ name: '🎯 نظام الضمان', value: `> 🟪 ضمان ملحمي: **${10 - pityData.epic_pity}**\n> 🟨 ضمان أسطوري: **${90 - pityData.legendary_pity}**`, inline: true })
-                .setColor(Colors.Purple)
-                .setImage('https://i.postimg.cc/q7d37hdb/gacha-chest.png');
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_1').setLabel('سحب x1').setStyle(ButtonStyle.Primary).setEmoji('📦').setDisabled(userMora < PULL_PRICE),
-                new ButtonBuilder().setCustomId('gacha_10').setLabel('سحب x10').setStyle(ButtonStyle.Success).setEmoji('🌟').setDisabled(userMora < PULL_PRICE * 10)
+        const getPullButtons = (moraBalance) => {
+            return new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('gacha_1').setLabel('سحب x1').setStyle(ButtonStyle.Primary).setEmoji('📦').setDisabled(moraBalance < PULL_PRICE),
+                new ButtonBuilder().setCustomId('gacha_10').setLabel('سحب x10').setStyle(ButtonStyle.Success).setEmoji('🌟').setDisabled(moraBalance < PULL_PRICE * 10)
             );
-            return { embeds: [embed], components: [row] };
         };
 
-        const msg = await reply(buildUI());
-        const collector = msg.createMessageComponentCollector({ filter: i => i.user.id === user.id, time: 60000 });
+        const initialEmbed = new EmbedBuilder()
+            .setTitle('✨ صـنـدوق الـمـعـرفـة الـغـامـضـة')
+            .setDescription(`استخدم المورا لفتح الصناديق واستكشاف كنوز الإمبراطورية!\n\n${EMOJI_MORA} **رصيدك:** ${userMora.toLocaleString()}`)
+            .addFields({ name: '🎯 نظام الضمان', value: `> 🟪 ضمان ملحمي: **${10 - pityData.epic_pity}**\n> 🟨 ضمان أسطوري: **${90 - pityData.legendary_pity}**`, inline: true })
+            .setColor(Colors.Purple)
+            .setImage('https://i.postimg.cc/q7d37hdb/gacha-chest.png');
 
-        collector.on('collect', async (i) => {
-            if (!i.customId.startsWith('gacha_')) return;
+        const initialMsg = await reply({ embeds: [initialEmbed], components: [getPullButtons(userMora)] });
+        
+        // ربط الـ Collector بالقناة لضمان استقبال تفاعلات السحبات الجديدة بسلاسة
+        const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
+            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10'].includes(i.customId),
+            time: 300000 // صالح لمدة 5 دقائق
+        });
+
+        channelCollector.on('collect', async (i) => {
             await i.deferUpdate().catch(()=>{});
 
+            userMora = await fetchUserMora();
             const isTen = i.customId === 'gacha_10';
             const cost = isTen ? PULL_PRICE * 10 : PULL_PRICE;
             if (userMora < cost) return i.followUp({ content: "❌ مورا غير كافية!", flags: [MessageFlags.Ephemeral] });
 
-            await msg.edit({ components: [], embeds: [new EmbedBuilder().setTitle('🌌 جاري استحضار القوى السحرية...').setImage('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif').setColor(Colors.Blue)] });
+            // 🔥 إخفاء أزرار السحب من الرسالة القديمة (لكي لا يضغطها مرتين) ويظل سجل الصور موجوداً 🔥
+            await i.editReply({ components: [] }).catch(()=>{});
+
+            // 🔥 إرسال رسالة جديدة للأنيميشن (لكي ينزل الشات للأسفل ويحتفظ بالقديم) 🔥
+            const pullMsg = await i.followUp({ 
+                embeds: [new EmbedBuilder().setTitle('🌌 جاري استحضار القوى السحرية...').setImage('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif').setColor(Colors.Blue)],
+                fetchReply: true
+            });
+
             await new Promise(r => setTimeout(r, 2000));
 
             userMora -= cost;
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, user.id, guildId]).catch(() => db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [cost, user.id, guildId]).catch(()=>{}));
 
             const results = [];
+            let highestRarityVal = 0;
             const rarityOrder = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
-            let bestResult = null;
 
             await db.query('BEGIN').catch(()=>{});
-            
             for (let k = 0; k < (isTen ? 10 : 1); k++) {
                 const { item, rarity } = performPull(pityData);
-                
-                if (!bestResult || rarityOrder[rarity] > rarityOrder[bestResult.rarity]) {
-                    bestResult = { item, rarity };
-                }
+                if (rarityOrder[rarity] > highestRarityVal) highestRarityVal = rarityOrder[rarity];
 
                 let compensation = null;
                 if (item.type === 'skill') {
@@ -201,48 +199,114 @@ module.exports = {
                 }
                 results.push({ item, rarity, compensation });
             }
-            
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
-            let files = [];
-            const finalEmbed = new EmbedBuilder()
-                .setTitle(isTen ? '🌟 نتائج السحب الملكي (x10)' : '📦 غنيمة الصندوق')
-                .setFooter({ text: `الضمان: الملحمي (${10 - pityData.epic_pity}) | الأسطوري (${90 - pityData.legendary_pity})` });
-
-            if (generateGachaCard && bestResult && bestResult.item.imgPath) {
-                try {
-                    const imageBuffer = await generateGachaCard(bestResult.item, bestResult.rarity);
-                    if (imageBuffer) {
-                        const attachment = new AttachmentBuilder(imageBuffer, { name: 'gacha_result.png' });
-                        files.push(attachment);
-                        finalEmbed.setImage('attachment://gacha_result.png');
+            const buildSummaryPayload = () => {
+                let resultDesc = "";
+                results.forEach(res => {
+                    const emoji = upgradeMats.rarity_colors[res.rarity]?.emoji || '💠';
+                    if (res.compensation) {
+                        resultDesc += `${emoji} | **${res.item.name}** (مكرر ♻️) ➔ تعويض 3x كتب + 500 مورا\n`;
+                    } else {
+                        const tag = res.item.type === 'skill' ? ' ✨ [جديد]' : '';
+                        resultDesc += `${emoji} | **${res.item.name}**${tag}\n`;
                     }
-                } catch (err) {
-                    console.error("[Gacha Generator Error]:", err);
+                });
+
+                const summaryEmbed = new EmbedBuilder()
+                    .setTitle(isTen ? '🌟 النتائج النهائية (10 سحبات)' : '📦 غنيمة الصندوق')
+                    .setDescription(resultDesc)
+                    .setColor(hexColors[results[0].rarity] || Colors.Blue)
+                    .setFooter({ text: `الضمان: الملحمي (${10 - pityData.epic_pity}) | الأسطوري (${90 - pityData.legendary_pity})` });
+
+                if (highestRarityVal >= 3) summaryEmbed.setColor(highestRarityVal === 4 ? Colors.Gold : Colors.Purple);
+                return { embeds: [summaryEmbed], components: [getPullButtons(userMora)], files: [] };
+            };
+
+            // 🔥 نظام التقليب (Pagination) عند سحب 10 🔥
+            if (isTen) {
+                let currentIndex = 0;
+
+                const getPagePayload = async (idx) => {
+                    const res = results[idx];
+                    let files = [];
+                    const pageEmbed = new EmbedBuilder()
+                        .setTitle(`📦 سحب ${idx + 1} من 10`)
+                        .setColor(hexColors[res.rarity] || Colors.Blue)
+                        .setFooter({ text: `الضمان: الملحمي (${10 - pityData.epic_pity}) | الأسطوري (${90 - pityData.legendary_pity})` });
+
+                    if (generateGachaCard && res.item.imgPath) {
+                        try {
+                            const buffer = await generateGachaCard(res.item, res.rarity);
+                            if (buffer) {
+                                // إعطاء اسم فريد لكل صورة عشان الديسكورد ما يعلق عليها بالكاش
+                                const attachment = new AttachmentBuilder(buffer, { name: `gacha_${idx}.png` });
+                                files.push(attachment);
+                                pageEmbed.setImage(`attachment://gacha_${idx}.png`);
+                            }
+                        } catch(e){}
+                    }
+
+                    let descText = `**${res.item.name}**\n`;
+                    if (res.compensation) descText += `*(مكرر ♻️) ➔ تم التعويض بكتب ومورا*`;
+                    else if (res.item.type === 'skill') descText += `*✨ [مهارة جديدة!]*`;
+                    pageEmbed.setDescription(descText);
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('gacha_next').setLabel(idx === 9 ? 'النتائج النهائية 📜' : 'التالي ➡️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('gacha_skip').setLabel('تخطي ⏭️').setStyle(ButtonStyle.Secondary)
+                    );
+
+                    return { embeds: [pageEmbed], components: [row], files };
+                };
+
+                await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
+
+                const pageCollector = pullMsg.createMessageComponentCollector({
+                    filter: btn => btn.user.id === user.id && ['gacha_next', 'gacha_skip'].includes(btn.customId),
+                    time: 120000 // دقيقتين للمرور على الصور
+                });
+
+                pageCollector.on('collect', async btn => {
+                    await btn.deferUpdate().catch(()=>{});
+                    if (btn.customId === 'gacha_skip') {
+                        pageCollector.stop('skipped');
+                    } else if (btn.customId === 'gacha_next') {
+                        currentIndex++;
+                        if (currentIndex >= 10) {
+                            pageCollector.stop('finished');
+                        } else {
+                            await pullMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
+                        }
+                    }
+                });
+
+                pageCollector.on('end', async () => {
+                    // عند انتهاء التقليب، يتم عرض قائمة النتائج مع أزرار السحب الجديدة
+                    userMora = await fetchUserMora();
+                    await pullMsg.edit(buildSummaryPayload()).catch(()=>{});
+                });
+
+            } else {
+                // 🔥 نظام السحب الفردي (1 Pull) 🔥
+                const res = results[0];
+                let files = [];
+                const finalEmbed = buildSummaryPayload().embeds[0];
+                
+                if (generateGachaCard && res.item.imgPath) {
+                    try {
+                        const buffer = await generateGachaCard(res.item, res.rarity);
+                        if (buffer) {
+                            const attachment = new AttachmentBuilder(buffer, { name: 'gacha_single.png' });
+                            files.push(attachment);
+                            finalEmbed.setImage('attachment://gacha_single.png');
+                        }
+                    } catch(e){}
                 }
+                
+                await pullMsg.edit({ embeds: [finalEmbed], components: [getPullButtons(userMora)], files }).catch(()=>{});
             }
-            
-            const hexColors = { Common: '#95a5a6', Uncommon: '#2ecc71', Rare: '#3498db', Epic: '#9b59b6', Legendary: '#f1c40f' };
-            finalEmbed.setColor(hexColors[bestResult.rarity] || Colors.Blue);
-
-            let resultDesc = "";
-            results.forEach(res => {
-                const emoji = upgradeMats.rarity_colors[res.rarity]?.emoji || '💠';
-                if (res.compensation) {
-                    resultDesc += `${emoji} | **${res.item.name}** (مكرر ♻️) ➔ تعويض 3x كتب + 500 مورا\n`;
-                } else {
-                    const tag = res.item.type === 'skill' ? ' ✨ [مهارة جديدة!]' : '';
-                    resultDesc += `${emoji} | **${res.item.name}**${tag}\n`;
-                }
-            });
-            finalEmbed.setDescription(resultDesc);
-
-            await msg.edit({ embeds: [finalEmbed], components: [buildUI().components[0]], files: files }).catch(()=>{});
-        });
-        
-        collector.on('end', () => {
-            msg.edit({ components: [] }).catch(()=>{});
         });
     }
 };
