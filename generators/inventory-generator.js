@@ -23,397 +23,378 @@ async function getCachedImage(imagePath) {
 }
 
 const RARITY_COLORS = {
-    'Common': '#8b9bb4',      
-    'Uncommon': '#10b981',    
-    'Rare': '#0ea5e9',        
-    'Epic': '#a855f7',        
-    'Legendary': '#f59e0b'    
+    'Common': '#A8B8D0',      
+    'Uncommon': '#2ECC71',    
+    'Rare': '#00C3FF',        
+    'Epic': '#B968FF',        
+    'Legendary': '#FFD700'    
 };
 
 // ==========================================
-// 🔥 دوال هندسية متوحشة (Extreme Shapes) 🔥
+// 🔥 دوال الرسم الفني العالي (High Fantasy Art) 🔥
 // ==========================================
 
-// 1. رسم شكل مقطوع الحواف (Sci-Fi Cut Rectangle)
-function drawCutRect(ctx, x, y, w, h, cut) {
-    ctx.beginPath();
-    ctx.moveTo(x + cut, y);
-    ctx.lineTo(x + w - cut, y);
-    ctx.lineTo(x + w, y + cut);
-    ctx.lineTo(x + w, y + h - cut);
-    ctx.lineTo(x + w - cut, y + h);
-    ctx.lineTo(x + cut, y + h);
-    ctx.lineTo(x, y + h - cut);
-    ctx.lineTo(x, y + cut);
-    ctx.closePath();
-}
+// 1. رسم إطار قوطي مزخرف للأدوات (Gothic Ornate Frame)
+function drawOrnateFrame(ctx, x, y, w, h, color) {
+    // الخلفية الزجاجية المظلمة
+    const bgGrad = ctx.createLinearGradient(x, y, x, y + h);
+    bgGrad.addColorStop(0, 'rgba(15, 20, 30, 0.9)');
+    bgGrad.addColorStop(1, 'rgba(5, 10, 15, 0.95)');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(x, y, w, h);
 
-// 2. رسم شكل سداسي (Hexagon)
-function drawHexagon(ctx, x, y, radius) {
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i;
-        const px = x + radius * Math.cos(angle);
-        const py = y + radius * Math.sin(angle);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-}
-
-// 3. علامات التصويب (HUD Crosshairs)
-function drawCrosshair(ctx, x, y, size, color) {
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+
+    // زوايا معدنية فخمة (Ornate Corners)
+    const cl = 20; // طول الزاوية
+    ctx.lineWidth = 3;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.moveTo(x - size, y); ctx.lineTo(x - size/3, y);
-    ctx.moveTo(x + size, y); ctx.lineTo(x + size/3, y);
-    ctx.moveTo(x, y - size); ctx.lineTo(x, y - size/3);
-    ctx.moveTo(x, y + size); ctx.lineTo(x, y + size/3);
+    // Top Left
+    ctx.moveTo(x, y + cl); ctx.lineTo(x, y); ctx.lineTo(x + cl, y);
+    // Top Right
+    ctx.moveTo(x + w - cl, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + cl);
+    // Bottom Right
+    ctx.moveTo(x + w, y + h - cl); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - cl, y + h);
+    // Bottom Left
+    ctx.moveTo(x + cl, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - cl);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+// 2. رسم شريط حريري لاسم الأداة (Elegant Ribbon)
+function drawRibbon(ctx, x, y, w, h, color) {
+    const ext = 10; // امتداد الشريط خارج المربع
+    ctx.fillStyle = 'rgba(5, 5, 8, 0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - ext, y);
+    ctx.lineTo(x + w + ext, y);
+    ctx.lineTo(x + w + ext - 8, y + h / 2);
+    ctx.lineTo(x + w + ext, y + h);
+    ctx.lineTo(x - ext, y + h);
+    ctx.lineTo(x - ext + 8, y + h / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // إطار الشريط
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 }
 
+// 3. رسم دائرة سحرية معقدة (Complex Magic Circle)
+function drawMagicCircle(ctx, cx, cy, radius, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    
+    // الدائرة الخارجية
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+    
+    // الدائرة الداخلية
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, radius - 15, 0, Math.PI * 2); ctx.stroke();
+
+    // النجمة السداسية
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0; i<3; i++) {
+        const angle1 = (Math.PI * 2 / 3) * i - Math.PI/2;
+        const angle2 = (Math.PI * 2 / 3) * i + Math.PI/6;
+        ctx.moveTo(radius * Math.cos(angle1), radius * Math.sin(angle1));
+        ctx.lineTo(radius * Math.cos(angle2), radius * Math.sin(angle2));
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
 // ========================================================
-// 🔥 دالة 1: مصفوفة الأبعاد لأقسام الحقيبة (The Matrix Grid)
+// 🔥 دالة 1: شبكة الأقسام الأسطورية (The Vault Grid) 🔥
 // ========================================================
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages) {
-    const width = 1200; // حجم سينمائي ضخم
-    const height = 800;
+    const width = 1200; 
+    const height = 850;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const primaryTheme = '#0ea5e9'; // لون التكنولوجيا السحرية
-
-    // 1. الخلفية (Deep Abyss Nebula)
-    const bgBase = ctx.createRadialGradient(width/2, height/2, 50, width/2, height/2, 800);
-    bgBase.addColorStop(0, '#0f172a'); 
-    bgBase.addColorStop(1, '#020617');
-    ctx.fillStyle = bgBase;
+    // 1. الخلفية (The Astral Void)
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
+    bgGrad.addColorStop(0, '#1a1025'); // بنفسجي ملكي غامق جداً
+    bgGrad.addColorStop(1, '#050508');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. مصفوفة الخلايا السداسية في الخلفية (Hex Matrix Overlay)
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.05)';
-    ctx.lineWidth = 1;
-    const hexRadius = 40;
-    for (let y = 0; y < height + hexRadius; y += hexRadius * 1.5) {
-        for (let x = 0; x < width + hexRadius; x += hexRadius * Math.sqrt(3)) {
-            const offsetX = (Math.floor(y / (hexRadius * 1.5)) % 2) * (hexRadius * Math.sqrt(3) / 2);
-            drawHexagon(ctx, x + offsetX, y, hexRadius);
-            ctx.stroke();
-        }
+    // 2. نثر غبار النجوم السحري (Stardust Particles)
+    ctx.fillStyle = '#FFFFFF';
+    for(let i=0; i<150; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pSize = Math.random() * 2.5;
+        ctx.globalAlpha = Math.random() * 0.5 + 0.1;
+        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
     }
+    ctx.globalAlpha = 1.0;
 
-    // 3. أشرطة بيانات خلفية (Data Lines)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
-    ctx.fillRect(0, 150, width, 2);
-    ctx.fillRect(0, height - 80, width, 2);
-    for(let i=0; i<10; i++) {
-        ctx.fillRect(Math.random()*width, 0, Math.random()*3, height);
-    }
-
-    // 4. إطار الـ HUD الخارجي
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.3)';
-    drawCutRect(ctx, 15, 15, width - 30, height - 30, 40);
-    ctx.stroke();
-    drawCrosshair(ctx, 15, 15, 20, primaryTheme);
-    drawCrosshair(ctx, width - 15, 15, 20, primaryTheme);
-    drawCrosshair(ctx, 15, height - 15, 20, primaryTheme);
-    drawCrosshair(ctx, width - 15, height - 15, 20, primaryTheme);
-
-    // 5. الهيدر (Sci-Fi Banner)
-    ctx.save();
-    const headerGrad = ctx.createLinearGradient(0, 0, 0, 120);
-    headerGrad.addColorStop(0, 'rgba(14, 165, 233, 0.15)');
-    headerGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = headerGrad;
-    drawCutRect(ctx, 50, 0, width - 100, 120, 30);
-    ctx.fill();
-
-    ctx.strokeStyle = primaryTheme;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(50, 120);
-    ctx.lineTo(width - 50, 120);
-    ctx.stroke();
-    ctx.restore();
+    // 3. الهيدر الملكي (Royal Banner)
+    const headerH = 140;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, headerH);
+    
+    // خطوط ذهبية للهيدر
+    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
+    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
+    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, headerH - 3, width, 3);
+    ctx.fillRect(0, 3, width, 1);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 48px "Bein"';
-    ctx.shadowColor = primaryTheme;
-    ctx.shadowBlur = 20;
-    ctx.fillText(`❖ مـسـتـودع ${userDisplayName} ❖`, width / 2, 50);
+    ctx.fillStyle = '#FFD700'; // ذهبي
+    ctx.font = 'bold 55px "Bein"';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 25;
+    ctx.fillText(`✦ خـزائـن ${userDisplayName} ✦`, width / 2, 60);
     
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '22px "Bein"';
+    ctx.fillStyle = '#E0E0E0';
+    ctx.font = '26px "Bein"';
     ctx.shadowBlur = 0;
-    ctx.letterSpacing = "5px"; // لمسة احترافية
-    ctx.fillText(`[ ${categoryTitle} / SYSTEM.ONLINE ]`, width / 2, 95);
+    ctx.letterSpacing = "3px";
+    ctx.fillText(`⟪ ${categoryTitle} ⟫`, width / 2, 110);
 
-    // 6. المربعات المقطوعة (The HUD Slots)
+    // 4. المربعات (The Relic Slots)
     const cols = 5;
     const rows = 3;
-    const slotW = 170; 
-    const slotH = 180;
+    const slotSize = 175; 
     const gapX = 45;      
-    const gapY = 45;      
+    const gapY = 55;      
     
-    const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
-    const startY = 170;
+    const startX = (width - ((cols * slotSize) + ((cols - 1) * gapX))) / 2;
+    const startY = 190;
 
     for (let i = 0; i < 15; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = startX + col * (slotW + gapX);
-        const y = startY + row * (slotH + gapY);
+        const x = startX + col * (slotSize + gapX);
+        const y = startY + row * (slotSize + gapY);
 
         const item = items[i];
-        const rarityColor = item && item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#1e293b';
+        const rarityColor = item && item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
 
-        // رسم قاعدة الـ Slot (Cut Rect)
-        ctx.fillStyle = item ? 'rgba(15, 23, 42, 0.8)' : 'rgba(15, 23, 42, 0.3)';
-        drawCutRect(ctx, x, y, slotW, slotH, 15);
-        ctx.fill();
+        if (!item) {
+            // خانة فارغة
+            drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
+            continue;
+        }
 
-        ctx.strokeStyle = item ? rarityColor : 'rgba(255,255,255,0.05)';
-        ctx.lineWidth = item ? 2 : 1;
-        ctx.stroke();
+        // رسم الخانة المزخرفة للعنصر
+        drawOrnateFrame(ctx, x, y, slotSize, slotSize, rarityColor);
 
-        // رسم زوايا تكنولوجية للـ Slot
-        ctx.strokeStyle = item ? '#ffffff' : 'rgba(255,255,255,0.1)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x + 15, y); ctx.lineTo(x + 30, y); // Top left
-        ctx.moveTo(x, y + 15); ctx.lineTo(x, y + 30);
-        ctx.stroke();
+        // توهج أسطوري خلف الأداة (Aura)
+        const aura = ctx.createRadialGradient(x + slotSize/2, y + slotSize/2, 10, x + slotSize/2, y + slotSize/2, slotSize/1.2);
+        aura.addColorStop(0, `${rarityColor}60`); 
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = aura;
+        ctx.fillRect(x, y, slotSize, slotSize);
 
-        if (item) {
-            // ==========================================
-            // 🔥 القرص الهولوجرامي أسفل العنصر (Hologram Pedestal) 🔥
-            // ==========================================
-            ctx.save();
-            ctx.translate(x + slotW / 2, y + slotH - 60);
-            ctx.scale(1, 0.3); // ضغط الدائرة لتصبح شكل بيضاوي 3D
-            
-            const pedGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, slotW / 2 - 20);
-            pedGrad.addColorStop(0, `${rarityColor}80`); // قلب مشع
-            pedGrad.addColorStop(0.8, `${rarityColor}20`);
-            pedGrad.addColorStop(1, 'rgba(0,0,0,0)');
-            
-            ctx.fillStyle = pedGrad;
-            ctx.beginPath();
-            ctx.arc(0, 0, slotW / 2 - 20, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // حلقة طاقة حول القرص
-            ctx.strokeStyle = rarityColor;
-            ctx.lineWidth = 5;
-            ctx.stroke();
-            ctx.restore();
-
-            // رسم العنصر
-            let imgDrawn = false;
-            if (item.imgPath) {
-                const imgPath = path.join(process.cwd(), item.imgPath);
-                const img = await getCachedImage(imgPath);
-                if (img) {
-                    const padding = 30; 
-                    const imgSize = slotW - (padding * 2);
-                    
-                    // ظل رهيب يعطي طفو
-                    ctx.shadowColor = rarityColor;
-                    ctx.shadowBlur = 35;
-                    // تحريك الصورة للأسفل قليلاً لتجلس على القرص
-                    ctx.drawImage(img, x + padding, y + padding - 10, imgSize, imgSize);
-                    ctx.shadowBlur = 0; 
-                    imgDrawn = true;
-                }
-            }
-
-            if (!imgDrawn) {
-                ctx.fillStyle = '#FFFFFF';
-                ctx.font = '65px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
+        // رسم الأداة
+        let imgDrawn = false;
+        if (item.imgPath) {
+            const imgPath = path.join(process.cwd(), item.imgPath);
+            const img = await getCachedImage(imgPath);
+            if (img) {
+                const padding = 25; 
+                const imgSize = slotSize - (padding * 2);
+                
                 ctx.shadowColor = rarityColor;
-                ctx.shadowBlur = 30;
-                ctx.fillText(item.emoji || '📦', x + slotW / 2, y + slotH / 2 - 15);
-                ctx.shadowBlur = 0;
+                ctx.shadowBlur = 40;
+                // تحريك للصعود قليلاً لإفساح المجال للشريط السفلي
+                ctx.drawImage(img, x + padding, y + padding - 15, imgSize, imgSize);
+                ctx.shadowBlur = 0; 
+                imgDrawn = true;
             }
+        }
 
-            // ==========================================
-            // 🔥 شريط الاسم الفخم (Angled Ribbon) 🔥
-            // ==========================================
-            ctx.fillStyle = `rgba(0, 0, 0, 0.8)`;
-            drawCutRect(ctx, x + 5, y + slotH - 35, slotW - 10, 30, 8);
-            ctx.fill();
-
-            // خط جانبي نيون
-            ctx.fillStyle = rarityColor;
-            ctx.fillRect(x + 5, y + slotH - 35 + 8, 4, 14);
-
+        if (!imgDrawn) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '65px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font = 'bold 14px "Bein"';
-            ctx.fillStyle = '#f8fafc';
-            let shortName = item.name;
-            if (shortName.length > 14) shortName = shortName.substring(0, 13) + '..';
-            ctx.fillText(shortName, x + slotW / 2, y + slotH - 20);
-
-            // ==========================================
-            // 🔥 شارة الكمية (Hexagon Badge) 🔥
-            // ==========================================
-            const badgeRadius = 18;
-            const badgeX = x + slotW - 10;
-            const badgeY = y + 15;
-
-            ctx.fillStyle = '#020617';
-            ctx.shadowColor = '#000000';
-            ctx.shadowBlur = 10;
-            drawHexagon(ctx, badgeX, badgeY, badgeRadius);
-            ctx.fill();
-
-            ctx.strokeStyle = rarityColor;
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            ctx.shadowColor = rarityColor;
+            ctx.shadowBlur = 30;
+            ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
             ctx.shadowBlur = 0;
-
-            const qtyText = item.quantity > 999 ? '999+' : item.quantity.toString();
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 13px "Arial"';
-            ctx.fillText(qtyText, badgeX, badgeY + 1);
         }
+
+        // شريط الاسم الحريري (Ribbon)
+        const ribbonH = 35;
+        const ribbonY = y + slotSize - 20;
+        drawRibbon(ctx, x, ribbonY, slotSize, ribbonH, rarityColor);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 16px "Bein"';
+        ctx.fillStyle = '#FFFFFF';
+        let shortName = item.name;
+        if (shortName.length > 15) shortName = shortName.substring(0, 14) + '..';
+        ctx.fillText(shortName, x + slotSize / 2, ribbonY + ribbonH / 2);
+
+        // شارة الكمية (Jewel Badge) في الزاوية العلوية اليمنى
+        const qtyText = item.quantity > 999 ? '999+' : item.quantity.toString();
+        ctx.font = 'bold 15px "Arial"';
+        const textW = ctx.measureText(qtyText).width;
+        const badgeRadius = Math.max(16, textW / 2 + 6);
+        const badgeX = x + slotSize; // على حافة الإطار
+        const badgeY = y;
+
+        // رسم الجوهرة
+        ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI*2);
+        ctx.fillStyle = rarityColor;
+        ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.fill();
+        
+        ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius - 2, 0, Math.PI*2);
+        ctx.fillStyle = '#111'; ctx.shadowBlur = 0; ctx.fill();
+
+        ctx.fillStyle = '#FFF';
+        ctx.fillText(qtyText, badgeX, badgeY + 1);
     }
 
-    // تذييل الصفحة (HUD Footer)
-    ctx.fillStyle = 'rgba(14, 165, 233, 0.1)';
-    drawCutRect(ctx, width / 2 - 150, height - 50, 300, 40, 15);
-    ctx.fill();
-    ctx.strokeStyle = primaryTheme;
+    // تذييل الصفحة (Parchment Footer)
+    const footerY = height - 50;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(width / 2 - 150, footerY - 20, 300, 40);
+    
+    ctx.strokeStyle = '#FFD700';
     ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.strokeRect(width / 2 - 150, footerY - 20, 300, 40);
 
-    ctx.fillStyle = primaryTheme;
-    ctx.fillRect(width / 2 - 150 + 10, height - 35, 10, 10);
-    ctx.fillRect(width / 2 + 150 - 20, height - 35, 10, 10);
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 18px "Bein"';
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 20px "Bein"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`PAGE ${page} / ${totalPages || 1}  |  STATUS: SYNCED`, width / 2, height - 30);
+    ctx.fillText(`✧ صفحة ${page} من ${totalPages || 1} ✧`, width / 2, footerY);
 
     return canvas.toBuffer('image/png');
 }
 
 // ========================================================
-// 🔥 دالة 2: الخيمة الملكية (Royal Altar Hub) 🔥
-// (تمت ترقيتها لتتناسب مع الفخامة الجديدة)
+// 🔥 دالة 2: قاعة الإمبراطور (The Emperor's Sanctum) 🔥
+// (الترحيب الفخم الخيالي)
 // ========================================================
 async function generateMainHub(userObj, displayName, moraBalance) {
-    const width = 900;
-    const height = 500;
+    const width = 1000;
+    const height = 550;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // خلفية
+    // 1. خلفية القاعة المظلمة
     const bgPath = path.join(process.cwd(), 'images/inventory/desk_bg.png');
     const bgImg = await getCachedImage(bgPath);
     if (bgImg) {
         ctx.drawImage(bgImg, 0, 0, width, height);
-        // تغميق الأطراف للدراما
-        const vignette = ctx.createRadialGradient(width/2, height/2, 200, width/2, height/2, 600);
-        vignette.addColorStop(0, 'rgba(0,0,0,0)');
-        vignette.addColorStop(1, 'rgba(0,0,0,0.8)');
+        const vignette = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 700);
+        vignette.addColorStop(0, 'rgba(0,0,0,0.3)');
+        vignette.addColorStop(1, 'rgba(0,0,0,0.95)'); // حواف مظلمة جداً لتركيز الإضاءة
         ctx.fillStyle = vignette;
         ctx.fillRect(0,0,width,height);
     } else {
-        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, width, height);
+        const fallbackBg = ctx.createLinearGradient(0,0,0,height);
+        fallbackBg.addColorStop(0,'#111'); fallbackBg.addColorStop(1,'#000');
+        ctx.fillStyle = fallbackBg; ctx.fillRect(0, 0, width, height);
     }
 
-    // لوحة زجاجية للبيانات
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.75)';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 30;
-    drawCutRect(ctx, 40, 40, 350, 420, 30);
-    ctx.fill();
+    // 2. بطاقة هوية اللاعب المنقوشة (Embossed ID Plaque)
+    const idX = 50, idY = 50, idW = 400, idH = 450;
+    
+    // اللوحة المعدنية الداكنة
+    ctx.fillStyle = 'rgba(15, 15, 20, 0.85)';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.roundRect(idX, idY, idW, idH, 20); ctx.fill();
     ctx.shadowBlur = 0;
     
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
+    // إطار ذهبي مزخرف للوحة
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
+    ctx.strokeRect(idX + 10, idY + 10, idW - 20, idH - 20);
+    // زوايا اللوحة
+    const cl = 30; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(idX+10, idY+10+cl); ctx.lineTo(idX+10, idY+10); ctx.lineTo(idX+10+cl, idY+10);
+    ctx.moveTo(idX+idW-10-cl, idY+10); ctx.lineTo(idX+idW-10, idY+10); ctx.lineTo(idX+idW-10, idY+10+cl);
+    ctx.moveTo(idX+idW-10, idY+idH-10-cl); ctx.lineTo(idX+idW-10, idY+idH-10); ctx.lineTo(idX+idW-10-cl, idY+idH-10);
+    ctx.moveTo(idX+10+cl, idY+idH-10); ctx.lineTo(idX+10, idY+idH-10); ctx.lineTo(idX+10, idY+idH-10-cl);
     ctx.stroke();
 
-    // دائرة سحرية خلف البروفايل
-    ctx.translate(215, 150);
-    for(let i=0; i<8; i++) {
-        ctx.rotate(Math.PI / 4);
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.3)';
-        ctx.strokeRect(-80, -80, 160, 160);
-    }
-    ctx.resetTransform();
+    // 3. صورة اللاعب المحفورة (Avatar Frame)
+    const avatarX = idX + idW/2, avatarY = idY + 120, avatarSize = 140;
+    
+    // شعاع خلف الصورة
+    const avatarGlow = ctx.createRadialGradient(avatarX, avatarY, 10, avatarX, avatarY, 100);
+    avatarGlow.addColorStop(0, 'rgba(255, 215, 0, 0.5)'); avatarGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = avatarGlow; ctx.fillRect(avatarX-100, avatarY-100, 200, 200);
 
-    // صورة اللاعب
     const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
     try {
         const avatarImg = await loadImage(avatarUrl);
         ctx.save();
-        ctx.beginPath();
-        drawHexagon(ctx, 215, 150, 80); // البروفايل صار سداسي!
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(avatarImg, 135, 70, 160, 160);
+        ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize/2, 0, Math.PI*2); ctx.clip();
+        ctx.drawImage(avatarImg, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
         ctx.restore();
-
-        ctx.beginPath();
-        drawHexagon(ctx, 215, 150, 80);
-        ctx.lineWidth = 5;
-        ctx.strokeStyle = '#f59e0b';
-        ctx.stroke();
     } catch(e) {}
 
-    // النصوص
+    // إطار ذهبي سميك للصورة
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize/2, 0, Math.PI*2);
+    ctx.lineWidth = 6; ctx.strokeStyle = '#FFD700'; ctx.stroke();
+    // إطار داخلي رفيع
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize/2 - 8, 0, Math.PI*2);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
+
+    // 4. نصوص الهوية (Player Info)
     ctx.textAlign = 'center';
-    ctx.font = 'bold 42px "Bein"';
+    
     ctx.fillStyle = '#FFFFFF';
-    ctx.shadowColor = '#000';
-    ctx.shadowBlur = 10;
-    ctx.fillText(displayName, 215, 290);
-
-    ctx.fillStyle = '#222';
-    drawCutRect(ctx, 80, 330, 270, 50, 10);
-    ctx.fill();
-
-    ctx.font = 'bold 26px "Bein"';
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillText(`المورا: ${moraBalance.toLocaleString()}`, 215, 355);
-
-    ctx.font = '20px "Bein"';
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('الأنظمة متصلة .. الحقيبة جاهزة', 215, 420);
+    ctx.font = 'bold 45px "Bein"';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 15;
+    ctx.fillText(displayName, avatarX, avatarY + 110);
     ctx.shadowBlur = 0;
 
-    // الحقيبة تطفو
+    // خط فاصل
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.fillRect(idX + 50, avatarY + 150, idW - 100, 2);
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 32px "Bein"';
+    ctx.fillText(`الثروة: ${moraBalance.toLocaleString()} 🪙`, avatarX, avatarY + 210);
+
+    ctx.fillStyle = '#A8B8D0';
+    ctx.font = '22px "Bein"';
+    ctx.fillText('❖ حـارس الأبـعـاد ❖', avatarX, avatarY + 270);
+
+    // 5. الحقيبة الفضائية (The Dimensional Relic)
+    const bagX = 720, bagY = 250;
+    
+    // رسم الدائرة السحرية الخرافية خلف الحقيبة
+    drawMagicCircle(ctx, bagX, bagY + 80, 160, 'rgba(185, 104, 255, 0.6)');
+    
+    // شعاع سحري يخرج من الدائرة للأعلى
+    const beam = ctx.createLinearGradient(0, bagY + 80, 0, bagY - 200);
+    beam.addColorStop(0, 'rgba(185, 104, 255, 0.4)');
+    beam.addColorStop(1, 'rgba(185, 104, 255, 0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath(); ctx.moveTo(bagX - 160, bagY + 80); ctx.lineTo(bagX + 160, bagY + 80); ctx.lineTo(bagX + 80, bagY - 200); ctx.lineTo(bagX - 80, bagY - 200); ctx.fill();
+
     const bagPath = path.join(process.cwd(), 'images/inventory/main_bag.png');
     const bagImg = await getCachedImage(bagPath);
     if (bagImg) {
-        // دائرة استدعاء تحت الحقيبة
-        ctx.save();
-        ctx.translate(630, 380);
-        ctx.scale(1, 0.25);
-        ctx.beginPath();
-        ctx.arc(0, 0, 180, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
-        ctx.fill();
-        ctx.strokeStyle = '#a855f7';
-        ctx.lineWidth = 10;
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.shadowColor = '#a855f7'; 
-        ctx.shadowBlur = 60;
-        ctx.drawImage(bagImg, 450, 50, 360, 360);
+        ctx.shadowColor = '#B968FF'; 
+        ctx.shadowBlur = 80; // توهج عظيم
+        ctx.drawImage(bagImg, bagX - 200, bagY - 200, 400, 400); // الحقيبة ضخمة وفخمة
         ctx.shadowBlur = 0;
     }
 
