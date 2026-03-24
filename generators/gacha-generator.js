@@ -2,14 +2,12 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs = require('fs');
 
-// 1. تسجيل خط الإمبراطورية الرسمي
 try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
-    console.log("[Gacha Generator] ⚠️ تنبيه: لم يتم العثور على خط Bein، سيتم استخدام خط النظام.");
+    console.log("[Gacha Generator] ⚠️ تنبيه: لم يتم العثور على خط Bein.");
 }
 
-// 2. نظام التخزين المؤقت (Cache) لسرعة خارقة ⚡
 const imageCache = new Map();
 
 async function getCachedImage(imagePath) {
@@ -24,7 +22,6 @@ async function getCachedImage(imagePath) {
     return null;
 }
 
-// 3. ألوان وخصائص الندرات
 const RARITY_INFO = {
     'Common': { text: 'عـادي', color: '#B0BEC5' },
     'Uncommon': { text: 'غـيـر شـائـع', color: '#2ECC71' },
@@ -33,13 +30,7 @@ const RARITY_INFO = {
     'Legendary': { text: 'أسـطـوري', color: '#F1C40F' }
 };
 
-/**
- * دالة توليد بطاقة السحب (Gacha Pull)
- * @param {Object} item - العنصر الذي تم سحبه
- * @param {String} rarity - ندرة العنصر
- */
 async function generateGachaCard(item, rarity) {
-    // دقة عالية HD 800x800
     const width = 800;
     const height = 800;
     const canvas = createCanvas(width, height);
@@ -47,16 +38,13 @@ async function generateGachaCard(item, rarity) {
 
     const rInfo = RARITY_INFO[rarity] || RARITY_INFO['Common'];
 
-    // ==========================================
-    // 1. رسم الهالة (الخلفية)
-    // ==========================================
-    const auraPath = path.join(process.cwd(), `images/auras/${rarity.toLowerCase()}.png`);
+    // 🔥 التعديل هنا: جلب الهالات من داخل مجلد materials/auras
+    const auraPath = path.join(process.cwd(), `images/materials/auras/${rarity}.png`);
     const auraImg = await getCachedImage(auraPath);
     
     if (auraImg) {
         ctx.drawImage(auraImg, 0, 0, width, height);
     } else {
-        // إذا لم يجد صورة الهالة، يصنع تدرج كوني احترافي
         const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, 500);
         grad.addColorStop(0, rInfo.color);
         grad.addColorStop(1, '#0d0d0d');
@@ -64,38 +52,30 @@ async function generateGachaCard(item, rarity) {
         ctx.fillRect(0, 0, width, height);
     }
 
-    // ==========================================
-    // 2. رسم الأداة (العنصر المسحوب)
-    // ==========================================
     let itemDrawn = false;
 
+    // 🔥 رسم الأداة من المسار الدقيق الذي حددناه في gacha.js
     if (item.imgPath) {
         const itemPath = path.join(process.cwd(), item.imgPath);
         const itemImg = await getCachedImage(itemPath);
         
         if (itemImg) {
-            const itemSize = 400; // حجم الأداة
+            const itemSize = 400; 
             const ix = (width - itemSize) / 2;
-            const iy = (height - itemSize) / 2 - 40; // رفعها للأعلى قليلاً
+            const iy = (height - itemSize) / 2 - 40; 
             
-            // تأثير التوهج المذهل (Glow) بلون الندرة
             ctx.shadowColor = rInfo.color;
             ctx.shadowBlur = 70;
-            
-            // رسم الأداة
             ctx.drawImage(itemImg, ix, iy, itemSize, itemSize);
-            
-            ctx.shadowBlur = 0; // إعادة تعيين الظل
+            ctx.shadowBlur = 0; 
             itemDrawn = true;
         }
     }
 
-    // إذا كان العنصر "مهارة" أو لم نجد صورته، نرسم بلورة سحرية تعويضية
     if (!itemDrawn) {
         const cx = width / 2;
         const cy = height / 2 - 40;
         
-        // بلورة مشعة
         ctx.beginPath();
         ctx.arc(cx, cy, 140, 0, Math.PI * 2);
         ctx.fillStyle = rInfo.color;
@@ -111,16 +91,12 @@ async function generateGachaCard(item, rarity) {
         ctx.globalAlpha = 1.0;
         ctx.shadowBlur = 0;
 
-        // أيقونة النجمة بداخل البلورة
         ctx.font = '100px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('✨', cx, cy + 10);
     }
 
-    // ==========================================
-    // 3. التدرج السينمائي السفلي (لإبراز النص)
-    // ==========================================
     const bottomGrad = ctx.createLinearGradient(0, height - 300, 0, height);
     bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
     bottomGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.7)');
@@ -128,13 +104,9 @@ async function generateGachaCard(item, rarity) {
     ctx.fillStyle = bottomGrad;
     ctx.fillRect(0, height - 300, width, 300);
 
-    // ==========================================
-    // 4. كتابة النصوص
-    // ==========================================
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic'; // إعادة ضبط المحاذاة
+    ctx.textBaseline = 'alphabetic'; 
 
-    // أ. نص الندرة (في الأعلى)
     ctx.font = 'bold 45px "Bein"';
     ctx.fillStyle = rInfo.color;
     ctx.shadowColor = '#000000';
@@ -142,28 +114,23 @@ async function generateGachaCard(item, rarity) {
     ctx.fillText(`✦ ${rInfo.text} ✦`, width / 2, 80);
     ctx.shadowBlur = 0;
 
-    // ب. اسم الأداة (في الأسفل)
     ctx.font = 'bold 75px "Bein"';
     ctx.lineWidth = 10;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; // حدود سوداء قوية
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
     ctx.strokeText(item.name, width / 2, height - 120);
     
-    ctx.fillStyle = '#FFFFFF'; // لون النص أبيض ناصع
+    ctx.fillStyle = '#FFFFFF';
     ctx.fillText(item.name, width / 2, height - 120);
 
-    // ج. نوع الأداة (تحت الاسم مباشرة)
     let typeText = "أداة غامضة";
     if (item.type === 'material') typeText = "مورد تصنيع عتيق";
     if (item.type === 'book') typeText = "مخطوطة سحرية";
     if (item.type === 'skill') typeText = "مـهـارة خـارقـة";
 
     ctx.font = '35px "Bein"';
-    ctx.fillStyle = '#A0A0A0'; // رمادي فاتح
+    ctx.fillStyle = '#A0A0A0'; 
     ctx.fillText(typeText, width / 2, height - 50);
 
-    // ==========================================
-    // 5. إخراج الصورة
-    // ==========================================
     return canvas.toBuffer('image/png');
 }
 
