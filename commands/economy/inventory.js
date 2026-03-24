@@ -18,7 +18,7 @@ try { farmItems = require('../../json/seeds.json').concat(require('../../json/fe
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// خريطة الأسماء لتطابق صور الأغراض (مأخوذة من Gacha لتوحيد النظام)
+// خريطة الأسماء لتطابق صور الأغراض
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
     'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
@@ -51,7 +51,6 @@ function resolveItemInfo(itemId) {
     }
     if (fishData && fishData.length > 0) {
         const fish = fishData.find(f => f.id === itemId || f.name === itemId);
-        // يمكنك لاحقاً إضافة صور الأسماك هنا
         if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common' };
     }
     if (farmItems && farmItems.length > 0) {
@@ -89,7 +88,14 @@ module.exports = {
             targetUser = interactionOrMessage.mentions.members.first() || interactionOrMessage.guild.members.cache.get(args[0]) || interactionOrMessage.member;
         }
 
-        const reply = async (payload) => isSlash ? interactionOrMessage.editReply(payload) : interactionOrMessage.reply(payload);
+        // 🔥 تعديل قوي لضمان جلب كائن الرسالة الصحيح وتجنب خطأ createMessageComponentCollector 🔥
+        const reply = async (payload) => {
+            if (isSlash) {
+                await interactionOrMessage.editReply(payload);
+                return interactionOrMessage.fetchReply();
+            }
+            return interactionOrMessage.reply(payload);
+        };
 
         if (!targetUser || targetUser.user.bot) return reply({ content: "❌ لا يمكن عرض حقيبة هذا العضو." });
 
@@ -122,7 +128,7 @@ module.exports = {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         }
 
-        // واجهة المستخدم الأساسية (المهارات والأسلحة) لأنها نصوص
+        // واجهة المعدات القتالية
         const combatEmbed = new EmbedBuilder().setTitle(`⚔️ المعدات القتالية لـ ${targetUser.displayName}`).setColor(Colors.DarkRed).setThumbnail(targetUser.user.displayAvatarURL({ dynamic: true }));
         let combatDesc = "**🗡️ السلاح الحالي:**\n";
         if (weapons.length > 0) {
@@ -141,7 +147,7 @@ module.exports = {
         } else combatDesc += `> لا يملك أي مهارات.\n`;
         combatEmbed.setDescription(combatDesc);
 
-        // الأزرار والقوائم
+        // القوائم والأزرار
         const menuRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder().setCustomId(`inv_menu_${user.id}`).setPlaceholder('تصفح أقسام الحقيبة...').addOptions([
                 { label: 'الأسلحة والمهارات', value: 'combat', emoji: '⚔️' },
@@ -162,7 +168,6 @@ module.exports = {
         const getComponents = (catItems = []) => {
             const rows = [menuRow];
             
-            // أزرار التقليب إذا كان هناك أكثر من 15 عنصر
             if (catItems.length > ITEMS_PER_PAGE) {
                 const totalPages = Math.ceil(catItems.length / ITEMS_PER_PAGE);
                 const pageRow = new ActionRowBuilder().addComponents(
@@ -203,7 +208,6 @@ module.exports = {
                 
                 return { embeds: [embed], components: getComponents(items), files: [attachment] };
             } else {
-                // نص احتياطي في حال عدم وجود المولد
                 let desc = "";
                 pageItems.forEach(item => { desc += `> ${item.emoji} **${item.name}** : \`${item.quantity}\`\n`; });
                 const textEmbed = new EmbedBuilder().setTitle(`🎒 حقيبة ${targetUser.displayName}`).setDescription(desc).setColor(Colors.DarkVividPink);
@@ -213,7 +217,6 @@ module.exports = {
 
         const msg = await reply(await renderCategory('combat'));
 
-        // 🔄 نظام التفاعل (القائمة والصفحات والتبادل)
         const filter = i => i.user.id === user.id && i.customId.includes(user.id);
         const collector = msg.createMessageComponentCollector({ filter, time: 180000 });
 
@@ -223,7 +226,7 @@ module.exports = {
             if (i.isStringSelectMenu() && i.customId === `inv_menu_${user.id}`) {
                 await i.deferUpdate().catch(()=>{});
                 currentCategory = i.values[0];
-                currentPage = 1; // تصفير الصفحة عند تغيير القسم
+                currentPage = 1; 
                 await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
             } 
             else if (i.isButton() && i.customId === `inv_next_${user.id}`) {
@@ -310,7 +313,7 @@ module.exports = {
                         const giftEmbed = new EmbedBuilder().setColor(Colors.LuminousVividPink).setDescription(`🎁 <@${user.id}> أرسل **${qty}x ${itemInfo.emoji} ${itemInfo.name}** كهدية إلى <@${tradeState.targetID}>!`);
                         await modalSubmit.reply({ embeds: [giftEmbed] });
                         
-                        // تحديث الحقيبة
+                        // 🔥 تحديث الحقيبة في الذاكرة لتجنب ظهور العنصر المرسل مجدداً 🔥
                         inventory = inventory.map(r => r.id === senderInvData.id ? { ...r, quantity: newSenderQty } : r).filter(r => Number(r.quantity) > 0);
                         const cItems = categories[currentCategory];
                         const idx = cItems.findIndex(c => c.id === tradeState.itemID);
@@ -318,7 +321,7 @@ module.exports = {
 
                         await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
                     } 
-                    // ⚖️ نظام المبادلة (بمقابل)
+                    // ⚖️ نظام المبادلة التجارية
                     else {
                         await modalSubmit.deferReply();
                         const tradeEmbed = new EmbedBuilder()
@@ -342,6 +345,7 @@ module.exports = {
                             await btn.deferUpdate();
                             if (btn.customId.includes('dec_')) {
                                 tradeEmbed.setColor(Colors.Red).setDescription(`❌ تم رفض الصفقة من قبل <@${tradeState.targetID}>.`);
+                                tradeCollector.stop('declined');
                                 return tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] });
                             }
 
@@ -356,6 +360,7 @@ module.exports = {
                             
                             if (!senderInvFinal || Number(senderInvFinal.quantity) < qty) {
                                 tradeEmbed.setColor(Colors.Red).setDescription(`❌ فشلت الصفقة: البائع لا يملك الكمية المطلوبة حالياً!`);
+                                tradeCollector.stop('failed');
                                 return tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] });
                             }
 
@@ -375,16 +380,28 @@ module.exports = {
 
                                 tradeEmbed.setColor(Colors.Green).setDescription(`✅ **تمت الصفقة بنجاح!**\nاشترى <@${tradeState.targetID}> ${qty}x ${itemInfo.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${user.id}>.`);
                                 await tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] });
+                                tradeCollector.stop('accepted'); // 🔥 إيقاف المُجمع لمنع رسالة انتهاء الوقت
+
+                                // 🔥 تحديث الحقيبة في الذاكرة لتجنب ظهور العنصر المباع مجدداً 🔥
+                                inventory = inventory.map(r => r.id === senderInvFinal.id ? { ...r, quantity: finalSenderQty } : r).filter(r => Number(r.quantity) > 0);
+                                const cItems = categories[currentCategory];
+                                const idx = cItems.findIndex(c => c.id === tradeState.itemID);
+                                if(idx > -1) { cItems[idx].quantity -= qty; if(cItems[idx].quantity <= 0) cItems.splice(idx, 1); }
+
+                                await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
                             } catch (e) {
                                 await db.query('ROLLBACK').catch(()=>{});
                                 tradeEmbed.setColor(Colors.Red).setDescription(`❌ حدث خطأ فني أثناء توقيع العقد.`);
                                 await tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] });
+                                tradeCollector.stop('error');
                             }
                         });
 
-                        tradeCollector.on('end', () => {
-                            tradeEmbed.setColor(Colors.Grey).setDescription(`⏳ انتهى وقت العرض. تم سحب الصفقة.`);
-                            tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] }).catch(()=>{});
+                        tradeCollector.on('end', (collected, reason) => {
+                            if (reason === 'time') {
+                                tradeEmbed.setColor(Colors.Grey).setDescription(`⏳ انتهى وقت العرض. تم سحب الصفقة.`);
+                                tradeMsgObj.edit({ embeds: [tradeEmbed], components: [] }).catch(()=>{});
+                            }
                         });
                     }
 
