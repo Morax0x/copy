@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, AttachmentBuilder } = require('discord.js');
 const path = require('path');
+const fs = require('fs');
 
 let generateGachaCard;
 try {
@@ -64,7 +65,6 @@ async function ensurePityTable(db) {
     await db.query(`CREATE TABLE IF NOT EXISTS user_gacha_pity ("userID" TEXT, "guildID" TEXT, "epic_pity" INTEGER DEFAULT 0, "legendary_pity" INTEGER DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`).catch(()=>{});
 }
 
-// 🔥 دالة السحب الذكية (استبعاد المهارات المكررة وانحياز العرق) 🔥
 function performPull(pityData, userRace, ownedSkills) {
     pityData.epic_pity++;
     pityData.legendary_pity++;
@@ -85,14 +85,11 @@ function performPull(pityData, userRace, ownedSkills) {
     if (rarity === 'Legendary') { pityData.legendary_pity = 0; pityData.epic_pity = 0; }
     else if (rarity === 'Epic') pityData.epic_pity = 0;
 
-    // استنساخ المسبح الأساسي
     let pool = LOOT_POOL[rarity] ? [...LOOT_POOL[rarity]] : [...LOOT_POOL['Common']];
 
-    // إزالة المهارات التي يملكها اللاعب مسبقاً
     pool = pool.filter(item => !(item.type === 'skill' && ownedSkills.includes(item.id)));
-    if (pool.length === 0) pool = [...LOOT_POOL['Common']]; // حماية من المسبح الفارغ
+    if (pool.length === 0) pool = [...LOOT_POOL['Common']]; 
 
-    // انحياز العرق للندرات العالية (75% فرصة لتطابق العرق)
     if (userRace && (rarity === 'Epic' || rarity === 'Legendary')) {
         if (Math.random() < 0.75) {
             const racePool = pool.filter(item => item.race === userRace || (item.type === 'book' && item.category === 'race'));
@@ -159,12 +156,19 @@ module.exports = {
             );
         };
 
-        // واجهة البداية الصامتة تماماً (فقط الصورة والأزرار)
-        const initialEmbed = new EmbedBuilder()
-            .setColor(Colors.Purple)
-            .setImage('https://i.postimg.cc/q7d37hdb/gacha-chest.png');
+        // 🔥 استخدام الصورة الرئيسية من ملفاتك 🔥
+        let initialFiles = [];
+        let chestImagePath = path.join(process.cwd(), 'images/gacha/main_chest.png');
+        const initialEmbed = new EmbedBuilder().setColor(Colors.Purple);
+        
+        if (fs.existsSync(chestImagePath)) {
+            initialFiles.push(new AttachmentBuilder(chestImagePath, { name: 'main_chest.png' }));
+            initialEmbed.setImage('attachment://main_chest.png');
+        } else {
+            initialEmbed.setImage('https://i.postimg.cc/q7d37hdb/gacha-chest.png');
+        }
 
-        const initialMsg = await reply({ embeds: [initialEmbed], components: [getPullButtons(userMora)] });
+        const initialMsg = await reply({ embeds: [initialEmbed], components: [getPullButtons(userMora)], files: initialFiles });
         
         const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
             filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10'].includes(i.customId),
@@ -181,13 +185,23 @@ module.exports = {
 
             await i.editReply({ components: [] }).catch(()=>{});
 
-            // صورة الاستدعاء المتحركة بدون نصوص
+            // 🔥 عرض صورة النيزك (الساقط) كشاشة تحميل 🔥
+            let summonFiles = [];
+            const summonEmbed = new EmbedBuilder().setColor(Colors.Blue);
+            let summonImagePath = path.join(process.cwd(), 'images/gacha/summon_magic.png');
+            
+            if (fs.existsSync(summonImagePath)) {
+                summonFiles.push(new AttachmentBuilder(summonImagePath, { name: 'summon_magic.png' }));
+                summonEmbed.setImage('attachment://summon_magic.png');
+            } else {
+                summonEmbed.setImage('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif');
+            }
+
             const pullMsg = await i.followUp({ 
-                embeds: [new EmbedBuilder().setImage('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif').setColor(Colors.Blue)],
+                embeds: [summonEmbed],
+                files: summonFiles,
                 fetchReply: true
             });
-
-            await new Promise(r => setTimeout(r, 2000));
 
             userMora -= cost;
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, user.id, guildId]).catch(() => db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [cost, user.id, guildId]).catch(()=>{}));
@@ -199,7 +213,6 @@ module.exports = {
 
             await db.query('BEGIN').catch(()=>{});
             for (let k = 0; k < (isTen ? 10 : 1); k++) {
-                // نمرر المهارات التي يملكها حالياً، وعرقه
                 const { item, rarity } = performPull(pityData, userRace, ownedSkills);
                 
                 if (rarityOrder[rarity] > highestRarityVal) {
@@ -208,7 +221,6 @@ module.exports = {
                 }
 
                 if (item.type === 'skill') {
-                    // حماية فورية: إضافة المهارة للقائمة الممنوعة لكي لا تتكرر في نفس السحبة العشرية!
                     ownedSkills.push(item.id);
                     await db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(()=>{}));
                 } else {
@@ -219,7 +231,25 @@ module.exports = {
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
-            // دالة عرض أفضل نتيجة صامتة مع أزرار السحب
+            // 🔥 عرض النيزك بناءً على أعلى ندرة 🔥
+            let meteorFiles = [];
+            const prefix = isTen ? 'ten_' : 'single_';
+            const meteorFileName = `${prefix}${bestResult.rarity}.png`;
+            const meteorPath = path.join(process.cwd(), `images/gacha/${meteorFileName}`);
+            
+            if (fs.existsSync(meteorPath)) {
+                meteorFiles.push(new AttachmentBuilder(meteorPath, { name: meteorFileName }));
+                const meteorEmbed = new EmbedBuilder()
+                    .setColor(hexColors[bestResult.rarity] || Colors.Blue)
+                    .setImage(`attachment://${meteorFileName}`);
+                
+                await pullMsg.edit({ embeds: [meteorEmbed], files: meteorFiles }).catch(()=>{});
+                await new Promise(r => setTimeout(r, 2000)); // ننتظر ثانيتين بعد ظهور النيزك قبل عرض البطاقة
+            } else {
+                await new Promise(r => setTimeout(r, 1500)); // انتظار افتراضي
+            }
+
+            // دالة عرض أفضل نتيجة (بطاقة العنصر) صامتة
             const buildSilentSummary = async () => {
                 let files = [];
                 const summaryEmbed = new EmbedBuilder().setColor(highestRarityVal === 4 ? Colors.Gold : (highestRarityVal === 3 ? Colors.Purple : Colors.Blue));
@@ -256,7 +286,6 @@ module.exports = {
                         } catch(e){}
                     }
 
-                    // أزرار تقليب فقط بدون نصوص
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('gacha_next').setLabel('➡️').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId('gacha_skip').setLabel('⏭️').setStyle(ButtonStyle.Secondary)
