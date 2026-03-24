@@ -31,19 +31,8 @@ const RARITY_COLORS = {
 };
 
 // ==========================================
-// 🔥 دوال الرسم الفني والمساعدات 🔥
+// 🔥 دوال الرسم والتصميم 🔥
 // ==========================================
-function roundRect(ctx, x, y, width, height, radius) {
-    if (width < 2 * radius) radius = width / 2;
-    if (height < 2 * radius) radius = height / 2;
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.arcTo(x + width, y, x + width, y + height, radius);
-    ctx.arcTo(x + width, y + height, x, y + height, radius);
-    ctx.arcTo(x, y + height, x, y, radius);
-    ctx.arcTo(x, y, x + width, y, radius);
-    ctx.closePath();
-}
 
 function drawOrnateFrame(ctx, x, y, w, h, color) {
     const bgGrad = ctx.createLinearGradient(x, y, x, y + h);
@@ -87,48 +76,35 @@ function drawRibbon(ctx, x, y, w, h, color) {
     ctx.stroke();
 }
 
-function drawMagicCircle(ctx, cx, cy, radius, color) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.strokeStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20;
-    
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
-    
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(0, 0, radius - 15, 0, Math.PI * 2); ctx.stroke();
-
-    ctx.lineWidth = 2;
+function roundRect(ctx, x, y, width, height, radius) {
+    if (width < 2 * radius) radius = width / 2;
+    if (height < 2 * radius) radius = height / 2;
     ctx.beginPath();
-    for(let i=0; i<3; i++) {
-        const angle1 = (Math.PI * 2 / 3) * i - Math.PI/2;
-        const angle2 = (Math.PI * 2 / 3) * i + Math.PI/6;
-        ctx.moveTo(radius * Math.cos(angle1), radius * Math.sin(angle1));
-        ctx.lineTo(radius * Math.cos(angle2), radius * Math.sin(angle2));
-    }
-    ctx.stroke();
-    ctx.restore();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    ctx.closePath();
 }
 
-function drawShield(ctx, x, y, width, height) {
+function drawShield(ctx, x, y, w, h) {
     ctx.beginPath();
-    ctx.moveTo(x, y - height/2); 
-    ctx.lineTo(x + width/2, y - height/3.5); 
-    ctx.lineTo(x + width/2, y + height/8); 
-    ctx.quadraticCurveTo(x + width/2, y + height/2.2, x, y + height/2); 
-    ctx.quadraticCurveTo(x - width/2, y + height/2.2, x - width/2, y + height/8); 
-    ctx.lineTo(x - width/2, y - height/3.5); 
+    ctx.moveTo(x, y - h/2); 
+    ctx.lineTo(x + w/2, y - h/4); 
+    ctx.lineTo(x + w/2, y + h/5); 
+    ctx.quadraticCurveTo(x + w/2, y + h/2, x, y + h/2); 
+    ctx.quadraticCurveTo(x - w/2, y + h/2, x - w/2, y + h/5); 
+    ctx.lineTo(x - w/2, y - h/4); 
     ctx.closePath();
 }
 
 // ========================================================
-// 🔥 دالة 1: شبكة الأقسام (تم إزالة الشريط السفلي وحشر الصفحة فوق) 🔥
+// 🔥 دالة 1: شبكة الأقسام (تم إصلاح المقاسات بالمليمتر) 🔥
 // ========================================================
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages) {
     const width = 1200; 
-    const height = 800; // قللنا الارتفاع لأننا شلنا الفوتر
+    const height = 900; // ⚠️ تم رفع الارتفاع لحل مشكلة خروج المربعات عن الإطار
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -138,6 +114,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
+    // غبار النجوم
     ctx.fillStyle = '#FFFFFF';
     for(let i=0; i<150; i++) {
         const px = Math.random() * width;
@@ -174,7 +151,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     ctx.letterSpacing = "3px";
     ctx.fillText(`⟪ ${categoryTitle} ⟫`, width / 2, 110);
 
-    // 🔥 وضع رقم الصفحة في الزاوية العلوية اليمنى بشكل أنيق وصغير 🔥
+    // رقم الصفحة محشور بالزاوية اليمنى فوق بأناقة
     ctx.textAlign = 'right';
     ctx.font = 'bold 18px "Bein"';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -187,7 +164,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     const gapY = 55;      
     
     const startX = (width - ((cols * slotSize) + ((cols - 1) * gapX))) / 2;
-    const startY = 190;
+    const startY = 180; // ⚠️ تم ضبط بداية الرسم لتوسيط المربعات بدقة
 
     for (let i = 0; i < 15; i++) {
         const col = i % cols;
@@ -272,22 +249,27 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
 }
 
 // ========================================================
-// 🔥 دالة 2: قاعة الإمبراطور (تم استرجاع الصورة الدائرية والدرع) 🔥
+// 🔥 دالة 2: الصفحة الرئيسية (تحفة بصرية متكاملة) 🔥
 // ========================================================
 async function generateMainHub(userObj, displayName, moraBalance, rankLetter) {
-    const width = 1000;
-    const height = 550;
+    // ⚠️ التأكد من أن الرتبة ليست فارغة (Fallback)
+    rankLetter = rankLetter || 'F';
+
+    const width = 1100;
+    const height = 600;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const primaryColor = '#FFD700'; // اللون الذهبي للبطاقة
+    const primaryColor = '#FFD700'; // الذهبي الملكي
 
+    // 1. الخلفية السينمائية
     const bgPath = path.join(process.cwd(), 'images/inventory/desk_bg.png');
     const bgImg = await getCachedImage(bgPath);
     if (bgImg) {
         ctx.drawImage(bgImg, 0, 0, width, height);
-        const vignette = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 700);
-        vignette.addColorStop(0, 'rgba(0,0,0,0.3)');
+        // تظليل الحواف للتركيز على العناصر
+        const vignette = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 800);
+        vignette.addColorStop(0, 'rgba(0,0,0,0.2)');
         vignette.addColorStop(1, 'rgba(0,0,0,0.95)'); 
         ctx.fillStyle = vignette;
         ctx.fillRect(0,0,width,height);
@@ -295,42 +277,37 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter) {
         ctx.fillStyle = '#111'; ctx.fillRect(0, 0, width, height);
     }
 
-    const idX = 50, idY = 50, idW = 400, idH = 450;
+    // ==========================================
+    // 🛡️ الجزء الأيسر: بطاقة الهوية الملكية 
+    // ==========================================
+    const idX = 60, idY = 60, idW = 380, idH = 480;
     
-    // اللوحة المعدنية
+    // إطار البطاقة الزجاجي
     ctx.fillStyle = 'rgba(15, 15, 20, 0.85)';
-    ctx.shadowColor = '#000'; ctx.shadowBlur = 30;
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 40;
     ctx.beginPath(); roundRect(ctx, idX, idY, idW, idH, 20); ctx.fill();
     ctx.shadowBlur = 0;
     
+    // الزخرفة الخارجية
     ctx.strokeStyle = primaryColor; ctx.lineWidth = 2;
-    ctx.strokeRect(idX + 10, idY + 10, idW - 20, idH - 20);
+    ctx.strokeRect(idX + 15, idY + 15, idW - 30, idH - 30);
     const cl = 30; ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(idX+10, idY+10+cl); ctx.lineTo(idX+10, idY+10); ctx.lineTo(idX+10+cl, idY+10);
-    ctx.moveTo(idX+idW-10-cl, idY+10); ctx.lineTo(idX+idW-10, idY+10); ctx.lineTo(idX+idW-10, idY+10+cl);
-    ctx.moveTo(idX+idW-10, idY+idH-10-cl); ctx.lineTo(idX+idW-10, idY+idH-10); ctx.lineTo(idX+idW-10-cl, idY+idH-10);
-    ctx.moveTo(idX+10+cl, idY+idH-10); ctx.lineTo(idX+10, idY+idH-10); ctx.lineTo(idX+10, idY+idH-10-cl);
+    ctx.moveTo(idX+15, idY+15+cl); ctx.lineTo(idX+15, idY+15); ctx.lineTo(idX+15+cl, idY+15);
+    ctx.moveTo(idX+idW-15-cl, idY+15); ctx.lineTo(idX+idW-15, idY+15); ctx.lineTo(idX+idW-15, idY+15+cl);
+    ctx.moveTo(idX+idW-15, idY+idH-15-cl); ctx.lineTo(idX+idW-15, idY+idH-15); ctx.lineTo(idX+idW-15-cl, idY+idH-15);
+    ctx.moveTo(idX+15+cl, idY+idH-15); ctx.lineTo(idX+15, idY+idH-15); ctx.lineTo(idX+15, idY+idH-15-cl);
     ctx.stroke();
 
-    // 🔥 استرجاع الصورة الدائرية والإطار المتدرج 🔥
+    // 👤 الصورة الدائرية (البروفايل)
     const avatarSize = 160;
     const avatarX = idX + idW / 2; 
-    const avatarY = idY + 120; 
+    const avatarY = idY + 130; 
 
-    const borderGradient = ctx.createLinearGradient(avatarX - avatarSize/2, avatarY - avatarSize/2, avatarX + avatarSize/2, avatarY + avatarSize/2);
-    borderGradient.addColorStop(0, primaryColor);
-    borderGradient.addColorStop(0.5, '#ffffff');
-    borderGradient.addColorStop(1, primaryColor);
-    
-    ctx.save();
-    ctx.shadowColor = primaryColor;
-    ctx.shadowBlur = 30; 
-    ctx.beginPath();
-    ctx.arc(avatarX, avatarY, (avatarSize / 2) + 6, 0, Math.PI * 2);
-    ctx.fillStyle = primaryColor;
-    ctx.fill();
-    ctx.restore();
+    // توهج خلف الصورة
+    const glow = ctx.createRadialGradient(avatarX, avatarY, 10, avatarX, avatarY, 120);
+    glow.addColorStop(0, 'rgba(255, 215, 0, 0.4)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow; ctx.fillRect(avatarX-120, avatarY-120, 240, 240);
 
     ctx.save();
     ctx.beginPath();
@@ -346,78 +323,116 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter) {
     }
     ctx.restore();
 
+    // إطار الصورة
     ctx.beginPath();
     ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
     ctx.lineWidth = 5;
-    ctx.strokeStyle = borderGradient;
+    ctx.strokeStyle = primaryColor;
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(avatarX, avatarY, avatarSize / 2 - 8, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
     ctx.stroke();
 
-    // 🔥 استرجاع درع رتبة المغامر (Shield) 🔥
-    const badgeX = avatarX + 80;
-    const badgeY = avatarY + 50;
-    const badgeW = 60;
-    const badgeH = 70;
+    // 🛡️ درع الرتبة (Rank Shield) متمركز بشكل احترافي أسفل الصورة
+    const badgeW = 70;
+    const badgeH = 80;
+    const badgeX = avatarX;
+    const badgeY = avatarY + (avatarSize / 2) + 10; // راكب على حافة الإطار
 
     ctx.save();
     drawShield(ctx, badgeX, badgeY, badgeW, badgeH);
     ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
-    ctx.shadowColor = primaryColor;
-    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 10;
     ctx.fill();
+    
     ctx.lineWidth = 3;
     ctx.strokeStyle = primaryColor;
     ctx.stroke();
 
-    drawShield(ctx, badgeX, badgeY + 3, badgeW - 10, badgeH - 12);
+    drawShield(ctx, badgeX, badgeY + 4, badgeW - 12, badgeH - 14);
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#ffffff';
     ctx.stroke();
     ctx.restore();
 
     ctx.fillStyle = primaryColor;
-    ctx.font = 'bold 30px "Arial", sans-serif';
+    ctx.font = 'bold 34px "Arial", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.shadowColor = primaryColor;
     ctx.shadowBlur = 10;
-    ctx.fillText(rankLetter, badgeX, badgeY + 5);
+    ctx.fillText(rankLetter, badgeX, badgeY + 6);
     ctx.shadowBlur = 0;
 
-    // 🔥 النصوص مرتبة بشكل أفضل 🔥
+    // 📝 ترتيب المعلومات (الاسم والثروة)
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 45px "Bein"';
-    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 15;
-    ctx.fillText(displayName, avatarX, avatarY + 130);
+    ctx.font = 'bold 42px "Bein"';
+    ctx.shadowColor = primaryColor; ctx.shadowBlur = 15;
+    
+    let dName = displayName;
+    if (dName.length > 14) dName = dName.substring(0, 13) + '..';
+    ctx.fillText(dName, avatarX, badgeY + 70);
     ctx.shadowBlur = 0;
 
-    ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
-    ctx.fillRect(idX + 50, avatarY + 170, idW - 100, 2);
+    // فاصل زخرفي
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+    ctx.fillRect(idX + 60, badgeY + 115, idW - 120, 2);
 
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 32px "Bein"';
-    ctx.fillText(`الثروة: ${moraBalance.toLocaleString()} 🪙`, avatarX, avatarY + 220);
+    ctx.font = 'bold 30px "Bein"';
+    ctx.fillText(`الثروة: ${moraBalance.toLocaleString()} 🪙`, avatarX, badgeY + 160);
 
     ctx.fillStyle = '#A8B8D0';
-    ctx.font = '22px "Bein"';
-    ctx.fillText('❖ حـارس الأبـعـاد ❖', avatarX, avatarY + 270);
+    ctx.font = '20px "Bein"';
+    ctx.fillText('❖ حـارس الأبـعـاد ❖', avatarX, badgeY + 205);
 
-    // الحقيبة والدائرة السحرية
-    const bagX = 720, bagY = 250;
-    drawMagicCircle(ctx, bagX, bagY + 80, 160, 'rgba(185, 104, 255, 0.6)');
+
+    // ==========================================
+    // 🎒 الجزء الأيمن: حقيبة الأبعاد (The Summoning Altar)
+    // ==========================================
+    const bagX = 800, bagY = 280;
     
-    const beam = ctx.createLinearGradient(0, bagY + 80, 0, bagY - 200);
-    beam.addColorStop(0, 'rgba(185, 104, 255, 0.4)');
+    // رسم دوائر سحرية خرافية مائلة (3D Effect)
+    ctx.save();
+    ctx.translate(bagX, bagY + 120);
+    ctx.scale(1, 0.35); // ضغط الدائرة لتعطي تأثير 3D على الأرض
+    
+    const altarGlow = ctx.createRadialGradient(0, 0, 20, 0, 0, 250);
+    altarGlow.addColorStop(0, 'rgba(185, 104, 255, 0.6)');
+    altarGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = altarGlow;
+    ctx.beginPath(); ctx.arc(0, 0, 250, 0, Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle = '#B968FF';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI*2); ctx.stroke();
+    
+    ctx.strokeStyle = 'rgba(185, 104, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([15, 10]);
+    ctx.beginPath(); ctx.arc(0, 0, 220, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // شعاع ضوئي يتصاعد
+    const beam = ctx.createLinearGradient(0, bagY + 120, 0, bagY - 200);
+    beam.addColorStop(0, 'rgba(185, 104, 255, 0.3)');
     beam.addColorStop(1, 'rgba(185, 104, 255, 0)');
     ctx.fillStyle = beam;
-    ctx.beginPath(); ctx.moveTo(bagX - 160, bagY + 80); ctx.lineTo(bagX + 160, bagY + 80); ctx.lineTo(bagX + 80, bagY - 200); ctx.lineTo(bagX - 80, bagY - 200); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bagX - 200, bagY + 120); ctx.lineTo(bagX + 200, bagY + 120); ctx.lineTo(bagX + 100, bagY - 200); ctx.lineTo(bagX - 100, bagY - 200); ctx.fill();
 
+    // رسم الحقيبة بشكل ضخم
     const bagPath = path.join(process.cwd(), 'images/inventory/main_bag.png');
     const bagImg = await getCachedImage(bagPath);
     if (bagImg) {
         ctx.shadowColor = '#B968FF'; 
-        ctx.shadowBlur = 80; 
-        ctx.drawImage(bagImg, bagX - 200, bagY - 200, 400, 400); 
+        ctx.shadowBlur = 60; 
+        ctx.drawImage(bagImg, bagX - 225, bagY - 225, 450, 450); 
         ctx.shadowBlur = 0;
     }
 
