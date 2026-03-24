@@ -117,42 +117,80 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.stroke();
 
         if (item) {
+            let imgDrawn = false;
+
+            // أ. محاولة رسم الصورة الحقيقية
             if (item.imgPath) {
                 const imgPath = path.join(process.cwd(), item.imgPath);
                 const img = await getCachedImage(imgPath);
                 if (img) {
-                    const padding = 15;
+                    const padding = 20; // تصغير الصورة قليلاً لترك مساحة للاسم
                     const imgSize = slotSize - (padding * 2);
                     
                     ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
                     ctx.shadowBlur = 15;
-                    ctx.drawImage(img, x + padding, y + padding - 5, imgSize, imgSize);
+                    // تم الدفع للأسفل (+8) لكي لا تغطي على الاسم العلوي
+                    ctx.drawImage(img, x + padding, y + padding + 8, imgSize, imgSize);
                     ctx.shadowBlur = 0; 
-                } else {
-                    ctx.fillStyle = rarityColor;
-                    ctx.font = '50px Arial';
-                    ctx.fillText('✨', x + slotSize / 2, y + slotSize / 2);
+                    imgDrawn = true;
                 }
-            } else {
-                ctx.fillStyle = '#FFFFFF';
-                ctx.font = '50px Arial';
-                ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2);
             }
 
-            // 🔥 هنا كان الخطأ، تم استخدام المصفوفة [10, 0, 14, 0] بدلاً من الكائن 🔥
+            // ب. نظام الإيموجي التعويضي (إذا لم يجد صورة)
+            if (!imgDrawn) {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '50px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // الدفع للأسفل (+10)
+                ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 + 10);
+            }
+
+            // ==========================================
+            // 🔥 إضافة اسم العنصر في الزاوية العلوية اليسرى 🔥
+            // ==========================================
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 12px "Bein"';
+            
+            let shortName = item.name;
+            // اختصار الاسم إذا كان أطول من 11 حرف
+            if (shortName.length > 11) shortName = shortName.substring(0, 10) + '..';
+            
+            const nameWidth = ctx.measureText(shortName).width;
+            
+            // خلفية سوداء نصف شفافة للاسم مع إطار خفيف
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.beginPath();
+            // المصفوفة: [TopLeft, TopRight, BottomRight, BottomLeft]
+            ctx.roundRect(x, y, nameWidth + 12, 24, [14, 0, 8, 0]);
+            ctx.fill();
+
+            ctx.strokeStyle = rarityColor;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x, y, nameWidth + 12, 24, [14, 0, 8, 0]);
+            ctx.stroke();
+
+            // رسم نص الاسم
+            ctx.fillStyle = '#E2E8F0'; // لون فضي ناصع
+            ctx.fillText(shortName, x + 6, y + 12);
+
+            // ==========================================
+            // 🔥 شارة الكمية في الزاوية السفلية اليمنى 🔥
+            // ==========================================
             const qtyText = `x${item.quantity.toLocaleString()}`;
-            ctx.font = 'bold 18px "Arial"';
+            ctx.font = 'bold 16px "Arial"';
             const textWidth = ctx.measureText(qtyText).width;
             
-            const badgePaddingX = 12;
-            const badgeHeight = 26;
+            const badgePaddingX = 10;
+            const badgeHeight = 24;
             const badgeWidth = textWidth + badgePaddingX;
             const badgeX = x + slotSize - badgeWidth;
             const badgeY = y + slotSize - badgeHeight;
 
             ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
             ctx.beginPath();
-            // المصفوفة: [TopLeft, TopRight, BottomRight, BottomLeft]
             ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, [10, 0, 14, 0]);
             ctx.fill();
 
@@ -163,11 +201,12 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.fillStyle = '#FFFFFF';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
-            ctx.fillText(qtyText, x + slotSize - 6, badgeY + badgeHeight / 2 + 1);
+            ctx.fillText(qtyText, x + slotSize - 5, badgeY + badgeHeight / 2 + 1);
             ctx.textAlign = 'center'; 
         }
     }
 
+    // تذييل الصفحة
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.font = '22px "Bein"';
     ctx.fillText(`❖ صفحة ${page} من ${totalPages || 1} ❖`, width / 2, height - 30);
