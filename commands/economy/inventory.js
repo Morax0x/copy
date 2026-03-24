@@ -20,12 +20,13 @@ try { farmItems = require('../../json/seeds.json').concat(require('../../json/fe
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
+// 🔥 تم إصلاح اسم ريشة السيرافيم لتطابق الملف لديك (seraphim_feathe.png) 🔥
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
     'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
     'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
     'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
-    'mat_seraphim_1': 'seraphim_feather.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
+    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
     'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
     'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
     'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
@@ -47,7 +48,8 @@ function resolveItemInfo(itemId) {
         for (const cat of upgradeMats.skill_books) {
             const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) return { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/skill_books/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+            // 🔥 تم توجيه البوت للبحث في images/materials بدلاً من images/skill_books 🔥
+            if (book) return { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
         }
     }
     if (fishData && fishData.length > 0) {
@@ -176,7 +178,6 @@ module.exports = {
             return rows;
         };
 
-        // 🔥 الدالة السحرية اللي ترسم المربعات وتعرض الصورة 🔥
         const renderCategory = async (catName) => {
             if (catName === 'combat') {
                 return { embeds: [combatEmbed], components: getComponents(), files: [] };
@@ -197,7 +198,6 @@ module.exports = {
 
             if (generateInventoryCard) {
                 const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
-                // 🎨 استدعاء المولد ليرسم الصفحة 🎨
                 const imgBuffer = await generateInventoryCard(targetUser.displayName, catTitles[catName], pageItems, currentPage, totalPages);
                 
                 const attachment = new AttachmentBuilder(imgBuffer, { name: 'inventory_card.png' });
