@@ -16,7 +16,6 @@ const PULL_PRICE = 1000;
 const OWNER_ID = "1145327691772481577";
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
-// 🔥 قائمة النصوص الملحمية العشوائية 🔥
 const FLAVOR_TEXTS = [
     "✨ قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
     "✨ بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب لندائك.",
@@ -137,7 +136,7 @@ module.exports = {
         if (isSlash) await interactionOrMessage.deferReply();
         const reply = async (payload) => isSlash ? interactionOrMessage.editReply(payload) : interactionOrMessage.reply(payload);
 
-        if (!db) return reply({ content: "❌" });
+        if (!db) return reply({ content: "❌ خطأ في قاعدة البيانات" }).catch(()=>{});
         await ensurePityTable(db);
 
         let userMora = 0;
@@ -165,9 +164,8 @@ module.exports = {
             } else {
                 await db.query(`INSERT INTO user_gacha_pity ("userID", "guildID") VALUES ($1, $2)`, [user.id, guildId]).catch(() => db.query(`INSERT INTO user_gacha_pity (userid, guildid) VALUES ($1, $2)`, [user.id, guildId]).catch(()=>{}));
             }
-        } catch (e) { return reply({ content: "❌" }); }
+        } catch (e) { return reply({ content: "❌ خطأ في قراءة البيانات" }).catch(()=>{}); }
 
-        // 🔥 تعديل الأزرار لإضافة الإيموجيات وزر صناديقي الجديد 🔥
         const getPullButtons = (moraBalance) => {
             return new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('gacha_1').setLabel('x1 - 1K').setEmoji('📦').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
@@ -188,18 +186,16 @@ module.exports = {
             contentString += `\nhttps://i.postimg.cc/q7d37hdb/gacha-chest.png`;
         }
 
-        const initialMsg = await reply({ content: contentString, components: [getPullButtons(userMora)], files: initialFiles });
+        const initialMsg = await reply({ content: contentString, components: [getPullButtons(userMora)], files: initialFiles }).catch(()=>{});
+        if (!initialMsg) return;
         
-        // 🔥 تحديث الفلتر ليشمل زر صناديقي 🔥
         const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
             filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10', 'gacha_inventory'].includes(i.customId),
             time: 300000 
         });
 
         channelCollector.on('collect', async (i) => {
-            await i.deferUpdate().catch(()=>{});
-
-            // 🔥 نظام زر صناديقي 🔥
+            // 🔥 نظام زر صناديقي معزول بحماية 🔥
             if (i.customId === 'gacha_inventory') {
                 let chestCount = 0;
                 try {
@@ -207,13 +203,22 @@ module.exports = {
                     if (invRes?.rows[0]) chestCount = Number(invRes.rows[0].quantity);
                 } catch(e) {}
                 
-                return i.followUp({ content: `🎒 **صناديقك المتاحة:** \`${chestCount}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] });
+                // استخدام reply لزر الصناديق عشان ما يخرب الرسالة الأساسية
+                return i.reply({ content: `🎒 **صناديقك المتاحة:** \`${chestCount}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+            }
+
+            // 🔥 حماية التكرار السريع (Spam Protection) للسحبات 🔥
+            try {
+                await i.deferUpdate();
+            } catch (err) {
+                // إذا فشل التحديث (بسبب ضغطة مكررة سريعة)، نوقف التنفيذ بصمت
+                return;
             }
 
             await fetchUserData();
             const isTen = i.customId === 'gacha_10';
             const cost = isTen ? PULL_PRICE * 10 : PULL_PRICE;
-            if (userMora < cost) return i.followUp({ content: "❌ لا تملك المورا الكافية!", flags: [MessageFlags.Ephemeral] });
+            if (userMora < cost) return i.followUp({ content: "❌ لا تملك المورا الكافية!", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
             await i.editReply({ components: [] }).catch(()=>{});
 
@@ -231,7 +236,9 @@ module.exports = {
                 content: summonContent || null,
                 files: summonFiles,
                 fetchReply: true
-            });
+            }).catch(()=>{});
+            
+            if(!pullMsg) return;
 
             userMora -= cost;
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, user.id, guildId]).catch(() => db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [cost, user.id, guildId]).catch(()=>{}));
@@ -317,7 +324,9 @@ module.exports = {
                 });
 
                 pageCollector.on('collect', async btn => {
-                    await btn.deferUpdate().catch(()=>{});
+                    // 🔥 حماية التقليب السريع 🔥
+                    try { await btn.deferUpdate(); } catch(e) { return; }
+                    
                     if (btn.customId === 'gacha_skip') {
                         pageCollector.stop('skipped');
                     } else if (btn.customId === 'gacha_next') {
