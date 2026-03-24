@@ -2,11 +2,12 @@ const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSele
 const path = require('path');
 const fs = require('fs');
 
-let generateInventoryCard;
+let generateInventoryCard, generateMainHub;
 try {
-    ({ generateInventoryCard } = require('../../generators/inventory-generator.js'));
+    ({ generateInventoryCard, generateMainHub } = require('../../generators/inventory-generator.js'));
 } catch (e) {
     generateInventoryCard = null;
+    generateMainHub = null;
 }
 
 const weaponsConfig = require('../../json/weapons-config.json');
@@ -115,7 +116,6 @@ module.exports = {
             return reply({ content: "❌ حدث خطأ أثناء سحب بيانات الحقيبة." });
         }
 
-        // 🔥 تنظيم الأقسام لتشمل القتال كصور 🔥
         const categories = { combat: [], materials: [], fishing: [], farming: [], others: [] };
         
         for (const row of inventory) {
@@ -126,7 +126,6 @@ module.exports = {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         }
 
-        // دمج الأسلحة والمهارات في قائمة مصورة
         if (weapons.length > 0) {
             const wData = weapons[0];
             const wConf = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
@@ -142,7 +141,6 @@ module.exports = {
         let currentCategory = 'main';
         let currentPage = 1;
 
-        // 🔥 نظام الأزرار الديناميكية (يتغير لون الزر حسب القسم المفتوح) 🔥
         const getCatButtons = () => {
             return new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`inv_cat_combat_${user.id}`).setLabel('معدات').setEmoji('⚔️').setStyle(currentCategory === 'combat' ? ButtonStyle.Success : ButtonStyle.Secondary),
@@ -173,21 +171,21 @@ module.exports = {
             return rows;
         };
 
-        // 🔥 الدالة السحرية لرسم الأقسام بدون أي Embeds 🔥
         const renderCategory = async (catName) => {
             const catTitles = { combat: 'الأسلحة والمهارات', materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
             
+            // 🔥 دمج واجهة الحقيبة الرئيسية (Main Hub) 🔥
             if (catName === 'main') {
-                let files = [];
-                let mainBagPath = path.join(process.cwd(), 'images/inventory/main_bag.png');
-                let contentStr = `**🎒 حقيبة الأبعاد لـ ${targetUser.displayName}**\n> حدد القسم الذي تود استكشافه من الأزرار:`;
-                
-                if (fs.existsSync(mainBagPath)) {
-                    files.push(new AttachmentBuilder(mainBagPath, { name: 'main_bag.png' }));
+                const targetLvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
+                const targetMora = targetLvlRes?.rows[0] ? Number(targetLvlRes.rows[0].mora) : 0;
+
+                if (generateMainHub) {
+                    const imgBuffer = await generateMainHub(targetUser.user, targetUser.displayName, targetMora);
+                    const attachment = new AttachmentBuilder(imgBuffer, { name: 'main_hub.png' });
+                    return { content: `**⛺ خيمة ${targetUser.displayName}**`, embeds: [], components: getComponents(), files: [attachment] };
                 } else {
-                    contentStr += `\nhttps://i.postimg.cc/85z1D8X3/main-bag-fallback.png`;
+                    return { content: `**⛺ خيمة ${targetUser.displayName}**\n> حدد القسم الذي تود استكشافه من الأزرار:`, embeds: [], components: getComponents(), files: [] };
                 }
-                return { content: contentStr, embeds: [], components: getComponents(), files: files };
             }
 
             const items = categories[catName];
@@ -221,7 +219,6 @@ module.exports = {
         let tradeState = { itemID: null, targetID: null };
 
         collector.on('collect', async (i) => {
-            // معالجة التنقل بين الأقسام
             if (i.customId.startsWith('inv_cat_')) {
                 try { await i.deferUpdate(); } catch(e) { return; }
                 currentCategory = i.customId.split('_')[2];
@@ -238,7 +235,6 @@ module.exports = {
                 currentPage--;
                 await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
             }
-            // نظام التبادل
             else if (i.customId === `inv_trade_init_${user.id}`) {
                 if (currentCategory === 'combat') {
                     return i.reply({ content: '❌ الأسلحة والمهارات مرتبطة بروحك ولا يمكن مبادلتها!', flags: [MessageFlags.Ephemeral] });
