@@ -45,16 +45,11 @@ function resolveItemInfo(itemId) {
 }
 
 async function getInventoryCategories(db, userId, guildId) {
-    let inventory = [];
-    try {
-        const invRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
-        inventory = invRes?.rows || [];
-    } catch (e) { }
-
+    const inventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
     const categories = { materials: [], fishing: [], farming: [], others: [] };
     
     for (const row of inventory) {
-        const itemId = row.itemID || row.itemid;
+        const itemId = row.itemID;
         const quantity = Number(row.quantity) || 0;
         if (quantity <= 0) continue;
         const itemInfo = resolveItemInfo(itemId);
