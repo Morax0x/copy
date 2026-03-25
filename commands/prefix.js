@@ -14,7 +14,7 @@ module.exports = {
         const guild = message.guild;
         const client = message.client;
         const member = message.member;
-        const db = client.sql;
+        const db = client.sql; // PostgreSQL / Supabase Database
 
         if(!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return message.reply(`❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`);
@@ -25,13 +25,19 @@ module.exports = {
 
         let currentPrefix = "-";
         try {
-            // استخدام الجدول الموحد للبريفكس
-            const res = await db.query(`SELECT "serverprefix" FROM prefix WHERE "guild" = $1`, [guild.id]);
-            if (res.rows.length > 0 && res.rows[0].serverprefix) {
-                currentPrefix = res.rows[0].serverprefix;
+            // 🔥 نقرأ البريفكس الحالي من جدول settings (نفس الجدول الذي يستخدمه messageCreate) 🔥
+            let res;
+            try {
+                res = await db.query(`SELECT "prefix" FROM settings WHERE "guild" = $1`, [guild.id]);
+            } catch(e) {
+                res = await db.query(`SELECT prefix FROM settings WHERE guild = $1`, [guild.id]).catch(()=>({rows:[]}));
+            }
+            
+            if (res && res.rows.length > 0 && (res.rows[0].prefix || res.rows[0].prefix)) {
+                currentPrefix = res.rows[0].prefix || res.rows[0].prefix;
             }
         } catch (e) {
-            // يمكن تجاهل الخطأ هنا في حال كان الجدول غير موجود، سيتم إنشاؤه في الخطوة التالية
+            console.error("Error fetching current prefix:", e);
         }
 
         if(newPrefix === currentPrefix) {
@@ -39,14 +45,20 @@ module.exports = {
         }
 
         try {
-            // إنشاء الجدول في حال لم يكن موجوداً لضمان عدم حدوث خطأ
-            await db.query(`CREATE TABLE IF NOT EXISTS prefix ("guild" TEXT PRIMARY KEY, "serverprefix" TEXT)`);
-
-            await db.query(`
-                INSERT INTO prefix ("guild", "serverprefix") 
-                VALUES ($1, $2) 
-                ON CONFLICT("guild") DO UPDATE SET "serverprefix" = EXCLUDED."serverprefix"
-            `, [guild.id, newPrefix]);
+            // 🔥 تحديث البريفكس في جدول settings بدلاً من إنشاء جدول جديد 🔥
+            try {
+                await db.query(`
+                    INSERT INTO settings ("guild", "prefix") 
+                    VALUES ($1, $2) 
+                    ON CONFLICT("guild") DO UPDATE SET "prefix" = EXCLUDED."prefix"
+                `, [guild.id, newPrefix]);
+            } catch(e) {
+                await db.query(`
+                    INSERT INTO settings (guild, prefix) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT(guild) DO UPDATE SET prefix = EXCLUDED.prefix
+                `, [guild.id, newPrefix]).catch(()=>{});
+            }
             
             return message.reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
             
