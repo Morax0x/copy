@@ -34,7 +34,6 @@ const RARITY_COLORS = {
 // 🔥 دوال الرسم والتصميم المتقدمة 🔥
 // ==========================================
 
-// دالة سحرية لضبط حجم الخط ديناميكياً (Auto-Scale Text)
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
@@ -136,7 +135,7 @@ function drawMagicCircle(ctx, cx, cy, radius, color) {
 }
 
 // ========================================================
-// 🔥 دالة 1: شبكة الأقسام 🔥
+// 🔥 دالة 1: شبكة الأقسام المحدثة (تدعم الحقيبة الفارغة) 🔥
 // ========================================================
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages) {
     const width = 1200; 
@@ -144,12 +143,14 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
+    // الخلفية السينمائية
     const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
     bgGrad.addColorStop(0, '#1a1025'); 
     bgGrad.addColorStop(1, '#050508');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
+    // غبار النجوم
     ctx.fillStyle = '#FFFFFF';
     for(let i=0; i<150; i++) {
         const px = Math.random() * width;
@@ -160,6 +161,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     }
     ctx.globalAlpha = 1.0;
 
+    // الهيدر الملكي
     const headerH = 140;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, 0, width, headerH);
@@ -191,15 +193,48 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.fillText(`[ ${page} / ${totalPages || 1} ]`, width - 30, 70);
 
+    // إعدادات الشبكة
     const cols = 5;
     const rows = 3;
     const slotSize = 175; 
     const gapX = 45;      
     const gapY = 55;      
-    
     const startX = (width - ((cols * slotSize) + ((cols - 1) * gapX))) / 2;
     const startY = 180; 
 
+    // 🔥 إذا كانت الحقيبة فارغة تماماً 🔥
+    if (!items || items.length === 0) {
+        // رسم الشبكة كلها كإطارات شفافة لتعطي إحساساً بالفراغ
+        for (let i = 0; i < 15; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = startX + col * (slotSize + gapX);
+            const y = startY + row * (slotSize + gapY);
+            drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
+        }
+        
+        // رسم شريط فخم في المنتصف يحتوي على نص "الحقيبة فارغة"
+        const emptyBoxW = 600;
+        const emptyBoxH = 120;
+        const emptyBoxX = (width - emptyBoxW) / 2;
+        const emptyBoxY = (height + headerH - emptyBoxH) / 2 - 20;
+
+        ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
+        ctx.beginPath(); roundRect(ctx, emptyBoxX, emptyBoxY, emptyBoxW, emptyBoxH, 20); ctx.fill();
+        ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
+        
+        ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 40px "Bein"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
+        ctx.shadowBlur = 0;
+
+        return canvas.toBuffer('image/png');
+    }
+
+    // إذا كانت الحقيبة ممتلئة، نرسم العناصر بشكل طبيعي
     for (let i = 0; i < 15; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
@@ -207,13 +242,13 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         const y = startY + row * (slotSize + gapY);
 
         const item = items[i];
-        const rarityColor = item && item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
-
+        
         if (!item) {
             drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
             continue;
         }
 
+        const rarityColor = item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
         drawOrnateFrame(ctx, x, y, slotSize, slotSize, rarityColor);
 
         const aura = ctx.createRadialGradient(x + slotSize/2, y + slotSize/2, 10, x + slotSize/2, y + slotSize/2, slotSize/1.2);
@@ -256,7 +291,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#FFFFFF';
-        // استخدام دالة النص الذكي لاسم العنصر لتجنب الخروج عن الشريط
         drawAutoScaledText(ctx, item.name, x + slotSize / 2, ribbonY + ribbonH / 2, slotSize - 20, 16, 10);
 
         const qtyText = item.quantity > 999 ? '999+' : item.quantity.toString();
@@ -291,7 +325,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
 
     const primaryColor = '#FFD700'; 
 
-    // 1. الخلفية
     const bgPath = path.join(process.cwd(), 'images/inventory/desk_bg.png');
     const bgImg = await getCachedImage(bgPath);
     if (bgImg) {
@@ -305,7 +338,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
         ctx.fillStyle = '#050508'; ctx.fillRect(0, 0, width, height);
     }
 
-    // 🛡️ لوحة الهوية
     const idX = 60, idY = 60, idW = 380, idH = 530;
     
     ctx.fillStyle = 'rgba(10, 10, 15, 0.9)';
@@ -323,7 +355,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     ctx.moveTo(idX+15+cl, idY+idH-15); ctx.lineTo(idX+15, idY+idH-15); ctx.lineTo(idX+15, idY+idH-15-cl);
     ctx.stroke();
 
-    // 👤 الصورة الدائرية
     const avatarSize = 160;
     const avatarX = idX + idW / 2; 
     const avatarY = idY + 130; 
@@ -346,7 +377,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.lineWidth = 5; ctx.strokeStyle = borderAvGrad; ctx.stroke();
 
-    // 🛡️ درع الرتبة
     const badgeW = 75, badgeH = 85;
     const badgeX = avatarX;
     const badgeY = avatarY + (avatarSize / 2) + 5; 
@@ -365,14 +395,12 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     ctx.fillText(rankLetter, badgeX, badgeY + 6);
     ctx.restore();
 
-    // 📝 ترتيب المعلومات
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = primaryColor; ctx.shadowBlur = 15;
-    drawAutoScaledText(ctx, displayName, avatarX, badgeY + 75, idW - 60, 45, 20); // تصغير ذكي للاسم
+    drawAutoScaledText(ctx, displayName, avatarX, badgeY + 75, idW - 60, 45, 20); 
     ctx.shadowBlur = 0;
 
-    // 🔥 شريط "العرق | السلاح" الأنيق المتجاوب 🔥
     const tagX = idX + 40, tagY = badgeY + 115, tagW = idW - 80, tagH = 45;
     ctx.fillStyle = 'rgba(255, 215, 0, 0.08)';
     ctx.beginPath(); roundRect(ctx, tagX, tagY, tagW, tagH, 10); ctx.fill();
@@ -383,15 +411,13 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     ctx.beginPath(); ctx.moveTo(tagX + tagW/2, tagY + 5); ctx.lineTo(tagX + tagW/2, tagY + tagH - 5);
     ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
 
-    // نصوص العرق والسلاح بنظام (Auto-Scale) لتجنب خروجها
-    const halfTagW = (tagW / 2) - 10; // المساحة المتاحة لكل نص
+    const halfTagW = (tagW / 2) - 10; 
     ctx.fillStyle = '#E0E0E0';
     drawAutoScaledText(ctx, `🩸 ${raceName}`, tagX + tagW/4, tagY + tagH/2, halfTagW, 18, 12);
     
     ctx.fillStyle = '#F1C40F';
     drawAutoScaledText(ctx, `⚔️ ${weaponName}`, tagX + (tagW * 0.75), tagY + tagH/2, halfTagW, 18, 12);
 
-    // 🔥 مستطيل الثروة المتجاوب 🔥
     const moraX = idX + 60, moraY = tagY + 65, moraW = idW - 120, moraH = 55;
     const goldGradBox = ctx.createLinearGradient(moraX, moraY, moraX + moraW, moraY);
     goldGradBox.addColorStop(0, 'rgba(255, 215, 0, 0.2)'); goldGradBox.addColorStop(0.5, 'rgba(255, 215, 0, 0)'); goldGradBox.addColorStop(1, 'rgba(255, 215, 0, 0.2)');
@@ -408,9 +434,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     drawAutoScaledText(ctx, moraText, idX + idW/2, moraY + moraH/2 + 2, moraW - 20, 30, 16);
     ctx.shadowBlur = 0;
 
-    // ==========================================
-    // 🎒 الجزء الأيمن: الحقيبة والمصفوفة
-    // ==========================================
     const bagX = 780, bagY = 320;
     
     ctx.save();
