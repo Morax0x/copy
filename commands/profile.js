@@ -105,7 +105,6 @@ function resolveItemInfo(itemId) {
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
     
-    // استخدام db.prepare للـ SQLite
     const weapons = db.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
     const levels = db.prepare("SELECT user as userID, level FROM levels WHERE guild = ?").all(guildID);
     const levelsMap = new Map(levels.map(r => [r.userID, r.level]));
@@ -176,7 +175,7 @@ module.exports = {
         if (!targetMember || targetMember.user.bot) return reply({ content: "❌ لا يمكن عرض بيانات هذا العضو." });
 
         try {
-            const db = client.sql; // SQLite
+            const db = client.sql; 
             const targetUser = targetMember.user; 
             const userId = targetUser.id;
             const guildId = guild.id;
@@ -184,12 +183,11 @@ module.exports = {
             const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
             // =====================================
-            // 📊 1. جلب البيانات الأساسية للبروفايل
+            // 📊 1. جلب البيانات الأساسية للبروفايل (مباشرة وبأمان)
             // =====================================
-            let levelData = null;
-            if (client.getLevel) levelData = await client.getLevel.get(userId, guildId);
+            let levelData = db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(userId, guildId);
             if (!levelData) {
-                levelData = db.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
+                levelData = { xp: 0, level: 1, mora: 0, bank: 0 };
             }
             
             const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
