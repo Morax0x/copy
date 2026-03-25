@@ -97,7 +97,6 @@ function resolveItemInfo(itemId) {
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
     
-    // جلب البيانات بطريقة PostgreSQL
     let wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]).catch(()=> db.query(`SELECT userid as "userID", racename as "raceName", weaponlevel as "weaponLevel" FROM user_weapons WHERE guildid = $1 AND userid != $2`, [guildID, TARGET_OWNER_ID]).catch(()=>({rows:[]})));
     const weapons = wRes.rows;
 
@@ -178,7 +177,6 @@ module.exports = {
             const isOwnProfile = targetUser.id === authorUser.id;
             const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
-            // 🔥 توجيه العرض 🔥
             let currentView = 'profile'; 
             let invCategory = 'main';
 
@@ -194,9 +192,6 @@ module.exports = {
             let invPage = 1; 
             let skillPage = 0;
 
-            // ==========================================
-            // 📊 1. جلب البيانات الأساسية للبروفايل (PostgreSQL)
-            // ==========================================
             let levelData = null;
             if (client.getLevel) { try { levelData = await client.getLevel(userId, guildId); } catch(e){} }
             if (!levelData) {
@@ -257,9 +252,6 @@ module.exports = {
                 moraBuff: moraBuffPercent, shields: totalShields, ranks: ranks
             };
 
-            // ==========================================
-            // 🎒 2. جلب بيانات الحقيبة والموارد
-            // ==========================================
             const invRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})));
             const inventory = invRes.rows || [];
             
@@ -279,9 +271,6 @@ module.exports = {
                 if (potionInfo) potionsList.push({ name: potionInfo.name, qty: quantity });
             }
 
-            // ==========================================
-            // ⚔️ 3. جلب بيانات العتاد والمهارات
-            // ==========================================
             const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [userId, guildId]).catch(()=>({rows:[]})));
             const dbSkills = skillRes.rows || [];
             
@@ -323,9 +312,6 @@ module.exports = {
             }
             allSkillsList.sort((a, b) => b.level - a.level);
 
-            // ==========================================
-            // 🖥️ 4. نظام العرض الديناميكي (Renderer)
-            // ==========================================
             const getNavigationButtons = () => {
                 return new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId(`view_profile_${authorUser.id}`).setLabel('البروفايل').setEmoji('🪪').setStyle(currentView === 'profile' ? ButtonStyle.Primary : ButtonStyle.Secondary),
@@ -379,11 +365,10 @@ module.exports = {
                     components.push(getInvCategoryButtons());
                     
                     if (invCategory === 'main') {
-                        let rankLetter = 'F';
-                        const lvl = profileData.level;
-                        if(lvl >= 100) rankLetter = 'SSS'; else if(lvl >= 80) rankLetter = 'SS'; else if(lvl >= 60) rankLetter = 'S'; else if(lvl >= 40) rankLetter = 'A'; else if(lvl >= 20) rankLetter = 'B'; else if(lvl >= 10) rankLetter = 'C'; else if(lvl >= 5) rankLetter = 'D';
+                        // 🔥 التصحيح: هنا يتم جلب الرتبة من نظام النقاط بدلاً من اللفل 🔥
+                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
                         
-                        const buffer = await generateMainHub(targetUser, cleanName, totalMora, rankLetter, arabicRaceName, weaponName);
+                        const buffer = await generateMainHub(targetUser, cleanName, totalMora, hubRank, arabicRaceName, weaponName);
                         const attachment = new AttachmentBuilder(buffer, { name: 'hub.png' });
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [attachment], components };
                     }
@@ -391,11 +376,7 @@ module.exports = {
                     const items = categories[invCategory] || [];
                     const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
                     
-                    if (items.length === 0) {
-                        return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**\n> ❌ هذا القسم فارغ تماماً.`, files: [], components };
-                    }
-
-                    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
+                    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                     if (invPage > totalPages) invPage = totalPages;
                     const startIdx = (invPage - 1) * ITEMS_PER_PAGE;
                     const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
@@ -407,10 +388,11 @@ module.exports = {
                             new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === totalPages)
                         ));
                     }
-                    if (isOwnProfile) {
+                    if (isOwnProfile && items.length > 0) {
                         components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('مبادلة عنصر 🤝').setStyle(ButtonStyle.Success)));
                     }
 
+                    // 🔥 التصحيح: رسم الحقيبة الفارغة يتم هنا كصورة فخمة 🔥
                     const buffer = await generateInventoryCard(cleanName, catTitles[invCategory], pageItems, invPage, totalPages);
                     const attachment = new AttachmentBuilder(buffer, { name: 'inv.png' });
                     return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**`, files: [attachment], components };
