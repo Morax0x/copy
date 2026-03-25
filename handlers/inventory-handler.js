@@ -1,11 +1,3 @@
-const { AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-let generateInventoryCard, generateMainHub;
-try {
-    ({ generateInventoryCard, generateMainHub } = require('../generators/inventory-generator.js'));
-} catch (e) {
-    generateInventoryCard = null; generateMainHub = null;
-}
-
 const upgradeMats = require('../json/upgrade-materials.json');
 let fishData = [], farmItems = [];
 try { fishData = require('../json/fish.json'); } catch(e) {}
@@ -52,71 +44,27 @@ function resolveItemInfo(itemId) {
     return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
 }
 
-const ITEMS_PER_PAGE = 15;
+async function getInventoryCategories(db, userId, guildId) {
+    let inventory = [];
+    try {
+        const invRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
+        inventory = invRes?.rows || [];
+    } catch (e) { }
 
-async function getInventoryView(db, targetUser, cleanName, authorId, invCategory, invPage, profileContext) {
-    const { level, totalMora, arabicRaceName, weaponName, isOwnProfile } = profileContext;
-
-    const inventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(targetUser.id, profileContext.guildId) || [];
-    
     const categories = { materials: [], fishing: [], farming: [], others: [] };
+    
     for (const row of inventory) {
-        const itemId = row.itemID;
+        const itemId = row.itemID || row.itemid;
         const quantity = Number(row.quantity) || 0;
         if (quantity <= 0) continue;
         const itemInfo = resolveItemInfo(itemId);
-        if (categories[itemInfo.category]) categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
-        else categories.others.push({ ...itemInfo, quantity, id: itemId });
+        if (categories[itemInfo.category]) {
+            categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
+        } else {
+            categories.others.push({ ...itemInfo, quantity, id: itemId });
+        }
     }
-
-    const catButtons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`cat_main_${authorId}`).setLabel('الخيمة').setEmoji('⛺').setStyle(invCategory === 'main' ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`cat_materials_${authorId}`).setLabel('موارد').setEmoji('💎').setStyle(invCategory === 'materials' ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`cat_fishing_${authorId}`).setLabel('صيد').setEmoji('🎣').setStyle(invCategory === 'fishing' ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`cat_farming_${authorId}`).setLabel('مزرعة').setEmoji('🌾').setStyle(invCategory === 'farming' ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`cat_others_${authorId}`).setLabel('أخرى').setEmoji('📦').setStyle(invCategory === 'others' ? ButtonStyle.Success : ButtonStyle.Secondary)
-    );
-
-    let components = [catButtons];
-
-    if (invCategory === 'main') {
-        let rankLetter = 'F';
-        if(level >= 100) rankLetter = 'SSS'; else if(level >= 80) rankLetter = 'SS'; else if(level >= 60) rankLetter = 'S'; else if(level >= 40) rankLetter = 'A'; else if(level >= 20) rankLetter = 'B'; else if(level >= 10) rankLetter = 'C'; else if(level >= 5) rankLetter = 'D';
-        
-        const buffer = await generateMainHub(targetUser, cleanName, totalMora, rankLetter, arabicRaceName, weaponName);
-        const attachment = new AttachmentBuilder(buffer, { name: 'hub.png' });
-        return { content: `**⛺ خيمة ${cleanName}**`, files: [attachment], components };
-    }
-
-    const items = categories[invCategory] || [];
-    const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
-    
-    if (items.length === 0) {
-        if (!generateInventoryCard) return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**\n> ❌ هذا القسم فارغ تماماً.`, files: [], components };
-        const buffer = await generateInventoryCard(cleanName, catTitles[invCategory], [], 1, 1);
-        return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**`, files: [new AttachmentBuilder(buffer, { name: 'inv_empty.png' })], components };
-    }
-
-    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    if (invPage > totalPages) invPage = totalPages;
-    const startIdx = (invPage - 1) * ITEMS_PER_PAGE;
-    const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-    if (totalPages > 1) {
-        components.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`inv_p_${authorId}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-            new ButtonBuilder().setCustomId('disp').setLabel(`${invPage}/${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-            new ButtonBuilder().setCustomId(`inv_n_${authorId}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === totalPages)
-        ));
-    }
-    if (isOwnProfile) {
-        components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorId}`).setLabel('مبادلة عنصر 🤝').setStyle(ButtonStyle.Success)));
-    }
-
-    const buffer = await generateInventoryCard(cleanName, catTitles[invCategory], pageItems, invPage, totalPages);
-    const attachment = new AttachmentBuilder(buffer, { name: 'inv.png' });
-    
-    return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**`, files: [attachment], components };
+    return categories;
 }
 
-module.exports = { getInventoryView, resolveItemInfo };
+module.exports = { resolveItemInfo, getInventoryCategories };
