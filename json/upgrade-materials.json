@@ -1,7 +1,7 @@
 {
   "rarity_colors": {
     "Common": {"name": "عادي", "color": "Gray", "emoji": "⬜"},
-    "Uncommon": {"name": "غير شائع", "color": "Green", "emoji": "🟩"},
+    "Uncommon": {"name": "شائع", "color": "Green", "emoji": "🟩"},
     "Rare": {"name": "نادر", "color": "Blue", "emoji": "🟦"},
     "Epic": {"name": "ملحمي", "color": "Purple", "emoji": "🟪"},
     "Legendary": {"name": "أسطوري", "color": "Gold", "emoji": "🟨"}
