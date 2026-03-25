@@ -1,31 +1,49 @@
-const { PermissionsBitField } = require("discord.js");
+const { SlashCommandBuilder, PermissionsBitField } = require("discord.js");
 
 module.exports = {
+    // 🔥 بناء أمر السلاش ليتعرف عليه ديسكورد 🔥
+    data: new SlashCommandBuilder()
+        .setName('prefix')
+        .setDescription('تغيير بادئة (بريفكس) الأوامر في السيرفر.')
+        .addStringOption(option =>
+            option.setName('البريفكس')
+                .setDescription('اكتب البريفكس الجديد الذي تريده للسيرفر')
+                .setRequired(true)),
+
     name: 'prefix',
     aliases: ['set-prefix', 'بريفكس'],
     category: "Admin",
     description: "Set server prefix",
     cooldown: 3,
 
-    async execute (message, args) {
-        const isSlash = !!message.isChatInputCommand;
-        if (isSlash) return;
-
-        const guild = message.guild;
-        const client = message.client;
-        const member = message.member;
+    async execute(interactionOrMessage, args) {
+        const isSlash = !!interactionOrMessage.isChatInputCommand;
+        const client = interactionOrMessage.client;
+        const guild = interactionOrMessage.guild;
         const db = client.sql; // PostgreSQL / Supabase Database
 
-        if(!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return message.reply(`❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`);
+        let member, newPrefix, reply;
+
+        // 🔥 تهيئة المتغيرات بناءً على طريقة الاستخدام (سلاش أو نصي) 🔥
+        if (isSlash) {
+            member = interactionOrMessage.member;
+            newPrefix = interactionOrMessage.options.getString('البريفكس');
+            reply = (payload) => interactionOrMessage.reply(payload);
+        } else {
+            member = interactionOrMessage.member;
+            if (!args[0]) return interactionOrMessage.reply(`❌ **الرجاء كتابة البريفكس الجديد.**\nمثال: \`-prefix !\``);
+            newPrefix = args[0];
+            reply = (payload) => interactionOrMessage.reply(payload);
         }
 
-        if (!args[0]) return message.reply(`❌ **الرجاء كتابة البريفكس الجديد.**\nمثال: \`-prefix !\``);
-        const newPrefix = args[0];
+        // التحقق من الصلاحيات
+        if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            return reply({ content: `❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`, ephemeral: true });
+        }
 
         let currentPrefix = "-";
         try {
-            // 🔥 نقرأ البريفكس الحالي من جدول settings (نفس الجدول الذي يستخدمه messageCreate) 🔥
+            // قراءة البريفكس الحالي من جدول settings
             let res;
             try {
                 res = await db.query(`SELECT "prefix" FROM settings WHERE "guild" = $1`, [guild.id]);
@@ -40,12 +58,12 @@ module.exports = {
             console.error("Error fetching current prefix:", e);
         }
 
-        if(newPrefix === currentPrefix) {
-            return message.reply(`⚠ **هذا هو البريفكس الحالي بالفعل!**`);
+        if (newPrefix === currentPrefix) {
+            return reply({ content: `⚠ **هذا هو البريفكس الحالي بالفعل!**`, ephemeral: true });
         }
 
         try {
-            // 🔥 تحديث البريفكس في جدول settings بدلاً من إنشاء جدول جديد 🔥
+            // تحديث البريفكس في جدول settings 
             try {
                 await db.query(`
                     INSERT INTO settings ("guild", "prefix") 
@@ -60,11 +78,11 @@ module.exports = {
                 `, [guild.id, newPrefix]).catch(()=>{});
             }
             
-            return message.reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
+            return reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
             
         } catch (error) {
             console.error("Prefix change error:", error);
-            return message.reply("❌ **حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.**");
+            return reply({ content: "❌ **حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.**", ephemeral: true });
         }
     }
 }
