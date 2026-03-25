@@ -7,7 +7,7 @@ const skillsConfig = require('../json/skills-config.json');
 const upgradeMats = require('../json/upgrade-materials.json');
 const potionItems = require('../json/potions.json');
 
-// 🔥 استدعاء مولدات الحقيبة والمهارات 🔥
+// 🔥 استدعاء المولدات الفخمة 🔥
 let generateInventoryCard, generateMainHub, generateSkillsCard;
 try {
     ({ generateInventoryCard, generateMainHub } = require('../generators/inventory-generator.js'));
@@ -20,7 +20,7 @@ let fishData = [], farmItems = [];
 try { fishData = require('../json/fish.json'); } catch(e) {}
 try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
-// 🔥 استدعاء دالة حساب الخبرة المركزية
+// استدعاء دالة حساب الخبرة المركزية
 let calculateRequiredXP;
 try {
     ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
@@ -131,13 +131,25 @@ async function calculateStrongestRank(db, guildID, targetUserID) {
 }
 
 module.exports = {
+    // 🔥 أمر السلاش الشامل بقائمة منسدلة 🔥
     data: new SlashCommandBuilder()
         .setName('بروفايل')
-        .setDescription('يعرض بطاقة المغامر الشاملة الخاصة بك.')
-        .addUserOption(option => option.setName('المستخدم').setDescription('المستخدم الذي تريد عرض بروفايله').setRequired(false)),
+        .setDescription('المركز الرئيسي: يعرض البروفايل، الحقيبة، أو العتاد الخاص بك.')
+        .addUserOption(option => 
+            option.setName('user')
+            .setDescription('المستخدم الذي تريد عرض بياناته (اختياري)')
+            .setRequired(false))
+        .addStringOption(option => 
+            option.setName('tab')
+            .setDescription('القسم الذي تود فتحه مباشرة (اختياري)')
+            .setRequired(false)
+            .addChoices(
+                { name: '🪪 بطاقة البروفايل', value: 'profile' },
+                { name: '🎒 الحقيبة', value: 'inventory' },
+                { name: '⚔️ العتاد والمهارات', value: 'combat' }
+            )),
 
     name: 'profile',
-    // 🔥 دمجنا كل الاختصارات في أمر واحد 🔥
     aliases: ['p', 'بروفايل', 'بطاقة', 'كارد', 'card', 'inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة', 'مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'], 
     description: 'يعرض بطاقة المغامر أو الحقيبة أو العتاد الخاص بك.',
 
@@ -150,7 +162,7 @@ module.exports = {
             guild = interaction.guild;
             client = interaction.client;
             authorUser = interaction.user; 
-            targetMember = interaction.options.getMember('المستخدم') || interaction.member;
+            targetMember = interaction.options.getMember('user') || interaction.member;
             await interaction.deferReply();
         } else {
             message = interactionOrMessage;
@@ -300,11 +312,20 @@ module.exports = {
             allSkillsList.sort((a, b) => b.level - a.level);
 
             // =====================================
-            // 🎮 3. توجيه العرض بناءً على الأمر
+            // 🎮 3. توجيه العرض بناءً على الأمر أو السلاش
             // =====================================
-            let currentView = 'profile'; // الافتراضي
+            let currentView = 'profile'; 
             let invCategory = 'main';
-            if (!isSlash) {
+
+            if (isSlash) {
+                // التحقق مما اختاره اللاعب في السلاش كوماند
+                const chosenTab = interactionOrMessage.options.getString('tab');
+                if (chosenTab) {
+                    currentView = chosenTab;
+                    if (chosenTab === 'inventory') invCategory = 'main';
+                }
+            } else {
+                // توجيه الأوامر النصية العادية
                 const commandUsed = interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase();
                 if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandUsed)) { currentView = 'inventory'; invCategory = 'main'; }
                 else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandUsed)) { currentView = 'combat'; }
@@ -408,24 +429,19 @@ module.exports = {
                 try { await i.deferUpdate(); } catch(e) { return; }
                 const id = i.customId;
 
-                // التنقل الأساسي
                 if (id.startsWith('view_')) {
                     currentView = id.split('_')[1];
                     await msg.edit(await renderView()).catch(()=>{});
                 }
-                // أقسام الحقيبة
                 else if (id.startsWith('cat_')) {
                     invCategory = id.split('_')[1];
                     invPage = 1;
                     await msg.edit(await renderView()).catch(()=>{});
                 }
-                // تقليب الحقيبة
                 else if (id.startsWith('inv_n_')) { invPage++; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('inv_p_')) { invPage--; await msg.edit(await renderView()).catch(()=>{}); }
-                // تقليب المهارات
                 else if (id.startsWith('sk_next_')) { skillPage++; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('sk_prev_')) { skillPage--; await msg.edit(await renderView()).catch(()=>{}); }
-                // نظام المبادلة المدمج
                 else if (id.startsWith('trade_init_')) {
                     const tradableItems = categories[invCategory];
                     const options = tradableItems.slice(0, 25).map(item => ({ label: item.name, value: item.id, emoji: item.emoji || '📦', description: `الكمية المتاحة: ${item.quantity}` }));
@@ -447,7 +463,6 @@ module.exports = {
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
                     );
                     await i.showModal(modal).catch(()=>{});
-                    // نظام المبادلة يعتمد على المودال كالسابق وسيتم إكماله في حدث InteractionCreate للحفاظ على سرعة الملف
                 }
             });
 
