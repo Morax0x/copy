@@ -1,24 +1,36 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, MessageFlags, AttachmentBuilder } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const { getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js'); // ضروري لجلب العرق والسلاح
 
-let generateInventoryCard, generateMainHub;
+let generateInventoryCard, generateMainHub, generateSkillsCard;
 try {
     ({ generateInventoryCard, generateMainHub } = require('../../generators/inventory-generator.js'));
+    // 🔥 جلب مولد المهارات الفخم 🔥
+    ({ generateSkillsCard } = require('../../generators/skills-card-generator.js'));
 } catch (e) {
     generateInventoryCard = null;
     generateMainHub = null;
+    generateSkillsCard = null;
 }
 
 const weaponsConfig = require('../../json/weapons-config.json');
 const skillsConfig = require('../../json/skills-config.json');
 const upgradeMats = require('../../json/upgrade-materials.json');
+const potionItems = require('../../json/potions.json');
 
 let fishData = [], farmItems = [];
 try { fishData = require('../../json/fish.json'); } catch(e) {}
 try { farmItems = require('../../json/seeds.json').concat(require('../../json/feed-items.json')); } catch(e) {}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
+const OWNER_ID = "1145327691772481577"; 
+
+const RACE_TRANSLATIONS = new Map([
+    ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
+    ['Seraphim', 'سيرافيم'], ['Demon', 'شيطان'], ['Vampire', 'مصاص دماء'], 
+    ['Spirit', 'روح'], ['Dwarf', 'قزم'], ['Ghoul', 'غول'], ['Hybrid', 'نصف وحش']
+]);
 
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
@@ -34,30 +46,6 @@ const ID_TO_IMAGE = {
     'mat_ghoul_1': 'ghoul_bone.png', 'mat_ghoul_2': 'ghoul_remains.png', 'mat_ghoul_3': 'ghoul_skull.png', 'mat_ghoul_4': 'ghoul_crystal.png', 'mat_ghoul_5': 'ghoul_core.png',
     'book_general_1': 'gen_book_tactic.png', 'book_general_2': 'gen_book_combat.png', 'book_general_3': 'gen_book_arts.png', 'book_general_4': 'gen_book_war.png', 'book_general_5': 'gen_book_wisdom.png',
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
-};
-
-// 🔥 خريطة مسميات صور المهارات الجديدة 🔥
-const SKILL_TO_IMAGE = {
-    'skill_healing': 'heal.png',
-    'skill_shielding': 'shield.png',
-    'skill_buffing': 'buff.png',
-    'skill_rebound': 'rebound.png',
-    'skill_weaken': 'weaken.png',
-    'skill_dispel': 'dispel.png',
-    'skill_cleanse': 'cleanse.png',
-    'skill_poison': 'poison.png',
-    'skill_gamble': 'gamble.png',
-    'race_dragon_skill': 'dragon.png',
-    'race_human_skill': 'human.png',
-    'race_seraphim_skill': 'seraphim.png',
-    'race_demon_skill': 'demon.png',
-    'race_elf_skill': 'elf.png',
-    'race_dark_elf_skill': 'darkelf.png',
-    'race_vampire_skill': 'vampire.png',
-    'race_hybrid_skill': 'hybrid.png',
-    'race_spirit_skill': 'spirit.png',
-    'race_dwarf_skill': 'dwarf.png',
-    'race_ghoul_skill': 'ghoul.png'
 };
 
 function resolveItemInfo(itemId) {
@@ -86,6 +74,7 @@ function resolveItemInfo(itemId) {
 }
 
 const ITEMS_PER_PAGE = 15;
+const SKILLS_PER_PAGE = 3;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -94,7 +83,7 @@ module.exports = {
         .addUserOption(option => option.setName('user').setDescription('عرض حقيبة عضو آخر').setRequired(false)),
         
     name: 'حقيبة',
-    aliases: ['inv', 'inventory', 'شنطة', 'اغراض'],
+    aliases: ['inv', 'inventory', 'شنطة', 'اغراض', 'مهاراتي', 'عتاد', 'skills', 'ms'], // تم دمج أوامر المهارات هنا!
     category: 'RPG',
 
     async execute(interactionOrMessage, args) {
@@ -105,12 +94,14 @@ module.exports = {
 
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
 
-        let targetUser;
+        let targetUser, targetMember;
         if (isSlash) {
-            targetUser = interactionOrMessage.options.getMember('user') || interactionOrMessage.member;
+            targetMember = interactionOrMessage.options.getMember('user') || interactionOrMessage.member;
+            targetUser = targetMember.user;
             await interactionOrMessage.deferReply();
         } else {
-            targetUser = interactionOrMessage.mentions.members.first() || interactionOrMessage.guild.members.cache.get(args[0]) || interactionOrMessage.member;
+            targetMember = interactionOrMessage.mentions.members.first() || interactionOrMessage.guild.members.cache.get(args[0]) || interactionOrMessage.member;
+            targetUser = targetMember.user;
         }
 
         const reply = async (payload) => {
@@ -121,7 +112,7 @@ module.exports = {
             return interactionOrMessage.reply(payload);
         };
 
-        if (!targetUser || targetUser.user.bot) return reply({ content: "❌ لا يمكن عرض حقيبة هذا العضو." });
+        if (!targetUser || targetUser.bot) return reply({ content: "❌ لا يمكن عرض حقيبة هذا العضو." });
 
         const userId = targetUser.id;
         const isOwnInventory = userId === user.id;
@@ -140,40 +131,103 @@ module.exports = {
             return reply({ content: "❌ حدث خطأ أثناء سحب بيانات الحقيبة." });
         }
 
-        const categories = { combat: [], materials: [], fishing: [], farming: [], others: [] };
+        const categories = { materials: [], fishing: [], farming: [], others: [] };
         
         for (const row of inventory) {
             const itemId = row.itemID || row.itemid;
             const quantity = Number(row.quantity) || 0;
             if (quantity <= 0) continue;
             const itemInfo = resolveItemInfo(itemId);
-            categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
+            if (categories[itemInfo.category]) {
+                categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
+            } else {
+                categories.others.push({ ...itemInfo, quantity, id: itemId });
+            }
         }
 
-        if (weapons.length > 0) {
-            const wData = weapons[0];
-            const wConf = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
-            if (wConf) categories.combat.push({ name: wConf.name, emoji: wConf.emoji || '🗡️', quantity: wData.weaponLevel || wData.weaponlevel, rarity: 'Legendary', imgPath: null, id: 'weapon' });
-        }
-        
-        // 🔥 تحديث المهارات لتعرض صور المهارات الجديدة 🔥
-        if (skills.length > 0) {
-            skills.forEach(s => {
-                const sConf = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
-                if (sConf) {
-                    const imgFileName = SKILL_TO_IMAGE[sConf.id];
-                    const imgPath = imgFileName ? `images/skills/${imgFileName}` : null;
-                    categories.combat.push({ name: sConf.name, emoji: sConf.emoji || '📜', quantity: s.skillLevel || s.skilllevel, rarity: 'Epic', imgPath: imgPath, id: s.skillID || s.skillid });
+        // 🔥 تجهيز بيانات المهارات الخاصة (Combat) لبطاقة الـ Spider Chart 🔥
+        let userLevel = 1;
+        try { 
+            let userLvlRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
+            userLevel = userLvlRes.rows[0] ? Number(userLvlRes.rows[0].level || userLvlRes.rows[0].level) : 1;
+        } catch(e) {}
+
+        const userRace = await getUserRace(targetMember, db);
+        const weaponData = await getWeaponData(db, targetMember);
+        const rawRace = userRace ? (userRace.raceName || userRace.racename) : "مجهول";
+        const arabicRaceName = RACE_TRANSLATIONS.get(rawRace) || rawRace;
+
+        let totalSpent = 0;
+        let allSkillsList = [];
+        let raceSkillId = null;
+
+        if (userRace && weaponData) {
+            const originalWeaponConfig = weaponsConfig.find(w => w.race === rawRace);
+            if (originalWeaponConfig) {
+                for (let i = 0; i < weaponData.currentLevel; i++) {
+                    totalSpent += originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
                 }
-            });
+            }
         }
 
+        if (userRace) {
+            const cleanRaceName = rawRace.toLowerCase().trim().replace(/\s+/g, '_');
+            raceSkillId = `race_${cleanRaceName}_skill`;
+        }
+
+        let hasRaceSkillInDB = false;
+        if (skills.length > 0) {
+            for (const dbSkill of skills) {
+                const skillID = dbSkill.skillID || dbSkill.skillid;
+                const skillLevel = Number(dbSkill.skillLevel || dbSkill.skilllevel);
+                const skillConfig = skillsConfig.find(s => s.id === skillID);
+                
+                if (skillConfig) {
+                    if (skillConfig.name.includes("شق زمكان") && userId !== OWNER_ID) continue; 
+                    if (skillID.startsWith('race_') && raceSkillId && skillID !== raceSkillId) continue; 
+                    if (raceSkillId && skillID === raceSkillId) hasRaceSkillInDB = true;
+
+                    allSkillsList.push({
+                        id: skillID, 
+                        name: skillConfig.name,
+                        level: skillLevel,
+                        description: skillConfig.description
+                    });
+                    
+                    for (let i = 0; i < skillLevel; i++) {
+                        totalSpent += skillConfig.base_price + (skillConfig.price_increment * i);
+                    }
+                }
+            }
+        }
+
+        if (userRace && raceSkillId && !hasRaceSkillInDB) {
+            const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
+            if (raceSkillConfig && (!raceSkillConfig.name.includes("شق زمكان") || userId === OWNER_ID)) {
+                allSkillsList.push({
+                    id: raceSkillId,
+                    name: raceSkillConfig.name,
+                    level: 1, 
+                    description: raceSkillConfig.description + " [غير مطورة]"
+                });
+            }
+        }
+
+        allSkillsList.sort((a, b) => b.level - a.level);
+
+
+        // توجيه الأوامر المدمجة (إذا كتب مهاراتي يفتح عتاد مباشرة)
         let currentCategory = 'main';
-        let currentPage = 1;
+        if (!isSlash && ['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase())) {
+            currentCategory = 'combat';
+        }
+
+        let currentPage = 1; // صفحة الحقيبة (تبدأ من 1)
+        let currentSkillPage = 0; // صفحة المهارات (تبدأ من 0 برمجياً)
 
         const getCatButtons = () => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`inv_cat_combat_${user.id}`).setLabel('معدات').setEmoji('⚔️').setStyle(currentCategory === 'combat' ? ButtonStyle.Success : ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`inv_cat_combat_${user.id}`).setLabel('العتاد والمهارات').setEmoji('⚔️').setStyle(currentCategory === 'combat' ? ButtonStyle.Success : ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId(`inv_cat_materials_${user.id}`).setLabel('موارد').setEmoji('💎').setStyle(currentCategory === 'materials' ? ButtonStyle.Success : ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId(`inv_cat_fishing_${user.id}`).setLabel('صيد').setEmoji('🎣').setStyle(currentCategory === 'fishing' ? ButtonStyle.Success : ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId(`inv_cat_farming_${user.id}`).setLabel('مزرعة').setEmoji('🌾').setStyle(currentCategory === 'farming' ? ButtonStyle.Success : ButtonStyle.Secondary),
@@ -184,70 +238,94 @@ module.exports = {
         const getComponents = (catItems = []) => {
             const rows = [getCatButtons()];
             if (currentCategory !== 'main') {
-                if (catItems.length > ITEMS_PER_PAGE) {
-                    const totalPages = Math.ceil(catItems.length / ITEMS_PER_PAGE);
-                    rows.push(new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_prev_${user.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(currentPage === 1),
-                        new ButtonBuilder().setCustomId('inv_page_display').setLabel(`${currentPage}/${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                        new ButtonBuilder().setCustomId(`inv_next_${user.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(currentPage === totalPages)
-                    ));
-                }
-                if (isOwnInventory && currentCategory !== 'combat') {
-                    rows.push(new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_trade_init_${user.id}`).setLabel('مبادلة / إهداء عنصر 🤝').setStyle(ButtonStyle.Primary)
-                    ));
+                if (currentCategory === 'combat') {
+                    // أزرار تقليب المهارات
+                    const totalSkillPages = Math.max(1, Math.ceil(allSkillsList.length / SKILLS_PER_PAGE));
+                    if (totalSkillPages > 1) {
+                        rows.push(new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`skill_prev_${user.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(currentSkillPage === 0),
+                            new ButtonBuilder().setCustomId(`skill_next_${user.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(currentSkillPage === totalSkillPages - 1)
+                        ));
+                    }
+                } else {
+                    // أزرار تقليب الحقيبة العادية
+                    if (catItems.length > ITEMS_PER_PAGE) {
+                        const totalPages = Math.ceil(catItems.length / ITEMS_PER_PAGE);
+                        rows.push(new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_prev_${user.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(currentPage === 1),
+                            new ButtonBuilder().setCustomId('inv_page_display').setLabel(`${currentPage}/${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+                            new ButtonBuilder().setCustomId(`inv_next_${user.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(currentPage === totalPages)
+                        ));
+                    }
+                    if (isOwnInventory) {
+                        rows.push(new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_trade_init_${user.id}`).setLabel('مبادلة / إهداء عنصر 🤝').setStyle(ButtonStyle.Primary)
+                        ));
+                    }
                 }
             }
             return rows;
         };
 
         const renderCategory = async (catName) => {
-            const catTitles = { combat: 'الأسلحة والمهارات', materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
+            const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
+            const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
             
-            // 🔥 دمج بيانات واجهة الحقيبة الرئيسية (Main Hub) الملكية المتكاملة 🔥
+            // 🔥 واجهة الخيمة الرئيسية 🔥
             if (catName === 'main') {
-                const targetLvlRes = await db.query(`SELECT "mora", "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT mora, level FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
+                const targetLvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
                 const targetMora = targetLvlRes?.rows[0] ? Number(targetLvlRes.rows[0].mora) : 0;
-                const targetLevel = targetLvlRes?.rows[0] ? Number(targetLvlRes.rows[0].level) : 1;
 
-                // حساب درع الرتبة
                 let rankLetter = 'F';
-                if(targetLevel >= 100) rankLetter = 'SSS';
-                else if(targetLevel >= 80) rankLetter = 'SS';
-                else if(targetLevel >= 60) rankLetter = 'S';
-                else if(targetLevel >= 40) rankLetter = 'A';
-                else if(targetLevel >= 20) rankLetter = 'B';
-                else if(targetLevel >= 10) rankLetter = 'C';
-                else if(targetLevel >= 5) rankLetter = 'D';
+                if(userLevel >= 100) rankLetter = 'SSS';
+                else if(userLevel >= 80) rankLetter = 'SS';
+                else if(userLevel >= 60) rankLetter = 'S';
+                else if(userLevel >= 40) rankLetter = 'A';
+                else if(userLevel >= 20) rankLetter = 'B';
+                else if(userLevel >= 10) rankLetter = 'C';
+                else if(userLevel >= 5) rankLetter = 'D';
 
-                // جلب العرق مباشرة وبأمان
-                let raceName = 'بشري';
-                try {
-                    const profileRes = await db.query(`SELECT "raceName" FROM user_profile WHERE "userID" = $1`, [userId]).catch(()=> db.query(`SELECT racename as "raceName" FROM user_profile WHERE userid = $1`, [userId]));
-                    if (profileRes && profileRes.rows[0]) {
-                        const rRaw = profileRes.rows[0].raceName;
-                        const RACE_TRANSLATIONS = { 'Human': 'بشري', 'Dragon': 'تنين', 'Elf': 'آلف', 'Dark Elf': 'آلف الظلام', 'Seraphim': 'سيرافيم', 'Demon': 'شيطان', 'Vampire': 'مصاص دماء', 'Spirit': 'روح', 'Dwarf': 'قزم', 'Ghoul': 'غول', 'Hybrid': 'نصف وحش' };
-                        raceName = RACE_TRANSLATIONS[rRaw] || rRaw || 'بشري';
-                    }
-                } catch(e) {}
-
-                // جلب السلاح من مصفوفة المعدات
-                const currentWeapon = categories.combat.find(w => w.id === 'weapon');
-                const weaponName = currentWeapon ? currentWeapon.name : 'بدون سلاح';
+                const weaponName = weaponData ? weaponData.name : 'بدون سلاح';
 
                 if (generateMainHub) {
-                    const targetUserName = targetUser.displayName || targetUser.user.username;
-                    const imgBuffer = await generateMainHub(targetUser.user, targetUserName, targetMora, rankLetter, raceName, weaponName);
+                    const imgBuffer = await generateMainHub(targetUser, cleanName, targetMora, rankLetter, arabicRaceName, weaponName);
                     const attachment = new AttachmentBuilder(imgBuffer, { name: 'main_hub.png' });
-                    return { content: `**⛺ خيمة ${targetUserName}**`, embeds: [], components: getComponents(), files: [attachment] };
+                    return { content: `**⛺ خيمة ${cleanName}**`, embeds: [], components: getComponents(), files: [attachment] };
                 } else {
-                    return { content: `**⛺ خيمة ${targetUser.displayName || targetUser.user.username}**\n> حدد القسم الذي تود استكشافه من الأزرار:`, embeds: [], components: getComponents(), files: [] };
+                    return { content: `**⛺ خيمة ${cleanName}**\n> حدد القسم الذي تود استكشافه من الأزرار:`, embeds: [], components: getComponents(), files: [] };
                 }
             }
 
-            const items = categories[catName];
+            // 🔥 قسم العتاد والمهارات (Spider Chart) 🔥
+            if (catName === 'combat') {
+                if (!generateSkillsCard) return { content: "❌ عذراً، لا يمكن رسم بطاقة المهارات حالياً.", embeds: [], components: getComponents() };
+
+                const totalSkillPages = Math.max(1, Math.ceil(allSkillsList.length / SKILLS_PER_PAGE));
+                const currentSkillsSlice = allSkillsList.slice(currentSkillPage * SKILLS_PER_PAGE, (currentSkillPage + 1) * SKILLS_PER_PAGE);
+                
+                const cardData = {
+                    user: targetUser,
+                    avatarUrl: targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
+                    cleanName: cleanName,
+                    weaponData: weaponData,
+                    raceName: arabicRaceName,
+                    skillsList: currentSkillsSlice,
+                    totalSpent: totalSpent,
+                    userLevel: userLevel,
+                    currentPage: currentSkillPage,
+                    totalPages: totalSkillPages
+                };
+
+                const buffer = await generateSkillsCard(cardData);
+                let attachment = new AttachmentBuilder(buffer, { name: `skills-${targetUser.id}.png` });
+
+                return { content: `**⚔️ العتاد والمهارات لـ ${cleanName}**`, embeds: [], files: [attachment], components: getComponents() };
+            }
+
+            // باقي أقسام الحقيبة (الشبكة العادية)
+            const items = categories[catName] || [];
             if (items.length === 0) {
-                return { content: `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**\n> ❌ هذه الحقيبة فارغة تماماً.`, embeds: [], components: getComponents(items), files: [] };
+                return { content: `**🎒 ${cleanName} | [ ${catTitles[catName]} ]**\n> ❌ هذه الحقيبة فارغة تماماً.`, embeds: [], components: getComponents(items), files: [] };
             }
 
             const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
@@ -258,17 +336,18 @@ module.exports = {
             const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
             if (generateInventoryCard) {
-                const imgBuffer = await generateInventoryCard(targetUser.displayName || targetUser.user.username, catTitles[catName], pageItems, currentPage, totalPages);
+                const imgBuffer = await generateInventoryCard(cleanName, catTitles[catName], pageItems, currentPage, totalPages);
                 const attachment = new AttachmentBuilder(imgBuffer, { name: 'inventory_card.png' });
-                return { content: `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**`, embeds: [], components: getComponents(items), files: [attachment] };
+                return { content: `**🎒 ${cleanName} | [ ${catTitles[catName]} ]**`, embeds: [], components: getComponents(items), files: [attachment] };
             } else {
-                let desc = `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**\n\n`;
+                let desc = `**🎒 ${cleanName} | [ ${catTitles[catName]} ]**\n\n`;
                 pageItems.forEach(item => { desc += `> ${item.emoji} **${item.name}** : \`${item.quantity}\`\n`; });
                 return { content: desc, embeds: [], components: getComponents(items), files: [] };
             }
         };
 
-        const msg = await reply(await renderCategory('main'));
+        // عرض الواجهة الأولية بناءً على الأمر الذي استدعي به
+        const msg = await reply(await renderCategory(currentCategory));
 
         const filter = i => i.user.id === user.id && i.customId.includes(user.id);
         const collector = msg.createMessageComponentCollector({ filter, time: 300000 });
@@ -280,8 +359,22 @@ module.exports = {
                 try { await i.deferUpdate(); } catch(e) { return; }
                 currentCategory = i.customId.split('_')[2];
                 currentPage = 1;
+                currentSkillPage = 0;
                 await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
             }
+            // تقليب المهارات
+            else if (i.customId === `skill_next_${user.id}`) {
+                try { await i.deferUpdate(); } catch(e) { return; }
+                const totalSkillPages = Math.max(1, Math.ceil(allSkillsList.length / SKILLS_PER_PAGE));
+                currentSkillPage = Math.min(totalSkillPages - 1, currentSkillPage + 1);
+                await msg.edit(await renderCategory('combat')).catch(()=>{});
+            }
+            else if (i.customId === `skill_prev_${user.id}`) {
+                try { await i.deferUpdate(); } catch(e) { return; }
+                currentSkillPage = Math.max(0, currentSkillPage - 1);
+                await msg.edit(await renderCategory('combat')).catch(()=>{});
+            }
+            // تقليب الحقيبة
             else if (i.customId === `inv_next_${user.id}`) {
                 try { await i.deferUpdate(); } catch(e) { return; }
                 currentPage++;
@@ -292,13 +385,10 @@ module.exports = {
                 currentPage--;
                 await msg.edit(await renderCategory(currentCategory)).catch(()=>{});
             }
+            // المبادلة (ممنوعة في العتاد)
             else if (i.customId === `inv_trade_init_${user.id}`) {
-                if (currentCategory === 'combat') {
-                    return i.reply({ content: '❌ الأسلحة والمهارات مرتبطة بروحك ولا يمكن مبادلتها!', flags: [MessageFlags.Ephemeral] });
-                }
-
                 const tradableItems = categories[currentCategory];
-                if (tradableItems.length === 0) return i.reply({ content: '❌ لا تملك أي عناصر للتبادل.', flags: [MessageFlags.Ephemeral] });
+                if (!tradableItems || tradableItems.length === 0) return i.reply({ content: '❌ لا تملك أي عناصر للتبادل في هذا القسم.', flags: [MessageFlags.Ephemeral] });
 
                 const options = tradableItems.slice(0, 25).map(item => {
                     return { label: item.name, value: item.id, emoji: item.emoji || '📦', description: `الكمية المتاحة: ${item.quantity}` };
