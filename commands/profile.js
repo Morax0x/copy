@@ -3,12 +3,12 @@ const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handle
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 
-let generateInventoryCard, generateMainHub, generateSkillsCard;
+let generateInventoryCard, generateMainHub, generateItemDetailsCard, generateSkillsCard;
 try {
-    ({ generateInventoryCard, generateMainHub } = require('../generators/inventory-generator.js'));
+    ({ generateInventoryCard, generateMainHub, generateItemDetailsCard } = require('../generators/inventory-generator.js'));
     ({ generateSkillsCard } = require('../generators/skills-card-generator.js'));
 } catch (e) {
-    generateInventoryCard = null; generateMainHub = null; generateSkillsCard = null;
+    generateInventoryCard = null; generateMainHub = null; generateItemDetailsCard = null; generateSkillsCard = null;
 }
 
 const weaponsConfig = require('../json/weapons-config.json');
@@ -163,6 +163,7 @@ module.exports = {
             let invPage = 1; 
             let skillPage = 0;
             let selectedIndex = 0; 
+            let activeItemDetails = null; 
 
             const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
             if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandTrigger)) {
@@ -189,6 +190,7 @@ module.exports = {
                 const weaponData = await getWeaponData(db, targetMember);
                 const weaponName = weaponData ? weaponData.name : "بدون سلاح";
 
+                // --- عرض البروفايل ---
                 if (currentView === 'profile') {
                     const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
                     const streakData = streakRes.rows[0] || {};
@@ -217,6 +219,7 @@ module.exports = {
                     return { content: `**🪪 بطاقة المغامر | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
+                // --- عرض العتاد (المهارات) ---
                 if (currentView === 'combat') {
                     const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]);
                     let allSkills = skillRes.rows.map(s => {
@@ -243,6 +246,7 @@ module.exports = {
                     return { content: `**⚔️ العتاد والمهارات | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
                 }
 
+                // --- عرض الحقيبة (الخيمة + الأقسام + تفاصيل العنصر) ---
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
                         const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
@@ -256,6 +260,26 @@ module.exports = {
                             new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
                         );
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [cats] };
+                    }
+
+                    // 🔥 إذا كان اللاعب قد اختار عرض تفاصيل عنصر محدد (Item Details View) 🔥
+                    if (activeItemDetails) {
+                        if (!generateItemDetailsCard) return { content: "❌ لا يمكن رسم صفحة العنصر حالياً.", components: [] };
+                        
+                        const buffer = await generateItemDetailsCard(cleanName, activeItemDetails);
+                        const btnRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_back_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger).setEmoji('↩️')
+                        );
+                        
+                        if (targetUser.id === authorUser.id) {
+                            btnRow.addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('إعـطـاء').setStyle(ButtonStyle.Primary).setEmoji('🎁'));
+                        }
+
+                        return {
+                            content: `**🔍 تفاصيل العنصر | ${activeItemDetails.name}**`,
+                            files: [new AttachmentBuilder(buffer, { name: 'item.png' })],
+                            components: [btnRow]
+                        };
                     }
 
                     const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
@@ -305,35 +329,30 @@ module.exports = {
                 await i.deferUpdate();
                 const id = i.customId;
 
-                if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; }
-                else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; }
-                else if (id.startsWith('v_pro_')) { currentView = 'profile'; }
-                else if (id.startsWith('cat_main_')) { invCategory = 'main'; }
-                else if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; }
-                else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; }
-                else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; }
-                else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; }
+                if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_pro_')) { currentView = 'profile'; activeItemDetails = null; }
+                else if (id.startsWith('cat_main_')) { invCategory = 'main'; activeItemDetails = null; }
+                else if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
                 
-                else if (id.startsWith('inv_n_')) { invPage++; selectedIndex = 0; }
-                else if (id.startsWith('inv_p_')) { invPage--; selectedIndex = 0; }
+                else if (id.startsWith('inv_n_')) { invPage++; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('inv_p_')) { invPage--; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('sk_n_')) { skillPage++; }
                 else if (id.startsWith('sk_p_')) { skillPage--; }
+
+                // العودة من صفحة تفاصيل العنصر إلى الشبكة
+                else if (id.startsWith('d_back_')) { activeItemDetails = null; }
 
                 else if (id.startsWith('d_')) {
                     const moveType = id.split('_')[1]; 
                     
-                    if (moveType === 'r1') { 
-                        if (selectedIndex % 5 !== 4) selectedIndex += 1; 
-                    } 
-                    else if (moveType === 'l1') { 
-                        if (selectedIndex % 5 !== 0) selectedIndex -= 1;
-                    }
-                    else if (moveType === 'd1') { 
-                        if (selectedIndex + 5 < 15) selectedIndex += 5;
-                    }
-                    else if (moveType === 'u1') { 
-                        if (selectedIndex - 5 >= 0) selectedIndex -= 5;
-                    }
+                    if (moveType === 'r1') { if (selectedIndex % 5 !== 4) selectedIndex += 1; } 
+                    else if (moveType === 'l1') { if (selectedIndex % 5 !== 0) selectedIndex -= 1; }
+                    else if (moveType === 'd1') { if (selectedIndex + 5 < 15) selectedIndex += 5; }
+                    else if (moveType === 'u1') { if (selectedIndex - 5 >= 0) selectedIndex -= 5; }
                     else if (moveType === 'r2') { 
                         if (selectedIndex % 5 <= 2) selectedIndex += 2;
                         else selectedIndex += (4 - (selectedIndex % 5)); 
@@ -351,10 +370,141 @@ module.exports = {
                         else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
                     }
                     else if (moveType === 'ok') {
-                        return i.followUp({ content: `✅ لقد قمت باختيار المربع رقم: **${selectedIndex + 1}**\n(سيتم برمجة فتح صفحة العنصر قريباً!)`, flags: [MessageFlags.Ephemeral] });
+                        // 🔥 تحديد العنصر النشط عند الضغط على OK 🔥
+                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
+                        const items = invQuery.rows.map(row => {
+                            const info = resolveItemInfo(row.itemID || row.itemid);
+                            return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
+                        }).filter(it => it.category === invCategory);
+
+                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+                        
+                        if (slice[selectedIndex]) {
+                            activeItemDetails = slice[selectedIndex];
+                        } else {
+                            return i.followUp({ content: `❌ هذا المربع فارغ يا عزيزي.`, flags: [MessageFlags.Ephemeral] });
+                        }
                     }
                 }
+                
+                // --- نظام الإعطاء المتكامل ---
+                else if (id.startsWith('trade_init_')) {
+                    if (!activeItemDetails) return;
+                    
+                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
+                    await i.followUp({ components: [userSelect], flags: [MessageFlags.Ephemeral] });
+                    return; // نوقف التنفيذ هنا عشان ما يحدث الواجهة الأصلية
+                }
+                else if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
+                    const targetID = i.values[0];
+                    if (targetID === authorUser.id || (await client.users.fetch(targetID)).bot) return i.followUp({ content: '❌ لا يمكنك التبادل مع نفسك أو مع البوتات!', flags: [MessageFlags.Ephemeral] });
 
+                    const modal = new ModalBuilder().setCustomId(`trade_modal_${authorUser.id}_${targetID}`).setTitle('إعـطـاء / مـبـادلـة');
+                    modal.addComponents(
+                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_qty').setLabel('الكمية المراد إرسالها').setStyle(TextInputStyle.Short).setRequired(true)),
+                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية المجانية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
+                    );
+                    await i.showModal(modal).catch(()=>{});
+
+                    try {
+                        const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${authorUser.id}_${targetID}`, time: 60000 });
+                        const qty = parseInt(modalSubmit.fields.getTextInputValue('trade_qty'));
+                        const price = parseInt(modalSubmit.fields.getTextInputValue('trade_price'));
+
+                        if (isNaN(qty) || qty <= 0) return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: [MessageFlags.Ephemeral] });
+                        if (isNaN(price) || price < 0) return modalSubmit.reply({ content: '❌ سعر غير صالح.', flags: [MessageFlags.Ephemeral] });
+
+                        let checkInvRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [authorUser.id, guildId, activeItemDetails.id]).catch(()=>({rows:[]}));
+                        const senderInvData = checkInvRes.rows[0];
+
+                        if (!senderInvData || Number(senderInvData.quantity) < qty) return modalSubmit.reply({ content: '❌ أنت لا تملك هذه الكمية في حقيبتك!', flags: [MessageFlags.Ephemeral] });
+
+                        if (price === 0) {
+                            await db.query('BEGIN').catch(()=>{});
+                            const newSenderQty = Number(senderInvData.quantity) - qty;
+                            if (newSenderQty > 0) {
+                                await db.query(`UPDATE user_inventory SET "quantity" = $1 WHERE "id" = $2`, [newSenderQty, senderInvData.id]);
+                            } else {
+                                await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [senderInvData.id]);
+                            }
+
+                            await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`, [targetID, guildId, activeItemDetails.id, qty]);
+                            await db.query('COMMIT').catch(()=>{});
+
+                            await modalSubmit.reply({ content: `🎁 <@${authorUser.id}> أرسل **${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}** كهدية إلى <@${targetID}>!` });
+                            
+                            activeItemDetails.quantity -= qty;
+                            if(activeItemDetails.quantity <= 0) activeItemDetails = null; // إغلاق الصفحة إذا نفدت الكمية
+                            await msg.edit(await renderView());
+                        } else {
+                            await modalSubmit.deferReply();
+                            const tradeId = Date.now().toString();
+                            const tradeButtons = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder().setCustomId(`trade_acc_${tradeId}`).setLabel('قبول وشراء ✅').setStyle(ButtonStyle.Success),
+                                new ButtonBuilder().setCustomId(`trade_dec_${tradeId}`).setLabel('رفض ❌').setStyle(ButtonStyle.Danger)
+                            );
+
+                            const tradeMsgObj = await modalSubmit.followUp({ content: `⚖️ **عـقـد تـجـاري**\nمرحباً <@${targetID}>!\nيعرض عليك <@${authorUser.id}>:\n**استلام:** ${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}\n**دفع:** ${price.toLocaleString()} ${EMOJI_MORA}`, components: [tradeButtons] });
+
+                            const tradeFilter = btn => btn.user.id === targetID && btn.customId.includes(tradeId);
+                            const tradeCollector = tradeMsgObj.createMessageComponentCollector({ filter: tradeFilter, time: 60000 });
+
+                            tradeCollector.on('collect', async btn => {
+                                await btn.deferUpdate();
+                                if (btn.customId.includes('dec_')) {
+                                    tradeCollector.stop('declined');
+                                    return tradeMsgObj.edit({ content: `❌ تم رفض الصفقة من قبل <@${targetID}>.`, components: [] });
+                                }
+
+                                let targetLvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetID, guildId]).catch(()=>({rows:[]}));
+                                const targetMora = targetLvlRes.rows[0] ? Number(targetLvlRes.rows[0].mora) : 0;
+                                
+                                if (targetMora < price) return btn.followUp({ content: '❌ لا تملك المورا الكافية!', flags: [MessageFlags.Ephemeral] });
+
+                                let checkInvFinalRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [authorUser.id, guildId, activeItemDetails.id]).catch(()=>({rows:[]}));
+                                const senderInvFinal = checkInvFinalRes.rows[0];
+
+                                if (!senderInvFinal || Number(senderInvFinal.quantity) < qty) {
+                                    tradeCollector.stop('failed');
+                                    return tradeMsgObj.edit({ content: `❌ فشلت الصفقة: البائع لا يملك الكمية المطلوبة حالياً!`, components: [] });
+                                }
+
+                                try {
+                                    await db.query('BEGIN').catch(()=>{});
+                                    const finalSenderQty = Number(senderInvFinal.quantity) - qty;
+                                    if (finalSenderQty > 0) {
+                                        await db.query(`UPDATE user_inventory SET "quantity" = $1 WHERE "id" = $2`, [finalSenderQty, senderInvFinal.id]);
+                                    } else {
+                                        await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [senderInvFinal.id]);
+                                    }
+                                    
+                                    await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`, [targetID, guildId, activeItemDetails.id, qty]);
+                                    await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [price, targetID, guildId]);
+                                    await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [price, authorUser.id, guildId]);
+                                    await db.query('COMMIT').catch(()=>{});
+
+                                    tradeCollector.stop('accepted');
+                                    await tradeMsgObj.edit({ content: `✅ **تمت الصفقة بنجاح!**\nاشترى <@${targetID}> ${qty}x ${activeItemDetails.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${authorUser.id}>.`, components: [] });
+
+                                    activeItemDetails.quantity -= qty;
+                                    if(activeItemDetails.quantity <= 0) activeItemDetails = null;
+                                    await msg.edit(await renderView());
+                                } catch (e) {
+                                    await db.query('ROLLBACK').catch(()=>{});
+                                    tradeCollector.stop('error');
+                                    await tradeMsgObj.edit({ content: `❌ حدث خطأ فني أثناء الصفقة.`, components: [] });
+                                }
+                            });
+
+                            tradeCollector.on('end', (collected, reason) => {
+                                if (reason === 'time') tradeMsgObj.edit({ content: `⏳ انتهى وقت العرض.`, components: [] }).catch(()=>{});
+                            });
+                        }
+                    } catch(e) {}
+                    return; // إيقاف تنفيذ التحديث الأساسي لأن المعاملة تمت
+                }
+
+                // تنفيذ تحديث الواجهة الطبيعي بعد أي حركة أو زر
                 await msg.edit(await renderView());
             });
 
