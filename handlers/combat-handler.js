@@ -9,40 +9,28 @@ async function getCombatData(db, targetMember, targetUser, guildId, RACE_TRANSLA
     const userRace = await getUserRace(targetMember, db);
     const weaponData = await getWeaponData(db, targetMember);
     
-    let userSkillsRes;
-    try { userSkillsRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]); }
-    catch(e) { userSkillsRes = await db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [targetUser.id, guildId]).catch(()=>({rows:[]})); }
-    const userSkillsDB = userSkillsRes.rows;
+    const userSkillsDB = db.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ? AND skillLevel > 0").all(targetUser.id, guildId) || [];
+    
+    let userLevelData = db.prepare("SELECT level FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, guildId);
+    const userLevel = userLevelData ? Number(userLevelData.level) : 1;
 
-    let userLvlRes;
-    try { userLvlRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]); }
-    catch(e) { userLvlRes = await db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]})); }
-    const userLevel = userLvlRes.rows[0] ? Number(userLvlRes.rows[0].level) : 1;
-
-    // 🔥 استخراج الجرعات potionsList كما طلبت تماماً 🔥
     let potionsList = [];
-    try {
-        let userInventoryRes;
-        try { userInventoryRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guildId]); }
-        catch(e) { userInventoryRes = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2 AND quantity > 0`, [targetUser.id, guildId]).catch(()=>({rows:[]})); }
-        
-        const userInventory = userInventoryRes.rows;
-        if (userInventory && userInventory.length > 0) {
-            for (const item of userInventory) {
-                const itemId = item.itemID || item.itemid;
-                const potionInfo = potionItems.find(p => String(p.id) === String(itemId));
-                if (potionInfo) {
-                    potionsList.push({ name: potionInfo.name, qty: Number(item.quantity) });
-                }
+    const userInventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ? AND quantity > 0").all(targetUser.id, guildId) || [];
+    
+    if (userInventory.length > 0) {
+        for (const item of userInventory) {
+            const potionInfo = potionItems.find(p => String(p.id) === String(item.itemID));
+            if (potionInfo) {
+                potionsList.push({ name: potionInfo.name, qty: Number(item.quantity) });
             }
         }
-    } catch (e) { }
+    }
 
     let totalSpent = 0;
     let allSkillsList = [];
     let raceSkillId = null;
 
-    const rawRace = userRace ? (userRace.raceName || userRace.racename) : "مجهول";
+    const rawRace = userRace ? userRace.raceName : "مجهول";
     const arabicRaceName = RACE_TRANSLATIONS.get(rawRace) || rawRace;
 
     if (userRace && weaponData) {
@@ -63,8 +51,8 @@ async function getCombatData(db, targetMember, targetUser, guildId, RACE_TRANSLA
 
     if (userSkillsDB.length > 0) {
         for (const dbSkill of userSkillsDB) {
-            const skillID = dbSkill.skillID || dbSkill.skillid;
-            const skillLevel = Number(dbSkill.skillLevel || dbSkill.skilllevel);
+            const skillID = dbSkill.skillID;
+            const skillLevel = Number(dbSkill.skillLevel);
             const skillConfig = skillsConfig.find(s => s.id === skillID);
             
             if (skillConfig) {
@@ -107,7 +95,7 @@ async function getCombatData(db, targetMember, targetUser, guildId, RACE_TRANSLA
         allSkillsList,
         totalSpent,
         userLevel,
-        potionsList // تم الحفاظ عليها هنا لتمريرها إن احتجت
+        potionsList 
     };
 }
 
