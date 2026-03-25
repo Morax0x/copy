@@ -8,6 +8,7 @@ const { askMorax } = require('../handlers/ai-handler');
 const aiConfig = require('../utils/aiConfig'); 
 const aiLimitHandler = require('../utils/aiLimitHandler');
 
+// استدعاء دالة التحديث الآمنة للوحة الملوك
 const { updateGuildStat } = require('../handlers/guild-board-handler.js');
 
 const DISBOARD_BOT_ID = '302050872383242240'; 
@@ -19,6 +20,7 @@ const ghostModeUsers = new Set();
 
 if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
 
+// 🔥 توحيد صارم لتوقيت السعودية (KSA) لمنع أي تضارب في تسجيل الأيام 🔥
 function getTodayDateString() { 
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 }
@@ -42,6 +44,7 @@ async function safeReply(message, options) {
     }
 }
 
+// 🔥 تحصين نظام تسجيل البومب (Atomic Update) 🔥
 async function recordBump(client, guildID, userID) {
     const sql = client.sql;
     if (!sql || !sql.open) return;
@@ -52,9 +55,9 @@ async function recordBump(client, guildID, userID) {
     const weeklyID = `${userID}-${guildID}-${weekStr}`;
     const totalID = `${userID}-${guildID}`;
     try {
-        sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_daily_stats.disboard_bumps, 0) + 1`).run(dailyID, userID, guildID, dateStr);
-        sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_weekly_stats.disboard_bumps, 0) + 1`).run(weeklyID, userID, guildID, weekStr);
-        sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = COALESCE(user_total_stats.total_disboard_bumps, 0) + 1`).run(totalID, userID, guildID);
+        sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(dailyID, userID, guildID, dateStr);
+        sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(weeklyID, userID, guildID, weekStr);
+        sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = CAST(COALESCE(total_disboard_bumps, 0) AS INTEGER) + 1`).run(totalID, userID, guildID);
         
         const member = await client.guilds.cache.get(guildID)?.members.fetch(userID).catch(() => null);
         if (member && client.checkQuests) {
@@ -228,10 +231,12 @@ module.exports = {
             }
         } catch (err) { console.error("[AFK System Error]", err); }
 
-        let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
-
         if (message.author.id === DISBOARD_BOT_ID) {
-            if (settings && settings.bumpChannelID && message.channel.id !== settings.bumpChannelID) return;
+            let settingsData;
+            try { settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id); } 
+            catch (e) { settingsData = sql.prepare("SELECT bumpChannelID FROM settings WHERE guild = ?").get(message.guild.id); }
+            
+            if (settingsData && settingsData.bumpChannelID && message.channel.id !== settingsData.bumpChannelID) return;
 
             let bumperID = null;
             if (message.interaction && message.interaction.commandName === 'bump') bumperID = message.interaction.user.id;
@@ -258,10 +263,16 @@ module.exports = {
             return;
         }
 
+        let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
+        let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
+
         let Prefix = settings?.prefix || "-";
 
         if (message.mentions.has(client.user) && !message.author.bot) {
-            if (!message.content.startsWith(Prefix)) {
+            
+            if (message.content.startsWith(Prefix)) {
+            } 
+            else {
                 const argsRaw = message.content.trim().split(/ +/);
                 const firstWord = argsRaw[0].toLowerCase();
                 const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
@@ -270,7 +281,9 @@ module.exports = {
                     isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?").get(message.guild.id, message.channel.id, firstWord);
                 } catch(e) {}
 
-                if (!isCommand && !isShortcut) {
+                if (isCommand || isShortcut) {
+                } 
+                else {
                     if (message.reference) {
                         try {
                             const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
@@ -346,7 +359,16 @@ module.exports = {
 
                         if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
 
-                        const reply = await askMorax(message.author.id, message.guild.id, message.channel.id, cleanContent, message.member.displayName, imageAttachment, isNsfw, message);
+                        const reply = await askMorax(
+                            message.author.id, 
+                            message.guild.id, 
+                            message.channel.id, 
+                            cleanContent, 
+                            message.member.displayName,
+                            imageAttachment, 
+                            isNsfw,
+                            message 
+                        );
                         
                         if (!reply) return;
 
@@ -392,19 +414,23 @@ module.exports = {
 
         if (message.author.bot) return;
 
-        const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
-        let isCategoryIgnored = false;
-        if (message.channel.parentId) {
-            isCategoryIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.parentId);
+        if (sql && sql.open) {
+            const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
+            let isCategoryIgnored = false;
+            if (message.channel.parentId) {
+                isCategoryIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.parentId);
+            }
+            if (isChannelIgnored || isCategoryIgnored) return; 
         }
-        if (isChannelIgnored || isCategoryIgnored) return; 
 
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
 
+            // 🔥 استدعاء التحديث للوحة الملوك المعزولة 🔥
             updateGuildStat(client, guildID, userID, 'messages', 1);
 
+            // 🔥 نظام منح وسام ثرثار الحانة محصّن بـ CAST و Atomic Update 🔥
             if (settings && settings.chatterChannelID && message.channel.id === settings.chatterChannelID) {
                 const todayDate = getTodayDateString();
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
@@ -415,7 +441,7 @@ module.exports = {
                 sql.prepare(`
                     INSERT INTO user_daily_stats (id, userID, guildID, date, main_chat_messages) 
                     VALUES (?, ?, ?, ?, 1) 
-                    ON CONFLICT(id) DO UPDATE SET main_chat_messages = COALESCE(main_chat_messages, 0) + 1
+                    ON CONFLICT(id) DO UPDATE SET main_chat_messages = CAST(COALESCE(main_chat_messages, 0) AS INTEGER) + 1
                 `).run(dailyIdForBadge, userID, guildID, todayDate);
 
                 const dailyDataCheck = sql.prepare("SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = ?").get(dailyIdForBadge);
