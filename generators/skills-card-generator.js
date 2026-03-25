@@ -22,7 +22,7 @@ async function getCachedImage(imagePath) {
     return null;
 }
 
-// مصفوفة صور المهارات (نفس التي استخدمناها في الحقيبة)
+// مصفوفة صور المهارات
 const SKILL_TO_IMAGE = {
     'skill_healing': 'heal.png',
     'skill_shielding': 'shield.png',
@@ -91,7 +91,7 @@ function wrapText(ctx, text, maxWidth) {
     return lines;
 }
 
-// 🔥 دالة رسم المخطط العنكبوتي (Spider/Radar Chart) الاحترافي 🔥
+// 🔥 دالة رسم المخطط العنكبوتي (Spider/Radar Chart) 🔥
 function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     const sides = stats.length;
     const angleStep = (Math.PI * 2) / sides;
@@ -102,8 +102,8 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
 
     // 1. رسم شبكة العنكبوت الخلفية (المستويات)
     const levels = 4;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1.5;
     for (let l = 1; l <= levels; l++) {
         const r = (radius / levels) * l;
         ctx.beginPath();
@@ -132,7 +132,7 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     let dataPoints = [];
     for (let i = 0; i < sides; i++) {
         const angle = i * angleStep - Math.PI / 2;
-        // نسبة مئوية (تجنب تجاوز 100%)
+        // التأكد أن النسبة لا تتجاوز 100% حتى لا تخرج عن الشبكة
         const percentage = Math.min(Math.max(stats[i].val / maxVal, 0.1), 1); 
         const r = radius * percentage;
         const x = r * Math.cos(angle);
@@ -144,26 +144,26 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     ctx.closePath();
 
     // تعبئة المضلع وإطاره
-    ctx.fillStyle = `rgba(${parseInt(primaryColor.slice(1,3),16)}, ${parseInt(primaryColor.slice(3,5),16)}, ${parseInt(primaryColor.slice(5,7),16)}, 0.4)`;
+    ctx.fillStyle = `rgba(${parseInt(primaryColor.slice(1,3),16)}, ${parseInt(primaryColor.slice(3,5),16)}, ${parseInt(primaryColor.slice(5,7),16)}, 0.45)`;
     ctx.fill();
     ctx.strokeStyle = primaryColor;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.5;
     ctx.stroke();
 
     // نقاط مضيئة على الزوايا
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = primaryColor;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 12;
     for (const pt of dataPoints) {
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI*2); ctx.fill();
     }
     ctx.shadowBlur = 0;
 
-    // 4. كتابة أسماء المحاور
-    ctx.font = 'bold 16px "Bein"';
+    // 4. كتابة أسماء المحاور بالعربي بمسافات ممتازة
+    ctx.font = 'bold 18px "Bein"';
     for (let i = 0; i < sides; i++) {
         const angle = i * angleStep - Math.PI / 2;
-        const labelRadius = radius + 35; // بعد النص عن المخطط
+        const labelRadius = radius + 40; // مسافة تنفس للنص بعيداً عن الشبكة
         const x = labelRadius * Math.cos(angle);
         const y = labelRadius * Math.sin(angle);
 
@@ -171,7 +171,7 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        // تعديل المحاذاة حسب الموقع
+        // تعديل المحاذاة حسب الموقع لتجنب التداخل
         if (Math.abs(Math.cos(angle)) > 0.1) {
             ctx.textAlign = Math.cos(angle) > 0 ? 'left' : 'right';
         }
@@ -211,7 +211,7 @@ async function generateSkillsCard(data) {
     }
     ctx.globalAlpha = 1.0;
 
-    // 2. الهيدر الملكي (تطابق مع الحقيبة)
+    // 2. الهيدر الملكي 
     const headerH = 120;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, 0, width, headerH);
@@ -224,6 +224,7 @@ async function generateSkillsCard(data) {
     ctx.fillRect(0, headerH - 3, width, 3);
     ctx.fillRect(0, 3, width, 1);
 
+    // عنوان البطاقة
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = primaryColor; 
@@ -232,6 +233,12 @@ async function generateSkillsCard(data) {
     ctx.shadowBlur = 20;
     ctx.fillText(`✦ مهارات ${data.cleanName} ✦`, width / 2, 60);
     ctx.shadowBlur = 0;
+
+    // 🔥 رقم الصفحة في الزاوية العلوية اليمنى (Pagination) 🔥
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 18px "Bein"';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText(`[ ${data.currentPage + 1} / ${data.totalPages || 1} ]`, width - 30, 60);
 
     // ==========================================
     // 🛡️ الجزء الأيسر: لوحة الهوية والمخطط العنكبوتي
@@ -269,17 +276,16 @@ async function generateSkillsCard(data) {
     ctx.fillText(`⚔️ السلاح: ${wpName} (ضرر: ${wpDmg})`, avatarX, avatarY + 125);
 
     // 🕸️ المخطط العنكبوتي (Spider Chart)
-    // حساب القيم التقريبية (هذه حسابات شكلية تعطي مظهراً احترافياً بناءً على بيانات اللاعب)
     const totalSkillsLevel = data.skillsList.reduce((acc, s) => acc + s.level, 0);
-    const maxPossibleLevels = 100; // افتراض أقصى مجموع لفلات
+    const playerLevel = data.userLevel || 1;
     
     let chartStats = [
-        { label: 'الهجوم (ATK)', val: (wpDmg / 200) * 100 }, // يعتمد على ضرر السلاح
-        { label: 'المهارة (SKL)', val: (totalSkillsLevel / maxPossibleLevels) * 100 + 20 }, // يعتمد على لفلات المهارات
-        { label: 'الحيوية (VIT)', val: 70 }, // قيمة افتراضية يمكن ربطها بالـ HP لاحقاً
-        { label: 'السحر (MAG)', val: data.skillsList.length * 15 }, // يعتمد على عدد المهارات المكتسبة
-        { label: 'الاستثمار (INV)', val: (data.totalSpent / 50000) * 100 }, // يعتمد على الأموال المصروفة للتطوير
-        { label: 'الدفاع (DEF)', val: 60 } // قيمة افتراضية
+        { label: 'الهجوم', val: Math.min((wpDmg / 150) * 100, 100) }, 
+        { label: 'المهارة', val: Math.min((totalSkillsLevel / 50) * 100 + 20, 100) }, 
+        { label: 'الحيوية', val: Math.min((playerLevel / 50) * 100 + 10, 100) }, 
+        { label: 'السحر', val: Math.min(data.skillsList.length * 20, 100) }, 
+        { label: 'الاستثمار', val: Math.min((data.totalSpent / 50000) * 100, 100) }, 
+        { label: 'الدفاع', val: Math.min((playerLevel / 60) * 100 + (wpDmg / 300) * 100, 100) }
     ];
 
     drawSpiderChart(ctx, avatarX, avatarY + 310, 100, chartStats, primaryColor);
@@ -345,27 +351,21 @@ async function generateSkillsCard(data) {
             ctx.fillStyle = '#000'; ctx.font = 'bold 16px "Arial"'; ctx.textAlign = 'center';
             ctx.fillText(`LVL ${skill.level}`, imgBoxX - 10 + badgeW/2, imgBoxY - 10 + badgeH/2 + 2);
 
-            // النصوص الخاصة بالمهارة
+            // النصوص الخاصة بالمهارة (تم تحسين مسافاتها بشكل دقيق)
             const textStartX = imgBoxX - 25; // نكتب من اليمين لليسار
             
             ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-            ctx.fillStyle = '#FFD700'; ctx.font = 'bold 30px "Bein"';
-            ctx.fillText(skill.name, textStartX, y + 30);
+            ctx.fillStyle = '#FFD700'; ctx.font = 'bold 32px "Bein"';
+            ctx.fillText(skill.name, textStartX, y + 35); // توسيط أفضل لاسم المهارة
 
-            // الوصف (دعم للأسطر المتعددة)
-            ctx.fillStyle = '#A8B8D0'; ctx.font = '20px "Bein"';
+            // الوصف (دعم للأسطر المتعددة بمسافة مريحة)
+            ctx.fillStyle = '#A8B8D0'; ctx.font = '22px "Bein"';
             const lines = wrapText(ctx, skill.description, rightPanelW - imgBoxSize - 70);
             for (let j = 0; j < Math.min(lines.length, 3); j++) {
-                ctx.fillText(lines[j], textStartX, y + 80 + (j * 30));
+                ctx.fillText(lines[j], textStartX, y + 85 + (j * 35)); // تباعد أسطر 35 بدلاً من 30
             }
         }
     }
-
-    // تذييل الصفحة
-    const footerY = height - 40;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#E0E0E0'; ctx.font = 'bold 20px "Bein"';
-    ctx.fillText(`❖ صفحة ${data.currentPage + 1} من ${data.totalPages} ❖`, rightPanelX + rightPanelW/2, footerY);
 
     return canvas.toBuffer('image/png');
 }
