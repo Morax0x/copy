@@ -30,10 +30,6 @@ const RARITY_COLORS = {
     'Legendary': '#FFD700'    
 };
 
-// ==========================================
-// 🔥 دوال الرسم والتصميم المتقدمة 🔥
-// ==========================================
-
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
@@ -109,48 +105,22 @@ function drawShield(ctx, x, y, w, h) {
     ctx.closePath();
 }
 
-function drawMagicCircle(ctx, cx, cy, radius, color) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.strokeStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20;
-    
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
-    
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(0, 0, radius - 15, 0, Math.PI * 2); ctx.stroke();
-
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for(let i=0; i<3; i++) {
-        const angle1 = (Math.PI * 2 / 3) * i - Math.PI/2;
-        const angle2 = (Math.PI * 2 / 3) * i + Math.PI/6;
-        ctx.moveTo(radius * Math.cos(angle1), radius * Math.sin(angle1));
-        ctx.lineTo(radius * Math.cos(angle2), radius * Math.sin(angle2));
-    }
-    ctx.stroke();
-    ctx.restore();
-}
-
 // ========================================================
-// 🔥 دالة 1: شبكة الأقسام المحدثة (تدعم الحقيبة الفارغة) 🔥
+// 🔥 دالة 1: شبكة الأقسام المحدثة (نظام المؤشر D-Pad) 🔥
 // ========================================================
-async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages) {
+// أضفت المتغير `selectedIndex` ليعرف المولد أين يرسم الإطار المضيء
+async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages, selectedIndex = 0) {
     const width = 1200; 
     const height = 900; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // الخلفية السينمائية
     const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
     bgGrad.addColorStop(0, '#1a1025'); 
     bgGrad.addColorStop(1, '#050508');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // غبار النجوم
     ctx.fillStyle = '#FFFFFF';
     for(let i=0; i<150; i++) {
         const px = Math.random() * width;
@@ -161,7 +131,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     }
     ctx.globalAlpha = 1.0;
 
-    // الهيدر الملكي
     const headerH = 140;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, 0, width, headerH);
@@ -193,7 +162,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.fillText(`[ ${page} / ${totalPages || 1} ]`, width - 30, 70);
 
-    // إعدادات الشبكة
     const cols = 5;
     const rows = 3;
     const slotSize = 175; 
@@ -202,120 +170,120 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     const startX = (width - ((cols * slotSize) + ((cols - 1) * gapX))) / 2;
     const startY = 180; 
 
-    // 🔥 إذا كانت الحقيبة فارغة تماماً 🔥
-    if (!items || items.length === 0) {
-        // رسم الشبكة كلها كإطارات شفافة لتعطي إحساساً بالفراغ
-        for (let i = 0; i < 15; i++) {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const x = startX + col * (slotSize + gapX);
-            const y = startY + row * (slotSize + gapY);
-            drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
-        }
-        
-        // رسم شريط فخم في المنتصف يحتوي على نص "الحقيبة فارغة"
-        const emptyBoxW = 600;
-        const emptyBoxH = 120;
-        const emptyBoxX = (width - emptyBoxW) / 2;
-        const emptyBoxY = (height + headerH - emptyBoxH) / 2 - 20;
-
-        ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
-        ctx.beginPath(); roundRect(ctx, emptyBoxX, emptyBoxY, emptyBoxW, emptyBoxH, 20); ctx.fill();
-        ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
-        
-        ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 40px "Bein"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
-        ctx.shadowBlur = 0;
-
-        return canvas.toBuffer('image/png');
-    }
-
-    // إذا كانت الحقيبة ممتلئة، نرسم العناصر بشكل طبيعي
+    // رسم 15 مربع (سواء كانت ممتلئة أو فارغة)
     for (let i = 0; i < 15; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = startX + col * (slotSize + gapX);
         const y = startY + row * (slotSize + gapY);
 
-        const item = items[i];
-        
+        const item = items && items[i] ? items[i] : null;
+
+        // رسم خلفية المربع الفارغ
         if (!item) {
             drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
-            continue;
-        }
+        } else {
+            // رسم المربع الممتلئ
+            const rarityColor = item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
+            drawOrnateFrame(ctx, x, y, slotSize, slotSize, rarityColor);
 
-        const rarityColor = item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
-        drawOrnateFrame(ctx, x, y, slotSize, slotSize, rarityColor);
+            const aura = ctx.createRadialGradient(x + slotSize/2, y + slotSize/2, 10, x + slotSize/2, y + slotSize/2, slotSize/1.2);
+            aura.addColorStop(0, `${rarityColor}60`); 
+            aura.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = aura;
+            ctx.fillRect(x, y, slotSize, slotSize);
 
-        const aura = ctx.createRadialGradient(x + slotSize/2, y + slotSize/2, 10, x + slotSize/2, y + slotSize/2, slotSize/1.2);
-        aura.addColorStop(0, `${rarityColor}60`); 
-        aura.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = aura;
-        ctx.fillRect(x, y, slotSize, slotSize);
-
-        let imgDrawn = false;
-        if (item.imgPath) {
-            const imgPath = path.join(process.cwd(), item.imgPath);
-            const img = await getCachedImage(imgPath);
-            if (img) {
-                const padding = 25; 
-                const imgSize = slotSize - (padding * 2);
-                
-                ctx.shadowColor = rarityColor;
-                ctx.shadowBlur = 40;
-                ctx.drawImage(img, x + padding, y + padding - 15, imgSize, imgSize);
-                ctx.shadowBlur = 0; 
-                imgDrawn = true;
+            let imgDrawn = false;
+            if (item.imgPath) {
+                const imgPath = path.join(process.cwd(), item.imgPath);
+                const img = await getCachedImage(imgPath);
+                if (img) {
+                    const padding = 25; 
+                    const imgSize = slotSize - (padding * 2);
+                    
+                    ctx.shadowColor = rarityColor;
+                    ctx.shadowBlur = 40;
+                    ctx.drawImage(img, x + padding, y + padding - 15, imgSize, imgSize);
+                    ctx.shadowBlur = 0; 
+                    imgDrawn = true;
+                }
             }
-        }
 
-        if (!imgDrawn) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = '65px Arial';
+            if (!imgDrawn) {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '65px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = rarityColor;
+                ctx.shadowBlur = 30;
+                ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
+                ctx.shadowBlur = 0;
+            }
+
+            const ribbonH = 35;
+            const ribbonY = y + slotSize - 20;
+            drawRibbon(ctx, x, ribbonY, slotSize, ribbonH, rarityColor);
+
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.shadowColor = rarityColor;
-            ctx.shadowBlur = 30;
-            ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
-            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#FFFFFF';
+            drawAutoScaledText(ctx, item.name, x + slotSize / 2, ribbonY + ribbonH / 2, slotSize - 20, 16, 10);
+
+            const qtyText = item.quantity > 999 ? '999+' : item.quantity.toString();
+            ctx.font = 'bold 15px "Arial"';
+            const textW = ctx.measureText(qtyText).width;
+            const badgeRadius = Math.max(16, textW / 2 + 6);
+            const badgeX = x + slotSize; 
+            const badgeY = y;
+
+            ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI*2);
+            ctx.fillStyle = rarityColor;
+            ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.fill();
+            
+            ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius - 2, 0, Math.PI*2);
+            ctx.fillStyle = '#111'; ctx.shadowBlur = 0; ctx.fill();
+
+            ctx.fillStyle = '#FFF';
+            ctx.fillText(qtyText, badgeX, badgeY + 1);
         }
 
-        const ribbonH = 35;
-        const ribbonY = y + slotSize - 20;
-        drawRibbon(ctx, x, ribbonY, slotSize, ribbonH, rarityColor);
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#FFFFFF';
-        drawAutoScaledText(ctx, item.name, x + slotSize / 2, ribbonY + ribbonH / 2, slotSize - 20, 16, 10);
-
-        const qtyText = item.quantity > 999 ? '999+' : item.quantity.toString();
-        ctx.font = 'bold 15px "Arial"';
-        const textW = ctx.measureText(qtyText).width;
-        const badgeRadius = Math.max(16, textW / 2 + 6);
-        const badgeX = x + slotSize; 
-        const badgeY = y;
-
-        ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI*2);
-        ctx.fillStyle = rarityColor;
-        ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.fill();
-        
-        ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius - 2, 0, Math.PI*2);
-        ctx.fillStyle = '#111'; ctx.shadowBlur = 0; ctx.fill();
-
-        ctx.fillStyle = '#FFF';
-        ctx.fillText(qtyText, badgeX, badgeY + 1);
+        // 🔥 نظام المؤشر (D-Pad Cursor) 🔥
+        if (i === selectedIndex) {
+            ctx.save();
+            // لون أزرق فخم للمؤشر مع ظل لامع
+            ctx.strokeStyle = '#00FFFF'; 
+            ctx.lineWidth = 5;
+            ctx.shadowColor = '#00FFFF';
+            ctx.shadowBlur = 20;
+            
+            // رسم الإطار المحيط
+            roundRect(ctx, x - 2, y - 2, slotSize + 4, slotSize + 4, 15);
+            ctx.stroke();
+            
+            // إضافة أطراف حادة للزوايا لتعطي طابع الخيال العلمي/RPG
+            const cornerLen = 25;
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            // الزاوية العلوية اليسرى
+            ctx.moveTo(x - 5, y + cornerLen); ctx.lineTo(x - 5, y - 5); ctx.lineTo(x + cornerLen, y - 5);
+            // الزاوية العلوية اليمنى
+            ctx.moveTo(x + slotSize - cornerLen, y - 5); ctx.lineTo(x + slotSize + 5, y - 5); ctx.lineTo(x + slotSize + 5, y + cornerLen);
+            // الزاوية السفلية اليمنى
+            ctx.moveTo(x + slotSize + 5, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 5, y + slotSize + 5); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 5);
+            // الزاوية السفلية اليسرى
+            ctx.moveTo(x + cornerLen, y + slotSize + 5); ctx.lineTo(x - 5, y + slotSize + 5); ctx.lineTo(x - 5, y + slotSize - cornerLen);
+            ctx.stroke();
+            ctx.restore();
+        }
     }
 
     return canvas.toBuffer('image/png');
 }
 
 // ========================================================
-// 🔥 دالة 2: الصفحة الرئيسية (التحفة الإمبراطورية المتجاوبة) 🔥
+// 🔥 دالة 2: الصفحة الرئيسية (الخيمة) 🔥
 // ========================================================
 async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName) {
     const width = 1100;
