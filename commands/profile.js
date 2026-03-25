@@ -61,7 +61,9 @@ module.exports = {
         if (!targetMember || targetMember.user.bot) return reply({ content: "❌ لا يمكن عرض بيانات هذا العضو." });
 
         try {
-            const db = client.sql; 
+            // 🔥 التصحيح العظيم لاكتشاف قاعدة البيانات دائماً وأبداً 🔥
+            const db = client.sql || require("better-sqlite3")('./mainDB.sqlite'); 
+            
             const targetUser = targetMember.user; 
             const guildId = guild.id;
             const isOwnProfile = targetUser.id === authorUser.id;
