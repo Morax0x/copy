@@ -4,9 +4,23 @@ const fs = require('fs');
 
 try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
+} catch (e) {}
+
+// 🔥 استيراد مكتبة الشروحات (Lore) 🔥
+let itemLore = {};
+try {
+    itemLore = require('../json/item-descriptions.json');
 } catch (e) {
-    console.log("[Inventory Generator] ⚠️ تنبيه: لم يتم العثور على خط Bein.");
+    console.log("[Inventory Generator] ⚠️ تنبيه: لم يتم العثور على ملف item-descriptions.json.");
 }
+
+const upgradeMats = require('../json/upgrade-materials.json');
+const skillsConfig = require('../json/skills-config.json');
+const potionItems = require('../json/potions.json');
+
+let fishData = [], farmItems = [];
+try { fishData = require('../json/fish.json'); } catch(e) {}
+try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 const imageCache = new Map();
 async function getCachedImage(imagePath) {
@@ -29,6 +43,72 @@ const RARITY_COLORS = {
     'Epic': '#B968FF',        
     'Legendary': '#FFD700'    
 };
+
+const ID_TO_IMAGE = {
+    'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
+    'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
+    'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
+    'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
+    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
+    'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
+    'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
+    'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
+    'mat_hybrid_1': 'hybrid_claw.png', 'mat_hybrid_2': 'hybrid_fur.png', 'mat_hybrid_3': 'hybrid_bone.png', 'mat_hybrid_4': 'hybrid_crystal.png', 'mat_hybrid_5': 'hybrid_soul.png',
+    'mat_dwarf_1': 'dwarf_copper.png', 'mat_dwarf_2': 'dwarf_bronze.png', 'mat_dwarf_3': 'dwarf_mithril.png', 'mat_dwarf_4': 'dwarf_heart.png', 'mat_dwarf_5': 'dwarf_hammer.png',
+    'mat_ghoul_1': 'ghoul_bone.png', 'mat_ghoul_2': 'ghoul_remains.png', 'mat_ghoul_3': 'ghoul_skull.png', 'mat_ghoul_4': 'ghoul_crystal.png', 'mat_ghoul_5': 'ghoul_core.png',
+    'book_general_1': 'gen_book_tactic.png', 'book_general_2': 'gen_book_combat.png', 'book_general_3': 'gen_book_arts.png', 'book_general_4': 'gen_book_war.png', 'book_general_5': 'gen_book_wisdom.png',
+    'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
+};
+
+// 🔥 دمج الوصف مع معلومات العنصر 🔥
+function resolveItemInfo(itemId) {
+    let baseInfo = null;
+
+    if (upgradeMats && upgradeMats.weapon_materials) {
+        for (const race of upgradeMats.weapon_materials) {
+            const mat = race.materials.find(m => m.id === itemId);
+            if (mat) {
+                baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+                break;
+            }
+        }
+    }
+    if (!baseInfo && upgradeMats && upgradeMats.skill_books) {
+        for (const cat of upgradeMats.skill_books) {
+            const book = cat.books.find(b => b.id === itemId);
+            const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
+            if (book) {
+                baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+                break;
+            }
+        }
+    }
+    if (!baseInfo && fishData && fishData.fishItems) {
+        const fish = fishData.fishItems.find(f => f.id === itemId || f.name === itemId);
+        if (fish) baseInfo = { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
+    }
+    if (!baseInfo && fishData && fishData.baits) {
+        const bait = fishData.baits.find(f => f.id === itemId || f.name === itemId);
+        if (bait) baseInfo = { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null };
+    }
+    if (!baseInfo && farmItems && farmItems.length > 0) {
+        const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
+        if (farmObj) baseInfo = { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
+    }
+    if (!baseInfo && potionItems && potionItems.length > 0) {
+        const pot = potionItems.find(p => p.id === itemId);
+        if (pot) baseInfo = { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null };
+    }
+
+    if (!baseInfo) {
+        baseInfo = { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
+    }
+
+    // جلب الوصف من ملف الـ Lore
+    baseInfo.description = itemLore[itemId] || null;
+    
+    return baseInfo;
+}
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
@@ -465,9 +545,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
 }
 
-// ========================================================
-// 🔥 دالة 3: صفحة تفاصيل العنصر (Item Details) 🔥
-// ========================================================
 async function generateItemDetailsCard(userDisplayName, item) {
     const width = 1000; 
     const height = 600; 
@@ -580,7 +657,6 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.fillStyle = '#A8B8D0';
     ctx.font = '24px "Bein"';
     
-    // 🔥 جلب الوصف من الكائنات المعطاة أو استخدام نص افتراضي فخم 🔥
     const description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
     const lines = wrapText(ctx, description, descBoxW - 40);
     
