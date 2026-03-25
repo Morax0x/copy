@@ -30,6 +30,10 @@ const RARITY_COLORS = {
     'Legendary': '#FFD700'    
 };
 
+// ==========================================
+// 🔥 دوال الرسم والتصميم المتقدمة 🔥
+// ==========================================
+
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
@@ -105,10 +109,34 @@ function drawShield(ctx, x, y, w, h) {
     ctx.closePath();
 }
 
+function drawMagicCircle(ctx, cx, cy, radius, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+    
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, radius - 15, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0; i<3; i++) {
+        const angle1 = (Math.PI * 2 / 3) * i - Math.PI/2;
+        const angle2 = (Math.PI * 2 / 3) * i + Math.PI/6;
+        ctx.moveTo(radius * Math.cos(angle1), radius * Math.sin(angle1));
+        ctx.lineTo(radius * Math.cos(angle2), radius * Math.sin(angle2));
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
 // ========================================================
 // 🔥 دالة 1: شبكة الأقسام المحدثة (نظام المؤشر D-Pad) 🔥
 // ========================================================
-// أضفت المتغير `selectedIndex` ليعرف المولد أين يرسم الإطار المضيء
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages, selectedIndex = 0) {
     const width = 1200; 
     const height = 900; 
@@ -170,7 +198,59 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     const startX = (width - ((cols * slotSize) + ((cols - 1) * gapX))) / 2;
     const startY = 180; 
 
-    // رسم 15 مربع (سواء كانت ممتلئة أو فارغة)
+    if (!items || items.length === 0) {
+        for (let i = 0; i < 15; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = startX + col * (slotSize + gapX);
+            const y = startY + row * (slotSize + gapY);
+            drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
+
+            // 🔥 المؤشر الفخم للحقيبة الفارغة 🔥
+            if (i === selectedIndex) {
+                ctx.save();
+                ctx.strokeStyle = '#00FFFF'; 
+                ctx.lineWidth = 4;
+                ctx.shadowColor = '#00FFFF';
+                ctx.shadowBlur = 15;
+                roundRect(ctx, x - 4, y - 4, slotSize + 8, slotSize + 8, 5); // زوايا حادة لتناسب المربع
+                ctx.stroke();
+
+                const cornerLen = 25;
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.moveTo(x - 8, y + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x + cornerLen, y - 8);
+                ctx.moveTo(x + slotSize - cornerLen, y - 8); ctx.lineTo(x + slotSize + 8, y - 8); ctx.lineTo(x + slotSize + 8, y + cornerLen);
+                ctx.moveTo(x + slotSize + 8, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 8, y + slotSize + 8); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 8);
+                ctx.moveTo(x + cornerLen, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize - cornerLen);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+        
+        const emptyBoxW = 600;
+        const emptyBoxH = 120;
+        const emptyBoxX = (width - emptyBoxW) / 2;
+        const emptyBoxY = (height + headerH - emptyBoxH) / 2 - 20;
+
+        ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
+        ctx.beginPath(); roundRect(ctx, emptyBoxX, emptyBoxY, emptyBoxW, emptyBoxH, 20); ctx.fill();
+        ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
+        
+        ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 40px "Bein"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
+        ctx.shadowBlur = 0;
+
+        // ⚡ تسريع الإنشاء
+        return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
+    }
+
     for (let i = 0; i < 15; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
@@ -178,12 +258,10 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         const y = startY + row * (slotSize + gapY);
 
         const item = items && items[i] ? items[i] : null;
-
-        // رسم خلفية المربع الفارغ
+        
         if (!item) {
             drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
         } else {
-            // رسم المربع الممتلئ
             const rarityColor = item.rarity ? (RARITY_COLORS[item.rarity] || '#777777') : '#222';
             drawOrnateFrame(ctx, x, y, slotSize, slotSize, rarityColor);
 
@@ -247,39 +325,34 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.fillText(qtyText, badgeX, badgeY + 1);
         }
 
-        // 🔥 نظام المؤشر (D-Pad Cursor) 🔥
+        // 🔥 نظام المؤشر (D-Pad Cursor) الدقيق للحقيبة الممتلئة والفارغة 🔥
         if (i === selectedIndex) {
             ctx.save();
-            // لون أزرق فخم للمؤشر مع ظل لامع
             ctx.strokeStyle = '#00FFFF'; 
-            ctx.lineWidth = 5;
+            ctx.lineWidth = 4;
             ctx.shadowColor = '#00FFFF';
-            ctx.shadowBlur = 20;
+            ctx.shadowBlur = 15;
             
-            // رسم الإطار المحيط
-            roundRect(ctx, x - 2, y - 2, slotSize + 4, slotSize + 4, 15);
+            // جعل الزوايا أقل انحناءً (5 بدلاً من 15) لتناسب حواف المربعات تماماً
+            roundRect(ctx, x - 4, y - 4, slotSize + 8, slotSize + 8, 5); 
             ctx.stroke();
             
-            // إضافة أطراف حادة للزوايا لتعطي طابع الخيال العلمي/RPG
             const cornerLen = 25;
             ctx.lineWidth = 6;
             ctx.strokeStyle = '#FFFFFF';
             ctx.shadowBlur = 10;
             ctx.beginPath();
-            // الزاوية العلوية اليسرى
-            ctx.moveTo(x - 5, y + cornerLen); ctx.lineTo(x - 5, y - 5); ctx.lineTo(x + cornerLen, y - 5);
-            // الزاوية العلوية اليمنى
-            ctx.moveTo(x + slotSize - cornerLen, y - 5); ctx.lineTo(x + slotSize + 5, y - 5); ctx.lineTo(x + slotSize + 5, y + cornerLen);
-            // الزاوية السفلية اليمنى
-            ctx.moveTo(x + slotSize + 5, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 5, y + slotSize + 5); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 5);
-            // الزاوية السفلية اليسرى
-            ctx.moveTo(x + cornerLen, y + slotSize + 5); ctx.lineTo(x - 5, y + slotSize + 5); ctx.lineTo(x - 5, y + slotSize - cornerLen);
+            ctx.moveTo(x - 8, y + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x + cornerLen, y - 8);
+            ctx.moveTo(x + slotSize - cornerLen, y - 8); ctx.lineTo(x + slotSize + 8, y - 8); ctx.lineTo(x + slotSize + 8, y + cornerLen);
+            ctx.moveTo(x + slotSize + 8, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 8, y + slotSize + 8); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 8);
+            ctx.moveTo(x + cornerLen, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize - cornerLen);
             ctx.stroke();
             ctx.restore();
         }
     }
 
-    return canvas.toBuffer('image/png');
+    // ⚡ تسريع الإنشاء
+    return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
 }
 
 // ========================================================
@@ -436,7 +509,8 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
         ctx.shadowBlur = 0;
     }
 
-    return canvas.toBuffer('image/png');
+    // ⚡ تسريع الإنشاء
+    return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
 }
 
 module.exports = { generateInventoryCard, generateMainHub };
