@@ -1,69 +1,58 @@
-const { SlashCommandBuilder, PermissionsBitField } = require("discord.js");
+const { PermissionsBitField } = require("discord.js");
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('prefix')
-        .setDescription('تغيير بادئة (بريفكس) الأوامر في السيرفر.')
-        .addStringOption(option =>
-            option.setName('البريفكس')
-                .setDescription('اكتب البريفكس الجديد الذي تريده للسيرفر')
-                .setRequired(true)),
-
     name: 'prefix',
     aliases: ['set-prefix', 'بريفكس'],
     category: "Admin",
     description: "Set server prefix",
     cooldown: 3,
 
-    async execute(interactionOrMessage, args) {
-        const isSlash = !!interactionOrMessage.isChatInputCommand;
-        const client = interactionOrMessage.client;
-        const guild = interactionOrMessage.guild;
-        const db = client.sql; // SQLite Database
+    async execute (message, args) {
+        const isSlash = !!message.isChatInputCommand;
+        if (isSlash) return;
 
-        let member, newPrefix, reply;
+        const guild = message.guild;
+        const client = message.client;
+        const member = message.member;
+        const db = client.sql;
 
-        if (isSlash) {
-            member = interactionOrMessage.member;
-            newPrefix = interactionOrMessage.options.getString('البريفكس');
-            reply = (payload) => interactionOrMessage.reply(payload);
-        } else {
-            member = interactionOrMessage.member;
-            if (!args[0]) return interactionOrMessage.reply(`❌ **الرجاء كتابة البريفكس الجديد.**\nمثال: \`-prefix !\``);
-            newPrefix = args[0];
-            reply = (payload) => interactionOrMessage.reply(payload);
+        if(!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            return message.reply(`❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`);
         }
 
-        if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return reply({ content: `❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`, ephemeral: true });
-        }
+        if (!args[0]) return message.reply(`❌ **الرجاء كتابة البريفكس الجديد.**\nمثال: \`-prefix !\``);
+        const newPrefix = args[0];
 
         let currentPrefix = "-";
         try {
-            // قراءة البريفكس الحالي من جدول settings (SQLite)
-            const res = db.prepare("SELECT prefix FROM settings WHERE guild = ?").get(guild.id);
-            if (res && res.prefix) currentPrefix = res.prefix;
+            // استخدام الجدول الموحد للبريفكس
+            const res = await db.query(`SELECT "serverprefix" FROM prefix WHERE "guild" = $1`, [guild.id]);
+            if (res.rows.length > 0 && res.rows[0].serverprefix) {
+                currentPrefix = res.rows[0].serverprefix;
+            }
         } catch (e) {
-            console.error("Error fetching current prefix:", e);
+            // يمكن تجاهل الخطأ هنا في حال كان الجدول غير موجود، سيتم إنشاؤه في الخطوة التالية
         }
 
-        if (newPrefix === currentPrefix) {
-            return reply({ content: `⚠ **هذا هو البريفكس الحالي بالفعل!**`, ephemeral: true });
+        if(newPrefix === currentPrefix) {
+            return message.reply(`⚠ **هذا هو البريفكس الحالي بالفعل!**`);
         }
 
         try {
-            // تحديث البريفكس في جدول settings (SQLite)
-            db.prepare(`
-                INSERT INTO settings (guild, prefix) 
-                VALUES (?, ?) 
-                ON CONFLICT(guild) DO UPDATE SET prefix = EXCLUDED.prefix
-            `).run(guild.id, newPrefix);
+            // إنشاء الجدول في حال لم يكن موجوداً لضمان عدم حدوث خطأ
+            await db.query(`CREATE TABLE IF NOT EXISTS prefix ("guild" TEXT PRIMARY KEY, "serverprefix" TEXT)`);
+
+            await db.query(`
+                INSERT INTO prefix ("guild", "serverprefix") 
+                VALUES ($1, $2) 
+                ON CONFLICT("guild") DO UPDATE SET "serverprefix" = EXCLUDED."serverprefix"
+            `, [guild.id, newPrefix]);
             
-            return reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
+            return message.reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
             
         } catch (error) {
             console.error("Prefix change error:", error);
-            return reply({ content: "❌ **حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.**", ephemeral: true });
+            return message.reply("❌ **حدث خطأ أثناء حفظ البيانات في قاعدة البيانات.**");
         }
     }
 }
