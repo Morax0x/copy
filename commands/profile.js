@@ -105,7 +105,7 @@ function resolveItemInfo(itemId) {
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
     
-    // SQLite Queries
+    // استخدام db.prepare للـ SQLite
     const weapons = db.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
     const levels = db.prepare("SELECT user as userID, level FROM levels WHERE guild = ?").all(guildID);
     const levelsMap = new Map(levels.map(r => [r.userID, r.level]));
