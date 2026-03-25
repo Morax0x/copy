@@ -20,7 +20,6 @@ const ghostModeUsers = new Set();
 
 if (!global.afkMessagesCache) global.afkMessagesCache = new Collection();
 
-// 🔥 توحيد صارم لتوقيت السعودية (KSA) لمنع أي تضارب في تسجيل الأيام 🔥
 function getTodayDateString() { 
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 }
@@ -44,10 +43,10 @@ async function safeReply(message, options) {
     }
 }
 
-// 🔥 تحصين نظام تسجيل البومب (Atomic Update) 🔥
+// 🔥 تحصين نظام تسجيل البومب (PostgreSQL Compatible) 🔥
 async function recordBump(client, guildID, userID) {
-    const sql = client.sql;
-    if (!sql || !sql.open) return;
+    const db = client.sql;
+    if (!db) return;
       
     const dateStr = getTodayDateString();
     const weekStr = getWeekStartDateString();
@@ -55,14 +54,22 @@ async function recordBump(client, guildID, userID) {
     const weeklyID = `${userID}-${guildID}-${weekStr}`;
     const totalID = `${userID}-${guildID}`;
     try {
-        sql.prepare(`INSERT INTO user_daily_stats (id, userID, guildID, date, disboard_bumps, boost_channel_reactions) VALUES (?,?,?,?,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(dailyID, userID, guildID, dateStr);
-        sql.prepare(`INSERT INTO user_weekly_stats (id, userID, guildID, weekStartDate, disboard_bumps) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = CAST(COALESCE(disboard_bumps, 0) AS INTEGER) + 1`).run(weeklyID, userID, guildID, weekStr);
-        sql.prepare(`INSERT INTO user_total_stats (id, userID, guildID, total_disboard_bumps) VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = CAST(COALESCE(total_disboard_bumps, 0) AS INTEGER) + 1`).run(totalID, userID, guildID);
+        await db.query(`INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "disboard_bumps", "boost_channel_reactions") VALUES ($1,$2,$3,$4,1,0) ON CONFLICT("id") DO UPDATE SET "disboard_bumps" = COALESCE(user_daily_stats."disboard_bumps", 0) + 1`, [dailyID, userID, guildID, dateStr]).catch(()=> db.query(`INSERT INTO user_daily_stats (id, userid, guildid, date, disboard_bumps, boost_channel_reactions) VALUES ($1,$2,$3,$4,1,0) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_daily_stats.disboard_bumps, 0) + 1`, [dailyID, userID, guildID, dateStr]));
+        
+        await db.query(`INSERT INTO user_weekly_stats ("id", "userID", "guildID", "weekStartDate", "disboard_bumps") VALUES ($1,$2,$3,$4,1) ON CONFLICT("id") DO UPDATE SET "disboard_bumps" = COALESCE(user_weekly_stats."disboard_bumps", 0) + 1`, [weeklyID, userID, guildID, weekStr]).catch(()=> db.query(`INSERT INTO user_weekly_stats (id, userid, guildid, weekstartdate, disboard_bumps) VALUES ($1,$2,$3,$4,1) ON CONFLICT(id) DO UPDATE SET disboard_bumps = COALESCE(user_weekly_stats.disboard_bumps, 0) + 1`, [weeklyID, userID, guildID, weekStr]));
+        
+        await db.query(`INSERT INTO user_total_stats ("id", "userID", "guildID", "total_disboard_bumps") VALUES ($1,$2,$3,1) ON CONFLICT("id") DO UPDATE SET "total_disboard_bumps" = COALESCE(user_total_stats."total_disboard_bumps", 0) + 1`, [totalID, userID, guildID]).catch(()=> db.query(`INSERT INTO user_total_stats (id, userid, guildid, total_disboard_bumps) VALUES ($1,$2,$3,1) ON CONFLICT(id) DO UPDATE SET total_disboard_bumps = COALESCE(user_total_stats.total_disboard_bumps, 0) + 1`, [totalID, userID, guildID]));
         
         const member = await client.guilds.cache.get(guildID)?.members.fetch(userID).catch(() => null);
         if (member && client.checkQuests) {
-            const updatedDaily = sql.prepare("SELECT * FROM user_daily_stats WHERE id = ?").get(dailyID);
-            const updatedTotal = sql.prepare("SELECT * FROM user_total_stats WHERE id = ?").get(totalID);
+            let updatedDailyRes;
+            try { updatedDailyRes = await db.query(`SELECT * FROM user_daily_stats WHERE "id" = $1`, [dailyID]); } catch(e) { updatedDailyRes = await db.query(`SELECT * FROM user_daily_stats WHERE id = $1`, [dailyID]); }
+            const updatedDaily = updatedDailyRes?.rows[0];
+            
+            let updatedTotalRes;
+            try { updatedTotalRes = await db.query(`SELECT * FROM user_total_stats WHERE "id" = $1`, [totalID]); } catch(e) { updatedTotalRes = await db.query(`SELECT * FROM user_total_stats WHERE id = $1`, [totalID]); }
+            const updatedTotal = updatedTotalRes?.rows[0];
+
             if (updatedDaily) await client.checkQuests(client, member, updatedDaily, 'daily', dateStr);
             if (updatedTotal) await client.checkAchievements(client, member, null, updatedTotal);
         }
@@ -73,20 +80,28 @@ module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
         const client = message.client;
-        const sql = client.sql;
-        if (!sql || !sql.open) return; 
+        const db = client.sql;
+        
+        // ⚠️ تم إزالة شرط !sql.open الخاطئ الذي كان يقتل الحدث ⚠️
+        if (!db) return; 
 
         if (message.author.bot && message.author.id !== DISBOARD_BOT_ID) return;
         if (!message.guild) return;
 
         try {
             if (message.member) {
-                const conflictRules = sql.prepare("SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''").all();
+                let conflictRulesRes;
+                try { conflictRulesRes = await db.query(`SELECT "role_id", "anti_roles" FROM role_settings WHERE "anti_roles" IS NOT NULL AND "anti_roles" != ''`); }
+                catch(e) { conflictRulesRes = await db.query(`SELECT role_id, anti_roles FROM role_settings WHERE anti_roles IS NOT NULL AND anti_roles != ''`).catch(()=>({rows:[]})); }
+                
+                const conflictRules = conflictRulesRes.rows;
                 if (conflictRules.length > 0) {
                     const memberRoleIds = message.member.roles.cache.map(r => r.id);
                     for (const rule of conflictRules) {
-                        if (memberRoleIds.includes(rule.role_id)) {
-                            const prohibitedRoles = rule.anti_roles.split(',');
+                        const roleId = rule.role_id || rule.role_id;
+                        const antiRoles = rule.anti_roles || rule.anti_roles;
+                        if (memberRoleIds.includes(roleId)) {
+                            const prohibitedRoles = antiRoles.split(',');
                             const hasForbidden = prohibitedRoles.filter(id => memberRoleIds.includes(id));
                             if (hasForbidden.length > 0) {
                                 await message.member.roles.remove(hasForbidden).catch(() => {});
@@ -98,145 +113,148 @@ module.exports = {
         } catch (error) { console.error("[Anti-Role Auto Cleaner Error]", error); }
 
         try {
-            const isAfkTableExists = sql.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='afk'").get();
-              
-            if (isAfkTableExists) {
-                const afkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
+            let afkDataRes;
+            try { afkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]); }
+            catch(e) { afkDataRes = await db.query(`SELECT * FROM afk WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>({rows:[]})); }
+            
+            const afkData = afkDataRes?.rows[0];
 
-                if (afkData) {
-                    const content = message.content.trim();
-                    const ghostKey = `${message.author.id}-${message.guild.id}`;
-                    const isGhostMessage = content.startsWith('(') && content.endsWith(')');
+            if (afkData) {
+                const content = message.content.trim();
+                const ghostKey = `${message.author.id}-${message.guild.id}`;
+                const isGhostMessage = content.startsWith('(') && content.endsWith(')');
+                
+                const allowGhost = isGhostMessage && !ghostModeUsers.has(ghostKey);
+
+                if (!allowGhost) {
+                    const now = Math.floor(Date.now() / 1000);
+                    const afkTime = Number(afkData.timestamp || afkData.timestamp);
+                    const diffSeconds = now - afkTime;
                     
-                    const allowGhost = isGhostMessage && !ghostModeUsers.has(ghostKey);
+                    const minutes = Math.floor(diffSeconds / 60); 
+                    const cappedMinutes = Math.min(minutes, 720); 
+                    const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
 
-                    if (!allowGhost) {
-                        const now = Math.floor(Date.now() / 1000);
-                        const diffSeconds = now - afkData.timestamp;
-                        
-                        const minutes = Math.floor(diffSeconds / 60); 
-                        
-                        const cappedMinutes = Math.min(minutes, 720); 
-                        const reward = (minutes >= 60) ? (cappedMinutes * 1) : 0;
-
-                        if (reward > 0) {
-                            let userLevel = client.getLevel.get(message.author.id, message.guild.id);
-                            if (userLevel) {
-                                userLevel.mora += reward;
-                                client.setLevel.run(userLevel);
-                            }
-                        }
-
-                        const storedMessages = JSON.parse(afkData.messages || '[]');
-                        let msgBtnRow = null;
-
-                        if (storedMessages.length > 0) {
-                            global.afkMessagesCache.set(message.author.id, storedMessages);
-                            setTimeout(() => global.afkMessagesCache.delete(message.author.id), 5 * 60 * 1000);
-
-                            msgBtnRow = new ActionRowBuilder().addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId('show_afk_msgs')
-                                    .setLabel(`عرض الرسائل (${storedMessages.length})`)
-                                    .setEmoji('📩')
-                                    .setStyle(ButtonStyle.Primary)
-                            );
-                        }
-
-                        sql.prepare("DELETE FROM afk WHERE userID = ? AND guildID = ?").run(message.author.id, message.guild.id);
-                        
-                        ghostModeUsers.delete(ghostKey);
-
+                    if (reward > 0) {
                         try {
-                            const currentName = message.member.displayName;
-                            if (currentName.includes("[AFK] ")) {
-                                await message.member.setNickname(currentName.replace("[AFK] ", ""));
-                            }
-                        } catch (e) {}
-
-                        const timeAgo = `<t:${afkData.timestamp}:R>`;
-                        
-                        let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount} مرة أثناء غيابك`;
-                        
-                        if (reward > 0) {
-                            replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
+                            await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [reward, message.author.id, message.guild.id]);
+                        } catch(e) {
+                            await db.query(`UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [reward, message.author.id, message.guild.id]).catch(()=>{});
                         }
+                    }
 
-                        const welcomeMsg = await safeReply(message, { 
-                            content: replyContent,
-                            components: msgBtnRow ? [msgBtnRow] : [] 
-                        });
-                        
-                        if (welcomeMsg) {
-                            const deleteTime = msgBtnRow ? 120000 : 60000;
-                            setTimeout(() => welcomeMsg.delete().catch(() => {}), deleteTime);
+                    const storedMessagesStr = afkData.messages || afkData.messages || '[]';
+                    const storedMessages = JSON.parse(storedMessagesStr);
+                    let msgBtnRow = null;
+
+                    if (storedMessages.length > 0) {
+                        global.afkMessagesCache.set(message.author.id, storedMessages);
+                        setTimeout(() => global.afkMessagesCache.delete(message.author.id), 5 * 60 * 1000);
+
+                        msgBtnRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('show_afk_msgs')
+                                .setLabel(`عرض الرسائل (${storedMessages.length})`)
+                                .setEmoji('📩')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                    }
+
+                    try { await db.query(`DELETE FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]); }
+                    catch(e) { await db.query(`DELETE FROM afk WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>{}); }
+                    
+                    ghostModeUsers.delete(ghostKey);
+
+                    try {
+                        const currentName = message.member.displayName;
+                        if (currentName.includes("[AFK] ")) {
+                            await message.member.setNickname(currentName.replace("[AFK] ", ""));
                         }
+                    } catch (e) {}
 
-                        const subscribers = JSON.parse(afkData.subscribers || '[]');
-                        if (subscribers.length > 0) {
-                            const everyoneRole = message.guild.roles.everyone;
-                            const perms = message.channel.permissionsFor(everyoneRole);
-                            if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
-                                const pings = subscribers.map(id => `<@${id}>`).join(' ');
-                                await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع  الغيـاب المؤقـت!\n${pings}`).catch(()=>{});
-                            } 
-                        }
-                    } else {
-                        ghostModeUsers.add(ghostKey);
-                    } 
-                }
+                    const timeAgo = `<t:${afkTime}:R>`;
+                    let replyContent = `👋 **✶أهلاً بعودتك يا ${message.author}!**\n⏱️ **✶مدة الغياب:** ${timeAgo}\n🔔 **✶تم منشنتك:** ${afkData.mentionsCount || afkData.mentionscount} مرة أثناء غيابك`;
+                    
+                    if (reward > 0) {
+                        replyContent += `\n💰 **✶مكافأة الراحة:** حصلت على **${reward}** <:mora:1435647151349698621> لأنك كنت غائباً ${timeAgo}`;
+                    }
 
-                if (message.mentions.members.size > 0) {
-                    const mentionedIds = new Set(message.mentions.members.map(m => m.id));
+                    const welcomeMsg = await safeReply(message, { 
+                        content: replyContent,
+                        components: msgBtnRow ? [msgBtnRow] : [] 
+                    });
+                    
+                    if (welcomeMsg) {
+                        const deleteTime = msgBtnRow ? 120000 : 60000;
+                        setTimeout(() => welcomeMsg.delete().catch(() => {}), deleteTime);
+                    }
 
-                    mentionedIds.forEach(async targetID => {
-                        if (targetID === message.author.id) return;
+                    const subscribersStr = afkData.subscribers || afkData.subscribers || '[]';
+                    const subscribers = JSON.parse(subscribersStr);
+                    if (subscribers.length > 0) {
+                        const everyoneRole = message.guild.roles.everyone;
+                        const perms = message.channel.permissionsFor(everyoneRole);
+                        if (perms.has(PermissionsBitField.Flags.ViewChannel)) {
+                            const pings = subscribers.map(id => `<@${id}>`).join(' ');
+                            await message.channel.send(`🔔 **✶ تنبيـه:** ${message.author} عاد من وضع الغيـاب المؤقـت!\n${pings}`).catch(()=>{});
+                        } 
+                    }
+                } else {
+                    ghostModeUsers.add(ghostKey);
+                } 
+            }
 
-                        const targetAfkData = sql.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, message.guild.id);
+            if (message.mentions.members.size > 0) {
+                const mentionedIds = new Set(message.mentions.members.map(m => m.id));
 
-                        if (targetAfkData) {
-                            sql.prepare("UPDATE afk SET mentionsCount = mentionsCount + 1 WHERE userID = ? AND guildID = ?").run(targetID, message.guild.id);
+                mentionedIds.forEach(async targetID => {
+                    if (targetID === message.author.id) return;
 
-                            const member = message.guild.members.cache.get(targetID);
-                            const timeAgo = `<t:${targetAfkData.timestamp}:R>`;
+                    let targetAfkDataRes;
+                    try { targetAfkDataRes = await db.query(`SELECT * FROM afk WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]); }
+                    catch(e) { targetAfkDataRes = await db.query(`SELECT * FROM afk WHERE userid = $1 AND guildid = $2`, [targetID, message.guild.id]).catch(()=>({rows:[]})); }
+                    const targetAfkData = targetAfkDataRes?.rows[0];
 
-                            const embed = new EmbedBuilder()
-                                .setColor("Random")
-                                .setThumbnail(member ? member.user.displayAvatarURL() : null)
-                                .setDescription(
-                                    `😴 **${member ? member.displayName : 'العضو'}**\n ✶ في وضع الغيـاب المؤقـت(AFK)\n📝 **السبب:** ${targetAfkData.reason}\n⏳ **منـذ:** ${timeAgo}`
-                                );
+                    if (targetAfkData) {
+                        try { await db.query(`UPDATE afk SET "mentionsCount" = COALESCE("mentionsCount", 0) + 1 WHERE "userID" = $1 AND "guildID" = $2`, [targetID, message.guild.id]); }
+                        catch(e) { await db.query(`UPDATE afk SET mentionscount = COALESCE(mentionscount, 0) + 1 WHERE userid = $1 AND guildid = $2`, [targetID, message.guild.id]).catch(()=>{}); }
 
-                            const row = new ActionRowBuilder().addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId(`notify_afk_${targetID}`)
-                                    .setLabel('نبهني عند عودتـه 🔔')
-                                    .setStyle(ButtonStyle.Secondary),
-                                new ButtonBuilder()
-                                    .setCustomId(`leave_msg_afk_${targetID}`)
-                                    .setLabel('اترك رسالـة 📩')
-                                    .setStyle(ButtonStyle.Primary)
+                        const member = message.guild.members.cache.get(targetID);
+                        const afkTime = targetAfkData.timestamp || targetAfkData.timestamp;
+                        const timeAgo = `<t:${afkTime}:R>`;
+
+                        const embed = new EmbedBuilder()
+                            .setColor("Random")
+                            .setThumbnail(member ? member.user.displayAvatarURL() : null)
+                            .setDescription(
+                                `😴 **${member ? member.displayName : 'العضو'}**\n ✶ في وضع الغيـاب المؤقـت(AFK)\n📝 **السبب:** ${targetAfkData.reason || targetAfkData.reason}\n⏳ **منـذ:** ${timeAgo}`
                             );
 
-                            const replyMsg = await safeReply(message, {
-                                embeds: [embed],
-                                components: [row],
-                                allowedMentions: { repliedUser: true }
-                            });
+                        const row = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`notify_afk_${targetID}`).setLabel('نبهني عند عودتـه 🔔').setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder().setCustomId(`leave_msg_afk_${targetID}`).setLabel('اترك رسالـة 📩').setStyle(ButtonStyle.Primary)
+                        );
 
-                            if (replyMsg) setTimeout(() => replyMsg.delete().catch(() => {}), 60000);
-                        }
-                    });
-                }
+                        const replyMsg = await safeReply(message, {
+                            embeds: [embed],
+                            components: [row],
+                            allowedMentions: { repliedUser: true }
+                        });
+
+                        if (replyMsg) setTimeout(() => replyMsg.delete().catch(() => {}), 60000);
+                    }
+                });
             }
         } catch (err) { console.error("[AFK System Error]", err); }
 
+        let settingsRes;
+        try { settingsRes = await db.query(`SELECT * FROM settings WHERE "guild" = $1`, [message.guild.id]); }
+        catch(e) { settingsRes = await db.query(`SELECT * FROM settings WHERE guild = $1`, [message.guild.id]).catch(()=>({rows:[]})); }
+        const settings = settingsRes?.rows[0] || {};
+
         if (message.author.id === DISBOARD_BOT_ID) {
-            let settingsData;
-            try { settingsData = sql.prepare("SELECT bumpChannelID, bumpNotifyRoleID FROM settings WHERE guild = ?").get(message.guild.id); } 
-            catch (e) { settingsData = sql.prepare("SELECT bumpChannelID FROM settings WHERE guild = ?").get(message.guild.id); }
-            
-            if (settingsData && settingsData.bumpChannelID && message.channel.id !== settingsData.bumpChannelID) return;
+            const bumpChannelID = settings.bumpChannelID || settings.bumpchannelid;
+            if (bumpChannelID && message.channel.id !== bumpChannelID) return;
 
             let bumperID = null;
             if (message.interaction && message.interaction.commandName === 'bump') bumperID = message.interaction.user.id;
@@ -258,32 +276,29 @@ module.exports = {
                     files: ["https://i.postimg.cc/1XTvpgMV/image.gif"]
                 }).catch(() => {});
                 message.channel.setName('˖✶⁺〢🍀・الـنـشـر').catch(err => console.error("[Bump Rename Error]", err.message));
-                try { sql.prepare("UPDATE settings SET nextBumpTime = ?, lastBumperID = ? WHERE guild = ?").run(nextBumpTime, bumperID, message.guild.id); } catch (e) {}
+                
+                try { await db.query(`UPDATE settings SET "nextBumpTime" = $1, "lastBumperID" = $2 WHERE "guild" = $3`, [nextBumpTime, bumperID, message.guild.id]); }
+                catch(e) { await db.query(`UPDATE settings SET nextbumptime = $1, lastbumperid = $2 WHERE guild = $3`, [nextBumpTime, bumperID, message.guild.id]).catch(()=>{}); }
             }
             return;
         }
 
-        let settings = sql.prepare("SELECT * FROM settings WHERE guild = ?").get(message.guild.id);
-        let reportSettings = sql.prepare("SELECT reportChannelID FROM report_settings WHERE guildID = ?").get(message.guild.id);
-
-        let Prefix = settings?.prefix || "-";
+        let Prefix = settings.prefix || "-";
 
         if (message.mentions.has(client.user) && !message.author.bot) {
-            
-            if (message.content.startsWith(Prefix)) {
-            } 
-            else {
+            if (!message.content.startsWith(Prefix)) {
                 const argsRaw = message.content.trim().split(/ +/);
                 const firstWord = argsRaw[0].toLowerCase();
                 const isCommand = client.commands.find(cmd => (cmd.name === firstWord) || (cmd.aliases && cmd.aliases.includes(firstWord)));
                 let isShortcut = false;
                 try {
-                    isShortcut = sql.prepare("SELECT 1 FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?").get(message.guild.id, message.channel.id, firstWord);
+                    let scRes;
+                    try { scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, firstWord]); }
+                    catch(e) { scRes = await db.query(`SELECT 1 FROM command_shortcuts WHERE guildid = $1 AND channelid = $2 AND shortcutword = $3`, [message.guild.id, message.channel.id, firstWord]).catch(()=>({rows:[]})); }
+                    isShortcut = !!scRes.rows[0];
                 } catch(e) {}
 
-                if (isCommand || isShortcut) {
-                } 
-                else {
+                if (!isCommand && !isShortcut) {
                     if (message.reference) {
                         try {
                             const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
@@ -302,9 +317,8 @@ module.exports = {
 
                     let isWisdomKing = false;
                     try {
-                        if (settings && settings.roleAdvisor && message.member.roles.cache.has(settings.roleAdvisor)) {
-                            isWisdomKing = true;
-                        }
+                        const roleAdv = settings.roleAdvisor || settings.roleadvisor;
+                        if (roleAdv && message.member.roles.cache.has(roleAdv)) isWisdomKing = true;
                     } catch(e) {}
 
                     if (!isOwnerMentioning && !isWisdomKing) {
@@ -343,14 +357,12 @@ module.exports = {
                         const cleanContent = message.content.replace(/<@!?[0-9]+>/g, "").trim();
                         
                         let imageAttachment = null;
-                        
                         if (message.attachments.size > 0) {
                             const attachment = message.attachments.first();
                             if (attachment.contentType && attachment.contentType.startsWith('image/')) {
                                 imageAttachment = { url: attachment.url, mimeType: attachment.contentType };
                             }
-                        } 
-                        else if (message.stickers.size > 0) {
+                        } else if (message.stickers.size > 0) {
                             const sticker = message.stickers.first();
                             if (sticker.format === 1 || sticker.format === 2) { 
                                  imageAttachment = { url: sticker.url, mimeType: 'image/png' };
@@ -359,17 +371,7 @@ module.exports = {
 
                         if (!cleanContent && !imageAttachment) return message.reply("نـعـم .. ؟");
 
-                        const reply = await askMorax(
-                            message.author.id, 
-                            message.guild.id, 
-                            message.channel.id, 
-                            cleanContent, 
-                            message.member.displayName,
-                            imageAttachment, 
-                            isNsfw,
-                            message 
-                        );
-                        
+                        const reply = await askMorax(message.author.id, message.guild.id, message.channel.id, cleanContent, message.member.displayName, imageAttachment, isNsfw, message);
                         if (!reply) return;
 
                         if (!isOwnerMentioning && !isWisdomKing) aiLimitHandler.incrementUsage(message.author.id);
@@ -392,7 +394,8 @@ module.exports = {
             }
         }
 
-        if (message.author.bot && settings && settings.treeChannelID && message.channel.id === settings.treeChannelID) {
+        const treeChannelID = settings.treeChannelID || settings.treechannelid;
+        if (message.author.bot && treeChannelID && message.channel.id === treeChannelID) {
              const fullContent = (message.content || "") + " " + (message.embeds[0]?.description || "") + " " + (message.embeds[0]?.title || "");
              const lowerContent = fullContent.toLowerCase();
              const validPhrases = ["watered the tree", "سقى الشجرة", "has watered", "قام بسقاية"];
@@ -414,46 +417,58 @@ module.exports = {
 
         if (message.author.bot) return;
 
-        if (sql && sql.open) {
-            const isChannelIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.id);
-            let isCategoryIgnored = false;
-            if (message.channel.parentId) {
-                isCategoryIgnored = sql.prepare("SELECT * FROM xp_ignore WHERE guildID = ? AND id = ?").get(message.guild.id, message.channel.parentId);
+        let isChannelIgnored = false;
+        try {
+            let ignRes;
+            try { ignRes = await db.query(`SELECT 1 FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [message.guild.id, message.channel.id]); }
+            catch(e) { ignRes = await db.query(`SELECT 1 FROM xp_ignore WHERE guildid = $1 AND id = $2`, [message.guild.id, message.channel.id]).catch(()=>({rows:[]})); }
+            if (ignRes.rows[0]) isChannelIgnored = true;
+            
+            if (!isChannelIgnored && message.channel.parentId) {
+                let catIgnRes;
+                try { catIgnRes = await db.query(`SELECT 1 FROM xp_ignore WHERE "guildID" = $1 AND "id" = $2`, [message.guild.id, message.channel.parentId]); }
+                catch(e) { catIgnRes = await db.query(`SELECT 1 FROM xp_ignore WHERE guildid = $1 AND id = $2`, [message.guild.id, message.channel.parentId]).catch(()=>({rows:[]})); }
+                if (catIgnRes.rows[0]) isChannelIgnored = true;
             }
-            if (isChannelIgnored || isCategoryIgnored) return; 
-        }
+        } catch(e) {}
+
+        if (isChannelIgnored) return;
 
         try {
             const userID = message.author.id;
             const guildID = message.guild.id;
 
-            // 🔥 استدعاء التحديث للوحة الملوك المعزولة 🔥
             updateGuildStat(client, guildID, userID, 'messages', 1);
 
-            // 🔥 نظام منح وسام ثرثار الحانة محصّن بـ CAST و Atomic Update 🔥
-            if (settings && settings.chatterChannelID && message.channel.id === settings.chatterChannelID) {
+            const chatterChannelID = settings.chatterChannelID || settings.chatterchannelid;
+            if (chatterChannelID && message.channel.id === chatterChannelID) {
                 const todayDate = getTodayDateString();
                 const dailyIdForBadge = `${userID}-${guildID}-${todayDate}`;
                 
-                try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN main_chat_messages INTEGER DEFAULT 0").run(); } catch(e){}
-                try { sql.prepare("ALTER TABLE user_daily_stats ADD COLUMN chatter_badge_given INTEGER DEFAULT 0").run(); } catch(e){}
+                try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "main_chat_messages" INTEGER DEFAULT 0`); } catch(e){}
+                try { await db.query(`ALTER TABLE user_daily_stats ADD COLUMN IF NOT EXISTS "chatter_badge_given" INTEGER DEFAULT 0`); } catch(e){}
                 
-                sql.prepare(`
-                    INSERT INTO user_daily_stats (id, userID, guildID, date, main_chat_messages) 
-                    VALUES (?, ?, ?, ?, 1) 
-                    ON CONFLICT(id) DO UPDATE SET main_chat_messages = CAST(COALESCE(main_chat_messages, 0) AS INTEGER) + 1
-                `).run(dailyIdForBadge, userID, guildID, todayDate);
+                try {
+                    await db.query(`INSERT INTO user_daily_stats ("id", "userID", "guildID", "date", "main_chat_messages") VALUES ($1, $2, $3, $4, 1) ON CONFLICT("id") DO UPDATE SET "main_chat_messages" = COALESCE(user_daily_stats."main_chat_messages", 0) + 1`, [dailyIdForBadge, userID, guildID, todayDate]);
+                } catch(e) {
+                    await db.query(`INSERT INTO user_daily_stats (id, userid, guildid, date, main_chat_messages) VALUES ($1, $2, $3, $4, 1) ON CONFLICT(id) DO UPDATE SET main_chat_messages = COALESCE(user_daily_stats.main_chat_messages, 0) + 1`, [dailyIdForBadge, userID, guildID, todayDate]).catch(()=>{});
+                }
 
-                const dailyDataCheck = sql.prepare("SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = ?").get(dailyIdForBadge);
+                let badgeRes;
+                try { badgeRes = await db.query(`SELECT "main_chat_messages", "chatter_badge_given" FROM user_daily_stats WHERE "id" = $1`, [dailyIdForBadge]); }
+                catch(e) { badgeRes = await db.query(`SELECT main_chat_messages, chatter_badge_given FROM user_daily_stats WHERE id = $1`, [dailyIdForBadge]).catch(()=>({rows:[]})); }
+                const dailyDataCheck = badgeRes.rows[0];
                 
-                if (dailyDataCheck && dailyDataCheck.main_chat_messages >= 100 && dailyDataCheck.chatter_badge_given === 0) {
-                    sql.prepare("UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = ?").run(dailyIdForBadge);
+                if (dailyDataCheck && Number(dailyDataCheck.main_chat_messages || dailyDataCheck.main_chat_messages) >= 100 && Number(dailyDataCheck.chatter_badge_given || dailyDataCheck.chatter_badge_given) === 0) {
+                    try { await db.query(`UPDATE user_daily_stats SET "chatter_badge_given" = 1 WHERE "id" = $1`, [dailyIdForBadge]); }
+                    catch(e) { await db.query(`UPDATE user_daily_stats SET chatter_badge_given = 1 WHERE id = $1`, [dailyIdForBadge]).catch(()=>{}); }
                     
-                    let roleToGive = settings.roleChatterBadge || settings.roleChatter;
+                    let roleToGive = settings.roleChatterBadge || settings.rolechatterbadge || settings.roleChatter || settings.rolechatter;
                     if (roleToGive) message.member.roles.add(roleToGive).catch(()=>{});
 
-                    if (settings.guildAnnounceChannelID) {
-                        const announceChannel = message.guild.channels.cache.get(settings.guildAnnounceChannelID);
+                    const announceChanId = settings.guildAnnounceChannelID || settings.guildannouncechannelid;
+                    if (announceChanId) {
+                        const announceChannel = message.guild.channels.cache.get(announceChanId);
                         if (announceChannel) {
                             const badgeEmbed = new EmbedBuilder()
                                 .setTitle('🗣️ انـجـاز يـومـي: ثـرثـار الـحـانـة!')
@@ -477,9 +492,9 @@ module.exports = {
                 if (emojis) await client.incrementQuestStats(userID, guildID, 'emojis_sent', emojis.length);
             }
             if (message.mentions.users.size > 0) {
-                message.mentions.users.forEach(async (user) => {
-                    if (user.id !== message.author.id && !user.bot) {
-                        if (client.incrementQuestStats) await client.incrementQuestStats(user.id, guildID, 'mentions_received', 1);
+                message.mentions.users.forEach(async (u) => {
+                    if (u.id !== message.author.id && !u.bot) {
+                        if (client.incrementQuestStats) await client.incrementQuestStats(u.id, guildID, 'mentions_received', 1);
                     }
                 });
             }
@@ -491,21 +506,36 @@ module.exports = {
                     }
                 } catch(e) {}
             }
-            if (settings && settings.countingChannelID && message.channel.id === settings.countingChannelID) {
+            const countChanId = settings.countingChannelID || settings.countingchannelid;
+            if (countChanId && message.channel.id === countChanId) {
                 if (!isNaN(message.content.trim())) {
                     if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'counting_channel', 1);
                 }
             }
             if (message.content.toLowerCase().includes('مياو') || message.content.toLowerCase().includes('meow')) {
                 if (client.incrementQuestStats) await client.incrementQuestStats(userID, guildID, 'meow_count', 1);
-                let level = client.getLevel.get(userID, guildID);
-                if (level) {
-                    level.total_meow_count = (level.total_meow_count || 0) + 1;
-                    client.setLevel.run(level);
-                    if (client.checkAchievements) await client.checkAchievements(client, message.member, level, null);
+                try {
+                    await db.query(`UPDATE levels SET "total_meow_count" = COALESCE("total_meow_count", 0) + 1 WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]);
+                } catch(e) {
+                    await db.query(`UPDATE levels SET total_meow_count = COALESCE(total_meow_count, 0) + 1 WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{});
+                }
+                
+                if (client.checkAchievements) {
+                    let lvlCheckRes;
+                    try { lvlCheckRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userID, guildID]); }
+                    catch(e) { lvlCheckRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
+                    if (lvlCheckRes.rows[0]) await client.checkAchievements(client, message.member, lvlCheckRes.rows[0], null);
                 }
             }
-            const isMediaChannel = sql.prepare("SELECT * FROM media_streak_channels WHERE guildID = ? AND channelID = ?").get(guildID, message.channel.id);
+            
+            let isMediaChannel = false;
+            try {
+                let mRes;
+                try { mRes = await db.query(`SELECT 1 FROM media_streak_channels WHERE "guildID" = $1 AND "channelID" = $2`, [guildID, message.channel.id]); }
+                catch(e) { mRes = await db.query(`SELECT 1 FROM media_streak_channels WHERE guildid = $1 AND channelid = $2`, [guildID, message.channel.id]).catch(()=>({rows:[]})); }
+                if (mRes.rows[0]) isMediaChannel = true;
+            } catch(e) {}
+
             if (isMediaChannel) {
                 if (message.attachments.size > 0 || message.content.includes('http')) {
                     await handleMediaStreakMessage(message);
@@ -513,89 +543,121 @@ module.exports = {
             }
             await handleStreakMessage(message);
 
-            let level = client.getLevel.get(message.author.id, message.guild.id);
-            const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, lastWork: 0, lastDaily: 0, dailyStreak: 0, bank: 0, lastInterest: 0, totalInterestEarned: 0, hasGuard: 0, guardExpires: 0, lastCollected: 0, totalVCTime: 0, lastRob: 0, lastGuess: 0, lastRPS: 0, lastRoulette: 0, lastTransfer: 0, lastDeposit: 0, shop_purchases: 0, total_meow_count: 0, boost_count: 0, lastPVP: 0 };
-            if (!level) level = { ...(client.defaultData || {}), ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
+            // 🔥 ترقية نظام الـ XP ليصبح PostgreSQL بالكامل 🔥
+            let levelDataRes;
+            try { levelDataRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [message.author.id, message.guild.id]); }
+            catch(e) { levelDataRes = await db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>({rows:[]})); }
             
-            let getXpfromDB = settings?.customXP || 25;
-            let getCooldownfromDB = settings?.customCooldown || 60000;
+            let level = levelDataRes.rows[0];
+            const completeDefaultLevelData = { xp: 0, level: 1, totalXP: 0, mora: 0, bank: 0 };
+            if (!level) level = { ...completeDefaultLevelData, user: message.author.id, guild: message.guild.id };
+            
+            let getXpfromDB = settings.customXP || settings.customxp || 25;
+            let getCooldownfromDB = settings.customCooldown || settings.customcooldown || 60000;
 
             if (!client.talkedRecently.get(message.author.id)) {
-                let buff = calculateBuffMultiplier(message.member, sql);
-
-                if (settings && settings.roleChatter && message.member.roles.cache.has(settings.roleChatter)) {
-                    buff += 0.50; 
-                }
+                let buff = calculateBuffMultiplier(message.member, db); 
+                const roleChatter = settings.roleChatter || settings.rolechatter;
+                if (roleChatter && message.member.roles.cache.has(roleChatter)) buff += 0.50; 
 
                 const xp = Math.floor((Math.random() * getXpfromDB + 1) * buff);
-                level.xp += xp; 
-                level.totalXP += xp;
+                level.xp = Number(level.xp || 0) + xp; 
+                level.totalXP = Number(level.totalXP || level.totalxp || 0) + xp;
+                level.level = Number(level.level || 1);
                 
                 const nextXP = 5 * (level.level ** 2) + (50 * level.level) + 100;
-                
+                let leveledUp = false;
+                let oldLvl = level.level;
+
                 if (level.xp >= nextXP) {
-                    const oldLvl = level.level;
-                    level.xp -= nextXP; level.level++;
-                    client.setLevel.run(level);
+                    leveledUp = true;
+                    level.xp -= nextXP; 
+                    level.level++;
+                }
+
+                // حفظ البيانات
+                try {
+                    await db.query(`INSERT INTO levels ("user", "guild", "xp", "level", "totalXP", "mora") VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT ("user", "guild") DO UPDATE SET "xp" = EXCLUDED."xp", "level" = EXCLUDED."level", "totalXP" = EXCLUDED."totalXP"`, [message.author.id, message.guild.id, level.xp, level.level, level.totalXP, Number(level.mora||0)]);
+                } catch(e) {
+                    await db.query(`INSERT INTO levels (userid, guildid, xp, level, totalxp, mora) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (userid, guildid) DO UPDATE SET xp = EXCLUDED.xp, level = EXCLUDED.level, totalxp = EXCLUDED.totalxp`, [message.author.id, message.guild.id, level.xp, level.level, level.totalXP, Number(level.mora||0)]).catch(()=>{});
+                }
+
+                if (leveledUp) {
                     try {
                         const card = await generateLevelUpCard(message.member, oldLvl, level.level, { mora: 0, hp: 0 });
-                        const channelId = settings?.levelChannel || message.channel.id;
+                        const channelId = settings.levelChannel || settings.levelchannel || message.channel.id;
                         const channel = message.guild.channels.cache.get(channelId);
                         if (channel) {
-                            const notifData = sql.prepare("SELECT levelNotif FROM quest_notifications WHERE userID = ? AND guildID = ?").get(message.author.id, message.guild.id);
-                            const isMentionOn = notifData ? notifData.levelNotif : 1; 
+                            let notifRes;
+                            try { notifRes = await db.query(`SELECT "levelNotif" FROM quest_notifications WHERE "userID" = $1 AND "guildID" = $2`, [message.author.id, message.guild.id]); }
+                            catch(e) { notifRes = await db.query(`SELECT levelnotif as "levelNotif" FROM quest_notifications WHERE userid = $1 AND guildid = $2`, [message.author.id, message.guild.id]).catch(()=>({rows:[]})); }
+                            
+                            const isMentionOn = notifRes.rows[0] ? notifRes.rows[0].levelNotif : 1; 
                             const userReference = isMentionOn ? message.author : `**${message.member.displayName}**`;
                             let contentMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${userReference} <a:wii:1435572329039007889>\n` +
                                              `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
                                              `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃 <a:MugiStronk:1438795606872166462> وتعاظم شأنك بين جموع الرعية فامضِ قُدمًا نحو المجد <:2KazumaSalut:1437129108806176768>`;
                             const milestones = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99];
-                            if (milestones.includes(level.level)) {
-                                contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
-                            }
+                            if (milestones.includes(level.level)) contentMsg += `\n★  فتـحـت ميزة جديـدة راجع قنـاة المستويات !`;
+                            
                             await channel.send({ content: contentMsg, files: [card] });
                         }
                     } catch (error) {
                         console.error("فشل في رسم بطاقة التلفيل:", error);
-                        let backupMsg = `╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n` +
-                                        `✶ مبارك صعودك في سُلّم الإمبراطورية\n` +
-                                        `★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`;
-                        message.channel.send(backupMsg);
+                        message.channel.send(`╭⭒★︰ <a:wi:1435572304988868769> ${message.author} <a:wii:1435572329039007889>\n✶ مبارك صعودك في سُلّم الإمبراطورية\n★ فقد كـسرت حـاجـز الـمستوى〃${oldLvl}〃وبلغـت المسـتـوى الـ 〃${level.level}〃`).catch(()=>{});
                     }
-                } else {
-                    client.setLevel.run(level);
                 }
+                
                 client.talkedRecently.set(message.author.id, Date.now() + getCooldownfromDB);
                 setTimeout(() => client.talkedRecently.delete(message.author.id), getCooldownfromDB);
             }
             
             try {
-                let currentLevelRole = sql.prepare("SELECT * FROM level_roles WHERE guildID = ? AND level = ?").get(message.guild.id, level.level);
+                let lrRes;
+                try { lrRes = await db.query(`SELECT * FROM level_roles WHERE "guildID" = $1 AND "level" = $2`, [message.guild.id, level.level]); }
+                catch(e) { lrRes = await db.query(`SELECT * FROM level_roles WHERE guildid = $1 AND level = $2`, [message.guild.id, level.level]).catch(()=>({rows:[]})); }
+                let currentLevelRole = lrRes.rows[0];
+
                 if (currentLevelRole && message.member) {
-                    if (!message.member.roles.cache.has(currentLevelRole.roleID)) {
-                        await message.member.roles.add(currentLevelRole.roleID).catch(e => console.error(`[Level Role Add Error]: ${e.message}`));
-                        const oldRoles = sql.prepare("SELECT roleID FROM level_roles WHERE guildID = ? AND level < ?").all(message.guild.id, level.level);
-                        for (const roleData of oldRoles) {
-                            if (message.member.roles.cache.has(roleData.roleID)) {
-                                await message.member.roles.remove(roleData.roleID).catch(e => {});
-                            }
+                    const rID = currentLevelRole.roleID || currentLevelRole.roleid;
+                    if (!message.member.roles.cache.has(rID)) {
+                        await message.member.roles.add(rID).catch(e => {});
+                        
+                        let oldRolesRes;
+                        try { oldRolesRes = await db.query(`SELECT "roleID" FROM level_roles WHERE "guildID" = $1 AND "level" < $2`, [message.guild.id, level.level]); }
+                        catch(e) { oldRolesRes = await db.query(`SELECT roleid as "roleID" FROM level_roles WHERE guildid = $1 AND level < $2`, [message.guild.id, level.level]).catch(()=>({rows:[]})); }
+                        
+                        for (const roleData of oldRolesRes.rows) {
+                            const oID = roleData.roleID || roleData.roleid;
+                            if (message.member.roles.cache.has(oID)) await message.member.roles.remove(oID).catch(e => {});
                         }
                     }
                 }
-            } catch (e) { console.error("[Level Role Logic Error]: ", e); }
+            } catch (e) {}
 
         } catch (err) { console.error("[Stats Error]", err); }
 
         try {
             const argsRaw = message.content.trim().split(/ +/);
             const shortcutWord = argsRaw[0].toLowerCase().trim();
-            let shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND channelID = ? AND shortcutWord = ?")
-                .get(message.guild.id, message.channel.id, shortcutWord);
-            if (!shortcut) {
-                 shortcut = sql.prepare("SELECT commandName FROM command_shortcuts WHERE guildID = ? AND shortcutWord = ? AND (channelID IS NULL OR channelID = 'null' OR channelID = '')")
-                .get(message.guild.id, shortcutWord);
-            }
+            
+            let shortcut = null;
+            try {
+                let scRes;
+                try { scRes = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "channelID" = $2 AND "shortcutWord" = $3`, [message.guild.id, message.channel.id, shortcutWord]); }
+                catch(e) { scRes = await db.query(`SELECT commandname as "commandName" FROM command_shortcuts WHERE guildid = $1 AND channelid = $2 AND shortcutword = $3`, [message.guild.id, message.channel.id, shortcutWord]).catch(()=>({rows:[]})); }
+                shortcut = scRes.rows[0];
+                
+                if (!shortcut) {
+                    let scRes2;
+                    try { scRes2 = await db.query(`SELECT "commandName" FROM command_shortcuts WHERE "guildID" = $1 AND "shortcutWord" = $2 AND ("channelID" IS NULL OR "channelID" = '' OR "channelID" = 'null')`, [message.guild.id, shortcutWord]); }
+                    catch(e) { scRes2 = await db.query(`SELECT commandname as "commandName" FROM command_shortcuts WHERE guildid = $1 AND shortcutword = $2 AND (channelid IS NULL OR channelid = '' OR channelid = 'null')`, [message.guild.id, shortcutWord]).catch(()=>({rows:[]})); }
+                    shortcut = scRes2.rows[0];
+                }
+            } catch(e) {}
+
             if (shortcut) {
-                const targetName = shortcut.commandName.toLowerCase();
+                const targetName = (shortcut.commandName || shortcut.commandname).toLowerCase();
                 const cmd = client.commands.find(c => (c.name && c.name.toLowerCase() === targetName) || (c.aliases && c.aliases.includes(targetName)));
                 if (cmd) {
                     if (checkPermissions(message, cmd)) {
@@ -610,13 +672,14 @@ module.exports = {
                     return; 
                 }
             }
-        } catch (err) { console.error("[Shortcut Handler Error]", err); }
+        } catch (err) {}
 
         const mentionRegex = new RegExp(`^<@!?${client.user.id}>( |)$`);
         if (mentionRegex.test(message.content)) {
             return message.reply(`البريفكس الخاص بي هو: \`${Prefix}\``).catch(() => {});
         }
 
+        // 🔥 معالج الأوامر بالبريفكس (PostgreSQL Compatible) 🔥
         if (message.content.startsWith(Prefix)) {
             const args = message.content.slice(Prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
@@ -625,24 +688,42 @@ module.exports = {
                 if (command) {
                     args.prefix = Prefix;
                     let isAllowed = false;
+                    const casChan = settings.casinoChannelID || settings.casinochannelid;
+                    const casChan2 = settings.casinoChannelID2 || settings.casinochannelid2;
+
                     if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) { isAllowed = true; } 
-                    else if (settings && (settings.casinoChannelID === message.channel.id || settings.casinoChannelID2 === message.channel.id) && command.category === 'Economy') { isAllowed = true; }
+                    else if ((casChan === message.channel.id || casChan2 === message.channel.id) && command.category === 'Economy') { isAllowed = true; }
                     else {
                         try {
-                            const channelPerm = sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.id);
-                            const categoryPerm = message.channel.parentId ? sql.prepare("SELECT 1 FROM command_permissions WHERE guildID = ? AND commandName = ? AND channelID = ?").get(message.guild.id, command.name, message.channel.parentId) : null;
-                            if (channelPerm || categoryPerm) { isAllowed = true; }
+                            let pRes;
+                            try { pRes = await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.id]); }
+                            catch(e) { pRes = await db.query(`SELECT 1 FROM command_permissions WHERE guildid = $1 AND commandname = $2 AND channelid = $3`, [message.guild.id, command.name, message.channel.id]).catch(()=>({rows:[]})); }
+                            if (pRes.rows[0]) isAllowed = true;
+
+                            if (!isAllowed && message.channel.parentId) {
+                                let cRes;
+                                try { cRes = await db.query(`SELECT 1 FROM command_permissions WHERE "guildID" = $1 AND "commandName" = $2 AND "channelID" = $3`, [message.guild.id, command.name, message.channel.parentId]); }
+                                catch(e) { cRes = await db.query(`SELECT 1 FROM command_permissions WHERE guildid = $1 AND commandname = $2 AND channelid = $3`, [message.guild.id, command.name, message.channel.parentId]).catch(()=>({rows:[]})); }
+                                if (cRes.rows[0]) isAllowed = true;
+                            }
                         } catch (err) { isAllowed = false; }
                     }
+
                     if (isAllowed) {
                         try {
-                            const isBlacklisted = sql.prepare("SELECT 1 FROM blacklist WHERE userID = ?").get(message.author.id);
-                            if (isBlacklisted) return; 
+                            let bRes;
+                            try { bRes = await db.query(`SELECT 1 FROM blacklist WHERE "userID" = $1`, [message.author.id]); }
+                            catch(e) { bRes = await db.query(`SELECT 1 FROM blacklist WHERE userid = $1`, [message.author.id]).catch(()=>({rows:[]})); }
+                            if (bRes.rows[0]) return; 
                         } catch(e) {}
+
                         if (checkPermissions(message, command)) {
                             const cooldownMsg = checkCooldown(message, command);
                             if (cooldownMsg) { if (typeof cooldownMsg === 'string') message.reply(cooldownMsg); } 
-                            else { try { await command.execute(message, args); } catch (error) { console.error(error); message.reply("❌ حدث خطأ."); } }
+                            else { 
+                                try { await command.execute(message, args); } 
+                                catch (error) { console.error(error); message.reply("❌ حدث خطأ أثناء تنفيذ الأمر.").catch(()=>{}); } 
+                            }
                         }
                     }
                     return; 
@@ -650,7 +731,9 @@ module.exports = {
             }
         }
 
-        if (settings && ((settings.casinoChannelID && message.channel.id === settings.casinoChannelID) || (settings.casinoChannelID2 && message.channel.id === settings.casinoChannelID2))) {
+        const casChan = settings.casinoChannelID || settings.casinochannelid;
+        const casChan2 = settings.casinoChannelID2 || settings.casinochannelid2;
+        if ((casChan && message.channel.id === casChan) || (casChan2 && message.channel.id === casChan2)) {
             const args = message.content.trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
             const command = client.commands.find(cmd => (cmd.name && cmd.name.toLowerCase() === commandName) || (cmd.aliases && cmd.aliases.includes(commandName)));
@@ -663,29 +746,39 @@ module.exports = {
 
         try {
             const content = message.content.trim();
-            const autoReply = sql.prepare("SELECT * FROM auto_responses WHERE guildID = ? AND trigger = ?").get(message.guild.id, content);
+            let arRes;
+            try { arRes = await db.query(`SELECT * FROM auto_responses WHERE "guildID" = $1 AND "trigger" = $2`, [message.guild.id, content]); }
+            catch(e) { arRes = await db.query(`SELECT * FROM auto_responses WHERE guildid = $1 AND "trigger" = $2`, [message.guild.id, content]).catch(()=>({rows:[]})); }
+            const autoReply = arRes.rows[0];
+
             if (autoReply) {
-                if (autoReply.expiresAt && Date.now() > autoReply.expiresAt) {
-                    sql.prepare("DELETE FROM auto_responses WHERE id = ?").run(autoReply.id);
+                const expiresAt = Number(autoReply.expiresAt || autoReply.expiresat);
+                if (expiresAt && Date.now() > expiresAt) {
+                    try { await db.query(`DELETE FROM auto_responses WHERE "id" = $1`, [autoReply.id]); }
+                    catch(e) { await db.query(`DELETE FROM auto_responses WHERE id = $1`, [autoReply.id]).catch(()=>{}); }
                 } 
                 else {
                     let isAllowedChannel = true;
                     try {
-                        if (autoReply.allowedChannels) {
-                            const allowed = JSON.parse(autoReply.allowedChannels);
+                        const aChan = autoReply.allowedChannels || autoReply.allowedchannels;
+                        if (aChan) {
+                            const allowed = JSON.parse(aChan);
                             if (allowed.length > 0 && !allowed.includes(message.channel.id)) isAllowedChannel = false;
                         }
-                        if (autoReply.ignoredChannels) {
-                            const ignored = JSON.parse(autoReply.ignoredChannels);
+                        const iChan = autoReply.ignoredChannels || autoReply.ignoredchannels;
+                        if (iChan) {
+                            const ignored = JSON.parse(iChan);
                             if (ignored.length > 0 && ignored.includes(message.channel.id)) isAllowedChannel = false;
                         }
                     } catch (e) {} 
+
                     if (isAllowedChannel) {
                         const cooldownKey = `ar_${autoReply.id}_${message.channel.id}`;
-                        const cooldownTime = (autoReply.cooldown || 600) * 1000;
+                        const cooldownTime = (Number(autoReply.cooldown) || 600) * 1000;
                         const now = Date.now();
                         if (message.author.id === message.guild.ownerId || !autoResponderCooldowns.has(cooldownKey) || now > autoResponderCooldowns.get(cooldownKey)) {
-                            const files = autoReply.images ? JSON.parse(autoReply.images) : [];
+                            const filesStr = autoReply.images || '[]';
+                            const files = JSON.parse(filesStr);
                             await safeReply(message, { content: autoReply.response, files: files, allowedMentions: { repliedUser: false } }).catch(() => {});
                             autoResponderCooldowns.set(cooldownKey, now + cooldownTime);
                             setTimeout(() => autoResponderCooldowns.delete(cooldownKey), cooldownTime);
@@ -693,6 +786,6 @@ module.exports = {
                     }
                 }
             }
-        } catch (err) { console.error("[Auto Responder Error]", err); }
+        } catch (err) {}
     },
 };
