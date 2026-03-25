@@ -30,10 +30,6 @@ const RARITY_COLORS = {
     'Legendary': '#FFD700'    
 };
 
-// ==========================================
-// 🔥 دوال الرسم والتصميم المتقدمة 🔥
-// ==========================================
-
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
@@ -134,9 +130,6 @@ function drawMagicCircle(ctx, cx, cy, radius, color) {
     ctx.restore();
 }
 
-// ========================================================
-// 🔥 دالة 1: شبكة الأقسام المحدثة (نظام المؤشر D-Pad) 🔥
-// ========================================================
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages, selectedIndex = 0) {
     const width = 1200; 
     const height = 900; 
@@ -206,26 +199,33 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             const y = startY + row * (slotSize + gapY);
             drawOrnateFrame(ctx, x, y, slotSize, slotSize, 'rgba(255,255,255,0.05)');
 
-            // 🔥 المؤشر الفخم للحقيبة الفارغة 🔥
             if (i === selectedIndex) {
                 ctx.save();
-                ctx.strokeStyle = '#00FFFF'; 
-                ctx.lineWidth = 4;
+                const cl = 20;
+                ctx.beginPath();
+                ctx.moveTo(x + cl, y);
+                ctx.lineTo(x + slotSize - cl, y);
+                ctx.lineTo(x + slotSize, y + cl);
+                ctx.lineTo(x + slotSize, y + slotSize - cl);
+                ctx.lineTo(x + slotSize - cl, y + slotSize);
+                ctx.lineTo(x + cl, y + slotSize);
+                ctx.lineTo(x, y + slotSize - cl);
+                ctx.lineTo(x, y + cl);
+                ctx.closePath();
+
                 ctx.shadowColor = '#00FFFF';
-                ctx.shadowBlur = 15;
-                roundRect(ctx, x - 4, y - 4, slotSize + 8, slotSize + 8, 5); // زوايا حادة لتناسب المربع
+                ctx.shadowBlur = 25;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 4;
                 ctx.stroke();
 
-                const cornerLen = 25;
+                ctx.shadowBlur = 50;
+                ctx.strokeStyle = '#00FFFF';
                 ctx.lineWidth = 6;
-                ctx.strokeStyle = '#FFFFFF';
-                ctx.shadowBlur = 10;
-                ctx.beginPath();
-                ctx.moveTo(x - 8, y + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x + cornerLen, y - 8);
-                ctx.moveTo(x + slotSize - cornerLen, y - 8); ctx.lineTo(x + slotSize + 8, y - 8); ctx.lineTo(x + slotSize + 8, y + cornerLen);
-                ctx.moveTo(x + slotSize + 8, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 8, y + slotSize + 8); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 8);
-                ctx.moveTo(x + cornerLen, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize - cornerLen);
                 ctx.stroke();
+
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+                ctx.fill();
                 ctx.restore();
             }
         }
@@ -247,7 +247,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
         ctx.shadowBlur = 0;
 
-        // ⚡ تسريع الإنشاء
         return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
     }
 
@@ -325,39 +324,40 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.fillText(qtyText, badgeX, badgeY + 1);
         }
 
-        // 🔥 نظام المؤشر (D-Pad Cursor) الدقيق للحقيبة الممتلئة والفارغة 🔥
         if (i === selectedIndex) {
             ctx.save();
-            ctx.strokeStyle = '#00FFFF'; 
-            ctx.lineWidth = 4;
-            ctx.shadowColor = '#00FFFF';
-            ctx.shadowBlur = 15;
-            
-            // جعل الزوايا أقل انحناءً (5 بدلاً من 15) لتناسب حواف المربعات تماماً
-            roundRect(ctx, x - 4, y - 4, slotSize + 8, slotSize + 8, 5); 
-            ctx.stroke();
-            
-            const cornerLen = 25;
-            ctx.lineWidth = 6;
-            ctx.strokeStyle = '#FFFFFF';
-            ctx.shadowBlur = 10;
+            const cl = 20;
             ctx.beginPath();
-            ctx.moveTo(x - 8, y + cornerLen); ctx.lineTo(x - 8, y - 8); ctx.lineTo(x + cornerLen, y - 8);
-            ctx.moveTo(x + slotSize - cornerLen, y - 8); ctx.lineTo(x + slotSize + 8, y - 8); ctx.lineTo(x + slotSize + 8, y + cornerLen);
-            ctx.moveTo(x + slotSize + 8, y + slotSize - cornerLen); ctx.lineTo(x + slotSize + 8, y + slotSize + 8); ctx.lineTo(x + slotSize - cornerLen, y + slotSize + 8);
-            ctx.moveTo(x + cornerLen, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize + 8); ctx.lineTo(x - 8, y + slotSize - cornerLen);
+            ctx.moveTo(x + cl, y);
+            ctx.lineTo(x + slotSize - cl, y);
+            ctx.lineTo(x + slotSize, y + cl);
+            ctx.lineTo(x + slotSize, y + slotSize - cl);
+            ctx.lineTo(x + slotSize - cl, y + slotSize);
+            ctx.lineTo(x + cl, y + slotSize);
+            ctx.lineTo(x, y + slotSize - cl);
+            ctx.lineTo(x, y + cl);
+            ctx.closePath();
+
+            ctx.shadowColor = '#00FFFF';
+            ctx.shadowBlur = 25;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 4;
             ctx.stroke();
+
+            ctx.shadowBlur = 50;
+            ctx.strokeStyle = '#00FFFF';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+            ctx.fill();
             ctx.restore();
         }
     }
 
-    // ⚡ تسريع الإنشاء
     return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
 }
 
-// ========================================================
-// 🔥 دالة 2: الصفحة الرئيسية (الخيمة) 🔥
-// ========================================================
 async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName) {
     const width = 1100;
     const height = 650;
@@ -509,7 +509,6 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
         ctx.shadowBlur = 0;
     }
 
-    // ⚡ تسريع الإنشاء
     return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
 }
 
