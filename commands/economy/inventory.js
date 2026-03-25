@@ -36,6 +36,30 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
+// 🔥 خريطة مسميات صور المهارات الجديدة 🔥
+const SKILL_TO_IMAGE = {
+    'skill_healing': 'heal.png',
+    'skill_shielding': 'shield.png',
+    'skill_buffing': 'buff.png',
+    'skill_rebound': 'rebound.png',
+    'skill_weaken': 'weaken.png',
+    'skill_dispel': 'dispel.png',
+    'skill_cleanse': 'cleanse.png',
+    'skill_poison': 'poison.png',
+    'skill_gamble': 'gamble.png',
+    'race_dragon_skill': 'dragon.png',
+    'race_human_skill': 'human.png',
+    'race_seraphim_skill': 'seraphim.png',
+    'race_demon_skill': 'demon.png',
+    'race_elf_skill': 'elf.png',
+    'race_dark_elf_skill': 'darkelf.png',
+    'race_vampire_skill': 'vampire.png',
+    'race_hybrid_skill': 'hybrid.png',
+    'race_spirit_skill': 'spirit.png',
+    'race_dwarf_skill': 'dwarf.png',
+    'race_ghoul_skill': 'ghoul.png'
+};
+
 function resolveItemInfo(itemId) {
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
@@ -131,10 +155,16 @@ module.exports = {
             const wConf = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
             if (wConf) categories.combat.push({ name: wConf.name, emoji: wConf.emoji || '🗡️', quantity: wData.weaponLevel || wData.weaponlevel, rarity: 'Legendary', imgPath: null, id: 'weapon' });
         }
+        
+        // 🔥 تحديث المهارات لتعرض صور المهارات الجديدة 🔥
         if (skills.length > 0) {
             skills.forEach(s => {
                 const sConf = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
-                if (sConf) categories.combat.push({ name: sConf.name, emoji: sConf.emoji || '📜', quantity: s.skillLevel || s.skilllevel, rarity: 'Epic', imgPath: null, id: s.skillID || s.skillid });
+                if (sConf) {
+                    const imgFileName = SKILL_TO_IMAGE[sConf.id];
+                    const imgPath = imgFileName ? `images/skills/${imgFileName}` : null;
+                    categories.combat.push({ name: sConf.name, emoji: sConf.emoji || '📜', quantity: s.skillLevel || s.skilllevel, rarity: 'Epic', imgPath: imgPath, id: s.skillID || s.skillid });
+                }
             });
         }
 
@@ -174,23 +204,50 @@ module.exports = {
         const renderCategory = async (catName) => {
             const catTitles = { combat: 'الأسلحة والمهارات', materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
             
-            // 🔥 دمج واجهة الحقيبة الرئيسية (Main Hub) 🔥
+            // 🔥 دمج بيانات واجهة الحقيبة الرئيسية (Main Hub) الملكية المتكاملة 🔥
             if (catName === 'main') {
-                const targetLvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
+                const targetLvlRes = await db.query(`SELECT "mora", "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT mora, level FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
                 const targetMora = targetLvlRes?.rows[0] ? Number(targetLvlRes.rows[0].mora) : 0;
+                const targetLevel = targetLvlRes?.rows[0] ? Number(targetLvlRes.rows[0].level) : 1;
+
+                // حساب درع الرتبة
+                let rankLetter = 'F';
+                if(targetLevel >= 100) rankLetter = 'SSS';
+                else if(targetLevel >= 80) rankLetter = 'SS';
+                else if(targetLevel >= 60) rankLetter = 'S';
+                else if(targetLevel >= 40) rankLetter = 'A';
+                else if(targetLevel >= 20) rankLetter = 'B';
+                else if(targetLevel >= 10) rankLetter = 'C';
+                else if(targetLevel >= 5) rankLetter = 'D';
+
+                // جلب العرق مباشرة وبأمان
+                let raceName = 'بشري';
+                try {
+                    const profileRes = await db.query(`SELECT "raceName" FROM user_profile WHERE "userID" = $1`, [userId]).catch(()=> db.query(`SELECT racename as "raceName" FROM user_profile WHERE userid = $1`, [userId]));
+                    if (profileRes && profileRes.rows[0]) {
+                        const rRaw = profileRes.rows[0].raceName;
+                        const RACE_TRANSLATIONS = { 'Human': 'بشري', 'Dragon': 'تنين', 'Elf': 'آلف', 'Dark Elf': 'آلف الظلام', 'Seraphim': 'سيرافيم', 'Demon': 'شيطان', 'Vampire': 'مصاص دماء', 'Spirit': 'روح', 'Dwarf': 'قزم', 'Ghoul': 'غول', 'Hybrid': 'نصف وحش' };
+                        raceName = RACE_TRANSLATIONS[rRaw] || rRaw || 'بشري';
+                    }
+                } catch(e) {}
+
+                // جلب السلاح من مصفوفة المعدات
+                const currentWeapon = categories.combat.find(w => w.id === 'weapon');
+                const weaponName = currentWeapon ? currentWeapon.name : 'بدون سلاح';
 
                 if (generateMainHub) {
-                    const imgBuffer = await generateMainHub(targetUser.user, targetUser.displayName, targetMora);
+                    const targetUserName = targetUser.displayName || targetUser.user.username;
+                    const imgBuffer = await generateMainHub(targetUser.user, targetUserName, targetMora, rankLetter, raceName, weaponName);
                     const attachment = new AttachmentBuilder(imgBuffer, { name: 'main_hub.png' });
-                    return { content: `**⛺ خيمة ${targetUser.displayName}**`, embeds: [], components: getComponents(), files: [attachment] };
+                    return { content: `**⛺ خيمة ${targetUserName}**`, embeds: [], components: getComponents(), files: [attachment] };
                 } else {
-                    return { content: `**⛺ خيمة ${targetUser.displayName}**\n> حدد القسم الذي تود استكشافه من الأزرار:`, embeds: [], components: getComponents(), files: [] };
+                    return { content: `**⛺ خيمة ${targetUser.displayName || targetUser.user.username}**\n> حدد القسم الذي تود استكشافه من الأزرار:`, embeds: [], components: getComponents(), files: [] };
                 }
             }
 
             const items = categories[catName];
             if (items.length === 0) {
-                return { content: `**🎒 ${targetUser.displayName} | [ ${catTitles[catName]} ]**\n> ❌ هذه الحقيبة فارغة تماماً.`, embeds: [], components: getComponents(items), files: [] };
+                return { content: `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**\n> ❌ هذه الحقيبة فارغة تماماً.`, embeds: [], components: getComponents(items), files: [] };
             }
 
             const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
@@ -201,11 +258,11 @@ module.exports = {
             const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
             if (generateInventoryCard) {
-                const imgBuffer = await generateInventoryCard(targetUser.displayName, catTitles[catName], pageItems, currentPage, totalPages);
+                const imgBuffer = await generateInventoryCard(targetUser.displayName || targetUser.user.username, catTitles[catName], pageItems, currentPage, totalPages);
                 const attachment = new AttachmentBuilder(imgBuffer, { name: 'inventory_card.png' });
-                return { content: `**🎒 ${targetUser.displayName} | [ ${catTitles[catName]} ]**`, embeds: [], components: getComponents(items), files: [attachment] };
+                return { content: `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**`, embeds: [], components: getComponents(items), files: [attachment] };
             } else {
-                let desc = `**🎒 ${targetUser.displayName} | [ ${catTitles[catName]} ]**\n\n`;
+                let desc = `**🎒 ${targetUser.displayName || targetUser.user.username} | [ ${catTitles[catName]} ]**\n\n`;
                 pageItems.forEach(item => { desc += `> ${item.emoji} **${item.name}** : \`${item.quantity}\`\n`; });
                 return { content: desc, embeds: [], components: getComponents(items), files: [] };
             }
