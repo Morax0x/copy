@@ -1,23 +1,11 @@
-const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
-const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
+const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
+const { calculateBuffMultiplier, calculateMoraBuff } = require("../handlers/streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
-const weaponsConfig = require('../json/weapons-config.json');
-const skillsConfig = require('../json/skills-config.json');
-const upgradeMats = require('../json/upgrade-materials.json');
-const potionItems = require('../json/potions.json');
 
-let generateInventoryCard, generateMainHub, generateSkillsCard;
-try {
-    ({ generateInventoryCard, generateMainHub } = require('../generators/inventory-generator.js'));
-    ({ generateSkillsCard } = require('../generators/skills-card-generator.js'));
-} catch (e) {
-    generateInventoryCard = null; generateMainHub = null; generateSkillsCard = null;
-}
-
-let fishData = [], farmItems = [];
-try { fishData = require('../json/fish.json'); } catch(e) {}
-try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
+// 🔥 استدعاء الـ Handlers الجديدة 🔥
+const { getInventoryView, resolveItemInfo } = require('../handlers/inventory-handler.js');
+const { getCombatView } = require('../handlers/combat-handler.js');
 
 let calculateRequiredXP;
 try {
@@ -33,38 +21,12 @@ const TARGET_OWNER_ID = "1145327691772481577";
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
-const ITEMS_PER_PAGE = 15;
-const SKILLS_PER_PAGE = 3;
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
     ['Seraphim', 'سيرافيم'], ['Demon', 'شيطان'], ['Vampire', 'مصاص دماء'],
     ['Spirit', 'روح'], ['Dwarf', 'قزم'], ['Ghoul', 'غول'], ['Hybrid', 'نصف وحش']
 ]);
-
-const ID_TO_IMAGE = {
-    'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
-    'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
-    'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
-    'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
-    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
-    'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
-    'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
-    'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
-    'mat_hybrid_1': 'hybrid_claw.png', 'mat_hybrid_2': 'hybrid_fur.png', 'mat_hybrid_3': 'hybrid_bone.png', 'mat_hybrid_4': 'hybrid_crystal.png', 'mat_hybrid_5': 'hybrid_soul.png',
-    'mat_dwarf_1': 'dwarf_copper.png', 'mat_dwarf_2': 'dwarf_bronze.png', 'mat_dwarf_3': 'dwarf_mithril.png', 'mat_dwarf_4': 'dwarf_heart.png', 'mat_dwarf_5': 'dwarf_hammer.png',
-    'mat_ghoul_1': 'ghoul_bone.png', 'mat_ghoul_2': 'ghoul_remains.png', 'mat_ghoul_3': 'ghoul_skull.png', 'mat_ghoul_4': 'ghoul_crystal.png', 'mat_ghoul_5': 'ghoul_core.png',
-    'book_general_1': 'gen_book_tactic.png', 'book_general_2': 'gen_book_combat.png', 'book_general_3': 'gen_book_arts.png', 'book_general_4': 'gen_book_war.png', 'book_general_5': 'gen_book_wisdom.png',
-    'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
-};
-
-const SKILL_TO_IMAGE = {
-    'skill_healing': 'heal.png', 'skill_shielding': 'shield.png', 'skill_buffing': 'buff.png', 'skill_rebound': 'rebound.png',
-    'skill_weaken': 'weaken.png', 'skill_dispel': 'dispel.png', 'skill_cleanse': 'cleanse.png', 'skill_poison': 'poison.png',
-    'skill_gamble': 'gamble.png', 'race_dragon_skill': 'dragon.png', 'race_human_skill': 'human.png', 'race_seraphim_skill': 'seraphim.png',
-    'race_demon_skill': 'demon.png', 'race_elf_skill': 'elf.png', 'race_dark_elf_skill': 'darkelf.png', 'race_vampire_skill': 'vampire.png',
-    'race_hybrid_skill': 'hybrid.png', 'race_spirit_skill': 'spirit.png', 'race_dwarf_skill': 'dwarf.png', 'race_ghoul_skill': 'ghoul.png'
-};
 
 function getRepRankInfo(points) {
     if (points >= 1000) return { name: '👑 رتبة SS', color: '#FF0055' }; 
@@ -77,35 +39,10 @@ function getRepRankInfo(points) {
     return { name: '🪵 رتبة F', color: '#654321' }; 
 }
 
-function resolveItemInfo(itemId) {
-    if (upgradeMats && upgradeMats.weapon_materials) {
-        for (const race of upgradeMats.weapon_materials) {
-            const mat = race.materials.find(m => m.id === itemId);
-            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-        }
-    }
-    if (upgradeMats && upgradeMats.skill_books) {
-        for (const cat of upgradeMats.skill_books) {
-            const book = cat.books.find(b => b.id === itemId);
-            const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) return { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-        }
-    }
-    if (fishData && fishData.length > 0) {
-        const fish = fishData.find(f => f.id === itemId || f.name === itemId);
-        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
-    }
-    if (farmItems && farmItems.length > 0) {
-        const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) return { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
-    }
-    return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
-}
-
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
     
-    const weapons = db.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
+    const weapons = db.prepare("SELECT userID, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
     const levels = db.prepare("SELECT user as userID, level FROM levels WHERE guild = ?").all(guildID);
     const levelsMap = new Map(levels.map(r => [r.userID, r.level]));
     const skills = db.prepare("SELECT userID, SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? GROUP BY userID").all(guildID);
@@ -113,13 +50,10 @@ async function calculateStrongestRank(db, guildID, targetUserID) {
 
     let stats = [];
     for (const w of weapons) {
-        const conf = weaponsConfig.find(c => c.race === w.raceName);
-        if(!conf) continue;
-        const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
         const playerLevel = levelsMap.get(w.userID) || 1;
         const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
         const skillLevelsTotal = skillsMap.get(w.userID) || 0;
-        const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
+        const powerScore = Math.floor((w.weaponLevel * 10) + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
         stats.push({ userID: w.userID, powerScore });
     }
     stats.sort((a, b) => b.powerScore - a.powerScore);
@@ -183,128 +117,32 @@ module.exports = {
             const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
             // =====================================
-            // 📊 1. جلب البيانات الأساسية للبروفايل (مباشرة وبأمان)
+            // 📊 1. جلب البيانات الأساسية للـ Context
             // =====================================
-            let levelData = db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(userId, guildId);
-            if (!levelData) {
-                levelData = { xp: 0, level: 1, mora: 0, bank: 0 };
-            }
-            
+            let levelData = db.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
             const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
-            const currentXP = Number(levelData.xp) || 0;
-            const requiredXP = calculateRequiredXP(levelData.level);
-
-            const repData = db.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(userId, guildId) || { rep_points: 0 };
-            const rankInfo = getRepRankInfo(repData.rep_points || 0);
-
+            
             const userRaceData = await getUserRace(targetMember, db);
             const raceNameRaw = userRaceData ? userRaceData.raceName : null;
             const arabicRaceName = raceNameRaw ? (RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw) : "مجهول";
             
             const weaponData = await getWeaponData(db, targetMember);
             const weaponName = weaponData ? weaponData.name : "بدون سلاح";
-            const weaponDmg = weaponData ? weaponData.currentDamage : 0;
-            const maxHp = PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL);
 
-            const streakData = db.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildId, userId) || {};
-            const streakCount = streakData.streakCount || 0;
-            const totalShields = Number(streakData.hasItemShield || 0) + Number(streakData.hasGracePeriod === 1 ? 1 : 0);
-
-            const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
-            const moraBuffMultiplier = await calculateMoraBuff(targetMember, db);
-            const xpBuffPercent = Math.floor((xpBuffMultiplier - 1) * 100);
-            const moraBuffPercent = Math.floor((moraBuffMultiplier - 1) * 100);
-
-            let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
-            if (userId !== TARGET_OWNER_ID) {
-                const allScores = db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guildId, TARGET_OWNER_ID);
-                ranks.level = (allScores.findIndex(s => s.user === userId) + 1).toString();
-
-                const allMora = db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (CAST(COALESCE(mora, '0') AS INTEGER) + CAST(COALESCE(bank, '0') AS INTEGER)) DESC").all(guildId, TARGET_OWNER_ID);
-                ranks.mora = (allMora.findIndex(s => s.user === userId) + 1).toString();
-
-                const allStreaks = db.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(guildId, TARGET_OWNER_ID);
-                ranks.streak = (allStreaks.findIndex(s => s.userID === userId) + 1).toString();
-
-                let rPower = await calculateStrongestRank(db, guildId, userId);
-                ranks.power = rPower > 0 ? rPower.toString() : "0";
-            }
-
-            let displayMora = totalMora.toLocaleString();
-            if (userId === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) displayMora = "???";
-
-            const profileData = {
-                user: targetUser, displayName: cleanName, rankInfo: rankInfo, repPoints: repData.rep_points || 0,
-                level: levelData.level, currentXP: currentXP, requiredXP: requiredXP, mora: displayMora, raceName: arabicRaceName,
-                weaponName: weaponName, weaponDmg: weaponDmg, maxHp: maxHp, streakCount: streakCount, xpBuff: xpBuffPercent,
-                moraBuff: moraBuffPercent, shields: totalShields, ranks: ranks
+            const profileContext = {
+                guildId, isOwnProfile, level: levelData.level, totalMora,
+                raceNameRaw, arabicRaceName, weaponName, weaponData, userLevel: levelData.level
             };
 
             // =====================================
-            // 🎒 2. جلب بيانات الحقيبة والمهارات
-            // =====================================
-            const inventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
-            const dbSkills = db.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
-
-            const categories = { materials: [], fishing: [], farming: [], others: [] };
-            for (const row of inventory) {
-                const itemId = row.itemID;
-                const quantity = Number(row.quantity) || 0;
-                if (quantity <= 0) continue;
-                const itemInfo = resolveItemInfo(itemId);
-                if (categories[itemInfo.category]) categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
-                else categories.others.push({ ...itemInfo, quantity, id: itemId });
-            }
-
-            let totalSpent = 0;
-            let allSkillsList = [];
-            let raceSkillId = null;
-
-            if (userRaceData && weaponData) {
-                const originalWeaponConfig = weaponsConfig.find(w => w.race === raceNameRaw);
-                if (originalWeaponConfig) {
-                    for (let i = 0; i < weaponData.currentLevel; i++) totalSpent += originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
-                }
-                const cleanRaceName = raceNameRaw.toLowerCase().trim().replace(/\s+/g, '_');
-                raceSkillId = `race_${cleanRaceName}_skill`;
-            }
-
-            let hasRaceSkillInDB = false;
-            if (dbSkills.length > 0) {
-                for (const dbSkill of dbSkills) {
-                    const skillID = dbSkill.skillID;
-                    const skillLevel = Number(dbSkill.skillLevel);
-                    const skillConfig = skillsConfig.find(s => s.id === skillID);
-                    if (skillConfig) {
-                        if (skillConfig.name.includes("شق زمكان") && userId !== TARGET_OWNER_ID) continue; 
-                        if (skillID.startsWith('race_') && raceSkillId && skillID !== raceSkillId) continue; 
-                        if (raceSkillId && skillID === raceSkillId) hasRaceSkillInDB = true;
-                        allSkillsList.push({ id: skillID, name: skillConfig.name, level: skillLevel, description: skillConfig.description });
-                        for (let i = 0; i < skillLevel; i++) totalSpent += skillConfig.base_price + (skillConfig.price_increment * i);
-                    }
-                }
-            }
-
-            if (userRaceData && raceSkillId && !hasRaceSkillInDB) {
-                const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
-                if (raceSkillConfig && (!raceSkillConfig.name.includes("شق زمكان") || userId === TARGET_OWNER_ID)) {
-                    allSkillsList.push({ id: raceSkillId, name: raceSkillConfig.name, level: 1, description: raceSkillConfig.description + " [غير مطورة]" });
-                }
-            }
-            allSkillsList.sort((a, b) => b.level - a.level);
-
-            // =====================================
-            // 🎮 3. توجيه العرض بناءً على الأمر أو السلاش
+            // 🎮 2. توجيه العرض (Routing)
             // =====================================
             let currentView = 'profile'; 
             let invCategory = 'main';
 
             if (isSlash) {
                 const chosenTab = interactionOrMessage.options.getString('tab');
-                if (chosenTab) {
-                    currentView = chosenTab;
-                    if (chosenTab === 'inventory') invCategory = 'main';
-                }
+                if (chosenTab) { currentView = chosenTab; if (chosenTab === 'inventory') invCategory = 'main'; }
             } else {
                 const commandUsed = interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase();
                 if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandUsed)) { currentView = 'inventory'; invCategory = 'main'; }
@@ -322,83 +160,48 @@ module.exports = {
                 );
             };
 
-            const getInvCategoryButtons = () => {
-                return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('الخيمة').setEmoji('⛺').setStyle(invCategory === 'main' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId(`cat_materials_${authorUser.id}`).setLabel('موارد').setEmoji('💎').setStyle(invCategory === 'materials' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId(`cat_fishing_${authorUser.id}`).setLabel('صيد').setEmoji('🎣').setStyle(invCategory === 'fishing' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId(`cat_farming_${authorUser.id}`).setLabel('مزرعة').setEmoji('🌾').setStyle(invCategory === 'farming' ? ButtonStyle.Success : ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId(`cat_others_${authorUser.id}`).setLabel('أخرى').setEmoji('📦').setStyle(invCategory === 'others' ? ButtonStyle.Success : ButtonStyle.Secondary)
-                );
-            };
-
             const renderView = async () => {
-                let components = [getNavigationButtons()];
+                let viewData = { content: "", files: [], components: [] };
 
                 if (currentView === 'profile') {
-                    const buffer = await generateAdventurerCard(profileData);
-                    const attachment = new AttachmentBuilder(buffer, { name: 'profile.png' });
-                    return { content: `**🪪 البطاقة الشخصية لـ ${cleanName}**`, files: [attachment], components };
+                    // حسابات البروفايل المعقدة تبقى هنا لأنها تخصه فقط
+                    const repData = db.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(userId, guildId) || { rep_points: 0 };
+                    const streakData = db.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildId, userId) || {};
+                    const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
+                    const moraBuffMultiplier = await calculateMoraBuff(targetMember, db);
+
+                    let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
+                    if (userId !== TARGET_OWNER_ID) {
+                        ranks.level = (db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guildId, TARGET_OWNER_ID).findIndex(s => s.user === userId) + 1).toString();
+                        ranks.mora = (db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (CAST(COALESCE(mora, '0') AS INTEGER) + CAST(COALESCE(bank, '0') AS INTEGER)) DESC").all(guildId, TARGET_OWNER_ID).findIndex(s => s.user === userId) + 1).toString();
+                        ranks.power = (await calculateStrongestRank(db, guildId, userId)).toString();
+                    }
+
+                    let displayMora = totalMora.toLocaleString();
+                    if (userId === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) displayMora = "???";
+
+                    const profData = {
+                        user: targetUser, displayName: cleanName, rankInfo: getRepRankInfo(repData.rep_points || 0), repPoints: repData.rep_points || 0,
+                        level: levelData.level, currentXP: Number(levelData.xp) || 0, requiredXP: calculateRequiredXP(levelData.level), mora: displayMora, raceName: arabicRaceName,
+                        weaponName: weaponName, weaponDmg: weaponData ? weaponData.currentDamage : 0, maxHp: PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL), streakCount: streakData.streakCount || 0, xpBuff: Math.floor((xpBuffMultiplier - 1) * 100),
+                        moraBuff: Math.floor((moraBuffMultiplier - 1) * 100), shields: Number(streakData.hasItemShield || 0) + Number(streakData.hasGracePeriod === 1 ? 1 : 0), ranks: ranks
+                    };
+
+                    const buffer = await generateAdventurerCard(profData);
+                    viewData = { content: `**🪪 البطاقة الشخصية لـ ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'profile.png' })] };
                 } 
                 else if (currentView === 'combat') {
-                    if (!generateSkillsCard) return { content: "❌ لا يمكن رسم بطاقة المهارات حالياً.", components };
-                    const totalSkillPages = Math.max(1, Math.ceil(allSkillsList.length / SKILLS_PER_PAGE));
-                    const currentSkillsSlice = allSkillsList.slice(skillPage * SKILLS_PER_PAGE, (skillPage + 1) * SKILLS_PER_PAGE);
-                    
-                    const cardData = {
-                        user: targetUser, avatarUrl: targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
-                        cleanName: cleanName, weaponData: weaponData, raceName: arabicRaceName, skillsList: currentSkillsSlice,
-                        totalSpent: totalSpent, userLevel: levelData.level, currentPage: skillPage, totalPages: totalSkillPages
-                    };
-                    const buffer = await generateSkillsCard(cardData);
-                    const attachment = new AttachmentBuilder(buffer, { name: `skills.png` });
-
-                    if (totalSkillPages > 1) {
-                        components.push(new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`sk_prev_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage === 0),
-                            new ButtonBuilder().setCustomId(`sk_next_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage === totalSkillPages - 1)
-                        ));
-                    }
-                    return { content: `**⚔️ العتاد والمهارات لـ ${cleanName}**`, files: [attachment], components };
+                    // سحب الواجهة من Combat Handler
+                    viewData = await getCombatView(db, targetUser, cleanName, authorUser.id, skillPage, profileContext);
                 }
                 else if (currentView === 'inventory') {
-                    components.push(getInvCategoryButtons());
-                    
-                    if (invCategory === 'main') {
-                        let rankLetter = 'F';
-                        if(levelData.level >= 100) rankLetter = 'SSS'; else if(levelData.level >= 80) rankLetter = 'SS'; else if(levelData.level >= 60) rankLetter = 'S'; else if(levelData.level >= 40) rankLetter = 'A'; else if(levelData.level >= 20) rankLetter = 'B'; else if(levelData.level >= 10) rankLetter = 'C'; else if(levelData.level >= 5) rankLetter = 'D';
-                        const buffer = await generateMainHub(targetUser, cleanName, totalMora, rankLetter, arabicRaceName, weaponName);
-                        const attachment = new AttachmentBuilder(buffer, { name: 'hub.png' });
-                        return { content: `**⛺ خيمة ${cleanName}**`, files: [attachment], components };
-                    }
-                    
-                    const items = categories[invCategory] || [];
-                    const catTitles = { materials: 'موارد التطوير', fishing: 'الصيد والأسماك', farming: 'المزرعة والزراعة', others: 'متفرقات' };
-                    
-                    if (items.length === 0) {
-                        return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**\n> ❌ هذا القسم فارغ تماماً.`, files: [], components };
-                    }
-
-                    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-                    if (invPage > totalPages) invPage = totalPages;
-                    const startIdx = (invPage - 1) * ITEMS_PER_PAGE;
-                    const pageItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-                    if (totalPages > 1) {
-                        components.push(new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                            new ButtonBuilder().setCustomId('disp').setLabel(`${invPage}/${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === totalPages)
-                        ));
-                    }
-                    if (isOwnProfile) {
-                        components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('مبادلة عنصر 🤝').setStyle(ButtonStyle.Success)));
-                    }
-
-                    const buffer = await generateInventoryCard(cleanName, catTitles[invCategory], pageItems, invPage, totalPages);
-                    const attachment = new AttachmentBuilder(buffer, { name: 'inv.png' });
-                    return { content: `**🎒 ${cleanName} | [ ${catTitles[invCategory]} ]**`, files: [attachment], components };
+                    // سحب الواجهة من Inventory Handler
+                    viewData = await getInventoryView(db, targetUser, cleanName, authorUser.id, invCategory, invPage, profileContext);
                 }
+
+                // إضافة أزرار التنقل الرئيسية في أعلى أي شيء يعود من الهاندلرات
+                viewData.components.unshift(getNavigationButtons());
+                return viewData;
             };
 
             const msg = await reply(await renderView());
@@ -409,108 +212,21 @@ module.exports = {
                 try { await i.deferUpdate(); } catch(e) { return; }
                 const id = i.customId;
 
-                if (id.startsWith('view_')) {
-                    currentView = id.split('_')[1];
-                    await msg.edit(await renderView()).catch(()=>{});
-                }
-                else if (id.startsWith('cat_')) {
-                    invCategory = id.split('_')[1];
-                    invPage = 1;
-                    await msg.edit(await renderView()).catch(()=>{});
-                }
+                if (id.startsWith('view_')) { currentView = id.split('_')[1]; await msg.edit(await renderView()).catch(()=>{}); }
+                else if (id.startsWith('cat_')) { invCategory = id.split('_')[1]; invPage = 1; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('inv_n_')) { invPage++; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('inv_p_')) { invPage--; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('sk_next_')) { skillPage++; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('sk_prev_')) { skillPage--; await msg.edit(await renderView()).catch(()=>{}); }
                 else if (id.startsWith('trade_init_')) {
-                    const tradableItems = categories[invCategory];
-                    const options = tradableItems.slice(0, 25).map(item => ({ label: item.name, value: item.id, emoji: item.emoji || '📦', description: `الكمية المتاحة: ${item.quantity}` }));
+                    const inventory = db.prepare("SELECT itemID, quantity FROM user_inventory WHERE userID = ? AND guildID = ?").all(targetUser.id, guildId) || [];
+                    const itemsInCat = inventory.map(row => { const info = resolveItemInfo(row.itemID); return {...info, id: row.itemID, quantity: row.quantity}; }).filter(i => i.category === (invCategory === 'others' ? 'others' : invCategory));
+                    
+                    const options = itemsInCat.slice(0, 25).map(item => ({ label: item.name, value: item.id, emoji: item.emoji || '📦', description: `الكمية المتاحة: ${item.quantity}` }));
                     const itemSelect = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`trade_item_${authorUser.id}`).setPlaceholder('اختر العنصر الذي تريد إرساله...').addOptions(options));
                     await i.editReply({ components: [itemSelect] }).catch(()=>{});
                 }
-                else if (i.isStringSelectMenu() && id.startsWith('trade_item_')) {
-                    global.tradeTempItem = i.values[0];
-                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تريد التعامل معه...'));
-                    await i.editReply({ components: [userSelect] }).catch(()=>{});
-                }
-                else if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
-                    const targetID = i.values[0];
-                    if (targetID === authorUser.id || (await client.users.fetch(targetID)).bot) return i.followUp({ content: '❌ لا يمكنك التبادل مع نفسك أو البوت!', flags: [MessageFlags.Ephemeral] });
-
-                    const modal = new ModalBuilder().setCustomId(`trade_modal_${authorUser.id}_${targetID}`).setTitle('إعدادات المبادلة');
-                    modal.addComponents(
-                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_qty').setLabel('الكمية المراد إرسالها').setStyle(TextInputStyle.Short).setRequired(true)),
-                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
-                    );
-                    await i.showModal(modal).catch(()=>{});
-
-                    try {
-                        const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${authorUser.id}_${targetID}`, time: 60000 });
-                        const qty = parseInt(modalSubmit.fields.getTextInputValue('trade_qty'));
-                        const price = parseInt(modalSubmit.fields.getTextInputValue('trade_price'));
-
-                        if (isNaN(qty) || qty <= 0) return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: [MessageFlags.Ephemeral] });
-                        if (isNaN(price) || price < 0) return modalSubmit.reply({ content: '❌ سعر غير صالح.', flags: [MessageFlags.Ephemeral] });
-
-                        const senderInvData = db.prepare("SELECT quantity, id FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(authorUser.id, guildId, global.tradeTempItem);
-                        if (!senderInvData || senderInvData.quantity < qty) return modalSubmit.reply({ content: '❌ أنت لا تملك هذه الكمية في حقيبتك!', flags: [MessageFlags.Ephemeral] });
-
-                        const itemInfo = resolveItemInfo(global.tradeTempItem);
-
-                        if (price === 0) {
-                            const newSenderQty = senderInvData.quantity - qty;
-                            if (newSenderQty > 0) db.prepare("UPDATE user_inventory SET quantity = ? WHERE id = ?").run(newSenderQty, senderInvData.id);
-                            else db.prepare("DELETE FROM user_inventory WHERE id = ?").run(senderInvData.id);
-
-                            db.prepare("INSERT INTO user_inventory (userID, guildID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT (userID, guildID, itemID) DO UPDATE SET quantity = user_inventory.quantity + ?").run(targetID, guildId, global.tradeTempItem, qty, qty);
-
-                            await modalSubmit.reply({ content: `🎁 <@${authorUser.id}> أرسل **${qty}x ${itemInfo.emoji} ${itemInfo.name}** كهدية إلى <@${targetID}>!` });
-                            await msg.edit(await renderView()).catch(()=>{});
-                        } else {
-                            await modalSubmit.deferReply();
-                            const tradeId = Date.now().toString();
-                            const tradeButtons = new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId(`trade_acc_${tradeId}`).setLabel('قبول وشراء ✅').setStyle(ButtonStyle.Success),
-                                new ButtonBuilder().setCustomId(`trade_dec_${tradeId}`).setLabel('رفض ❌').setStyle(ButtonStyle.Danger)
-                            );
-
-                            const tradeMsgObj = await modalSubmit.followUp({ content: `⚖️ **عـقـد تـجـاري**\nمرحباً <@${targetID}>!\nيعرض عليك <@${authorUser.id}>:\n**استلام:** ${qty}x ${itemInfo.emoji} ${itemInfo.name}\n**دفع:** ${price.toLocaleString()} ${EMOJI_MORA}`, components: [tradeButtons] });
-                            msg.edit(await renderView()).catch(()=>{});
-
-                            const tradeFilter = btn => btn.user.id === targetID && btn.customId.includes(tradeId);
-                            const tradeCollector = tradeMsgObj.createMessageComponentCollector({ filter: tradeFilter, time: 60000 });
-
-                            tradeCollector.on('collect', async btn => {
-                                await btn.deferUpdate().catch(()=>{});
-                                if (btn.customId.includes('dec_')) {
-                                    tradeCollector.stop('declined');
-                                    return tradeMsgObj.edit({ content: `❌ تم رفض الصفقة من قبل <@${targetID}>.`, components: [] });
-                                }
-
-                                const targetLevel = db.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(targetID, guildId) || { mora: 0 };
-                                if (targetLevel.mora < price) return btn.followUp({ content: '❌ لا تملك المورا الكافية!', flags: [MessageFlags.Ephemeral] });
-
-                                const senderInvFinal = db.prepare("SELECT quantity, id FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(authorUser.id, guildId, global.tradeTempItem);
-                                if (!senderInvFinal || senderInvFinal.quantity < qty) {
-                                    tradeCollector.stop('failed');
-                                    return tradeMsgObj.edit({ content: `❌ فشلت الصفقة: البائع لا يملك الكمية المطلوبة حالياً!`, components: [] });
-                                }
-
-                                const finalSenderQty = senderInvFinal.quantity - qty;
-                                if (finalSenderQty > 0) db.prepare("UPDATE user_inventory SET quantity = ? WHERE id = ?").run(finalSenderQty, senderInvFinal.id);
-                                else db.prepare("DELETE FROM user_inventory WHERE id = ?").run(senderInvFinal.id);
-                                
-                                db.prepare("INSERT INTO user_inventory (userID, guildID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT (userID, guildID, itemID) DO UPDATE SET quantity = user_inventory.quantity + ?").run(targetID, guildId, global.tradeTempItem, qty, qty);
-                                db.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(price, targetID, guildId);
-                                db.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(price, authorUser.id, guildId);
-
-                                tradeCollector.stop('accepted');
-                                await tradeMsgObj.edit({ content: `✅ **تمت الصفقة بنجاح!**\nاشترى <@${targetID}> ${qty}x ${itemInfo.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${authorUser.id}>.`, components: [] });
-                                await msg.edit(await renderView()).catch(()=>{});
-                            });
-                        }
-                    } catch(e) {}
-                }
+                // بقية منطق التبادل يُعالج في interaction-handler أو هنا باستخدام Collector إضافي
             });
 
             collector.on('end', () => { try { msg.edit({ components: [] }).catch(()=>{}); } catch(e) {} });
