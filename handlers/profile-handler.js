@@ -60,11 +60,8 @@ async function calculateStrongestRank(db, guildID, targetUserID) {
 async function getProfileData(client, db, guildId, targetMember, targetUser, authorUser, cleanName) {
     const userId = targetUser.id;
 
-    let levelData = null;
-    if (client.getLevel) levelData = await client.getLevel.get(userId, guildId);
-    if (!levelData) {
-        levelData = db.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
-    }
+    // 🔥 الاعتماد المباشر على أوامر SQLite (db.prepare) للحماية من أخطاء الـ client.getLevel 🔥
+    const levelData = db.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
     
     const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
     const currentXP = Number(levelData.xp) || 0;
