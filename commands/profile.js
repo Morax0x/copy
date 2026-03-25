@@ -162,7 +162,6 @@ module.exports = {
             let invCategory = 'main';
             let invPage = 1; 
             let skillPage = 0;
-            // 🔥 المتغير الجديد لتتبع موقع المؤشر في الحقيبة (من 0 إلى 14) 🔥
             let selectedIndex = 0; 
 
             const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
@@ -190,7 +189,6 @@ module.exports = {
                 const weaponData = await getWeaponData(db, targetMember);
                 const weaponName = weaponData ? weaponData.name : "بدون سلاح";
 
-                // --- عرض البروفايل ---
                 if (currentView === 'profile') {
                     const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
                     const streakData = streakRes.rows[0] || {};
@@ -219,7 +217,6 @@ module.exports = {
                     return { content: `**🪪 بطاقة المغامر | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
-                // --- عرض العتاد (المهارات) ---
                 if (currentView === 'combat') {
                     const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]);
                     let allSkills = skillRes.rows.map(s => {
@@ -246,7 +243,6 @@ module.exports = {
                     return { content: `**⚔️ العتاد والمهارات | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
                 }
 
-                // --- عرض الحقيبة (الخيمة + الأقسام) ---
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
                         const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
@@ -257,12 +253,11 @@ module.exports = {
                             new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صيد').setStyle(ButtonStyle.Success).setEmoji('🎣'),
                             new ButtonBuilder().setCustomId(`c_far_${authorUser.id}`).setLabel('مزرعة').setStyle(ButtonStyle.Success).setEmoji('🌾'),
                             new ButtonBuilder().setCustomId(`c_oth_${authorUser.id}`).setLabel('أخرى').setStyle(ButtonStyle.Success).setEmoji('📦'),
-                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العودة').setStyle(ButtonStyle.Danger)
+                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
                         );
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [cats] };
                     }
 
-                    // عرض أقسام الحقيبة (موارد، إلخ) مع أزرار التحكم
                     const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                     const items = invQuery.rows.map(row => {
                         const info = resolveItemInfo(row.itemID || row.itemid);
@@ -272,10 +267,8 @@ module.exports = {
                     const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                     const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
 
-                    // 🔥 تمرير الـ selectedIndex إلى المولد ليرسم المؤشر 🔥
                     const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
 
-                    // 🔥 تصميم الأزرار الـ 4 (D-Pad Navigation) 🔥
                     const row1 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
                         new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
@@ -283,7 +276,7 @@ module.exports = {
                     );
                     const row2 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setLabel('OK').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
                     );
                     const row3 = new ActionRowBuilder().addComponents(
@@ -293,12 +286,12 @@ module.exports = {
                     );
                     const row4 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العودة').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
                         new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
                     );
 
                     return { 
-                        content: `**🎒 حقيبة ${cleanName} | ${invCategory}**\n> 🎯 استخدم الأسهم للتحرك واضغط **OK** لتفاصيل العنصر.`, 
+                        content: `**🎒 حقيبة ${cleanName} | ${invCategory}**\n> 🎯 استخدم الأسهم للتحرك واضغط **💠** لتفاصيل العنصر.`, 
                         files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
                         components: [row1, row2, row3, row4] 
                     };
@@ -312,7 +305,6 @@ module.exports = {
                 await i.deferUpdate();
                 const id = i.customId;
 
-                // --- التنقل بين الواجهات الرئيسية ---
                 if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; }
                 else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; }
                 else if (id.startsWith('v_pro_')) { currentView = 'profile'; }
@@ -322,47 +314,43 @@ module.exports = {
                 else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; }
                 else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; }
                 
-                // --- تقليب الصفحات ---
                 else if (id.startsWith('inv_n_')) { invPage++; selectedIndex = 0; }
                 else if (id.startsWith('inv_p_')) { invPage--; selectedIndex = 0; }
                 else if (id.startsWith('sk_n_')) { skillPage++; }
                 else if (id.startsWith('sk_p_')) { skillPage--; }
 
-                // 🔥 منطق أزرار التوجيه (D-Pad) داخل الحقيبة 🔥
                 else if (id.startsWith('d_')) {
                     const moveType = id.split('_')[1]; 
-                    // الشبكة عبارة عن 3 صفوف و 5 أعمدة (0 إلى 14)
                     
-                    if (moveType === 'r1') { // يمين خطوة
+                    if (moveType === 'r1') { 
                         if (selectedIndex % 5 !== 4) selectedIndex += 1; 
                     } 
-                    else if (moveType === 'l1') { // يسار خطوة
+                    else if (moveType === 'l1') { 
                         if (selectedIndex % 5 !== 0) selectedIndex -= 1;
                     }
-                    else if (moveType === 'd1') { // تحت خطوة
+                    else if (moveType === 'd1') { 
                         if (selectedIndex + 5 < 15) selectedIndex += 5;
                     }
-                    else if (moveType === 'u1') { // فوق خطوة
+                    else if (moveType === 'u1') { 
                         if (selectedIndex - 5 >= 0) selectedIndex -= 5;
                     }
-                    else if (moveType === 'r2') { // يمين خطوتين
+                    else if (moveType === 'r2') { 
                         if (selectedIndex % 5 <= 2) selectedIndex += 2;
-                        else selectedIndex += (4 - (selectedIndex % 5)); // يوصل للآخر لو مافي خطوتين
+                        else selectedIndex += (4 - (selectedIndex % 5)); 
                     }
-                    else if (moveType === 'l2') { // يسار مضاعف
+                    else if (moveType === 'l2') { 
                         if (selectedIndex % 5 >= 2) selectedIndex -= 2;
-                        else selectedIndex -= (selectedIndex % 5); // يوصل للأول
+                        else selectedIndex -= (selectedIndex % 5); 
                     }
-                    else if (moveType === 'd2') { // تحت مضاعف
+                    else if (moveType === 'd2') { 
                         if (selectedIndex + 10 < 15) selectedIndex += 10;
                         else if (selectedIndex + 5 < 15) selectedIndex += 5;
                     }
-                    else if (moveType === 'u2') { // فوق مضاعف
+                    else if (moveType === 'u2') { 
                         if (selectedIndex - 10 >= 0) selectedIndex -= 10;
                         else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
                     }
                     else if (moveType === 'ok') {
-                        // هنا سنبرمج "فتح صفحة العنصر" في الخطوة القادمة
                         return i.followUp({ content: `✅ لقد قمت باختيار المربع رقم: **${selectedIndex + 1}**\n(سيتم برمجة فتح صفحة العنصر قريباً!)`, flags: [MessageFlags.Ephemeral] });
                     }
                 }
