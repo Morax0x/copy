@@ -2,14 +2,20 @@ const { SlashCommandBuilder, AttachmentBuilder, MessageFlags, ActionRowBuilder, 
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../../handlers/pvp-core.js');
 const skillsConfig = require('../../json/skills-config.json');
 const weaponsConfig = require('../../json/weapons-config.json');
-const potionItems = require('../../json/potions.json');
 
-// استدعاء المصمم الفخم الذي بنيناه
+// استدعاء المصمم الفخم 
 const { generateSkillsCard } = require('../../generators/skills-card-generator.js'); 
 
 const OWNER_ID = "1145327691772481577"; 
 const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
+
+// مترجم الأعراق إلى العربية
+const RACE_TRANSLATIONS = new Map([
+    ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
+    ['Seraphim', 'سيرافيم'], ['Demon', 'شيطان'], ['Vampire', 'مصاص دماء'], 
+    ['Spirit', 'روح'], ['Dwarf', 'قزم'], ['Ghoul', 'غول'], ['Hybrid', 'نصف وحش']
+]);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -59,46 +65,30 @@ module.exports = {
         const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
         const avatarUrl = targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 });
 
+        // جلب البيانات من الداتا بيز
         const userRace = await getUserRace(targetMember, sql);
         const weaponData = await getWeaponData(sql, targetMember);
         
         let userSkillsRes;
         try { userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guild.id]); }
         catch(e) { userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
-        
         const userSkillsDB = userSkillsRes.rows;
 
-        // 🔥 جلب بيانات اللاعب الأساسية لتغذية المخطط العنكبوتي 🔥
         let userLvlRes;
-        try { userLvlRes = await sql.query(`SELECT "level", "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guild.id]); }
-        catch(e) { userLvlRes = await sql.query(`SELECT level, mora FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
+        try { userLvlRes = await sql.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guild.id]); }
+        catch(e) { userLvlRes = await sql.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
         const userLevel = userLvlRes.rows[0] ? Number(userLvlRes.rows[0].level) : 1;
-        
-        let potionsList = [];
-        try {
-            let userInventoryRes;
-            try { userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "quantity" > 0`, [targetUser.id, guild.id]); }
-            catch(e) { userInventoryRes = await sql.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2 AND quantity > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
-            
-            const userInventory = userInventoryRes.rows;
-            if (userInventory && userInventory.length > 0) {
-                for (const item of userInventory) {
-                    const itemId = item.itemID || item.itemid;
-                    const potionInfo = potionItems.find(p => String(p.id) === String(itemId));
-                    if (potionInfo) {
-                        potionsList.push({ name: potionInfo.name, qty: Number(item.quantity) });
-                    }
-                }
-            }
-        } catch (e) { }
 
         let totalSpent = 0;
         let allSkills = [];
         let raceSkillId = null;
 
+        // 🔥 ترجمة اسم العرق 🔥
+        const rawRace = userRace ? (userRace.raceName || userRace.racename) : "مجهول";
+        const arabicRaceName = RACE_TRANSLATIONS.get(rawRace) || rawRace;
+
         if (userRace && weaponData) {
-            const rName = userRace.raceName || userRace.racename;
-            const originalWeaponConfig = weaponsConfig.find(w => w.race === rName);
+            const originalWeaponConfig = weaponsConfig.find(w => w.race === rawRace);
             if (originalWeaponConfig) {
                 for (let i = 0; i < weaponData.currentLevel; i++) {
                     totalSpent += originalWeaponConfig.base_price + (originalWeaponConfig.price_increment * i);
@@ -107,7 +97,7 @@ module.exports = {
         }
 
         if (userRace) {
-            const cleanRaceName = (userRace.raceName || userRace.racename).toLowerCase().trim().replace(/\s+/g, '_');
+            const cleanRaceName = rawRace.toLowerCase().trim().replace(/\s+/g, '_');
             raceSkillId = `race_${cleanRaceName}_skill`;
         }
 
@@ -126,7 +116,7 @@ module.exports = {
                     if (raceSkillId && skillID === raceSkillId) hasRaceSkillInDB = true;
 
                     allSkills.push({
-                        id: skillID, // 🔥 إرسال الـ ID لربطه بالصورة في المولد 🔥
+                        id: skillID, 
                         name: skillConfig.name,
                         level: skillLevel,
                         description: skillConfig.description
@@ -174,11 +164,10 @@ module.exports = {
                 avatarUrl: avatarUrl,
                 cleanName: cleanName,
                 weaponData: weaponData,
-                raceName: userRace ? (userRace.raceName || userRace.racename) : "مجهول",
-                potionsList: potionsList,
+                raceName: arabicRaceName, // إرسال العرق مترجماً
                 skillsList: currentSkillsSlice,
                 totalSpent: totalSpent,
-                userLevel: userLevel, // 🔥 تمرير مستوى اللاعب للمولد لحساب الحيوية والدفاع 🔥
+                userLevel: userLevel,
                 currentPage: currentPage,
                 totalPages: totalPages
             };
