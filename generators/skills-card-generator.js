@@ -1,10 +1,63 @@
-const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas'); 
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
+const fs = require('fs');
 
 try {
-    GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/bein-ar-normal.ttf'), 'Bein');
+    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
-    console.log("⚠️ لم يتم العثور على خط Bein، سيتم استخدام الخط الافتراضي.");
+    console.log("⚠️ تنبيه: لم يتم العثور على خط Bein.");
+}
+
+const imageCache = new Map();
+async function getCachedImage(imagePath) {
+    if (!imagePath) return null;
+    if (imageCache.has(imagePath)) return imageCache.get(imagePath);
+    if (fs.existsSync(imagePath)) {
+        try {
+            const img = await loadImage(imagePath);
+            imageCache.set(imagePath, img);
+            return img;
+        } catch (e) { return null; }
+    }
+    return null;
+}
+
+// مصفوفة صور المهارات (نفس التي استخدمناها في الحقيبة)
+const SKILL_TO_IMAGE = {
+    'skill_healing': 'heal.png',
+    'skill_shielding': 'shield.png',
+    'skill_buffing': 'buff.png',
+    'skill_rebound': 'rebound.png',
+    'skill_weaken': 'weaken.png',
+    'skill_dispel': 'dispel.png',
+    'skill_cleanse': 'cleanse.png',
+    'skill_poison': 'poison.png',
+    'skill_gamble': 'gamble.png',
+    'race_dragon_skill': 'dragon.png',
+    'race_human_skill': 'human.png',
+    'race_seraphim_skill': 'seraphim.png',
+    'race_demon_skill': 'demon.png',
+    'race_elf_skill': 'elf.png',
+    'race_dark_elf_skill': 'darkelf.png',
+    'race_vampire_skill': 'vampire.png',
+    'race_hybrid_skill': 'hybrid.png',
+    'race_spirit_skill': 'spirit.png',
+    'race_dwarf_skill': 'dwarf.png',
+    'race_ghoul_skill': 'ghoul.png'
+};
+
+// ==========================================
+// 🔥 دوال الرسم المساعدة 🔥
+// ==========================================
+
+function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px "Bein"`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px "Bein"`;
+    }
+    ctx.fillText(text, x, y);
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
@@ -19,169 +72,300 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+function wrapText(ctx, text, maxWidth) {
     const words = text.split(' ');
-    let line = '';
-    
-    for (let n = 0; n < words.length; n++) {
-        let testLine = line + words[n] + ' ';
-        let metrics = ctx.measureText(testLine);
-        let testWidth = metrics.width;
-        if (testWidth > maxWidth && n > 0) {
-            ctx.fillText(line, x, y);
-            line = words[n] + ' ';
-            y += lineHeight;
+    let lines = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth) {
+            currentLine += " " + word;
         } else {
-            line = testLine;
+            lines.push(currentLine);
+            currentLine = word;
         }
     }
-    ctx.fillText(line, x, y);
+    lines.push(currentLine);
+    return lines;
 }
 
+// 🔥 دالة رسم المخطط العنكبوتي (Spider/Radar Chart) الاحترافي 🔥
+function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
+    const sides = stats.length;
+    const angleStep = (Math.PI * 2) / sides;
+    const maxVal = 100; // القيمة القصوى لكل محور
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // 1. رسم شبكة العنكبوت الخلفية (المستويات)
+    const levels = 4;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    for (let l = 1; l <= levels; l++) {
+        const r = (radius / levels) * l;
+        ctx.beginPath();
+        for (let i = 0; i <= sides; i++) {
+            const angle = i * angleStep - Math.PI / 2;
+            const x = r * Math.cos(angle);
+            const y = r * Math.sin(angle);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    // 2. رسم المحاور (الخطوط الممتدة من المركز)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.beginPath();
+    for (let i = 0; i < sides; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        ctx.moveTo(0, 0);
+        ctx.lineTo(radius * Math.cos(angle), radius * Math.sin(angle));
+    }
+    ctx.stroke();
+
+    // 3. رسم منطقة بيانات اللاعب (المضلع الملون)
+    ctx.beginPath();
+    let dataPoints = [];
+    for (let i = 0; i < sides; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        // نسبة مئوية (تجنب تجاوز 100%)
+        const percentage = Math.min(Math.max(stats[i].val / maxVal, 0.1), 1); 
+        const r = radius * percentage;
+        const x = r * Math.cos(angle);
+        const y = r * Math.sin(angle);
+        dataPoints.push({x, y});
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    // تعبئة المضلع وإطاره
+    ctx.fillStyle = `rgba(${parseInt(primaryColor.slice(1,3),16)}, ${parseInt(primaryColor.slice(3,5),16)}, ${parseInt(primaryColor.slice(5,7),16)}, 0.4)`;
+    ctx.fill();
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // نقاط مضيئة على الزوايا
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = primaryColor;
+    ctx.shadowBlur = 10;
+    for (const pt of dataPoints) {
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // 4. كتابة أسماء المحاور
+    ctx.font = 'bold 16px "Bein"';
+    for (let i = 0; i < sides; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        const labelRadius = radius + 35; // بعد النص عن المخطط
+        const x = labelRadius * Math.cos(angle);
+        const y = labelRadius * Math.sin(angle);
+
+        ctx.fillStyle = '#E0E0E0';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // تعديل المحاذاة حسب الموقع
+        if (Math.abs(Math.cos(angle)) > 0.1) {
+            ctx.textAlign = Math.cos(angle) > 0 ? 'left' : 'right';
+        }
+        
+        ctx.fillText(stats[i].label, x, y);
+    }
+
+    ctx.restore();
+}
+
+// ========================================================
+// 🔥 الدالة الرئيسية: رسم بطاقة المهارات 🔥
+// ========================================================
 async function generateSkillsCard(data) {
-    const width = 1000;
-    const height = 750;
+    const width = 1200;
+    const height = 800;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const primaryColor = '#FFD700'; // ذهبي
-    const secondaryColor = '#b8860b'; // برونزي
+    const primaryColor = '#B968FF'; // لون البطاقة (أرجواني فخم / Epic)
 
-    // 1. رسم الخلفية الأساسية
-    const bgBase = ctx.createLinearGradient(0, 0, width, height);
-    bgBase.addColorStop(0, '#0a0a14'); 
-    bgBase.addColorStop(1, '#1a1a2e');
-    ctx.fillStyle = bgBase;
+    // 1. الخلفية السينمائية
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
+    bgGrad.addColorStop(0, '#1a1025'); 
+    bgGrad.addColorStop(1, '#050508');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. تأثير الإضاءة
-    const glow = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 600);
-    glow.addColorStop(0, 'rgba(255, 215, 0, 0.05)');
-    glow.addColorStop(1, 'rgba(0, 0, 0, 0.8)'); 
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, width, height);
-
-    // 3. الإطار الخارجي
-    const borderGradient = ctx.createLinearGradient(0, 0, width, height);
-    borderGradient.addColorStop(0, primaryColor);
-    borderGradient.addColorStop(0.5, '#ffffff');
-    borderGradient.addColorStop(1, primaryColor);
-
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = borderGradient;
-    ctx.strokeRect(10, 10, width - 20, height - 20);
-    
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.strokeRect(20, 20, width - 40, height - 40);
-
-    // 4. رسم المهارات (تم تقديمها لتكون في الخلفية بالنسبة للمربعات الجانبية)
-    let skillY = 290;
-    const skillBoxW = width - 80;
-    const skillX = 40;
-
-    ctx.fillStyle = primaryColor;
-    ctx.font = 'bold 30px "Bein", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText('❖ المهارات والقـدرات المكتسبة', width - 40, 260);
-
-    if (data.skillsList.length > 0) {
-        data.skillsList.forEach((skill, index) => {
-            ctx.fillStyle = 'rgba(15, 15, 20, 0.9)';
-            ctx.beginPath(); roundRect(ctx, skillX, skillY, skillBoxW, 110, 12); ctx.fill();
-            
-            const colors = ['#FFD700', '#00FFFF', '#FF00FF'];
-            ctx.fillStyle = colors[index % colors.length];
-            ctx.beginPath(); roundRect(ctx, skillX + skillBoxW - 10, skillY, 10, 110, 5); ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 24px "Bein", sans-serif';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${skill.name} (Lv.${skill.level})`, skillX + skillBoxW - 25, skillY + 35);
-            
-            ctx.fillStyle = '#cccccc';
-            ctx.font = '18px "Bein", sans-serif';
-            wrapText(ctx, skill.description, skillX + skillBoxW - 25, skillY + 70, skillBoxW - 50, 25);
-            skillY += 130;
-        });
+    // غبار النجوم
+    ctx.fillStyle = '#FFFFFF';
+    for(let i=0; i<150; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pSize = Math.random() * 2.5;
+        ctx.globalAlpha = Math.random() * 0.5 + 0.1;
+        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
     }
+    ctx.globalAlpha = 1.0;
 
-    // ==========================================================
-    // 5. رسم الطبقة الأمامية (السلاح + الجرعات + الأفاتار)
-    // نضعها هنا لترسم "فوق" أي تداخل من المهارات
-    // ==========================================================
+    // 2. الهيدر الملكي (تطابق مع الحقيبة)
+    const headerH = 120;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, headerH);
     
-    // الأفاتار واسم اللاعب
-    const avatarSize = 160;
-    const avatarX = width - 190; 
-    const avatarY = 50; 
+    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
+    goldGrad.addColorStop(0, 'rgba(185, 104, 255, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(185, 104, 255, 0.8)');
+    goldGrad.addColorStop(1, 'rgba(185, 104, 255, 0)');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, headerH - 3, width, 3);
+    ctx.fillRect(0, 3, width, 1);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = primaryColor; 
+    ctx.font = 'bold 50px "Bein"';
+    ctx.shadowColor = primaryColor;
+    ctx.shadowBlur = 20;
+    ctx.fillText(`✦ مهارات ${data.cleanName} ✦`, width / 2, 60);
+    ctx.shadowBlur = 0;
+
+    // ==========================================
+    // 🛡️ الجزء الأيسر: لوحة الهوية والمخطط العنكبوتي
+    // ==========================================
+    const leftPanelW = 450;
     
-    ctx.save();
-    ctx.shadowColor = primaryColor; ctx.shadowBlur = 30; 
-    ctx.beginPath(); ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, (avatarSize / 2) + 6, 0, Math.PI * 2);
-    ctx.fillStyle = primaryColor; ctx.fill();
-    ctx.restore();
+    ctx.fillStyle = 'rgba(15, 20, 30, 0.8)';
+    ctx.beginPath(); roundRect(ctx, 40, 160, leftPanelW, height - 200, 20); ctx.fill();
+    ctx.strokeStyle = primaryColor; ctx.lineWidth = 2; ctx.stroke();
+
+    // 👤 الصورة الدائرية (Avatar)
+    const avatarSize = 130;
+    const avatarX = 40 + leftPanelW / 2;
+    const avatarY = 250;
 
     ctx.save();
-    ctx.beginPath(); ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
     try {
         const avatarImage = await loadImage(data.avatarUrl);
-        ctx.drawImage(avatarImage, avatarX, avatarY, avatarSize, avatarSize);
-    } catch (e) { ctx.fillStyle = '#333'; ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize); }
+        ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
+    } catch (e) { ctx.fillStyle = '#333'; ctx.fill(); }
     ctx.restore();
 
-    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'right'; ctx.font = 'bold 50px "Bein", sans-serif';
-    let dName = data.cleanName; if (dName.length > 15) dName = dName.substring(0, 15) + '..';
-    ctx.fillText(dName, width - 210, 100);
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
+    ctx.lineWidth = 4; ctx.strokeStyle = primaryColor; ctx.stroke();
 
-    // صندوق السلاح (أمام المهارات)
-    const leftX = 40;
-    const leftBoxW = 400;
+    // معلومات العرق والسلاح تحت الصورة
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#E0E0E0'; ctx.font = 'bold 22px "Bein"';
+    ctx.fillText(`🩸 العرق: ${data.raceName}`, avatarX, avatarY + 90);
     
-    ctx.fillStyle = 'rgba(15, 15, 20, 0.95)'; // زيادة الشفافية لضمان التغطية
-    ctx.beginPath(); roundRect(ctx, leftX, 60, leftBoxW, 160, 15); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = primaryColor; ctx.stroke();
+    ctx.fillStyle = '#F1C40F'; ctx.font = 'bold 20px "Bein"';
+    const wpName = data.weaponData ? data.weaponData.name : 'بدون سلاح';
+    const wpDmg = data.weaponData ? data.weaponData.currentDamage : 0;
+    ctx.fillText(`⚔️ السلاح: ${wpName} (ضرر: ${wpDmg})`, avatarX, avatarY + 125);
 
-    ctx.fillStyle = primaryColor; ctx.font = 'bold 28px "Bein", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText('⚔️ العـتـاد والأسلحـة', leftX + leftBoxW - 20, 100);
+    // 🕸️ المخطط العنكبوتي (Spider Chart)
+    // حساب القيم التقريبية (هذه حسابات شكلية تعطي مظهراً احترافياً بناءً على بيانات اللاعب)
+    const totalSkillsLevel = data.skillsList.reduce((acc, s) => acc + s.level, 0);
+    const maxPossibleLevels = 100; // افتراض أقصى مجموع لفلات
+    
+    let chartStats = [
+        { label: 'الهجوم (ATK)', val: (wpDmg / 200) * 100 }, // يعتمد على ضرر السلاح
+        { label: 'المهارة (SKL)', val: (totalSkillsLevel / maxPossibleLevels) * 100 + 20 }, // يعتمد على لفلات المهارات
+        { label: 'الحيوية (VIT)', val: 70 }, // قيمة افتراضية يمكن ربطها بالـ HP لاحقاً
+        { label: 'السحر (MAG)', val: data.skillsList.length * 15 }, // يعتمد على عدد المهارات المكتسبة
+        { label: 'الاستثمار (INV)', val: (data.totalSpent / 50000) * 100 }, // يعتمد على الأموال المصروفة للتطوير
+        { label: 'الدفاع (DEF)', val: 60 } // قيمة افتراضية
+    ];
 
-    ctx.font = '22px "Bein", sans-serif'; ctx.fillStyle = '#ffffff';
-    if (data.weaponData) {
-        ctx.fillText(`السلاح: ${data.weaponData.name}`, leftX + leftBoxW - 20, 150);
-        ctx.fillStyle = '#00BFFF'; ctx.fillText(`المستوى: Lv.${data.weaponData.currentLevel}`, leftX + leftBoxW - 20, 180);
+    drawSpiderChart(ctx, avatarX, avatarY + 310, 100, chartStats, primaryColor);
+
+    // ==========================================
+    // 📜 الجزء الأيمن: قائمة المهارات (The Skills List)
+    // ==========================================
+    const rightPanelX = 530;
+    const rightPanelW = 630;
+    const startY = 160;
+    const slotH = 180;
+    const gapY = 25;
+
+    if (data.skillsList.length === 0) {
+        ctx.fillStyle = 'rgba(15, 20, 30, 0.8)';
+        ctx.beginPath(); roundRect(ctx, rightPanelX, startY, rightPanelW, height - 200, 20); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.stroke();
+        
+        ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center'; ctx.font = 'bold 30px "Bein"';
+        ctx.fillText('❌ لا يوجد مهارات مسجلة', rightPanelX + rightPanelW/2, startY + 200);
+    } else {
+        for (let i = 0; i < data.skillsList.length; i++) {
+            const skill = data.skillsList[i];
+            const y = startY + i * (slotH + gapY);
+
+            // إطار المهارة الزجاجي
+            ctx.fillStyle = 'rgba(20, 25, 35, 0.8)';
+            ctx.beginPath(); roundRect(ctx, rightPanelX, y, rightPanelW, slotH, 15); ctx.fill();
+            ctx.strokeStyle = 'rgba(185, 104, 255, 0.5)'; ctx.lineWidth = 2; ctx.stroke();
+
+            // مربع صورة المهارة
+            const imgBoxSize = 130;
+            const imgBoxX = rightPanelX + rightPanelW - imgBoxSize - 25; // على اليمين
+            const imgBoxY = y + 25;
+
+            ctx.fillStyle = 'rgba(10, 10, 15, 0.9)';
+            ctx.beginPath(); roundRect(ctx, imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 15); ctx.fill();
+            ctx.strokeStyle = primaryColor; ctx.lineWidth = 2; ctx.stroke();
+
+            // جلب صورة المهارة ورسمها
+            let imgDrawn = false;
+            if (skill.id && SKILL_TO_IMAGE[skill.id]) {
+                const imgPath = path.join(process.cwd(), `images/skills/${SKILL_TO_IMAGE[skill.id]}`);
+                const img = await getCachedImage(imgPath);
+                if (img) {
+                    ctx.shadowColor = primaryColor; ctx.shadowBlur = 20;
+                    ctx.drawImage(img, imgBoxX + 15, imgBoxY + 15, imgBoxSize - 30, imgBoxSize - 30);
+                    ctx.shadowBlur = 0;
+                    imgDrawn = true;
+                }
+            }
+
+            if (!imgDrawn) {
+                ctx.fillStyle = '#FFFFFF'; ctx.font = '50px Arial';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('📜', imgBoxX + imgBoxSize/2, imgBoxY + imgBoxSize/2);
+            }
+
+            // شارة لفل المهارة (Level Badge)
+            const badgeW = 60, badgeH = 30;
+            ctx.fillStyle = primaryColor;
+            ctx.beginPath(); roundRect(ctx, imgBoxX - 10, imgBoxY - 10, badgeW, badgeH, 8); ctx.fill();
+            ctx.fillStyle = '#000'; ctx.font = 'bold 16px "Arial"'; ctx.textAlign = 'center';
+            ctx.fillText(`LVL ${skill.level}`, imgBoxX - 10 + badgeW/2, imgBoxY - 10 + badgeH/2 + 2);
+
+            // النصوص الخاصة بالمهارة
+            const textStartX = imgBoxX - 25; // نكتب من اليمين لليسار
+            
+            ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+            ctx.fillStyle = '#FFD700'; ctx.font = 'bold 30px "Bein"';
+            ctx.fillText(skill.name, textStartX, y + 30);
+
+            // الوصف (دعم للأسطر المتعددة)
+            ctx.fillStyle = '#A8B8D0'; ctx.font = '20px "Bein"';
+            const lines = wrapText(ctx, skill.description, rightPanelW - imgBoxSize - 70);
+            for (let j = 0; j < Math.min(lines.length, 3); j++) {
+                ctx.fillText(lines[j], textStartX, y + 80 + (j * 30));
+            }
+        }
     }
 
-    // صندوق الجرعات (أمام المهارات)
-    ctx.fillStyle = 'rgba(15, 15, 20, 0.95)';
-    ctx.beginPath(); roundRect(ctx, leftX, 250, leftBoxW, 180, 15); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = secondaryColor; ctx.stroke();
-
-    ctx.fillStyle = secondaryColor; ctx.font = 'bold 28px "Bein", sans-serif';
-    ctx.fillText('⚗️ حقـيبـة الجرعـات', leftX + leftBoxW - 20, 290);
-
-    ctx.font = '20px "Bein", sans-serif'; ctx.fillStyle = '#e0e0e0';
-    let pY = 340;
-    if (data.potionsList.length > 0) {
-        data.potionsList.slice(0, 3).forEach(p => {
-            ctx.fillText(`(x${p.qty}) : ${p.name}`, leftX + leftBoxW - 20, pY);
-            pY += 30;
-        });
-    } else { ctx.fillText("الحقيبة فارغة.", leftX + leftBoxW - 20, pY); }
-
-    // قيمة العتاد
-    ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
-    ctx.beginPath(); roundRect(ctx, width - 450, 130, 230, 45, 10); ctx.fill();
-    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 20px "Bein", sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(`قيمة العتاد: ${data.totalSpent.toLocaleString()}`, width - 335, 160);
-
-    // 8. ترقيم الصفحات
-    if (data.totalPages > 1) {
-        ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
-        ctx.beginPath(); roundRect(ctx, width/2 - 80, height - 50, 160, 35, 10); ctx.fill();
-        ctx.fillStyle = '#ffffff'; ctx.font = '18px "Bein", sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(`صفحة ${data.currentPage + 1} / ${data.totalPages}`, width/2, height - 26);
-    }
+    // تذييل الصفحة
+    const footerY = height - 40;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#E0E0E0'; ctx.font = 'bold 20px "Bein"';
+    ctx.fillText(`❖ صفحة ${data.currentPage + 1} من ${data.totalPages} ❖`, rightPanelX + rightPanelW/2, footerY);
 
     return canvas.toBuffer('image/png');
 }
