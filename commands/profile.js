@@ -70,42 +70,54 @@ function getRepRankInfo(points) {
 }
 
 function resolveItemInfo(itemId) {
+    let baseInfo = null;
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             const mat = race.materials.find(m => m.id === itemId);
-            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+            if (mat) baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
         }
     }
-    if (upgradeMats && upgradeMats.skill_books) {
+    if (!baseInfo && upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
             const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) return { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+            if (book) baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
         }
     }
-    if (fishData && fishData.length > 0) {
-        const fish = fishData.find(f => f.id === itemId || f.name === itemId);
-        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
+    if (!baseInfo && fishData && fishData.fishItems) {
+        const fish = fishData.fishItems.find(f => f.id === itemId || f.name === itemId);
+        if (fish) baseInfo = { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
     }
-    if (farmItems && farmItems.length > 0) {
+    if (!baseInfo && fishData && fishData.baits) {
+        const bait = fishData.baits.find(f => f.id === itemId || f.name === itemId);
+        if (bait) baseInfo = { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null };
+    }
+    if (!baseInfo && farmItems && farmItems.length > 0) {
         const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) return { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
+        if (farmObj) baseInfo = { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
     }
-    return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
+    if (!baseInfo && potionItems && potionItems.length > 0) {
+        const pot = potionItems.find(p => p.id === itemId);
+        if (pot) baseInfo = { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null };
+    }
+    if (!baseInfo) {
+        baseInfo = { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
+    }
+    try {
+        const itemLore = require('../json/item-descriptions.json');
+        baseInfo.description = itemLore[itemId] || null;
+    } catch(e) {}
+    return baseInfo;
 }
 
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
-    
     let wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]).catch(()=> db.query(`SELECT userid as "userID", racename as "raceName", weaponlevel as "weaponLevel" FROM user_weapons WHERE guildid = $1 AND userid != $2`, [guildID, TARGET_OWNER_ID]).catch(()=>({rows:[]})));
     const weapons = wRes.rows;
-
     let lvlRes = await db.query(`SELECT "user" as "userID", "level" FROM levels WHERE "guild" = $1`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", level FROM levels WHERE guildid = $1`, [guildID]).catch(()=>({rows:[]})));
     const levelsMap = new Map(lvlRes.rows.map(r => [r.userID, r.level]));
-
     let skillRes = await db.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", SUM(skilllevel) as "totalLevels" FROM user_skills WHERE guildid = $1 GROUP BY userid`, [guildID]).catch(()=>({rows:[]})));
     const skillsMap = new Map(skillRes.rows.map(r => [r.userID, parseInt(r.totalLevels) || 0]));
-
     let stats = [];
     for (const w of weapons) {
         const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
@@ -118,7 +130,6 @@ async function calculateStrongestRank(db, guildID, targetUserID) {
         const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
         stats.push({ userID: w.userID, powerScore });
     }
-    
     stats.sort((a, b) => b.powerScore - a.powerScore);
     return stats.findIndex(s => s.userID === targetUserID) + 1; 
 }
@@ -190,7 +201,6 @@ module.exports = {
                 const weaponData = await getWeaponData(db, targetMember);
                 const weaponName = weaponData ? weaponData.name : "بدون سلاح";
 
-                // --- عرض البروفايل ---
                 if (currentView === 'profile') {
                     const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
                     const streakData = streakRes.rows[0] || {};
@@ -219,7 +229,6 @@ module.exports = {
                     return { content: `**🪪 بطاقة المغامر | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
-                // --- عرض العتاد (المهارات) ---
                 if (currentView === 'combat') {
                     const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]);
                     let allSkills = skillRes.rows.map(s => {
@@ -246,7 +255,6 @@ module.exports = {
                     return { content: `**⚔️ العتاد والمهارات | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
                 }
 
-                // --- عرض الحقيبة (الخيمة + الأقسام + تفاصيل العنصر) ---
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
                         const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
@@ -262,7 +270,6 @@ module.exports = {
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [cats] };
                     }
 
-                    // 🔥 إذا كان اللاعب قد اختار عرض تفاصيل عنصر محدد (Item Details View) 🔥
                     if (activeItemDetails) {
                         if (!generateItemDetailsCard) return { content: "❌ لا يمكن رسم صفحة العنصر حالياً.", components: [] };
                         
@@ -326,27 +333,26 @@ module.exports = {
             const collector = msg.createMessageComponentCollector({ filter: i => i.user.id === authorUser.id, time: 300000 });
 
             collector.on('collect', async (i) => {
-                await i.deferUpdate();
                 const id = i.customId;
 
-                if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
-                else if (id.startsWith('v_pro_')) { currentView = 'profile'; activeItemDetails = null; }
-                else if (id.startsWith('cat_main_')) { invCategory = 'main'; activeItemDetails = null; }
-                else if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                // --- التنقل العادي (بدون إيقاف التنفيذ) ---
+                if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
+                else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
+                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
                 
-                else if (id.startsWith('inv_n_')) { invPage++; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('inv_p_')) { invPage--; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('sk_n_')) { skillPage++; }
-                else if (id.startsWith('sk_p_')) { skillPage--; }
-
-                // العودة من صفحة تفاصيل العنصر إلى الشبكة
-                else if (id.startsWith('d_back_')) { activeItemDetails = null; }
+                else if (id.startsWith('inv_n_')) { await i.deferUpdate(); invPage++; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('inv_p_')) { await i.deferUpdate(); invPage--; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('sk_n_')) { await i.deferUpdate(); skillPage++; }
+                else if (id.startsWith('sk_p_')) { await i.deferUpdate(); skillPage--; }
+                else if (id.startsWith('d_back_')) { await i.deferUpdate(); activeItemDetails = null; }
 
                 else if (id.startsWith('d_')) {
+                    await i.deferUpdate();
                     const moveType = id.split('_')[1]; 
                     
                     if (moveType === 'r1') { if (selectedIndex % 5 !== 4) selectedIndex += 1; } 
@@ -370,7 +376,6 @@ module.exports = {
                         else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
                     }
                     else if (moveType === 'ok') {
-                        // 🔥 تحديد العنصر النشط عند الضغط على OK 🔥
                         const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                         const items = invQuery.rows.map(row => {
                             const info = resolveItemInfo(row.itemID || row.itemid);
@@ -387,24 +392,33 @@ module.exports = {
                     }
                 }
                 
-                // --- نظام الإعطاء المتكامل ---
+                // 🔥 نظام الإعطاء المتكامل (يتم استخدام showModal مباشرة على نفس التفاعل i) 🔥
                 else if (id.startsWith('trade_init_')) {
-                    if (!activeItemDetails) return;
+                    if (!activeItemDetails) {
+                        await i.deferUpdate();
+                        return;
+                    }
                     
                     const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
-                    await i.followUp({ components: [userSelect], flags: [MessageFlags.Ephemeral] });
-                    return; // نوقف التنفيذ هنا عشان ما يحدث الواجهة الأصلية
+                    
+                    // هنا نستخدم i.reply بدلاً من i.followUp مع ephemeral لكي يظهر القائمة فقط للاعب
+                    await i.reply({ content: "**اختر اللاعب الذي تريد إرسال العنصر إليه:**", components: [userSelect], flags: [MessageFlags.Ephemeral] });
+                    return; 
                 }
                 else if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
                     const targetID = i.values[0];
-                    if (targetID === authorUser.id || (await client.users.fetch(targetID)).bot) return i.followUp({ content: '❌ لا يمكنك التبادل مع نفسك أو مع البوتات!', flags: [MessageFlags.Ephemeral] });
+                    if (targetID === authorUser.id || (await client.users.fetch(targetID)).bot) {
+                        return i.reply({ content: '❌ لا يمكنك التبادل مع نفسك أو مع البوتات!', flags: [MessageFlags.Ephemeral] });
+                    }
 
+                    // إظهار المودال مباشرة على التفاعل الخاص بالـ Select Menu
                     const modal = new ModalBuilder().setCustomId(`trade_modal_${authorUser.id}_${targetID}`).setTitle('إعـطـاء / مـبـادلـة');
                     modal.addComponents(
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_qty').setLabel('الكمية المراد إرسالها').setStyle(TextInputStyle.Short).setRequired(true)),
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية المجانية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
                     );
-                    await i.showModal(modal).catch(()=>{});
+                    
+                    await i.showModal(modal).catch(console.error);
 
                     try {
                         const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${authorUser.id}_${targetID}`, time: 60000 });
@@ -434,7 +448,7 @@ module.exports = {
                             await modalSubmit.reply({ content: `🎁 <@${authorUser.id}> أرسل **${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}** كهدية إلى <@${targetID}>!` });
                             
                             activeItemDetails.quantity -= qty;
-                            if(activeItemDetails.quantity <= 0) activeItemDetails = null; // إغلاق الصفحة إذا نفدت الكمية
+                            if(activeItemDetails.quantity <= 0) activeItemDetails = null;
                             await msg.edit(await renderView());
                         } else {
                             await modalSubmit.deferReply();
@@ -504,7 +518,7 @@ module.exports = {
                     return; // إيقاف تنفيذ التحديث الأساسي لأن المعاملة تمت
                 }
 
-                // تنفيذ تحديث الواجهة الطبيعي بعد أي حركة أو زر
+                // تحديث الواجهة الطبيعي لأي حركة أخرى
                 await msg.edit(await renderView());
             });
 
