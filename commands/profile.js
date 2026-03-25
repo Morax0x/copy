@@ -1,5 +1,5 @@
 const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
-const { calculateBuffMultiplier, calculateMoraBuff } = require("../handlers/streak-handler.js");
+const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 const weaponsConfig = require('../json/weapons-config.json');
@@ -7,7 +7,6 @@ const skillsConfig = require('../json/skills-config.json');
 const upgradeMats = require('../json/upgrade-materials.json');
 const potionItems = require('../json/potions.json');
 
-// 🔥 استدعاء المولدات الفخمة 🔥
 let generateInventoryCard, generateMainHub, generateSkillsCard;
 try {
     ({ generateInventoryCard, generateMainHub } = require('../generators/inventory-generator.js'));
@@ -20,7 +19,6 @@ let fishData = [], farmItems = [];
 try { fishData = require('../json/fish.json'); } catch(e) {}
 try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
-// استدعاء دالة حساب الخبرة المركزية
 let calculateRequiredXP;
 try {
     ({ calculateRequiredXP } = require('../handlers/handler-utils.js'));
@@ -106,32 +104,30 @@ function resolveItemInfo(itemId) {
 
 async function calculateStrongestRank(db, guildID, targetUserID) {
     if (targetUserID === TARGET_OWNER_ID) return 0;
-    const wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]);
-    const weapons = wRes.rows;
-    const lvlRes = await db.query(`SELECT "user" as "userID", "level" FROM levels WHERE "guild" = $1`, [guildID]);
-    const levelsMap = new Map(lvlRes.rows.map(r => [r.userID || r.userid, r.level]));
-    const skillRes = await db.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guildID]);
-    const skillsMap = new Map(skillRes.rows.map(r => [r.userID || r.userid, parseInt(r.totalLevels || r.totallevels) || 0]));
+    
+    // SQLite Queries
+    const weapons = db.prepare("SELECT userID, raceName, weaponLevel FROM user_weapons WHERE guildID = ? AND userID != ?").all(guildID, TARGET_OWNER_ID);
+    const levels = db.prepare("SELECT user as userID, level FROM levels WHERE guild = ?").all(guildID);
+    const levelsMap = new Map(levels.map(r => [r.userID, r.level]));
+    const skills = db.prepare("SELECT userID, SUM(skillLevel) as totalLevels FROM user_skills WHERE guildID = ? GROUP BY userID").all(guildID);
+    const skillsMap = new Map(skills.map(r => [r.userID, parseInt(r.totalLevels) || 0]));
 
     let stats = [];
     for (const w of weapons) {
-        const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
+        const conf = weaponsConfig.find(c => c.race === w.raceName);
         if(!conf) continue;
-        const wLvl = w.weaponLevel || w.weaponlevel;
-        const dmg = conf.base_damage + (conf.damage_increment * (wLvl - 1));
-        const uid = w.userID || w.userid;
-        const playerLevel = levelsMap.get(uid) || 1;
+        const dmg = conf.base_damage + (conf.damage_increment * (w.weaponLevel - 1));
+        const playerLevel = levelsMap.get(w.userID) || 1;
         const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
-        const skillLevelsTotal = skillsMap.get(uid) || 0;
+        const skillLevelsTotal = skillsMap.get(w.userID) || 0;
         const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
-        stats.push({ userID: uid, powerScore });
+        stats.push({ userID: w.userID, powerScore });
     }
     stats.sort((a, b) => b.powerScore - a.powerScore);
     return stats.findIndex(s => s.userID === targetUserID) + 1; 
 }
 
 module.exports = {
-    // 🔥 أمر السلاش الشامل بقائمة منسدلة 🔥
     data: new SlashCommandBuilder()
         .setName('بروفايل')
         .setDescription('المركز الرئيسي: يعرض البروفايل، الحقيبة، أو العتاد الخاص بك.')
@@ -180,7 +176,7 @@ module.exports = {
         if (!targetMember || targetMember.user.bot) return reply({ content: "❌ لا يمكن عرض بيانات هذا العضو." });
 
         try {
-            const db = client.sql;
+            const db = client.sql; // SQLite
             const targetUser = targetMember.user; 
             const userId = targetUser.id;
             const guildId = guild.id;
@@ -191,22 +187,20 @@ module.exports = {
             // 📊 1. جلب البيانات الأساسية للبروفايل
             // =====================================
             let levelData = null;
-            if (client.getLevel) levelData = await client.getLevel(userId, guildId);
+            if (client.getLevel) levelData = await client.getLevel.get(userId, guildId);
             if (!levelData) {
-                const lvlRes = await db.query(`SELECT "xp", "level", "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
-                levelData = lvlRes.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
+                levelData = db.prepare("SELECT xp, level, mora, bank FROM levels WHERE user = ? AND guild = ?").get(userId, guildId) || { xp: 0, level: 1, mora: 0, bank: 0 };
             }
             
             const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
             const currentXP = Number(levelData.xp) || 0;
             const requiredXP = calculateRequiredXP(levelData.level);
 
-            const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
-            const repData = repRes.rows[0] || { rep_points: 0 };
-            const rankInfo = getRepRankInfo(repData.rep_points || repData.reppoints || 0);
+            const repData = db.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(userId, guildId) || { rep_points: 0 };
+            const rankInfo = getRepRankInfo(repData.rep_points || 0);
 
             const userRaceData = await getUserRace(targetMember, db);
-            const raceNameRaw = userRaceData ? (userRaceData.raceName || userRaceData.racename) : null;
+            const raceNameRaw = userRaceData ? userRaceData.raceName : null;
             const arabicRaceName = raceNameRaw ? (RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw) : "مجهول";
             
             const weaponData = await getWeaponData(db, targetMember);
@@ -214,12 +208,9 @@ module.exports = {
             const weaponDmg = weaponData ? weaponData.currentDamage : 0;
             const maxHp = PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL);
 
-            const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, userId]);
-            const streakData = streakRes.rows[0];
-            const streakCount = streakData ? (streakData.streakCount || streakData.streakcount || 0) : 0;
-            let hasItemShields = streakData ? (streakData.hasItemShield || streakData.hasitemshield || 0) : 0;
-            let hasGraceShield = (streakData && (streakData.hasGracePeriod === 1 || streakData.hasgraceperiod === 1)) ? 1 : 0;
-            const totalShields = Number(hasItemShields) + Number(hasGraceShield);
+            const streakData = db.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildId, userId) || {};
+            const streakCount = streakData.streakCount || 0;
+            const totalShields = Number(streakData.hasItemShield || 0) + Number(streakData.hasGracePeriod === 1 ? 1 : 0);
 
             const xpBuffMultiplier = await calculateBuffMultiplier(targetMember, db);
             const moraBuffMultiplier = await calculateMoraBuff(targetMember, db);
@@ -228,17 +219,14 @@ module.exports = {
 
             let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
             if (userId !== TARGET_OWNER_ID) {
-                const allScores = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY "totalXP" DESC`, [guildId, TARGET_OWNER_ID]);
-                let rLvl = allScores.rows.findIndex(s => s.user === userId) + 1;
-                ranks.level = rLvl > 0 ? rLvl.toString() : "0";
+                const allScores = db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY totalXP DESC").all(guildId, TARGET_OWNER_ID);
+                ranks.level = (allScores.findIndex(s => s.user === userId) + 1).toString();
 
-                const allMora = await db.query(`SELECT "user" FROM levels WHERE "guild" = $1 AND "user" != $2 ORDER BY (CAST(COALESCE("mora", '0') AS BIGINT) + CAST(COALESCE("bank", '0') AS BIGINT)) DESC`, [guildId, TARGET_OWNER_ID]);
-                let rMora = allMora.rows.findIndex(s => s.user === userId) + 1;
-                ranks.mora = rMora > 0 ? rMora.toString() : "0";
+                const allMora = db.prepare("SELECT user FROM levels WHERE guild = ? AND user != ? ORDER BY (CAST(COALESCE(mora, '0') AS INTEGER) + CAST(COALESCE(bank, '0') AS INTEGER)) DESC").all(guildId, TARGET_OWNER_ID);
+                ranks.mora = (allMora.findIndex(s => s.user === userId) + 1).toString();
 
-                const allStreaks = await db.query(`SELECT "userID" FROM streaks WHERE "guildID" = $1 AND "userID" != $2 ORDER BY "streakCount" DESC`, [guildId, TARGET_OWNER_ID]);
-                let rStreak = allStreaks.rows.findIndex(s => (s.userID || s.userid) === userId) + 1;
-                ranks.streak = rStreak > 0 ? rStreak.toString() : "0";
+                const allStreaks = db.prepare("SELECT userID FROM streaks WHERE guildID = ? AND userID != ? ORDER BY streakCount DESC").all(guildId, TARGET_OWNER_ID);
+                ranks.streak = (allStreaks.findIndex(s => s.userID === userId) + 1).toString();
 
                 let rPower = await calculateStrongestRank(db, guildId, userId);
                 ranks.power = rPower > 0 ? rPower.toString() : "0";
@@ -248,7 +236,7 @@ module.exports = {
             if (userId === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) displayMora = "???";
 
             const profileData = {
-                user: targetUser, displayName: cleanName, rankInfo: rankInfo, repPoints: repData.rep_points || repData.reppoints || 0,
+                user: targetUser, displayName: cleanName, rankInfo: rankInfo, repPoints: repData.rep_points || 0,
                 level: levelData.level, currentXP: currentXP, requiredXP: requiredXP, mora: displayMora, raceName: arabicRaceName,
                 weaponName: weaponName, weaponDmg: weaponDmg, maxHp: maxHp, streakCount: streakCount, xpBuff: xpBuffPercent,
                 moraBuff: moraBuffPercent, shields: totalShields, ranks: ranks
@@ -257,16 +245,12 @@ module.exports = {
             // =====================================
             // 🎒 2. جلب بيانات الحقيبة والمهارات
             // =====================================
-            let inventory = [], dbSkills = [];
-            const invRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
-            inventory = invRes?.rows || [];
-            
-            const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2`, [userId, guildId]));
-            dbSkills = skillRes?.rows || [];
+            const inventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
+            const dbSkills = db.prepare("SELECT * FROM user_skills WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
 
             const categories = { materials: [], fishing: [], farming: [], others: [] };
             for (const row of inventory) {
-                const itemId = row.itemID || row.itemid;
+                const itemId = row.itemID;
                 const quantity = Number(row.quantity) || 0;
                 if (quantity <= 0) continue;
                 const itemInfo = resolveItemInfo(itemId);
@@ -290,8 +274,8 @@ module.exports = {
             let hasRaceSkillInDB = false;
             if (dbSkills.length > 0) {
                 for (const dbSkill of dbSkills) {
-                    const skillID = dbSkill.skillID || dbSkill.skillid;
-                    const skillLevel = Number(dbSkill.skillLevel || dbSkill.skilllevel);
+                    const skillID = dbSkill.skillID;
+                    const skillLevel = Number(dbSkill.skillLevel);
                     const skillConfig = skillsConfig.find(s => s.id === skillID);
                     if (skillConfig) {
                         if (skillConfig.name.includes("شق زمكان") && userId !== TARGET_OWNER_ID) continue; 
@@ -318,14 +302,12 @@ module.exports = {
             let invCategory = 'main';
 
             if (isSlash) {
-                // التحقق مما اختاره اللاعب في السلاش كوماند
                 const chosenTab = interactionOrMessage.options.getString('tab');
                 if (chosenTab) {
                     currentView = chosenTab;
                     if (chosenTab === 'inventory') invCategory = 'main';
                 }
             } else {
-                // توجيه الأوامر النصية العادية
                 const commandUsed = interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase();
                 if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandUsed)) { currentView = 'inventory'; invCategory = 'main'; }
                 else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandUsed)) { currentView = 'combat'; }
@@ -463,6 +445,73 @@ module.exports = {
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
                     );
                     await i.showModal(modal).catch(()=>{});
+
+                    try {
+                        const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${authorUser.id}_${targetID}`, time: 60000 });
+                        const qty = parseInt(modalSubmit.fields.getTextInputValue('trade_qty'));
+                        const price = parseInt(modalSubmit.fields.getTextInputValue('trade_price'));
+
+                        if (isNaN(qty) || qty <= 0) return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: [MessageFlags.Ephemeral] });
+                        if (isNaN(price) || price < 0) return modalSubmit.reply({ content: '❌ سعر غير صالح.', flags: [MessageFlags.Ephemeral] });
+
+                        const senderInvData = db.prepare("SELECT quantity, id FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(authorUser.id, guildId, global.tradeTempItem);
+                        if (!senderInvData || senderInvData.quantity < qty) return modalSubmit.reply({ content: '❌ أنت لا تملك هذه الكمية في حقيبتك!', flags: [MessageFlags.Ephemeral] });
+
+                        const itemInfo = resolveItemInfo(global.tradeTempItem);
+
+                        if (price === 0) {
+                            const newSenderQty = senderInvData.quantity - qty;
+                            if (newSenderQty > 0) db.prepare("UPDATE user_inventory SET quantity = ? WHERE id = ?").run(newSenderQty, senderInvData.id);
+                            else db.prepare("DELETE FROM user_inventory WHERE id = ?").run(senderInvData.id);
+
+                            db.prepare("INSERT INTO user_inventory (userID, guildID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT (userID, guildID, itemID) DO UPDATE SET quantity = user_inventory.quantity + ?").run(targetID, guildId, global.tradeTempItem, qty, qty);
+
+                            await modalSubmit.reply({ content: `🎁 <@${authorUser.id}> أرسل **${qty}x ${itemInfo.emoji} ${itemInfo.name}** كهدية إلى <@${targetID}>!` });
+                            await msg.edit(await renderView()).catch(()=>{});
+                        } else {
+                            await modalSubmit.deferReply();
+                            const tradeId = Date.now().toString();
+                            const tradeButtons = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder().setCustomId(`trade_acc_${tradeId}`).setLabel('قبول وشراء ✅').setStyle(ButtonStyle.Success),
+                                new ButtonBuilder().setCustomId(`trade_dec_${tradeId}`).setLabel('رفض ❌').setStyle(ButtonStyle.Danger)
+                            );
+
+                            const tradeMsgObj = await modalSubmit.followUp({ content: `⚖️ **عـقـد تـجـاري**\nمرحباً <@${targetID}>!\nيعرض عليك <@${authorUser.id}>:\n**استلام:** ${qty}x ${itemInfo.emoji} ${itemInfo.name}\n**دفع:** ${price.toLocaleString()} ${EMOJI_MORA}`, components: [tradeButtons] });
+                            msg.edit(await renderView()).catch(()=>{});
+
+                            const tradeFilter = btn => btn.user.id === targetID && btn.customId.includes(tradeId);
+                            const tradeCollector = tradeMsgObj.createMessageComponentCollector({ filter: tradeFilter, time: 60000 });
+
+                            tradeCollector.on('collect', async btn => {
+                                await btn.deferUpdate().catch(()=>{});
+                                if (btn.customId.includes('dec_')) {
+                                    tradeCollector.stop('declined');
+                                    return tradeMsgObj.edit({ content: `❌ تم رفض الصفقة من قبل <@${targetID}>.`, components: [] });
+                                }
+
+                                const targetLevel = db.prepare("SELECT mora FROM levels WHERE user = ? AND guild = ?").get(targetID, guildId) || { mora: 0 };
+                                if (targetLevel.mora < price) return btn.followUp({ content: '❌ لا تملك المورا الكافية!', flags: [MessageFlags.Ephemeral] });
+
+                                const senderInvFinal = db.prepare("SELECT quantity, id FROM user_inventory WHERE userID = ? AND guildID = ? AND itemID = ?").get(authorUser.id, guildId, global.tradeTempItem);
+                                if (!senderInvFinal || senderInvFinal.quantity < qty) {
+                                    tradeCollector.stop('failed');
+                                    return tradeMsgObj.edit({ content: `❌ فشلت الصفقة: البائع لا يملك الكمية المطلوبة حالياً!`, components: [] });
+                                }
+
+                                const finalSenderQty = senderInvFinal.quantity - qty;
+                                if (finalSenderQty > 0) db.prepare("UPDATE user_inventory SET quantity = ? WHERE id = ?").run(finalSenderQty, senderInvFinal.id);
+                                else db.prepare("DELETE FROM user_inventory WHERE id = ?").run(senderInvFinal.id);
+                                
+                                db.prepare("INSERT INTO user_inventory (userID, guildID, itemID, quantity) VALUES (?, ?, ?, ?) ON CONFLICT (userID, guildID, itemID) DO UPDATE SET quantity = user_inventory.quantity + ?").run(targetID, guildId, global.tradeTempItem, qty, qty);
+                                db.prepare("UPDATE levels SET mora = mora - ? WHERE user = ? AND guild = ?").run(price, targetID, guildId);
+                                db.prepare("UPDATE levels SET mora = mora + ? WHERE user = ? AND guild = ?").run(price, authorUser.id, guildId);
+
+                                tradeCollector.stop('accepted');
+                                await tradeMsgObj.edit({ content: `✅ **تمت الصفقة بنجاح!**\nاشترى <@${targetID}> ${qty}x ${itemInfo.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${authorUser.id}>.`, components: [] });
+                                await msg.edit(await renderView()).catch(()=>{});
+                            });
+                        }
+                    } catch(e) {}
                 }
             });
 
