@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, PermissionsBitField } = require("discord.js");
 
 module.exports = {
-    // 🔥 بناء أمر السلاش ليتعرف عليه ديسكورد 🔥
     data: new SlashCommandBuilder()
         .setName('prefix')
         .setDescription('تغيير بادئة (بريفكس) الأوامر في السيرفر.')
@@ -20,11 +19,10 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         const client = interactionOrMessage.client;
         const guild = interactionOrMessage.guild;
-        const db = client.sql; // PostgreSQL / Supabase Database
+        const db = client.sql; // SQLite Database
 
         let member, newPrefix, reply;
 
-        // 🔥 تهيئة المتغيرات بناءً على طريقة الاستخدام (سلاش أو نصي) 🔥
         if (isSlash) {
             member = interactionOrMessage.member;
             newPrefix = interactionOrMessage.options.getString('البريفكس');
@@ -36,24 +34,15 @@ module.exports = {
             reply = (payload) => interactionOrMessage.reply(payload);
         }
 
-        // التحقق من الصلاحيات
         if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return reply({ content: `❌ **عذراً، لا تملك صلاحية \`ManageGuild\` لاستخدام هذا الأمر.**`, ephemeral: true });
         }
 
         let currentPrefix = "-";
         try {
-            // قراءة البريفكس الحالي من جدول settings
-            let res;
-            try {
-                res = await db.query(`SELECT "prefix" FROM settings WHERE "guild" = $1`, [guild.id]);
-            } catch(e) {
-                res = await db.query(`SELECT prefix FROM settings WHERE guild = $1`, [guild.id]).catch(()=>({rows:[]}));
-            }
-            
-            if (res && res.rows.length > 0 && (res.rows[0].prefix || res.rows[0].prefix)) {
-                currentPrefix = res.rows[0].prefix || res.rows[0].prefix;
-            }
+            // قراءة البريفكس الحالي من جدول settings (SQLite)
+            const res = db.prepare("SELECT prefix FROM settings WHERE guild = ?").get(guild.id);
+            if (res && res.prefix) currentPrefix = res.prefix;
         } catch (e) {
             console.error("Error fetching current prefix:", e);
         }
@@ -63,20 +52,12 @@ module.exports = {
         }
 
         try {
-            // تحديث البريفكس في جدول settings 
-            try {
-                await db.query(`
-                    INSERT INTO settings ("guild", "prefix") 
-                    VALUES ($1, $2) 
-                    ON CONFLICT("guild") DO UPDATE SET "prefix" = EXCLUDED."prefix"
-                `, [guild.id, newPrefix]);
-            } catch(e) {
-                await db.query(`
-                    INSERT INTO settings (guild, prefix) 
-                    VALUES ($1, $2) 
-                    ON CONFLICT(guild) DO UPDATE SET prefix = EXCLUDED.prefix
-                `, [guild.id, newPrefix]).catch(()=>{});
-            }
+            // تحديث البريفكس في جدول settings (SQLite)
+            db.prepare(`
+                INSERT INTO settings (guild, prefix) 
+                VALUES (?, ?) 
+                ON CONFLICT(guild) DO UPDATE SET prefix = EXCLUDED.prefix
+            `).run(guild.id, newPrefix);
             
             return reply(`✅ **تم تغيير بريفكس السيرفر بنجاح إلى:** \`${newPrefix}\``);
             
