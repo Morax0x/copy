@@ -166,45 +166,33 @@ module.exports = {
             const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
             if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandTrigger)) {
                 currentView = 'inventory'; invCategory = 'main';
-            } else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandUsed)) {
+            } else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandTrigger)) {
                 currentView = 'combat';
             }
 
-            // =====================================
-            // 📊 1. جلب البيانات المركزية للبروفايل
-            // =====================================
-            let levelData = null;
-            if (client.getLevel) { try { levelData = await client.getLevel(targetUser.id, guildId); } catch(e){} }
-            if (!levelData) {
-                const lvlRes = await db.query(`SELECT "xp", "level", "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]).catch(()=> db.query(`SELECT xp, level, mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]})));
-                levelData = lvlRes.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
-            }
-            
-            const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
-
-            const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=> db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]})));
-            const repPoints = repRes.rows[0]?.rep_points || repRes.rows[0]?.reppoints || 0;
-            const rankInfo = getRepRankInfo(repPoints);
-
-            const userRaceData = await getUserRace(targetMember, db);
-            const raceNameRaw = userRaceData ? (userRaceData.raceName || userRaceData.racename) : null;
-            const arabicRaceName = raceNameRaw ? (RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw) : "مجهول";
-            
-            const weaponData = await getWeaponData(db, targetMember);
-            const weaponName = weaponData ? weaponData.name : "بدون سلاح";
-
             const renderView = async () => {
-                // =====================================
-                // 🪪 2. عرض البروفايل الرئيسي
-                // =====================================
-                if (currentView === 'profile') {
-                    const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(()=> db.query(`SELECT * FROM streaks WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]})));
-                    const streakData = streakRes.rows[0] || {};
-                    const streakCount = streakData.streakCount || streakData.streakcount || 0;
-                    let hasItemShields = streakData.hasItemShield || streakData.hasitemshield || 0;
-                    let hasGraceShield = (streakData.hasGracePeriod === 1 || streakData.hasgraceperiod === 1) ? 1 : 0;
-                    const totalShields = Number(hasItemShields) + Number(hasGraceShield);
+                // 1. جلب البيانات الأساسية
+                let levelData = db.prepare ? db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, guildId) : null;
+                if (!levelData) {
+                    const res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]);
+                    levelData = res.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
+                }
 
+                const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
+                const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
+                const repPoints = repRes.rows[0]?.rep_points || 0;
+                const rankInfo = getRepRankInfo(repPoints);
+
+                const userRaceData = await getUserRace(targetMember, db);
+                const raceNameRaw = userRaceData?.raceName || null;
+                const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
+                const weaponData = await getWeaponData(db, targetMember);
+                const weaponName = weaponData ? weaponData.name : "بدون سلاح";
+
+                // --- عرض البروفايل ---
+                if (currentView === 'profile') {
+                    const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
+                    const streakData = streakRes.rows[0] || {};
                     const xpBuff = await calculateBuffMultiplier(targetMember, db);
                     const moraBuff = await calculateMoraBuff(targetMember, db);
                     const ranks = { level: "0", mora: "0", streak: "0", power: "0" };
@@ -214,15 +202,17 @@ module.exports = {
 
                     const profData = {
                         user: targetUser, displayName: cleanName, rankInfo, repPoints,
-                        level: levelData.level, currentXP: Number(levelData.xp) || 0, requiredXP: calculateRequiredXP(levelData.level),
+                        level: levelData.level, currentXP: Number(levelData.xp), requiredXP: calculateRequiredXP(levelData.level),
                         mora: (targetUser.id === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) ? "???" : totalMora.toLocaleString(),
                         raceName: arabicRaceName, weaponName, weaponDmg: weaponData?.currentDamage || 0,
-                        maxHp: PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL), streakCount,
+                        maxHp: PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL), streakCount: streakData.streakCount || 0,
                         xpBuff: Math.floor((xpBuff - 1) * 100), moraBuff: Math.floor((moraBuff - 1) * 100),
-                        shields: totalShields, ranks
+                        shields: Number(streakData.hasItemShield || 0) + (streakData.hasGracePeriod === 1 ? 1 : 0), ranks
                     };
 
                     const buffer = await generateAdventurerCard(profData);
+                    
+                    // 🔥 تعديل 1: أزرار البروفايل الأساسية (زرين فقط) 🔥
                     const nav = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('حـقـيـبـة').setStyle(ButtonStyle.Primary).setEmoji('🎒'),
                         new ButtonBuilder().setCustomId(`v_com_${authorUser.id}`).setLabel('عـتـاد').setStyle(ButtonStyle.Primary).setEmoji('⚔️')
@@ -230,16 +220,12 @@ module.exports = {
                     return { content: `**🪪 بطاقة المغامر | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
-                // =====================================
-                // ⚔️ 3. عرض العتاد والمهارات
-                // =====================================
+                // --- عرض العتاد (المهارات) ---
                 if (currentView === 'combat') {
-                    const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [targetUser.id, guildId]).catch(()=>({rows:[]})));
+                    const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]);
                     let allSkills = skillRes.rows.map(s => {
-                        const skillID = s.skillID || s.skillid;
-                        const skillLevel = s.skillLevel || s.skilllevel;
-                        const conf = skillsConfig.find(sc => sc.id === skillID);
-                        return conf ? { id: conf.id, name: conf.name, level: skillLevel, description: conf.description } : null;
+                        const conf = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
+                        return conf ? { id: conf.id, name: conf.name, level: s.skillLevel, description: conf.description } : null;
                     }).filter(s => s !== null);
                     allSkills.sort((a,b) => b.level - a.level);
 
@@ -247,12 +233,13 @@ module.exports = {
                     const slice = allSkills.slice(skillPage * SKILLS_PER_PAGE, (skillPage + 1) * SKILLS_PER_PAGE);
 
                     const cardData = {
-                        user: targetUser, avatarUrl: targetUser.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
+                        user: targetUser, avatarUrl: targetUser.displayAvatarURL({ extension: 'png', size: 256 }),
                         cleanName, weaponData, raceName: arabicRaceName, skillsList: slice,
                         totalSpent: 0, userLevel: levelData.level, currentPage: skillPage, totalPages: totalSkillPages
                     };
                     const buffer = await generateSkillsCard(cardData);
                     
+                    // 🔥 تعديل 2: أزرار العتاد (يمين، يسار، العودة للبروفايل) 🔥
                     const nav = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`sk_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage === 0),
                         new ButtonBuilder().setCustomId(`sk_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage >= totalSkillPages - 1),
@@ -261,15 +248,15 @@ module.exports = {
                     return { content: `**⚔️ العتاد والمهارات | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
                 }
 
-                // =====================================
-                // 🎒 4. عرض الحقيبة والخيمة
-                // =====================================
+                // --- عرض الحقيبة (الخيمة + الأقسام) ---
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        // 🔥 اصلاح رتبة الخيمة: مطابقة لـ RankInfo في البروفايل 🔥
-                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
+                        // 🔥 تعديل 3: جلب رتبة المغامر للخيمة من البروفايل مباشرة 🔥
+                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name; 
+                        
                         const buffer = await generateMainHub(targetUser, cleanName, totalMora, hubRank, arabicRaceName, weaponName);
                         
+                        // 🔥 تعديل 4: أزرار الحقيبة الرئيسية (الخيمة) + زر العودة للبروفايل 🔥
                         const cats = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('موارد').setStyle(ButtonStyle.Success).setEmoji('💎'),
                             new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صيد').setStyle(ButtonStyle.Success).setEmoji('🎣'),
@@ -280,22 +267,24 @@ module.exports = {
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [cats] };
                     }
 
-                    const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=> db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]})));
+                    // عرض أقسام الحقيبة التفصيلية
+                    const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                     const items = invQuery.rows.map(row => {
                         const info = resolveItemInfo(row.itemID || row.itemid);
-                        return { ...info, quantity: Number(row.quantity), id: row.itemID || row.itemid };
-                    }).filter(i => i.category === invCategory && i.quantity > 0);
+                        return { ...info, quantity: row.quantity, id: row.itemID };
+                    }).filter(i => i.category === invCategory);
 
                     const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                     const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
 
-                    // 🔥 إرسال صورة الحقيبة حتى لو كانت فارغة (slice رح يكون []) 🔥
+                    // 🔥 تعديل 5: الرسم حتى لو كانت المصفوفة فارغة للحفاظ على الشكل الفخم 🔥
                     const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages);
                     
                     const nav = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
                         new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages),
-                        new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
+                        // 🔥 تعديل 6: زر العودة داخل الأقسام يرجعك للخيمة الرئيسية 🔥
+                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
                     );
                     return { content: `**🎒 حقيبة ${cleanName} | ${invCategory}**`, files: [new AttachmentBuilder(buffer, { name: 'i.png' })], components: [nav] };
                 }
@@ -308,7 +297,6 @@ module.exports = {
                 await i.deferUpdate();
                 const id = i.customId;
 
-                // التوجيه الذكي
                 if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; }
                 else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; }
                 else if (id.startsWith('v_pro_')) { currentView = 'profile'; }
