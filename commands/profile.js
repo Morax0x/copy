@@ -162,6 +162,8 @@ module.exports = {
             let invCategory = 'main';
             let invPage = 1; 
             let skillPage = 0;
+            // 🔥 المتغير الجديد لتتبع موقع المؤشر في الحقيبة (من 0 إلى 14) 🔥
+            let selectedIndex = 0; 
 
             const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
             if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandTrigger)) {
@@ -171,7 +173,6 @@ module.exports = {
             }
 
             const renderView = async () => {
-                // 1. جلب البيانات الأساسية
                 let levelData = db.prepare ? db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, guildId) : null;
                 if (!levelData) {
                     const res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]);
@@ -211,8 +212,6 @@ module.exports = {
                     };
 
                     const buffer = await generateAdventurerCard(profData);
-                    
-                    // 🔥 تعديل 1: أزرار البروفايل الأساسية (زرين فقط) 🔥
                     const nav = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('حـقـيـبـة').setStyle(ButtonStyle.Primary).setEmoji('🎒'),
                         new ButtonBuilder().setCustomId(`v_com_${authorUser.id}`).setLabel('عـتـاد').setStyle(ButtonStyle.Primary).setEmoji('⚔️')
@@ -239,7 +238,6 @@ module.exports = {
                     };
                     const buffer = await generateSkillsCard(cardData);
                     
-                    // 🔥 تعديل 2: أزرار العتاد (يمين، يسار، العودة للبروفايل) 🔥
                     const nav = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`sk_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage === 0),
                         new ButtonBuilder().setCustomId(`sk_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage >= totalSkillPages - 1),
@@ -251,42 +249,59 @@ module.exports = {
                 // --- عرض الحقيبة (الخيمة + الأقسام) ---
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        // 🔥 تعديل 3: جلب رتبة المغامر للخيمة من البروفايل مباشرة 🔥
-                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name; 
-                        
+                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
                         const buffer = await generateMainHub(targetUser, cleanName, totalMora, hubRank, arabicRaceName, weaponName);
                         
-                        // 🔥 تعديل 4: أزرار الحقيبة الرئيسية (الخيمة) + زر العودة للبروفايل 🔥
                         const cats = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('موارد').setStyle(ButtonStyle.Success).setEmoji('💎'),
                             new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صيد').setStyle(ButtonStyle.Success).setEmoji('🎣'),
                             new ButtonBuilder().setCustomId(`c_far_${authorUser.id}`).setLabel('مزرعة').setStyle(ButtonStyle.Success).setEmoji('🌾'),
                             new ButtonBuilder().setCustomId(`c_oth_${authorUser.id}`).setLabel('أخرى').setStyle(ButtonStyle.Success).setEmoji('📦'),
-                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
+                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العودة').setStyle(ButtonStyle.Danger)
                         );
                         return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [cats] };
                     }
 
-                    // عرض أقسام الحقيبة التفصيلية
+                    // عرض أقسام الحقيبة (موارد، إلخ) مع أزرار التحكم
                     const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                     const items = invQuery.rows.map(row => {
                         const info = resolveItemInfo(row.itemID || row.itemid);
-                        return { ...info, quantity: row.quantity, id: row.itemID };
+                        return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                     }).filter(i => i.category === invCategory);
 
                     const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                     const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
 
-                    // 🔥 تعديل 5: الرسم حتى لو كانت المصفوفة فارغة للحفاظ على الشكل الفخم 🔥
-                    const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages);
-                    
-                    const nav = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages),
-                        // 🔥 تعديل 6: زر العودة داخل الأقسام يرجعك للخيمة الرئيسية 🔥
-                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
+                    // 🔥 تمرير الـ selectedIndex إلى المولد ليرسم المؤشر 🔥
+                    const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+
+                    // 🔥 تصميم الأزرار الـ 4 (D-Pad Navigation) 🔥
+                    const row1 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
                     );
-                    return { content: `**🎒 حقيبة ${cleanName} | ${invCategory}**`, files: [new AttachmentBuilder(buffer, { name: 'i.png' })], components: [nav] };
+                    const row2 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setLabel('OK').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
+                    );
+                    const row3 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
+                    );
+                    const row4 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العودة').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                    );
+
+                    return { 
+                        content: `**🎒 حقيبة ${cleanName} | ${invCategory}**\n> 🎯 استخدم الأسهم للتحرك واضغط **OK** لتفاصيل العنصر.`, 
+                        files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
+                        components: [row1, row2, row3, row4] 
+                    };
                 }
             };
 
@@ -297,18 +312,60 @@ module.exports = {
                 await i.deferUpdate();
                 const id = i.customId;
 
-                if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; }
+                // --- التنقل بين الواجهات الرئيسية ---
+                if (id.startsWith('v_inv_')) { currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; }
                 else if (id.startsWith('v_com_')) { currentView = 'combat'; skillPage = 0; }
                 else if (id.startsWith('v_pro_')) { currentView = 'profile'; }
                 else if (id.startsWith('cat_main_')) { invCategory = 'main'; }
-                else if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'materials'; invPage = 1; }
-                else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; }
-                else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; }
-                else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; }
-                else if (id.startsWith('inv_n_')) invPage++;
-                else if (id.startsWith('inv_p_')) invPage--;
-                else if (id.startsWith('sk_n_')) skillPage++;
-                else if (id.startsWith('sk_p_')) skillPage--;
+                else if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; }
+                else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; }
+                else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; }
+                else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; }
+                
+                // --- تقليب الصفحات ---
+                else if (id.startsWith('inv_n_')) { invPage++; selectedIndex = 0; }
+                else if (id.startsWith('inv_p_')) { invPage--; selectedIndex = 0; }
+                else if (id.startsWith('sk_n_')) { skillPage++; }
+                else if (id.startsWith('sk_p_')) { skillPage--; }
+
+                // 🔥 منطق أزرار التوجيه (D-Pad) داخل الحقيبة 🔥
+                else if (id.startsWith('d_')) {
+                    const moveType = id.split('_')[1]; 
+                    // الشبكة عبارة عن 3 صفوف و 5 أعمدة (0 إلى 14)
+                    
+                    if (moveType === 'r1') { // يمين خطوة
+                        if (selectedIndex % 5 !== 4) selectedIndex += 1; 
+                    } 
+                    else if (moveType === 'l1') { // يسار خطوة
+                        if (selectedIndex % 5 !== 0) selectedIndex -= 1;
+                    }
+                    else if (moveType === 'd1') { // تحت خطوة
+                        if (selectedIndex + 5 < 15) selectedIndex += 5;
+                    }
+                    else if (moveType === 'u1') { // فوق خطوة
+                        if (selectedIndex - 5 >= 0) selectedIndex -= 5;
+                    }
+                    else if (moveType === 'r2') { // يمين خطوتين
+                        if (selectedIndex % 5 <= 2) selectedIndex += 2;
+                        else selectedIndex += (4 - (selectedIndex % 5)); // يوصل للآخر لو مافي خطوتين
+                    }
+                    else if (moveType === 'l2') { // يسار مضاعف
+                        if (selectedIndex % 5 >= 2) selectedIndex -= 2;
+                        else selectedIndex -= (selectedIndex % 5); // يوصل للأول
+                    }
+                    else if (moveType === 'd2') { // تحت مضاعف
+                        if (selectedIndex + 10 < 15) selectedIndex += 10;
+                        else if (selectedIndex + 5 < 15) selectedIndex += 5;
+                    }
+                    else if (moveType === 'u2') { // فوق مضاعف
+                        if (selectedIndex - 10 >= 0) selectedIndex -= 10;
+                        else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
+                    }
+                    else if (moveType === 'ok') {
+                        // هنا سنبرمج "فتح صفحة العنصر" في الخطوة القادمة
+                        return i.followUp({ content: `✅ لقد قمت باختيار المربع رقم: **${selectedIndex + 1}**\n(سيتم برمجة فتح صفحة العنصر قريباً!)`, flags: [MessageFlags.Ephemeral] });
+                    }
+                }
 
                 await msg.edit(await renderView());
             });
