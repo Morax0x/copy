@@ -4,7 +4,7 @@ const skillsConfig = require('../../json/skills-config.json');
 const weaponsConfig = require('../../json/weapons-config.json');
 const potionItems = require('../../json/potions.json');
 
-// استدعاء المصمم الفخم الذي بنيناه للتو!
+// استدعاء المصمم الفخم الذي بنيناه
 const { generateSkillsCard } = require('../../generators/skills-card-generator.js'); 
 
 const OWNER_ID = "1145327691772481577"; 
@@ -67,6 +67,12 @@ module.exports = {
         catch(e) { userSkillsRes = await sql.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2 AND skilllevel > 0`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
         
         const userSkillsDB = userSkillsRes.rows;
+
+        // 🔥 جلب بيانات اللاعب الأساسية لتغذية المخطط العنكبوتي 🔥
+        let userLvlRes;
+        try { userLvlRes = await sql.query(`SELECT "level", "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guild.id]); }
+        catch(e) { userLvlRes = await sql.query(`SELECT level, mora FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guild.id]).catch(()=>({rows:[]})); }
+        const userLevel = userLvlRes.rows[0] ? Number(userLvlRes.rows[0].level) : 1;
         
         let potionsList = [];
         try {
@@ -120,6 +126,7 @@ module.exports = {
                     if (raceSkillId && skillID === raceSkillId) hasRaceSkillInDB = true;
 
                     allSkills.push({
+                        id: skillID, // 🔥 إرسال الـ ID لربطه بالصورة في المولد 🔥
                         name: skillConfig.name,
                         level: skillLevel,
                         description: skillConfig.description
@@ -136,6 +143,7 @@ module.exports = {
             const raceSkillConfig = skillsConfig.find(s => s.id === raceSkillId);
             if (raceSkillConfig && (!raceSkillConfig.name.includes("شق زمكان") || targetUser.id === OWNER_ID)) {
                 allSkills.push({
+                    id: raceSkillId,
                     name: raceSkillConfig.name,
                     level: 1, 
                     description: raceSkillConfig.description + " [غير مطورة]"
@@ -170,6 +178,7 @@ module.exports = {
                 potionsList: potionsList,
                 skillsList: currentSkillsSlice,
                 totalSpent: totalSpent,
+                userLevel: userLevel, // 🔥 تمرير مستوى اللاعب للمولد لحساب الحيوية والدفاع 🔥
                 currentPage: currentPage,
                 totalPages: totalPages
             };
