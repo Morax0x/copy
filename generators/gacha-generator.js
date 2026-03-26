@@ -10,10 +10,18 @@ const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 async function getCachedImage(imageUrl) {
     if (!imageUrl) return null;
-    if (imageCache.has(imageUrl)) return imageCache.get(imageUrl);
+    
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) {
+        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/')}`;
+    }
+    
+    const encodedUrl = encodeURI(finalUrl);
+
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
     try {
-        const img = await loadImage(imageUrl);
-        imageCache.set(imageUrl, img);
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
         return img;
     } catch (e) {
         return null;
@@ -57,12 +65,7 @@ async function generateGachaCard(item, rarity) {
 
     let itemDrawn = false;
     if (item.imgPath) {
-        let fullImageUrl = item.imgPath;
-        if (!fullImageUrl.startsWith('http')) {
-             fullImageUrl = `${R2_URL}/${item.imgPath.replace(/\\/g, '/')}`;
-        }
-        
-        const itemImg = await getCachedImage(fullImageUrl);
+        const itemImg = await getCachedImage(item.imgPath);
         
         if (itemImg) {
             const itemSize = 380; 
