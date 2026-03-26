@@ -1,10 +1,9 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const path = require('path');
 
 try {
-    GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
-} catch (e) {
-    console.log("[Gacha Generator] Warning: Bein font not found.");
-}
+    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
+} catch (e) {}
 
 const imageCache = new Map();
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
@@ -17,7 +16,6 @@ async function getCachedImage(imageUrl) {
         imageCache.set(imageUrl, img);
         return img;
     } catch (e) {
-        console.log(`[Gacha] Failed to load image from URL: ${imageUrl}`);
         return null;
     }
 }
