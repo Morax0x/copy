@@ -1,25 +1,24 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const path = require('path');
-const fs = require('fs');
 
 try {
-    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
+    GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
 } catch (e) {
-    console.log("⚠️ تنبيه: لم يتم العثور على خط Bein.");
+    console.log("[Skills Generator] Warning: Bein font not found.");
 }
 
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const imageCache = new Map();
-async function getCachedImage(imagePath) {
-    if (!imagePath) return null;
-    if (imageCache.has(imagePath)) return imageCache.get(imagePath);
-    if (fs.existsSync(imagePath)) {
-        try {
-            const img = await loadImage(imagePath);
-            imageCache.set(imagePath, img);
-            return img;
-        } catch (e) { return null; }
+
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    if (imageCache.has(imageUrl)) return imageCache.get(imageUrl);
+    try {
+        const img = await loadImage(imageUrl);
+        imageCache.set(imageUrl, img);
+        return img;
+    } catch (e) {
+        return null;
     }
-    return null;
 }
 
 const SKILL_TO_IMAGE = {
@@ -86,16 +85,14 @@ function wrapText(ctx, text, maxWidth) {
     return lines;
 }
 
-// 🔥 دالة رسم المخطط العنكبوتي (Spider Chart) 🔥
 function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     const sides = stats.length;
     const angleStep = (Math.PI * 2) / sides;
-    const maxVal = 100; // 100%
+    const maxVal = 100; 
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    // 1. رسم شبكة العنكبوت الخلفية
     const levels = 4;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1.5;
@@ -112,7 +109,6 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
         ctx.stroke();
     }
 
-    // 2. رسم المحاور
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.beginPath();
     for (let i = 0; i < sides; i++) {
@@ -122,12 +118,11 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     }
     ctx.stroke();
 
-    // 3. رسم منطقة بيانات اللاعب
     ctx.beginPath();
     let dataPoints = [];
     for (let i = 0; i < sides; i++) {
         const angle = i * angleStep - Math.PI / 2;
-        const percentage = Math.min(Math.max(stats[i].val / maxVal, 0.05), 1); // 0.05 كحد أدنى عشان ما تصير نقطة ميتة
+        const percentage = Math.min(Math.max(stats[i].val / maxVal, 0.05), 1); 
         const r = radius * percentage;
         const x = r * Math.cos(angle);
         const y = r * Math.sin(angle);
@@ -137,14 +132,12 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     }
     ctx.closePath();
 
-    // تعبئة وإطار
     ctx.fillStyle = `rgba(${parseInt(primaryColor.slice(1,3),16)}, ${parseInt(primaryColor.slice(3,5),16)}, ${parseInt(primaryColor.slice(5,7),16)}, 0.45)`;
     ctx.fill();
     ctx.strokeStyle = primaryColor;
     ctx.lineWidth = 3.5;
     ctx.stroke();
 
-    // نقاط مضيئة
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = primaryColor;
     ctx.shadowBlur = 12;
@@ -153,7 +146,6 @@ function drawSpiderChart(ctx, cx, cy, radius, stats, primaryColor) {
     }
     ctx.shadowBlur = 0;
 
-    // 4. كتابة أسماء المحاور بالعربي
     ctx.font = 'bold 18px "Bein"';
     for (let i = 0; i < sides; i++) {
         const angle = i * angleStep - Math.PI / 2;
@@ -255,16 +247,14 @@ async function generateSkillsCard(data) {
     const wpDmg = data.weaponData ? data.weaponData.currentDamage : 0;
     ctx.fillText(`⚔️ السلاح: ${wpName} (ضرر: ${wpDmg})`, avatarX, avatarY + 125);
 
-    // 🔥 الرياضيات الدقيقة للمخطط العنكبوتي 🔥
     const totalSkillsLevel = data.skillsList.reduce((acc, s) => acc + s.level, 0);
     const playerLevel = data.userLevel || 1;
     
-    // حسابات صارمة: النسبة من 0 إلى 100 فقط بناءً على الحد الأقصى
-    const maxDmg = 300;     // أقصى ضرر متوقع
-    const maxSkLvl = 100;   // أقصى مجموع لفلات المهارات
-    const maxLvl = 100;     // أقصى لفل للاعب
-    const maxSkills = 8;    // أقصى عدد مهارات
-    const maxSpent = 250000;// أقصى مورا للصرف
+    const maxDmg = 300;     
+    const maxSkLvl = 100;   
+    const maxLvl = 100;     
+    const maxSkills = 8;    
+    const maxSpent = 250000;
 
     let chartStats = [
         { label: 'الهجوم', val: (wpDmg / maxDmg) * 100 }, 
@@ -309,8 +299,8 @@ async function generateSkillsCard(data) {
 
             let imgDrawn = false;
             if (skill.id && SKILL_TO_IMAGE[skill.id]) {
-                const imgPath = path.join(process.cwd(), `images/skills/${SKILL_TO_IMAGE[skill.id]}`);
-                const img = await getCachedImage(imgPath);
+                const imgUrl = `${R2_URL}/images/skills/${SKILL_TO_IMAGE[skill.id]}`;
+                const img = await getCachedImage(imgUrl);
                 if (img) {
                     ctx.shadowColor = primaryColor; ctx.shadowBlur = 20;
                     ctx.drawImage(img, imgBoxX + 15, imgBoxY + 15, imgBoxSize - 30, imgBoxSize - 30);
@@ -325,18 +315,16 @@ async function generateSkillsCard(data) {
                 ctx.fillText('📜', imgBoxX + imgBoxSize/2, imgBoxY + imgBoxSize/2);
             }
 
-            // 🔥 شارة اللفل الجديدة الفخمة (أسفل صورة المهارة) 🔥
             const badgeW = 75, badgeH = 28;
             const badgeX = imgBoxX + (imgBoxSize / 2) - (badgeW / 2);
-            const badgeY = imgBoxY + imgBoxSize - (badgeH / 2); // تتمركز على الحافة السفلية للمربع
+            const badgeY = imgBoxY + imgBoxSize - (badgeH / 2); 
 
-            ctx.fillStyle = '#1a1025'; // خلفية الشارة داكنة
+            ctx.fillStyle = '#1a1025'; 
             ctx.beginPath(); roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 10); ctx.fill();
             ctx.strokeStyle = primaryColor; ctx.lineWidth = 2; ctx.stroke();
 
             ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px "Arial"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(`LVL ${skill.level}`, badgeX + badgeW/2, badgeY + badgeH/2 + 2);
-
 
             const textStartX = imgBoxX - 25; 
             
