@@ -42,62 +42,48 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
-    let currentFontSize = maxFontSize;
-    ctx.font = `bold ${currentFontSize}px "Bein"`;
-    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
-        currentFontSize--;
-        ctx.font = `bold ${currentFontSize}px "Bein"`;
-    }
-    ctx.fillText(text, x, y);
-}
-
-async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0) {
-    const width = 1200;
-    const height = 675; 
+async function generateGachaHub(userObj, moraBalance, flavorText) {
+    const width = 1000;
+    const height = 500; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
+
+    // 1. الخلفية (صندوق القاتشا كبير ومدمج كخلفية)
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(0, 0, width, height);
 
     const chestUrl = `${R2_URL}/images/gacha/main_chest.png`;
     const chestImg = await getCachedImage(chestUrl);
     if (chestImg) {
-        ctx.drawImage(chestImg, 0, 0, width, height);
-    } else {
-        ctx.fillStyle = '#0f1420';
-        ctx.fillRect(0, 0, width, height);
+        ctx.globalAlpha = 0.55; // شفافية عشان ما يزعج النصوص
+        ctx.drawImage(chestImg, width/2 - 350, height/2 - 350, 700, 700);
+        ctx.globalAlpha = 1.0;
     }
-
-    const vignette = ctx.createRadialGradient(width/2, height/2, 200, width/2, height/2, 800);
-    vignette.addColorStop(0, 'rgba(0,0,0,0.15)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.9)');
-    ctx.fillStyle = vignette;
+    
+    // تدرج لوني يعطي طابع سينمائي
+    const overlay = ctx.createLinearGradient(0, 0, width, height);
+    overlay.addColorStop(0, 'rgba(15, 20, 30, 0.85)');
+    overlay.addColorStop(1, 'rgba(5, 10, 15, 0.95)');
+    ctx.fillStyle = overlay;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = '#FFFFFF';
-    for(let i=0; i<80; i++) {
-        const px = Math.random() * width;
-        const py = Math.random() * height;
-        const pSize = Math.random() * 2.5;
-        ctx.globalAlpha = Math.random() * 0.4 + 0.1;
-        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
-    }
-    ctx.globalAlpha = 1.0;
+    // دالة مساعدة لرسم اللوحات الزجاجية الأنيقة
+    const drawGlassPanel = (x, y, w, h) => {
+        ctx.fillStyle = 'rgba(20, 25, 35, 0.6)';
+        ctx.beginPath(); roundRect(ctx, x, y, w, h, 15); ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(185, 104, 255, 0.3)'; ctx.stroke();
+    };
 
-    const headerH = 110;
-    ctx.fillStyle = 'rgba(5, 10, 15, 0.7)';
-    ctx.fillRect(0, 0, width, headerH);
+    // =====================================
+    // 2. لوحة معلومات اللاعب (يسار)
+    // =====================================
+    drawGlassPanel(50, 50, 300, 280);
     
-    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
-    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
-    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
-    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
-    ctx.fillStyle = goldGrad;
-    ctx.fillRect(0, headerH - 2, width, 2);
+    const avatarSize = 130;
+    const avatarX = 50 + 150;
+    const avatarY = 50 + 80;
 
-    const avatarSize = 75;
-    const avatarX = 50 + avatarSize/2;
-    const avatarY = headerH / 2;
-
+    // رسم الأفاتار
     ctx.save();
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
     try {
@@ -106,84 +92,66 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
         ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
     } catch (e) {}
     ctx.restore();
-    
+
+    // إطار الأفاتار
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
-    ctx.lineWidth = 3; ctx.strokeStyle = '#FFD700'; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = '#FFD700'; ctx.stroke();
 
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
-    let dName = userObj.displayName || userObj.username;
-    ctx.font = 'bold 28px "Bein"';
-    ctx.fillText(dName, avatarX + 55, avatarY);
-    ctx.shadowBlur = 0;
-
-    const boxW = 200;
-    const boxH = 50;
-    const moraX = width - boxW - 40;
-    const chestX = moraX - boxW - 20;
-    const boxY = (headerH - boxH) / 2;
-
-    ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
-    ctx.beginPath(); roundRect(ctx, chestX, boxY, boxW, boxH, 12); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(185, 104, 255, 0.6)'; ctx.stroke();
-    
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#E0E0E0';
-    ctx.font = 'bold 24px "Arial"';
-    ctx.fillText(chestCount.toString(), chestX + boxW - 50, boxY + boxH/2 + 2);
-    ctx.font = '24px "Arial"';
-    ctx.fillText('📦', chestX + boxW - 15, boxY + boxH/2 + 2);
-    
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#B968FF';
-    ctx.font = 'bold 18px "Bein"';
-    ctx.fillText("صناديقك", chestX + 20, boxY + boxH/2 + 2);
-
-    ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
-    ctx.beginPath(); roundRect(ctx, moraX, boxY, boxW, boxH, 12); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; ctx.stroke();
-    
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 24px "Arial"';
-    ctx.fillText(moraBalance.toLocaleString(), moraX + boxW - 50, boxY + boxH/2 + 2);
-    ctx.font = '24px "Arial"';
-    ctx.fillText('🪙', moraX + boxW - 15, boxY + boxH/2 + 2);
-
-    const bottomGrad = ctx.createLinearGradient(0, height - 220, 0, height);
-    bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    bottomGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.85)');
-    bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.98)');
-    ctx.fillStyle = bottomGrad;
-    ctx.fillRect(0, height - 220, width, 220);
-
-    const pricePanelW = 550;
-    const pricePanelH = 60;
-    const pricePanelX = (width - pricePanelW) / 2;
-    const pricePanelY = height - 150;
-
-    ctx.fillStyle = 'rgba(10, 15, 20, 0.8)';
-    ctx.beginPath(); roundRect(ctx, pricePanelX, pricePanelY, pricePanelW, pricePanelH, 15); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
-
+    // اسم اللاعب تحت الأفاتار
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 22px "Bein"';
-    ctx.fillText("10 صناديق = 10,000 🪙", width/2 - 130, pricePanelY + 30);
-    
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("1 صندوق = 1,000 🪙", width/2 + 130, pricePanelY + 30);
+    ctx.font = 'bold 24px "Bein"';
+    let dName = userObj.displayName || userObj.username;
+    if (dName.length > 15) dName = dName.substring(0, 15) + '..';
+    ctx.fillText(dName, avatarX, avatarY + 75);
 
+    // الرصيد
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 20px "Bein"';
+    ctx.fillText(`الرصيد: ${moraBalance.toLocaleString()} 🪙`, avatarX, avatarY + 115);
+
+    // =====================================
+    // 3. لوحة الأسعار (يمين)
+    // =====================================
+    drawGlassPanel(width - 350, 50, 300, 280);
+    
+    ctx.fillStyle = '#B968FF';
+    ctx.font = 'bold 28px "Bein"';
+    ctx.fillText("تكلفة الصناديق", width - 200, 80);
+
+    // خط فاصل
+    ctx.beginPath();
+    ctx.moveTo(width - 320, 130); ctx.lineTo(width - 80, 130);
+    ctx.strokeStyle = 'rgba(185, 104, 255, 0.4)'; ctx.stroke();
+
+    // السعر: 1 صندوق
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 22px "Bein"';
+    ctx.fillText("صندوق واحد", width - 70, 180);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText("1,000 🪙", width - 320, 180);
+
+    // السعر: 10 صناديق
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText("10 صناديق", width - 70, 240);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText("10,000 🪙", width - 320, 240);
+
+    // =====================================
+    // 4. لوحة العبارة العشوائية (أسفل)
+    // =====================================
+    drawGlassPanel(50, 360, width - 100, 90);
+    
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#E0E0E0';
-    ctx.font = 'bold 26px "Bein"';
-    ctx.shadowColor = '#B968FF'; 
-    ctx.shadowBlur = 15;
-    ctx.fillText(flavorText, width/2, height - 45);
+    ctx.font = 'bold 24px "Bein"';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 15;
+    ctx.fillText(flavorText, width/2, 405);
     ctx.shadowBlur = 0;
 
     return canvas.toBuffer('image/png');
