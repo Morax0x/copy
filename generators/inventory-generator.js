@@ -1,18 +1,15 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const path = require('path');
-const fs = require('fs');
 
 try {
-    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
+    GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
 } catch (e) {}
 
-// 🔥 استيراد مكتبة الشروحات (Lore) 🔥
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
+
 let itemLore = {};
 try {
     itemLore = require('../json/item-descriptions.json');
-} catch (e) {
-    console.log("[Inventory Generator] ⚠️ تنبيه: لم يتم العثور على ملف item-descriptions.json.");
-}
+} catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
 const skillsConfig = require('../json/skills-config.json');
@@ -23,17 +20,17 @@ try { fishData = require('../json/fish.json'); } catch(e) {}
 try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 const imageCache = new Map();
-async function getCachedImage(imagePath) {
-    if (!imagePath) return null;
-    if (imageCache.has(imagePath)) return imageCache.get(imagePath);
-    if (fs.existsSync(imagePath)) {
-        try {
-            const img = await loadImage(imagePath);
-            imageCache.set(imagePath, img);
-            return img;
-        } catch (e) { return null; }
+
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    if (imageCache.has(imageUrl)) return imageCache.get(imageUrl);
+    try {
+        const img = await loadImage(imageUrl);
+        imageCache.set(imageUrl, img);
+        return img;
+    } catch (e) { 
+        return null; 
     }
-    return null;
 }
 
 const RARITY_COLORS = {
@@ -60,7 +57,6 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// 🔥 دمج الوصف مع معلومات العنصر 🔥
 function resolveItemInfo(itemId) {
     let baseInfo = null;
 
@@ -68,7 +64,7 @@ function resolveItemInfo(itemId) {
         for (const race of upgradeMats.weapon_materials) {
             const mat = race.materials.find(m => m.id === itemId);
             if (mat) {
-                baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+                baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
                 break;
             }
         }
@@ -78,7 +74,7 @@ function resolveItemInfo(itemId) {
             const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
             if (book) {
-                baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+                baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
                 break;
             }
         }
@@ -104,7 +100,6 @@ function resolveItemInfo(itemId) {
         baseInfo = { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
     }
 
-    // جلب الوصف من ملف الـ Lore
     baseInfo.description = itemLore[itemId] || null;
     
     return baseInfo;
@@ -384,8 +379,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.fillRect(x, y, slotSize, slotSize);
             let imgDrawn = false;
             if (item.imgPath) {
-                const imgPath = path.join(process.cwd(), item.imgPath);
-                const img = await getCachedImage(imgPath);
+                const img = await getCachedImage(item.imgPath);
                 if (img) {
                     const padding = 25; 
                     const imgSize = slotSize - (padding * 2);
@@ -429,8 +423,8 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
     const primaryColor = '#FFD700'; 
-    const bgPath = path.join(process.cwd(), 'images/inventory/desk_bg.png');
-    const bgImg = await getCachedImage(bgPath);
+    const bgUrl = `${R2_URL}/images/inventory/desk_bg.png`;
+    const bgImg = await getCachedImage(bgUrl);
     if (bgImg) {
         ctx.drawImage(bgImg, 0, 0, width, height);
         const vignette = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 800);
@@ -535,8 +529,8 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     beam.addColorStop(1, 'rgba(185, 104, 255, 0)');
     ctx.fillStyle = beam;
     ctx.beginPath(); ctx.moveTo(bagX - 200, bagY + 120); ctx.lineTo(bagX + 200, bagY + 120); ctx.lineTo(bagX + 100, bagY - 200); ctx.lineTo(bagX - 100, bagY - 200); ctx.fill();
-    const bagPath = path.join(process.cwd(), 'images/inventory/main_bag.png');
-    const bagImg = await getCachedImage(bagPath);
+    const bagUrl = `${R2_URL}/images/inventory/main_bag.png`;
+    const bagImg = await getCachedImage(bagUrl);
     if (bagImg) {
         ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 60; 
         ctx.drawImage(bagImg, bagX - 225, bagY - 225, 450, 450); 
@@ -586,8 +580,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
 
     let imgDrawn = false;
     if (item.imgPath) {
-        const imgPath = path.join(process.cwd(), item.imgPath);
-        const img = await getCachedImage(imgPath);
+        const img = await getCachedImage(item.imgPath);
         if (img) {
             const padding = 40;
             const finalImgSize = imgSize - (padding * 2);
