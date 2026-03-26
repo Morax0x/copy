@@ -1,37 +1,34 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, AttachmentBuilder } = require('discord.js');
-const path = require('path');
-const fs = require('fs');
 
-let generateGachaCard;
+let generateGachaCard, generateGachaHub;
 try {
-    ({ generateGachaCard } = require('../../generators/gacha-generator.js'));
+    ({ generateGachaCard, generateGachaHub } = require('../../generators/gacha-generator.js'));
 } catch (e) {
-    generateGachaCard = null;
+    generateGachaCard = null; generateGachaHub = null;
 }
 
 const skillsConfig = require('../../json/skills-config.json');
 const upgradeMats = require('../../json/upgrade-materials.json');
 
 const PULL_PRICE = 1000;
-const OWNER_ID = "1145327691772481577";
-const EMOJI_MORA = '<:mora:1435647151349698621>';
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 const FLAVOR_TEXTS = [
-    "✨ قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
-    "✨ بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب لندائك.",
-    "✨ النجوم تنتظر من يوقظها.. ادفع المورا وابدأ طقوس الاستدعاء.",
-    "✨ مقابل المورا، قد تبتسم لك الأقدار أو تدير لك ظهرها.. هل تجرؤ على التجربة؟",
-    "⚔️ اكسر قيود الزمن، واستحضر قوى الأجداد المنسية إلى قبضتك!",
-    "⚔️ خلف هذا الختم ترقد كنوز الإمبراطورية العتيقة.. افتحه واصنع مجدك.",
-    "⚔️ أيقظ التحف النادرة من سباتها الأبدي.. المورا هي الثمن، والقوة هي الجائزة.",
-    "⚔️ طريق العظمة محفوف بالمخاطر والمكافآت.. استخدم المورا واكشف غنيمتك.",
-    "🔮 همسات الأقدار تناديك.. استخدم المورا لفك طلاسم هذا الصندوق الغامض.",
-    "🔮 تذكرة عبورك لعالم الأسرار.. ادفع الثمن واكشف ما يختبئ في الظلام.",
-    "🔮 بوابات الحظ لا تُفتح للجبناء.. ألقِ المورا في الفراغ وانتظر المعجزة.",
-    "🌌 قرابين المورا، هي مفتاحك للأسطورة.",
-    "🌌 اكسر الختم، واقطف نجمتك الساطعة!",
-    "🌌 ضحِّ بالمورا.. وعانق المجهول.",
-    "🌌 حظوظك مكتوبة بين النجوم.. افتح الصندوق لتقرأها."
+    "قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
+    "بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب.",
+    "النجوم تنتظر من يوقظها.. ادفع المورا وابدأ طقوس الاستدعاء.",
+    "مقابل المورا، قد تبتسم لك الأقدار أو تدير لك ظهرها.. جرب حظك!",
+    "اكسر قيود الزمن، واستحضر قوى الأجداد المنسية إلى قبضتك!",
+    "خلف هذا الختم ترقد كنوز الإمبراطورية.. افتحه واصنع مجدك.",
+    "أيقظ التحف النادرة من سباتها الأبدي.. المورا هي الثمن.",
+    "طريق العظمة محفوف بالمخاطر والمكافآت.. اكشف غنيمتك.",
+    "همسات الأقدار تناديك.. استخدم المورا لفك طلاسم الصندوق.",
+    "تذكرة عبورك لعالم الأسرار.. اكشف ما يختبئ في الظلام.",
+    "بوابات الحظ لا تُفتح للجبناء.. ألقِ المورا وانتظر المعجزة.",
+    "قرابين المورا، هي مفتاحك للأسطورة.",
+    "اكسر الختم، واقطف نجمتك الساطعة!",
+    "ضحِّ بالمورا.. وعانق المجهول.",
+    "حظوظك مكتوبة بين النجوم.. افتح الصندوق لتقرأها."
 ];
 
 const ID_TO_IMAGE = {
@@ -175,18 +172,14 @@ module.exports = {
         };
 
         const initialRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-
         let initialFiles = [];
-        let chestImagePath = path.join(process.cwd(), 'images/gacha/main_chest.png');
-        let contentString = `**${initialRandomText}**\n> ${EMOJI_MORA} **رصيدك الحالي:** \`${userMora.toLocaleString()}\``;
-
-        if (fs.existsSync(chestImagePath)) {
-            initialFiles.push(new AttachmentBuilder(chestImagePath, { name: 'main_chest.png' }));
-        } else {
-            contentString += `\nhttps://i.postimg.cc/q7d37hdb/gacha-chest.png`;
+        
+        if (generateGachaHub) {
+            const hubBuffer = await generateGachaHub(user, userMora, initialRandomText);
+            if (hubBuffer) initialFiles.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_hub.png' }));
         }
 
-        const initialMsg = await reply({ content: contentString, components: [getPullButtons(userMora)], files: initialFiles }).catch(()=>{});
+        const initialMsg = await reply({ components: [getPullButtons(userMora)], files: initialFiles }).catch(()=>{});
         if (!initialMsg) return;
         
         const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
@@ -195,25 +188,16 @@ module.exports = {
         });
 
         channelCollector.on('collect', async (i) => {
-            // 🔥 نظام زر صناديقي معزول بحماية 🔥
             if (i.customId === 'gacha_inventory') {
                 let chestCount = 0;
                 try {
                     const invRes = await db.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
                     if (invRes?.rows[0]) chestCount = Number(invRes.rows[0].quantity);
                 } catch(e) {}
-                
-                // استخدام reply لزر الصناديق عشان ما يخرب الرسالة الأساسية
                 return i.reply({ content: `🎒 **صناديقك المتاحة:** \`${chestCount}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
             }
 
-            // 🔥 حماية التكرار السريع (Spam Protection) للسحبات 🔥
-            try {
-                await i.deferUpdate();
-            } catch (err) {
-                // إذا فشل التحديث (بسبب ضغطة مكررة سريعة)، نوقف التنفيذ بصمت
-                return;
-            }
+            try { await i.deferUpdate(); } catch (err) { return; }
 
             await fetchUserData();
             const isTen = i.customId === 'gacha_10';
@@ -222,21 +206,8 @@ module.exports = {
 
             await i.editReply({ components: [] }).catch(()=>{});
 
-            let summonFiles = [];
-            let summonImagePath = path.join(process.cwd(), 'images/gacha/summon_magic.png');
-            let summonContent = "";
-            
-            if (fs.existsSync(summonImagePath)) {
-                summonFiles.push(new AttachmentBuilder(summonImagePath, { name: 'summon_magic.png' }));
-            } else {
-                summonContent = 'https://i.postimg.cc/T1b1xJ2R/magic-summon.gif';
-            }
-
-            const pullMsg = await i.followUp({ 
-                content: summonContent || null,
-                files: summonFiles,
-                fetchReply: true
-            }).catch(()=>{});
+            let summonFiles = [new AttachmentBuilder('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif', { name: 'summon_magic.gif' })];
+            const pullMsg = await i.followUp({ files: summonFiles, fetchReply: true }).catch(()=>{});
             
             if(!pullMsg) return;
 
@@ -268,18 +239,13 @@ module.exports = {
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
-            let meteorFiles = [];
             const prefix = isTen ? 'ten_' : 'single_';
             const meteorFileName = `${prefix}${bestResult.rarity}.png`;
-            const meteorPath = path.join(process.cwd(), `images/gacha/${meteorFileName}`);
+            const meteorUrl = `${R2_URL}/images/gacha/${meteorFileName}`;
+            let meteorFiles = [new AttachmentBuilder(meteorUrl, { name: meteorFileName })];
             
-            if (fs.existsSync(meteorPath)) {
-                meteorFiles.push(new AttachmentBuilder(meteorPath, { name: meteorFileName }));
-                await pullMsg.edit({ content: "", files: meteorFiles }).catch(()=>{});
-                await new Promise(r => setTimeout(r, 2000));
-            } else {
-                await new Promise(r => setTimeout(r, 1500));
-            }
+            await pullMsg.edit({ files: meteorFiles }).catch(()=>{});
+            await new Promise(r => setTimeout(r, 2000));
 
             const buildSilentSummary = async () => {
                 let files = [];
@@ -290,8 +256,13 @@ module.exports = {
                     } catch(e){}
                 }
                 const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-                const summaryContent = `**${summaryRandomText}**\n> ${EMOJI_MORA} **رصيدك المتبقي:** \`${userMora.toLocaleString()}\``;
-                return { content: summaryContent, components: [getPullButtons(userMora)], files };
+                if (generateGachaHub) {
+                    try {
+                        const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText);
+                        if (hubBuffer) files.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_summary.png' }));
+                    } catch(e){}
+                }
+                return { components: [getPullButtons(userMora)], files };
             };
 
             if (isTen) {
@@ -313,7 +284,7 @@ module.exports = {
                         new ButtonBuilder().setCustomId('gacha_skip').setLabel('تخطي ⏭️').setStyle(ButtonStyle.Secondary)
                     );
                     
-                    return { content: `📦 **سحبة ${idx + 1} من 10**`, components: [row], files };
+                    return { components: [row], files };
                 };
 
                 await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
@@ -324,7 +295,6 @@ module.exports = {
                 });
 
                 pageCollector.on('collect', async btn => {
-                    // 🔥 حماية التقليب السريع 🔥
                     try { await btn.deferUpdate(); } catch(e) { return; }
                     
                     if (btn.customId === 'gacha_skip') {
