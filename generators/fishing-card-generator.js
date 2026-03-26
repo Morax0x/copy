@@ -1,6 +1,4 @@
 const Canvas = require('canvas');
-const path = require('path');
-const fs = require('fs');
 
 const THEME = {
     TEXT: "#FFFFFF",
@@ -10,15 +8,12 @@ const THEME = {
     BAR_BG: "rgba(0, 0, 0, 0.6)"
 };
 
-// مسار المجلدات الأساسية للصور حسب الترتيب الجديد
-const BASE_IMG_PATH = path.join(process.cwd(), 'images', 'fish');
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/fish';
 
-// 🔥 الذاكرة العشوائية لتخزين الصور لضمان سرعة 0 تأخير 🔥
 const imageCache = new Map();
 
-// 🚀 دالة التحميل المسبق (تعمل تلقائياً عند التشغيل)
 async function preloadAssets() {
-    console.log("[Fishing Generator] Starting asset preload into RAM...");
+    console.log("[Fishing Generator] Starting asset preload from Cloud into RAM...");
     
     const foldersToLoad = [
         { folder: 'beach', files: ['beach.png', 'shallow.png', 'deep.png', 'bermuda.png', 'trench.png', 'atlantis.png', 'dark_sea.png'] },
@@ -37,27 +32,30 @@ async function preloadAssets() {
 
     for (const group of foldersToLoad) {
         for (const file of group.files) {
-            const fullPath = path.join(BASE_IMG_PATH, group.folder, file);
-            if (fs.existsSync(fullPath)) {
-                try {
-                    const img = await Canvas.loadImage(fullPath);
-                    imageCache.set(fullPath, img);
-                } catch (e) {
-                    console.error(`[Fishing] ❌ خطأ في قراءة الصورة: ${fullPath}`, e);
-                }
-            } else {
-                console.warn(`[Fishing] ⚠️ تنبيه: الصورة مفقودة ولم يتم العثور عليها: ${fullPath}`);
+            const urlPath = group.folder ? `${R2_URL}/${group.folder}/${file}` : `${R2_URL}/${file}`;
+            try {
+                const img = await Canvas.loadImage(urlPath);
+                imageCache.set(urlPath, img);
+            } catch (e) {
+                console.error(`[Fishing] Error loading image: ${urlPath}`);
             }
         }
     }
-    console.log(`[Fishing Generator] ✅ Successfully loaded ${imageCache.size} assets into RAM.`);
+    console.log(`[Fishing Generator] Successfully loaded ${imageCache.size} assets into RAM.`);
 }
 
 preloadAssets();
 
-function getCachedImage(folder, imageName) {
-    const fullPath = path.join(BASE_IMG_PATH, folder, imageName);
-    return imageCache.get(fullPath) || null;
+async function getCachedImage(folder, imageName) {
+    const urlPath = folder ? `${R2_URL}/${folder}/${imageName}` : `${R2_URL}/${imageName}`;
+    if (imageCache.has(urlPath)) return imageCache.get(urlPath);
+    try {
+        const img = await Canvas.loadImage(urlPath);
+        imageCache.set(urlPath, img);
+        return img;
+    } catch (e) {
+        return null;
+    }
 }
 
 async function generateFishingCard(tension, distance, statusText, locationId = 'beach', boatLevel = 1, rodLevel = 1) {
@@ -66,15 +64,14 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
 
-    const bgImage = getCachedImage('beach', `${locationId}.png`);
-    const boatImage = getCachedImage('ships', `boat_${boatLevel}.png`);
-    const rodImage = getCachedImage('fishing', `rod_${rodLevel}.png`);
+    const bgImage = await getCachedImage('beach', `${locationId}.png`);
+    const boatImage = await getCachedImage('ships', `boat_${boatLevel}.png`);
+    const rodImage = await getCachedImage('fishing', `rod_${rodLevel}.png`);
     
-    const fishImage = getCachedImage('', 'ordinary_fish.png') 
-                   || getCachedImage('', 'shadow_fish.png') 
-                   || getCachedImage('', 'fish.png');
+    const fishImage = await getCachedImage('', 'ordinary_fish.png') 
+                   || await getCachedImage('', 'shadow_fish.png') 
+                   || await getCachedImage('', 'fish.png');
 
-    // 1. رسم الخلفية
     if (bgImage) {
         ctx.drawImage(bgImage, 0, 0, canvasWidth, canvasHeight);
     } else {
@@ -89,7 +86,6 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     if (tension > 50) tensionColor = THEME.TENSION_MID;
     if (tension > 80) tensionColor = THEME.TENSION_HIGH;
 
-    // 2. رسم العداد
     const tensionBarX = 730;
     const tensionBarY = 50;
     const tensionBarW = 30;
@@ -119,43 +115,32 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     ctx.fillText('توتر الخيط', tensionBarX + 15, tensionBarY - 15);
     ctx.fillText(`${Math.floor(tension)}%`, tensionBarX + 15, tensionBarY + tensionBarH + 25);
 
-    // ==========================================
-    // 🔥 الوزنية الجديدة للأحجام والمواقع 🔥
-    // ==========================================
-    
-    // أبعاد وموقع القارب (أكبر وفي مستوى الماء)
     const boatWidth = 260;
     const boatHeight = 160;
     const boatX = 30; 
     const boatY = 180; 
 
-    // أبعاد وموقع السنارة (أصغر وموجودة في مقدمة القارب يميناً)
     const rodWidth = 70;
     const rodHeight = 70;
     const rodX = boatX + 160; 
     const rodY = boatY + 10;  
 
-    // أبعاد وموقع السمكة (في الماء)
     const fishWidth = 80;
     const fishHeight = 60;
-    // السمكة تتحرك من يمين الشاشة (x=700) إلى جهة القارب (x=320)
     const fishX = 320 + ((distance / 100) * 350);
     const fishY = 260;
 
-    // رسم الخيط
     ctx.beginPath();
-    // بداية الخيط من رأس السنارة (الزاوية اليمنى العلوية للسنارة)
     const lineStartX = rodX + (rodWidth * 0.85); 
     const lineStartY = rodY + (rodHeight * 0.15);
     ctx.moveTo(lineStartX, lineStartY); 
-    ctx.lineTo(fishX + 10, fishY + 20); // يتجه لفم السمكة
+    ctx.lineTo(fishX + 10, fishY + 20);
     ctx.lineWidth = tension > 80 ? 4 : 2;
     ctx.strokeStyle = tensionColor;
     if (tension > 85) ctx.setLineDash([5, 5]); 
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // رسم القارب
     if (boatImage) {
         ctx.drawImage(boatImage, boatX, boatY, boatWidth, boatHeight);
     } else {
@@ -163,12 +148,10 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
         ctx.fillRect(boatX, boatY + 50, 150, 50);
     }
 
-    // رسم السنارة
     if (rodImage) {
         ctx.drawImage(rodImage, rodX, rodY, rodWidth, rodHeight);
     }
 
-    // رسم السمكة
     if (fishImage) {
         ctx.drawImage(fishImage, fishX, fishY, fishWidth, fishHeight);
     } else {
@@ -178,9 +161,6 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
         ctx.fill();
     }
 
-    // ==========================================
-
-    // 5. رسم شريط المسافة
     const distBarX = 50;
     const distBarY = 350;
     const distBarW = 600;
@@ -204,7 +184,6 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     ctx.textAlign = 'left';
     ctx.fillText(`المسافة المتبقية: ${Math.floor(distance)}m`, distBarX, distBarY - 10);
 
-    // 6. طباعة النص العلوي
     ctx.textAlign = 'center';
     ctx.font = 'bold 24px "Arial"';
     ctx.fillStyle = THEME.TEXT;
