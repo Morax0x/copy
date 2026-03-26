@@ -25,6 +25,7 @@ const MAX_GAME_PLOTS = 36;
 
 const ASSETS_PATH = path.join(__dirname, '..', 'images', 'farm');
 let GLOBAL_IMAGES = null;
+let imageLoadPromise = null;
 
 const farmLocks = new Map();
 
@@ -47,31 +48,36 @@ async function getGrowthMultiplier(db, userId, guildId) {
 
 async function loadAllImages() {
     if (GLOBAL_IMAGES) return GLOBAL_IMAGES; 
+    if (imageLoadPromise) return await imageLoadPromise;
 
-    const loadImage = async (name) => {
-        try { return await Canvas.loadImage(path.join(ASSETS_PATH, name)); } 
-        catch (e) { 
-            try { return await Canvas.loadImage(path.join(ASSETS_PATH, name + '.png')); } catch (e2) { return null; }
-        }
-    };
+    imageLoadPromise = (async () => {
+        const loadImage = async (name) => {
+            const ext = name.endsWith('.png') ? '' : '.png';
+            const fullPath = path.join(ASSETS_PATH, name + ext);
+            try { return await Canvas.loadImage(fullPath); } 
+            catch (e) { return null; }
+        };
 
-    GLOBAL_IMAGES = {
-        grass: await loadImage('grass.png'),
-        tilled: await loadImage('tilled.png'),
-        lock: await loadImage('lock.png'),
-        withered: await loadImage('withered.png'),
-        sprout: await loadImage('sprout.png'),
-        borderTop: await loadImage('border_top.png'),
-        borderBottom: await loadImage('border_bottom.png'),
-        borderLeft: await loadImage('border_left.png'),
-        borderRight: await loadImage('border_right.png'),
-        cornerTL: await loadImage('corner_top_left.png'),
-        cornerTR: await loadImage('corner_top_right.png'),
-        cornerBL: await loadImage('corner_bottom_left.png'),
-        cornerBR: await loadImage('corner_bottom_right.png'),
-        crops: {} 
-    };
-    return GLOBAL_IMAGES;
+        GLOBAL_IMAGES = {
+            grass: await loadImage('grass.png'),
+            tilled: await loadImage('tilled.png'),
+            lock: await loadImage('lock.png'),
+            withered: await loadImage('withered.png'),
+            sprout: await loadImage('sprout.png'),
+            borderTop: await loadImage('border_top.png'),
+            borderBottom: await loadImage('border_bottom.png'),
+            borderLeft: await loadImage('border_left.png'),
+            borderRight: await loadImage('border_right.png'),
+            cornerTL: await loadImage('corner_top_left.png'),
+            cornerTR: await loadImage('corner_top_right.png'),
+            cornerBL: await loadImage('corner_bottom_left.png'),
+            cornerBR: await loadImage('corner_bottom_right.png'),
+            crops: {} 
+        };
+        return GLOBAL_IMAGES;
+    })();
+
+    return await imageLoadPromise;
 }
 
 async function getCropImage(seedId) {
@@ -79,7 +85,8 @@ async function getCropImage(seedId) {
     if (GLOBAL_IMAGES.crops[seedId]) return GLOBAL_IMAGES.crops[seedId];
 
     try {
-        const img = await Canvas.loadImage(path.join(ASSETS_PATH, `${seedId}.png`));
+        const fullPath = path.join(ASSETS_PATH, `${seedId}.png`);
+        const img = await Canvas.loadImage(fullPath);
         GLOBAL_IMAGES.crops[seedId] = img;
         return img;
     } catch (e) { return null; }
@@ -341,7 +348,6 @@ async function handleLandInteractions(i, client, db) {
     const updateView = async () => {
         const data = await renderLand(i, client, db);
         
-        // جلب صف الأزرار السفلي الخاص بالتنقل والموجود أصلاً في الرسالة
         const currentComponents = i.message.components;
         let navRow = null;
         if (currentComponents && currentComponents.length > 0) {
