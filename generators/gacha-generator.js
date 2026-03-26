@@ -1,165 +1,119 @@
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
-// المقاسات المثالية للديسكورد (تم ضبطها لتكون سينمائية)
+// المقاسات المثالية للديسكورد (مضبوطة 100%)
 const HUB_WIDTH = 1200;
 const HUB_HEIGHT = 600;
 const CARD_WIDTH = 600;
 const CARD_HEIGHT = 840;
 
-// رابط السحابة الخاصة بك لجلب صور العناصر
-const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
-
-// ألوان الندرة (ألوان أساسية + ألوان التوهج)
+// ألوان الندرة للبطاقات
 const RARITY_COLORS = {
-    Common: { main: '#B0BEC5', glow: '#78909C' },
-    Uncommon: { main: '#69F0AE', glow: '#00E676' },
-    Rare: { main: '#40C4FF', glow: '#00B0FF' },
-    Epic: { main: '#E040FB', glow: '#AA00FF' },
-    Legendary: { main: '#FFD700', glow: '#FF8F00' }
+    Common: '#B0BEC5',    
+    Uncommon: '#69F0AE',  
+    Rare: '#40C4FF',      
+    Epic: '#E040FB',      
+    Legendary: '#FFD700'  
 };
-
-// دالة مساعدة لرسم تأثير الأشعة (Sunburst) خلف العنصر
-function drawSunburst(ctx, width, height, color) {
-    const cx = width / 2;
-    const cy = height / 2;
-    const outerRadius = Math.max(width, height);
-    const rays = 24;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.15;
-
-    for (let i = 0; i < rays; i++) {
-        const angle = (i * 2 * Math.PI) / rays;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(angle - 0.05) * outerRadius, Math.sin(angle - 0.05) * outerRadius);
-        ctx.lineTo(Math.cos(angle + 0.05) * outerRadius, Math.sin(angle + 0.05) * outerRadius);
-        ctx.closePath();
-        ctx.fill();
-    }
-    ctx.restore();
-}
-
-// دالة مساعدة لرسم جزيئات الغبار/النجوم
-function drawParticles(ctx, width, height, count, color) {
-    ctx.save();
-    ctx.fillStyle = color;
-    for (let i = 0; i < count; i++) {
-        const x = Math.random() * width;
-        const y = Math.random() * height;
-        const r = Math.random() * 2 + 0.5;
-        const alpha = Math.random() * 0.8 + 0.2;
-        
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    ctx.restore();
-}
 
 async function generateGachaHub(user, userMora, flavorText) {
     const canvas = createCanvas(HUB_WIDTH, HUB_HEIGHT);
     const ctx = canvas.getContext('2d');
+    const centerX = HUB_WIDTH / 2;
+    const centerY = HUB_HEIGHT / 2;
 
-    // 1. خلفية الفضاء العميق (Deep Space)
-    const bgGradient = ctx.createLinearGradient(0, 0, 0, HUB_HEIGHT);
-    bgGradient.addColorStop(0, '#090514');   // أسود ليلي مائل للبنفسجي
-    bgGradient.addColorStop(0.5, '#1b1236'); // بنفسجي داكن
-    bgGradient.addColorStop(1, '#0c071e');   // عودة للظلام
+    // 1. خلفية ليلية عميقة (فضاء سحري)
+    const bgGradient = ctx.createLinearGradient(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    bgGradient.addColorStop(0, '#0a0a1a');
+    bgGradient.addColorStop(0.5, '#1a103c'); // لون بنفسجي غامق بالوسط
+    bgGradient.addColorStop(1, '#050510');
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
 
-    // 2. رسم نجوم في الخلفية
-    drawParticles(ctx, HUB_WIDTH, HUB_HEIGHT, 150, '#FFFFFF');
-
-    // 3. تأثير السديم السحري (بؤرة الاستدعاء)
-    const cx = HUB_WIDTH / 2;
-    const cy = HUB_HEIGHT / 2;
-    const nebula = ctx.createRadialGradient(cx, cy, 10, cx, cy, 500);
-    nebula.addColorStop(0, 'rgba(224, 64, 251, 0.5)'); // قلب البنفسجي المضيء
-    nebula.addColorStop(0.4, 'rgba(64, 196, 255, 0.15)'); // هالة زرقاء
-    nebula.addColorStop(1, 'transparent');
-    
-    ctx.globalCompositeOperation = 'screen';
-    ctx.fillStyle = nebula;
+    // 2. دوامة سحرية في المنتصف (تأثير Summon Magic)
+    const portalGlow = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, 500);
+    portalGlow.addColorStop(0, 'rgba(123, 31, 162, 0.9)'); // قلب البوابة مشع
+    portalGlow.addColorStop(0.4, 'rgba(49, 27, 146, 0.5)');
+    portalGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = portalGlow;
     ctx.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
-    ctx.globalCompositeOperation = 'source-over';
 
-    // 4. رسم دائرة سحرية (إطار داخلي متوهج)
-    ctx.beginPath();
-    ctx.arc(cx, cy, 250, 0, Math.PI * 2);
+    // رسم دوائر البوابة السحرية (Magic Circles)
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)'; // ذهبي شفاف
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.arc(cx, cy, 240, 0, Math.PI * 2);
-    ctx.setLineDash([5, 15]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(224, 64, 251, 0.4)';
-    ctx.stroke();
-    ctx.setLineDash([]); // إعادة الضبط
+    for(let i = 1; i <= 4; i++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, i * 80, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // خطوط متقطعة تعطي طابع طلاسم/سحر
+        ctx.setLineDash([15, 20]);
+        ctx.beginPath();
+        ctx.arc(0, 0, (i * 80) + 15, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]); // تصفير التقطيع
+    }
+    ctx.restore();
 
-    // 5. النص الافتتاحي (Flavor Text) بتأثير سينمائي
-    ctx.shadowColor = '#E040FB';
-    ctx.shadowBlur = 25;
+    // 3. جزيئات سحرية ونجوم تتطاير (Particles)
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 120; i++) {
+        const x = Math.random() * HUB_WIDTH;
+        const y = Math.random() * HUB_HEIGHT;
+        const size = Math.random() * 2.5 + 0.5;
+        const opacity = Math.random() * 0.8 + 0.2;
+        
+        ctx.globalAlpha = opacity;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // 4. كتابة النص الافتتاحي (Flavor Text)
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 15;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 3;
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 42px "Arial"';
+    ctx.font = 'bold 38px "Arial"'; // إذا عندك خط عربي حمله واستخدمه هنا
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(flavorText, cx, cy - 30);
+    ctx.fillText(flavorText, centerX, centerY - 80);
 
-    // 6. صندوق عرض رصيد المورا
-    const pillWidth = 400;
-    const pillHeight = 70;
-    const pillX = cx - pillWidth / 2;
-    const pillY = cy + 70;
-
-    // خلفية رصيد المورا
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#000000';
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.beginPath();
-    ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 35);
-    ctx.fill();
-
-    // إطار رصيد المورا
-    ctx.shadowBlur = 15;
+    // 5. عرض رصيد المورا بطريقة فخمة مع إضاءة قوية
     ctx.shadowColor = '#FFD700';
-    ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    // نص المورا
-    ctx.shadowBlur = 5;
+    ctx.shadowBlur = 25;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 32px "Arial"';
-    ctx.fillText(`💰 المورا: ${userMora.toLocaleString()}`, cx, pillY + pillHeight / 2);
+    ctx.font = 'bold 48px "Arial"';
+    ctx.fillText(`💰 المورا: ${userMora.toLocaleString()}`, centerX, centerY + 80);
 
-    // 7. إطار ذهبي خارجي فخم يعطي طابع الـ Gacha
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
-    ctx.lineWidth = 15;
-    ctx.strokeRect(7.5, 7.5, HUB_WIDTH - 15, HUB_HEIGHT - 15);
+    // 6. إطار احترافي للواجهة مع زوايا مزخرفة
+    ctx.shadowBlur = 0; // نقفل الظل للإطار
+    const frameGradient = ctx.createLinearGradient(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    frameGradient.addColorStop(0, '#FFD700');
+    frameGradient.addColorStop(0.5, '#FFA000');
+    frameGradient.addColorStop(1, '#FFD700');
     
-    // زوايا الإطار
-    ctx.fillStyle = '#FFD700';
-    const cornerSize = 30;
+    ctx.strokeStyle = frameGradient;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(20, 20, HUB_WIDTH - 40, HUB_HEIGHT - 40);
+
+    // رسم زوايا ذهبية سميكة للإطار
+    const cornerSize = 50;
+    ctx.lineWidth = 12;
+    
     // الزاوية العلوية اليسرى
-    ctx.fillRect(0, 0, cornerSize, 15);
-    ctx.fillRect(0, 0, 15, cornerSize);
+    ctx.beginPath(); ctx.moveTo(20, 20 + cornerSize); ctx.lineTo(20, 20); ctx.lineTo(20 + cornerSize, 20); ctx.stroke();
     // الزاوية العلوية اليمنى
-    ctx.fillRect(HUB_WIDTH - cornerSize, 0, cornerSize, 15);
-    ctx.fillRect(HUB_WIDTH - 15, 0, 15, cornerSize);
+    ctx.beginPath(); ctx.moveTo(HUB_WIDTH - 20 - cornerSize, 20); ctx.lineTo(HUB_WIDTH - 20, 20); ctx.lineTo(HUB_WIDTH - 20, 20 + cornerSize); ctx.stroke();
     // الزاوية السفلية اليسرى
-    ctx.fillRect(0, HUB_HEIGHT - 15, cornerSize, 15);
-    ctx.fillRect(0, HUB_HEIGHT - cornerSize, 15, cornerSize);
+    ctx.beginPath(); ctx.moveTo(20, HUB_HEIGHT - 20 - cornerSize); ctx.lineTo(20, HUB_HEIGHT - 20); ctx.lineTo(20 + cornerSize, HUB_HEIGHT - 20); ctx.stroke();
     // الزاوية السفلية اليمنى
-    ctx.fillRect(HUB_WIDTH - cornerSize, HUB_HEIGHT - 15, cornerSize, 15);
-    ctx.fillRect(HUB_WIDTH - 15, HUB_HEIGHT - cornerSize, 15, cornerSize);
+    ctx.beginPath(); ctx.moveTo(HUB_WIDTH - 20 - cornerSize, HUB_HEIGHT - 20); ctx.lineTo(HUB_WIDTH - 20, HUB_HEIGHT - 20); ctx.lineTo(HUB_WIDTH - 20, HUB_HEIGHT - 20 - cornerSize); ctx.stroke();
 
     return canvas.encode('png');
 }
@@ -167,100 +121,51 @@ async function generateGachaHub(user, userMora, flavorText) {
 async function generateGachaCard(item, rarity) {
     const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
     const ctx = canvas.getContext('2d');
-    const colors = RARITY_COLORS[rarity] || RARITY_COLORS.Common;
+    const color = RARITY_COLORS[rarity] || RARITY_COLORS.Common;
 
-    // 1. خلفية البطاقة الأساسية (داكنة لبروز الألوان)
-    ctx.fillStyle = '#111115';
+    // خلفية البطاقة الأساسية
+    ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
-    // 2. إضاءة التوهج المركزي حسب الندرة
-    const glow = ctx.createRadialGradient(CARD_WIDTH/2, CARD_HEIGHT/2 - 50, 20, CARD_WIDTH/2, CARD_HEIGHT/2 - 50, CARD_WIDTH);
-    glow.addColorStop(0, colors.glow);
+    // إضاءة خلفية للبطاقة من المنتصف
+    const glow = ctx.createRadialGradient(CARD_WIDTH/2, CARD_HEIGHT/2, 20, CARD_WIDTH/2, CARD_HEIGHT/2, 400);
+    glow.addColorStop(0, color);
     glow.addColorStop(1, 'transparent');
     ctx.fillStyle = glow;
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.5;
     ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
     ctx.globalAlpha = 1.0;
 
-    // 3. تأثير الأشعة المنبثقة وجزيئات الندرة
-    drawSunburst(ctx, CARD_WIDTH, CARD_HEIGHT, colors.main);
-    drawParticles(ctx, CARD_WIDTH, CARD_HEIGHT, 80, colors.main);
-
-    // 4. سحب صورة العنصر من السحابة (R2)
+    // رسم صورة العنصر (مع تأكيد المقاسات)
     if (item.imgPath) {
         try {
-            // معالجة الرابط وجلبه من السحابة كـ Buffer عشان يقبله الـ Canvas
-            const url = item.imgPath.startsWith('http') ? item.imgPath : `${R2_URL}/${item.imgPath}`;
-            const res = await fetch(url);
-            
-            if (res.ok) {
-                const buffer = await res.arrayBuffer();
-                const img = await loadImage(Buffer.from(buffer));
-                
-                // رسم الصورة مع ظل سفلي قوي لإعطاء عمق (3D Effect)
-                ctx.shadowColor = '#000000';
-                ctx.shadowBlur = 30;
-                ctx.shadowOffsetY = 15;
-                
-                const imgSize = 340;
-                ctx.drawImage(img, (CARD_WIDTH - imgSize) / 2, (CARD_HEIGHT - imgSize) / 2 - 80, imgSize, imgSize);
-                
-                // تصفير الظل عشان ما يخرب باقي الرسم
-                ctx.shadowBlur = 0;
-                ctx.shadowOffsetY = 0;
-            } else {
-                console.log(`[Gacha Card] فشل في تحميل الصورة من السحابة: ${url}`);
-            }
+            const img = await loadImage(`./${item.imgPath}`); 
+            // رسم الصورة في منتصف البطاقة بالضبط
+            ctx.drawImage(img, (CARD_WIDTH / 2) - 150, (CARD_HEIGHT / 2) - 180, 300, 300);
         } catch (err) {
-            console.log(`[Gacha Card] خطأ برمجي في جلب الصورة:`, err);
+            console.log("صورة العنصر غير موجودة:", item.imgPath);
         }
     }
 
-    // 5. تصميم إطار البطاقة (Card Border)
-    const margin = 20;
-    
-    // الإطار الداخلي الشفاف
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(margin + 10, margin + 10, CARD_WIDTH - (margin * 2) - 20, CARD_HEIGHT - (margin * 2) - 20);
+    // إطار البطاقة اللامع بلون الندرة
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 25;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 15;
+    ctx.strokeRect(20, 20, CARD_WIDTH - 40, CARD_HEIGHT - 40);
 
-    // الإطار الخارجي اللامع بندرة البطاقة
-    ctx.shadowColor = colors.main;
-    ctx.shadowBlur = 20;
-    ctx.strokeStyle = colors.main;
-    ctx.lineWidth = 8;
-    ctx.strokeRect(margin, margin, CARD_WIDTH - (margin * 2), CARD_HEIGHT - (margin * 2));
-    ctx.shadowBlur = 0;
-
-    // 6. منطقة النص السفلية (Banner)
-    const bannerHeight = 160;
-    const bannerY = CARD_HEIGHT - margin - bannerHeight;
-    
-    // خلفية البانر متدرجة للأسود
-    const bannerGrad = ctx.createLinearGradient(0, bannerY, 0, bannerY + bannerHeight);
-    bannerGrad.addColorStop(0, 'transparent');
-    bannerGrad.addColorStop(0.3, 'rgba(0, 0, 0, 0.8)');
-    bannerGrad.addColorStop(1, 'rgba(0, 0, 0, 1)');
-    ctx.fillStyle = bannerGrad;
-    ctx.fillRect(margin, bannerY, CARD_WIDTH - (margin * 2), bannerHeight);
-
-    // 7. كتابة اسم العنصر والندرة
-    ctx.textAlign = 'center';
-    
-    // اسم العنصر
-    ctx.shadowColor = colors.glow;
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 45px "Arial"';
-    ctx.fillText(item.name || "عنصر مجهول", CARD_WIDTH / 2, bannerY + 80);
-
-    // الندرة
-    ctx.shadowBlur = 5;
+    // كتابة اسم العنصر أسفل الصورة
+    ctx.shadowBlur = 10;
     ctx.shadowColor = '#000000';
-    ctx.fillStyle = colors.main;
-    ctx.font = 'bold 30px "Arial"';
-    ctx.letterSpacing = "5px"; // ميزة مدعومة في بعض نسخ الـ Canvas تعطي فخامة
-    ctx.fillText(`✦ ${rarity.toUpperCase()} ✦`, CARD_WIDTH / 2, bannerY + 130);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 45px "Arial"';
+    ctx.fillText(item.name || "عنصر مجهول", CARD_WIDTH / 2, CARD_HEIGHT - 140);
+
+    // كتابة الندرة بأسلوب مميز
+    ctx.fillStyle = color;
+    ctx.font = 'bold 35px "Arial"';
+    ctx.fillText(`✦ ${rarity.toUpperCase()} ✦`, CARD_WIDTH / 2, CARD_HEIGHT - 70);
 
     return canvas.encode('png');
 }
