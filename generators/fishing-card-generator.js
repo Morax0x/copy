@@ -1,4 +1,10 @@
-const Canvas = require('canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+
+try {
+    GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
+} catch (e) {
+    console.log("[Fishing Generator] Warning: Bein font not found.");
+}
 
 const THEME = {
     TEXT: "#FFFFFF",
@@ -34,7 +40,7 @@ async function preloadAssets() {
         for (const file of group.files) {
             const urlPath = group.folder ? `${R2_URL}/${group.folder}/${file}` : `${R2_URL}/${file}`;
             try {
-                const img = await Canvas.loadImage(urlPath);
+                const img = await loadImage(urlPath);
                 imageCache.set(urlPath, img);
             } catch (e) {
                 console.error(`[Fishing] Error loading image: ${urlPath}`);
@@ -50,7 +56,7 @@ async function getCachedImage(folder, imageName) {
     const urlPath = folder ? `${R2_URL}/${folder}/${imageName}` : `${R2_URL}/${imageName}`;
     if (imageCache.has(urlPath)) return imageCache.get(urlPath);
     try {
-        const img = await Canvas.loadImage(urlPath);
+        const img = await loadImage(urlPath);
         imageCache.set(urlPath, img);
         return img;
     } catch (e) {
@@ -58,10 +64,23 @@ async function getCachedImage(folder, imageName) {
     }
 }
 
+// دالة مساعدة لدعم roundRect إذا لم تكن مدعومة في السياق
+function roundRect(ctx, x, y, width, height, radius) {
+    if (width < 2 * radius) radius = width / 2;
+    if (height < 2 * radius) radius = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    ctx.closePath();
+}
+
 async function generateFishingCard(tension, distance, statusText, locationId = 'beach', boatLevel = 1, rodLevel = 1) {
     const canvasWidth = 800;
     const canvasHeight = 400;
-    const canvas = Canvas.createCanvas(canvasWidth, canvasHeight);
+    const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
 
     const bgImage = await getCachedImage('beach', `${locationId}.png`);
@@ -93,8 +112,7 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
 
     ctx.fillStyle = THEME.BAR_BG;
     ctx.beginPath();
-    if(ctx.roundRect) ctx.roundRect(tensionBarX, tensionBarY, tensionBarW, tensionBarH, 10);
-    else ctx.rect(tensionBarX, tensionBarY, tensionBarW, tensionBarH);
+    roundRect(ctx, tensionBarX, tensionBarY, tensionBarW, tensionBarH, 10);
     ctx.fill();
 
     const fillHeight = (tension / 100) * tensionBarH;
@@ -104,8 +122,7 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     ctx.shadowColor = tensionColor;
     ctx.shadowBlur = 15;
     ctx.beginPath();
-    if(ctx.roundRect) ctx.roundRect(tensionBarX, fillY, tensionBarW, fillHeight, 10);
-    else ctx.rect(tensionBarX, fillY, tensionBarW, fillHeight);
+    roundRect(ctx, tensionBarX, fillY, tensionBarW, fillHeight, 10);
     ctx.fill();
     ctx.shadowBlur = 0;
 
@@ -167,16 +184,16 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     const distBarH = 15;
 
     ctx.fillStyle = THEME.BAR_BG;
-    if(ctx.roundRect) ctx.roundRect(distBarX, distBarY, distBarW, distBarH, 7);
-    else ctx.rect(distBarX, distBarY, distBarW, distBarH);
+    ctx.beginPath();
+    roundRect(ctx, distBarX, distBarY, distBarW, distBarH, 7);
     ctx.fill();
 
     const distFillW = ((100 - Math.min(distance, 100)) / 100) * distBarW;
     ctx.fillStyle = "#00a8ff"; 
     ctx.shadowColor = "#00a8ff";
     ctx.shadowBlur = 10;
-    if(ctx.roundRect) ctx.roundRect(distBarX, distBarY, distFillW, distBarH, 7);
-    else ctx.rect(distBarX, distBarY, distFillW, distBarH);
+    ctx.beginPath();
+    roundRect(ctx, distBarX, distBarY, distFillW, distBarH, 7);
     ctx.fill();
     ctx.shadowBlur = 0;
 
@@ -192,7 +209,7 @@ async function generateFishingCard(tension, distance, statusText, locationId = '
     ctx.fillText(statusText, canvasWidth / 2, 40);
     ctx.shadowBlur = 0;
 
-    return canvas.toBuffer();
+    return canvas.toBuffer('image/png');
 }
 
 module.exports = { generateFishingCard };
