@@ -14,21 +14,21 @@ const PULL_PRICE = 1000;
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 const FLAVOR_TEXTS = [
-    "قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
-    "بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب.",
-    "النجوم تنتظر من يوقظها.. ادفع المورا وابدأ طقوس الاستدعاء.",
-    "مقابل المورا، قد تبتسم لك الأقدار أو تدير لك ظهرها.. جرب حظك!",
-    "اكسر قيود الزمن، واستحضر قوى الأجداد المنسية إلى قبضتك!",
-    "خلف هذا الختم ترقد كنوز الإمبراطورية.. افتحه واصنع مجدك.",
-    "أيقظ التحف النادرة من سباتها الأبدي.. المورا هي الثمن.",
-    "طريق العظمة محفوف بالمخاطر والمكافآت.. اكشف غنيمتك.",
-    "همسات الأقدار تناديك.. استخدم المورا لفك طلاسم الصندوق.",
-    "تذكرة عبورك لعالم الأسرار.. اكشف ما يختبئ في الظلام.",
-    "بوابات الحظ لا تُفتح للجبناء.. ألقِ المورا وانتظر المعجزة.",
-    "قرابين المورا، هي مفتاحك للأسطورة.",
-    "اكسر الختم، واقطف نجمتك الساطعة!",
-    "ضحِّ بالمورا.. وعانق المجهول.",
-    "حظوظك مكتوبة بين النجوم.. افتح الصندوق لتقرأها."
+    "✨ قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
+    "✨ بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب.",
+    "✨ النجوم تنتظر من يوقظها.. ادفع المورا وابدأ طقوس الاستدعاء.",
+    "✨ مقابل المورا، قد تبتسم لك الأقدار أو تدير لك ظهرها.. جرب حظك!",
+    "⚔️ اكسر قيود الزمن، واستحضر قوى الأجداد المنسية إلى قبضتك!",
+    "⚔️ خلف هذا الختم ترقد كنوز الإمبراطورية.. افتحه واصنع مجدك.",
+    "⚔️ أيقظ التحف النادرة من سباتها الأبدي.. المورا هي الثمن.",
+    "⚔️ طريق العظمة محفوف بالمخاطر والمكافآت.. اكشف غنيمتك.",
+    "🔮 همسات الأقدار تناديك.. استخدم المورا لفك طلاسم الصندوق.",
+    "🔮 تذكرة عبورك لعالم الأسرار.. اكشف ما يختبئ في الظلام.",
+    "🔮 بوابات الحظ لا تُفتح للجبناء.. ألقِ المورا وانتظر المعجزة.",
+    "🌌 قرابين المورا، هي مفتاحك للأسطورة.",
+    "🌌 اكسر الختم، واقطف نجمتك الساطعة!",
+    "🌌 ضحِّ بالمورا.. وعانق المجهول.",
+    "🌌 حظوظك مكتوبة بين النجوم.. افتح الصندوق لتقرأها."
 ];
 
 const ID_TO_IMAGE = {
@@ -137,6 +137,7 @@ module.exports = {
         await ensurePityTable(db);
 
         let userMora = 0;
+        let chestCount = 0;
         let pityData = { epic_pity: 0, legendary_pity: 0 };
         let ownedSkills = [];
         let userRace = null;
@@ -145,6 +146,9 @@ module.exports = {
             const lvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
             userMora = lvlRes?.rows[0] ? Number(lvlRes.rows[0].mora) : 0;
             
+            const invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
+            chestCount = invRes?.rows[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
+
             const skillRes = await db.query(`SELECT "skillID" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT skillid FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
             if(skillRes?.rows) ownedSkills = skillRes.rows.map(r => r.skillID || r.skillid);
 
@@ -165,8 +169,8 @@ module.exports = {
 
         const getPullButtons = (moraBalance) => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1 - 1K').setEmoji('📦').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
-                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10 - 10K').setEmoji('🌟').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
+                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1').setEmoji('📦').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
+                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10').setEmoji('🌟').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
                 new ButtonBuilder().setCustomId('gacha_inventory').setLabel('صناديقي').setEmoji('🎒').setStyle(ButtonStyle.Secondary)
             );
         };
@@ -175,7 +179,7 @@ module.exports = {
         let initialFiles = [];
         
         if (generateGachaHub) {
-            const hubBuffer = await generateGachaHub(user, userMora, initialRandomText);
+            const hubBuffer = await generateGachaHub(user, userMora, initialRandomText, chestCount);
             if (hubBuffer) initialFiles.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_hub.png' }));
         }
 
@@ -189,12 +193,12 @@ module.exports = {
 
         channelCollector.on('collect', async (i) => {
             if (i.customId === 'gacha_inventory') {
-                let chestCount = 0;
+                let currentChests = 0;
                 try {
                     const invRes = await db.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
-                    if (invRes?.rows[0]) chestCount = Number(invRes.rows[0].quantity);
+                    if (invRes?.rows[0]) currentChests = Number(invRes.rows[0].quantity);
                 } catch(e) {}
-                return i.reply({ content: `🎒 **صناديقك المتاحة:** \`${chestCount}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                return i.reply({ content: `🎒 **صناديقك المتاحة:** \`${currentChests}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
             }
 
             try { await i.deferUpdate(); } catch (err) { return; }
@@ -248,6 +252,7 @@ module.exports = {
             await new Promise(r => setTimeout(r, 2000));
 
             const buildSilentSummary = async () => {
+                await fetchUserData(); // تحديث المورا والصناديق بعد الشراء
                 let files = [];
                 if (generateGachaCard && bestResult && bestResult.item.imgPath) {
                     try {
@@ -258,7 +263,7 @@ module.exports = {
                 const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
                 if (generateGachaHub) {
                     try {
-                        const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText);
+                        const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText, chestCount);
                         if (hubBuffer) files.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_summary.png' }));
                     } catch(e){}
                 }
@@ -307,12 +312,10 @@ module.exports = {
                 });
 
                 pageCollector.on('end', async () => {
-                    await fetchUserData();
                     await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
                 });
 
             } else {
-                await fetchUserData();
                 await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
             }
         });
