@@ -23,13 +23,22 @@ const imageCache = new Map();
 
 async function getCachedImage(imageUrl) {
     if (!imageUrl) return null;
-    if (imageCache.has(imageUrl)) return imageCache.get(imageUrl);
+    
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) {
+        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/')}`;
+    }
+    
+    const encodedUrl = encodeURI(finalUrl);
+
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
     try {
-        const img = await loadImage(imageUrl);
-        imageCache.set(imageUrl, img);
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
         return img;
-    } catch (e) { 
-        return null; 
+    } catch (e) {
+        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
+        return null;
     }
 }
 
@@ -194,28 +203,6 @@ function drawShield(ctx, x, y, w, h) {
     ctx.quadraticCurveTo(x - w/2, y + h/2, x - w/2, y + h/5); 
     ctx.lineTo(x - w/2, y - h/4); 
     ctx.closePath();
-}
-
-function drawMagicCircle(ctx, cx, cy, radius, color) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.strokeStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(0, 0, radius - 15, 0, Math.PI * 2); ctx.stroke();
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for(let i=0; i<3; i++) {
-        const angle1 = (Math.PI * 2 / 3) * i - Math.PI/2;
-        const angle2 = (Math.PI * 2 / 3) * i + Math.PI/6;
-        ctx.moveTo(radius * Math.cos(angle1), radius * Math.sin(angle1));
-        ctx.lineTo(radius * Math.cos(angle2), radius * Math.sin(angle2));
-    }
-    ctx.stroke();
-    ctx.restore();
 }
 
 async function generateInventoryCard(userDisplayName, categoryTitle, items, page, totalPages, selectedIndex = 0) {
