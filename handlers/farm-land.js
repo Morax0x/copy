@@ -1,6 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, Colors } = require("discord.js");
 const Canvas = require('canvas');
-const path = require('path');
 const seedsData = require('../json/seeds.json');
 const { getLandPlots } = require('../utils/farmUtils.js');
 
@@ -23,7 +22,10 @@ const GRID_COLS = 6;
 const GRID_ROWS = 6;    
 const MAX_GAME_PLOTS = 36; 
 
-const ASSETS_PATH = path.join(__dirname, '..', 'images', 'farm');
+// رابط الصور السحابي
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
+const ASSETS_URL = `${R2_URL}/images/farm`;
+
 let GLOBAL_IMAGES = null;
 let imageLoadPromise = null;
 
@@ -53,9 +55,9 @@ async function loadAllImages() {
     imageLoadPromise = (async () => {
         const loadImage = async (name) => {
             const ext = name.endsWith('.png') ? '' : '.png';
-            const fullPath = path.join(ASSETS_PATH, name + ext);
-            try { return await Canvas.loadImage(fullPath); } 
-            catch (e) { return null; }
+            const url = `${ASSETS_URL}/${name}${ext}`;
+            try { return await Canvas.loadImage(url); } 
+            catch (e) { console.error(`Failed to load image: ${url}`); return null; }
         };
 
         GLOBAL_IMAGES = {
@@ -85,8 +87,8 @@ async function getCropImage(seedId) {
     if (GLOBAL_IMAGES.crops[seedId]) return GLOBAL_IMAGES.crops[seedId];
 
     try {
-        const fullPath = path.join(ASSETS_PATH, `${seedId}.png`);
-        const img = await Canvas.loadImage(fullPath);
+        const url = `${ASSETS_URL}/${seedId}.png`;
+        const img = await Canvas.loadImage(url);
         GLOBAL_IMAGES.crops[seedId] = img;
         return img;
     } catch (e) { return null; }
