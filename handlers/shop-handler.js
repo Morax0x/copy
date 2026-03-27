@@ -67,6 +67,10 @@ const emojiMap = new Map([
     ['farm_worker_3d', '👨‍🌾'] 
 ]);
 
+// 🔥 أقفال لمنع الضغط المزدوج وخصم المورا مرتين 🔥
+const shopLocks = new Set();
+const modalLocks = new Set();
+
 function getBuyableItems() { 
     return shopItems.filter(it => 
         it.category !== 'menus' && 
@@ -213,8 +217,9 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         }
         else if (itemData.category === 'potions') { 
             await ensureInventoryTable(db); 
-            try { await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [interaction.guild.id, interaction.user.id, itemData.id]); }
-            catch(e) { await db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [interaction.guild.id, interaction.user.id, itemData.id]).catch(()=>{}); }
+            // 🔥 الحد الأقصى الثابت للجرعات هو 999 بدون ربط باللفل 🔥
+            try { await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + 1, 999)`, [interaction.guild.id, interaction.user.id, itemData.id]); }
+            catch(e) { await db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = LEAST(user_inventory.quantity + 1, 999)`, [interaction.guild.id, interaction.user.id, itemData.id]).catch(()=>{}); }
         }
         else if (itemData.id === 'streak_shield') {
             let existingStreakRes;
@@ -253,8 +258,8 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             catch(e) { settingsRes = await db.query(`SELECT viproleid FROM settings WHERE guild = $1`, [interaction.guild.id]).catch(()=>({rows:[]})); }
             const settings = settingsRes.rows[0];
             if (settings && (settings.vipRoleID || settings.viproleid)) {
-                const member = await interaction.guild.members.fetch(interaction.user.id);
-                await member.roles.add(settings.vipRoleID || settings.viproleid);
+                const member = await interaction.guild.members.fetch(interaction.user.id).catch(()=>{});
+                if (member) await member.roles.add(settings.vipRoleID || settings.viproleid).catch(()=>{});
                 const expiresAt = Date.now() + (3 * 24 * 60 * 60 * 1000);
                 try { await db.query(`INSERT INTO temporary_roles ("userID", "guildID", "roleID", "expiresAt") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "roleID") DO UPDATE SET "expiresAt" = EXCLUDED."expiresAt"`, [interaction.user.id, interaction.guild.id, settings.vipRoleID || settings.viproleid, expiresAt]); }
                 catch(e) { await db.query(`INSERT INTO temporary_roles (userid, guildid, roleid, expiresat) VALUES ($1, $2, $3, $4) ON CONFLICT (userid, guildid, roleid) DO UPDATE SET expiresat = EXCLUDED.expiresat`, [interaction.user.id, interaction.guild.id, settings.vipRoleID || settings.viproleid, expiresAt]).catch(()=>{}); }
@@ -266,17 +271,25 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
             try { await db.query(`INSERT INTO user_buffs ("userID", "guildID", "buffType", "multiplier", "expiresAt", "buffPercent") VALUES ($1, $2, $3, $4, $5, $6)`, [interaction.user.id, interaction.guild.id, 'farm_worker', 0, expiresAt, 0]); }
             catch(e) { await db.query(`INSERT INTO user_buffs (userid, guildid, bufftype, multiplier, expiresat, buffpercent) VALUES ($1, $2, $3, $4, $5, $6)`, [interaction.user.id, interaction.guild.id, 'farm_worker', 0, expiresAt, 0]).catch(()=>{}); }
         }
-         
+        // 🔥 إصلاح تغيير العرق: تأمين سحب الرتب وتنظيف الأسلحة والمهارات بشكل كامل 🔥
         else if (itemData.id === 'change_race') {
             try {
                 let allRaceRolesRes;
                 try { allRaceRolesRes = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [interaction.guild.id]); }
                 catch(e) { allRaceRolesRes = await db.query(`SELECT roleid, racename FROM race_roles WHERE guildid = $1`, [interaction.guild.id]).catch(()=>({rows:[]})); }
                 const raceRoleIDs = allRaceRolesRes.rows.map(r => r.roleID || r.roleid);
-                const userRaceRole = interaction.member.roles.cache.find(r => raceRoleIDs.includes(r.id));
-                if (userRaceRole) { await interaction.member.roles.remove(userRaceRole); }
+                
+                // سحب جميع رتب الأعراق
+                for (const roleId of raceRoleIDs) {
+                    if (interaction.member.roles.cache.has(roleId)) {
+                        await interaction.member.roles.remove(roleId).catch(console.error);
+                    }
+                }
+                
                 try { await db.query(`DELETE FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [interaction.user.id, interaction.guild.id]); }
                 catch(e) { await db.query(`DELETE FROM user_weapons WHERE userid = $1 AND guildid = $2`, [interaction.user.id, interaction.guild.id]).catch(()=>{}); }
+                
+                // حذف المهارات العرقية فقط (تبدأ بـ race_)
                 try { await db.query(`DELETE FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillID" LIKE 'race_%'`, [interaction.user.id, interaction.guild.id]); }
                 catch(e) { await db.query(`DELETE FROM user_skills WHERE userid = $1 AND guildid = $2 AND skillid LIKE 'race_%'`, [interaction.user.id, interaction.guild.id]).catch(()=>{}); }
             } catch (err) { console.error("Error in change_race cleanup:", err); }
@@ -451,14 +464,31 @@ async function _handleBoatSelect(i, client, db) {
     await i.editReply({ embeds: [embed], components: [row] });
 }
 
-async function _handleBaitSelect(i, client, db) {
-    if(i.replied || i.deferred) await i.editReply("جاري التحميل..."); else await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const baitOptions = baitsConfig.map(b => {
-        const packPrice = Math.round((b.price / 5) * 5); 
-        return { label: `حزمة 5x ${b.name}`, description: `${b.description} | ${packPrice.toLocaleString()} مورا`, value: `buy_bait_${b.id}`, emoji: '🪱' };
-    });
-    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_bait_menu').setPlaceholder('اختر الطعم (حزمة من 5 حبات)...').addOptions(baitOptions));
-    await i.editReply({ content: "**🛒 متجر الطعوم:**", components: [row], embeds: [] });
+async function _handleBaitBuy(i, client, db) {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const baitId = i.values[0].replace('buy_bait_', '');
+    const bait = baitsConfig.find(b => b.id === baitId);
+    
+    const qty = 5; 
+    const unitPrice = Math.round(bait.price / 5);
+    const cost = unitPrice * qty; 
+    
+    let userData = await client.getLevel(i.user.id, i.guild.id);
+    if (Number(userData.mora) < cost) {
+        const userBank = Number(userData.bank) || 0;
+        let msg = `❌ رصيدك غير كافي لشراء هذه الحزمة! تحتاج إلى **${cost.toLocaleString()}** ${EMOJI_MORA}`;
+        if (userBank >= cost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، اسحب منها.`;
+        return i.editReply(msg);
+    }
+    userData.mora = Number(userData.mora) - cost; 
+    await client.setLevel(userData);
+    
+    // 🔥 الحماية: الحد الأقصى لأي عنصر في المخزن (1000 للأعلاف والطعوم)
+    try { await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + $5, 1000)`, [i.guild.id, i.user.id, baitId, qty, qty]); }
+    catch(e) { await db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = LEAST(user_inventory.quantity + $5, 1000)`, [i.guild.id, i.user.id, baitId, qty, qty]).catch(()=>{}); }
+    
+    await i.editReply({ content: `✅ تم شراء **حزمة (${qty} حبات) من ${bait.name}** بنجاح!` });
+    sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
 
 async function _handlePotionSelect(i, client, db) {
@@ -490,77 +520,12 @@ async function _handlePotionSelect(i, client, db) {
 
     const embed = new EmbedBuilder()
         .setTitle('🧪 متجر الجرعات السحرية')
-        .setDescription('اختر الجرعة التي تريد شراءها من القائمة بالأسفل.\n⚠️ **تنبيه:** عدد الجرعات التي يمكنك حملها يعتمد على مستواك!')
+        .setDescription('اختر الجرعة التي تريد شراءها من القائمة بالأسفل.')
         .setColor(Colors.Purple)
         .setImage(BANNER_URL)
         .setThumbnail(THUMBNAILS.get('potions_menu'));
 
     await i.editReply({ embeds: [embed], components: [row] });
-}
-
-async function _handleRodUpgrade(i, client, db) {
-    await i.deferUpdate();
-    const userId = i.user.id; 
-    let userData = await client.getLevel(userId, i.guild.id);
-    const nextLevel = (Number(userData.rodLevel || userData.rodlevel) || 1) + 1; const nextRod = rodsConfig.find(r => r.level === nextLevel);
-    if (!nextRod) return i.followUp({ content: '❌ الحد الأقصى.', flags: MessageFlags.Ephemeral });
-    if (Number(userData.mora) < nextRod.price) {
-        const userBank = Number(userData.bank) || 0;
-        let msg = `❌ رصيدك غير كافي.`;
-        if (userBank >= nextRod.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، اسحب منها.`;
-        return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-    }
-    userData.mora = Number(userData.mora) - nextRod.price; userData.rodLevel = nextLevel; 
-    await client.setLevel(userData);
-    await i.followUp({ content: `🎉 مبروك! تم شراء **${nextRod.name}**!`, flags: MessageFlags.Ephemeral });
-    sendShopLog(client, i.guild.id, i.member, `سنارة صيد: ${nextRod.name}`, nextRod.price, "شراء/تطوير");
-    await _handleRodSelect(i, client, db);
-}
-
-async function _handleBoatUpgrade(i, client, db) {
-    await i.deferUpdate();
-    const userId = i.user.id; 
-    let userData = await client.getLevel(userId, i.guild.id);
-    const nextLevel = (Number(userData.boatLevel || userData.boatlevel) || 1) + 1; const nextBoat = boatsConfig.find(b => b.level === nextLevel);
-    if (!nextBoat) return i.followUp({ content: '❌ الحد الأقصى.', flags: MessageFlags.Ephemeral });
-    if (Number(userData.mora) < nextBoat.price) {
-        const userBank = Number(userData.bank) || 0;
-        let msg = `❌ رصيدك غير كافي.`;
-        if (userBank >= nextBoat.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، اسحب منها.`;
-        return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-    }
-    userData.mora = Number(userData.mora) - nextBoat.price; userData.boatLevel = nextLevel;
-    try { await db.query(`UPDATE levels SET "boatLevel" = $1, "mora" = $2, "currentLocation" = $3 WHERE "user" = $4 AND "guild" = $5`, [nextLevel, userData.mora, nextBoat.location_id, userId, i.guild.id]); }
-    catch(e) { await db.query(`UPDATE levels SET boatlevel = $1, mora = $2, currentlocation = $3 WHERE userid = $4 AND guildid = $5`, [nextLevel, userData.mora, nextBoat.location_id, userId, i.guild.id]).catch(()=>{}); }
-    await i.followUp({ content: `🎉 مبروك! تم شراء **${nextBoat.name}**!`, flags: MessageFlags.Ephemeral });
-    sendShopLog(client, i.guild.id, i.member, `قارب صيد: ${nextBoat.name}`, nextBoat.price, "شراء/تطوير");
-    await _handleBoatSelect(i, client, db);
-}
-
-async function _handleBaitBuy(i, client, db) {
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const baitId = i.values[0].replace('buy_bait_', '');
-    const bait = baitsConfig.find(b => b.id === baitId);
-    
-    const qty = 5; 
-    const unitPrice = Math.round(bait.price / 5);
-    const cost = unitPrice * qty; 
-    
-    let userData = await client.getLevel(i.user.id, i.guild.id);
-    if (Number(userData.mora) < cost) {
-        const userBank = Number(userData.bank) || 0;
-        let msg = `❌ رصيدك غير كافي لشراء هذه الحزمة! تحتاج إلى **${cost.toLocaleString()}** ${EMOJI_MORA}`;
-        if (userBank >= cost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، اسحب منها.`;
-        return i.editReply(msg);
-    }
-    userData.mora = Number(userData.mora) - cost; 
-    await client.setLevel(userData);
-    
-    try { await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $5`, [i.guild.id, i.user.id, baitId, qty, qty]); }
-    catch(e) { await db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $5`, [i.guild.id, i.user.id, baitId, qty, qty]).catch(()=>{}); }
-    
-    await i.editReply({ content: `✅ تم شراء **حزمة (${qty} حبات) من ${bait.name}** بنجاح!` });
-    sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
 
 async function _handleWeaponUpgrade(i, client, db, isUpdate = false) {
@@ -710,44 +675,6 @@ async function _handleShopButton(i, client, db) {
         let userData = await client.getLevel(userId, guildId); 
         if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
           
-        if (item.category === 'potions') {
-            await ensureInventoryTable(db); 
-              
-            const userLevel = Number(userData.level);
-            let maxTypes = 3;
-            let maxQtyPerType = 1;
-            if (userLevel >= 31) { maxTypes = 6; maxQtyPerType = 5; }
-            else if (userLevel >= 21) { maxTypes = 6; maxQtyPerType = 3; }
-            else if (userLevel >= 11) { maxTypes = 6; maxQtyPerType = 2; }
-            else { maxTypes = 3; maxQtyPerType = 1; }
-
-            let existingPotionRes;
-            try { existingPotionRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]); }
-            catch(e) { existingPotionRes = await db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]})); }
-            const existingPotion = existingPotionRes.rows[0];
-            const currentQty = (existingPotion && Number(existingPotion.quantity) > 0) ? Number(existingPotion.quantity) : 0;
-
-            if (currentQty >= maxQtyPerType) {
-                return await i.reply({ content: `🚫 **وصلت للحد الأقصى من هذه الجرعة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxQtyPerType}** فقط من نوع **${item.name}**.\nارفع مستواك لزيادة السعة!`, flags: MessageFlags.Ephemeral });
-            }
-            if (currentQty === 0) {
-                let allUserItemsRes;
-                try { allUserItemsRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
-                catch(e) { allUserItemsRes = await db.query(`SELECT itemid as "itemID", quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
-                const allUserItems = allUserItemsRes.rows;
-                let currentPotionTypesCount = 0;
-                for (const uItem of allUserItems) {
-                    if (Number(uItem.quantity) <= 0) continue; 
-                    const shopItem = potionItems.find(si => si.id === (uItem.itemID || uItem.itemid)); 
-                    if (shopItem) { currentPotionTypesCount++; }
-                }
-                 
-                if (currentPotionTypesCount >= maxTypes) {
-                    return await i.reply({ content: `🚫 **حقيبتك ممتلئة بأنواع مختلفة!**\nمستواك الحالي (${userLevel}) يسمح لك بحمل **${maxTypes}** أنواع مختلفة من الجرعات.\nاستهلك بعض الجرعات أولاً.`, flags: MessageFlags.Ephemeral });
-                }
-            }
-        }
-
         const RESTRICTED_ITEMS = []; 
 
         const NON_DISCOUNTABLE = [...RESTRICTED_ITEMS, 'xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
@@ -901,7 +828,6 @@ async function handleShopModal(i, client, db) {
     return false;
 }
 
-// 🔥 الحل الجذري لمشكلة التلفيل بسبب المودال في المتجر 🔥
 async function _handleXpExchangeModal(i, client, db) {
     try {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -933,9 +859,7 @@ async function _handleXpExchangeModal(i, client, db) {
         
         userData.mora = Number(userData.mora) - totalCost; 
         
-        // 🔥 إضافة الـ XP الصامت بواسطة الدالة المركزية السحرية 🔥
         if (addXPAndCheckLevel) {
-            // نمرر false لمنع إرسال صورة التلفيل والمنشن
             await addXPAndCheckLevel(client, i.member, db, amountToBuy, 0, false).catch(()=>{});
         } else {
             userData.xp = Number(userData.xp) + amountToBuy; 
