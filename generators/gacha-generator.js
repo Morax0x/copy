@@ -24,7 +24,7 @@ async function getCachedImage(imageUrl) {
 
 const RARITY_INFO = {
     'Common': { text: 'عادي', color: '#B0BEC5', stars: '★' },
-    'Uncommon': { text: 'غير شائع', color: '#2ECC71', stars: '★★' },
+    'Uncommon': { text: 'شائع', color: '#2ECC71', stars: '★★' },
     'Rare': { text: 'نادر', color: '#3498DB', stars: '★★★' },
     'Epic': { text: 'ملحمي', color: '#9B59B6', stars: '★★★★' },
     'Legendary': { text: 'اسطوري', color: '#F1C40F', stars: '★★★★★' }
@@ -183,13 +183,13 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein"';
     // 🔥 تعديل أسعار الشراء بالعربي مثل ما طلبت
-    ctx.fillText("10 صناديق = 10K 🪙", width/2 - 130, pricePanelY + 35);
+    ctx.fillText("عشر صناديق = 10000", width/2 - 130, pricePanelY + 35);
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("1 صندوق = 1K 🪙", width/2 + 130, pricePanelY + 35);
+    ctx.fillText("صندوق = 1000", width/2 + 130, pricePanelY + 35);
 
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 26px "Bein"';
