@@ -1,9 +1,9 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
-// تسجيل الخطوط لضمان عدم ظهور المربعات الفارغة!
+// تسجيل الخطوط
 try {
     GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
-    GlobalFonts.registerFromPath('efonts/NotoEmoj.ttf', 'Emoji'); // إضافة خط الإيموجي
+    GlobalFonts.registerFromPath('efonts/NotoEmoj.ttf', 'Emoji');
 } catch (e) {}
 
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
@@ -55,6 +55,7 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
+// 🔥 دالة ذكية لإجبار بناء الروابط مباشرة من سيرفرك بدون الاعتماد على JSON 🔥
 function addItemToDict(id, name, emoji, category, rarity, imgPath) {
     if (!id) return;
     const cleanId = String(id).trim();
@@ -63,7 +64,7 @@ function addItemToDict(id, name, emoji, category, rarity, imgPath) {
         emoji: emoji || '📦',
         category: category || 'others',
         rarity: rarity || 'Common',
-        imgPath: imgPath ? String(imgPath).trim() : null
+        imgPath: `${R2_URL}/${imgPath}` // فرض الرابط الأساسي لجميع العناصر
     };
     ITEM_DICTIONARY.set(cleanId, data);
     ITEM_DICTIONARY.set(cleanId.toLowerCase(), data);
@@ -87,32 +88,32 @@ function buildItemDictionary() {
     }
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
-            addItemToDict(fish.id, fish.name, fish.emoji, 'fishing', fish.rarity > 3 ? 'Epic' : 'Common', fish.image || `images/fish/${fish.id}.png`);
+            addItemToDict(fish.id, fish.name, fish.emoji, 'fishing', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`);
         }
     }
     if (fishData && fishData.baits) {
         for (const bait of fishData.baits) {
-            addItemToDict(bait.id, bait.name, bait.emoji, 'fishing', 'Common', bait.image || `images/fish/baits/${bait.id}.png`);
+            addItemToDict(bait.id, bait.name, bait.emoji, 'fishing', 'Common', `images/fish/baits/${bait.id}.png`);
         }
     }
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
-            addItemToDict(seed.id, seed.name, seed.emoji, 'farming', 'Common', seed.image || `images/farm/seeds/${seed.id}.png`);
+            addItemToDict(seed.id, seed.name, seed.emoji, 'farming', 'Common', `images/farm/seeds/${seed.id}.png`);
         }
     }
     if (farmFeeds && farmFeeds.length > 0) {
         for (const feed of farmFeeds) {
-            addItemToDict(feed.id, feed.name, feed.emoji, 'farming', 'Common', feed.image || `images/feeds/${feed.id}.png`);
+            addItemToDict(feed.id, feed.name, feed.emoji, 'farming', 'Common', `images/feeds/${feed.id}.png`);
         }
     }
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
-            addItemToDict(pot.id, pot.name, pot.emoji, 'potions', 'Rare', pot.image || `images/potions/${pot.id}.png`);
+            addItemToDict(pot.id, pot.name, pot.emoji, 'potions', 'Rare', `images/potions/${pot.id}.png`);
         }
     }
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            addItemToDict(market.id, market.name, '📈', 'market', 'Epic', market.image || `images/market/${String(market.id).toLowerCase()}.png`);
+            addItemToDict(market.id, market.name, '📈', 'market', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`);
         }
     }
 }
@@ -121,16 +122,7 @@ buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
     if (!imageUrl) return null;
-    
-    let finalUrl = imageUrl;
-    if (!finalUrl.startsWith('http')) {
-        // تنظيف المسار لمنع حدوث مشكلة دبل سلاش //
-        const cleanPath = finalUrl.replace(/\\/g, '/').replace(/^\/+/, '');
-        finalUrl = `${R2_URL}/${cleanPath}`;
-    }
-    
-    const encodedUrl = encodeURI(finalUrl);
-
+    const encodedUrl = encodeURI(imageUrl);
     if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
     try {
         const img = await loadImage(encodedUrl);
@@ -183,7 +175,7 @@ async function getInventoryCategories(db, userId, guildId) {
         }
     }
 
-    // 🔥 استخراج أدوات الصيد المشتراة من حساب اللاعب 🔥
+    // استخراج أدوات الصيد (مربوطة بسيرفر R2 مباشرة)
     try {
         let userData = null;
         try {
@@ -206,7 +198,7 @@ async function getInventoryCategories(db, userId, guildId) {
                         emoji: '🎣',
                         category: 'fishing',
                         rarity: i >= 8 ? 'Legendary' : (i >= 5 ? 'Epic' : (i >= 3 ? 'Rare' : 'Common')),
-                        imgPath: `images/fish/fishing/rod_${i}.png`,
+                        imgPath: `${R2_URL}/images/fish/fishing/rod_${i}.png`,
                         quantity: 1,
                         id: `rod_${i}`,
                         description: `سنارة صيد بمستوى ${i}\nتزيد الحظ بنسبة ${rod.luck_bonus}%`
@@ -222,7 +214,7 @@ async function getInventoryCategories(db, userId, guildId) {
                         emoji: '🚤',
                         category: 'fishing',
                         rarity: i >= 6 ? 'Legendary' : (i >= 4 ? 'Epic' : (i >= 2 ? 'Rare' : 'Common')),
-                        imgPath: `images/fish/ships/boat_${i}.png`,
+                        imgPath: `${R2_URL}/images/fish/ships/boat_${i}.png`,
                         quantity: 1,
                         id: `boat_${i}`,
                         description: `قارب يفتح موقع: ${boat.location_id}`
@@ -237,10 +229,10 @@ async function getInventoryCategories(db, userId, guildId) {
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
-    ctx.font = `bold ${currentFontSize}px "Bein", "Emoji"`;
+    ctx.font = `bold ${currentFontSize}px "Bein", "Emoji", "Segoe UI Emoji"`;
     while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
-        ctx.font = `bold ${currentFontSize}px "Bein", "Emoji"`;
+        ctx.font = `bold ${currentFontSize}px "Bein", "Emoji", "Segoe UI Emoji"`;
     }
     ctx.fillText(text, x, y);
 }
@@ -408,7 +400,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
         ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 40px "Bein", "Emoji"'; // دعم الإيموجي هنا!
+        ctx.font = 'bold 40px "Bein", "Emoji"'; 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
@@ -500,8 +492,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             }
             if (!imgDrawn) {
                 ctx.fillStyle = '#FFFFFF';
-                // 🔥 استخدمت خط الإيموجي هنا لتفادي ظهور مربع فارغ 🔥
-                ctx.font = '65px "Emoji", "Arial"';
+                ctx.font = '65px "Emoji", "Segoe UI Emoji", sans-serif'; 
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = rarityColor;
@@ -526,20 +517,15 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🔥 تم إضافة ذكاء لاكتشاف الرتبة الصحيحة إذا كان المدخل "رتبة" وتجاهله 🔥
-async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName, userLevel = 1) {
-    
-    // الحل الجذري لمشكلة كتابة كلمة "رتبة" 
+async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName) {
+    // 🔥 الذكاء الاصطناعي: تنظيف النصوص الوهمية من الخيمة 🔥
     let finalRank = String(rankLetter).trim();
-    if (finalRank === 'رتبة' || !finalRank || finalRank === 'undefined') {
-        const lvl = Number(userLevel) || 1;
-        if (lvl >= 50) finalRank = 'SS';
-        else if (lvl >= 40) finalRank = 'S';
-        else if (lvl >= 30) finalRank = 'A';
-        else if (lvl >= 20) finalRank = 'B';
-        else if (lvl >= 10) finalRank = 'C';
-        else finalRank = 'D';
-    }
+    let finalRace = String(raceName).trim();
+    let finalWeapon = String(weaponName).trim();
+
+    if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank) finalRank = 'D'; // إذا كان حرف عربي (مثل "رتبة") يحط D كبديل
+    if (/عرق/.test(finalRace)) finalRace = 'مواطن';
+    if (/سلاح/.test(finalWeapon)) finalWeapon = 'قبضة اليد';
 
     const width = 1100;
     const height = 650;
@@ -590,7 +576,7 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     borderAvGrad.addColorStop(0, primaryColor); borderAvGrad.addColorStop(0.5, '#ffffff'); borderAvGrad.addColorStop(1, primaryColor);
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.lineWidth = 5; ctx.strokeStyle = borderAvGrad; ctx.stroke();
     
-    // رسم الدرع والرتبة الصحيحة
+    // رسم الدرع والرتبة المعالجة (D بدلاً من "رتبة")
     const badgeW = 75, badgeH = 85;
     const badgeX = avatarX;
     const badgeY = avatarY + (avatarSize / 2) + 5; 
@@ -620,9 +606,10 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
     ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
     const halfTagW = (tagW / 2) - 10; 
     ctx.fillStyle = '#E0E0E0';
-    drawAutoScaledText(ctx, `🩸 ${raceName}`, tagX + tagW/4, tagY + tagH/2, halfTagW, 18, 12);
+    drawAutoScaledText(ctx, `🩸 ${finalRace}`, tagX + tagW/4, tagY + tagH/2, halfTagW, 18, 12);
     ctx.fillStyle = '#F1C40F';
-    drawAutoScaledText(ctx, `⚔️ ${weaponName}`, tagX + (tagW * 0.75), tagY + tagH/2, halfTagW, 18, 12);
+    drawAutoScaledText(ctx, `⚔️ ${finalWeapon}`, tagX + (tagW * 0.75), tagY + tagH/2, halfTagW, 18, 12);
+    
     const moraX = idX + 60, moraY = tagY + 65, moraW = idW - 120, moraH = 55;
     const goldGradBox = ctx.createLinearGradient(moraX, moraY, moraX + moraW, moraY);
     goldGradBox.addColorStop(0, 'rgba(255, 215, 0, 0.2)'); goldGradBox.addColorStop(0.5, 'rgba(255, 215, 0, 0)'); goldGradBox.addColorStop(1, 'rgba(255, 215, 0, 0.2)');
@@ -720,7 +707,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
 
     if (!imgDrawn) {
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '150px "Emoji", "Arial"';
+        ctx.font = '150px "Emoji", "Segoe UI Emoji", "Arial"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = rarityColor;
@@ -776,7 +763,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.fillStyle = '#A8B8D0';
     ctx.font = '24px "Bein", "Emoji"';
     
-    const description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
+    const description = item.description || "عنصر غامض لا يعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
     const lines = wrapText(ctx, description, descBoxW - 40);
     
     for (let j = 0; j < lines.length; j++) {
