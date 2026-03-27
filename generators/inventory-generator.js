@@ -1,6 +1,5 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
-// تسجيل الخطوط
 try {
     GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
     GlobalFonts.registerFromPath('efonts/NotoEmoj.ttf', 'Emoji');
@@ -87,42 +86,45 @@ function buildItemDictionary() {
     }
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
-            addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`);
+            addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', fish.image || `images/fish/${fish.id}.png`);
         }
     }
     if (fishData && fishData.baits) {
         for (const bait of fishData.baits) {
-            addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', `images/fish/baits/${bait.id}.png`);
+            addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', bait.image || `images/fish/baits/${bait.id}.png`);
         }
     }
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
-            addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', `images/farm/seeds/${seed.id}.png`);
+            addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', seed.image || `images/farm/seeds/${seed.id}.png`);
         }
     }
     if (farmFeeds && farmFeeds.length > 0) {
         for (const feed of farmFeeds) {
-            addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', `images/feeds/${feed.id}.png`);
+            addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', feed.image || `images/feeds/${feed.id}.png`);
         }
     }
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
-            addItemToDict(pot.id, pot.name, pot.emoji, 'جرعات', 'Rare', `images/potions/${pot.id}.png`);
+            addItemToDict(pot.id, pot.name, pot.emoji, 'جرعات', 'Rare', pot.image || `images/potions/${pot.id}.png`);
         }
     }
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            addItemToDict(market.id, market.name, '📈', 'سوق', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`);
+            addItemToDict(market.id, market.name, '📈', 'سوق', 'Epic', market.image || `images/market/${String(market.id).toLowerCase()}.png`);
         }
     }
 }
 
-// تنفيذ البناء لتسريع الرسومات
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
     if (!imageUrl) return null;
-    const encodedUrl = encodeURI(imageUrl);
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) {
+        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+    }
+    const encodedUrl = encodeURI(finalUrl);
 
     if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
     try {
@@ -130,7 +132,6 @@ async function getCachedImage(imageUrl) {
         imageCache.set(encodedUrl, img);
         return img;
     } catch (e) {
-        console.log(`[Canvas] Missing Image URL: ${encodedUrl}`);
         return null;
     }
 }
@@ -176,7 +177,6 @@ async function getInventoryCategories(db, userId, guildId) {
         }
     }
 
-    // استخراج السنارات والقوارب ووضعها في قسم الصيد
     try {
         let userData = null;
         try {
@@ -518,12 +518,10 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🔥 دالة ذكية تقرأ معلومات اللاعب الحقيقية في الخيمة بدل النصوص الوهمية 🔥
 async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
-    // إذا تم استدعاؤها مع (member, db, moraBalance) -> نستخرج البيانات الحقيقية من الداتا بيز!
-    if (arg1 && arg1.roles && arg2 && arg2.query) {
+    if (arg1 && arg1.roles && arg2 && typeof arg2.query === 'function') {
         const member = arg1;
         const db = arg2;
         moraBalance = arg3 || 0;
@@ -532,7 +530,6 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
         const guildId = member.guild.id;
         const userId = userObj.id;
 
-        // جلب الرتبة الحقيقية
         try {
             const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
             const points = Number(repRes.rows[0]?.rep_points || 0);
@@ -546,7 +543,6 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
             else finalRank = 'F';
         } catch(e) {}
 
-        // جلب العرق الحقيقي
         try {
             const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [guildId]);
             const userRoleIDs = member.roles.cache.map(r => r.id);
@@ -555,14 +551,12 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
             finalRace = userRace ? (RACE_TRANSLATIONS[userRace.raceName] || userRace.raceName) : "مواطن";
         } catch(e) {}
 
-        // جلب السلاح الحقيقي
         try {
             const wRes = await db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
             finalWeapon = wRes.rows[0]?.raceName || "قبضة اليد";
         } catch(e) {}
 
     } else {
-        // إذا تم استدعاؤها بالطريقة القديمة
         userObj = arg1;
         displayName = arg2;
         moraBalance = arg3;
@@ -570,10 +564,9 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
         finalRace = String(arg5).trim();
         finalWeapon = String(arg6).trim();
 
-        // تنظيف النصوص العشوائية أو الوهمية
-        if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank) finalRank = 'D';
-        if (/عرق/.test(finalRace)) finalRace = 'مواطن';
-        if (/سلاح/.test(finalWeapon)) finalWeapon = 'قبضة اليد';
+        if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank || finalRank === 'undefined') finalRank = 'D';
+        if (/عرق/.test(finalRace) || !finalRace || finalRace === 'undefined') finalRace = 'مواطن';
+        if (/سلاح/.test(finalWeapon) || !finalWeapon || finalWeapon === 'undefined') finalWeapon = 'قبضة اليد';
     }
 
     const width = 1100;
@@ -625,7 +618,6 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     borderAvGrad.addColorStop(0, primaryColor); borderAvGrad.addColorStop(0.5, '#ffffff'); borderAvGrad.addColorStop(1, primaryColor);
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.lineWidth = 5; ctx.strokeStyle = borderAvGrad; ctx.stroke();
     
-    // رسم الدرع والرتبة المعالجة (D بدلاً من "رتبة")
     const badgeW = 75, badgeH = 85;
     const badgeX = avatarX;
     const badgeY = avatarY + (avatarSize / 2) + 5; 
@@ -756,7 +748,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
 
     if (!imgDrawn) {
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '150px "Emoji", "Segoe UI Emoji", "Arial"';
+        ctx.font = '150px "Emoji", "Arial"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = rarityColor;
