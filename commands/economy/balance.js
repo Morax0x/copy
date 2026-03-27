@@ -1,17 +1,20 @@
 const { AttachmentBuilder, SlashCommandBuilder } = require("discord.js");
 const Canvas = require('canvas');
-const path = require('path');
 
 const EMPEROR_ID = '1145327691772481577';
 const EMPEROR_CARD_URL = 'https://i.postimg.cc/8CK5jbWN/card-(2).jpg';
+const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
-// 🔥 تخزين الخلفية في الذاكرة لتسريع الأمر 10 أضعاف! 🔥
 let cachedBackground = null;
 
 async function getBackground() {
     if (cachedBackground) return cachedBackground;
-    const bgPath = path.join(__dirname, '../../images/card.png');
-    cachedBackground = await Canvas.loadImage(bgPath);
+    const bgUrl = `${R2_URL}/images/card.png`;
+    try {
+        cachedBackground = await Canvas.loadImage(bgUrl);
+    } catch (error) {
+        console.error("[Balance] Failed to load card background from R2:", error);
+    }
     return cachedBackground;
 }
 
@@ -65,7 +68,6 @@ module.exports = {
                 return await message.channel.send(payload);
             }
 
-            // 🔥 جلب البيانات الحية بأسرع طريقة ممكنة
             let safeMora = 0;
             let safeBank = 0;
 
@@ -85,7 +87,6 @@ module.exports = {
                 } catch(err) {}
             }
 
-            // تحديث الكاش الداخلي بصمت
             if (client.getLevel) {
                 let cachedData = await client.getLevel(user.id, guild.id);
                 if (cachedData) {
@@ -94,12 +95,16 @@ module.exports = {
                 }
             }
 
-            // رسم اللوحة بأقصى سرعة
             const canvas = Canvas.createCanvas(1000, 400); 
             const context = canvas.getContext('2d');
 
             const background = await getBackground();
-            context.drawImage(background, 0, 0, canvas.width, canvas.height);
+            if (background) {
+                context.drawImage(background, 0, 0, canvas.width, canvas.height);
+            } else {
+                context.fillStyle = '#1A1A1A';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+            }
 
             try {
                 const avatar = await Canvas.loadImage(user.displayAvatarURL({ extension: 'png', size: 256 }));
