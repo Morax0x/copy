@@ -1,5 +1,6 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
+// تسجيل الخطوط
 try {
     GlobalFonts.registerFromPath('fonts/bein-ar-normal.ttf', 'Bein');
     GlobalFonts.registerFromPath('efonts/NotoEmoj.ttf', 'Emoji');
@@ -11,29 +12,25 @@ let itemLore = {};
 try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
+const weaponsConfig = require('../json/weapons-config.json'); // عشان نجيب اسم السلاح الحقيقي
+let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
+
+let fishData = { fishItems: [], baits: [], rods: [], boats: [] };
+let rodsConfig = [], boatsConfig = [];
+try { 
+    const fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); 
+    fishData = fishJson;
+    rodsConfig = fishJson.rods || [];
+    boatsConfig = fishJson.boats || [];
+} catch(e) {}
+
+let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e) {}
+let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e) {}
+let potionItems = []; try { potionItems = require('../json/potions.json'); } catch(e) {}
+let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e) {}
 
 const imageCache = new Map();
-
-async function getCachedImage(imageUrl) {
-    if (!imageUrl) return null;
-    
-    let finalUrl = imageUrl;
-    if (!finalUrl.startsWith('http')) {
-        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/').replace(/^\/+/, '')}`;
-    }
-    
-    const encodedUrl = encodeURI(finalUrl);
-
-    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
-    try {
-        const img = await loadImage(encodedUrl);
-        imageCache.set(encodedUrl, img);
-        return img;
-    } catch (e) {
-        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
-        return null;
-    }
-}
+const ITEM_DICTIONARY = new Map();
 
 const RARITY_COLORS = {
     'Common': '#A8B8D0',      
@@ -59,65 +56,113 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-function resolveItemInfo(itemId) {
-    let desc = itemLore[itemId] || null;
+// 🔥 إضافة خيار fullImage للتحكم بحجم الصورة (كامل المربع أو مبعد) 🔥
+function addItemToDict(id, name, emoji, category, rarity, imgPath, fullImage = false) {
+    if (!id) return;
+    const cleanId = String(id).trim();
+    const data = {
+        name: name || cleanId,
+        emoji: emoji || '📦',
+        category: category || 'أخرى',
+        rarity: rarity || 'Common',
+        imgPath: imgPath ? `${R2_URL}/${imgPath.replace(/^\/+/, '')}` : null,
+        fullImage: fullImage
+    };
+    ITEM_DICTIONARY.set(cleanId, data);
+    ITEM_DICTIONARY.set(cleanId.toLowerCase(), data);
+}
 
+function buildItemDictionary() {
+    // 1. الموارد والكتب (مفرغة = padding)
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
-            const mat = race.materials.find(m => m.id === itemId);
-            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'موارد', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}`, description: desc };
+            for (const mat of race.materials) {
+                addItemToDict(mat.id, mat.name, mat.emoji, 'موارد', mat.rarity, `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}`, false);
+            }
         }
     }
-
     if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
-            const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) return { name: book.name, emoji: book.emoji, category: 'موارد', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}`, description: desc };
+            for (const book of cat.books) {
+                addItemToDict(book.id, book.name, book.emoji, 'موارد', book.rarity, `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}`, false);
+            }
         }
     }
-
-    let fishJson;
-    try { fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e){}
-    if (fishJson && fishJson.fishItems) {
-        const fish = fishJson.fishItems.find(f => f.id === itemId || f.name === itemId);
-        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'صيد', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: `${R2_URL}/images/fish/${fish.id}.png`, description: desc };
+    
+    // 2. الصيد (صور كاملة = fullImage)
+    if (fishData && fishData.fishItems) {
+        for (const fish of fishData.fishItems) {
+            addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`, true);
+        }
     }
-    if (fishJson && fishJson.baits) {
-        const bait = fishJson.baits.find(f => f.id === itemId || f.name === itemId);
-        if (bait) return { name: bait.name, emoji: bait.emoji || '🪱', category: 'صيد', rarity: 'Common', imgPath: `${R2_URL}/images/fish/baits/${bait.id}.png`, description: desc };
+    if (fishData && fishData.baits) {
+        for (const bait of fishData.baits) {
+            addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', `images/fish/baits/${bait.id}.png`, true);
+        }
     }
-
-    let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e){}
+    
+    // 3. المزرعة (صور كاملة = fullImage)
     if (farmSeeds && farmSeeds.length > 0) {
-        const seed = farmSeeds.find(s => s.id === itemId || s.name === itemId);
-        if (seed) return { name: seed.name, emoji: seed.emoji || '🌾', category: 'مزرعة', rarity: 'Common', imgPath: `${R2_URL}/images/farm/seeds/${seed.id}.png`, description: desc };
+        for (const seed of farmSeeds) {
+            addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', `images/farm/seeds/${seed.id}.png`, true);
+        }
     }
-
-    let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e){}
     if (farmFeeds && farmFeeds.length > 0) {
-        const feed = farmFeeds.find(f => f.id === itemId || f.name === itemId);
-        if (feed) return { name: feed.name, emoji: feed.emoji || '🌾', category: 'مزرعة', rarity: 'Common', imgPath: `${R2_URL}/images/feeds/${feed.id}.png`, description: desc };
+        for (const feed of farmFeeds) {
+            addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', `images/feeds/${feed.id}.png`, true);
+        }
     }
-
-    let potionItems = []; try { potionItems = require('../json/potions.json'); } catch(e){}
+    
+    // 4. الجرعات (في قسم أخرى، مفرغة = padding)
     if (potionItems && potionItems.length > 0) {
-        const pot = potionItems.find(p => p.id === itemId || p.name === itemId);
-        if (pot) return { name: pot.name, emoji: pot.emoji || '🧪', category: 'جرعات', rarity: 'Rare', imgPath: `${R2_URL}/images/potions/${pot.id}.png`, description: desc };
+        for (const pot of potionItems) {
+            addItemToDict(pot.id, pot.name, pot.emoji, 'أخرى', 'Rare', `images/potions/${pot.id}.png`, false);
+        }
     }
-
-    let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e){}
+    
+    // 5. السوق (في قسم أخرى، صور كاملة = fullImage)
     if (marketItems && marketItems.length > 0) {
-        const market = marketItems.find(m => m.id === itemId || m.name === itemId);
-        if (market) return { name: market.name, emoji: '📈', category: 'سوق', rarity: 'Epic', imgPath: `${R2_URL}/images/market/${String(market.id).toLowerCase()}.png`, description: desc };
+        for (const market of marketItems) {
+            addItemToDict(market.id, market.name, '📈', 'أخرى', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`, true);
+        }
+    }
+}
+
+// تنفيذ البناء لتسريع الرسومات
+buildItemDictionary();
+
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    const encodedUrl = encodeURI(imageUrl);
+
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
+    try {
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
+        return img;
+    } catch (e) {
+        console.log(`[Canvas] Missing Image URL: ${encodedUrl}`);
+        return null;
+    }
+}
+
+function resolveItemInfo(itemId) {
+    if (!itemId) return { name: 'عنصر مجهول', emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null, fullImage: false };
+    const cleanId = String(itemId).trim();
+    let baseInfo = ITEM_DICTIONARY.get(cleanId) || ITEM_DICTIONARY.get(cleanId.toLowerCase());
+
+    if (!baseInfo) {
+        baseInfo = { name: cleanId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null, fullImage: false };
     }
 
-    return { name: itemId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null, description: desc };
+    baseInfo.description = itemLore[cleanId] || itemLore[cleanId.toLowerCase()] || null;
+    return { ...baseInfo };
 }
 
 async function getInventoryCategories(db, userId, guildId) {
     let inventory = [];
-    const categories = { 'موارد': [], 'صيد': [], 'مزرعة': [], 'جرعات': [], 'سوق': [], 'أخرى': [] };
+    const categories = { 'موارد': [], 'صيد': [], 'مزرعة': [], 'أخرى': [] };
     
     try {
         const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
@@ -143,6 +188,7 @@ async function getInventoryCategories(db, userId, guildId) {
         }
     }
 
+    // استخراج السنارات والقوارب ووضعها في قسم الصيد (بصور كاملة المربع)
     try {
         let userData = null;
         try {
@@ -156,10 +202,6 @@ async function getInventoryCategories(db, userId, guildId) {
         if (userData) {
             const rodLvl = Number(userData.rodLevel || userData.rodlevel) || 1;
             const boatLvl = Number(userData.boatLevel || userData.boatlevel) || 1;
-            
-            let fishJson; try { fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e){}
-            const rodsConfig = fishJson?.rods || [];
-            const boatsConfig = fishJson?.boats || [];
 
             for (let i = 1; i <= rodLvl; i++) {
                 const rod = rodsConfig.find(r => r.level === i);
@@ -172,6 +214,7 @@ async function getInventoryCategories(db, userId, guildId) {
                         imgPath: `${R2_URL}/images/fish/fishing/rod_${i}.png`,
                         quantity: 1,
                         id: `rod_${i}`,
+                        fullImage: true,
                         description: `سنارة صيد بمستوى ${i}\nتزيد الحظ بنسبة ${rod.luck_bonus}%`
                     });
                 }
@@ -188,6 +231,7 @@ async function getInventoryCategories(db, userId, guildId) {
                         imgPath: `${R2_URL}/images/fish/ships/boat_${i}.png`,
                         quantity: 1,
                         id: `boat_${i}`,
+                        fullImage: true,
                         description: `قارب يفتح موقع: ${boat.location_id}`
                     });
                 }
@@ -448,16 +492,27 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             aura.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = aura;
             ctx.fillRect(x, y, slotSize, slotSize);
+            
             let imgDrawn = false;
             if (item.imgPath) {
                 const img = await getCachedImage(item.imgPath);
                 if (img) {
-                    const padding = 25; 
-                    const imgSize = slotSize - (padding * 2);
-                    ctx.shadowColor = rarityColor;
-                    ctx.shadowBlur = 40;
-                    ctx.drawImage(img, x + padding, y + padding - 15, imgSize, imgSize);
-                    ctx.shadowBlur = 0; 
+                    // 🔥 هنا السحر: إذا كان fullImage صحيح يملأ المربع، وإذا لا يسوي padding 🔥
+                    if (item.fullImage) {
+                        ctx.save();
+                        ctx.beginPath();
+                        roundRect(ctx, x + 2, y + 2, slotSize - 4, slotSize - 4, 15);
+                        ctx.clip();
+                        ctx.drawImage(img, x + 2, y + 2, slotSize - 4, slotSize - 4);
+                        ctx.restore();
+                    } else {
+                        const padding = 25; 
+                        const imgSize = slotSize - (padding * 2);
+                        ctx.shadowColor = rarityColor;
+                        ctx.shadowBlur = 40;
+                        ctx.drawImage(img, x + padding, y + padding - 15, imgSize, imgSize);
+                        ctx.shadowBlur = 0; 
+                    }
                     imgDrawn = true;
                 }
             }
@@ -471,6 +526,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
                 ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
                 ctx.shadowBlur = 0;
             }
+            
             drawRibbon(ctx, x, ribbonY, slotSize, ribbonH, rarityColor);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -488,7 +544,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🔥 تم التعديل الذكي لدعم الداتا بيز مباشرة وجلب بيانات الرتبة، العرق، السلاح تلقائياً
+// 🔥 تحديث الخيمة لتقرأ السلاح الحقيقي بالاسم الكامل مع اللفل بدلاً من اسم العرق! 🔥
 async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
@@ -522,10 +578,15 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
             finalRace = userRace ? (RACE_TRANSLATIONS[userRace.raceName] || userRace.raceName) : "مواطن";
         } catch(e) {}
 
+        // 🔥 استخراج اسم السلاح الحقيقي من الـ weaponsConfig 🔥
         try {
             const wRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
             if (wRes.rows.length > 0) {
-                finalWeapon = `${wRes.rows[0].raceName} (Lv.${wRes.rows[0].weaponLevel})`;
+                const raceN = wRes.rows[0].raceName;
+                const wpLvl = wRes.rows[0].weaponLevel;
+                const wpConf = weaponsConfig.find(w => w.race.toLowerCase() === raceN.toLowerCase());
+                const wpName = wpConf ? wpConf.name : raceN;
+                finalWeapon = `${wpName} (Lv.${wpLvl})`;
             } else {
                 finalWeapon = "قبضة اليد";
             }
@@ -711,19 +772,29 @@ async function generateItemDetailsCard(userDisplayName, item) {
     if (item.imgPath) {
         const img = await getCachedImage(item.imgPath);
         if (img) {
-            const padding = 40;
-            const finalImgSize = imgSize - (padding * 2);
-            ctx.shadowColor = rarityColor;
-            ctx.shadowBlur = 60;
-            ctx.drawImage(img, imgX + padding, imgY + padding - 20, finalImgSize, finalImgSize);
-            ctx.shadowBlur = 0;
+            // 🔥 هنا السحر: يفرق بين الصور المفرغة والصور الكاملة 🔥
+            if (item.fullImage) {
+                ctx.save();
+                ctx.beginPath();
+                roundRect(ctx, imgX + 4, imgY + 4, imgSize - 8, imgSize - 8, 20);
+                ctx.clip();
+                ctx.drawImage(img, imgX + 4, imgY + 4, imgSize - 8, imgSize - 8);
+                ctx.restore();
+            } else {
+                const padding = 40;
+                const finalImgSize = imgSize - (padding * 2);
+                ctx.shadowColor = rarityColor;
+                ctx.shadowBlur = 60;
+                ctx.drawImage(img, imgX + padding, imgY + padding - 20, finalImgSize, finalImgSize);
+                ctx.shadowBlur = 0;
+            }
             imgDrawn = true;
         }
     }
 
     if (!imgDrawn) {
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '150px "Emoji", "Arial"';
+        ctx.font = '150px "Emoji", "Segoe UI Emoji", "Arial"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.shadowColor = rarityColor;
