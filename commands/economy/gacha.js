@@ -245,12 +245,7 @@ module.exports = {
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
-            const prefix = isTen ? 'ten_' : 'single_';
-            const meteorFileName = `${prefix}${bestResult.rarity}.png`;
-            const meteorUrl = `${R2_URL}/images/gacha/${meteorFileName}`;
-            let meteorFiles = [new AttachmentBuilder(meteorUrl, { name: meteorFileName })];
-            
-            await pullMsg.edit({ files: meteorFiles }).catch(()=>{});
+            // 🔥 إنتظار ثانيتين عشان الـ GIF يشتغل كنوع من التشويق قبل عرض الجائزة 🔥
             await new Promise(r => setTimeout(r, 2000));
 
             const buildSilentSummary = async () => {
@@ -266,54 +261,57 @@ module.exports = {
                 return { components: [getPullButtons(userMora)], files };
             };
 
-            if (isTen) {
-                let currentIndex = 0;
+            let currentIndex = 0;
 
-                const getPagePayload = async (idx) => {
-                    const res = results[idx];
-                    let files = [];
-                    
-                    if (generateGachaCard && res.item.imgPath) {
-                        try {
-                            const buffer = await generateGachaCard(res.item, res.rarity);
-                            if (buffer) files.push(new AttachmentBuilder(buffer, { name: `gacha_${idx}.png` }));
-                        } catch(e){}
-                    }
+            const getPagePayload = async (idx) => {
+                const res = results[idx];
+                let files = [];
+                
+                if (generateGachaCard && res.item) {
+                    try {
+                        const buffer = await generateGachaCard(res.item, res.rarity);
+                        if (buffer) files.push(new AttachmentBuilder(buffer, { name: `gacha_${idx}.png` }));
+                    } catch(e){}
+                }
 
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId('gacha_next').setLabel('التالي').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId('gacha_skip').setLabel('تخطي').setStyle(ButtonStyle.Secondary)
+                const row = new ActionRowBuilder();
+                if (isTen) {
+                    row.addComponents(
+                        new ButtonBuilder().setCustomId('gacha_next').setLabel('التالي').setStyle(ButtonStyle.Success).setEmoji('➡️'),
+                        new ButtonBuilder().setCustomId('gacha_return').setLabel('العودة للرئيسية').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                     );
-                    
-                    return { components: [row], files };
-                };
+                } else {
+                    row.addComponents(
+                        new ButtonBuilder().setCustomId('gacha_return').setLabel('العودة للرئيسية').setStyle(ButtonStyle.Primary).setEmoji('↩️')
+                    );
+                }
+                
+                return { components: [row], files };
+            };
 
-                await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
+            // عرض البطاقة الأولى مباشرة (أو الوحيدة في حال كان صندوق واحد)
+            await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
 
-                const pageCollector = pullMsg.createMessageComponentCollector({
-                    filter: btn => btn.user.id === user.id && ['gacha_next', 'gacha_skip'].includes(btn.customId),
-                    time: 120000 
-                });
+            const pageCollector = pullMsg.createMessageComponentCollector({
+                filter: btn => btn.user.id === user.id && ['gacha_next', 'gacha_return'].includes(btn.customId),
+                time: 120000 
+            });
 
-                pageCollector.on('collect', async btn => {
-                    try { await btn.deferUpdate(); } catch(e) { return; }
-                    
-                    if (btn.customId === 'gacha_skip') {
-                        pageCollector.stop('skipped');
-                    } else if (btn.customId === 'gacha_next') {
-                        currentIndex++;
-                        if (currentIndex >= 10) pageCollector.stop('finished');
-                        else await pullMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
-                    }
-                });
+            pageCollector.on('collect', async btn => {
+                try { await btn.deferUpdate(); } catch(e) { return; }
+                
+                if (btn.customId === 'gacha_return') {
+                    pageCollector.stop('returned');
+                } else if (btn.customId === 'gacha_next') {
+                    currentIndex++;
+                    if (currentIndex >= 10) pageCollector.stop('finished');
+                    else await pullMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
+                }
+            });
 
-                pageCollector.on('end', async () => {
-                    await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
-                });
-
-            } else {
+            pageCollector.on('end', async () => {
                 await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
-            }
+            });
         });
     }
 };
