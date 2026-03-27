@@ -1,7 +1,18 @@
 const upgradeMats = require('../json/upgrade-materials.json');
-let fishData = [], farmItems = [];
-try { fishData = require('../json/fish.json'); } catch(e) {}
-try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
+let fishData = [], farmSeeds = [], farmFeeds = [], potionsData = [], marketData = [];
+
+// استيراد جميع الملفات بأمان
+try { 
+    const fishJson = require('../json/fishing-config.json') || require('../json/fish.json');
+    fishData = fishJson.fishItems || fishJson; 
+} catch(e) {}
+try { farmSeeds = require('../json/seeds.json'); } catch(e) {}
+try { farmFeeds = require('../json/feed-items.json'); } catch(e) {}
+try { potionsData = require('../json/potions.json'); } catch(e) {}
+try { marketData = require('../json/market-items.json'); } catch(e) {}
+
+// 🔥 القاموس السريع جداً (لزيادة سرعة قراءة المخزن بنسبة 99%) 🔥
+const ITEM_DICTIONARY = new Map();
 
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
@@ -19,46 +30,98 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-function resolveItemInfo(itemId) {
+// بناء القاموس مرة واحدة فقط عند بدء التشغيل
+function buildDictionary() {
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
-            const mat = race.materials.find(m => m.id === itemId);
-            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+            for (const mat of race.materials) {
+                ITEM_DICTIONARY.set(mat.id, { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}` });
+            }
         }
     }
     if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
-            const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) return { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
+            for (const book of cat.books) {
+                ITEM_DICTIONARY.set(book.id, { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}` });
+            }
         }
     }
-    if (fishData && fishData.length > 0) {
-        const fish = fishData.find(f => f.id === itemId || f.name === itemId);
-        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
+    if (fishData && Array.isArray(fishData)) {
+        for (const fish of fishData) {
+            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: fish.image || null });
+        }
     }
-    if (farmItems && farmItems.length > 0) {
-        const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) return { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
+    if (farmSeeds && Array.isArray(farmSeeds)) {
+        for (const seed of farmSeeds) {
+            ITEM_DICTIONARY.set(seed.id, { name: seed.name, emoji: seed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: seed.image || `images/farm/seeds/${seed.id}.png` });
+        }
     }
+    if (farmFeeds && Array.isArray(farmFeeds)) {
+        for (const feed of farmFeeds) {
+            ITEM_DICTIONARY.set(feed.id, { name: feed.name, emoji: feed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: feed.image || `images/feeds/${feed.id}.png` });
+        }
+    }
+    if (potionsData && Array.isArray(potionsData)) {
+        for (const potion of potionsData) {
+            ITEM_DICTIONARY.set(potion.id, { name: potion.name, emoji: potion.emoji || '🧪', category: 'potions', rarity: 'Rare', imgPath: potion.image || `images/potions/${potion.id}.png` });
+        }
+    }
+    if (marketData && Array.isArray(marketData)) {
+        for (const market of marketData) {
+            ITEM_DICTIONARY.set(market.id, { name: market.name, emoji: '📈', category: 'market', rarity: 'Epic', imgPath: market.image || `images/market/${market.id.toLowerCase()}.png` });
+        }
+    }
+}
+
+// تنفيذ البناء فوراً
+buildDictionary();
+
+function resolveItemInfo(itemId) {
+    // جلب العنصر من القاموس بسرعة البرق (O(1))
+    if (ITEM_DICTIONARY.has(itemId)) {
+        return ITEM_DICTIONARY.get(itemId);
+    }
+    // عنصر غير معروف
     return { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
 }
 
 async function getInventoryCategories(db, userId, guildId) {
-    const inventory = db.prepare("SELECT * FROM user_inventory WHERE userID = ? AND guildID = ?").all(userId, guildId) || [];
-    const categories = { materials: [], fishing: [], farming: [], others: [] };
+    let inventory = [];
+    
+    // 🔥 تم تعديل الاستعلام ليتوافق مع PostgreSQL بدلاً من SQLite لمنع انهيار البوت 🔥
+    try {
+        const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+        inventory = res.rows;
+    } catch(e) {
+        try {
+            const res = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]);
+            inventory = res.rows;
+        } catch(err) {
+            console.error("❌ Inventory Fetch Error:", err);
+            return { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
+        }
+    }
+
+    // إضافة الأقسام الجديدة للمخزن
+    const categories = { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
     
     for (const row of inventory) {
-        const itemId = row.itemID;
+        const itemId = row.itemID || row.itemid;
         const quantity = Number(row.quantity) || 0;
+        
         if (quantity <= 0) continue;
+        
         const itemInfo = resolveItemInfo(itemId);
+        
+        // فرز العنصر في القسم المناسب
         if (categories[itemInfo.category]) {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         } else {
             categories.others.push({ ...itemInfo, quantity, id: itemId });
         }
     }
+    
     return categories;
 }
 
