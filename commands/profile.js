@@ -42,21 +42,16 @@ const RACE_TRANSLATIONS = new Map([
     ['Spirit', 'روح'], ['Dwarf', 'قزم'], ['Ghoul', 'غول'], ['Hybrid', 'نصف وحش']
 ]);
 
-const ID_TO_IMAGE = {
-    'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
-    'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
-    'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
-    'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
-    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
-    'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
-    'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
-    'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
-    'mat_hybrid_1': 'hybrid_claw.png', 'mat_hybrid_2': 'hybrid_fur.png', 'mat_hybrid_3': 'hybrid_bone.png', 'mat_hybrid_4': 'hybrid_crystal.png', 'mat_hybrid_5': 'hybrid_soul.png',
-    'mat_dwarf_1': 'dwarf_copper.png', 'mat_dwarf_2': 'dwarf_bronze.png', 'mat_dwarf_3': 'dwarf_mithril.png', 'mat_dwarf_4': 'dwarf_heart.png', 'mat_dwarf_5': 'dwarf_hammer.png',
-    'mat_ghoul_1': 'ghoul_bone.png', 'mat_ghoul_2': 'ghoul_remains.png', 'mat_ghoul_3': 'ghoul_skull.png', 'mat_ghoul_4': 'ghoul_crystal.png', 'mat_ghoul_5': 'ghoul_core.png',
-    'book_general_1': 'gen_book_tactic.png', 'book_general_2': 'gen_book_combat.png', 'book_general_3': 'gen_book_arts.png', 'book_general_4': 'gen_book_war.png', 'book_general_5': 'gen_book_wisdom.png',
-    'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
-};
+// 🔥 تم استخدام الدالة الذكية من ملف الـ Generator بدلاً من تكرار الأكواد الضعيفة 🔥
+let resolveItemInfoLocal;
+try {
+    const invGen = require('../generators/inventory-generator.js');
+    resolveItemInfoLocal = invGen.resolveItemInfo;
+} catch (e) {
+    resolveItemInfoLocal = function(itemId) {
+        return { name: itemId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null, description: "تعذر قراءة التفاصيل" };
+    };
+}
 
 function getRepRankInfo(points) {
     if (points >= 1000) return { name: '👑 رتبة SS', color: '#FF0055' }; 
@@ -67,47 +62,6 @@ function getRepRankInfo(points) {
     if (points >= 25)   return { name: '⚔️ رتبة D', color: '#A9A9A9' }; 
     if (points >= 10)   return { name: '🛡️ رتبة E', color: '#B87333' }; 
     return { name: '🪵 رتبة F', color: '#654321' }; 
-}
-
-function resolveItemInfo(itemId) {
-    let baseInfo = null;
-    if (upgradeMats && upgradeMats.weapon_materials) {
-        for (const race of upgradeMats.weapon_materials) {
-            const mat = race.materials.find(m => m.id === itemId);
-            if (mat) baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-        }
-    }
-    if (!baseInfo && upgradeMats && upgradeMats.skill_books) {
-        for (const cat of upgradeMats.skill_books) {
-            const book = cat.books.find(b => b.id === itemId);
-            const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-        }
-    }
-    if (!baseInfo && fishData && fishData.fishItems) {
-        const fish = fishData.fishItems.find(f => f.id === itemId || f.name === itemId);
-        if (fish) baseInfo = { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
-    }
-    if (!baseInfo && fishData && fishData.baits) {
-        const bait = fishData.baits.find(f => f.id === itemId || f.name === itemId);
-        if (bait) baseInfo = { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null };
-    }
-    if (!baseInfo && farmItems && farmItems.length > 0) {
-        const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) baseInfo = { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
-    }
-    if (!baseInfo && potionItems && potionItems.length > 0) {
-        const pot = potionItems.find(p => p.id === itemId);
-        if (pot) baseInfo = { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null };
-    }
-    if (!baseInfo) {
-        baseInfo = { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
-    }
-    try {
-        const itemLore = require('../json/item-descriptions.json');
-        baseInfo.description = itemLore[itemId] || null;
-    } catch(e) {}
-    return baseInfo;
 }
 
 async function calculateStrongestRank(db, guildID, targetUserID) {
@@ -257,8 +211,9 @@ module.exports = {
 
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        const hubRank = rankInfo.name.split(' ')[1] || rankInfo.name;
-                        const buffer = await generateMainHub(targetUser, cleanName, totalMora, hubRank, arabicRaceName, weaponName);
+                        // 🔥 تم التعديل الجذري هنا لضمان إرسال الرتبة والعرق الحقيقيين للخيمة بدلاً من نصوص ثابتة 🔥
+                        const hubRank = rankInfo.name.replace(/[^a-zA-Z]/g, '').trim() || "D";
+                        const buffer = await generateMainHub(targetMember, db, totalMora, hubRank, arabicRaceName, weaponName, levelData.level);
                         
                         const cats = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('موارد').setStyle(ButtonStyle.Success).setEmoji('💎'),
@@ -291,7 +246,7 @@ module.exports = {
 
                     const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                     const items = invQuery.rows.map(row => {
-                        const info = resolveItemInfo(row.itemID || row.itemid);
+                        const info = resolveItemInfoLocal(row.itemID || row.itemid);
                         return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                     }).filter(i => i.category === invCategory);
 
@@ -340,10 +295,10 @@ module.exports = {
                 else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
                 else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
-                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'materials'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'fishing'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'farming'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'others'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'موارد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'صيد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'مزرعة'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'أخرى'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
                 
                 else if (id.startsWith('inv_n_')) { await i.deferUpdate(); invPage++; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('inv_p_')) { await i.deferUpdate(); invPage--; selectedIndex = 0; activeItemDetails = null; }
@@ -378,7 +333,7 @@ module.exports = {
                     else if (moveType === 'ok') {
                         const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                         const items = invQuery.rows.map(row => {
-                            const info = resolveItemInfo(row.itemID || row.itemid);
+                            const info = resolveItemInfoLocal(row.itemID || row.itemid);
                             return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                         }).filter(it => it.category === invCategory);
 
