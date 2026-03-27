@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
@@ -13,6 +13,12 @@ try {
 
 const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
+const upgradeMats = require('../json/upgrade-materials.json');
+const potionItems = require('../json/potions.json');
+
+let fishData = [], farmItems = [];
+try { fishData = require('../json/fish.json'); } catch(e) {}
+try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 let calculateRequiredXP;
 try { ({ calculateRequiredXP } = require('../handlers/handler-utils.js')); } 
@@ -29,6 +35,7 @@ const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
 const ITEMS_PER_PAGE = 15;
 const SKILLS_PER_PAGE = 3;
+const MAX_INVENTORY_LIMIT = 999; // 🔥 الحد الأقصى لأي عنصر في المخزن 🔥
 
 const RACE_TRANSLATIONS = new Map([
     ['Human', 'بشري'], ['Dragon', 'تنين'], ['Elf', 'آلف'], ['Dark Elf', 'آلف الظلام'],
@@ -117,7 +124,7 @@ module.exports = {
             const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
             let currentView = 'profile'; 
-            let invCategory = 'موارد'; // افتراضي عند فتح الحقيبة
+            let invCategory = 'موارد'; 
             let invPage = 1; 
             let skillPage = 0;
             let selectedIndex = 0; 
@@ -204,7 +211,6 @@ module.exports = {
 
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        // استدعاء ذكي للخيمة
                         const buffer = await generateMainHub(targetMember, db, totalMora);
                         
                         const cats = new ActionRowBuilder().addComponents(
@@ -282,7 +288,6 @@ module.exports = {
             collector.on('collect', async (i) => {
                 const id = i.customId;
 
-                // التعامل مع زر الاستهداف للمبادلة (حتى لو ضغط عليه نفس الشخص أو غيره نعالجه)
                 if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
                     if (i.user.id !== authorUser.id) return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
                     
@@ -307,6 +312,14 @@ module.exports = {
                         if (isNaN(qty) || qty <= 0) return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: [MessageFlags.Ephemeral] });
                         if (isNaN(price) || price < 0) return modalSubmit.reply({ content: '❌ سعر غير صالح.', flags: [MessageFlags.Ephemeral] });
 
+                        // 🔍 فحص هل المستلم راح يتجاوز الحد الأقصى 999؟
+                        let checkTargetInvRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [targetID, guildId, activeItemDetails.id]).catch(()=>({rows:[]}));
+                        const targetCurrentQty = checkTargetInvRes.rows[0] ? Number(checkTargetInvRes.rows[0].quantity) : 0;
+                        
+                        if (targetCurrentQty + qty > MAX_INVENTORY_LIMIT) {
+                            return modalSubmit.reply({ content: `❌ **لا يمكنك إرسال هذه الكمية!**\nالطرف الآخر سيصل للحد الأقصى (${MAX_INVENTORY_LIMIT}).\n> يمتلك حالياً: **${targetCurrentQty}**`, flags: [MessageFlags.Ephemeral] });
+                        }
+
                         let checkInvRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [authorUser.id, guildId, activeItemDetails.id]).catch(()=>({rows:[]}));
                         const senderInvData = checkInvRes.rows[0];
 
@@ -321,7 +334,8 @@ module.exports = {
                                 await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [senderInvData.id]);
                             }
 
-                            await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`, [targetID, guildId, activeItemDetails.id, qty]);
+                            // 🔥 الحماية بقاعدة البيانات باستخدام LEAST لضمان عدم تجاوز 999 🔥
+                            await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + $4, 999)`, [targetID, guildId, activeItemDetails.id, qty]);
                             await db.query('COMMIT').catch(()=>{});
 
                             await modalSubmit.reply({ content: `🎁 <@${authorUser.id}> أرسل **${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}** كهدية إلى <@${targetID}>!` });
@@ -371,7 +385,7 @@ module.exports = {
                                         await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [senderInvFinal.id]);
                                     }
                                     
-                                    await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`, [targetID, guildId, activeItemDetails.id, qty]);
+                                    await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + $4, 999)`, [targetID, guildId, activeItemDetails.id, qty]);
                                     await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [price, targetID, guildId]);
                                     await db.query(`UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [price, authorUser.id, guildId]);
                                     await db.query('COMMIT').catch(()=>{});
@@ -397,7 +411,6 @@ module.exports = {
                     return;
                 }
 
-                // الحماية لجميع الأزرار الأخرى (فقط صاحب البروفايل)
                 if (i.user.id !== authorUser.id) {
                     return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
                 }
@@ -458,18 +471,6 @@ module.exports = {
                     }
                 }
                 
-                else if (id.startsWith('trade_init_')) {
-                    if (!activeItemDetails) {
-                        await i.deferUpdate();
-                        return;
-                    }
-                    
-                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
-                    
-                    await i.reply({ content: "**اختر اللاعب الذي تريد إرسال العنصر إليه:**", components: [userSelect], flags: [MessageFlags.Ephemeral] });
-                    return; 
-                }
-
                 await msg.edit(await renderView());
             });
 
