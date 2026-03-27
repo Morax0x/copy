@@ -77,7 +77,8 @@ module.exports = (client, db, antiRolesCache) => {
             }
         }
 
-        if (i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) {
+        // 🔥 تمت إضافة isUserSelectMenu لمنع تعليق التفاعل في زر إعطاء بالانفنتوري 🔥
+        if (i.isButton() || i.isStringSelectMenu() || i.isModalSubmit() || i.isUserSelectMenu()) {
             processingInteractions.add(i.user.id);
             setTimeout(() => processingInteractions.delete(i.user.id), 3000);
         }
@@ -133,8 +134,11 @@ module.exports = (client, db, antiRolesCache) => {
                 return;
             }
 
-            if (i.isButton() || i.isStringSelectMenu()) {
+            if (i.isButton() || i.isStringSelectMenu() || i.isUserSelectMenu()) {
                 const id = i.customId;
+
+                // إعطاء فرصة للكوليكتر الموجود بملف البروفايل يشتغل بدون مقاطعة هنا
+                if (id.startsWith('trade_target_')) return;
 
                 if (id.startsWith('sugg_')) {
                     if (handleSuggestionButtons) await handleSuggestionButtons(i, client, db);
