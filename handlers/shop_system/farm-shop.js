@@ -23,6 +23,7 @@ const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 const ITEMS_PER_PAGE = 15;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_FARM_LIMIT = 1000; // 🔥 الحد الأقصى للمخزن (البذور والأعلاف)
 
 function buildMainMenu(user) {
     const embed = new EmbedBuilder()
@@ -147,6 +148,9 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
         
         const invQuery = invQueryRes.rows[0];
         userQuantity = invQuery ? Number(invQuery.quantity) : 0;
+        
+        // 🔥 فحص التعبئة للبذور والأعلاف (1000 حد أقصى) 🔥
+        isFull = userQuantity >= MAX_FARM_LIMIT;
     }
 
     const price = item.price.toLocaleString();
@@ -198,8 +202,12 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
         )
         .setFooter({ text: `العنصر ${itemIndex + 1} من ${totalItems}` });
 
-    if (isFull && category === 'animals') {
-        detailEmbed.addFields({ name: '⚠️ تنبيه السعة', value: '🚫 **لا توجد مساحة كافية في الحظيرة!**', inline: false });
+    if (isFull) {
+        if (category === 'animals') {
+            detailEmbed.addFields({ name: '⚠️ تنبيه السعة', value: '🚫 **لا توجد مساحة كافية في الحظيرة!**', inline: false });
+        } else {
+            detailEmbed.addFields({ name: '⚠️ تنبيه السعة', value: `🚫 **وصلت للحد الأقصى (${MAX_FARM_LIMIT}) في المخزن!**`, inline: false });
+        }
     }
 
     const actionRow1 = new ActionRowBuilder().addComponents(
@@ -211,9 +219,9 @@ async function buildDetailView(item, userId, guildId, sql, itemIndex, totalItems
     const actionRow2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(category === 'animals' ? `buy_animal_${item.id}` : (category === 'seeds' ? `buy_seed_${item.id}` : `buy_feed_${item.id}`))
-            .setLabel(isFull && category === 'animals' ? 'ممتلئ' : 'شراء 🛒')
-            .setStyle(isFull && category === 'animals' ? ButtonStyle.Secondary : ButtonStyle.Success)
-            .setDisabled(isFull && category === 'animals'), 
+            .setLabel(isFull ? 'ممتلئ' : 'شراء 🛒')
+            .setStyle(isFull ? ButtonStyle.Secondary : ButtonStyle.Success)
+            .setDisabled(isFull), 
             
         new ButtonBuilder()
             .setCustomId(category === 'animals' ? `sell_animal_${item.id}` : (category === 'seeds' ? `sell_seed_${item.id}` : `sell_feed_${item.id}`))
@@ -369,6 +377,18 @@ async function handleShopInteraction(i, client, sql, user, guild, shopState, get
                 if (!userData) userData = { ...client.defaultData, user: user.id, guild: guild.id };
 
                 if (action === 'buy') {
+                    // 🔥 حماية السعة القصوى للبذور والأعلاف (1000 حد أقصى) 🔥
+                    if (shopState.currentCategory !== 'animals') {
+                        let invCheckRes;
+                        try { invCheckRes = await sql.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guild.id, itemId]); }
+                        catch(e) { invCheckRes = await sql.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guild.id, itemId]).catch(()=>({rows:[]})); }
+                        
+                        const currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity) : 0;
+                        if (currQty + qty > MAX_FARM_LIMIT) {
+                            return submit.reply({ content: `🚫 **مخزنك ممتلئ!**\nالحد الأقصى هو ${MAX_FARM_LIMIT}. (تمتلك حالياً: ${currQty})`, flags: [MessageFlags.Ephemeral] });
+                        }
+                    }
+
                     if (shopState.currentCategory === 'animals') {
                         let userRowsRes;
                         try { userRowsRes = await sql.query(`SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]); }
@@ -384,7 +404,7 @@ async function handleShopInteraction(i, client, sql, user, guild, shopState, get
                         const requiredSize = (itemData.size || 1) * qty;
                         
                         if (Number(currentCap) + Number(requiredSize) > Number(currentMax)) {
-                            return submit.reply({ content: `🚫 لا توجد مساحة كافية! المساحة المطلوبة: ${requiredSize}, المتاحة: ${currentMax - currentCap}`, flags: [MessageFlags.Ephemeral] });
+                            return submit.reply({ content: `🚫 لا توجد مساحة كافية في الحظيرة! المساحة المطلوبة: ${requiredSize}, المتاحة: ${currentMax - currentCap}`, flags: [MessageFlags.Ephemeral] });
                         }
                     }
 
@@ -401,11 +421,19 @@ async function handleShopInteraction(i, client, sql, user, guild, shopState, get
                         try { await sql.query(`INSERT INTO user_farm ("guildID", "userID", "animalID", "quantity", "purchaseTimestamp", "lastFedTimestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, user.id, itemId, qty, Date.now(), Date.now()]); }
                         catch(e) { await sql.query(`INSERT INTO user_farm (guildid, userid, animalid, quantity, purchasetimestamp, lastfedtimestamp) VALUES ($1, $2, $3, $4, $5, $6)`, [guild.id, user.id, itemId, qty, Date.now(), Date.now()]).catch(()=>{}); }
                     } else {
-                        try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $5`, [guild.id, user.id, itemId, qty, qty]); }
-                        catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = COALESCE(quantity, 0) + $5`, [guild.id, user.id, itemId, qty, qty]).catch(()=>{}); }
+                        // 🔥 تحديث السعة بشكل سليم باستخدام LEAST لضمان الجدار الناري 1000 🔥
+                        try { await sql.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT("guildID", "userID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + $5, $6)`, [guild.id, user.id, itemId, qty, qty, MAX_FARM_LIMIT]); }
+                        catch(e) { await sql.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT(guildid, userid, itemid) DO UPDATE SET quantity = LEAST(COALESCE(quantity, 0) + $5, $6)`, [guild.id, user.id, itemId, qty, qty, MAX_FARM_LIMIT]).catch(()=>{}); }
                     }
                     
-                    await submit.reply({ content: `✅ تم شراء **${qty}x ${itemData.name}** بنجاح!`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                    // 🔥 رد علني بدون Ephemeral لعملية الشراء الناجحة 🔥
+                    const successEmbed = new EmbedBuilder()
+                        .setTitle('✅ عملية شراء زراعية')
+                        .setColor(Colors.Green)
+                        .setDescription(`📦 **الكمية:** ${qty.toLocaleString()}x ${itemData.name}\n💵 **التكلفة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
+                        .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() });
+
+                    await submit.reply({ content: `<@${user.id}>`, embeds: [successEmbed] }).catch(()=>{});
 
                 } else { 
                     if (shopState.currentCategory === 'animals') {
@@ -463,7 +491,14 @@ async function handleShopInteraction(i, client, sql, user, guild, shopState, get
                         userData.mora = String(Number(userData.mora || 0) + totalRefund);
                         if (typeof client.setLevel === 'function') await client.setLevel(userData);
                         
-                        await submit.reply({ content: `✅ تم بيع **${soldCount}x ${itemData.name}** بـ **${totalRefund.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                        // 🔥 رد علني للبيع 🔥
+                        const sellEmbed = new EmbedBuilder()
+                            .setTitle('📈 عملية بيع زراعية')
+                            .setColor(Colors.Blue)
+                            .setDescription(`📦 **الكمية المباعة:** ${soldCount.toLocaleString()}x ${itemData.name}\n💰 **المبلغ المسترد:** ${totalRefund.toLocaleString()} ${EMOJI_MORA}`)
+                            .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() });
+
+                        await submit.reply({ content: `<@${user.id}>`, embeds: [sellEmbed] }).catch(()=>{});
 
                     } else {
                         let invItemRes;
@@ -490,7 +525,14 @@ async function handleShopInteraction(i, client, sql, user, guild, shopState, get
                             catch(e) { await sql.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [qty, user.id, guild.id, itemId]).catch(()=>{}); }
                         }
 
-                        await submit.reply({ content: `✅ تم بيع **${qty}x ${itemData.name}** (بنصف السعر) وكسبت **${totalGain.toLocaleString()}** مورا.`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                        // 🔥 رد علني للبيع 🔥
+                        const sellEmbed = new EmbedBuilder()
+                            .setTitle('📈 عملية بيع زراعية')
+                            .setColor(Colors.Blue)
+                            .setDescription(`📦 **الكمية المباعة:** ${qty.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`)
+                            .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() });
+
+                        await submit.reply({ content: `<@${user.id}>`, embeds: [sellEmbed] }).catch(()=>{});
                     }
                 }
 
