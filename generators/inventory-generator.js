@@ -10,15 +10,18 @@ let itemLore = {};
 try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
-const skillsConfig = require('../json/skills-config.json');
-const potionItems = require('../json/potions.json');
+let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
 
-let fishData = [], farmItems = [];
-try { fishData = require('../json/fish.json'); } catch(e) {}
-try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
+let fishData = { fishItems: [], baits: [] };
+try { fishData = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e) {}
+
+let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e) {}
+let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e) {}
+let potionItems = []; try { potionItems = require('../json/potions.json'); } catch(e) {}
+let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e) {}
 
 const imageCache = new Map();
-const ITEM_DICTIONARY = new Map();
+const ITEM_DICTIONARY = new Map(); // 🔥 قاموس تسريع الرسم 🔥
 
 const RARITY_COLORS = {
     'Common': '#A8B8D0',      
@@ -44,47 +47,64 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
+// بناء القاموس لمرة واحدة لتسريع استدعاء الصور
 function buildItemDictionary() {
+    // المواد (Materials)
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             for (const mat of race.materials) {
-                ITEM_DICTIONARY.set(mat.id, { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}` });
+                ITEM_DICTIONARY.set(mat.id, { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}` });
             }
         }
     }
+    // الكتب (Books)
     if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
             for (const book of cat.books) {
-                ITEM_DICTIONARY.set(book.id, { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}` });
+                ITEM_DICTIONARY.set(book.id, { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}` });
             }
         }
     }
+    // الأسماك (Fish)
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
-            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null });
-            ITEM_DICTIONARY.set(fish.name, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null });
+            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: fish.image || null });
         }
     }
+    // الطعوم (Baits)
     if (fishData && fishData.baits) {
         for (const bait of fishData.baits) {
-            ITEM_DICTIONARY.set(bait.id, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null });
-            ITEM_DICTIONARY.set(bait.name, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null });
+            ITEM_DICTIONARY.set(bait.id, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: bait.image || `images/fish/baits/${bait.id}.png` });
         }
     }
-    if (farmItems && farmItems.length > 0) {
-        for (const farmObj of farmItems) {
-            ITEM_DICTIONARY.set(farmObj.id, { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null });
-            ITEM_DICTIONARY.set(farmObj.name, { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null });
+    // بذور المزرعة (Seeds)
+    if (farmSeeds && farmSeeds.length > 0) {
+        for (const seed of farmSeeds) {
+            ITEM_DICTIONARY.set(seed.id, { name: seed.name, emoji: seed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: seed.image || `images/farm/seeds/${seed.id}.png` });
         }
     }
+    // أعلاف المزرعة (Feeds)
+    if (farmFeeds && farmFeeds.length > 0) {
+        for (const feed of farmFeeds) {
+            ITEM_DICTIONARY.set(feed.id, { name: feed.name, emoji: feed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: feed.image || `images/feeds/${feed.id}.png` });
+        }
+    }
+    // الجرعات (Potions)
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
-            ITEM_DICTIONARY.set(pot.id, { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null });
+            ITEM_DICTIONARY.set(pot.id, { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: pot.image || `images/potions/${pot.id}.png` });
+        }
+    }
+    // السوق (Market)
+    if (marketItems && marketItems.length > 0) {
+        for (const market of marketItems) {
+            ITEM_DICTIONARY.set(market.id, { name: market.name, emoji: '📈', category: 'others', rarity: 'Epic', imgPath: market.image || `images/market/${market.id.toLowerCase()}.png` });
         }
     }
 }
 
+// تنفيذ فوراً عند تحميل الملف
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
@@ -103,11 +123,13 @@ async function getCachedImage(imageUrl) {
         imageCache.set(encodedUrl, img);
         return img;
     } catch (e) {
+        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
         return null;
     }
 }
 
 function resolveItemInfo(itemId) {
+    // جلب سريع جداً بدلاً من الـ IF المتتالية
     let baseInfo = ITEM_DICTIONARY.get(itemId);
 
     if (!baseInfo) {
@@ -115,7 +137,7 @@ function resolveItemInfo(itemId) {
     }
 
     baseInfo.description = itemLore[itemId] || null;
-    return baseInfo;
+    return { ...baseInfo };
 }
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
