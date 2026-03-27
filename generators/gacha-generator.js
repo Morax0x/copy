@@ -23,11 +23,11 @@ async function getCachedImage(imageUrl) {
 }
 
 const RARITY_INFO = {
-    'Common': { text: 'عـادي', color: '#B0BEC5', stars: '★' },
-    'Uncommon': { text: 'غـيـر شـائـع', color: '#2ECC71', stars: '★★' },
-    'Rare': { text: 'نــادر', color: '#3498DB', stars: '★★★' },
-    'Epic': { text: 'مـلـحـمـي', color: '#9B59B6', stars: '★★★★' },
-    'Legendary': { text: 'أسـطـوري', color: '#F1C40F', stars: '★★★★★' }
+    'Common': { text: 'عادي', color: '#B0BEC5', stars: '★' },
+    'Uncommon': { text: 'غير شائع', color: '#2ECC71', stars: '★★' },
+    'Rare': { text: 'نادر', color: '#3498DB', stars: '★★★' },
+    'Epic': { text: 'ملحمي', color: '#9B59B6', stars: '★★★★' },
+    'Legendary': { text: 'اسطوري', color: '#F1C40F', stars: '★★★★★' }
 };
 
 function roundRect(ctx, x, y, width, height, radius) {
@@ -43,6 +43,16 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px "Arial"`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px "Arial"`;
+    }
+    ctx.fillText(text, x, y);
+}
+
+function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
     while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
@@ -115,8 +125,7 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
     let dName = userObj.displayName || userObj.username;
-    ctx.font = 'bold 28px "Bein"';
-    ctx.fillText(dName, avatarX + 55, avatarY);
+    drawAutoScaledArabicText(ctx, dName, avatarX + 55, avatarY, 200, 28, 14);
     ctx.shadowBlur = 0;
 
     const boxW = 200;
@@ -125,32 +134,34 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     const chestX = moraX - boxW - 20;
     const boxY = (headerH - boxH) / 2;
 
+    // رسم مربع الصناديق
     ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
     ctx.beginPath(); roundRect(ctx, chestX, boxY, boxW, boxH, 12); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(185, 104, 255, 0.6)'; ctx.stroke();
     
     ctx.textAlign = 'right';
     ctx.fillStyle = '#E0E0E0';
-    ctx.font = 'bold 24px "Arial"';
-    ctx.fillText(chestCount.toString(), chestX + boxW - 50, boxY + boxH/2 + 2);
+    // 🔥 ضبط مقاس رقم الصناديق عشان ما يطلع برا المربع
+    drawAutoScaledText(ctx, chestCount.toString(), chestX + boxW - 45, boxY + boxH/2 + 2, boxW - 120, 24, 12);
     ctx.font = '24px "Arial"';
-    ctx.fillText('📦', chestX + boxW - 15, boxY + boxH/2 + 2);
+    ctx.fillText('📦', chestX + boxW - 10, boxY + boxH/2 + 2);
     
     ctx.textAlign = 'left';
     ctx.fillStyle = '#B968FF';
     ctx.font = 'bold 18px "Bein"';
-    ctx.fillText("صناديقك", chestX + 20, boxY + boxH/2 + 2);
+    ctx.fillText("صناديقك", chestX + 15, boxY + boxH/2 + 2);
 
+    // رسم مربع المورا
     ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
     ctx.beginPath(); roundRect(ctx, moraX, boxY, boxW, boxH, 12); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; ctx.stroke();
     
     ctx.textAlign = 'right';
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 24px "Arial"';
-    ctx.fillText(moraBalance.toLocaleString(), moraX + boxW - 50, boxY + boxH/2 + 2);
+    // 🔥 ضبط مقاس المورا عشان لو اللاعب غني ما يطلع برا المربع
+    drawAutoScaledText(ctx, moraBalance.toLocaleString(), moraX + boxW - 45, boxY + boxH/2 + 2, boxW - 70, 24, 12);
     ctx.font = '24px "Arial"';
-    ctx.fillText('🪙', moraX + boxW - 15, boxY + boxH/2 + 2);
+    ctx.fillText('🪙', moraX + boxW - 10, boxY + boxH/2 + 2);
 
     const bottomGrad = ctx.createLinearGradient(0, height - 220, 0, height);
     bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
@@ -171,18 +182,20 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein"';
-    ctx.fillText("10 صناديق = 10,000 🪙", width/2 - 130, pricePanelY + 30);
+    // 🔥 تعديل أسعار الشراء بالعربي مثل ما طلبت
+    ctx.fillText("10 صناديق = 10K 🪙", width/2 - 130, pricePanelY + 35);
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("1 صندوق = 1,000 🪙", width/2 + 130, pricePanelY + 30);
+    ctx.fillText("1 صندوق = 1K 🪙", width/2 + 130, pricePanelY + 35);
 
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 26px "Bein"';
     ctx.shadowColor = '#B968FF'; 
     ctx.shadowBlur = 15;
+    // مسح التشكيل والنقاط تم من مصفوفة الجمل فوق
     ctx.fillText(flavorText, width/2, height - 45);
     ctx.shadowBlur = 0;
 
@@ -266,20 +279,28 @@ async function generateGachaCard(item, rarity) {
     ctx.fillText(rInfo.stars, width / 2, height - 200);
     ctx.shadowBlur = 0;
 
-    ctx.font = 'bold 75px "Bein"';
+    // 🔥 تصغير الخط إذا كان الاسم طويل כדי لا يتجاوز الشاشة
     ctx.lineWidth = 10;
     ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
-    ctx.strokeText(item.name, width / 2, height - 100);
     const textGrad = ctx.createLinearGradient(0, height - 180, 0, height - 100);
     textGrad.addColorStop(0, '#FFFFFF');
     textGrad.addColorStop(1, '#D0D0D0');
+    
+    let fontSize = 75;
+    ctx.font = `bold ${fontSize}px "Bein"`;
+    while (ctx.measureText(item.name).width > width - 40 && fontSize > 20) {
+        fontSize--;
+        ctx.font = `bold ${fontSize}px "Bein"`;
+    }
+    
+    ctx.strokeText(item.name, width / 2, height - 100);
     ctx.fillStyle = textGrad;
     ctx.fillText(item.name, width / 2, height - 100);
 
-    let typeText = "أداة غامضة";
+    let typeText = "اداة غامضة";
     if (item.type === 'material') typeText = "مورد تصنيع عتيق";
     if (item.type === 'book') typeText = "مخطوطة سحرية";
-    if (item.type === 'skill') typeText = "مـهـارة خـارقـة";
+    if (item.type === 'skill') typeText = "مهارة خارقة";
 
     ctx.font = 'bold 32px "Bein"';
     ctx.fillStyle = rInfo.color; 
