@@ -14,21 +14,21 @@ const PULL_PRICE = 1000;
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 const FLAVOR_TEXTS = [
-    "✨ قدّم المورا للسماء، ودع النجوم ترسم لك مساراً جديداً.",
-    "✨ بين يديك مفتاح الأبعاد.. اكسر الختم لترى أي أسطورة ستستجيب.",
-    "✨ النجوم تنتظر من يوقظها.. ادفع المورا وابدأ طقوس الاستدعاء.",
-    "✨ مقابل المورا، قد تبتسم لك الأقدار أو تدير لك ظهرها.. جرب حظك!",
-    "⚔️ اكسر قيود الزمن، واستحضر قوى الأجداد المنسية إلى قبضتك!",
-    "⚔️ خلف هذا الختم ترقد كنوز الإمبراطورية.. افتحه واصنع مجدك.",
-    "⚔️ أيقظ التحف النادرة من سباتها الأبدي.. المورا هي الثمن.",
-    "⚔️ طريق العظمة محفوف بالمخاطر والمكافآت.. اكشف غنيمتك.",
-    "🔮 همسات الأقدار تناديك.. استخدم المورا لفك طلاسم الصندوق.",
-    "🔮 تذكرة عبورك لعالم الأسرار.. اكشف ما يختبئ في الظلام.",
-    "🔮 بوابات الحظ لا تُفتح للجبناء.. ألقِ المورا وانتظر المعجزة.",
-    "🌌 قرابين المورا، هي مفتاحك للأسطورة.",
-    "🌌 اكسر الختم، واقطف نجمتك الساطعة!",
-    "🌌 ضحِّ بالمورا.. وعانق المجهول.",
-    "🌌 حظوظك مكتوبة بين النجوم.. افتح الصندوق لتقرأها."
+    "قدم المورا للسماء ودع النجوم ترسم لك مسارا جديدا",
+    "بين يديك مفتاح الابعاد اكسر الختم لترى اي اسطورة ستستجيب",
+    "النجوم تنتظر من يوقظها ادفع المورا وابدا طقوس الاستدعاء",
+    "مقابل المورا قد تبتسم لك الاقدار او تدير لك ظهرها جرب حظك",
+    "اكسر قيود الزمن واستحضر قوى الاجداد المنسية الى قبضتك",
+    "خلف هذا الختم ترقد كنوز الامبراطورية افتحه واصنع مجدك",
+    "ايقظ التحف النادرة من سباتها الابدي المورا هي الثمن",
+    "طريق العظمة محفوف بالمخاطر والمكافات اكشف غنيمتك",
+    "همسات الاقدار تناديك استخدم المورا لفك طلاسم الصندوق",
+    "تذكرة عبورك لعالم الاسرار اكشف ما يختبئ في الظلام",
+    "بوابات الحظ لا تفتح للجبناء الق المورا وانتظر المعجزة",
+    "قرابين المورا هي مفتاحك للاسطورة",
+    "اكسر الختم واقطف نجمتك الساطعة",
+    "ضح بالمورا وعانق المجهول",
+    "حظوظك مكتوبة بين النجوم افتح الصندوق لتقراها"
 ];
 
 const ID_TO_IMAGE = {
@@ -54,7 +54,7 @@ if (upgradeMats.weapon_materials) {
         race.materials.forEach(m => {
             const raceFolder = race.race.toLowerCase().replace(' ', '_');
             const imgName = ID_TO_IMAGE[m.id] || `${m.id}.png`;
-            LOOT_POOL[m.rarity].push({ ...m, type: 'material', race: race.race, imgPath: `images/materials/${raceFolder}/${imgName}` });
+            LOOT_POOL[m.rarity].push({ ...m, type: 'material', race: race.race, imgPath: `${R2_URL}/images/materials/${raceFolder}/${imgName}` });
         });
     });
 }
@@ -64,7 +64,7 @@ if (upgradeMats.skill_books) {
         cat.books.forEach(b => {
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
             const imgName = ID_TO_IMAGE[b.id] || `${b.id}.png`;
-            LOOT_POOL[b.rarity].push({ ...b, type: 'book', category: cat.category, imgPath: `images/materials/${typeFolder}/${imgName}` });
+            LOOT_POOL[b.rarity].push({ ...b, type: 'book', category: cat.category, imgPath: `${R2_URL}/images/materials/${typeFolder}/${imgName}` });
         });
     });
 }
@@ -133,7 +133,7 @@ module.exports = {
         if (isSlash) await interactionOrMessage.deferReply();
         const reply = async (payload) => isSlash ? interactionOrMessage.editReply(payload) : interactionOrMessage.reply(payload);
 
-        if (!db) return reply({ content: "❌ خطأ في قاعدة البيانات" }).catch(()=>{});
+        if (!db) return reply({ content: "خطأ في قاعدة البيانات" }).catch(()=>{});
         await ensurePityTable(db);
 
         let userMora = 0;
@@ -143,17 +143,17 @@ module.exports = {
         let userRace = null;
 
         const fetchUserData = async () => {
-            const lvlRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
+            const [lvlRes, invRes, skillRes, wepRes] = await Promise.all([
+                db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId])),
+                db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId])),
+                db.query(`SELECT "skillID" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT skillid FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId])),
+                db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]))
+            ]);
+
             userMora = lvlRes?.rows[0] ? Number(lvlRes.rows[0].mora) : 0;
-            
-            const invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
             chestCount = invRes?.rows[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
-
-            const skillRes = await db.query(`SELECT "skillID" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT skillid FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
-            if(skillRes?.rows) ownedSkills = skillRes.rows.map(r => r.skillID || r.skillid);
-
-            const wepRes = await db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
-            if(wepRes?.rows[0]) userRace = wepRes.rows[0].raceName || wepRes.rows[0].racename;
+            if (skillRes?.rows) ownedSkills = skillRes.rows.map(r => r.skillID || r.skillid);
+            if (wepRes?.rows[0]) userRace = wepRes.rows[0].raceName || wepRes.rows[0].racename;
         };
 
         try {
@@ -165,13 +165,13 @@ module.exports = {
             } else {
                 await db.query(`INSERT INTO user_gacha_pity ("userID", "guildID") VALUES ($1, $2)`, [user.id, guildId]).catch(() => db.query(`INSERT INTO user_gacha_pity (userid, guildid) VALUES ($1, $2)`, [user.id, guildId]).catch(()=>{}));
             }
-        } catch (e) { return reply({ content: "❌ خطأ في قراءة البيانات" }).catch(()=>{}); }
+        } catch (e) { return reply({ content: "خطأ في قراءة البيانات" }).catch(()=>{}); }
 
         const getPullButtons = (moraBalance) => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1').setEmoji('📦').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
-                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10').setEmoji('🌟').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
-                new ButtonBuilder().setCustomId('gacha_inventory').setLabel('صناديقي').setEmoji('🎒').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
+                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
+                new ButtonBuilder().setCustomId('gacha_inventory').setLabel('صناديقي').setStyle(ButtonStyle.Secondary)
             );
         };
 
@@ -198,7 +198,7 @@ module.exports = {
                     const invRes = await db.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
                     if (invRes?.rows[0]) currentChests = Number(invRes.rows[0].quantity);
                 } catch(e) {}
-                return i.reply({ content: `🎒 **صناديقك المتاحة:** \`${currentChests}\` صندوق\n*(قريباً سنضيف ميزة جمع الصناديق من المهام والزعماء!)*`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+                return i.reply({ content: `صناديقك المتاحة: ${currentChests} صندوق\nقريبا سنضيف ميزة جمع الصناديق من المهام والزعماء`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
             }
 
             try { await i.deferUpdate(); } catch (err) { return; }
@@ -206,7 +206,7 @@ module.exports = {
             await fetchUserData();
             const isTen = i.customId === 'gacha_10';
             const cost = isTen ? PULL_PRICE * 10 : PULL_PRICE;
-            if (userMora < cost) return i.followUp({ content: "❌ لا تملك المورا الكافية!", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+            if (userMora < cost) return i.followUp({ content: "لا تملك المورا الكافية", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
             await i.editReply({ components: [] }).catch(()=>{});
 
@@ -222,6 +222,7 @@ module.exports = {
             let highestRarityVal = 0;
             const rarityOrder = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
             let bestResult = null;
+            const insertPromises = [];
 
             await db.query('BEGIN').catch(()=>{});
             for (let k = 0; k < (isTen ? 10 : 1); k++) {
@@ -234,12 +235,13 @@ module.exports = {
 
                 if (item.type === 'skill') {
                     ownedSkills.push(item.id);
-                    await db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(()=>{}));
+                    insertPromises.push(db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(()=>{})));
                 } else {
-                    await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_inventory (userid, guildid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(userid, guildid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [user.id, guildId, item.id]).catch(()=>{}));
+                    insertPromises.push(db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_inventory (userid, guildid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(userid, guildid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [user.id, guildId, item.id]).catch(()=>{})));
                 }
                 results.push({ item, rarity });
             }
+            await Promise.all(insertPromises);
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
@@ -252,14 +254,8 @@ module.exports = {
             await new Promise(r => setTimeout(r, 2000));
 
             const buildSilentSummary = async () => {
-                await fetchUserData(); // تحديث المورا والصناديق بعد الشراء
+                await fetchUserData(); 
                 let files = [];
-                if (generateGachaCard && bestResult && bestResult.item.imgPath) {
-                    try {
-                        const buffer = await generateGachaCard(bestResult.item, bestResult.rarity);
-                        if (buffer) files.push(new AttachmentBuilder(buffer, { name: 'gacha_best.png' }));
-                    } catch(e){}
-                }
                 const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
                 if (generateGachaHub) {
                     try {
@@ -285,8 +281,8 @@ module.exports = {
                     }
 
                     const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId('gacha_next').setLabel('التالي ➡️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId('gacha_skip').setLabel('تخطي ⏭️').setStyle(ButtonStyle.Secondary)
+                        new ButtonBuilder().setCustomId('gacha_next').setLabel('التالي').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('gacha_skip').setLabel('تخطي').setStyle(ButtonStyle.Secondary)
                     );
                     
                     return { components: [row], files };
