@@ -11,24 +11,29 @@ let itemLore = {};
 try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
-let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
-
-let fishData = { fishItems: [], baits: [], rods: [], boats: [] };
-let rodsConfig = [], boatsConfig = [];
-try { 
-    const fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); 
-    fishData = fishJson;
-    rodsConfig = fishJson.rods || [];
-    boatsConfig = fishJson.boats || [];
-} catch(e) {}
-
-let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e) {}
-let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e) {}
-let potionItems = []; try { potionItems = require('../json/potions.json'); } catch(e) {}
-let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e) {}
 
 const imageCache = new Map();
-const ITEM_DICTIONARY = new Map();
+
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) {
+        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+    }
+    
+    const encodedUrl = encodeURI(finalUrl);
+
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
+    try {
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
+        return img;
+    } catch (e) {
+        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
+        return null;
+    }
+}
 
 const RARITY_COLORS = {
     'Common': '#A8B8D0',      
@@ -54,99 +59,60 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-function addItemToDict(id, name, emoji, category, rarity, imgPath) {
-    if (!id) return;
-    const cleanId = String(id).trim();
-    const data = {
-        name: name || cleanId,
-        emoji: emoji || '📦',
-        category: category || 'أخرى',
-        rarity: rarity || 'Common',
-        imgPath: imgPath ? `${R2_URL}/${imgPath.replace(/^\/+/, '')}` : null
-    };
-    ITEM_DICTIONARY.set(cleanId, data);
-    ITEM_DICTIONARY.set(cleanId.toLowerCase(), data);
-}
+function resolveItemInfo(itemId) {
+    let desc = itemLore[itemId] || null;
 
-function buildItemDictionary() {
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
-            for (const mat of race.materials) {
-                addItemToDict(mat.id, mat.name, mat.emoji, 'موارد', mat.rarity, `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}`);
-            }
+            const mat = race.materials.find(m => m.id === itemId);
+            if (mat) return { name: mat.name, emoji: mat.emoji, category: 'موارد', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}`, description: desc };
         }
     }
+
     if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
+            const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            for (const book of cat.books) {
-                addItemToDict(book.id, book.name, book.emoji, 'موارد', book.rarity, `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}`);
-            }
+            if (book) return { name: book.name, emoji: book.emoji, category: 'موارد', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}`, description: desc };
         }
     }
-    if (fishData && fishData.fishItems) {
-        for (const fish of fishData.fishItems) {
-            addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', fish.image || `images/fish/${fish.id}.png`);
-        }
+
+    let fishJson;
+    try { fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e){}
+    if (fishJson && fishJson.fishItems) {
+        const fish = fishJson.fishItems.find(f => f.id === itemId || f.name === itemId);
+        if (fish) return { name: fish.name, emoji: fish.emoji || '🐟', category: 'صيد', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: `${R2_URL}/images/fish/${fish.id}.png`, description: desc };
     }
-    if (fishData && fishData.baits) {
-        for (const bait of fishData.baits) {
-            addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', bait.image || `images/fish/baits/${bait.id}.png`);
-        }
+    if (fishJson && fishJson.baits) {
+        const bait = fishJson.baits.find(f => f.id === itemId || f.name === itemId);
+        if (bait) return { name: bait.name, emoji: bait.emoji || '🪱', category: 'صيد', rarity: 'Common', imgPath: `${R2_URL}/images/fish/baits/${bait.id}.png`, description: desc };
     }
+
+    let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e){}
     if (farmSeeds && farmSeeds.length > 0) {
-        for (const seed of farmSeeds) {
-            addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', seed.image || `images/farm/seeds/${seed.id}.png`);
-        }
+        const seed = farmSeeds.find(s => s.id === itemId || s.name === itemId);
+        if (seed) return { name: seed.name, emoji: seed.emoji || '🌾', category: 'مزرعة', rarity: 'Common', imgPath: `${R2_URL}/images/farm/seeds/${seed.id}.png`, description: desc };
     }
+
+    let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e){}
     if (farmFeeds && farmFeeds.length > 0) {
-        for (const feed of farmFeeds) {
-            addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', feed.image || `images/feeds/${feed.id}.png`);
-        }
+        const feed = farmFeeds.find(f => f.id === itemId || f.name === itemId);
+        if (feed) return { name: feed.name, emoji: feed.emoji || '🌾', category: 'مزرعة', rarity: 'Common', imgPath: `${R2_URL}/images/feeds/${feed.id}.png`, description: desc };
     }
+
+    let potionItems = []; try { potionItems = require('../json/potions.json'); } catch(e){}
     if (potionItems && potionItems.length > 0) {
-        for (const pot of potionItems) {
-            addItemToDict(pot.id, pot.name, pot.emoji, 'جرعات', 'Rare', pot.image || `images/potions/${pot.id}.png`);
-        }
+        const pot = potionItems.find(p => p.id === itemId || p.name === itemId);
+        if (pot) return { name: pot.name, emoji: pot.emoji || '🧪', category: 'جرعات', rarity: 'Rare', imgPath: `${R2_URL}/images/potions/${pot.id}.png`, description: desc };
     }
+
+    let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e){}
     if (marketItems && marketItems.length > 0) {
-        for (const market of marketItems) {
-            addItemToDict(market.id, market.name, '📈', 'سوق', 'Epic', market.image || `images/market/${String(market.id).toLowerCase()}.png`);
-        }
-    }
-}
-
-buildItemDictionary();
-
-async function getCachedImage(imageUrl) {
-    if (!imageUrl) return null;
-    let finalUrl = imageUrl;
-    if (!finalUrl.startsWith('http')) {
-        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/').replace(/^\/+/, '')}`;
-    }
-    const encodedUrl = encodeURI(finalUrl);
-
-    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
-    try {
-        const img = await loadImage(encodedUrl);
-        imageCache.set(encodedUrl, img);
-        return img;
-    } catch (e) {
-        return null;
-    }
-}
-
-function resolveItemInfo(itemId) {
-    if (!itemId) return { name: 'عنصر مجهول', emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null };
-    const cleanId = String(itemId).trim();
-    let baseInfo = ITEM_DICTIONARY.get(cleanId) || ITEM_DICTIONARY.get(cleanId.toLowerCase());
-
-    if (!baseInfo) {
-        baseInfo = { name: cleanId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null };
+        const market = marketItems.find(m => m.id === itemId || m.name === itemId);
+        if (market) return { name: market.name, emoji: '📈', category: 'سوق', rarity: 'Epic', imgPath: `${R2_URL}/images/market/${String(market.id).toLowerCase()}.png`, description: desc };
     }
 
-    baseInfo.description = itemLore[cleanId] || itemLore[cleanId.toLowerCase()] || null;
-    return { ...baseInfo };
+    return { name: itemId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null, description: desc };
 }
 
 async function getInventoryCategories(db, userId, guildId) {
@@ -190,6 +156,10 @@ async function getInventoryCategories(db, userId, guildId) {
         if (userData) {
             const rodLvl = Number(userData.rodLevel || userData.rodlevel) || 1;
             const boatLvl = Number(userData.boatLevel || userData.boatlevel) || 1;
+            
+            let fishJson; try { fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e){}
+            const rodsConfig = fishJson?.rods || [];
+            const boatsConfig = fishJson?.boats || [];
 
             for (let i = 1; i <= rodLvl; i++) {
                 const rod = rodsConfig.find(r => r.level === i);
@@ -518,6 +488,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
+// 🔥 تم التعديل الذكي لدعم الداتا بيز مباشرة وجلب بيانات الرتبة، العرق، السلاح تلقائياً
 async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
@@ -552,8 +523,12 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
         } catch(e) {}
 
         try {
-            const wRes = await db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
-            finalWeapon = wRes.rows[0]?.raceName || "قبضة اليد";
+            const wRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
+            if (wRes.rows.length > 0) {
+                finalWeapon = `${wRes.rows[0].raceName} (Lv.${wRes.rows[0].weaponLevel})`;
+            } else {
+                finalWeapon = "قبضة اليد";
+            }
         } catch(e) {}
 
     } else {
@@ -564,9 +539,9 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
         finalRace = String(arg5).trim();
         finalWeapon = String(arg6).trim();
 
-        if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank || finalRank === 'undefined') finalRank = 'D';
-        if (/عرق/.test(finalRace) || !finalRace || finalRace === 'undefined') finalRace = 'مواطن';
-        if (/سلاح/.test(finalWeapon) || !finalWeapon || finalWeapon === 'undefined') finalWeapon = 'قبضة اليد';
+        if (finalRank.includes('رتبة') || !finalRank || finalRank === 'undefined') finalRank = 'D';
+        if (finalRace.includes('عرق') || !finalRace || finalRace === 'undefined') finalRace = 'مواطن';
+        if (finalWeapon.includes('سلاح') || !finalWeapon || finalWeapon === 'undefined') finalWeapon = 'قبضة اليد';
     }
 
     const width = 1100;
