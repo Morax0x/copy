@@ -7,9 +7,7 @@ try {
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 let itemLore = {};
-try {
-    itemLore = require('../json/item-descriptions.json');
-} catch (e) {}
+try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
 const skillsConfig = require('../json/skills-config.json');
@@ -20,27 +18,7 @@ try { fishData = require('../json/fish.json'); } catch(e) {}
 try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 const imageCache = new Map();
-
-async function getCachedImage(imageUrl) {
-    if (!imageUrl) return null;
-    
-    let finalUrl = imageUrl;
-    if (!finalUrl.startsWith('http')) {
-        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/')}`;
-    }
-    
-    const encodedUrl = encodeURI(finalUrl);
-
-    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
-    try {
-        const img = await loadImage(encodedUrl);
-        imageCache.set(encodedUrl, img);
-        return img;
-    } catch (e) {
-        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
-        return null;
-    }
-}
+const ITEM_DICTIONARY = new Map();
 
 const RARITY_COLORS = {
     'Common': '#A8B8D0',      
@@ -66,51 +44,77 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-function resolveItemInfo(itemId) {
-    let baseInfo = null;
-
+function buildItemDictionary() {
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
-            const mat = race.materials.find(m => m.id === itemId);
-            if (mat) {
-                baseInfo = { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-                break;
+            for (const mat of race.materials) {
+                ITEM_DICTIONARY.set(mat.id, { name: mat.name, emoji: mat.emoji, category: 'materials', rarity: mat.rarity, imgPath: `${R2_URL}/images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}` });
             }
         }
     }
-    if (!baseInfo && upgradeMats && upgradeMats.skill_books) {
+    if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
-            const book = cat.books.find(b => b.id === itemId);
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            if (book) {
-                baseInfo = { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[itemId] || itemId + '.png'}` };
-                break;
+            for (const book of cat.books) {
+                ITEM_DICTIONARY.set(book.id, { name: book.name, emoji: book.emoji, category: 'materials', rarity: book.rarity, imgPath: `${R2_URL}/images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}` });
             }
         }
     }
-    if (!baseInfo && fishData && fishData.fishItems) {
-        const fish = fishData.fishItems.find(f => f.id === itemId || f.name === itemId);
-        if (fish) baseInfo = { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null };
+    if (fishData && fishData.fishItems) {
+        for (const fish of fishData.fishItems) {
+            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null });
+            ITEM_DICTIONARY.set(fish.name, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: null });
+        }
     }
-    if (!baseInfo && fishData && fishData.baits) {
-        const bait = fishData.baits.find(f => f.id === itemId || f.name === itemId);
-        if (bait) baseInfo = { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null };
+    if (fishData && fishData.baits) {
+        for (const bait of fishData.baits) {
+            ITEM_DICTIONARY.set(bait.id, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null });
+            ITEM_DICTIONARY.set(bait.name, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: null });
+        }
     }
-    if (!baseInfo && farmItems && farmItems.length > 0) {
-        const farmObj = farmItems.find(f => f.id === itemId || f.name === itemId);
-        if (farmObj) baseInfo = { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null };
+    if (farmItems && farmItems.length > 0) {
+        for (const farmObj of farmItems) {
+            ITEM_DICTIONARY.set(farmObj.id, { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null });
+            ITEM_DICTIONARY.set(farmObj.name, { name: farmObj.name, emoji: farmObj.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: null });
+        }
     }
-    if (!baseInfo && potionItems && potionItems.length > 0) {
-        const pot = potionItems.find(p => p.id === itemId);
-        if (pot) baseInfo = { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null };
+    if (potionItems && potionItems.length > 0) {
+        for (const pot of potionItems) {
+            ITEM_DICTIONARY.set(pot.id, { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: null });
+        }
     }
+}
+
+buildItemDictionary();
+
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) {
+        finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/')}`;
+    }
+    
+    const encodedUrl = encodeURI(finalUrl);
+
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
+    try {
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
+        return img;
+    } catch (e) {
+        return null;
+    }
+}
+
+function resolveItemInfo(itemId) {
+    let baseInfo = ITEM_DICTIONARY.get(itemId);
 
     if (!baseInfo) {
         baseInfo = { name: itemId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
     }
 
     baseInfo.description = itemLore[itemId] || null;
-    
     return baseInfo;
 }
 
@@ -292,7 +296,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.textBaseline = 'middle';
         ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
         ctx.shadowBlur = 0;
-        return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
+        return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
     }
 
     for (let i = 0; i < 15; i++) {
@@ -401,7 +405,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.fillText(qtyText, badgeX, badgeY + 1);
         }
     }
-    return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
+    return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
 async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName) {
@@ -523,7 +527,7 @@ async function generateMainHub(userObj, displayName, moraBalance, rankLetter, ra
         ctx.drawImage(bagImg, bagX - 225, bagY - 225, 450, 450); 
         ctx.shadowBlur = 0;
     }
-    return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
+    return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
 async function generateItemDetailsCard(userDisplayName, item) {
@@ -644,7 +648,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
         ctx.fillText(lines[j], textX - 20, descBoxY + 20 + (j * 40));
     }
 
-    return canvas.toBuffer('image/png', { compressionLevel: 3, filters: canvas.PNG_FILTER_NONE });
+    return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
 module.exports = { generateInventoryCard, generateMainHub, generateItemDetailsCard };
