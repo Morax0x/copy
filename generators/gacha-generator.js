@@ -1,307 +1,316 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Colors, MessageFlags, AttachmentBuilder } = require('discord.js');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const path = require('path');
 
-let generateGachaCard, generateGachaHub;
 try {
-    ({ generateGachaCard, generateGachaHub } = require('../../generators/gacha-generator.js'));
-} catch (e) {
-    generateGachaCard = null; generateGachaHub = null;
-}
+    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
+} catch (e) {}
 
-const skillsConfig = require('../../json/skills-config.json');
-const upgradeMats = require('../../json/upgrade-materials.json');
-
-const PULL_PRICE = 1000;
+const imageCache = new Map();
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
-const FLAVOR_TEXTS = [
-    "قدم المورا للسماء ودع النجوم ترسم لك مسارا جديدا",
-    "بين يديك مفتاح الابعاد اكسر الختم لترى اي اسطورة ستستجيب",
-    "النجوم تنتظر من يوقظها ادفع المورا وابدا طقوس الاستدعاء",
-    "مقابل المورا قد تبتسم لك الاقدار او تدير لك ظهرها جرب حظك",
-    "اكسر قيود الزمن واستحضر قوى الاجداد المنسية الى قبضتك",
-    "خلف هذا الختم ترقد كنوز الامبراطورية افتحه واصنع مجدك",
-    "ايقظ التحف النادرة من سباتها الابدي المورا هي الثمن",
-    "طريق العظمة محفوف بالمخاطر والمكافات اكشف غنيمتك",
-    "همسات الاقدار تناديك استخدم المورا لفك طلاسم الصندوق",
-    "تذكرة عبورك لعالم الاسرار اكشف ما يختبئ في الظلام",
-    "بوابات الحظ لا تفتح للجبناء الق المورا وانتظر المعجزة",
-    "قرابين المورا هي مفتاحك للاسطورة",
-    "اكسر الختم واقطف نجمتك الساطعة",
-    "ضح بالمورا وعانق المجهول",
-    "حظوظك مكتوبة بين النجوم افتح الصندوق لتقراها"
-];
+async function getCachedImage(imageUrl) {
+    if (!imageUrl) return null;
+    let finalUrl = imageUrl;
+    if (!finalUrl.startsWith('http')) finalUrl = `${R2_URL}/${finalUrl.replace(/\\/g, '/')}`;
+    const encodedUrl = encodeURI(finalUrl);
 
-const ID_TO_IMAGE = {
-    'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
-    'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
-    'mat_elf_1': 'elf_branch.png', 'mat_elf_2': 'elf_bark.png', 'mat_elf_3': 'elf_flower.png', 'mat_elf_4': 'elf_crystal.png', 'mat_elf_5': 'elf_tear.png',
-    'mat_darkelf_1': 'darkelf_obsidian.png', 'mat_darkelf_2': 'darkelf_glass.png', 'mat_darkelf_3': 'darkelf_crystal.png', 'mat_darkelf_4': 'darkelf_void.png', 'mat_darkelf_5': 'darkelf_ash.png',
-    'mat_seraphim_1': 'seraphim_feathe.png', 'mat_seraphim_2': 'seraphim_halo.png', 'mat_seraphim_3': 'seraphim_crystal.png', 'mat_seraphim_4': 'seraphim_core.png', 'mat_seraphim_5': 'seraphim_chalice.png',
-    'mat_demon_1': 'demon_ember.png', 'mat_demon_2': 'demon_horn.png', 'mat_demon_3': 'demon_crystal.png', 'mat_demon_4': 'demon_flame.png', 'mat_demon_5': 'demon_crown.png',
-    'mat_vampire_1': 'vampire_blood.png', 'mat_vampire_2': 'vampire_vial.png', 'mat_vampire_3': 'vampire_fang.png', 'mat_vampire_4': 'vampire_moon.png', 'mat_vampire_5': 'vampire_chalice.png',
-    'mat_spirit_1': 'spirit_dust.png', 'mat_spirit_2': 'spirit_remnant.png', 'mat_spirit_3': 'spirit_crystal.png', 'mat_spirit_4': 'spirit_core.png', 'mat_spirit_5': 'spirit_pulse.png',
-    'mat_hybrid_1': 'hybrid_claw.png', 'mat_hybrid_2': 'hybrid_fur.png', 'mat_hybrid_3': 'hybrid_bone.png', 'mat_hybrid_4': 'hybrid_crystal.png', 'mat_hybrid_5': 'hybrid_soul.png',
-    'mat_dwarf_1': 'dwarf_copper.png', 'mat_dwarf_2': 'dwarf_bronze.png', 'mat_dwarf_3': 'dwarf_mithril.png', 'mat_dwarf_4': 'dwarf_heart.png', 'mat_dwarf_5': 'dwarf_hammer.png',
-    'mat_ghoul_1': 'ghoul_bone.png', 'mat_ghoul_2': 'ghoul_remains.png', 'mat_ghoul_3': 'ghoul_skull.png', 'mat_ghoul_4': 'ghoul_crystal.png', 'mat_ghoul_5': 'ghoul_core.png',
-    'book_general_1': 'gen_book_tactic.png', 'book_general_2': 'gen_book_combat.png', 'book_general_3': 'gen_book_arts.png', 'book_general_4': 'gen_book_war.png', 'book_general_5': 'gen_book_wisdom.png',
-    'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
+    try {
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
+        return img;
+    } catch (e) { return null; }
+}
+
+const RARITY_INFO = {
+    'Common': { text: 'عادي', color: '#B0BEC5', stars: '★' },
+    'Uncommon': { text: 'شائع', color: '#2ECC71', stars: '★★' },
+    'Rare': { text: 'نادر', color: '#3498DB', stars: '★★★' },
+    'Epic': { text: 'ملحمي', color: '#9B59B6', stars: '★★★★' },
+    'Legendary': { text: 'اسطوري', color: '#F1C40F', stars: '★★★★★' }
 };
 
-const LOOT_POOL = { Common: [], Uncommon: [], Rare: [], Epic: [], Legendary: [] };
-
-if (upgradeMats.weapon_materials) {
-    upgradeMats.weapon_materials.forEach(race => {
-        race.materials.forEach(m => {
-            const raceFolder = race.race.toLowerCase().replace(' ', '_');
-            const imgName = ID_TO_IMAGE[m.id] || `${m.id}.png`;
-            LOOT_POOL[m.rarity].push({ ...m, type: 'material', race: race.race, imgPath: `${R2_URL}/images/materials/${raceFolder}/${imgName}` });
-        });
-    });
+function roundRect(ctx, x, y, width, height, radius) {
+    if (width < 2 * radius) radius = width / 2;
+    if (height < 2 * radius) radius = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    ctx.closePath();
 }
 
-if (upgradeMats.skill_books) {
-    upgradeMats.skill_books.forEach(cat => {
-        cat.books.forEach(b => {
-            const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
-            const imgName = ID_TO_IMAGE[b.id] || `${b.id}.png`;
-            LOOT_POOL[b.rarity].push({ ...b, type: 'book', category: cat.category, imgPath: `${R2_URL}/images/materials/${typeFolder}/${imgName}` });
-        });
-    });
+function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px "Arial"`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px "Arial"`;
+    }
+    ctx.fillText(text, x, y);
 }
 
-if (skillsConfig) {
-    skillsConfig.forEach(s => {
-        const isLegendary = s.id.startsWith('race_') || s.id === 'skill_gamble' || s.id === 'skill_dispel';
-        const rarity = isLegendary ? 'Legendary' : 'Epic';
-        LOOT_POOL[rarity].push({ ...s, type: 'skill', rarity: rarity, imgPath: null });
-    });
+function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px "Bein"`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px "Bein"`;
+    }
+    ctx.fillText(text, x, y);
 }
 
-async function ensurePityTable(db) {
-    await db.query(`CREATE TABLE IF NOT EXISTS user_gacha_pity ("userID" TEXT, "guildID" TEXT, "epic_pity" INTEGER DEFAULT 0, "legendary_pity" INTEGER DEFAULT 0, PRIMARY KEY ("userID", "guildID"))`).catch(()=>{});
-}
+async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0) {
+    const width = 1200;
+    const height = 675; 
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
 
-function performPull(pityData, userRace, ownedSkills) {
-    pityData.epic_pity++;
-    pityData.legendary_pity++;
-
-    let rarity = 'Common';
-    const rand = Math.random();
-
-    if (pityData.legendary_pity >= 90) rarity = 'Legendary';
-    else if (pityData.epic_pity >= 10) rarity = 'Epic';
-    else {
-        if (rand <= 0.006) rarity = 'Legendary';
-        else if (rand <= 0.051) rarity = 'Epic';
-        else if (rand <= 0.18) rarity = 'Rare';
-        else if (rand <= 0.48) rarity = 'Uncommon';
-        else rarity = 'Common';
+    const chestUrl = `${R2_URL}/images/gacha/main_chest.png`;
+    const chestImg = await getCachedImage(chestUrl);
+    if (chestImg) {
+        ctx.drawImage(chestImg, 0, 0, width, height);
+    } else {
+        ctx.fillStyle = '#0f1420';
+        ctx.fillRect(0, 0, width, height);
     }
 
-    if (rarity === 'Legendary') { pityData.legendary_pity = 0; pityData.epic_pity = 0; }
-    else if (rarity === 'Epic') pityData.epic_pity = 0;
+    const vignette = ctx.createRadialGradient(width/2, height/2, 200, width/2, height/2, 800);
+    vignette.addColorStop(0, 'rgba(0,0,0,0.15)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.9)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
 
-    let pool = LOOT_POOL[rarity] ? [...LOOT_POOL[rarity]] : [...LOOT_POOL['Common']];
+    ctx.fillStyle = '#FFFFFF';
+    for(let i=0; i<80; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pSize = Math.random() * 2.5;
+        ctx.globalAlpha = Math.random() * 0.4 + 0.1;
+        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
 
-    pool = pool.filter(item => !(item.type === 'skill' && ownedSkills.includes(item.id)));
-    if (pool.length === 0) pool = [...LOOT_POOL['Common']]; 
+    const headerH = 110;
+    ctx.fillStyle = 'rgba(5, 10, 15, 0.7)';
+    ctx.fillRect(0, 0, width, headerH);
+    
+    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
+    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
+    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, headerH - 2, width, 2);
 
-    if (userRace && (rarity === 'Epic' || rarity === 'Legendary')) {
-        if (Math.random() < 0.75) {
-            const racePool = pool.filter(item => item.race === userRace || (item.type === 'book' && item.category === 'race'));
-            if (racePool.length > 0) pool = racePool;
+    const avatarSize = 75;
+    const avatarX = 50 + avatarSize/2;
+    const avatarY = headerH / 2;
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
+    try {
+        const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
+        const avatarImage = await loadImage(avatarUrl);
+        ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
+    } catch (e) {}
+    ctx.restore();
+    
+    ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
+    ctx.lineWidth = 3; ctx.strokeStyle = '#FFD700'; ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
+    let dName = userObj.displayName || userObj.username;
+    drawAutoScaledArabicText(ctx, dName, avatarX + 55, avatarY, 200, 28, 14);
+    ctx.shadowBlur = 0;
+
+    const boxW = 200;
+    const boxH = 50;
+    const moraX = width - boxW - 40;
+    const chestX = moraX - boxW - 20;
+    const boxY = (headerH - boxH) / 2;
+
+    // رسم مربع الصناديق
+    ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
+    ctx.beginPath(); roundRect(ctx, chestX, boxY, boxW, boxH, 12); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(185, 104, 255, 0.6)'; ctx.stroke();
+    
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#E0E0E0';
+    // 🔥 ضبط مقاس رقم الصناديق عشان ما يطلع برا المربع
+    drawAutoScaledText(ctx, chestCount.toString(), chestX + boxW - 45, boxY + boxH/2 + 2, boxW - 120, 24, 12);
+    ctx.font = '24px "Arial"';
+    ctx.fillText('📦', chestX + boxW - 10, boxY + boxH/2 + 2);
+    
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#B968FF';
+    ctx.font = 'bold 18px "Bein"';
+    ctx.fillText("صناديقك", chestX + 15, boxY + boxH/2 + 2);
+
+    // رسم مربع المورا
+    ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
+    ctx.beginPath(); roundRect(ctx, moraX, boxY, boxW, boxH, 12); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; ctx.stroke();
+    
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#FFD700';
+    // 🔥 ضبط مقاس المورا عشان لو اللاعب غني ما يطلع برا المربع
+    drawAutoScaledText(ctx, moraBalance.toLocaleString(), moraX + boxW - 45, boxY + boxH/2 + 2, boxW - 70, 24, 12);
+    ctx.font = '24px "Arial"';
+    ctx.fillText('🪙', moraX + boxW - 10, boxY + boxH/2 + 2);
+
+    const bottomGrad = ctx.createLinearGradient(0, height - 220, 0, height);
+    bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    bottomGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.85)');
+    bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.98)');
+    ctx.fillStyle = bottomGrad;
+    ctx.fillRect(0, height - 220, width, 220);
+
+    const pricePanelW = 550;
+    const pricePanelH = 60;
+    const pricePanelX = (width - pricePanelW) / 2;
+    const pricePanelY = height - 150;
+
+    ctx.fillStyle = 'rgba(10, 15, 20, 0.8)';
+    ctx.beginPath(); roundRect(ctx, pricePanelX, pricePanelY, pricePanelW, pricePanelH, 15); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 22px "Bein"';
+    // 🔥 تعديل أسعار الشراء بالعربي مثل ما طلبت
+    ctx.fillText("عشر صناديق = 10000", width/2 - 130, pricePanelY + 35);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText("صندوق = 1000", width/2 + 130, pricePanelY + 35);
+
+    ctx.fillStyle = '#E0E0E0';
+    ctx.font = 'bold 26px "Bein"';
+    ctx.shadowColor = '#B968FF'; 
+    ctx.shadowBlur = 15;
+    // مسح التشكيل والنقاط تم من مصفوفة الجمل فوق
+    ctx.fillText(flavorText, width/2, height - 45);
+    ctx.shadowBlur = 0;
+
+    return canvas.toBuffer('image/png');
+}
+
+async function generateGachaCard(item, rarity) {
+    const width = 800;
+    const height = 800;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    const rInfo = RARITY_INFO[rarity] || RARITY_INFO['Common'];
+    const auraUrl = `${R2_URL}/images/materials/auras/${rarity}.png`;
+    const auraImg = await getCachedImage(auraUrl);
+    
+    if (auraImg) {
+        ctx.drawImage(auraImg, 0, 0, width, height);
+    } else {
+        const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, 500);
+        grad.addColorStop(0, rInfo.color);
+        grad.addColorStop(1, '#050505');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    const centerGlow = ctx.createRadialGradient(width/2, height/2 - 60, 20, width/2, height/2 - 60, 350);
+    centerGlow.addColorStop(0, `${rInfo.color}60`);
+    centerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = centerGlow;
+    ctx.fillRect(0, 0, width, height);
+
+    let itemDrawn = false;
+    if (item.imgPath) {
+        const itemImg = await getCachedImage(item.imgPath);
+        if (itemImg) {
+            const itemSize = 380; 
+            const ix = (width - itemSize) / 2;
+            const iy = (height - itemSize) / 2 - 80;
+            ctx.shadowColor = rInfo.color;
+            ctx.shadowBlur = 100;
+            ctx.drawImage(itemImg, ix, iy, itemSize, itemSize);
+            ctx.shadowBlur = 0; 
+            itemDrawn = true;
         }
     }
 
-    const item = pool[Math.floor(Math.random() * pool.length)];
-    return { item, rarity };
+    if (!itemDrawn) {
+        const cx = width / 2;
+        const cy = height / 2 - 80;
+        ctx.shadowColor = rInfo.color;
+        ctx.shadowBlur = 120;
+        ctx.fillStyle = rInfo.color;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 120); ctx.lineTo(cx + 80, cy); ctx.lineTo(cx, cy + 120); ctx.lineTo(cx - 80, cy);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 120); ctx.lineTo(cx + 80, cy); ctx.lineTo(cx, cy + 120);
+        ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.font = '90px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('✨', cx, cy + 10);
+    }
+
+    const bottomGrad = ctx.createLinearGradient(0, height - 350, 0, height);
+    bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    bottomGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.85)');
+    bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.98)');
+    ctx.fillStyle = bottomGrad;
+    ctx.fillRect(0, height - 350, width, 350);
+
+    ctx.textAlign = 'center';
+    ctx.font = '50px Arial';
+    ctx.fillStyle = '#F1C40F';
+    ctx.shadowColor = '#D4AC0D';
+    ctx.shadowBlur = 20;
+    ctx.fillText(rInfo.stars, width / 2, height - 200);
+    ctx.shadowBlur = 0;
+
+    // 🔥 تصغير الخط إذا كان الاسم طويل כדי لا يتجاوز الشاشة
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
+    const textGrad = ctx.createLinearGradient(0, height - 180, 0, height - 100);
+    textGrad.addColorStop(0, '#FFFFFF');
+    textGrad.addColorStop(1, '#D0D0D0');
+    
+    let fontSize = 75;
+    ctx.font = `bold ${fontSize}px "Bein"`;
+    while (ctx.measureText(item.name).width > width - 40 && fontSize > 20) {
+        fontSize--;
+        ctx.font = `bold ${fontSize}px "Bein"`;
+    }
+    
+    ctx.strokeText(item.name, width / 2, height - 100);
+    ctx.fillStyle = textGrad;
+    ctx.fillText(item.name, width / 2, height - 100);
+
+    let typeText = "اداة غامضة";
+    if (item.type === 'material') typeText = "مورد تصنيع عتيق";
+    if (item.type === 'book') typeText = "مخطوطة سحرية";
+    if (item.type === 'skill') typeText = "مهارة خارقة";
+
+    ctx.font = 'bold 32px "Bein"';
+    ctx.fillStyle = rInfo.color; 
+    ctx.fillText(`✦ ${typeText} ✦`, width / 2, height - 40);
+
+    ctx.strokeStyle = `rgba(255, 255, 255, 0.08)`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(15, 15, width - 30, height - 30);
+
+    return canvas.toBuffer('image/png');
 }
 
-module.exports = {
-    data: new SlashCommandBuilder().setName('صندوق').setDescription('افتح صناديق السحر للحصول على مهارات وكتب وخامات تطوير'),
-    name: 'صندوق',
-    aliases: ['gacha', 'صناديق', 'سحب', 'pull'],
-    category: 'RPG',
-
-    async execute(interactionOrMessage) {
-        const isSlash = !!interactionOrMessage.isChatInputCommand;
-        const client = interactionOrMessage.client;
-        const db = client.sql;
-        const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
-        const guildId = interactionOrMessage.guild.id;
-
-        if (isSlash) await interactionOrMessage.deferReply();
-        const reply = async (payload) => isSlash ? interactionOrMessage.editReply(payload) : interactionOrMessage.reply(payload);
-
-        if (!db) return reply({ content: "خطأ في قاعدة البيانات" }).catch(()=>{});
-        await ensurePityTable(db);
-
-        let userMora = 0;
-        let chestCount = 0;
-        let pityData = { epic_pity: 0, legendary_pity: 0 };
-        let ownedSkills = [];
-        let userRace = null;
-
-        const fetchUserData = async () => {
-            const [lvlRes, invRes, skillRes, wepRes] = await Promise.all([
-                db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId])),
-                db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId])),
-                db.query(`SELECT "skillID" FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT skillid FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId])),
-                db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]))
-            ]);
-
-            userMora = lvlRes?.rows[0] ? Number(lvlRes.rows[0].mora) : 0;
-            chestCount = invRes?.rows[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
-            if (skillRes?.rows) ownedSkills = skillRes.rows.map(r => r.skillID || r.skillid);
-            if (wepRes?.rows[0]) userRace = wepRes.rows[0].raceName || wepRes.rows[0].racename;
-        };
-
-        try {
-            await fetchUserData();
-            const pityRes = await db.query(`SELECT * FROM user_gacha_pity WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(() => db.query(`SELECT * FROM user_gacha_pity WHERE userid = $1 AND guildid = $2`, [user.id, guildId]));
-            if (pityRes?.rows[0]) {
-                pityData.epic_pity = pityRes.rows[0].epic_pity || 0;
-                pityData.legendary_pity = pityRes.rows[0].legendary_pity || 0;
-            } else {
-                await db.query(`INSERT INTO user_gacha_pity ("userID", "guildID") VALUES ($1, $2)`, [user.id, guildId]).catch(() => db.query(`INSERT INTO user_gacha_pity (userid, guildid) VALUES ($1, $2)`, [user.id, guildId]).catch(()=>{}));
-            }
-        } catch (e) { return reply({ content: "خطأ في قراءة البيانات" }).catch(()=>{}); }
-
-        const getPullButtons = (moraBalance) => {
-            return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_1').setLabel('x1').setStyle(ButtonStyle.Primary).setDisabled(moraBalance < PULL_PRICE),
-                new ButtonBuilder().setCustomId('gacha_10').setLabel('x10').setStyle(ButtonStyle.Success).setDisabled(moraBalance < PULL_PRICE * 10),
-                new ButtonBuilder().setCustomId('gacha_inventory').setLabel('صناديقي').setStyle(ButtonStyle.Secondary)
-            );
-        };
-
-        const initialRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-        let initialFiles = [];
-        
-        if (generateGachaHub) {
-            const hubBuffer = await generateGachaHub(user, userMora, initialRandomText, chestCount);
-            if (hubBuffer) initialFiles.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_hub.png' }));
-        }
-
-        const initialMsg = await reply({ components: [getPullButtons(userMora)], files: initialFiles }).catch(()=>{});
-        if (!initialMsg) return;
-        
-        const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
-            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10', 'gacha_inventory'].includes(i.customId),
-            time: 300000 
-        });
-
-        channelCollector.on('collect', async (i) => {
-            if (i.customId === 'gacha_inventory') {
-                let currentChests = 0;
-                try {
-                    const invRes = await db.query(`SELECT quantity FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = 'gacha_chest'`, [user.id, guildId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = 'gacha_chest'`, [user.id, guildId]));
-                    if (invRes?.rows[0]) currentChests = Number(invRes.rows[0].quantity);
-                } catch(e) {}
-                return i.reply({ content: `صناديقك المتاحة: ${currentChests} صندوق\nقريبا سنضيف ميزة جمع الصناديق من المهام والزعماء`, flags: [MessageFlags.Ephemeral] }).catch(()=>{});
-            }
-
-            try { await i.deferUpdate(); } catch (err) { return; }
-
-            await fetchUserData();
-            const isTen = i.customId === 'gacha_10';
-            const cost = isTen ? PULL_PRICE * 10 : PULL_PRICE;
-            if (userMora < cost) return i.followUp({ content: "لا تملك المورا الكافية", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
-
-            await i.editReply({ components: [] }).catch(()=>{});
-
-            // 🔥 تم إزالة صور التشويق وإضافة رسالة انتظار نصية سريعة 🔥
-            const pullMsg = await i.followUp({ content: '✨ جاري كسر الختم...', fetchReply: true }).catch(()=>{});
-            if(!pullMsg) return;
-
-            userMora -= cost;
-            await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, user.id, guildId]).catch(() => db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [cost, user.id, guildId]).catch(()=>{}));
-
-            const results = [];
-            const insertPromises = [];
-
-            await db.query('BEGIN').catch(()=>{});
-            for (let k = 0; k < (isTen ? 10 : 1); k++) {
-                const { item, rarity } = performPull(pityData, userRace, ownedSkills);
-
-                if (item.type === 'skill') {
-                    ownedSkills.push(item.id);
-                    insertPromises.push(db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(()=>{})));
-                } else {
-                    insertPromises.push(db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, 1) ON CONFLICT("userID", "guildID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + 1`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_inventory (userid, guildid, itemid, quantity) VALUES ($1, $2, $3, 1) ON CONFLICT(userid, guildid, itemid) DO UPDATE SET quantity = user_inventory.quantity + 1`, [user.id, guildId, item.id]).catch(()=>{})));
-                }
-                results.push({ item, rarity });
-            }
-            await Promise.all(insertPromises);
-            await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
-            await db.query('COMMIT').catch(()=>{});
-
-            const buildSilentSummary = async () => {
-                await fetchUserData(); 
-                let files = [];
-                const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-                if (generateGachaHub) {
-                    try {
-                        const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText, chestCount);
-                        if (hubBuffer) files.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_summary.png' }));
-                    } catch(e){}
-                }
-                return { content: null, components: [getPullButtons(userMora)], files };
-            };
-
-            let currentIndex = 0;
-
-            // 🔥 توحيد نظام العرض سواء كان صندوق واحد أو 10 صناديق 🔥
-            const getPagePayload = async (idx) => {
-                const res = results[idx];
-                let files = [];
-                
-                if (generateGachaCard && res.item) {
-                    try {
-                        const buffer = await generateGachaCard(res.item, res.rarity);
-                        if (buffer) files.push(new AttachmentBuilder(buffer, { name: `gacha_${idx}.png` }));
-                    } catch(e){}
-                }
-
-                const row = new ActionRowBuilder();
-                if (isTen) {
-                    row.addComponents(
-                        new ButtonBuilder().setCustomId('gacha_next').setLabel('التالي').setStyle(ButtonStyle.Success).setEmoji('➡️'),
-                        new ButtonBuilder().setCustomId('gacha_return').setLabel('العودة للرئيسية').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
-                    );
-                } else {
-                    // 🔥 إضافة زر العودة في حالة السحب الفردي 🔥
-                    row.addComponents(
-                        new ButtonBuilder().setCustomId('gacha_return').setLabel('العودة للرئيسية').setStyle(ButtonStyle.Primary).setEmoji('↩️')
-                    );
-                }
-                
-                return { content: null, components: [row], files }; // null لإخفاء كلمة "جاري كسر الختم..."
-            };
-
-            // عرض البطاقة فوراً وبدون أي تأخير
-            await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
-
-            const pageCollector = pullMsg.createMessageComponentCollector({
-                filter: btn => btn.user.id === user.id && ['gacha_next', 'gacha_return'].includes(btn.customId),
-                time: 120000 
-            });
-
-            pageCollector.on('collect', async btn => {
-                try { await btn.deferUpdate(); } catch(e) { return; }
-                
-                if (btn.customId === 'gacha_return') {
-                    pageCollector.stop('returned');
-                } else if (btn.customId === 'gacha_next') {
-                    currentIndex++;
-                    if (currentIndex >= 10) pageCollector.stop('finished');
-                    else await pullMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
-                }
-            });
-
-            pageCollector.on('end', async () => {
-                await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
-            });
-        });
-    }
-};
+module.exports = { generateGachaCard, generateGachaHub };
