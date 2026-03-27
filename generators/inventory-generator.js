@@ -12,8 +12,14 @@ try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 const upgradeMats = require('../json/upgrade-materials.json');
 let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
 
-let fishData = { fishItems: [], baits: [] };
-try { fishData = require('../json/fishing-config.json') || require('../json/fish.json'); } catch(e) {}
+let fishData = { fishItems: [], baits: [], rods: [], boats: [] };
+let rodsConfig = [], boatsConfig = [];
+try { 
+    const fishJson = require('../json/fishing-config.json') || require('../json/fish.json'); 
+    fishData = fishJson;
+    rodsConfig = fishJson.rods || [];
+    boatsConfig = fishJson.boats || [];
+} catch(e) {}
 
 let farmSeeds = []; try { farmSeeds = require('../json/seeds.json'); } catch(e) {}
 let farmFeeds = []; try { farmFeeds = require('../json/feed-items.json'); } catch(e) {}
@@ -21,7 +27,7 @@ let potionItems = []; try { potionItems = require('../json/potions.json'); } cat
 let marketItems = []; try { marketItems = require('../json/market-items.json'); } catch(e) {}
 
 const imageCache = new Map();
-const ITEM_DICTIONARY = new Map(); // 🔥 قاموس تسريع الرسم 🔥
+const ITEM_DICTIONARY = new Map();
 
 const RARITY_COLORS = {
     'Common': '#A8B8D0',      
@@ -47,9 +53,7 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// بناء القاموس لمرة واحدة لتسريع استدعاء الصور
 function buildItemDictionary() {
-    // المواد (Materials)
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             for (const mat of race.materials) {
@@ -57,7 +61,6 @@ function buildItemDictionary() {
             }
         }
     }
-    // الكتب (Books)
     if (upgradeMats && upgradeMats.skill_books) {
         for (const cat of upgradeMats.skill_books) {
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
@@ -66,45 +69,38 @@ function buildItemDictionary() {
             }
         }
     }
-    // الأسماك (Fish)
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
-            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: fish.image || null });
+            ITEM_DICTIONARY.set(fish.id, { name: fish.name, emoji: fish.emoji || '🐟', category: 'fishing', rarity: fish.rarity > 3 ? 'Epic' : 'Common', imgPath: fish.image || `images/fish/${fish.id}.png` });
         }
     }
-    // الطعوم (Baits)
     if (fishData && fishData.baits) {
         for (const bait of fishData.baits) {
             ITEM_DICTIONARY.set(bait.id, { name: bait.name, emoji: bait.emoji || '🪱', category: 'fishing', rarity: 'Common', imgPath: bait.image || `images/fish/baits/${bait.id}.png` });
         }
     }
-    // بذور المزرعة (Seeds)
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
             ITEM_DICTIONARY.set(seed.id, { name: seed.name, emoji: seed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: seed.image || `images/farm/seeds/${seed.id}.png` });
         }
     }
-    // أعلاف المزرعة (Feeds)
     if (farmFeeds && farmFeeds.length > 0) {
         for (const feed of farmFeeds) {
             ITEM_DICTIONARY.set(feed.id, { name: feed.name, emoji: feed.emoji || '🌾', category: 'farming', rarity: 'Common', imgPath: feed.image || `images/feeds/${feed.id}.png` });
         }
     }
-    // الجرعات (Potions)
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
-            ITEM_DICTIONARY.set(pot.id, { name: pot.name, emoji: pot.emoji || '🧪', category: 'others', rarity: 'Rare', imgPath: pot.image || `images/potions/${pot.id}.png` });
+            ITEM_DICTIONARY.set(pot.id, { name: pot.name, emoji: pot.emoji || '🧪', category: 'potions', rarity: 'Rare', imgPath: pot.image || `images/potions/${pot.id}.png` });
         }
     }
-    // السوق (Market)
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            ITEM_DICTIONARY.set(market.id, { name: market.name, emoji: '📈', category: 'others', rarity: 'Epic', imgPath: market.image || `images/market/${market.id.toLowerCase()}.png` });
+            ITEM_DICTIONARY.set(market.id, { name: market.name, emoji: '📈', category: 'market', rarity: 'Epic', imgPath: market.image || `images/market/${market.id.toLowerCase()}.png` });
         }
     }
 }
 
-// تنفيذ فوراً عند تحميل الملف
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
@@ -123,13 +119,11 @@ async function getCachedImage(imageUrl) {
         imageCache.set(encodedUrl, img);
         return img;
     } catch (e) {
-        console.log(`[Inventory] Error loading image: ${encodedUrl}`);
         return null;
     }
 }
 
 function resolveItemInfo(itemId) {
-    // جلب سريع جداً بدلاً من الـ IF المتتالية
     let baseInfo = ITEM_DICTIONARY.get(itemId);
 
     if (!baseInfo) {
@@ -138,6 +132,90 @@ function resolveItemInfo(itemId) {
 
     baseInfo.description = itemLore[itemId] || null;
     return { ...baseInfo };
+}
+
+async function getInventoryCategories(db, userId, guildId) {
+    let inventory = [];
+    const categories = { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
+    
+    // 1. جلب العناصر العادية من جدول المخزن
+    try {
+        const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+        inventory = res.rows;
+    } catch(e) {
+        try {
+            const res = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]);
+            inventory = res.rows;
+        } catch(err) {}
+    }
+    
+    for (const row of inventory) {
+        const itemId = row.itemID || row.itemid;
+        const quantity = Number(row.quantity) || 0;
+        if (quantity <= 0) continue;
+        
+        const itemInfo = resolveItemInfo(itemId);
+        if (categories[itemInfo.category]) {
+            categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
+        } else {
+            categories.others.push({ ...itemInfo, quantity, id: itemId });
+        }
+    }
+
+    // 2. 🔥 إضافة أدوات الصيد (السنارات والقوارب) من جدول مستويات اللاعب 🔥
+    try {
+        let userData = null;
+        try {
+            const res = await db.query(`SELECT "rodLevel", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]);
+            if (res.rows.length > 0) userData = res.rows[0];
+        } catch(e) {
+            const res = await db.query(`SELECT rodlevel, boatlevel FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]}));
+            if (res.rows.length > 0) userData = res.rows[0];
+        }
+
+        if (userData) {
+            const rodLvl = Number(userData.rodLevel || userData.rodlevel) || 1;
+            const boatLvl = Number(userData.boatLevel || userData.boatlevel) || 1;
+
+            // إضافة جميع السنارات التي وصل لها اللاعب
+            for (let i = 1; i <= rodLvl; i++) {
+                const rod = rodsConfig.find(r => r.level === i);
+                if (rod) {
+                    categories.fishing.push({
+                        name: rod.name,
+                        emoji: '🎣',
+                        category: 'fishing',
+                        rarity: i >= 8 ? 'Legendary' : (i >= 5 ? 'Epic' : (i >= 3 ? 'Rare' : 'Common')),
+                        imgPath: `images/fish/fishing/rod_${i}.png`,
+                        quantity: 1,
+                        id: `rod_${i}`,
+                        description: `سنارة صيد بمستوى ${i}\nتزيد الحظ بنسبة ${rod.luck_bonus}%`
+                    });
+                }
+            }
+
+            // إضافة جميع القوارب التي وصل لها اللاعب
+            for (let i = 1; i <= boatLvl; i++) {
+                const boat = boatsConfig.find(b => b.level === i);
+                if (boat) {
+                    categories.fishing.push({
+                        name: boat.name,
+                        emoji: '🚤',
+                        category: 'fishing',
+                        rarity: i >= 6 ? 'Legendary' : (i >= 4 ? 'Epic' : (i >= 2 ? 'Rare' : 'Common')),
+                        imgPath: `images/fish/ships/boat_${i}.png`,
+                        quantity: 1,
+                        id: `boat_${i}`,
+                        description: `قارب يفتح موقع: ${boat.location_id}`
+                    });
+                }
+            }
+        }
+    } catch(e) {
+        console.error("Error fetching fishing gear for inventory:", e);
+    }
+    
+    return categories;
 }
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
@@ -673,4 +751,4 @@ async function generateItemDetailsCard(userDisplayName, item) {
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-module.exports = { generateInventoryCard, generateMainHub, generateItemDetailsCard };
+module.exports = { resolveItemInfo, getInventoryCategories, generateInventoryCard, generateMainHub, generateItemDetailsCard };
