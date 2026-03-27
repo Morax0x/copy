@@ -288,6 +288,23 @@ module.exports = {
             collector.on('collect', async (i) => {
                 const id = i.customId;
 
+                // 🔥 إصلاح زر إعطاء: يظهر في نفس الرسالة القائمة المنسدلة بدلا من رد مخفي يمنع الـ Collector 🔥
+                if (id.startsWith('trade_init_')) {
+                    if (i.user.id !== authorUser.id) return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
+                    if (!activeItemDetails) return i.deferUpdate();
+                    
+                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
+                    const cancelBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`d_back_${authorUser.id}`).setLabel('إلغاء المبادلة').setStyle(ButtonStyle.Danger));
+                    
+                    await i.update({ 
+                        content: `**🎁 إعطاء أو مبادلة العنصر:** ${activeItemDetails.emoji} ${activeItemDetails.name}\nيرجى تحديد اللاعب من القائمة بالأسفل:`, 
+                        embeds: [], 
+                        components: [userSelect, cancelBtn],
+                        files: []
+                    });
+                    return; 
+                }
+
                 if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
                     if (i.user.id !== authorUser.id) return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
                     
@@ -312,7 +329,6 @@ module.exports = {
                         if (isNaN(qty) || qty <= 0) return modalSubmit.reply({ content: '❌ كمية غير صالحة.', flags: [MessageFlags.Ephemeral] });
                         if (isNaN(price) || price < 0) return modalSubmit.reply({ content: '❌ سعر غير صالح.', flags: [MessageFlags.Ephemeral] });
 
-                        // 🔍 فحص هل المستلم راح يتجاوز الحد الأقصى 999؟
                         let checkTargetInvRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [targetID, guildId, activeItemDetails.id]).catch(()=>({rows:[]}));
                         const targetCurrentQty = checkTargetInvRes.rows[0] ? Number(checkTargetInvRes.rows[0].quantity) : 0;
                         
@@ -334,7 +350,6 @@ module.exports = {
                                 await db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [senderInvData.id]);
                             }
 
-                            // 🔥 الحماية بقاعدة البيانات باستخدام LEAST لضمان عدم تجاوز 999 🔥
                             await db.query(`INSERT INTO user_inventory ("userID", "guildID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("userID", "guildID", "itemID") DO UPDATE SET "quantity" = LEAST(user_inventory."quantity" + $4, 999)`, [targetID, guildId, activeItemDetails.id, qty]);
                             await db.query('COMMIT').catch(()=>{});
 
@@ -430,30 +445,22 @@ module.exports = {
                 else if (id.startsWith('sk_p_')) { await i.deferUpdate(); skillPage--; }
                 else if (id.startsWith('d_back_')) { await i.deferUpdate(); activeItemDetails = null; }
 
+                // 🔥 حركة الأسهم الدائرية المطورة (طريقة كيبورد التلفزيون) 🔥
                 else if (id.startsWith('d_')) {
                     await i.deferUpdate();
                     const moveType = id.split('_')[1]; 
                     
-                    if (moveType === 'r1') { if (selectedIndex % 5 !== 4) selectedIndex += 1; } 
-                    else if (moveType === 'l1') { if (selectedIndex % 5 !== 0) selectedIndex -= 1; }
-                    else if (moveType === 'd1') { if (selectedIndex + 5 < 15) selectedIndex += 5; }
-                    else if (moveType === 'u1') { if (selectedIndex - 5 >= 0) selectedIndex -= 5; }
-                    else if (moveType === 'r2') { 
-                        if (selectedIndex % 5 <= 2) selectedIndex += 2;
-                        else selectedIndex += (4 - (selectedIndex % 5)); 
-                    }
-                    else if (moveType === 'l2') { 
-                        if (selectedIndex % 5 >= 2) selectedIndex -= 2;
-                        else selectedIndex -= (selectedIndex % 5); 
-                    }
-                    else if (moveType === 'd2') { 
-                        if (selectedIndex + 10 < 15) selectedIndex += 10;
-                        else if (selectedIndex + 5 < 15) selectedIndex += 5;
-                    }
-                    else if (moveType === 'u2') { 
-                        if (selectedIndex - 10 >= 0) selectedIndex -= 10;
-                        else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
-                    }
+                    const col = selectedIndex % 5;
+                    const row = Math.floor(selectedIndex / 5);
+                    
+                    if (moveType === 'r1') { selectedIndex = row * 5 + ((col + 1) % 5); } 
+                    else if (moveType === 'l1') { selectedIndex = row * 5 + ((col - 1 + 5) % 5); }
+                    else if (moveType === 'd1') { selectedIndex = ((row + 1) % 3) * 5 + col; }
+                    else if (moveType === 'u1') { selectedIndex = ((row - 1 + 3) % 3) * 5 + col; }
+                    else if (moveType === 'r2') { selectedIndex = row * 5 + ((col + 2) % 5); }
+                    else if (moveType === 'l2') { selectedIndex = row * 5 + ((col - 2 + 5) % 5); }
+                    else if (moveType === 'd2') { selectedIndex = ((row + 2) % 3) * 5 + col; }
+                    else if (moveType === 'u2') { selectedIndex = ((row - 2 + 3) % 3) * 5 + col; }
                     else if (moveType === 'ok') {
                         const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                         const items = invQuery.rows.map(row => {
