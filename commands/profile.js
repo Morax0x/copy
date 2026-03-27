@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
+const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
 const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
@@ -13,12 +13,6 @@ try {
 
 const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
-const upgradeMats = require('../json/upgrade-materials.json');
-const potionItems = require('../json/potions.json');
-
-let fishData = [], farmItems = [];
-try { fishData = require('../json/fish.json'); } catch(e) {}
-try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 let calculateRequiredXP;
 try { ({ calculateRequiredXP } = require('../handlers/handler-utils.js')); } 
@@ -42,7 +36,6 @@ const RACE_TRANSLATIONS = new Map([
     ['Spirit', 'روح'], ['Dwarf', 'قزم'], ['Ghoul', 'غول'], ['Hybrid', 'نصف وحش']
 ]);
 
-// 🔥 تم استخدام الدالة الذكية من ملف الـ Generator بدلاً من تكرار الأكواد الضعيفة 🔥
 let resolveItemInfoLocal;
 try {
     const invGen = require('../generators/inventory-generator.js');
@@ -124,7 +117,7 @@ module.exports = {
             const cleanName = cleanDisplayName(targetMember.displayName || targetUser.username);
 
             let currentView = 'profile'; 
-            let invCategory = 'main';
+            let invCategory = 'موارد'; // افتراضي عند فتح الحقيبة
             let invPage = 1; 
             let skillPage = 0;
             let selectedIndex = 0; 
@@ -211,9 +204,8 @@ module.exports = {
 
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        // 🔥 تم التعديل الجذري هنا لضمان إرسال الرتبة والعرق الحقيقيين للخيمة بدلاً من نصوص ثابتة 🔥
-                        const hubRank = rankInfo.name.replace(/[^a-zA-Z]/g, '').trim() || "D";
-                        const buffer = await generateMainHub(targetMember, db, totalMora, hubRank, arabicRaceName, weaponName, levelData.level);
+                        // استدعاء ذكي للخيمة
+                        const buffer = await generateMainHub(targetMember, db, totalMora);
                         
                         const cats = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('موارد').setStyle(ButtonStyle.Success).setEmoji('💎'),
@@ -285,89 +277,21 @@ module.exports = {
             };
 
             const msg = await reply(await renderView());
-            const collector = msg.createMessageComponentCollector({ filter: i => i.user.id === authorUser.id, time: 300000 });
+            const collector = msg.createMessageComponentCollector({ filter: i => true, time: 300000 });
 
             collector.on('collect', async (i) => {
                 const id = i.customId;
 
-                // --- التنقل العادي (بدون إيقاف التنفيذ) ---
-                if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
-                else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
-                else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
-                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'موارد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'صيد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'مزرعة'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'أخرى'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                
-                else if (id.startsWith('inv_n_')) { await i.deferUpdate(); invPage++; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('inv_p_')) { await i.deferUpdate(); invPage--; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('sk_n_')) { await i.deferUpdate(); skillPage++; }
-                else if (id.startsWith('sk_p_')) { await i.deferUpdate(); skillPage--; }
-                else if (id.startsWith('d_back_')) { await i.deferUpdate(); activeItemDetails = null; }
-
-                else if (id.startsWith('d_')) {
-                    await i.deferUpdate();
-                    const moveType = id.split('_')[1]; 
+                // التعامل مع زر الاستهداف للمبادلة (حتى لو ضغط عليه نفس الشخص أو غيره نعالجه)
+                if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
+                    if (i.user.id !== authorUser.id) return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
                     
-                    if (moveType === 'r1') { if (selectedIndex % 5 !== 4) selectedIndex += 1; } 
-                    else if (moveType === 'l1') { if (selectedIndex % 5 !== 0) selectedIndex -= 1; }
-                    else if (moveType === 'd1') { if (selectedIndex + 5 < 15) selectedIndex += 5; }
-                    else if (moveType === 'u1') { if (selectedIndex - 5 >= 0) selectedIndex -= 5; }
-                    else if (moveType === 'r2') { 
-                        if (selectedIndex % 5 <= 2) selectedIndex += 2;
-                        else selectedIndex += (4 - (selectedIndex % 5)); 
-                    }
-                    else if (moveType === 'l2') { 
-                        if (selectedIndex % 5 >= 2) selectedIndex -= 2;
-                        else selectedIndex -= (selectedIndex % 5); 
-                    }
-                    else if (moveType === 'd2') { 
-                        if (selectedIndex + 10 < 15) selectedIndex += 10;
-                        else if (selectedIndex + 5 < 15) selectedIndex += 5;
-                    }
-                    else if (moveType === 'u2') { 
-                        if (selectedIndex - 10 >= 0) selectedIndex -= 10;
-                        else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
-                    }
-                    else if (moveType === 'ok') {
-                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                        const items = invQuery.rows.map(row => {
-                            const info = resolveItemInfoLocal(row.itemID || row.itemid);
-                            return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
-                        }).filter(it => it.category === invCategory);
-
-                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
-                        
-                        if (slice[selectedIndex]) {
-                            activeItemDetails = slice[selectedIndex];
-                        } else {
-                            return i.followUp({ content: `❌ هذا المربع فارغ يا عزيزي.`, flags: [MessageFlags.Ephemeral] });
-                        }
-                    }
-                }
-                
-                // 🔥 نظام الإعطاء المتكامل (يتم استخدام showModal مباشرة على نفس التفاعل i) 🔥
-                else if (id.startsWith('trade_init_')) {
-                    if (!activeItemDetails) {
-                        await i.deferUpdate();
-                        return;
-                    }
-                    
-                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
-                    
-                    // هنا نستخدم i.reply بدلاً من i.followUp مع ephemeral لكي يظهر القائمة فقط للاعب
-                    await i.reply({ content: "**اختر اللاعب الذي تريد إرسال العنصر إليه:**", components: [userSelect], flags: [MessageFlags.Ephemeral] });
-                    return; 
-                }
-                else if (i.isUserSelectMenu() && id.startsWith('trade_target_')) {
                     const targetID = i.values[0];
                     if (targetID === authorUser.id || (await client.users.fetch(targetID)).bot) {
                         return i.reply({ content: '❌ لا يمكنك التبادل مع نفسك أو مع البوتات!', flags: [MessageFlags.Ephemeral] });
                     }
 
-                    // إظهار المودال مباشرة على التفاعل الخاص بالـ Select Menu
-                    const modal = new ModalBuilder().setCustomId(`trade_modal_${authorUser.id}_${targetID}`).setTitle('إعـطـاء / مـبـادلـة');
+                    const modal = new ModalBuilder().setCustomId(`trade_modal_${targetID}`).setTitle('إعـطـاء / مـبـادلـة');
                     modal.addComponents(
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_qty').setLabel('الكمية المراد إرسالها').setStyle(TextInputStyle.Short).setRequired(true)),
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('trade_price').setLabel('السعر (مورا) - ضع 0 للهدية المجانية').setStyle(TextInputStyle.Short).setValue('0').setRequired(true))
@@ -376,7 +300,7 @@ module.exports = {
                     await i.showModal(modal).catch(console.error);
 
                     try {
-                        const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${authorUser.id}_${targetID}`, time: 60000 });
+                        const modalSubmit = await i.awaitModalSubmit({ filter: m => m.user.id === authorUser.id && m.customId === `trade_modal_${targetID}`, time: 60000 });
                         const qty = parseInt(modalSubmit.fields.getTextInputValue('trade_qty'));
                         const price = parseInt(modalSubmit.fields.getTextInputValue('trade_price'));
 
@@ -470,10 +394,82 @@ module.exports = {
                             });
                         }
                     } catch(e) {}
-                    return; // إيقاف تنفيذ التحديث الأساسي لأن المعاملة تمت
+                    return;
                 }
 
-                // تحديث الواجهة الطبيعي لأي حركة أخرى
+                // الحماية لجميع الأزرار الأخرى (فقط صاحب البروفايل)
+                if (i.user.id !== authorUser.id) {
+                    return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
+                }
+
+                if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
+                else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
+                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'موارد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'صيد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'مزرعة'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'أخرى'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                
+                else if (id.startsWith('inv_n_')) { await i.deferUpdate(); invPage++; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('inv_p_')) { await i.deferUpdate(); invPage--; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('sk_n_')) { await i.deferUpdate(); skillPage++; }
+                else if (id.startsWith('sk_p_')) { await i.deferUpdate(); skillPage--; }
+                else if (id.startsWith('d_back_')) { await i.deferUpdate(); activeItemDetails = null; }
+
+                else if (id.startsWith('d_')) {
+                    await i.deferUpdate();
+                    const moveType = id.split('_')[1]; 
+                    
+                    if (moveType === 'r1') { if (selectedIndex % 5 !== 4) selectedIndex += 1; } 
+                    else if (moveType === 'l1') { if (selectedIndex % 5 !== 0) selectedIndex -= 1; }
+                    else if (moveType === 'd1') { if (selectedIndex + 5 < 15) selectedIndex += 5; }
+                    else if (moveType === 'u1') { if (selectedIndex - 5 >= 0) selectedIndex -= 5; }
+                    else if (moveType === 'r2') { 
+                        if (selectedIndex % 5 <= 2) selectedIndex += 2;
+                        else selectedIndex += (4 - (selectedIndex % 5)); 
+                    }
+                    else if (moveType === 'l2') { 
+                        if (selectedIndex % 5 >= 2) selectedIndex -= 2;
+                        else selectedIndex -= (selectedIndex % 5); 
+                    }
+                    else if (moveType === 'd2') { 
+                        if (selectedIndex + 10 < 15) selectedIndex += 10;
+                        else if (selectedIndex + 5 < 15) selectedIndex += 5;
+                    }
+                    else if (moveType === 'u2') { 
+                        if (selectedIndex - 10 >= 0) selectedIndex -= 10;
+                        else if (selectedIndex - 5 >= 0) selectedIndex -= 5;
+                    }
+                    else if (moveType === 'ok') {
+                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
+                        const items = invQuery.rows.map(row => {
+                            const info = resolveItemInfoLocal(row.itemID || row.itemid);
+                            return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
+                        }).filter(it => it.category === invCategory);
+
+                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+                        
+                        if (slice[selectedIndex]) {
+                            activeItemDetails = slice[selectedIndex];
+                        } else {
+                            return i.followUp({ content: `❌ هذا المربع فارغ يا عزيزي.`, flags: [MessageFlags.Ephemeral] });
+                        }
+                    }
+                }
+                
+                else if (id.startsWith('trade_init_')) {
+                    if (!activeItemDetails) {
+                        await i.deferUpdate();
+                        return;
+                    }
+                    
+                    const userSelect = new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`trade_target_${authorUser.id}`).setPlaceholder('اختر اللاعب الذي تود التبادل معه...'));
+                    
+                    await i.reply({ content: "**اختر اللاعب الذي تريد إرسال العنصر إليه:**", components: [userSelect], flags: [MessageFlags.Ephemeral] });
+                    return; 
+                }
+
                 await msg.edit(await renderView());
             });
 
