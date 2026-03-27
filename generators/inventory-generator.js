@@ -55,16 +55,15 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// 🔥 دالة ذكية لإجبار بناء الروابط مباشرة من سيرفرك بدون الاعتماد على JSON 🔥
 function addItemToDict(id, name, emoji, category, rarity, imgPath) {
     if (!id) return;
     const cleanId = String(id).trim();
     const data = {
         name: name || cleanId,
         emoji: emoji || '📦',
-        category: category || 'others',
+        category: category || 'أخرى',
         rarity: rarity || 'Common',
-        imgPath: `${R2_URL}/${imgPath}` // فرض الرابط الأساسي لجميع العناصر
+        imgPath: imgPath ? `${R2_URL}/${imgPath.replace(/^\/+/, '')}` : null
     };
     ITEM_DICTIONARY.set(cleanId, data);
     ITEM_DICTIONARY.set(cleanId.toLowerCase(), data);
@@ -74,7 +73,7 @@ function buildItemDictionary() {
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             for (const mat of race.materials) {
-                addItemToDict(mat.id, mat.name, mat.emoji, 'materials', mat.rarity, `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}`);
+                addItemToDict(mat.id, mat.name, mat.emoji, 'موارد', mat.rarity, `images/materials/${race.race.toLowerCase().replace(' ', '_')}/${ID_TO_IMAGE[mat.id] || mat.id + '.png'}`);
             }
         }
     }
@@ -82,47 +81,49 @@ function buildItemDictionary() {
         for (const cat of upgradeMats.skill_books) {
             const typeFolder = cat.category === 'General_Skills' ? 'general' : 'race';
             for (const book of cat.books) {
-                addItemToDict(book.id, book.name, book.emoji, 'materials', book.rarity, `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}`);
+                addItemToDict(book.id, book.name, book.emoji, 'موارد', book.rarity, `images/materials/${typeFolder}/${ID_TO_IMAGE[book.id] || book.id + '.png'}`);
             }
         }
     }
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
-            addItemToDict(fish.id, fish.name, fish.emoji, 'fishing', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`);
+            addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`);
         }
     }
     if (fishData && fishData.baits) {
         for (const bait of fishData.baits) {
-            addItemToDict(bait.id, bait.name, bait.emoji, 'fishing', 'Common', `images/fish/baits/${bait.id}.png`);
+            addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', `images/fish/baits/${bait.id}.png`);
         }
     }
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
-            addItemToDict(seed.id, seed.name, seed.emoji, 'farming', 'Common', `images/farm/seeds/${seed.id}.png`);
+            addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', `images/farm/seeds/${seed.id}.png`);
         }
     }
     if (farmFeeds && farmFeeds.length > 0) {
         for (const feed of farmFeeds) {
-            addItemToDict(feed.id, feed.name, feed.emoji, 'farming', 'Common', `images/feeds/${feed.id}.png`);
+            addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', `images/feeds/${feed.id}.png`);
         }
     }
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
-            addItemToDict(pot.id, pot.name, pot.emoji, 'potions', 'Rare', `images/potions/${pot.id}.png`);
+            addItemToDict(pot.id, pot.name, pot.emoji, 'جرعات', 'Rare', `images/potions/${pot.id}.png`);
         }
     }
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            addItemToDict(market.id, market.name, '📈', 'market', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`);
+            addItemToDict(market.id, market.name, '📈', 'سوق', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`);
         }
     }
 }
 
+// تنفيذ البناء لتسريع الرسومات
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
     if (!imageUrl) return null;
     const encodedUrl = encodeURI(imageUrl);
+
     if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
     try {
         const img = await loadImage(encodedUrl);
@@ -135,12 +136,12 @@ async function getCachedImage(imageUrl) {
 }
 
 function resolveItemInfo(itemId) {
-    if (!itemId) return { name: 'عنصر مجهول', emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
+    if (!itemId) return { name: 'عنصر مجهول', emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null };
     const cleanId = String(itemId).trim();
     let baseInfo = ITEM_DICTIONARY.get(cleanId) || ITEM_DICTIONARY.get(cleanId.toLowerCase());
 
     if (!baseInfo) {
-        baseInfo = { name: cleanId, emoji: '📦', category: 'others', rarity: 'Common', imgPath: null };
+        baseInfo = { name: cleanId, emoji: '📦', category: 'أخرى', rarity: 'Common', imgPath: null };
     }
 
     baseInfo.description = itemLore[cleanId] || itemLore[cleanId.toLowerCase()] || null;
@@ -149,7 +150,7 @@ function resolveItemInfo(itemId) {
 
 async function getInventoryCategories(db, userId, guildId) {
     let inventory = [];
-    const categories = { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
+    const categories = { 'موارد': [], 'صيد': [], 'مزرعة': [], 'جرعات': [], 'سوق': [], 'أخرى': [] };
     
     try {
         const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
@@ -171,11 +172,11 @@ async function getInventoryCategories(db, userId, guildId) {
         if (categories[itemInfo.category]) {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         } else {
-            categories.others.push({ ...itemInfo, quantity, id: itemId });
+            categories['أخرى'].push({ ...itemInfo, quantity, id: itemId });
         }
     }
 
-    // استخراج أدوات الصيد (مربوطة بسيرفر R2 مباشرة)
+    // استخراج السنارات والقوارب ووضعها في قسم الصيد
     try {
         let userData = null;
         try {
@@ -193,10 +194,10 @@ async function getInventoryCategories(db, userId, guildId) {
             for (let i = 1; i <= rodLvl; i++) {
                 const rod = rodsConfig.find(r => r.level === i);
                 if (rod) {
-                    categories.fishing.push({
+                    categories['صيد'].push({
                         name: rod.name,
                         emoji: '🎣',
-                        category: 'fishing',
+                        category: 'صيد',
                         rarity: i >= 8 ? 'Legendary' : (i >= 5 ? 'Epic' : (i >= 3 ? 'Rare' : 'Common')),
                         imgPath: `${R2_URL}/images/fish/fishing/rod_${i}.png`,
                         quantity: 1,
@@ -209,10 +210,10 @@ async function getInventoryCategories(db, userId, guildId) {
             for (let i = 1; i <= boatLvl; i++) {
                 const boat = boatsConfig.find(b => b.level === i);
                 if (boat) {
-                    categories.fishing.push({
+                    categories['صيد'].push({
                         name: boat.name,
                         emoji: '🚤',
-                        category: 'fishing',
+                        category: 'صيد',
                         rarity: i >= 6 ? 'Legendary' : (i >= 4 ? 'Epic' : (i >= 2 ? 'Rare' : 'Common')),
                         imgPath: `${R2_URL}/images/fish/ships/boat_${i}.png`,
                         quantity: 1,
@@ -229,10 +230,10 @@ async function getInventoryCategories(db, userId, guildId) {
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
-    ctx.font = `bold ${currentFontSize}px "Bein", "Emoji", "Segoe UI Emoji"`;
+    ctx.font = `bold ${currentFontSize}px "Bein", "Emoji"`;
     while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
-        ctx.font = `bold ${currentFontSize}px "Bein", "Emoji", "Segoe UI Emoji"`;
+        ctx.font = `bold ${currentFontSize}px "Bein", "Emoji"`;
     }
     ctx.fillText(text, x, y);
 }
@@ -492,7 +493,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             }
             if (!imgDrawn) {
                 ctx.fillStyle = '#FFFFFF';
-                ctx.font = '65px "Emoji", "Segoe UI Emoji", sans-serif'; 
+                ctx.font = '65px "Emoji", "Arial"';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = rarityColor;
@@ -517,15 +518,63 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-async function generateMainHub(userObj, displayName, moraBalance, rankLetter, raceName, weaponName) {
-    // 🔥 الذكاء الاصطناعي: تنظيف النصوص الوهمية من الخيمة 🔥
-    let finalRank = String(rankLetter).trim();
-    let finalRace = String(raceName).trim();
-    let finalWeapon = String(weaponName).trim();
+// 🔥 دالة ذكية تقرأ معلومات اللاعب الحقيقية في الخيمة بدل النصوص الوهمية 🔥
+async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
+    let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
-    if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank) finalRank = 'D'; // إذا كان حرف عربي (مثل "رتبة") يحط D كبديل
-    if (/عرق/.test(finalRace)) finalRace = 'مواطن';
-    if (/سلاح/.test(finalWeapon)) finalWeapon = 'قبضة اليد';
+    // إذا تم استدعاؤها مع (member, db, moraBalance) -> نستخرج البيانات الحقيقية من الداتا بيز!
+    if (arg1 && arg1.roles && arg2 && arg2.query) {
+        const member = arg1;
+        const db = arg2;
+        moraBalance = arg3 || 0;
+        userObj = member.user;
+        displayName = member.displayName || userObj.username;
+        const guildId = member.guild.id;
+        const userId = userObj.id;
+
+        // جلب الرتبة الحقيقية
+        try {
+            const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
+            const points = Number(repRes.rows[0]?.rep_points || 0);
+            if (points >= 1000) finalRank = 'SS'; 
+            else if (points >= 500) finalRank = 'S'; 
+            else if (points >= 250) finalRank = 'A'; 
+            else if (points >= 100) finalRank = 'B'; 
+            else if (points >= 50) finalRank = 'C'; 
+            else if (points >= 25) finalRank = 'D'; 
+            else if (points >= 10) finalRank = 'E';
+            else finalRank = 'F';
+        } catch(e) {}
+
+        // جلب العرق الحقيقي
+        try {
+            const res = await db.query(`SELECT "roleID", "raceName" FROM race_roles WHERE "guildID" = $1`, [guildId]);
+            const userRoleIDs = member.roles.cache.map(r => r.id);
+            const userRace = res.rows.find(r => userRoleIDs.includes(r.roleID));
+            const RACE_TRANSLATIONS = { 'Human': 'بشري', 'Dragon': 'تنين', 'Elf': 'آلف', 'Dark Elf': 'آلف الظلام', 'Seraphim': 'سيرافيم', 'Demon': 'شيطان', 'Vampire': 'مصاص دماء', 'Spirit': 'روح', 'Dwarf': 'قزم', 'Ghoul': 'غول', 'Hybrid': 'نصف وحش' };
+            finalRace = userRace ? (RACE_TRANSLATIONS[userRace.raceName] || userRace.raceName) : "مواطن";
+        } catch(e) {}
+
+        // جلب السلاح الحقيقي
+        try {
+            const wRes = await db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
+            finalWeapon = wRes.rows[0]?.raceName || "قبضة اليد";
+        } catch(e) {}
+
+    } else {
+        // إذا تم استدعاؤها بالطريقة القديمة
+        userObj = arg1;
+        displayName = arg2;
+        moraBalance = arg3;
+        finalRank = String(arg4).trim();
+        finalRace = String(arg5).trim();
+        finalWeapon = String(arg6).trim();
+
+        // تنظيف النصوص العشوائية أو الوهمية
+        if (/[\u0600-\u06FF]/.test(finalRank) || !finalRank) finalRank = 'D';
+        if (/عرق/.test(finalRace)) finalRace = 'مواطن';
+        if (/سلاح/.test(finalWeapon)) finalWeapon = 'قبضة اليد';
+    }
 
     const width = 1100;
     const height = 650;
@@ -763,7 +812,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.fillStyle = '#A8B8D0';
     ctx.font = '24px "Bein", "Emoji"';
     
-    const description = item.description || "عنصر غامض لا يعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
+    const description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
     const lines = wrapText(ctx, description, descBoxW - 40);
     
     for (let j = 0; j < lines.length; j++) {
