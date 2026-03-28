@@ -12,7 +12,7 @@ let itemLore = {};
 try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
-const weaponsConfig = require('../json/weapons-config.json'); // عشان نجيب اسم السلاح الحقيقي
+const weaponsConfig = require('../json/weapons-config.json'); 
 let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
 
 let fishData = { fishItems: [], baits: [], rods: [], boats: [] };
@@ -56,7 +56,6 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// 🔥 إضافة خيار fullImage للتحكم بحجم الصورة (كامل المربع أو مبعد) 🔥
 function addItemToDict(id, name, emoji, category, rarity, imgPath, fullImage = false) {
     if (!id) return;
     const cleanId = String(id).trim();
@@ -73,7 +72,6 @@ function addItemToDict(id, name, emoji, category, rarity, imgPath, fullImage = f
 }
 
 function buildItemDictionary() {
-    // 1. الموارد والكتب (مفرغة = padding)
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             for (const mat of race.materials) {
@@ -89,8 +87,6 @@ function buildItemDictionary() {
             }
         }
     }
-    
-    // 2. الصيد (صور كاملة = fullImage)
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
             addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`, true);
@@ -101,8 +97,6 @@ function buildItemDictionary() {
             addItemToDict(bait.id, bait.name, bait.emoji, 'صيد', 'Common', `images/fish/baits/${bait.id}.png`, true);
         }
     }
-    
-    // 3. المزرعة (صور كاملة = fullImage)
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
             addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', `images/farm/seeds/${seed.id}.png`, true);
@@ -113,24 +107,18 @@ function buildItemDictionary() {
             addItemToDict(feed.id, feed.name, feed.emoji, 'مزرعة', 'Common', `images/feeds/${feed.id}.png`, true);
         }
     }
-    
-    // 4. الجرعات (في قسم أخرى، مفرغة = padding)
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
             addItemToDict(pot.id, pot.name, pot.emoji, 'أخرى', 'Rare', `images/potions/${pot.id}.png`, false);
         }
     }
-    
-    // 5. السوق (في قسم الممتلكات/أخرى، مفرغة = padding) 🔥 تم التعديل هنا 🔥
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            // false = الصورة راح يكون لها مساحة (Padding) وماراح تمط المربع
             addItemToDict(market.id, market.name, '📈', 'أخرى', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`, false);
         }
     }
 }
 
-// تنفيذ البناء لتسريع الرسومات
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
@@ -189,7 +177,6 @@ async function getInventoryCategories(db, userId, guildId) {
         }
     }
 
-    // استخراج السنارات والقوارب ووضعها في قسم الصيد (بصور كاملة المربع)
     try {
         let userData = null;
         try {
@@ -416,10 +403,10 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
         ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 40px "Bein", "Emoji"'; 
+        ctx.font = 'bold 40px "Bein"'; 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
+        ctx.fillText('هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
         ctx.shadowBlur = 0;
         return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
     }
@@ -498,7 +485,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             if (item.imgPath) {
                 const img = await getCachedImage(item.imgPath);
                 if (img) {
-                    // 🔥 هنا السحر: إذا كان fullImage صحيح يملأ المربع، وإذا لا يسوي padding 🔥
                     if (item.fullImage) {
                         ctx.save();
                         ctx.beginPath();
@@ -532,7 +518,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#FFFFFF';
-            drawAutoScaledText(ctx, item.name, x + slotSize / 2, ribbonY + ribbonH / 2, slotSize - 20, 16, 10);
+            drawAutoScaledText(ctx, item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), x + slotSize / 2, ribbonY + ribbonH / 2, slotSize - 20, 16, 10);
             ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI*2);
             ctx.fillStyle = rarityColor;
             ctx.shadowColor = '#000'; ctx.shadowBlur = 10; ctx.fill();
@@ -545,7 +531,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🔥 تحديث الخيمة لتقرأ السلاح الحقيقي بالاسم الكامل مع اللفل بدلاً من اسم العرق! 🔥
 async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
@@ -579,7 +564,6 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
             finalRace = userRace ? (RACE_TRANSLATIONS[userRace.raceName] || userRace.raceName) : "مواطن";
         } catch(e) {}
 
-        // 🔥 استخراج اسم السلاح الحقيقي من الـ weaponsConfig 🔥
         try {
             const wRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
             if (wRes.rows.length > 0) {
@@ -667,7 +651,7 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     ctx.fillStyle = primaryColor; ctx.font = 'bold 36px "Arial"';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = primaryColor; ctx.shadowBlur = 10;
-    ctx.fillText(finalRank, badgeX, badgeY + 6);
+    ctx.fillText(finalRank.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), badgeX, badgeY + 6);
     ctx.restore();
     
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -684,9 +668,9 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
     const halfTagW = (tagW / 2) - 10; 
     ctx.fillStyle = '#E0E0E0';
-    drawAutoScaledText(ctx, `🩸 ${finalRace}`, tagX + tagW/4, tagY + tagH/2, halfTagW, 18, 12);
+    drawAutoScaledText(ctx, finalRace.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), tagX + tagW/4, tagY + tagH/2, halfTagW, 18, 12);
     ctx.fillStyle = '#F1C40F';
-    drawAutoScaledText(ctx, `⚔️ ${finalWeapon}`, tagX + (tagW * 0.75), tagY + tagH/2, halfTagW, 18, 12);
+    drawAutoScaledText(ctx, finalWeapon.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), tagX + (tagW * 0.75), tagY + tagH/2, halfTagW, 18, 12);
     
     const moraX = idX + 60, moraY = tagY + 65, moraW = idW - 120, moraH = 55;
     const goldGradBox = ctx.createLinearGradient(moraX, moraY, moraX + moraW, moraY);
@@ -697,7 +681,7 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     ctx.beginPath(); roundRect(ctx, moraX, moraY, moraW, moraH, 15); ctx.stroke();
     ctx.fillStyle = '#FFD700';
     ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
-    const moraText = `${moraBalance.toLocaleString()} 🪙`;
+    const moraText = `${moraBalance.toLocaleString()} مورا`;
     drawAutoScaledText(ctx, moraText, idX + idW/2, moraY + moraH/2 + 2, moraW - 20, 30, 16);
     ctx.shadowBlur = 0;
     const bagX = 780, bagY = 320;
@@ -773,7 +757,6 @@ async function generateItemDetailsCard(userDisplayName, item) {
     if (item.imgPath) {
         const img = await getCachedImage(item.imgPath);
         if (img) {
-            // 🔥 هنا السحر: يفرق بين الصور المفرغة والصور الكاملة 🔥
             if (item.fullImage) {
                 ctx.save();
                 ctx.beginPath();
@@ -800,7 +783,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
         ctx.textBaseline = 'middle';
         ctx.shadowColor = rarityColor;
         ctx.shadowBlur = 50;
-        ctx.fillText(item.emoji || '📦', imgX + imgSize / 2, imgY + imgSize / 2 - 20);
+        ctx.fillText('📦', imgX + imgSize / 2, imgY + imgSize / 2 - 20);
         ctx.shadowBlur = 0;
     }
 
@@ -813,7 +796,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.font = 'bold 60px "Bein"';
     ctx.shadowColor = rarityColor;
     ctx.shadowBlur = 15;
-    ctx.fillText(item.name, textX, textY);
+    ctx.fillText(item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), textX, textY);
     ctx.shadowBlur = 0;
 
     textY += 90;
@@ -851,7 +834,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.fillStyle = '#A8B8D0';
     ctx.font = '24px "Bein", "Emoji"';
     
-    const description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
+    const description = item.description ? item.description.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim() : "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
     const lines = wrapText(ctx, description, descBoxW - 40);
     
     for (let j = 0; j < lines.length; j++) {
@@ -861,4 +844,115 @@ async function generateItemDetailsCard(userDisplayName, item) {
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-module.exports = { resolveItemInfo, getInventoryCategories, generateInventoryCard, generateMainHub, generateItemDetailsCard };
+// 🌟 دالة رسم الممتلكات (الأسهم والعقارات) 🌟
+async function generatePortfolioCard(userDisplayName, items, page, totalPages, totalValue) {
+    const width = 1200; 
+    const height = 900; 
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
+    bgGrad.addColorStop(0, '#111827'); 
+    bgGrad.addColorStop(1, '#030712');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+    
+    const headerH = 140;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, headerH);
+    
+    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
+    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
+    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, headerH - 3, width, 3);
+    ctx.fillRect(0, 3, width, 1);
+    
+    ctx.fillStyle = '#FFD700'; 
+    ctx.font = 'bold 50px "Bein"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 15;
+    ctx.fillText(`✦ محفظة استثمارات ${userDisplayName} ✦`, width / 2, 50);
+    ctx.shadowBlur = 0;
+    
+    ctx.fillStyle = '#00FF88';
+    ctx.font = '30px "Bein"';
+    ctx.fillText(`إجمالي القيمة: ${totalValue.toLocaleString()} مورا`, width / 2, 105);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = 'bold 20px "Bein"';
+    ctx.textAlign = 'right';
+    ctx.fillText(`[ ${page} / ${totalPages || 1} ]`, width - 30, 70);
+
+    const cols = 3;
+    const rows = 3;
+    const cardW = 340;
+    const cardH = 210;
+    const gapX = 50;
+    const gapY = 30;
+    const startX = (width - ((cols * cardW) + ((cols - 1) * gapX))) / 2;
+    const startY = 170; 
+
+    if (!items || items.length === 0) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 40px "Bein"'; 
+        ctx.textAlign = 'center';
+        ctx.fillText('المحفظة فارغة حالياً', width / 2, height / 2);
+        return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
+    }
+
+    for (let i = 0; i < items.length; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = startX + col * (cardW + gapX);
+        const y = startY + row * (cardH + gapY);
+        const item = items[i];
+
+        ctx.fillStyle = 'rgba(15, 20, 30, 0.95)';
+        ctx.beginPath(); roundRect(ctx, x, y, cardW, cardH, 15); ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
+
+        const cleanName = item.name.replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 24px "Bein"';
+        ctx.textAlign = 'center';
+        ctx.fillText(cleanName, x + cardW/2, y + 35);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.beginPath(); ctx.moveTo(x + 20, y + 60); ctx.lineTo(x + cardW - 20, y + 60); ctx.stroke();
+
+        ctx.textAlign = 'right';
+        ctx.font = '22px "Bein"';
+        const textX = x + cardW - 20;
+        const valX = x + 20;
+        let textY = y + 90;
+        const spacing = 35;
+
+        ctx.fillStyle = '#A8B8D0'; ctx.fillText('الكمية:', textX, textY);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF'; ctx.fillText(item.quantity.toLocaleString(), valX, textY);
+        
+        textY += spacing;
+        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('سعر الشراء:', textX, textY);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#FFD700'; ctx.fillText(item.purchasePrice.toLocaleString(), valX, textY);
+
+        textY += spacing;
+        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('السعر الحالي:', textX, textY);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#00FF88'; ctx.fillText(item.currentPrice.toLocaleString(), valX, textY);
+
+        textY += spacing;
+        const profit = (item.currentPrice - item.purchasePrice) * item.quantity;
+        const isProfit = profit >= 0;
+        const profitStr = isProfit ? `+${profit.toLocaleString()}` : profit.toLocaleString();
+        
+        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('الربح / الخسارة:', textX, textY);
+        ctx.textAlign = 'left'; ctx.fillStyle = isProfit ? '#00FF88' : '#FF4444'; ctx.fillText(profitStr, valX, textY);
+    }
+
+    return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
+}
+
+module.exports = { resolveItemInfo, getInventoryCategories, generateInventoryCard, generateMainHub, generateItemDetailsCard, generatePortfolioCard };
