@@ -1,121 +1,78 @@
-const { 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    PermissionsBitField, 
-    MessageFlags, 
-    SlashCommandBuilder 
-} = require("discord.js");
+const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require("discord.js");
+const shopItems = require('../../json/shop-items.json');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('متجر')
-        .setDescription('يعرض المتجر'),
+        .setDescription('تصفح متجر الإمبراطورية الشامل'),
 
     name: 'shop',
-    aliases: ['متجر', 'setup-shop'],
+    aliases: ['متجر'],
     category: "Economy",
-    description: 'يقوم بنشر رسالة المتجر التفاعلية (للإدارة) أو يوجهك للمتجر.',
 
     async execute(interactionOrMessage) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, guild, client, member, channel;
+        let interaction, message, client, author, guild;
 
         if (isSlash) {
             interaction = interactionOrMessage;
-            guild = interaction.guild;
             client = interaction.client;
-            member = interaction.member;
-            channel = interaction.channel;
+            author = interaction.user;
+            guild = interaction.guild;
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         } else {
             message = interactionOrMessage;
-            guild = message.guild;
             client = message.client;
-            member = message.member;
-            channel = message.channel;
+            author = message.author;
+            guild = message.guild;
         }
-
-        const replyEphemeral = async (payload) => {
-            if (typeof payload === 'string') payload = { content: payload };
-            payload.flags = MessageFlags.Ephemeral;
-
-            if (isSlash) {
-                return interaction.editReply(payload);
-            } else {
-                return message.reply(payload);
-            }
-        };
 
         const db = client.sql;
-
-        if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            const guildId = guild.id;
-            try {
-                await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guildId]);
-                const settingsRes = await db.query(`SELECT "shopChannelID" FROM settings WHERE "guild" = $1`, [guildId]);
-                const settings = settingsRes.rows[0];
-                const shopId = settings?.shopchannelid || settings?.shopChannelID;
-
-                if (!settings || !shopId) {
-                    return replyEphemeral({
-                        content: `❌ لم يقم أي إداري بإعداد المتجر في هذا السيرفر بعد.`
-                    });
-                }
-
-                return replyEphemeral({
-                    content: `✥ تـوجـه الى قنـاة المـتجـر: <#${shopId}>`
-                });
-            } catch(e) {
-                console.error(e);
-                return replyEphemeral({ content: `❌ حدث خطأ أثناء التحقق من المتجر.` });
-            }
+        
+        let userData = await client.getLevel(author.id, guild.id);
+        if (!userData) {
+            let dbRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [author.id, guild.id]).catch(()=>({rows:[]}));
+            userData = dbRes.rows[0] || { mora: 0, bank: 0 };
         }
 
-        const buttonRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('shop_open_menu') 
-                .setLabel('تصفح المتجر')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🛒')
+        let generateShopImage;
+        try { 
+            generateShopImage = require('../../generators/shop-generator.js').generateShopImage; 
+        } catch(e) {}
+
+        if (!generateShopImage) {
+            const msg = { content: "❌ نظام الرسم غير متوفر حالياً.", flags: MessageFlags.Ephemeral };
+            if (isSlash) return interaction.editReply(msg);
+            else return message.reply(msg);
+        }
+
+        const imageBuffer = await generateShopImage(author, userData, shopItems);
+
+        const options = shopItems.map(item => ({
+            label: item.name,
+            description: `السعر: ${item.price} | ${item.description.substring(0, 50)}`,
+            value: `buy_item_${item.id}`,
+            emoji: item.emoji || '📦'
+        }));
+
+        const row = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('shop_buy_select')
+                .setPlaceholder('🛒 شراء (اختر العنصر من هنا)...')
+                .addOptions(options)
         );
 
-        const descriptionText = `
-✥ في هذا المتجر العريق، يمكنك جمع المـورا من الكازينو واستخدامها لاستبدالها بـ جوائز لا تتوفر إلا في ساحات الإمبراطورية<a:HypedDance:1435572391190204447>! 
+        const replyData = {
+            content: `**مرحباً بك في متجر الإمبراطورية الشامل** يا <@${author.id}>`,
+            files: [{ attachment: imageBuffer, name: 'empire_shop_all.png' }],
+            components: [row]
+        };
 
-✬ اشترِ مستويات إضافية لتتقدم في السيرفر وتزداد مكانتك بين النخبة , استأجر حارس شخصي لحماية ممتلكاتك احصل على دروع الستريك <:Shield:1437804676224516146> استمتع بـ تعزيز خبرة لتزيد مستواك ونقاط الاتش بي <a:levelup:1437805366048985290> احصل على رتب خاصة تمنحك الهيبة والتألق بين الأعضاء، واجعل اسمك يسطع في كل ركن من أركان الإمبراطورية <a:JaFaster:1435572430042042409>
-
-✦ كل ما ترغب به متاح في متجر الإمبراطورية، فقط اجمع، استبدل، وتألق <:mora:1435647151349698621>!
-
-✦ لمعرفة طريقة اللعب وجمع المورا توجه الكازينو واكتب \`اوامر\` <:mora:1435647151349698621>
-        `;
-
-        const mainEmbed = new EmbedBuilder()
-            .setTitle('متجر الامبراطورية <:mora:1435647151349698621>')
-            .setURL('https://top.gg/discord/servers/732581242885705728/vote')
-            .setDescription(descriptionText)
-            .setColor('#9A6AAD') 
-            .setImage('https://i.postimg.cc/kMwWDMM0/shop.jpg');
-
-        await channel.send({ embeds: [mainEmbed], components: [buttonRow] });
-
-        try {
-            const guildId = guild.id;
-            const channelId = channel.id;
-
-            await db.query(`INSERT INTO settings ("guild") VALUES ($1) ON CONFLICT ("guild") DO NOTHING`, [guildId]);
-            await db.query(`UPDATE settings SET "shopChannelID" = $1 WHERE "guild" = $2`, [channelId, guildId]);
-
-            if (isSlash) {
-                await interaction.editReply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.' });
-            } else {
-                await message.reply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.', flags: MessageFlags.Ephemeral });
-            }
-
-        } catch (err) {
-            console.error(err);
-            await replyEphemeral({ content: '⚠️ تم نشر المتجر، ولكن حدث خطأ أثناء حفظه كمتجر رسمي للسيرفر.' });
+        if (isSlash) {
+            await interaction.editReply(replyData);
+        } else {
+            replyData.flags = MessageFlags.Ephemeral;
+            await message.reply(replyData);
         }
     }
 };
