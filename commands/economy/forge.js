@@ -34,6 +34,19 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
+// 🌟 قاموس الندرة لترجمة مستويات العناصر للعربية
+const RARITY_ARABIC = {
+    'Common': 'شائع',
+    'Uncommon': 'غير شائع',
+    'Rare': 'نادر',
+    'Epic': 'ملحمي',
+    'Legendary': 'أسطوري'
+};
+
+function translateRarity(rarity) {
+    return RARITY_ARABIC[rarity] || rarity;
+}
+
 // 🛡️ حماية الاستخراج وفك كائنات اللغات
 function resolveText(val) {
     if (val == null) return '';
@@ -94,14 +107,18 @@ const getReturnRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
 );
 
+// 🎨 تحديث قوي لدالة الرد عشان تمنع تعليق الصور (Caching Bug) وتزيل أي إيمبد قديم بالكامل
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     try {
         if (generateForgeUI) {
             const buffer = await generateForgeUI(user, view, data);
             if (buffer) {
-                const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
+                // إضافة ختم زمني عشان ديسكورد ما يكيّش الصورة القديمة ويطلع لك مساحة فاضية
+                const filename = `forge_${Date.now()}.png`; 
+                const attachment = new AttachmentBuilder(buffer, { name: filename });
+                
                 if (isInitial && !i.replied && !i.deferred) {
-                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
+                    return await i.reply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
                 } else {
                     return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
                 }
@@ -112,9 +129,10 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
+    // Fallback آمن جداً
     try {
-        if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
-        return await i.editReply({ content: null, embeds: [], components, files: [] }).catch(()=>{});
+        if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components, embeds: [] }).catch(()=>{});
+        return await i.editReply({ content: null, components, embeds: [], files: [] }).catch(()=>{});
     } catch(err) {}
 }
 
@@ -408,7 +426,7 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
     if (!state.sacrificeItem) {
         const sacrificeOptions = availableSacrifices.map(row => {
             const info = getItemInfo(row.itemID);
-            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
+            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `الكمية: ${row.quantity} | الندرة: ${translateRarity(info.rarity)}`.substring(0, 100) };
         }).slice(0, 25);
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions)));
     } else {
@@ -524,7 +542,7 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
         const smeltOptions = smeltableItems.map(row => {
             const info = getItemInfo(row.itemID);
             const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
+            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP | الندرة: ${translateRarity(info.rarity)}`.substring(0, 100) };
         }).slice(0, 25);
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions)));
     } else {
@@ -618,7 +636,7 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
         if (isModal) {
             await replyWithCanvas({
                 replied: false, deferred: false,
-                editReply: async (p) => i.editReply(p) // نمرر دالة الرد حق المودل
+                editReply: async (p) => i.editReply(p) 
             }, user, 'success_smelting', successData, [getReturnRow()]);
         } else {
             await replyWithCanvas(i, user, 'success_smelting', successData, [getReturnRow()]);
