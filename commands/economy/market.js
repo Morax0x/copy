@@ -1,6 +1,15 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const marketConfig = require('../../json/market-items.json'); 
-const { drawMarketGrid } = require('../../generators/market-generator.js'); 
+
+// 🔥 حماية استدعاء مكتبة الرسم (لكي لا يتعطل الأمر إذا كان هناك مشكلة في التثبيت) 🔥
+let drawMarketGrid = null;
+try {
+    const generator = require('../../generators/market-generator.js');
+    drawMarketGrid = generator.drawMarketGrid;
+} catch (e) {
+    console.error("⚠️ [تحذير]: فشل في تحميل مكتبة رسم السوق. تأكد من تثبيت canvas (npm install canvas)");
+    console.error(e.message);
+}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -58,11 +67,15 @@ function cleanEmojiFromName(name) {
 }
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
+    if (!drawMarketGrid) {
+        throw new Error("مكتبة الرسم Canvas غير محملة، يرجى مراجعة الكونسول.");
+    }
+
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    // استدعاء المولد المرئي
+    // 🎨 استدعاء دالة الرسم لتوليد صورة السوق
     const imageBuffer = await drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
@@ -97,15 +110,17 @@ async function buildDetailView(item, userId, guildId, allItems, timeRemaining, s
     let userPortfolio;
     try {
         const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
-        userPortfolio = userPortfolioRes.rows[0];
+        userPortfolio = userPortfolioRes.rows ? userPortfolioRes.rows[0] : (Array.isArray(userPortfolioRes) ? userPortfolioRes[0] : null);
     } catch (e) {
-        const userPortfolioRes = await sql.query(`SELECT quantity FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
-        userPortfolio = userPortfolioRes.rows[0];
+        try {
+            const userPortfolioRes = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
+            userPortfolio = userPortfolioRes;
+        } catch(err) {}
     }
-    const userQuantity = userPortfolio ? Number(userPortfolio.quantity || userPortfolio.Quantity) : 0;
+    const userQuantity = userPortfolio ? Number(userPortfolio.quantity || userPortfolio.Quantity || 0) : 0;
     
-    const changePercent = Number(item.lastChangePercent || item.lastchangepercent);
-    const currentPrice = Number(item.currentPrice || item.currentprice);
+    const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
+    const currentPrice = Number(item.currentPrice || item.currentprice || 0);
     
     const changeEmoji = getItemChangeEmoji(changePercent);
     const price = currentPrice.toLocaleString();
@@ -149,7 +164,6 @@ module.exports = {
     description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.',
 
     async execute(interactionOrMessage, args) {
-
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, client, sql, user, guild;
 
@@ -175,124 +189,137 @@ module.exports = {
         }
 
         const reply = async (payload) => {
-            if (isSlash) {
-                return await interaction.editReply(payload);
-            } else {
-                return await message.channel.send(payload);
-            }
+            if (isSlash) return await interaction.editReply(payload).catch(()=>{});
+            else return await message.channel.send(payload).catch(()=>{});
         };
 
-        const dbItemsRes = await sql.query("SELECT * FROM market_items");
-        const dbItems = dbItemsRes.rows;
-
-        const validItemIds = new Set(marketConfig.map(i => i.id));
-        const allItems = dbItems.filter(item => validItemIds.has(item.id));
-
-        if (allItems.length === 0) {
-            const embed = new EmbedBuilder().setTitle('📈 سوق الاستثمار').setDescription("السوق فارغ تماماً حالياً.").setColor(Colors.Red);
-            return reply({ embeds: [embed] });
-        }
-
-        let currentPage = 0;
-        let currentItemIndex = 0;
-        let currentView = 'grid'; 
-        let timeRemaining = getUpdateTimeRemaining();
-
-        // 🎨 استدعاء لوحة الرسم
-        const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-        
-        let msg;
-        const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
-        
-        if (isSlash) {
-            msg = await interaction.editReply(initPayload);
-        } else {
-            msg = await message.channel.send(initPayload);
-        }
-
-        const filter = i => i.user.id === user.id;
-        const collector = msg.createMessageComponentCollector({
-            time: 180000,
-            filter,
-        });
-
-        collector.on('collect', async i => {
+        try {
+            // 🔥 حل مشكلة الداتابيز الآمن (يدعم كل أنواع قواعد البيانات) 🔥
+            let dbItems = [];
             try {
-                if (i.isButton()) {
-                    if (i.customId === 'market_prev' || i.customId === 'market_next') {
-                        try { await i.deferUpdate(); } catch (e) {}
+                const dbItemsRes = await sql.query("SELECT * FROM market_items");
+                dbItems = dbItemsRes.rows ? dbItemsRes.rows : (Array.isArray(dbItemsRes) ? dbItemsRes : []);
+            } catch (dbErr) {
+                try {
+                    dbItems = sql.prepare("SELECT * FROM market_items").all();
+                } catch(sqliteErr) {
+                    console.error("Market DB Error:", dbErr.message, sqliteErr.message);
+                    return reply({ content: "❌ عذراً، لا يمكن الاتصال بقاعدة بيانات السوق حالياً." });
+                }
+            }
 
-                        if (currentView === 'grid') {
-                            if (i.customId === 'market_next') currentPage = Math.min(Math.ceil(allItems.length / ITEMS_PER_PAGE) - 1, currentPage + 1);
-                            else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
+            const validItemIds = new Set(marketConfig.map(i => i.id));
+            const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
+            if (allItems.length === 0) {
+                const embed = new EmbedBuilder().setTitle('📈 سوق الاستثمار').setDescription("السوق فارغ تماماً حالياً.").setColor(Colors.Red);
+                return reply({ embeds: [embed] });
+            }
+
+            let currentPage = 0;
+            let currentItemIndex = 0;
+            let currentView = 'grid'; 
+            let timeRemaining = getUpdateTimeRemaining();
+
+            // 🎨 استدعاء لوحة الرسم
+            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+            
+            let msg;
+            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
+            
+            if (isSlash) {
+                msg = await interaction.editReply(initPayload);
+            } else {
+                msg = await message.channel.send(initPayload);
+            }
+
+            const filter = i => i.user.id === user.id;
+            const collector = msg.createMessageComponentCollector({
+                time: 300000,
+                filter,
+            });
+
+            collector.on('collect', async i => {
+                try {
+                    if (i.isButton()) {
+                        if (i.customId === 'market_prev' || i.customId === 'market_next') {
+                            try { await i.deferUpdate(); } catch (e) {}
+
+                            if (currentView === 'grid') {
+                                if (i.customId === 'market_next') currentPage = Math.min(Math.ceil(allItems.length / ITEMS_PER_PAGE) - 1, currentPage + 1);
+                                else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
+
+                                timeRemaining = getUpdateTimeRemaining();
+                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                                await i.editReply({ files: [newPage.attachment], components: newPage.components, embeds: [] });
+                            }
+                        } else if (i.customId.startsWith('market_prev_') || i.customId.startsWith('market_next_')) {
+                            try { await i.deferUpdate(); } catch (e) {}
+                            
+                            const currentItemID = i.customId.split('_')[2];
+                            currentItemIndex = allItems.findIndex(it => it.id === currentItemID);
+
+                            if (i.customId.startsWith('market_next_')) {
+                                currentItemIndex = (currentItemIndex + 1) % allItems.length;
+                            } else if (i.customId.startsWith('market_prev_')) {
+                                currentItemIndex = (currentItemIndex - 1 + allItems.length) % allItems.length;
+                            }
+
+                            const item = allItems[currentItemIndex];
+                            const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
+                            await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
+
+                        } else if (i.customId === 'market_back_to_grid') {
+                            try { await i.deferUpdate(); } catch (e) {}
+                            currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
-                            const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                            await i.editReply({ files: [newPage.attachment], components: newPage.components, embeds: [] });
+                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في سوق الاستثمار يا <@${i.user.id}> 📊**` });
 
+                        } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
+                            const isBuy = i.customId.startsWith('buy_asset_');
+                            const assetId = i.customId.replace(isBuy ? 'buy_asset_' : 'sell_asset_', '');
+                            const item = allItems.find(it => it.id === assetId);
+
+                            if (!item) return;
+
+                            const modal = new ModalBuilder()
+                                .setCustomId(`${isBuy ? 'buy_modal_' : 'sell_modal_'}${assetId}`)
+                                .setTitle("أدخل الكمية");
+
+                            const quantityInput = new TextInputBuilder()
+                                .setCustomId('quantity_input')
+                                .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
+                                .setStyle(TextInputStyle.Short)
+                                .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()}`)
+                                .setRequired(true);
+
+                            modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
+                            await i.showModal(modal);
                         }
-                    } else if (i.customId.startsWith('market_prev_') || i.customId.startsWith('market_next_')) {
+                    }
+
+                    else if (i.isStringSelectMenu() && i.customId === 'market_select_item') {
                         try { await i.deferUpdate(); } catch (e) {}
-                        
-                        const currentItemID = i.customId.split('_')[2];
-                        currentItemIndex = allItems.findIndex(it => it.id === currentItemID);
-
-                        if (i.customId.startsWith('market_next_')) {
-                            currentItemIndex = (currentItemIndex + 1) % allItems.length;
-                        } else if (i.customId.startsWith('market_prev_')) {
-                            currentItemIndex = (currentItemIndex - 1 + allItems.length) % allItems.length;
-                        }
-
+                        currentView = 'detail';
+                        const selectedID = i.values[0];
+                        currentItemIndex = allItems.findIndex(it => it.id === selectedID);
                         const item = allItems[currentItemIndex];
                         const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
                         await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
-
-                    } else if (i.customId === 'market_back_to_grid') {
-                        try { await i.deferUpdate(); } catch (e) {}
-                        currentView = 'grid';
-                        timeRemaining = getUpdateTimeRemaining();
-                        const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                        await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في سوق الاستثمار يا <@${i.user.id}> 📊**` });
-
-                    } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
-                        const isBuy = i.customId.startsWith('buy_asset_');
-                        const assetId = i.customId.replace(isBuy ? 'buy_asset_' : 'sell_asset_', '');
-                        const item = allItems.find(it => it.id === assetId);
-
-                        if (!item) return;
-
-                        const modal = new ModalBuilder()
-                            .setCustomId(`${isBuy ? 'buy_modal_' : 'sell_modal_'}${assetId}`)
-                            .setTitle("أدخل الكمية");
-
-                        const quantityInput = new TextInputBuilder()
-                            .setCustomId('quantity_input')
-                            .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
-                            .setStyle(TextInputStyle.Short)
-                            .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()}`)
-                            .setRequired(true);
-
-                        modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
-                        await i.showModal(modal);
                     }
+                } catch (error) {
+                    console.error("خطأ في جامع السوق:", error);
                 }
+            });
 
-                else if (i.isStringSelectMenu() && i.customId === 'market_select_item') {
-                    try { await i.deferUpdate(); } catch (e) {}
-                    currentView = 'detail';
-                    const selectedID = i.values[0];
-                    currentItemIndex = allItems.findIndex(it => it.id === selectedID);
-                    const item = allItems[currentItemIndex];
-                    const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, allItems, timeRemaining, sql); 
-                    await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
-                }
-            } catch (error) {
-                console.error("خطأ في جامع السوق:", error);
-            }
-        });
+            collector.on('end', () => {
+                if(msg && msg.editable) msg.edit({ components: [] }).catch(() => null);
+            });
 
-        collector.on('end', () => {
-            msg.edit({ components: [] }).catch(() => null);
-        });
+        } catch (globalError) {
+            console.error("Market Execute Error:", globalError);
+            return reply({ content: `❌ **حدث خطأ غير متوقع:**\n\`${globalError.message}\`\nتأكد من تنصيب مكتبة \`canvas\`.` });
+        }
     }
 };
