@@ -6,15 +6,15 @@ try {
 } catch (e) {}
 
 async function generateGlobalShopBoard(allItems) {
-    const columns = 3;
-    const boxSize = 260;
-    const gapX = 40;
+    const columns = 4;
+    const boxSize = 240;
+    const gapX = 30;
     const gapY = 40;
-    const startX = 50;
+    const startX = 45;
     const startY = 180;
 
     const rows = Math.ceil(allItems.length / columns);
-    const canvasWidth = 1000;
+    const canvasWidth = 1140;
     const canvasHeight = startY + (rows * (boxSize + gapY)) + 50;
 
     const canvas = createCanvas(canvasWidth, canvasHeight);
@@ -29,7 +29,7 @@ async function generateGlobalShopBoard(allItems) {
     
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.roundRect(30, 20, 940, 120, 20);
+    ctx.roundRect(30, 20, 1080, 120, 20);
     ctx.fill();
 
     ctx.fillStyle = '#FFD700';
@@ -61,25 +61,25 @@ async function generateGlobalShopBoard(allItems) {
         try {
             if (item.image) {
                 const itemImage = await loadImage(item.image);
-                ctx.drawImage(itemImage, x + 70, y + 25, 120, 120);
+                ctx.drawImage(itemImage, x + 60, y + 25, 120, 120);
             } else {
                 throw new Error("No image");
             }
         } catch (e) {
             ctx.fillStyle = '#252533';
             ctx.beginPath();
-            ctx.roundRect(x + 70, y + 25, 120, 120, 15);
+            ctx.roundRect(x + 60, y + 25, 120, 120, 15);
             ctx.fill();
         }
 
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'center';
-        ctx.font = 'bold 24px "Cairo", sans-serif';
+        ctx.font = 'bold 22px "Cairo", sans-serif';
         ctx.fillText(item.name, x + (boxSize / 2), y + 180);
 
         ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 22px "Cairo", sans-serif';
-        const priceText = item.price > 0 ? `${item.price.toLocaleString()} مورا` : '-';
+        ctx.font = 'bold 20px "Cairo", sans-serif';
+        const priceText = item.price > 0 ? `${item.price.toLocaleString()} مورا` : 'مـورا ؟';
         ctx.fillText(priceText, x + (boxSize / 2), y + 220);
     }
 
