@@ -1,7 +1,9 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, Colors } = require("discord.js");
 const Canvas = require('canvas');
-const seedsData = require('../../json/seeds.json');
-const { getLandPlots } = require('../../utils/farmUtils.js');
+
+// 🌟 تم تصحيح مسارات الملفات هنا 🌟
+const seedsData = require('../json/seeds.json');
+const { getLandPlots } = require('../utils/farmUtils.js');
 
 let updateGuildStat, addXPAndCheckLevel;
 try {
@@ -104,13 +106,12 @@ async function ensureLandTable(db) {
             "plantTime" BIGINT,
             PRIMARY KEY ("userID", "guildID", "plotID")
         )
-    `).catch(() => {}); // نتجاهل الخطأ إذا الجدول موجود
+    `).catch(() => {});
 }
 
 async function renderLand(interaction, client, db) {
     await ensureLandTable(db);
     
-    // 🚀 جلب كل البيانات المطلوبة للرسم في نفس الوقت
     const user = interaction.user || interaction.author; 
     const userId = user.id;
     const guildId = interaction.guild.id;
@@ -191,7 +192,6 @@ async function renderLand(interaction, client, db) {
     const startX = TILE_SIZE;
     const startY = TILE_SIZE;
 
-    // 🚀 جلب صور المحاصيل المزروعة مسبقاً بالتوازي
     const cropLoadPromises = [];
     for (let i = 1; i <= MAX_GAME_PLOTS; i++) {
         const plotData = userPlots.find(p => Number(p.plotID || p.plotid) === i);
@@ -207,7 +207,7 @@ async function renderLand(interaction, client, db) {
             }
         }
     }
-    await Promise.all(cropLoadPromises); // نحمل كل صور المحاصيل مرة وحدة
+    await Promise.all(cropLoadPromises);
 
     for (let i = 1; i <= MAX_GAME_PLOTS; i++) {
         const index = i - 1;
@@ -245,7 +245,7 @@ async function renderLand(interaction, client, db) {
                         if (images.withered) ctx.drawImage(images.withered, x, y, TILE_SIZE, TILE_SIZE);
                         witheredCount++;
                     } else if (age >= growthMs) {
-                        const cropImg = await getCropImage(seed.id); // لأننا حملناها بالـ Promise.all بتجي فوراً
+                        const cropImg = await getCropImage(seed.id);
                         if (cropImg) ctx.drawImage(cropImg, x, y, TILE_SIZE, TILE_SIZE);
                         readyCount++;
                     } else {
@@ -535,7 +535,6 @@ async function handleLandInteractions(i, client, db) {
 
             if (isNaN(qtyInput) || qtyInput <= 0) return await i.editReply("❌ رقم خطأ.").catch(()=>{});
 
-            // 🚀 جلب بيانات المزرعة والمخزون معاً لتسريع العملية
             const [tilledPlotsRes, invItemRes] = await Promise.all([
                 db.query(`SELECT "plotID" FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'tilled'`, [userId, guildId]).catch(() => db.query(`SELECT plotid FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'tilled'`, [userId, guildId]).catch(()=>({rows:[]}))),
                 db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, seedId]).catch(() => db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, seedId]).catch(()=>({rows:[]})))
@@ -657,7 +656,6 @@ async function handleLandInteractions(i, client, db) {
                 } catch(err) { await db.query("ROLLBACK").catch(()=>{}); }
             }
 
-            // 🚀 الرد المباشر (ظاهر للكل) عن الأرباح
             if (addXPAndCheckLevel && totalXP > 0) {
                  await addXPAndCheckLevel(client, i.member, db, totalXP, totalRevenue, false).catch(()=>{});
             } else {
