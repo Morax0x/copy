@@ -69,7 +69,6 @@ function getItemInfo(itemId) {
     return null;
 }
 
-// تجميع المخزون لتفادي التكرار
 function aggregateInventory(rows) {
     const map = {};
     for (const r of rows) {
@@ -81,7 +80,6 @@ function aggregateInventory(rows) {
     return Object.keys(map).map(id => ({ itemID: id, quantity: map[id] }));
 }
 
-// إنشاء الأزرار الرئيسية كدالة عشان ديسكورد ما يرفض تكرار استخدامها
 const getMainMenuRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحدادة').setEmoji('⚒️').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الأكاديمية').setEmoji('📜').setStyle(ButtonStyle.Primary),
@@ -89,6 +87,7 @@ const getMainMenuRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_smelting').setLabel('الصهر').setEmoji('🔥').setStyle(ButtonStyle.Danger)
 );
 
+// 🛡️ نظام الرد المدعم بصائد الأخطاء
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     try {
         if (generateForgeUI) {
@@ -96,20 +95,30 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
             if (buffer) {
                 const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
                 if (isInitial && !i.replied && !i.deferred) {
-                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
+                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(err => {
+                        i.followUp({ content: `❌ مشكلة بالديسكورد أثناء الرد الأولي:\n\`${err.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+                    });
                 } else {
-                    return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
+                    return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(err => {
+                        i.followUp({ content: `❌ مشكلة بالديسكورد أثناء تحديث الواجهة:\n\`${err.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+                    });
                 }
             }
         }
     } catch (e) {
         console.error("Canvas Error in Forge:", e);
+        await i.followUp({ content: `❌ خطأ في رسم الصورة:\n\`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
-    if (isInitial && !i.replied && !i.deferred) {
-        return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
+    // الفولباك
+    try {
+        if (isInitial && !i.replied && !i.deferred) {
+            return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
+        }
+        return await i.editReply({ content: null, components, files: [] }).catch(()=>{});
+    } catch(err) {
+        console.error("Fallback error:", err);
     }
-    return await i.editReply({ content: null, components, files: [] }).catch(()=>{});
 }
 
 module.exports = {
@@ -143,7 +152,9 @@ module.exports = {
         let smeltState = { item: null };
 
         collector.on('collect', async (i) => {
-            try { await i.deferUpdate(); } catch(e) {}
+            try { 
+                if (!i.deferred && !i.replied) await i.deferUpdate(); 
+            } catch(e) {}
 
             try {
                 if (i.isStringSelectMenu()) {
@@ -177,7 +188,8 @@ module.exports = {
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
-                await i.followUp({ content: `❌ عذراً، حدث خطأ برمجي غير متوقع: ${innerError.message}`, flags: MessageFlags.Ephemeral }).catch(()=>{});
+                // هذا بيكشف لك الغلط في الشات بشكل مخفي فوراً
+                await i.followUp({ content: `❌ **تم اكتشاف خطأ:**\n\`\`\`js\n${innerError.message}\n\`\`\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
 
@@ -261,12 +273,11 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
 
     if (userSkills.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], components: [getMainMenuRow()] });
 
+    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد للـ SelectMenu 🔥
     const skillOptions = userSkills.map(s => {
         const configSkill = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
         if (!configSkill) return null;
-        const opt = { label: configSkill.name.substring(0, 100), value: configSkill.id, description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
-        if (configSkill.emoji) opt.emoji = configSkill.emoji;
-        return opt;
+        return { label: configSkill.name.substring(0, 100), value: configSkill.id, description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
     }).filter(Boolean);
 
     const skillSelectRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_skill_select').setPlaceholder('اختر المهارة...').addOptions(skillOptions.slice(0, 25)));
@@ -354,11 +365,10 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
 
     if (availableSacrifices.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], components: [getMainMenuRow()] });
 
+    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد 🔥
     const sacrificeOptions = availableSacrifices.map(row => {
         const info = getItemInfo(row.itemID);
-        const opt = { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
-        if (info.emoji) opt.emoji = info.emoji;
-        return opt;
+        return { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
     }).slice(0, 25);
 
     const sacrificeRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions));
@@ -379,18 +389,14 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         if (rMats) {
             const matMatch = rMats.materials.find(m => m.rarity === sacInfo.rarity);
             if (matMatch && matMatch.id !== sacInfo.id) {
-                const opt = { label: matMatch.name.substring(0, 100), value: matMatch.id, description: 'مورد سلاح' };
-                if (matMatch.emoji) opt.emoji = matMatch.emoji;
-                targetOptions.push(opt);
+                targetOptions.push({ label: matMatch.name.substring(0, 100), value: matMatch.id, description: 'مورد سلاح' });
             }
         }
         
         upgradeMats.skill_books.forEach(cat => {
             const bookMatch = cat.books.find(b => b.rarity === sacInfo.rarity);
             if (bookMatch && bookMatch.id !== sacInfo.id) {
-                const opt = { label: bookMatch.name.substring(0, 100), value: bookMatch.id, description: 'مخطوطة سحر' };
-                if (bookMatch.emoji) opt.emoji = bookMatch.emoji;
-                targetOptions.push(opt);
+                targetOptions.push({ label: bookMatch.name.substring(0, 100), value: bookMatch.id, description: 'مخطوطة سحر' });
             }
         });
 
@@ -449,7 +455,7 @@ async function handleSynthesis(i, user, guildId, db, state) {
         await db.query('COMMIT').catch(()=>{}); 
         
         const targetInfo = getItemInfo(state.targetItem);
-        const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.emoji || ''} ${targetInfo.name}**`);
+        const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.name}**`);
         await i.editReply({ files: [], embeds: [successEmbed], components: [getMainMenuRow()] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
@@ -468,12 +474,11 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
 
     if (smeltableItems.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], components: [getMainMenuRow()] });
 
+    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد 🔥
     const smeltOptions = smeltableItems.map(row => {
         const info = getItemInfo(row.itemID);
         const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-        const opt = { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
-        if (info.emoji) opt.emoji = info.emoji;
-        return opt;
+        return { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
     }).slice(0, 25);
 
     const smeltRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions));
@@ -524,7 +529,7 @@ async function handleSmelting(i, user, guildId, db, state, client) {
             if(cacheData) { cacheData.xp += xpReward; cacheData.totalXP += xpReward; await client.setLevel(cacheData); }
         }
         
-        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق ${itemInfo.emoji || ''} ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
+        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
         await i.editReply({ files: [], embeds: [successEmbed], components: [getMainMenuRow()] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
