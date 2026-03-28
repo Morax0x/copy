@@ -1,19 +1,16 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 
-// 🔥 حل مشكلة المسار (Cannot find module) بشكل ديناميكي 🔥
+// استدعاء ملف الكونفج بشكل آمن
 const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
 let marketConfig = [];
-try {
-    if (fs.existsSync(marketConfigPath)) {
-        marketConfig = require(marketConfigPath);
-    } else {
-        console.error(`⚠️ [Market] لا يمكن العثور على ملف market-items.json في المسار: ${marketConfigPath}`);
-    }
-} catch (e) {
-    console.error("⚠️ [Market] خطأ في قراءة ملف سوق الاستثمار:", e.message);
+if (fs.existsSync(marketConfigPath)) {
+    marketConfig = require(marketConfigPath);
 }
+
+// 🔥 استدعاء مكتبة الرسم بشكل نظيف ومباشر 🔥
+const { drawMarketGrid } = require('../../generators/market-generator.js'); 
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
@@ -71,19 +68,10 @@ function cleanEmojiFromName(name) {
 }
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
-    // 🔥 الاستدعاء الذكي (Lazy Loading) لحل مشكلة Circular Dependency كلياً 🔥
-    const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
-    const { drawMarketGrid } = require(generatorPath);
-
-    if (!drawMarketGrid) {
-        throw new Error("مكتبة الرسم Canvas غير محملة أو هناك خطأ في ملف market-generator.js");
-    }
-
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    // 🎨 استدعاء دالة الرسم لتوليد صورة السوق
     const imageBuffer = await drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
@@ -153,7 +141,7 @@ async function buildDetailView(item, userId, guildId, sql) {
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger).setDisabled(userQuantity === 0),
-        new ButtonBuilder().setCustomId('market_back_to_grid').setLabel('العودة للوحة السوق').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('market_back_to_grid').setLabel('العودة للوحة').setStyle(ButtonStyle.Primary)
     );
 
     return { embed: detailEmbed, components: [actionRow] };
@@ -222,10 +210,10 @@ module.exports = {
             }
 
             let currentPage = 0;
+            let currentItemIndex = 0;
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
 
-            // 🎨 استدعاء لوحة الرسم
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
             let msg;
@@ -262,7 +250,7 @@ module.exports = {
                             currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
                             const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في سوق الاستثمار يا <@${i.user.id}> 📊**` });
+                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في بورصة الإمبراطورية يا <@${i.user.id}> 📊**` });
 
                         } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
                             const isBuy = i.customId.startsWith('buy_asset_');
@@ -291,9 +279,8 @@ module.exports = {
                         try { await i.deferUpdate(); } catch (e) {}
                         currentView = 'detail';
                         const selectedID = i.values[0];
-                        const item = allItems.find(it => it.id === selectedID);
-                        if (!item) return;
-                        
+                        currentItemIndex = allItems.findIndex(it => it.id === selectedID);
+                        const item = allItems[currentItemIndex];
                         const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
                         await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
                     }
