@@ -4,11 +4,20 @@ const feedItems = require('../../json/feed-items.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 const { renderLand } = require('../../handlers/farm-land.js');
 
+// 🚨 نظام ذكي لاكتشاف الأخطاء في ملف المتجر 🚨
 let farmShop;
+let farmShopError = null;
 try {
     farmShop = require('../../handlers/shop_system/farm-shop.js');
 } catch(e) {
-    try { farmShop = require('../../handlers/farm-shop.js'); } catch(e2) {}
+    farmShopError = e.message;
+    try { 
+        farmShop = require('../../handlers/farm-shop.js'); 
+        farmShopError = null; // نجح في المسار الثاني
+    } catch(e2) {
+        farmShopError = e2.message; // حفظ الخطأ لعرضه للمستخدم
+        console.error("❌ خطأ في تحميل ملف متجر المزرعة:", e2);
+    }
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -72,6 +81,7 @@ module.exports = {
         const now = Date.now();
 
         let animalsPage = 0;
+        let shopState = {}; // مساحة لحفظ حالة المتجر
 
         const getAnimalsPaginationRow = (page, totalPages) => {
             const row = new ActionRowBuilder();
@@ -242,7 +252,6 @@ module.exports = {
             fetchReply: true 
         });
 
-        // 🚨 هنا تم تنظيف الـ Collector ليشمل التصفح فقط
         const collector = msg.createMessageComponentCollector({ 
             filter: i => {
                 if (i.user.id === user.id) return true;
@@ -277,15 +286,53 @@ module.exports = {
                     const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
                     await i.editReply({ embeds: [data.embed], components: components, files: [], attachments: [], content: '' }).catch(() => {});
                 }
+                // 🛒 فتح المتجر بذكاء وعرض الأخطاء لو وجدت
                 else if (i.customId === 'nav_shop') {
-                    await i.deferUpdate().catch(() => {});
-                    if (farmShop && farmShop.buildMainMenu) {
-                        const data = farmShop.buildMainMenu(user);
-                        await i.editReply({ embeds: data.embeds, components: [...data.components, getNavRow('shop')], files: [], attachments: [], content: '' }).catch(() => {});
-                    } else {
-                        await i.followUp({ content: '❌ نظام المتجر غير متوفر حالياً.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                    if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
+                    
+                    if (!farmShop) {
+                        return await i.followUp({ 
+                            content: `❌ **حدث خطأ في ملف المتجر يمنعه من العمل!**\n\`${farmShopError || 'الملف مفقود'}\`\n\n*(الرجاء إبلاغ الإدارة بهذا الخطأ لإصلاحه)*`, 
+                            flags: [MessageFlags.Ephemeral] 
+                        }).catch(() => {});
+                    }
+
+                    try {
+                        // محاولة إيجاد الدالة بأكثر من اسم محتمل
+                        const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu || farmShop.generateMainMenu;
+                        
+                        if (menuFn) {
+                            const data = await menuFn(user, client, db);
+                            const embeds = data.embeds || (data.embed ? [data.embed] : []);
+                            const components = data.components || (data.actionRow ? [data.actionRow] : []);
+                            
+                            components.push(getNavRow('shop'));
+
+                            await i.editReply({ 
+                                embeds: embeds, 
+                                components: components, 
+                                files: data.files || [], 
+                                attachments: [], 
+                                content: data.content || '' 
+                            }).catch(() => {});
+                        } else if (farmShop.handleShopInteraction) {
+                            // إذا كانت الدالة المتاحة هي المعالج فقط، نرسله مباشرة
+                            await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
+                        } else {
+                            await i.followUp({ content: '❌ المتجر متوفر كملف لكن دالة الفتح (`buildMainMenu`) غير موجودة فيه!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        await i.followUp({ content: `❌ **خطأ برمجي أثناء فتح المتجر:**\n\`${err.message}\``, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                     }
                 }
+                // 🌟 التعامل مع أزرار المتجر الداخلية (توجيهها للمتجر)
+                else if (farmShop && (i.customId === 'shop_cat_select' || i.customId.startsWith('shop_cat_') || i.customId === 'farm_select_item' || i.customId.startsWith('buy_btn_farm|') || i.customId.startsWith('farm_shop_'))) {
+                    if (farmShop.handleShopInteraction) {
+                        await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
+                    }
+                }
+                // أزرار تقليب صفحات الحيوانات
                 else if (i.customId === 'farm_prev' || i.customId === 'farm_next') {
                     await i.deferUpdate().catch(() => {});
                     if (i.customId === 'farm_prev') animalsPage--;
@@ -294,6 +341,7 @@ module.exports = {
                     const components = data.actionRow ? [data.actionRow, getNavRow('animals')] : [getNavRow('animals')];
                     await i.editReply({ embeds: [data.embed], components: components }).catch(() => {});
                 }
+                // نظام الإطعام
                 else if (i.customId === 'btn_feed_animal') {
                     if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
 
