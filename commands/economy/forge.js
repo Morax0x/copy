@@ -69,7 +69,7 @@ function getItemInfo(itemId) {
     return null;
 }
 
-// تجميع المخزون لتفادي التكرار (الأخطاء في القوائم المنسدلة)
+// تجميع المخزون لتفادي التكرار
 function aggregateInventory(rows) {
     const map = {};
     for (const r of rows) {
@@ -98,7 +98,6 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         console.error("Canvas Error in Forge:", e);
     }
     
-    // الفولباك الآمن
     if (isInitial && !i.replied && !i.deferred) {
         return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
     }
@@ -124,13 +123,12 @@ module.exports = {
         if (!userDataRes?.rows?.[0]) return isSlash ? interactionOrMessage.editReply("❌ لم يتم العثور على بياناتك.") : interactionOrMessage.reply("❌ لم يتم العثور على بياناتك.");
         const userMora = Number(userDataRes.rows[0].mora || userDataRes.rows[0].Mora || 0);
 
+        // 🔥 تحويل القائمة المنسدلة إلى أزرار فخمة وسريعة الاستجابة 🔥
         const menuRow = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId(`forge_menu_main`).setPlaceholder('اختر القسم المطلوب...').addOptions([
-                { label: 'ورشة الحدادة', value: 'forge_weapon', emoji: '⚒️', description: 'استخدم الخامات لترقية سلاحك العرقي' },
-                { label: 'أكاديمية السحر', value: 'forge_skill_menu', emoji: '📜', description: 'استخدم المخطوطات لصقل مهاراتك' },
-                { label: 'فرن الدمج', value: 'forge_synthesis', emoji: '🔄', description: 'ادمج 4 عناصر لتحصل على عنصر من اختيارك' },
-                { label: 'محرقة التفكيك', value: 'forge_smelting', emoji: '🔥', description: 'احرق العناصر الزائدة مقابل XP' }
-            ])
+            new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحدادة').setEmoji('⚒️').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الأكاديمية').setEmoji('📜').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('forge_synthesis').setLabel('الدمج').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('forge_smelting').setLabel('الصهر').setEmoji('🔥').setStyle(ButtonStyle.Danger)
         );
 
         let replyObj = await replyWithCanvas(isSlash ? interactionOrMessage : { editReply: async (p) => interactionOrMessage.reply(p) }, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [menuRow], !isSlash);
@@ -149,14 +147,7 @@ module.exports = {
 
             try {
                 if (i.isStringSelectMenu()) {
-                    if (i.customId === 'forge_menu_main') {
-                        const choice = i.values[0];
-                        if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
-                        else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
-                        else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
-                        else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
-                    } 
-                    else if (i.customId === 'forge_skill_select') {
+                    if (i.customId === 'forge_skill_select') {
                         await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
                     }
                     else if (i.customId === 'forge_synth_sacrifice') {
@@ -174,7 +165,14 @@ module.exports = {
                     }
                 }
                 else if (i.isButton()) {
-                    if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db, menuRow);
+                    // أزرار الأقسام الرئيسية
+                    if (i.customId === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
+                    else if (i.customId === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
+                    else if (i.customId === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
+                    else if (i.customId === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
+                    
+                    // أزرار التنفيذ
+                    else if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db, menuRow);
                     else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, menuRow, i.customId.replace('forge_upgrade_skill_', ''));
                     else if (i.customId === 'forge_execute_synth') await handleSynthesis(i, user, guildId, db, menuRow, synthesisState);
                     else if (i.customId === 'forge_execute_smelt') await handleSmelting(i, user, guildId, db, menuRow, smeltState, client);
@@ -185,7 +183,7 @@ module.exports = {
         });
 
         collector.on('end', () => {
-            try { menuRow.components[0].setDisabled(true); replyObj.edit({ components: [menuRow] }).catch(()=>{}); } catch(e) {}
+            try { menuRow.components.forEach(c => c.setDisabled(true)); replyObj.edit({ components: [menuRow] }).catch(()=>{}); } catch(e) {}
         });
     }
 };
@@ -225,7 +223,7 @@ async function buildWeaponForgeUI(i, user, guildId, db, menuRow) {
         currentStat: `${currentDmg} DMG`, nextStat: `${nextDmg} DMG`,
         reqMora: reqs.moraCost, reqMatName: requiredMaterial.name, reqMatIcon: requiredMaterial.iconUrl,
         userMatCount, reqMatCount: reqs.matCount
-    }, [menuRow, btnRow]);
+    }, [btnRow, menuRow]); // الأزرار الرئيسية تحت
 }
 
 async function handleWeaponUpgrade(i, user, guildId, db, menuRow) {
@@ -273,7 +271,7 @@ async function buildAcademyMenuUI(i, user, guildId, db, menuRow) {
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [menuRow, skillSelectRow]);
+    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, menuRow]);
 }
 
 async function buildSkillUpgradeUI(i, user, guildId, db, menuRow, skillId) {
@@ -308,7 +306,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, menuRow, skillId) {
         currentStat: `${currentVal}${statSymbol}`, nextStat: `${nextVal}${statSymbol}`,
         reqMora: reqs.moraCost, reqMatName: requiredBook.name, reqMatIcon: requiredBook.iconUrl,
         userMatCount: userBookCount, reqMatCount: reqs.matCount
-    }, [menuRow, btnRow]);
+    }, [btnRow, menuRow]);
 }
 
 async function handleSkillUpgrade(i, user, guildId, db, menuRow, skillId) {
@@ -361,7 +359,7 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
     }).slice(0, 25);
 
     const sacrificeRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions));
-    const components = [menuRow, sacrificeRow];
+    const components = [sacrificeRow, menuRow]; // الأزرار تحت
     
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
@@ -393,20 +391,19 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
             }
         });
 
-        // تنظيف الخيارات من أي تكرار احتياطياً
         const uniqueTargetsMap = new Map();
         targetOptions.forEach(opt => uniqueTargetsMap.set(opt.value, opt));
         const uniqueTargets = Array.from(uniqueTargetsMap.values());
 
         if (uniqueTargets.length > 0) {
-            components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(uniqueTargets.slice(0, 25))));
+            components.unshift(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(uniqueTargets.slice(0, 25))));
         }
 
         if (state.targetItem) {
             const targetInfo = getItemInfo(state.targetItem);
             payloadData.targetMatName = targetInfo.name;
             payloadData.targetMatIcon = targetInfo.iconUrl;
-            components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمج (-5000 مورا)`).setStyle(ButtonStyle.Success).setEmoji('🔨')));
+            components.unshift(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمج (-5000 مورا)`).setStyle(ButtonStyle.Success).setEmoji('🔨')));
         }
     }
 
@@ -417,7 +414,6 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
     if (!state.sacrificeItem || !state.targetItem) return;
     
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=>({rows:[]})));
-    // جمع كل الكميات إذا كانت متكررة
     let sacQty = 0;
     if (invRes?.rows) invRes.rows.forEach(r => sacQty += Number(r.quantity || r.Quantity));
     
@@ -431,7 +427,6 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
     try {
         await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [SYNTHESIS_FEE, user.id, guildId]).catch(()=> db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [SYNTHESIS_FEE, user.id, guildId]));
         
-        // الخصم
         let remainingToDeduct = 4;
         let updateRes = await db.query(`SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]));
         for (const r of updateRes.rows) {
@@ -479,7 +474,7 @@ async function buildSmeltingUI(i, user, guildId, db, menuRow, state) {
     }).slice(0, 25);
 
     const smeltRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions));
-    const components = [menuRow, smeltRow];
+    const components = [smeltRow, menuRow];
     
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
@@ -491,7 +486,7 @@ async function buildSmeltingUI(i, user, guildId, db, menuRow, state) {
         payloadData.sacMatName = itemInfo.name;
         payloadData.reqMatIcon = itemInfo.iconUrl;
         payloadData.xpGain = SMELT_XP_RATES[itemInfo.rarity] || 10;
-        components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_smelt').setLabel(`صهر (حبة واحدة)`).setStyle(ButtonStyle.Danger).setEmoji('🔥')));
+        components.unshift(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_smelt').setLabel(`صهر (حبة واحدة)`).setStyle(ButtonStyle.Danger).setEmoji('🔥')));
     }
 
     await replyWithCanvas(i, user, 'smelting', payloadData, components);
