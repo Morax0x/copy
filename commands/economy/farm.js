@@ -62,7 +62,7 @@ module.exports = {
         const reply = async (payload) => {
             if (isSlash) return interaction.editReply(payload).catch(() => {});
             return message.channel.send(payload).catch(() => {});
-        };
+        }
 
         const db = client.sql;
         const targetUser = targetMember.user;
@@ -70,14 +70,6 @@ module.exports = {
         const guildId = guild.id;
         const isOwner = user.id === userId; 
         const now = Date.now();
-
-        let shopState = {
-            currentView: 'main',
-            currentCategory: null,
-            currentPage: 0,
-            currentItemIndex: 0,
-            currentItemsList: []
-        };
 
         let animalsPage = 0;
 
@@ -250,6 +242,7 @@ module.exports = {
             fetchReply: true 
         });
 
+        // 🚨 هنا تم تنظيف الـ Collector ليشمل التصفح فقط
         const collector = msg.createMessageComponentCollector({ 
             filter: i => {
                 if (i.user.id === user.id) return true;
@@ -286,11 +279,11 @@ module.exports = {
                 }
                 else if (i.customId === 'nav_shop') {
                     await i.deferUpdate().catch(() => {});
-                    if (farmShop) {
+                    if (farmShop && farmShop.buildMainMenu) {
                         const data = farmShop.buildMainMenu(user);
                         await i.editReply({ embeds: data.embeds, components: [...data.components, getNavRow('shop')], files: [], attachments: [], content: '' }).catch(() => {});
                     } else {
-                        await i.followUp({ content: '❌ نظام المتجر قيد التحديث.', flags: [MessageFlags.Ephemeral] });
+                        await i.followUp({ content: '❌ نظام المتجر غير متوفر حالياً.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
                     }
                 }
                 else if (i.customId === 'farm_prev' || i.customId === 'farm_next') {
@@ -382,10 +375,6 @@ module.exports = {
                         }
                     });
                 }
-                else if (farmShop && (i.customId === 'shop_cat_select' || i.customId === 'farm_select_item' || i.customId.startsWith('buy_btn_farm|'))) {
-                    await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
-                }
-
             } catch (err) {}
         });
 
