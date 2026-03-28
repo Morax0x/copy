@@ -16,7 +16,6 @@ const skillsConfig = require('../json/skills-config.json');
 const upgradeMats = require('../json/upgrade-materials.json');
 const potionItems = require('../json/potions.json');
 
-// 🔥 استيراد عناصر السوق لحساب الممتلكات
 let marketConfig = [];
 try { marketConfig = require('../json/market-items.json'); } catch(e) {}
 
@@ -99,7 +98,6 @@ module.exports = {
         .addUserOption(option => option.setName('user').setDescription('عرض بيانات مستخدم آخر').setRequired(false)),
 
     name: 'profile',
-    // 🔥 تم دمج كل الاختصارات هنا (بروفايل، شنطة، ممتلكات، مهارات)
     aliases: ['p', 'بروفايل', 'بطاقة', 'كارد', 'card', 'inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة', 'مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي', 'محفظتي', 'استثماراتي', 'ممتلكات', 'portfolio'], 
 
     async execute(interactionOrMessage, args) {
@@ -135,7 +133,6 @@ module.exports = {
             let selectedIndex = 0; 
             let activeItemDetails = null; 
 
-            // 🔥 نظام التوجيه الذكي عبر الاختصارات 🔥
             const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
             
             if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandTrigger)) {
@@ -143,7 +140,7 @@ module.exports = {
             } else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandTrigger)) {
                 currentView = 'combat';
             } else if (['محفظتي', 'استثماراتي', 'ممتلكات', 'portfolio'].includes(commandTrigger)) {
-                currentView = 'portfolio'; // توجيه مباشر للممتلكات
+                currentView = 'portfolio';
             }
 
             const renderView = async () => {
@@ -155,9 +152,7 @@ module.exports = {
 
                 const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
 
-                // 🌟 نظام الممتلكات المدمج الجديد (Portfolio) 🌟
                 if (currentView === 'portfolio') {
-                    // 🚀 تسريع الجلب باستخدام المتوازي
                     const [portfolioRes, dbMarketRes] = await Promise.all([
                         db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
                         db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
@@ -208,7 +203,7 @@ module.exports = {
                             if (vItem.buyPrice > 0) {
                                 descriptionLines.push(`✦ سعـر الشـراء : ${vItem.buyPrice.toLocaleString()} ${EMOJI_MORA}`);
                             }
-                            descriptionLines.push(`\u200B`); // سطر فاصل
+                            descriptionLines.push(`\u200B`);
                         }
                         embed.setDescription(`✥ قيمة الاصول الكلية: **${totalValue.toLocaleString()}** ${EMOJI_MORA}\n\n` + descriptionLines.join('\n'));
                     }
@@ -217,10 +212,9 @@ module.exports = {
                         new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('العـودة للحقيبة').setStyle(ButtonStyle.Danger).setEmoji('🎒')
                     );
 
-                    return { content: `**💼 محفظة الاستثمارات | ${cleanName}**`, embeds: [embed], components: [nav], files: [] };
+                    return { content: '', embeds: [embed], components: [nav], files: [] };
                 }
 
-                // النظام المعتاد للبروفايل والمهارات والمخزن...
                 const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                 const repPoints = repRes.rows[0]?.rep_points || 0;
                 const rankInfo = getRepRankInfo(repPoints);
@@ -256,7 +250,7 @@ module.exports = {
                         new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('حـقـيـبـة').setStyle(ButtonStyle.Primary).setEmoji('🎒'),
                         new ButtonBuilder().setCustomId(`v_com_${authorUser.id}`).setLabel('عـتـاد').setStyle(ButtonStyle.Primary).setEmoji('⚔️')
                     );
-                    return { content: `**🪪 بطاقة المغامر | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
+                    return { content: '', files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
                 if (currentView === 'combat') {
@@ -282,27 +276,26 @@ module.exports = {
                         new ButtonBuilder().setCustomId(`sk_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(skillPage >= totalSkillPages - 1),
                         new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger)
                     );
-                    return { content: `**⚔️ العتاد والمهارات | ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
+                    return { content: '', files: [new AttachmentBuilder(buffer, { name: 's.png' })], components: [nav] };
                 }
 
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
                         const buffer = await generateMainHub(targetMember, db, totalMora);
                         
-                        // 🔥 تحديث الأزرار لإضافة قسم "الممتلكات" وترتيبها في صفين 🔥
                         const row1 = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('موارد').setStyle(ButtonStyle.Success).setEmoji('💎'),
                             new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صيد').setStyle(ButtonStyle.Success).setEmoji('🎣'),
                             new ButtonBuilder().setCustomId(`c_far_${authorUser.id}`).setLabel('مزرعة').setStyle(ButtonStyle.Success).setEmoji('🌾'),
+                            new ButtonBuilder().setCustomId(`v_port_${authorUser.id}`).setLabel('الممتلكات').setStyle(ButtonStyle.Primary).setEmoji('💼'),
                             new ButtonBuilder().setCustomId(`c_oth_${authorUser.id}`).setLabel('أخرى').setStyle(ButtonStyle.Success).setEmoji('📦')
                         );
                         
                         const row2 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`v_port_${authorUser.id}`).setLabel('الممتلكات').setStyle(ButtonStyle.Primary).setEmoji('💼'),
                             new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setLabel('العـودة للبروفايل').setStyle(ButtonStyle.Danger).setEmoji('↩️')
                         );
 
-                        return { content: `**⛺ خيمة ${cleanName}**`, files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [row1, row2] };
+                        return { content: '', files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [row1, row2] };
                     }
 
                     if (activeItemDetails) {
@@ -318,7 +311,7 @@ module.exports = {
                         }
 
                         return {
-                            content: `**🔍 تفاصيل العنصر | ${activeItemDetails.name}**`,
+                            content: '',
                             files: [new AttachmentBuilder(buffer, { name: 'item.png' })],
                             components: [btnRow]
                         };
@@ -357,7 +350,7 @@ module.exports = {
                     );
 
                     return { 
-                        content: `**🎒 حقيبة ${cleanName} | ${invCategory}**\n> 🎯 استخدم الأسهم للتحرك واضغط **💠** لتفاصيل العنصر.`, 
+                        content: '', 
                         files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
                         components: [row1, row2, row3, row4] 
                     };
@@ -514,7 +507,6 @@ module.exports = {
                 if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
-                // 🔥 الزر الجديد الخاص بالممتلكات 🔥
                 else if (id.startsWith('v_port_')) { await i.deferUpdate(); currentView = 'portfolio'; activeItemDetails = null; }
                 
                 else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
