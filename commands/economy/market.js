@@ -2,17 +2,16 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const fs = require('fs');
 const path = require('path');
 
-// 1. تحميل الإعدادات بأمان من الجذر الرئيسي
+// 1. تحميل الإعدادات بأمان
 let marketConfig = [];
 try {
     const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
     if (fs.existsSync(marketConfigPath)) marketConfig = require(marketConfigPath);
-    else marketConfig = require('../../json/market-items.json'); // مسار احتياطي
 } catch (e) {
     console.error("⚠️ [Market] تحذير: لم يتم العثور على ملف market-items.json");
 }
 
-// 2. استدعاء الرسام بأمان (من الجذر الرئيسي لتفادي أخطاء المسارات)
+// 2. استدعاء الرسام 
 let marketGen;
 try {
     const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
@@ -34,22 +33,6 @@ const EMOJI_ASSET_SMALL = {
     'ART': '<:atr:1437395490168639550>',
 };
 
-const EMOJI_ASSET_IMAGES = {
-    'TESLA': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/tesla.png',
-    'APPLE': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/apple.png',
-    'GOLD': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/gold.png',
-    'SPACEX': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/spacex.png',
-    'ANDROID': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/android.png',
-    'SILVER': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/silver.png',
-    'LAND': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/land.png',
-    'BITCOIN': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/bitcoin.png',
-    'ART': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/art.png',
-};
-
-const EMOJI_UP = '<:upward:1435880367805431850>';
-const EMOJI_DOWN = '<:downward:1435880484046372914>';
-const EMOJI_NEUTRAL = '<:neutral:1435880568158945292>';
-
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 9;
 
@@ -65,9 +48,9 @@ function getUpdateTimeRemaining() {
 }
 
 function getItemChangeEmoji(changePercent) {
-    if (changePercent > 0.01) return EMOJI_UP;
-    if (changePercent < -0.01) return EMOJI_DOWN;
-    return EMOJI_NEUTRAL;
+    if (changePercent > 0.01) return '<:upward:1435880367805431850>';
+    if (changePercent < -0.01) return '<:downward:1435880484046372914>';
+    return '<:neutral:1435880568158945292>';
 }
 
 function cleanEmojiFromName(name) {
@@ -77,7 +60,7 @@ function cleanEmojiFromName(name) {
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
     if (!marketGen || typeof marketGen.drawMarketGrid !== 'function') {
-        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح! تأكد من وجود الملف في generators/market-generator.js");
+        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح! تأكد أنك لم تضع كود الأمر داخل ملف الرسام.");
     }
 
     const startIndex = pageIndex * ITEMS_PER_PAGE;
@@ -89,7 +72,7 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
 
     const selectOptions = itemsOnPage.map(item => ({
         label: `${cleanEmojiFromName(item.name)}`,
-        description: `السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()} مورا`,
+        description: `السعر الحالي: ${Number(item.currentPrice || item.currentprice || item.price).toLocaleString()} مورا`,
         value: item.id,
         emoji: EMOJI_ASSET_SMALL[item.id] || '📈'
     }));
@@ -128,7 +111,7 @@ async function buildDetailView(item, userId, guildId, sql) {
     const userQuantity = userPortfolio ? Number(userPortfolio.quantity || userPortfolio.Quantity || 0) : 0;
     
     const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
-    const currentPrice = Number(item.currentPrice || item.currentprice || 0);
+    const currentPrice = Number(item.currentPrice || item.currentprice || item.price || 0);
     
     const changeEmoji = getItemChangeEmoji(changePercent);
     const price = currentPrice.toLocaleString();
@@ -145,9 +128,8 @@ async function buildDetailView(item, userId, guildId, sql) {
         )
         .setTimestamp();
 
-    const itemImage = EMOJI_ASSET_IMAGES[item.id];
-    if (itemImage) {
-        detailEmbed.setThumbnail(itemImage);
+    if (item.image) {
+        detailEmbed.setThumbnail(item.image);
     }
 
     const actionRow = new ActionRowBuilder().addComponents(
@@ -170,7 +152,6 @@ module.exports = {
     description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.',
 
     async execute(interactionOrMessage, args) {
-        console.log("➡️ [Market] تم تشغيل أمر السوق!");
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, client, sql, user, guild;
 
@@ -181,11 +162,8 @@ module.exports = {
             user = interaction.user;
             guild = interaction.guild;
             try {
-                if (!interaction.deferred && !interaction.replied) {
-                    await interaction.deferReply();
-                    console.log("➡️ [Market] تم عمل Defer بنجاح");
-                }
-            } catch (e) { console.error("⚠️ [Market] Defer Error:", e.message); }
+                if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
+            } catch (e) {}
         } else {
             message = interactionOrMessage;
             client = message.client;
@@ -200,7 +178,6 @@ module.exports = {
         };
 
         try {
-            console.log("➡️ [Market] جاري جلب البيانات من الداتابيز...");
             let dbItems = [];
             try {
                 const dbItemsRes = await sql.query("SELECT * FROM market_items");
@@ -209,14 +186,21 @@ module.exports = {
                 try {
                     dbItems = sql.prepare("SELECT * FROM market_items").all();
                 } catch(sqliteErr) {
-                    console.error("Market DB Error:", sqliteErr.message);
                     return reply({ content: "❌ عذراً، لا يمكن الاتصال بقاعدة بيانات السوق حالياً." });
                 }
             }
 
-            console.log(`➡️ [Market] تم جلب ${dbItems.length} أصل من الداتابيز.`);
             const validItemIds = new Set(marketConfig.map(i => i.id));
-            const allItems = dbItems.filter(item => validItemIds.has(item.id));
+            let allItems = dbItems.filter(item => validItemIds.has(item.id));
+            
+            if (allItems.length === 0) {
+                allItems = marketConfig;
+            } else {
+                allItems = allItems.map(dbItem => {
+                    const configData = marketConfig.find(c => c.id === dbItem.id);
+                    return { ...configData, ...dbItem };
+                });
+            }
 
             if (allItems.length === 0) {
                 const embed = new EmbedBuilder().setTitle('📈 سوق الاستثمار').setDescription("السوق فارغ تماماً حالياً.").setColor(Colors.Red);
@@ -227,10 +211,8 @@ module.exports = {
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
 
-            console.log("➡️ [Market] جاري بناء الصورة المرئية للمقاسات...");
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
-            console.log("➡️ [Market] الصورة جاهزة، جاري الإرسال...");
             let msg;
             const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
             
@@ -239,13 +221,9 @@ module.exports = {
             } else {
                 msg = await message.channel.send(initPayload);
             }
-            console.log("✅ [Market] تم إرسال رسالة السوق بنجاح!");
 
             const filter = i => i.user.id === user.id;
-            const collector = msg.createMessageComponentCollector({
-                time: 300000,
-                filter,
-            });
+            const collector = msg.createMessageComponentCollector({ time: 300000, filter });
 
             collector.on('collect', async i => {
                 try {
@@ -283,7 +261,7 @@ module.exports = {
                                 .setCustomId('quantity_input')
                                 .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
                                 .setStyle(TextInputStyle.Short)
-                                .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()}`)
+                                .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice || item.price).toLocaleString()}`)
                                 .setRequired(true);
 
                             modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
@@ -301,9 +279,7 @@ module.exports = {
                         const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
                         await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
                     }
-                } catch (error) {
-                    console.error("خطأ في جامع السوق:", error);
-                }
+                } catch (error) {}
             });
 
             collector.on('end', () => {
@@ -311,7 +287,6 @@ module.exports = {
             });
 
         } catch (globalError) {
-            console.error("Market Execute Error:", globalError);
             return reply({ content: `❌ **حدث خطأ غير متوقع:**\n\`${globalError.message}\`` });
         }
     }
