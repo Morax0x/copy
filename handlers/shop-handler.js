@@ -30,10 +30,6 @@ const shopItems = require('../json/shop-items.json');
 const CUSTOM_XP_RATE = 5; 
 const MAX_POTION_LIMIT = 999;
 
-let generateShopImage;
-try { generateShopImage = require('../generators/shop-generator.js').generateShopImage; } 
-catch (e) { try { generateShopImage = require('../../generators/shop-generator.js').generateShopImage; } catch(e2) {} }
-
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, db, callbackType) {
     const member = interaction.member; 
     const guildID = interaction.guild.id; 
@@ -590,80 +586,6 @@ async function handleShopModal(i, client, db) {
 }
 
 async function handleShopInteractions(i, client, db) {
-    if (i.customId === 'shop_open_menu' || i.customId.startsWith('shop_cat_')) {
-        if (!i.deferred && !i.replied) {
-            if (i.customId === 'shop_open_menu') {
-                await i.deferReply({ flags: MessageFlags.Ephemeral });
-            } else {
-                await i.deferUpdate();
-            }
-        }
-
-        const userId = i.user.id;
-        const guildId = i.guild.id;
-
-        let userData = await client.getLevel(userId, guildId);
-        if (!userData) {
-            let dbRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})));
-            userData = dbRes.rows[0] || { level: 0, mora: 0, bank: 0 };
-        }
-
-        let targetCategory = 'general';
-        if (i.customId.startsWith('shop_cat_')) {
-            targetCategory = i.customId.replace('shop_cat_', '');
-        }
-
-        const categoryItems = shopItems.filter(item => item.category === targetCategory);
-        if (categoryItems.length === 0) return i.editReply({ content: "❌ لا توجد عناصر في هذا القسم." });
-
-        let categoryNameAr = 'السوق العام';
-        if (targetCategory === 'profession') categoryNameAr = 'المهن والحرف';
-        if (targetCategory === 'premium') categoryNameAr = 'الخدمات المميزة';
-
-        if (!generateShopImage) return i.editReply({ content: "❌ نظام الرسم غير متوفر." });
-        const imageBuffer = await generateShopImage(i.user, userData, categoryItems, categoryNameAr);
-
-        const buyOptions = categoryItems.map(item => ({
-            label: item.name,
-            description: `السعر: ${item.price} مورا | ${item.description.substring(0, 50)}`,
-            value: `buy_item_${item.id}`,
-            emoji: item.emoji || '📦'
-        }));
-
-        const selectMenuRow = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('shop_buy_select')
-                .setPlaceholder('🛒 اختر عنصراً لشرائه من هذه الصفحة...')
-                .addOptions(buyOptions)
-        );
-
-        const categoryRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('shop_cat_general')
-                .setLabel('السوق العام')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'general'),
-            new ButtonBuilder()
-                .setCustomId('shop_cat_profession')
-                .setLabel('المهن والحرف')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'profession'),
-            new ButtonBuilder()
-                .setCustomId('shop_cat_premium')
-                .setLabel('الخدمات المميزة')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'premium')
-        );
-
-        const replyData = {
-            content: `**مرحباً بك في متجر الإمبراطورية** يا <@${userId}>`,
-            files: [{ attachment: imageBuffer, name: 'empire_shop.png' }],
-            components: [selectMenuRow, categoryRow]
-        };
-
-        return await i.editReply(replyData);
-    }
-
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_select') {
         const fakeInteraction = Object.assign(Object.create(Object.getPrototypeOf(i)), i);
         fakeInteraction.customId = i.values[0];
