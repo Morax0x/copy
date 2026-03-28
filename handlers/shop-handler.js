@@ -184,7 +184,6 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         } 
     }
 
-    // 💰 خصم الأموال
     await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [finalPrice, interaction.user.id, interaction.guild.id]);
       
     try {
@@ -334,6 +333,68 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
     }
     
     if(sendShopLog) sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
+}
+
+async function _handleRodUpgrade(i, client, db) {
+    await i.deferUpdate();
+    let userDataRes = await executeDB(db, `SELECT "mora", "bank", "rodLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
+    let userData = userDataRes?.rows?.[0];
+    if (!userData) return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
+
+    const currentLevel = Number(userData.rodLevel) || 1;
+    const nextLevel = currentLevel + 1;
+    const nextRod = finalRods.find(r => r.level === nextLevel);
+
+    if (!nextRod) return i.followUp({ content: '❌ لقد وصلت للحد الأقصى للسنارة بالفعل!', flags: MessageFlags.Ephemeral });
+
+    if (Number(userData.mora) < nextRod.price) {
+        const userBank = Number(userData.bank) || 0;
+        let msg = `❌ رصيدك غير كافي! تحتاج إلى **${nextRod.price.toLocaleString()}** ${EMOJI_MORA}`;
+        if (userBank >= nextRod.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا. اسحبها أولاً.`;
+        return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+    }
+
+    await executeDB(db, `UPDATE levels SET "rodLevel" = $1, "mora" = "mora" - $2 WHERE "user" = $3 AND "guild" = $4`, [nextLevel, nextRod.price, i.user.id, i.guild.id]);
+
+    const embed = new EmbedBuilder()
+        .setTitle('✅ تمت الترقية بنجاح!')
+        .setColor(Colors.Green)
+        .setDescription(`تم تطوير سنارتك إلى **${nextRod.name}**\n💰 التكلفة: ${nextRod.price.toLocaleString()} ${EMOJI_MORA}`);
+    if (nextRod.image) embed.setThumbnail(nextRod.image);
+
+    await i.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    if(sendShopLog) sendShopLog(client, i.guild.id, i.member, `تطوير سنارة (${nextRod.name})`, nextRod.price, "ترقية");
+}
+
+async function _handleBoatUpgrade(i, client, db) {
+    await i.deferUpdate();
+    let userDataRes = await executeDB(db, `SELECT "mora", "bank", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
+    let userData = userDataRes?.rows?.[0];
+    if (!userData) return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
+
+    const currentLevel = Number(userData.boatLevel) || 1;
+    const nextLevel = currentLevel + 1;
+    const nextBoat = finalBoats.find(b => b.level === nextLevel);
+
+    if (!nextBoat) return i.followUp({ content: '❌ لقد وصلت للحد الأقصى للقارب بالفعل!', flags: MessageFlags.Ephemeral });
+
+    if (Number(userData.mora) < nextBoat.price) {
+        const userBank = Number(userData.bank) || 0;
+        let msg = `❌ رصيدك غير كافي! تحتاج إلى **${nextBoat.price.toLocaleString()}** ${EMOJI_MORA}`;
+        if (userBank >= nextBoat.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا. اسحبها أولاً.`;
+        return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+    }
+
+    await executeDB(db, `UPDATE levels SET "boatLevel" = $1, "mora" = "mora" - $2 WHERE "user" = $3 AND "guild" = $4`, [nextLevel, nextBoat.price, i.user.id, i.guild.id]);
+
+    const embed = new EmbedBuilder()
+        .setTitle('✅ تمت الترقية بنجاح!')
+        .setColor(Colors.Green)
+        .setDescription(`تم تطوير قاربك إلى **${nextBoat.name}**\n💰 التكلفة: ${nextBoat.price.toLocaleString()} ${EMOJI_MORA}`);
+    if (nextBoat.image) embed.setThumbnail(nextBoat.image);
+
+    await i.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    if(sendShopLog) sendShopLog(client, i.guild.id, i.member, `تطوير قارب (${nextBoat.name})`, nextBoat.price, "ترقية");
 }
 
 async function _handleShopButton(i, client, db, explicitItemId = null) {
@@ -534,6 +595,7 @@ async function _handleRodSelect(i, client, db) {
 
     const embed = new EmbedBuilder().setTitle(`🎣 سنارة الصيد`).setDescription(`**السنارة الحالية:** ${currentRod.name}`).setColor(Colors.Aqua).setImage(BANNER_URL)
         .addFields({ name: 'المستوى الحالي', value: `Lv. ${currentLevel}`, inline: true }, { name: 'أقصى صيد', value: `${currentRod.max_fish} سمكات`, inline: true }, { name: 'الحظ', value: `+${currentRod.luck_bonus}%`, inline: true });
+    if(currentRod.image) embed.setThumbnail(currentRod.image);
     
     const row = new ActionRowBuilder();
     if (!nextRod) {
@@ -558,6 +620,8 @@ async function _handleBoatSelect(i, client, db) {
     if(!currentBoat) return i.editReply("❌ بيانات القوارب غير متوفرة.");
 
     const embed = new EmbedBuilder().setTitle(`🚤 قـوارب الـصـيـد`).setDescription(`**القارب الحالي:** ${currentBoat.name}`).setColor(Colors.Blue).setImage(BANNER_URL);
+    if(currentBoat.image) embed.setThumbnail(currentBoat.image);
+    
     const row = new ActionRowBuilder();
     if (!nextBoat) {
         embed.addFields({ name: "التطوير", value: "الحد الأقصى", inline: true });
@@ -737,8 +801,8 @@ async function handleShopInteractions(i, client, db) {
         return await _handleBaitBuy(i, client, db, baitId);
     }
     
-    if (i.isButton() && i.customId === 'upgrade_rod') await _handleRodSelect(i, client, db);
-    if (i.isButton() && i.customId === 'upgrade_boat') await _handleBoatSelect(i, client, db);
+    if (i.isButton() && i.customId === 'upgrade_rod') return await _handleRodUpgrade(i, client, db);
+    if (i.isButton() && i.customId === 'upgrade_boat') return await _handleBoatUpgrade(i, client, db);
 
     if (i.isButton() && i.customId.startsWith('buy_item_')) {
         const boughtItemId = i.customId.replace('buy_item_', ''); 
