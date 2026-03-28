@@ -24,7 +24,7 @@ const ITEMS_PER_PAGE = 9;
 // 🔥 الإيموجيات المخصصة للأزرار
 const EMOJI_RIGHT = '1439164491072929915'; // السهم اليمين (السابق)
 const EMOJI_LEFT = '1439164494759723029';  // السهم اليسار (التالي)
-const EMOJI_BACK = '↩️'; // سهم العودة للوحة الرئيسية
+const EMOJI_BACK = '↩️'; // سهم العودة
 
 function getUpdateTimeRemaining() {
     const now = Date.now();
@@ -69,11 +69,11 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
 
     const actionRows = [selectMenuRow];
 
-    // أزرار التنقل بالأسهم المخصصة
+    // 🔥 تعديل ترتيب الأزرار: اليسار باليسار واليمين باليمين 🔥
     if (totalPages > 1) {
         const navRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('market_prev').setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
-            new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
+            new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1),
+            new ButtonBuilder().setCustomId('market_prev').setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0)
         );
         actionRows.push(navRow);
     }
@@ -100,22 +100,22 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
-        // أسهم التنقل المخصصة
-        new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
+        // 🔥 ترتيب الأسهم: اليسار باليسار واليمين باليمين 🔥
         new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
         
         // زر الشراء
         new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success)
     );
 
-    // 🔥 زر البيع الذكي: يظهر فقط إذا كان المستخدم يملك أسهماً 🔥
+    // زر البيع الذكي: يظهر فقط إذا كان المستخدم يملك أسهماً
     if (userQuantity > 0) {
         actionRow.addComponents(
             new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger)
         );
     }
 
-    // زر العودة (سهم فقط)
+    // زر العودة للوحة الرئيسية
     actionRow.addComponents(
         new ButtonBuilder().setCustomId('market_back_to_grid').setEmoji(EMOJI_BACK).setStyle(ButtonStyle.Primary)
     );
