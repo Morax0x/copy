@@ -11,18 +11,28 @@ const {
     Colors
 } = require('discord.js');
 
-const farmAnimals = require('../json/farm-animals.json');
-const feedItems = require('../json/feed-items.json');
-const seeds = require('../json/seeds.json');
+let farmAnimals, seedsData, feedItems;
+try {
+    farmAnimals = require('../../json/farm-animals.json'); 
+    seedsData = require('../../json/seeds.json'); 
+    feedItems = require('../../json/feed-items.json');
+} catch(e) {
+    farmAnimals = require('../json/farm-animals.json'); 
+    seedsData = require('../json/seeds.json'); 
+    feedItems = require('../json/feed-items.json');
+}
 
 let getPlayerCapacity;
-try { ({ getPlayerCapacity } = require('../utils/farmUtils.js')); } 
-catch(e) {}
+try {
+    ({ getPlayerCapacity } = require('../../utils/farmUtils.js'));
+} catch (e) {
+    ({ getPlayerCapacity } = require('../utils/farmUtils.js'));
+}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
-const ITEMS_PER_PAGE = 9; // تم تقليل العدد ليكون التصميم أرتب في الإمبد
+const ITEMS_PER_PAGE = 9; 
 const MAX_FARM_LIMIT = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -125,6 +135,96 @@ function buildGridView(allItems, pageIndex, currentCapacity, maxCapacity, catego
     return { embeds: [embed], components: [selectMenuRow, navRow] };
 }
 
+// 🎨 الدالة الأسطورية الجديدة لعرض تفاصيل العنصر
+async function buildDetailView(item, userId, guildId, db, category, client) {
+    let userQuantity = 0;
+    let isFull = false;
+    let maxCapacity = 0;
+    let currentCapacityUsed = 0;
+
+    // 1. حساب المخزون والسعة
+    if (category === 'animals') {
+        let userFarmRes = await executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=>({rows:[]}));
+        for (const row of userFarmRes.rows) {
+            if (String(row.animalID || row.animalid) === String(item.id)) {
+                userQuantity += Number(row.quantity || row.Quantity) || 0;
+            }
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+            if (fa) currentCapacityUsed += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+        }
+        if (getPlayerCapacity) maxCapacity = await getPlayerCapacity(client, userId, guildId);
+        isFull = (currentCapacityUsed + (item.size || 1)) > maxCapacity;
+    } else {
+        let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
+        userQuantity = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity) : 0;
+        isFull = userQuantity >= MAX_FARM_LIMIT;
+    }
+
+    // 2. تجهيز الإيمبد الفخم
+    let embedColor = Colors.Gold;
+    let field2_name = "الدخل (لليوم)";
+    let field2_val = "0";
+    let field3_val = "";
+    
+    if (category === 'animals') {
+        embedColor = Colors.Orange;
+        field2_val = `${item.income_per_day} ${EMOJI_MORA}`;
+        field3_val = `⏳ العمر: **${item.lifespan_days || 30}** يوم\n📦 الحجم: **${item.size || 1}** في الحظيرة`;
+    } else if (category === 'seeds') {
+        embedColor = Colors.Green;
+        field2_name = "قيمة المحصول";
+        field2_val = `${item.sell_price} ${EMOJI_MORA}`;
+        field3_val = `⏳ النمو: **${item.growth_time_hours}** ساعة\n🍂 الذبول: **${item.wither_time_hours}** ساعة\n✨ الخبرة: **${item.xp_reward}** XP`;
+    } else if (category === 'feed') {
+        embedColor = Colors.DarkOrange;
+        field2_name = "مخصص لـ";
+        const target = farmAnimals.find(a => a.feed_id === item.id);
+        field2_val = target ? target.name : "حيوانات متنوعة";
+        field3_val = `📦 عنصر استهلاكي\n⚠️ ضروري لإبقاء الحيوان على قيد الحياة`;
+    }
+
+    const detailEmbed = new EmbedBuilder()
+        .setTitle(`🔍 تفاصيل: ${item.emoji} ${item.name}`)
+        .setColor(embedColor)
+        .addFields(
+            { name: '💰 سعر الشراء', value: `**${item.price.toLocaleString()}** ${EMOJI_MORA}`, inline: true },
+            { name: field2_name, value: `**${field2_val}**`, inline: true },
+            { name: '📊 الخصائص', value: field3_val, inline: false },
+            { name: '📦 مخزونك الحالي', value: `تمتلك: **${userQuantity.toLocaleString()}**`, inline: false }
+        );
+
+    if (item.image) detailEmbed.setThumbnail(item.image);
+
+    if (isFull) {
+        if (category === 'animals') {
+            detailEmbed.addFields({ name: '⚠️ تنبيه السعة', value: `🚫 **لا توجد مساحة كافية في الحظيرة!**\nالمساحة المتاحة: ${maxCapacity - currentCapacityUsed}`, inline: false });
+        } else {
+            detailEmbed.addFields({ name: '⚠️ تنبيه المخزن', value: `🚫 **وصلت للحد الأقصى (${MAX_FARM_LIMIT}) في المخزن!**`, inline: false });
+        }
+    }
+
+    // 3. ترتيب الأزرار
+    const actionRow1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`buy_btn_farm|${category}|${item.id}`)
+            .setLabel(isFull ? 'ممتلئ' : 'شراء 🛒')
+            .setStyle(isFull ? ButtonStyle.Secondary : ButtonStyle.Success)
+            .setDisabled(isFull), 
+            
+        new ButtonBuilder()
+            .setCustomId(`sell_btn_farm|${category}|${item.id}`)
+            .setLabel(`بيع (نصف السعر) 💰`)
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(userQuantity === 0)
+    );
+
+    const actionRow2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('farm_back_to_grid').setLabel('العودة للقائمة').setStyle(ButtonStyle.Primary)
+    );
+
+    return { embeds: [detailEmbed], components: [actionRow1, actionRow2] };
+}
+
 async function handleShopInteraction(i, client, db, user, guild, shopState, getNavRow) {
     if (i.customId.startsWith('shop_cat_')) {
         await i.deferUpdate().catch(()=>{});
@@ -134,7 +234,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
 
         let itemsList = [];
         if (category === 'animals') itemsList = farmAnimals;
-        else if (category === 'seeds') itemsList = seeds;
+        else if (category === 'seeds') itemsList = seedsData;
         else if (category === 'feed') itemsList = feedItems;
         shopState.currentItemsList = itemsList;
 
@@ -178,36 +278,42 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         return await i.editReply({ embeds: data.embeds, components: [...data.components, getNavRow('shop')] }).catch(()=>{});
     }
 
+    // 🌟 فتح تفاصيل العنصر من القائمة المنسدلة
     if (i.isStringSelectMenu() && i.customId === 'farm_select_item') {
+        await i.deferUpdate().catch(()=>{});
         const [_, category, itemId] = i.values[0].split('|');
         
         let item = null;
-        let desc = '';
-        if (category === 'animals') {
-            item = farmAnimals.find(a => String(a.id) === String(itemId));
-            desc = `**الدخل اليومي:** ${item.income_per_day} مورا\n**الحجم في الحظيرة:** ${item.size}\n**مدة الحياة:** ${item.lifespan_days} يوم`;
-        } else if (category === 'seeds') {
-            item = seeds.find(s => String(s.id) === String(itemId));
-            desc = `**وقت النمو:** ${item.growth_time_hours} ساعة\n**وقت الذبول:** ${item.wither_time_hours} ساعة\n**سعر البيع بعد الحصاد:** ${item.sell_price} مورا\n**نقاط الخبرة:** +${item.xp_reward} XP`;
-        } else if (category === 'feed') {
-            item = feedItems.find(f => String(f.id) === String(itemId));
-            desc = `**الوصف:** ${item.description}`;
+        if (category === 'animals') item = farmAnimals.find(a => String(a.id) === String(itemId));
+        else if (category === 'seeds') item = seedsData.find(s => String(s.id) === String(itemId));
+        else if (category === 'feed') item = feedItems.find(f => String(f.id) === String(itemId));
+
+        if (!item) return await i.followUp({ content: '❌ العنصر غير موجود.', flags: MessageFlags.Ephemeral });
+
+        // حفظ العنصر الحالي للعودة
+        shopState.currentItem = item;
+        shopState.currentCategory = category;
+
+        const data = await buildDetailView(item, user.id, guild.id, db, category, client);
+        return await i.editReply({ embeds: data.embeds, components: [...data.components, getNavRow('shop')], content: '' }).catch(()=>{});
+    }
+
+    // 🌟 العودة لشبكة العناصر (Grid) من صفحة التفاصيل
+    if (i.customId === 'farm_back_to_grid') {
+        await i.deferUpdate().catch(()=>{});
+        
+        let currentCap = 0, maxCap = 0;
+        if (shopState.currentCategory === 'animals') {
+            let userFarmRes = await executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]).catch(()=>({rows:[]}));
+            for (const row of userFarmRes.rows) {
+                const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+                if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+            }
+            if(getPlayerCapacity) maxCap = await getPlayerCapacity(client, user.id, guild.id);
         }
 
-        if (!item) return await i.reply({ content: '❌ العنصر غير موجود.', flags: MessageFlags.Ephemeral });
-
-        const detailEmbed = new EmbedBuilder()
-            .setTitle(`🏞️ تفاصيل: ${item.name}`)
-            .setDescription(desc)
-            .addFields({ name: 'السعر', value: `**${item.price.toLocaleString()}** ${EMOJI_MORA}`, inline: true })
-            .setColor(Colors.Gold);
-        if (item.image) detailEmbed.setThumbnail(item.image);
-
-        const buyBtn = new ButtonBuilder().setCustomId(`buy_btn_farm|${category}|${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success);
-        const sellBtn = new ButtonBuilder().setCustomId(`sell_btn_farm|${category}|${item.id}`).setLabel('بيع (نصف السعر) 💰').setStyle(ButtonStyle.Danger);
-        const row = new ActionRowBuilder().addComponents(buyBtn, sellBtn);
-
-        return await i.reply({ embeds: [detailEmbed], components: [row], flags: MessageFlags.Ephemeral });
+        const data = buildGridView(shopState.currentItemsList, shopState.currentPage || 0, currentCap, maxCap, shopState.currentCategory);
+        return await i.editReply({ embeds: data.embeds, components: [...data.components, getNavRow('shop')] }).catch(()=>{});
     }
 
     // عرض Modal الشراء أو البيع
@@ -217,7 +323,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         
         let itemData = null;
         if (category === 'animals') itemData = farmAnimals.find(a => String(a.id) === String(itemId));
-        else if (category === 'seeds') itemData = seeds.find(s => String(s.id) === String(itemId));
+        else if (category === 'seeds') itemData = seedsData.find(s => String(s.id) === String(itemId));
         else if (category === 'feed') itemData = feedItems.find(f => String(f.id) === String(itemId));
 
         if (!itemData) return await i.reply({ content: '❌ العنصر غير موجود!', flags: MessageFlags.Ephemeral });
@@ -253,7 +359,7 @@ async function handleFarmShopModal(i, client, db) {
 
         let itemData = null;
         if (category === 'animals') itemData = farmAnimals.find(a => String(a.id) === String(itemId));
-        else if (category === 'seeds') itemData = seeds.find(s => String(s.id) === String(itemId));
+        else if (category === 'seeds') itemData = seedsData.find(s => String(s.id) === String(itemId));
         else if (category === 'feed') itemData = feedItems.find(f => String(f.id) === String(itemId));
 
         if (!itemData) return await i.editReply('❌ العنصر غير موجود!');
@@ -321,10 +427,18 @@ async function handleFarmShopModal(i, client, db) {
                 .setTitle('✅ عملية شراء ناجحة')
                 .setColor(Colors.Green)
                 .setDescription(`📦 **العنصر:** ${itemData.emoji} ${itemData.name}\n🔢 **الكمية:** ${quantity.toLocaleString()}\n💰 **التكلفة:** ${totalPrice.toLocaleString()} ${EMOJI_MORA}`);
+            
+            // 🌟 تحديث واجهة التفاصيل لتعكس المخزون الجديد (استرجاع ذكي)
+            if (i.message) {
+                const newData = await buildDetailView(itemData, i.user.id, i.guild.id, db, category, client);
+                // نقوم بتحديث الرسالة الأصلية التي تحتوي على التفاصيل والأزرار
+                await i.message.edit({ embeds: newData.embeds, components: newData.components }).catch(()=>{});
+            }
+
             return await i.editReply({ content: null, embeds: [successEmbed] });
 
         } else if (action === 'sell') {
-            const sellPrice = Math.floor(itemData.price * 0.5); // نصف السعر
+            const sellPrice = Math.floor(itemData.price * 0.5); 
             const totalGain = sellPrice * quantity;
 
             if (category === 'animals') {
@@ -348,7 +462,7 @@ async function handleFarmShopModal(i, client, db) {
                     const ageMs = now - purchaseTime;
                     const remainingLifeMs = lifespanMs - ageMs;
 
-                    if (remainingLifeMs <= noSellMs) continue; // الحيوان عجوز، لا يمكن بيعه
+                    if (remainingLifeMs <= noSellMs) continue; 
 
                     let currentValRatio = (remainingLifeMs / lifespanMs);
                     if (currentValRatio > 1) currentValRatio = 1;
@@ -375,6 +489,11 @@ async function handleFarmShopModal(i, client, db) {
                     .setTitle('📈 عملية بيع زراعية')
                     .setColor(Colors.Blue)
                     .setDescription(`📦 **الكمية المباعة:** ${soldCount.toLocaleString()}x ${itemData.name}\n💰 **المبلغ المسترد:** ${totalRefund.toLocaleString()} ${EMOJI_MORA}`);
+                
+                if (i.message) {
+                    const newData = await buildDetailView(itemData, i.user.id, i.guild.id, db, category, client);
+                    await i.message.edit({ embeds: newData.embeds, components: newData.components }).catch(()=>{});
+                }
                 return await i.editReply({ content: null, embeds: [sellEmbed] });
 
             } else {
@@ -397,6 +516,11 @@ async function handleFarmShopModal(i, client, db) {
                     .setTitle('📈 عملية بيع زراعية')
                     .setColor(Colors.Blue)
                     .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`);
+                
+                if (i.message) {
+                    const newData = await buildDetailView(itemData, i.user.id, i.guild.id, db, category, client);
+                    await i.message.edit({ embeds: newData.embeds, components: newData.components }).catch(()=>{});
+                }
                 return await i.editReply({ content: null, embeds: [sellEmbed] });
             }
         }
