@@ -58,7 +58,8 @@ function cleanEmojiFromName(name) {
     return name.replace(/<a?:.+?:\d+>/g, '').trim();
 }
 
-async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
+// 🔥 تم إضافة معامل userAvatarUrl لتمرير صورة صاحب الأمر للرسام 🔥
+async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvatarUrl) {
     if (!marketGen || typeof marketGen.drawMarketGrid !== 'function') {
         throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح! تأكد أنك لم تضع كود الأمر داخل ملف الرسام.");
     }
@@ -67,7 +68,8 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
+    // استدعاء الرسام مع تمرير صورة المستخدم
+    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages, userAvatarUrl);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
     const selectOptions = itemsOnPage.map(item => ({
@@ -210,11 +212,14 @@ module.exports = {
             let currentPage = 0;
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
+            
+            // 🔥 جلب رابط الأفتار الخاص بالمستخدم بصيغة png عشان الكانفاس يقرأه صح 🔥
+            const avatarUrl = user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 });
 
-            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
             
             let msg;
-            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
+            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمارات يا <@${user.id}> 📊**` };
             
             if (isSlash) {
                 msg = await interaction.editReply(initPayload);
@@ -236,14 +241,14 @@ module.exports = {
                                 else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
 
                                 timeRemaining = getUpdateTimeRemaining();
-                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
                                 await i.editReply({ files: [newPage.attachment], components: newPage.components, embeds: [] });
                             }
                         } else if (i.customId === 'market_back_to_grid') {
                             try { await i.deferUpdate(); } catch (e) {}
                             currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
-                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
                             await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في بورصة الإمبراطورية يا <@${i.user.id}> 📊**` });
 
                         } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
