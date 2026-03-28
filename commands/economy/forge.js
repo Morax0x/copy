@@ -8,14 +8,12 @@ try {
     ({ generateForgeUI } = require('../../generators/forge-generator.js'));
 } catch (e) {
     generateForgeUI = null;
-    console.error("Failed to load generateForgeUI:", e);
 }
 
 let addXPAndCheckLevel;
 try { ({ addXPAndCheckLevel } = require('../handler-utils.js')); } 
 catch (e) { try { ({ addXPAndCheckLevel } = require('./handler-utils.js')); } catch (e2) {} }
 
-const EMOJI_MORA = '<:mora:1435647151349698621>';
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const SMELT_XP_RATES = { 'Common': 10, 'Uncommon': 20, 'Rare': 30, 'Epic': 100, 'Legendary': 1000 };
 const SYNTHESIS_FEE = 5000;
@@ -36,6 +34,13 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
+// 🛡️ حماية الاستخراج وفك كائنات اللغات
+function resolveText(val) {
+    if (val == null) return '';
+    if (typeof val === 'object') return val.ar || val.en || val.name || JSON.stringify(val);
+    return String(val);
+}
+
 function getUpgradeRequirement(currentLevel) {
     if (currentLevel >= 30) return null; 
     let tierIndex = 0, matCount = 0, moraCost = 0;
@@ -53,7 +58,7 @@ function getItemInfo(itemId) {
         if (mat) {
             const raceFolder = r.race.toLowerCase().replace(' ', '_');
             const imgName = ID_TO_IMAGE[mat.id] || `${mat.id}.png`;
-            return { ...mat, type: 'material', race: r.race, iconUrl: `${R2_URL}/images/materials/${raceFolder}/${imgName}` };
+            return { ...mat, type: 'material', race: r.race, name: resolveText(mat.name), iconUrl: `${R2_URL}/images/materials/${raceFolder}/${imgName}` };
         }
     }
     for (const c of upgradeMats.skill_books) {
@@ -61,7 +66,7 @@ function getItemInfo(itemId) {
         if (book) {
             const typeFolder = c.category === 'General_Skills' ? 'general' : 'race';
             const imgName = ID_TO_IMAGE[book.id] || `${book.id}.png`;
-            return { ...book, type: 'book', iconUrl: `${R2_URL}/images/materials/${typeFolder}/${imgName}` };
+            return { ...book, type: 'book', name: resolveText(book.name), iconUrl: `${R2_URL}/images/materials/${typeFolder}/${imgName}` };
         }
     }
     return null;
@@ -104,7 +109,7 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         }
     } catch (e) {
         console.error("Canvas Error in Forge:", e);
-        await i.followUp({ content: `❌ خطأ في رسم الصورة:\n\`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+        await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
     try {
@@ -191,7 +196,7 @@ module.exports = {
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
-                await i.followUp({ content: `❌ **تم اكتشاف خطأ:**\n\`\`\`js\n${innerError.message}\n\`\`\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+                await i.followUp({ content: `❌ **خطأ برمجي:**\n\`${innerError.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
 
@@ -238,7 +243,7 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
     );
     
     await replyWithCanvas(i, user, 'weapon', {
-        mora: userMora, title: `تطوير ${weaponConfig.name}`,
+        mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`,
         currentLevel, nextLevel: currentLevel + 1,
         currentStat: `${currentDmg} DMG`, nextStat: `${nextDmg} DMG`,
         reqMora: reqs.moraCost, reqMatName: requiredMaterial.name, reqMatIcon: requiredMaterial.iconUrl,
@@ -278,28 +283,18 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
 
     if (userSkills.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], components: [getReturnRow()] });
 
-    // تفادي الأخطاء في SelectMenu (ديسكورد يمنع أي قيمة فيها خلل أو أطول من 100 حرف أو إيموجي مش شغال)
     const skillOptions = userSkills.map(s => {
         const configSkill = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
         if (!configSkill) return null;
-        const opt = { 
-            label: configSkill.name.substring(0, 100), 
-            value: configSkill.id.substring(0, 100), 
-            description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) 
-        };
-        // نشيل الإيموجي إذا كان يعلق
-        // if (configSkill.emoji) opt.emoji = configSkill.emoji;
-        return opt;
+        return { label: resolveText(configSkill.name).substring(0, 100), value: configSkill.id.substring(0, 100), description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
     }).filter(Boolean);
-
-    if(skillOptions.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا يمكن جلب بيانات المهارات حالياً.")], components: [getReturnRow()] });
 
     const skillSelectRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_skill_select').setPlaceholder('اختر المهارة...').addOptions(skillOptions.slice(0, 25)));
     
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    await replyWithCanvas(i, user, 'skill', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()]);
+    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()]);
 }
 
 async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
@@ -308,7 +303,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const currentLevel = Number(sData.skillLevel || sData.skilllevel);
     const configSkill = skillsConfig.find(sc => sc.id === skillId);
     
-    if (currentLevel >= (configSkill.max_level || 30)) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ مهارة **${configSkill.name}** وصلت للحد الأقصى!`)], components: [getReturnRow()] });
+    if (currentLevel >= (configSkill.max_level || 30)) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ المهارة وصلت للحد الأقصى!`)], components: [getReturnRow()] });
 
     const reqs = getUpgradeRequirement(currentLevel);
     const categoryName = skillId.startsWith('race_') ? 'Race_Skills' : 'General_Skills';
@@ -332,7 +327,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     );
     
     await replyWithCanvas(i, user, 'skill', {
-        mora: userMora, title: `صقل ${configSkill.name}`,
+        mora: userMora, title: `صقل ${resolveText(configSkill.name)}`,
         currentLevel, nextLevel: currentLevel + 1,
         currentStat: `${currentVal}${statSymbol}`, nextStat: `${nextVal}${statSymbol}`,
         reqMora: reqs.moraCost, reqMatName: requiredBook.name, reqMatIcon: requiredBook.iconUrl,
@@ -390,8 +385,7 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
     if (!state.sacrificeItem) {
         const sacrificeOptions = availableSacrifices.map(row => {
             const info = getItemInfo(row.itemID);
-            const opt = { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
-            return opt;
+            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
         }).slice(0, 25);
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions)));
     } else {
@@ -404,14 +398,14 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         if (rMats) {
             const matMatch = rMats.materials.find(m => m.rarity === sacInfo.rarity);
             if (matMatch && matMatch.id !== sacInfo.id) {
-                targetOptions.push({ label: matMatch.name.substring(0, 100), value: matMatch.id.substring(0, 100), description: 'مورد سلاح' });
+                targetOptions.push({ label: resolveText(matMatch.name).substring(0, 100), value: matMatch.id.substring(0, 100), description: 'مورد سلاح' });
             }
         }
         
         upgradeMats.skill_books.forEach(cat => {
             const bookMatch = cat.books.find(b => b.rarity === sacInfo.rarity);
             if (bookMatch && bookMatch.id !== sacInfo.id) {
-                targetOptions.push({ label: bookMatch.name.substring(0, 100), value: bookMatch.id.substring(0, 100), description: 'مخطوطة سحر' });
+                targetOptions.push({ label: resolveText(bookMatch.name).substring(0, 100), value: bookMatch.id.substring(0, 100), description: 'مخطوطة سحر' });
             }
         });
 
@@ -502,8 +496,7 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
         const smeltOptions = smeltableItems.map(row => {
             const info = getItemInfo(row.itemID);
             const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-            const opt = { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
-            return opt;
+            return { label: info.name.substring(0, 100), value: info.id.substring(0, 100), description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
         }).slice(0, 25);
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions)));
     } else {
