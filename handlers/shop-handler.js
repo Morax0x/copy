@@ -41,6 +41,48 @@ const finalBoats = boatsConfig.length > 0 ? boatsConfig : (fishingConfig.boats |
 const CUSTOM_XP_RATE = 5; 
 const MAX_POTION_LIMIT = 999;
 
+async function sendItemDetailsEmbed(i, itemId, itemType = 'general') {
+    let item;
+    let priceText = '';
+    let descText = '';
+
+    if (itemType === 'bait') {
+        item = finalBaits.find(b => b.id === itemId);
+        if(item) {
+            const unitPrice = Math.round(item.price / 5);
+            const cost = unitPrice * 5; 
+            priceText = `**${cost.toLocaleString()}** ${EMOJI_MORA}`;
+            descText = `حزمة تحتوي على (5 حبات) من ${item.name}.`;
+        }
+    } else {
+        item = shopItems.find(it => it.id === itemId) || finalPotionItems.find(it => it.id === itemId);
+        if(item) {
+            priceText = `**${item.price > 0 ? item.price.toLocaleString() : 'مـورا ؟'}** ${EMOJI_MORA}`;
+            descText = item.description || 'لا يوجد وصف.';
+        }
+    }
+
+    if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
+
+    const detailEmbed = new EmbedBuilder()
+        .setTitle(`${item.emoji || '📦'} ${item.name}`)
+        .setDescription(`**الوصف:**\n${descText}`)
+        .addFields({ name: 'السعر', value: priceText, inline: true })
+        .setColor(Colors.Gold);
+        
+    if(item.image) detailEmbed.setThumbnail(item.image);
+
+    const customId = itemType === 'bait' ? `buy_confirm_bait_${item.id}` : `buy_item_${item.id}`;
+    const buyBtn = new ButtonBuilder().setCustomId(customId).setLabel('تأكيد الشراء').setStyle(ButtonStyle.Success).setEmoji('🛒');
+    const row = new ActionRowBuilder().addComponents(buyBtn);
+
+    if(i.replied || i.deferred) {
+        return await i.followUp({ embeds: [detailEmbed], components: [row], flags: MessageFlags.Ephemeral });
+    } else {
+        return await i.reply({ embeds: [detailEmbed], components: [row], flags: MessageFlags.Ephemeral });
+    }
+}
+
 async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalPrice, client, db, callbackType) {
     const member = interaction.member; 
     const guildID = interaction.guild.id; 
@@ -236,7 +278,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         .setAuthor({ name: interaction.user.username, iconURL: interaction.user.displayAvatarURL() });
 
     if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral }).catch(()=>{});
+        await interaction.editReply({ content: null, embeds: [successEmbed], components: [] }).catch(()=>{});
     } else {
         await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
@@ -504,9 +546,8 @@ async function _handleBaitSelect(i, client, db) {
     await i.editReply({ content: null, embeds: [embed], components: [row] });
 }
 
-async function _handleBaitBuy(i, client, db) {
+async function _handleBaitBuy(i, client, db, baitId) {
     if(!i.deferred && !i.replied) await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const baitId = i.values[0].replace('buy_bait_', '');
     const bait = finalBaits.find(b => b.id === baitId);
     if (!bait) return i.editReply({ content: '❌ هذا العنصر غير موجود!' });
     
@@ -594,19 +635,17 @@ async function handleShopModal(i, client, db) {
 
 async function handleShopInteractions(i, client, db) {
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_select') {
-        const boughtItemId = i.values[0].replace('buy_item_', '');
+        const rawId = i.values[0].replace('buy_item_', '');
         
-        if (boughtItemId === 'fishing_gear_menu') return await _handleFishingMenu(i, client, db);
-        if (boughtItemId === 'potions_menu') return await _handlePotionSelect(i, client, db);
-        
-        if (boughtItemId === 'exchange_xp') {
+        if (rawId === 'fishing_gear_menu') return await _handleFishingMenu(i, client, db);
+        if (rawId === 'potions_menu') return await _handlePotionSelect(i, client, db);
+        if (rawId === 'exchange_xp') {
              const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
              xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية (اكتب All للكل)').setStyle(TextInputStyle.Short).setRequired(true)));
              return await i.showModal(xpModal);
         }
 
-        await _handleShopButton(i, client, db, boughtItemId);
-        return;
+        return await sendItemDetailsEmbed(i, rawId, 'general');
     }
 
     if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
@@ -619,32 +658,25 @@ async function handleShopInteractions(i, client, db) {
 
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
         const potionId = i.values[0].replace('buy_item_', '');
-        const item = finalPotionItems.find(it => it.id === potionId);
-        if (!item) return await i.reply({ content: "❌ خطأ في تحميل بيانات الجرعة.", flags: MessageFlags.Ephemeral });
-        await _handleShopButton(i, client, db, potionId);
-        return;
+        return await sendItemDetailsEmbed(i, potionId, 'general');
     }
 
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') {
-        await _handleBaitBuy(i, client, db);
-        return;
+        const baitId = i.values[0].replace('buy_bait_', '');
+        return await sendItemDetailsEmbed(i, baitId, 'bait');
     }
 
-    if (i.customId.startsWith('buy_item_')) {
+    if (i.isButton() && i.customId.startsWith('buy_confirm_bait_')) {
+        const baitId = i.customId.replace('buy_confirm_bait_', '');
+        return await _handleBaitBuy(i, client, db, baitId);
+    }
+
+    if (i.isButton() && i.customId.startsWith('buy_item_')) {
         const boughtItemId = i.customId.replace('buy_item_', ''); 
-        
-        if (boughtItemId === 'fishing_gear_menu') return await _handleFishingMenu(i, client, db);
-        if (boughtItemId === 'potions_menu') return await _handlePotionSelect(i, client, db);
-        
-        if (boughtItemId === 'exchange_xp') {
-             const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
-             xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية (اكتب All للكل)').setStyle(TextInputStyle.Short).setRequired(true)));
-             return await i.showModal(xpModal);
-        }
-
-        await _handleShopButton(i, client, db, boughtItemId);
+        return await _handleShopButton(i, client, db, boughtItemId);
     }
-    else if (i.customId.startsWith('replace_buff_')) await _handleReplaceBuffButton(i, client, db);
+    
+    if (i.customId.startsWith('replace_buff_')) await _handleReplaceBuffButton(i, client, db);
     else if (i.customId === 'cancel_purchase') { await i.deferUpdate(); await i.editReply({ content: 'تم الإلغاء.', components: [], embeds: [] }); }
     else if (i.customId === 'replace_guard') await _handleReplaceGuard(i, client, db);
 }
