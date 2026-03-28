@@ -4,117 +4,163 @@ const fs = require('fs');
 
 const imageAssetsDir = path.join(process.cwd(), 'empress-assets', 'images', 'market');
 
-// 🔥 الكاش للصور الأساسية (للتسريع الجذري للأداء) 🔥
+// 🔥 نظام الكاش السريع
 const ASSETS_CACHE = new Map();
 let trendImages = { up: null, down: null, neutral: null };
 
-// دالة تحميل الصور الأساسية مرة واحدة عند بدء التشغيل
 async function preloadGlobalAssets() {
     try {
-        if (!fs.existsSync(imageAssetsDir)) {
-            console.error(`⚠️ [Market Preload]: مجلد الصور غير موجود في المسار: ${imageAssetsDir}`);
-            return;
-        }
-
-        // تحميل صور الأسهم الحقيقية (Trends) التي أرفقتها
+        if (!fs.existsSync(imageAssetsDir)) return;
         trendImages.up = await loadImage(path.join(imageAssetsDir, 'up_trend.png')).catch(()=>{});
         trendImages.down = await loadImage(path.join(imageAssetsDir, 'down_trend.png')).catch(()=>{});
         trendImages.neutral = await loadImage(path.join(imageAssetsDir, 'neutral_trend.png')).catch(()=>{});
-
-        console.log("✅ [Market Preload]: تم تحميل صور الأسهم (Trends) بنجاح.");
-
     } catch (e) { console.error("[Market Preload Error]:", e.message); }
 }
 
-// دالة جلب صورة الأصل مع كاش (محلي أو رابط)
 async function getAssetImage(item) {
     if (ASSETS_CACHE.has(item.id)) return ASSETS_CACHE.get(item.id);
-    
-    // 1. محاولة جلب الصورة المحلية أولاً (اسم_الآيدي.png)
     const imgPath = path.join(imageAssetsDir, `${item.id.toLowerCase()}.png`);
     if (fs.existsSync(imgPath)) {
         const img = await loadImage(imgPath).catch(()=>{});
         if (img) { ASSETS_CACHE.set(item.id, img); return img; }
     }
-    
-    // 2. إذا لم تتوفر الصورة المحلية، نجلبها من الرابط في الجيسون
     if (item.image) {
         const img = await loadImage(item.image).catch(()=>{});
         if (img) { ASSETS_CACHE.set(item.id, img); return img; }
     }
-    
     return null;
 }
 
-// تنسيق السعر
 function formatPriceText(price) {
     if (isNaN(price)) return '0 Mora';
     return Number(price).toLocaleString();
 }
 
-// دالة مساعدة لرسم مربعات بزوايا دائرية
-function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
-    if (typeof radius === 'undefined') radius = 5;
+// 🔷 دالة رسم الكروت المستقبلية (Sci-Fi Panel)
+function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
+    const cut = 25; // حجم القطع في الزوايا
+
     ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.moveTo(x + cut, y);
+    ctx.lineTo(x + width, y);
+    ctx.lineTo(x + width, y + height - cut);
+    ctx.lineTo(x + width - cut, y + height);
+    ctx.lineTo(x, y + height);
+    ctx.lineTo(x, y + cut);
     ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
+
+    // تعبئة خلفية الكرت (زجاجي داكن)
+    ctx.fillStyle = 'rgba(8, 12, 22, 0.85)';
+    ctx.fill();
+
+    // تأثير التوهج النيون
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 15;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = borderColor;
+    ctx.stroke();
+    
+    // إغلاق التوهج عشان ما يأثر على باقي الرسم
+    ctx.shadowBlur = 0; 
+    
+    // رسم خطوط ديكور جانبية (تفاصيل Cyberpunk)
+    ctx.beginPath();
+    ctx.moveTo(x + 5, y + cut + 10);
+    ctx.lineTo(x + 5, y + height - 10);
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth = 3;
+    ctx.stroke();
 }
 
-// 🔥🔥 دالة الرسم الرئيسية (شكل احترافي، لوغوهات كبيرة، أسهم حقيقية) 🔥🔥
+// 📈 دالة رسم "مخطط بياني" هولوغرامي مصغر أسفل الكرت
+function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
+    ctx.beginPath();
+    let currentY = isUp ? y + height : (isDown ? y : y + height / 2);
+    ctx.moveTo(x, currentY);
+
+    const points = 6;
+    const stepX = width / points;
+
+    for (let i = 1; i <= points; i++) {
+        // توليد حركة عشوائية للرسم البياني مع الحفاظ على الاتجاه
+        let randomFluctuation = (Math.random() - 0.5) * 20; 
+        
+        if (isUp) {
+            currentY -= (height / points) + randomFluctuation;
+        } else if (isDown) {
+            currentY += (height / points) + randomFluctuation;
+        } else {
+            currentY += randomFluctuation; // تذبذب في نفس المستوى
+        }
+
+        // منع الرسم البياني من الخروج عن حدود الكرت
+        currentY = Math.max(y, Math.min(currentY, y + height)); 
+        
+        ctx.lineTo(x + (i * stepX), currentY);
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+
+// 🔥🔥 GOD MODE GRID GENERATOR 🔥🔥
 exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages) {
-    // أبعاد اللوحة الكبيرة للدقة العالية (1200x900)
-    const CANVAS_WIDTH = 1200;
-    const CANVAS_HEIGHT = 900;
+    const CANVAS_WIDTH = 1280;
+    const CANVAS_HEIGHT = 960;
     const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
     const ctx = canvas.getContext("2d");
-    const FONT_FAMILY = '"Arial", sans-serif'; // يفضل تسجيل خط Tajawal-Bold هنا لفخامة أكثر
+    const FONT_FAMILY = '"Arial", sans-serif';
 
-    // 1️⃣ رسم الخلفية (Dark Trading Theme)
-    const bgGradient = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    bgGradient.addColorStop(0, '#0a0f1e'); // كحلي غامق جداً
-    bgGradient.addColorStop(1, '#020408'); // أسود تقريباً
+    // 1️⃣ خلفية البورصة المستقبلية (Deep Cyber Space)
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    bgGradient.addColorStop(0, '#04070d'); 
+    bgGradient.addColorStop(0.5, '#0a1224'); 
+    bgGradient.addColorStop(1, '#020408'); 
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // رسم شبكة ديكور خفيفة (Grid)
-    ctx.strokeStyle = 'rgba(0, 162, 255, 0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < CANVAS_WIDTH; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_HEIGHT); ctx.stroke(); }
-    for (let y = 0; y < CANVAS_HEIGHT; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_WIDTH, y); ctx.stroke(); }
+    // شبكة نقاط هولوغرامية بالخلفية
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
+    for (let x = 20; x < CANVAS_WIDTH; x += 40) {
+        for (let y = 20; y < CANVAS_HEIGHT; y += 40) {
+            ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fill();
+        }
+    }
 
-    // 2️⃣ رسم الهيدر الاحترافي
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, 90);
-    ctx.strokeStyle = 'rgba(0, 162, 255, 0.1)';
-    ctx.beginPath(); ctx.moveTo(0, 90); ctx.lineTo(CANVAS_WIDTH, 90); ctx.stroke();
+    // 2️⃣ الهيدر الهولوغرامي (Terminal Header)
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, 100);
+    
+    // خط نيون علوي
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 100); ctx.lineTo(CANVAS_WIDTH, 100); ctx.stroke();
+    ctx.shadowBlur = 0;
 
     ctx.textAlign = "right";
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 35px ${FONT_FAMILY}`;
-    ctx.fillText('✥ سوق الاستثمار الإمبراطوري ✥', CANVAS_WIDTH - 40, 55);
+    ctx.font = `bold 42px ${FONT_FAMILY}`;
+    ctx.fillText('EMPRESS GLOBAL EXCHANGE 🌐', CANVAS_WIDTH - 50, 65);
 
     ctx.textAlign = "left";
-    ctx.font = `24px ${FONT_FAMILY}`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(`🕒 التحديث القادم خلال: ${timeRemaining}`, 40, 55);
+    ctx.font = `bold 24px ${FONT_FAMILY}`;
+    ctx.fillStyle = '#00ffff'; // لون سماوي مميز للتوقيت
+    ctx.fillText(`[ SYS_UPDATE_IN ]: ${timeRemaining}`, 50, 62);
 
-    // 3️⃣ إعدادات الشبكة والكروت (3x3)
-    const CARD_WIDTH = 360;
-    const CARD_HEIGHT = 220;
-    const GAP_X = 30;
-    const GAP_Y = 30;
-    const START_X = 40;
-    const START_Y = 130;
+    // 3️⃣ الكروت (The Sci-Fi Panels)
+    const CARD_WIDTH = 370;
+    const CARD_HEIGHT = 230;
+    const GAP_X = 35;
+    const GAP_Y = 35;
+    const START_X = 50;
+    const START_Y = 150;
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -128,82 +174,71 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         const isUp = changePercent > 0.01;
         const isDown = changePercent < -0.01;
 
-        // تحديد لون البطاقة والسهم (أخضر متوهج/أحمر متوهج/رمادي)
-        const mainColor = isUp ? '#1ddb2a' : (isDown ? '#db1d2a' : '#888888');
-        const glowColor = isUp ? 'rgba(29, 219, 42, 0.1)' : (isDown ? 'rgba(219, 29, 42, 0.1)' : 'rgba(136, 136, 136, 0.05)');
+        // ألوان نيون حقيقية (Neon Colors)
+        const mainColor = isUp ? '#00ff88' : (isDown ? '#ff0055' : '#00ccff');
+        const glowColor = isUp ? 'rgba(0, 255, 136, 0.6)' : (isDown ? 'rgba(255, 0, 85, 0.6)' : 'rgba(0, 204, 255, 0.6)');
+        const borderColor = isUp ? 'rgba(0, 255, 136, 0.8)' : (isDown ? 'rgba(255, 0, 85, 0.8)' : 'rgba(0, 204, 255, 0.8)');
 
-        // -- A. خلفية الكرت (Glassmorphism Effect)
-        ctx.fillStyle = 'rgba(20, 30, 50, 0.7)'; // خلفية كرت داكنة وشفافة
-        roundRect(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, 20, true);
-        
-        // رسم حدود مضيئة خفيفة (Outer Glow)
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 20;
-        ctx.strokeStyle = `rgba(${isUp ? '29, 219, 42' : (isDown ? '219, 29, 42' : '136, 136, 136')}, 0.2)`;
-        ctx.lineWidth = 2;
-        roundRect(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, 20, false, true);
-        ctx.shadowBlur = 0; // إيقاف الظل لباقي العناصر
+        // رسم الكرت المستقبلي
+        drawSciFiPanel(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, borderColor, glowColor);
 
-        // -- B. رسم لوغوه الأصل (تم تكبيره - 80x80)
+        // رسم المخطط البياني الحي أسفل الكرت (Sparkline)
+        drawSparkline(ctx, x + 20, y + Math.floor(CARD_HEIGHT * 0.65), CARD_WIDTH - 40, 50, isUp, isDown, mainColor);
+
+        // صورة اللوغو 
         const assetImg = await getAssetImage(item);
         if (assetImg) {
-            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10;
-            ctx.drawImage(assetImg, x + 25, y + 25, 80, 80); // اللوغو كبير في اليسار
+            ctx.shadowColor = glowColor; ctx.shadowBlur = 15; // اللوغو يشع بلون السهم
+            ctx.drawImage(assetImg, x + 20, y + 20, 75, 75);
             ctx.shadowBlur = 0;
         }
 
-        // -- C. رسم حالة السهم الحقيقي (Trend Image الكبير) في اليمين
+        // صورة اتجاه السهم (Trend)
         const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
         if (trendImg) {
-            ctx.drawImage(trendImg, x + CARD_WIDTH - 105, y + 25, 80, 80); // السهم كبير ومكانه واضح
+            ctx.drawImage(trendImg, x + CARD_WIDTH - 90, y + 20, 70, 70);
         }
 
-        // -- D. رسم النصوص والتفاصيل
-        ctx.textAlign = "right";
-        
-        // اسم الأصل (إزالة الإيموجي النصي القديم)
+        // --- النصوص الهولوغرامية ---
+        ctx.textAlign = "left";
         const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').trim();
+        
+        // اسم السهم
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 28px ${FONT_FAMILY}`;
-        ctx.fillText(cleanName.split(' ')[0], x + CARD_WIDTH - 25, y + 130);
-
-        // النسبة المئوية للتغير
+        ctx.fillText(cleanName.split(' ')[0], x + 110, y + 50);
+        
+        // شارة النسبة المئوية (Badge)
+        ctx.fillStyle = isUp ? 'rgba(0, 255, 136, 0.15)' : (isDown ? 'rgba(255, 0, 85, 0.15)' : 'rgba(0, 204, 255, 0.15)');
+        ctx.beginPath(); ctx.roundRect(x + 110, y + 65, 100, 30, 5); ctx.fill();
+        ctx.strokeStyle = mainColor; ctx.lineWidth = 1; ctx.stroke();
+        
         ctx.fillStyle = mainColor;
-        ctx.font = `22px ${FONT_FAMILY}`;
+        ctx.font = `bold 18px ${FONT_FAMILY}`;
         const sign = changePercent > 0 ? '+' : '';
-        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + CARD_WIDTH - 25, y + 160);
+        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 120, y + 87);
 
-        // -- E. شريط السعر السفلي الداكن
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        roundRect(ctx, x + 15, y + CARD_HEIGHT - 65, CARD_WIDTH - 30, 50, 10, true);
-
-        // كتابة "السعر الحالي"
-        ctx.textAlign = "left";
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.font = `18px ${FONT_FAMILY}`;
-        ctx.fillText('السعر الحالي', x + 30, y + CARD_HEIGHT - 35);
-
-        // قيمة السعر باللون المناسب
-        ctx.textAlign = "right";
-        ctx.fillStyle = mainColor;
-        ctx.font = `bold 26px ${FONT_FAMILY}`;
-        ctx.fillText(`${formatPriceText(currentPrice)} Mora`, x + CARD_WIDTH - 30, y + CARD_HEIGHT - 33);
-    }
-
-    // 4️⃣ شريط التنقل السفلي الاحترافي
-    if (totalPages > 1) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.01)';
-        ctx.fillRect(0, CANVAS_HEIGHT - 60, CANVAS_WIDTH, 60);
-
+        // السعر (Neon Glowing Text)
         ctx.textAlign = "center";
-        ctx.font = `20px ${FONT_FAMILY}`;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.fillText(`صفحة ${currentPage + 1} من ${totalPages}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 22);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold 36px ${FONT_FAMILY}`;
+        ctx.shadowColor = mainColor;
+        ctx.shadowBlur = 10;
+        ctx.fillText(`${formatPriceText(currentPrice)} Ⓜ`, x + CARD_WIDTH / 2, y + 145);
+        ctx.shadowBlur = 0;
     }
 
-    // إرجاع الصورة كـ Buffer
+    // 4️⃣ ترقيم الصفحات
+    if (totalPages > 1) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, CANVAS_HEIGHT - 60, CANVAS_WIDTH, 60);
+        ctx.textAlign = "center";
+        ctx.font = `bold 22px ${FONT_FAMILY}`;
+        ctx.fillStyle = '#00ffff';
+        ctx.fillText(`PAGE [ ${currentPage + 1} / ${totalPages} ]`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 22);
+    }
+
     return canvas.toBuffer();
 };
 
-// 🔥 تنفيذ تحميل الصور عند تحميل الملف لضمان السرعة 🔥
 preloadGlobalAssets();
