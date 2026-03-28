@@ -22,7 +22,6 @@ let handleFarmInteractions;
 let handleFarmShopModal; 
 let farmShop; 
 
-// 🌟 فصلنا الفحص عشان إذا خرب ملف ما يخرب الثاني! 🌟
 try {
     const farmModule = require('./handlers/farm-handler.js');
     handleFarmInteractions = farmModule.handleFarmInteractions || farmModule._handleFarmTransaction;
@@ -38,7 +37,7 @@ try {
         farmShop = require('./handlers/farm-shop.js');
         handleFarmShopModal = farmShop.handleFarmShopModal;
     } catch (e2) {
-        console.error("ℹ️ Farm Shop module error (Check JSON paths inside it).");
+        console.error("ℹ️ Farm Shop module error.");
     }
 }
 
@@ -161,6 +160,11 @@ module.exports = (client, db, antiRolesCache) => {
                     return;
                 }
 
+                // 🌟 الحماية القسوى: نمنع الهاندلر المركزي من سرقة أزرار المزرعة، ونتركها للكوليكتر في farm.js! 🌟
+                if (id.startsWith('shop_cat_') || id.startsWith('farm_') || id.startsWith('buy_btn_farm|') || id.startsWith('sell_btn_farm|') || id.startsWith('nav_') || id.includes('feed_animal')) {
+                    return; // تم الإيقاف هنا ليعمل كوليكتر المزرعة بكفاءة.
+                }
+
                 if (id.startsWith('notify_afk_')) {
                     const targetID = id.split('_')[2];
                     const afkData = db.prepare("SELECT * FROM afk WHERE userID = ? AND guildID = ?").get(targetID, i.guild.id);
@@ -224,17 +228,6 @@ module.exports = (client, db, antiRolesCache) => {
                     return;
                 }
 
-                if (id.startsWith('shop_cat_') || id.startsWith('farm_') || id.startsWith('buy_btn_farm|') || id.startsWith('sell_btn_farm|')) {
-                    if (farmShop && farmShop.handleShopInteraction) {
-                        await farmShop.handleShopInteraction(i, client, db, i.user, i.guild, {}, () => new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId('farm_shop_back').setLabel('رجوع للأقسام').setStyle(ButtonStyle.Secondary)
-                        ));
-                    } else if (id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') {
-                        if (handleFarmInteractions) await handleFarmInteractions(i, client, db);
-                    }
-                    return;
-                }
-
                 if (id.startsWith('bid_')) { 
                     await handleAuctionSystem(i); 
                 } else if (id.startsWith('giveaway_')) {
@@ -283,7 +276,7 @@ module.exports = (client, db, antiRolesCache) => {
 
             if (i.isModalSubmit()) {
                 
-                // 🌟 إصلاح المودال للبيع والشراء 🌟
+                // 🌟 السماح بنوافذ بيع وشراء المزرعة فقط هنا
                 if (i.customId.startsWith('farm_buy_modal|') || i.customId.startsWith('farm_sell_modal|')) {
                     if (handleFarmShopModal) {
                         await handleFarmShopModal(i, client, db);
