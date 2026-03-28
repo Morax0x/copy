@@ -4,12 +4,14 @@ const fs = require('fs');
 
 const imageAssetsDir = path.join(process.cwd(), 'empress-assets', 'images', 'market');
 
+// 🔥 نظام الكاش السريع للأداء الأقصى
 const ASSETS_CACHE = new Map();
 let trendImages = { up: null, down: null, neutral: null };
 
 async function preloadGlobalAssets() {
     try {
         if (!fs.existsSync(imageAssetsDir)) return;
+        // تحميل صور الأسهم الحقيقية (Trends) التي أرفقتها
         trendImages.up = await loadImage(path.join(imageAssetsDir, 'up_trend.png')).catch(()=>{});
         trendImages.down = await loadImage(path.join(imageAssetsDir, 'down_trend.png')).catch(()=>{});
         trendImages.neutral = await loadImage(path.join(imageAssetsDir, 'neutral_trend.png')).catch(()=>{});
@@ -30,6 +32,7 @@ async function getAssetImage(item) {
     return null;
 }
 
+// دالة لجلب ورسم آفتار المستخدم بشكل دائري
 async function drawUserAvatar(ctx, url, x, y, size) {
     try {
         const avatarImg = await loadImage(url);
@@ -41,6 +44,7 @@ async function drawUserAvatar(ctx, url, x, y, size) {
         ctx.drawImage(avatarImg, x, y, size, size);
         ctx.restore();
         
+        // تأثير توهج حول الآفتار
         ctx.shadowColor = '#00ffff';
         ctx.shadowBlur = 10;
         ctx.strokeStyle = '#ffffff';
@@ -57,6 +61,7 @@ function formatPriceText(price) {
     return Number(price).toLocaleString();
 }
 
+// دالة مساعدة لرسم مربعات بزوايا دائرية
 function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
     if (typeof radius === 'undefined') radius = 5;
     ctx.beginPath();
@@ -74,8 +79,10 @@ function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
     if (stroke) ctx.stroke();
 }
 
+// 🔷 دالة رسم الكروت المستقبلية (Sci-Fi Panel)
 function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     const cut = 25; 
+
     ctx.beginPath();
     ctx.moveTo(x + cut, y);
     ctx.lineTo(x + width, y);
@@ -95,6 +102,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.stroke();
     ctx.shadowBlur = 0; 
     
+    // خط ديكور جانبي
     ctx.beginPath();
     ctx.moveTo(x + 5, y + cut + 10);
     ctx.lineTo(x + 5, y + height - 10);
@@ -103,6 +111,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.stroke();
 }
 
+// 📈 دالة رسم "مخطط بياني" هولوغرامي مصغر أسفل الكرت
 function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
     ctx.beginPath();
     let currentY = isUp ? y + height : (isDown ? y : y + height / 2);
@@ -128,13 +137,15 @@ function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
     ctx.shadowBlur = 0;
 }
 
+// 🔥🔥 GOD MODE GRID GENERATOR v3 - الشغل الثقيل 🔥🔥
 exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages, userAvatarUrl) {
     const CANVAS_WIDTH = 1280;
     const CANVAS_HEIGHT = 960;
     const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
     const ctx = canvas.getContext("2d");
-    const FONT_FAMILY = '"Arial", sans-serif';
+    const FONT_FAMILY = '"Arial", sans-serif'; 
 
+    // 1️⃣ خلفية البورصة المستقبلية
     const bgGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     bgGradient.addColorStop(0, '#04070d'); 
     bgGradient.addColorStop(0.5, '#0a1224'); 
@@ -142,6 +153,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
+    // شبكة نقاط هولوغرامية بالخلفية
     ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
     for (let x = 20; x < CANVAS_WIDTH; x += 40) {
         for (let y = 20; y < CANVAS_HEIGHT; y += 40) {
@@ -149,9 +161,11 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         }
     }
 
+    // 2️⃣ الهيدر الهولوغرامي
     ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
     ctx.fillRect(0, 0, CANVAS_WIDTH, 100);
     
+    // خط نيون علوي
     ctx.shadowColor = '#00ffff';
     ctx.shadowBlur = 15;
     ctx.strokeStyle = '#00ffff';
@@ -173,6 +187,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         await drawUserAvatar(ctx, userAvatarUrl, 50, 10, 80);
     }
 
+    // 3️⃣ الكروت المحسنة (The Sci-Fi Panels)
     const CARD_WIDTH = 370;
     const CARD_HEIGHT = 230;
     const GAP_X = 35;
@@ -197,45 +212,56 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         const borderColor = isUp ? 'rgba(0, 255, 136, 0.8)' : (isDown ? 'rgba(255, 0, 85, 0.8)' : 'rgba(0, 204, 255, 0.8)');
 
         drawSciFiPanel(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, borderColor, glowColor);
+
+        // رسم المخطط البياني
         drawSparkline(ctx, x + 20, y + Math.floor(CARD_HEIGHT * 0.7), CARD_WIDTH - 40, 50, isUp, isDown, mainColor);
 
+        // صورة اللوغو (تم تكبيرها بشكل ضخم صدق - 110x110)
         const assetImg = await getAssetImage(item);
         if (assetImg) {
             ctx.shadowColor = glowColor; ctx.shadowBlur = 15;
-            ctx.drawImage(assetImg, x + 15, y + 15, 100, 100);
+            // رسم اللوغو بحجم كبير في زاوية الكرت
+            ctx.drawImage(assetImg, x + 15, y + 15, 110, 110);
             ctx.shadowBlur = 0;
         }
 
+        // صورة اتجاه السهم (Trend) من ملفاتك
         const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
         if (trendImg) {
-            ctx.drawImage(trendImg, x + CARD_WIDTH - 90, y + 15, 75, 75);
+            ctx.drawImage(trendImg, x + CARD_WIDTH - 100, y + 15, 85, 85);
         }
 
+        // --- النصوص الهولوغرامية ---
         ctx.textAlign = "left";
-        const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
+        const cleanName = item.name.trim();
         
+        // اسم السهم كاملاً
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 24px ${FONT_FAMILY}`;
-        ctx.fillText(cleanName, x + 125, y + 50);
+        ctx.font = `bold 26px ${FONT_FAMILY}`;
+        // الإزاحة استناداً لحجم اللوغو الجديد
+        ctx.fillText(cleanName, x + 135, y + 50);
         
+        // شارة النسبة المئوية (Badge)
         ctx.fillStyle = isUp ? 'rgba(0, 255, 136, 0.15)' : (isDown ? 'rgba(255, 0, 85, 0.15)' : 'rgba(0, 204, 255, 0.15)');
-        roundRect(ctx, x + 125, y + 65, 100, 30, 5, true);
+        ctx.beginPath(); ctx.roundRect(x + 135, y + 65, 110, 35, 5); ctx.fill();
         ctx.strokeStyle = mainColor; ctx.lineWidth = 1; ctx.stroke();
         
         ctx.fillStyle = mainColor;
-        ctx.font = `bold 18px ${FONT_FAMILY}`;
+        ctx.font = `bold 20px ${FONT_FAMILY}`;
         const sign = changePercent > 0 ? '+' : '';
-        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 135, y + 87);
+        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 145, y + 90);
 
+        // السعر
         ctx.textAlign = "center";
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 36px ${FONT_FAMILY}`;
+        ctx.font = `bold 38px ${FONT_FAMILY}`;
         ctx.shadowColor = mainColor;
         ctx.shadowBlur = 10;
         ctx.fillText(`${formatPriceText(currentPrice)}`, x + CARD_WIDTH / 2, y + 155);
         ctx.shadowBlur = 0;
     }
 
+    // 4️⃣ ترقيم الصفحات
     if (totalPages > 1) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(0, CANVAS_HEIGHT - 60, CANVAS_WIDTH, 60);
@@ -248,6 +274,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     return canvas.toBuffer();
 };
 
+// 🎨 2. رسم بطاقة التفاصيل
 exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, currentPrice, changePercent) {
     const CANVAS_WIDTH = 900;
     const CANVAS_HEIGHT = 450;
@@ -281,7 +308,7 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     }
 
     ctx.textAlign = "left";
-    const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
+    const cleanName = item.name.trim();
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 48px ${FONT_FAMILY}`;
     ctx.fillText(cleanName, 300, 100);
