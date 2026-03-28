@@ -109,17 +109,5 @@
     "emoji": "🧬",
     "category": "premium",
     "image": "https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/shop/change_race.png"
-  },
-  {
-    "id": "item_temp_reply",
-    "name": "رد بوت تلقائي خاص بك",
-    "description": "شراء رد خاص بك لمدة 3 أيام.",
-    "price": 10000,
-    "type": "special",
-    "emoji": "💬",
-    "stock": -1,
-    "role_id": null,
-    "category": "general",
-    "image": "https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/shop/item_temp_reply.png"
   }
 ]
