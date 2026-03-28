@@ -7,7 +7,9 @@ const { renderLand } = require('../../handlers/farm-land.js');
 let farmShop;
 try {
     farmShop = require('../../handlers/shop_system/farm-shop.js');
-} catch(e) {}
+} catch(e) {
+    try { farmShop = require('../../handlers/farm-shop.js'); } catch(e2) {}
+}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 const LEFT_EMOJI = '<:left:1439164494759723029>';
@@ -380,7 +382,7 @@ module.exports = {
                         }
                     });
                 }
-                else if (farmShop && (i.customId.startsWith('shop_cat_') || i.customId === 'farm_select_item' || i.customId.startsWith('buy_') || i.customId.startsWith('sell_') || i.customId.startsWith('farm_page_') || i.customId.startsWith('farm_prev_detail_') || i.customId.startsWith('farm_next_detail_') || i.customId === 'farm_back_main' || i.customId === 'farm_back_to_grid')) {
+                else if (farmShop && (i.customId === 'shop_cat_select' || i.customId === 'farm_select_item' || i.customId.startsWith('buy_btn_farm|'))) {
                     await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
                 }
 
