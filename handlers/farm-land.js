@@ -1,7 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, Colors } = require("discord.js");
 const Canvas = require('canvas');
-
-// 🌟 تم تصحيح مسارات الملفات هنا 🌟
 const seedsData = require('../json/seeds.json');
 const { getLandPlots } = require('../utils/farmUtils.js');
 
@@ -27,8 +25,21 @@ const MAX_GAME_PLOTS = 36;
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const ASSETS_URL = `${R2_URL}/images/farm`;
 
-let GLOBAL_IMAGES = null;
-let imageLoadPromise = null;
+// 🚀 أقوى نظام كاش بالرام (يحفظ مسار التحميل نفسه عشان يمنع التكرار نهائياً)
+const RAM_IMAGE_CACHE = new Map();
+
+async function getFarmAsset(name) {
+    if (RAM_IMAGE_CACHE.has(name)) return await RAM_IMAGE_CACHE.get(name);
+    
+    const url = `${ASSETS_URL}/${name}.png`;
+    const promise = Canvas.loadImage(url).catch((e) => {
+        console.error(`Failed to load image: ${url}`);
+        return null;
+    });
+    
+    RAM_IMAGE_CACHE.set(name, promise);
+    return await promise;
+}
 
 const farmLocks = new Map();
 
@@ -47,52 +58,6 @@ async function getGrowthMultiplier(db, userId, guildId) {
         if (points >= 50)   return 0.97; 
         return 1.0; 
     } catch(e) { return 1.0; }
-}
-
-async function loadAllImages() {
-    if (GLOBAL_IMAGES) return GLOBAL_IMAGES; 
-    if (imageLoadPromise) return await imageLoadPromise;
-
-    imageLoadPromise = (async () => {
-        const loadImage = async (name) => {
-            const ext = name.endsWith('.png') ? '' : '.png';
-            const url = `${ASSETS_URL}/${name}${ext}`;
-            try { return await Canvas.loadImage(url); } 
-            catch (e) { console.error(`Failed to load image: ${url}`); return null; }
-        };
-
-        GLOBAL_IMAGES = {
-            grass: await loadImage('grass.png'),
-            tilled: await loadImage('tilled.png'),
-            lock: await loadImage('lock.png'),
-            withered: await loadImage('withered.png'),
-            sprout: await loadImage('sprout.png'),
-            borderTop: await loadImage('border_top.png'),
-            borderBottom: await loadImage('border_bottom.png'),
-            borderLeft: await loadImage('border_left.png'),
-            borderRight: await loadImage('border_right.png'),
-            cornerTL: await loadImage('corner_top_left.png'),
-            cornerTR: await loadImage('corner_top_right.png'),
-            cornerBL: await loadImage('corner_bottom_left.png'),
-            cornerBR: await loadImage('corner_bottom_right.png'),
-            crops: {} 
-        };
-        return GLOBAL_IMAGES;
-    })();
-
-    return await imageLoadPromise;
-}
-
-async function getCropImage(seedId) {
-    if (!GLOBAL_IMAGES) await loadAllImages();
-    if (GLOBAL_IMAGES.crops[seedId]) return GLOBAL_IMAGES.crops[seedId];
-
-    try {
-        const url = `${ASSETS_URL}/${seedId}.png`;
-        const img = await Canvas.loadImage(url);
-        GLOBAL_IMAGES.crops[seedId] = img;
-        return img;
-    } catch (e) { return null; }
 }
 
 async function ensureLandTable(db) {
@@ -115,25 +80,34 @@ async function renderLand(interaction, client, db) {
     const user = interaction.user || interaction.author; 
     const userId = user.id;
     const guildId = interaction.guild.id;
+    const now = Date.now();
 
-    const [images, growthMultiplier, unlockedPlotsRaw, userPlotsRes, workerBuffRes] = await Promise.all([
-        loadAllImages(),
+    // 🚀 جلب البيانات والصور الأساسية كلها بضربة وحدة (Parallel Execution)
+    const [
+        growthMultiplier, unlockedPlotsRaw, userPlotsRes, workerBuffRes,
+        grassImg, tilledImg, lockImg, witheredImg, sproutImg,
+        bTop, bBot, bLeft, bRight, cTL, cTR, cBL, cBR
+    ] = await Promise.all([
         getGrowthMultiplier(db, userId, guildId),
         getLandPlots(client, userId, guildId),
         db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(() => db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]}))),
-        db.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'farm_worker' AND "expiresAt" > $3`, [userId, guildId, Date.now()]).catch(() => db.query(`SELECT expiresat FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'farm_worker' AND expiresat > $3`, [userId, guildId, Date.now()]).catch(()=>({rows:[]})))
+        db.query(`SELECT "expiresAt" FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'farm_worker' AND "expiresAt" > $3`, [userId, guildId, now]).catch(() => db.query(`SELECT expiresat FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'farm_worker' AND expiresat > $3`, [userId, guildId, now]).catch(()=>({rows:[]}))),
+        getFarmAsset('grass'), getFarmAsset('tilled'), getFarmAsset('lock'), getFarmAsset('withered'), getFarmAsset('sprout'),
+        getFarmAsset('border_top'), getFarmAsset('border_bottom'), getFarmAsset('border_left'), getFarmAsset('border_right'),
+        getFarmAsset('corner_top_left'), getFarmAsset('corner_top_right'), getFarmAsset('corner_bottom_left'), getFarmAsset('corner_bottom_right')
     ]);
+
+    const images = {
+        grass: grassImg, tilled: tilledImg, lock: lockImg, withered: witheredImg, sprout: sproutImg,
+        borderTop: bTop, borderBottom: bBot, borderLeft: bLeft, borderRight: bRight,
+        cornerTL: cTL, cornerTR: cTR, cornerBL: cBL, cornerBR: cBR
+    };
 
     const unlockedPlots = unlockedPlotsRaw >= 30 ? 36 : unlockedPlotsRaw;
     const userPlots = userPlotsRes.rows;
-    const now = Date.now();
 
-    let canPlow = false;        
-    let hasTilled = false;      
-    let readyCount = 0;         
-    let witheredCount = 0;      
-    let minRemainingTime = Infinity;
-    let totalPlowCost = 0;
+    let canPlow = false, hasTilled = false, readyCount = 0, witheredCount = 0, minRemainingTime = Infinity, totalPlowCost = 0;
+    const neededCrops = new Set(); // لاستخراج الصور المطلوبة بدون تكرار
 
     for (let i = 1; i <= unlockedPlots; i++) {
         const p = userPlots.find(x => Number(x.plotID || x.plotid) === i);
@@ -141,13 +115,9 @@ async function renderLand(interaction, client, db) {
         if (!p || p.status === 'empty') {
             totalPlowCost += PLOW_COST_BULK;
             canPlow = true;
-        }
-        
-        if (p && p.status === 'tilled') {
+        } else if (p.status === 'tilled') {
             hasTilled = true;
-        }
-
-        if (p && p.status === 'planted' && (p.seedID || p.seedid)) {
+        } else if (p.status === 'planted' && (p.seedID || p.seedid)) {
             const sID = p.seedID || p.seedid;
             const seed = seedsData.find(s => s.id === sID);
             if (seed) {
@@ -155,12 +125,18 @@ async function renderLand(interaction, client, db) {
                 const age = now - Number(p.plantTime || p.planttime);
                 const remaining = growthMs - age;
 
-                if (remaining > 0 && remaining < minRemainingTime) {
-                    minRemainingTime = remaining;
+                if (remaining > 0 && remaining < minRemainingTime) minRemainingTime = remaining;
+                
+                // التحقق مما إذا كان المحصول جاهزاً لنطلب صورته
+                if (age >= growthMs && age < (growthMs + (seed.wither_time_hours * 3600000))) {
+                    neededCrops.add(seed.id);
                 }
             }
         }
     }
+
+    // 🚀 تحميل صور المحاصيل المطلوبة فقط دفعة واحدة (إذا لم تكن محملة أصلاً)
+    await Promise.all(Array.from(neededCrops).map(id => getFarmAsset(id)));
 
     const totalWidth = (GRID_COLS * TILE_SIZE) + (TILE_SIZE * 2);
     const totalHeight = (GRID_ROWS * TILE_SIZE) + (TILE_SIZE * 2);
@@ -192,23 +168,6 @@ async function renderLand(interaction, client, db) {
     const startX = TILE_SIZE;
     const startY = TILE_SIZE;
 
-    const cropLoadPromises = [];
-    for (let i = 1; i <= MAX_GAME_PLOTS; i++) {
-        const plotData = userPlots.find(p => Number(p.plotID || p.plotid) === i);
-        if (i <= unlockedPlots && plotData && plotData.status === 'planted') {
-            const sID = plotData.seedID || plotData.seedid;
-            const seed = seedsData.find(s => s.id === sID);
-            if (seed) {
-                const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
-                const age = now - Number(plotData.plantTime || plotData.planttime);
-                if (age >= growthMs && age < (growthMs + (seed.wither_time_hours * 3600000))) {
-                    cropLoadPromises.push(getCropImage(seed.id));
-                }
-            }
-        }
-    }
-    await Promise.all(cropLoadPromises);
-
     for (let i = 1; i <= MAX_GAME_PLOTS; i++) {
         const index = i - 1;
         const col = index % GRID_COLS;
@@ -222,9 +181,7 @@ async function renderLand(interaction, client, db) {
         if (i > unlockedPlots) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-            if (images.lock) {
-                ctx.drawImage(images.lock, x, y, TILE_SIZE, TILE_SIZE);
-            }
+            if (images.lock) ctx.drawImage(images.lock, x, y, TILE_SIZE, TILE_SIZE);
         } else {
             const plotData = userPlots.find(p => Number(p.plotID || p.plotid) === i);
             
@@ -245,7 +202,7 @@ async function renderLand(interaction, client, db) {
                         if (images.withered) ctx.drawImage(images.withered, x, y, TILE_SIZE, TILE_SIZE);
                         witheredCount++;
                     } else if (age >= growthMs) {
-                        const cropImg = await getCropImage(seed.id);
+                        const cropImg = await getFarmAsset(seed.id); // 🚀 يستدعيها من الرام بصفر ثانية
                         if (cropImg) ctx.drawImage(cropImg, x, y, TILE_SIZE, TILE_SIZE);
                         readyCount++;
                     } else {
