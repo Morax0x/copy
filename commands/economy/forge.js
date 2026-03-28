@@ -114,7 +114,7 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
     
     try {
         if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
-        return await i.editReply({ content: null, components, files: [] }).catch(()=>{});
+        return await i.editReply({ content: null, embeds: [], components, files: [] }).catch(()=>{});
     } catch(err) {}
 }
 
@@ -256,6 +256,7 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
     const wData = weaponRes?.rows?.[0];
     const currentLevel = Number(wData.weaponLevel || wData.weaponlevel);
     const reqs = getUpgradeRequirement(currentLevel);
+    const weaponConfig = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
     const raceMats = upgradeMats.weapon_materials.find(m => m.race === (wData.raceName || wData.racename));
     const requiredMaterial = raceMats.materials[reqs.tierIndex];
 
@@ -267,10 +268,19 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
         await db.query(`UPDATE user_weapons SET "weaponLevel" = "weaponLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [user.id, guildId, wData.raceName || wData.racename]).catch(()=> db.query(`UPDATE user_weapons SET weaponlevel = weaponlevel + 1 WHERE userid = $1 AND guildid = $2 AND racename = $3`, [user.id, guildId, wData.raceName || wData.racename]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ نجاح التطوير!`).setColor(Colors.LuminousVividPink).setDescription(`سلاحك الآن في **Lv.${currentLevel + 1}** ⚔️`)], components: [getReturnRow()] });
+        // 🌟 شاشة النجاح المدمجة في الكانفاس (بدون إيمبد)
+        const nextLevel = currentLevel + 1;
+        const nextStat = `${weaponConfig.base_damage + (weaponConfig.damage_increment * nextLevel)} DMG`;
+
+        await replyWithCanvas(i, user, 'success_weapon', {
+            title: `تطوير ${resolveText(weaponConfig.name)}`,
+            currentLevel: currentLevel,
+            nextLevel: nextLevel,
+            nextStat: nextStat
+        }, [getReturnRow()]);
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getReturnRow()] });
+        await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الحفظ!", embeds: [], components: [getReturnRow()] });
     }
 }
 
@@ -289,12 +299,14 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
         return { label: resolveText(configSkill.name).substring(0, 100), value: configSkill.id.substring(0, 100), description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
     }).filter(Boolean);
 
+    if(skillOptions.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا يمكن جلب بيانات المهارات حالياً.")], components: [getReturnRow()] });
+
     const skillSelectRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_skill_select').setPlaceholder('اختر المهارة...').addOptions(skillOptions.slice(0, 25)));
     
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()]);
+    await replyWithCanvas(i, user, 'skill_home', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()]);
 }
 
 async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
@@ -340,6 +352,7 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
     const currentLevel = Number(skillRes.rows[0].skillLevel || skillRes.rows[0].skilllevel);
     const reqs = getUpgradeRequirement(currentLevel);
     const categoryName = skillId.startsWith('race_') ? 'Race_Skills' : 'General_Skills';
+    const configSkill = skillsConfig.find(sc => sc.id === skillId);
     const requiredBook = upgradeMats.skill_books.find(c => c.category === categoryName).books[reqs.tierIndex];
 
     await db.query('BEGIN').catch(()=>{}); 
@@ -350,10 +363,20 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
         await db.query(`UPDATE user_skills SET "skillLevel" = "skillLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "skillID" = $3`, [user.id, guildId, skillId]).catch(()=> db.query(`UPDATE user_skills SET skilllevel = skilllevel + 1 WHERE userid = $1 AND guildid = $2 AND skillid = $3`, [user.id, guildId, skillId]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ حكمة جديدة!`).setColor(Colors.LuminousVividPink).setDescription(`المهارة الآن في **Lv.${currentLevel + 1}** 📜`)], components: [getReturnRow()] });
+        // 🌟 شاشة النجاح المدمجة
+        const nextLevel = currentLevel + 1;
+        const statSymbol = configSkill.stat_type === '%' ? '%' : '';
+        const nextStat = `${configSkill.base_value + (configSkill.value_increment * nextLevel)}${statSymbol}`;
+
+        await replyWithCanvas(i, user, 'success_skill', {
+            title: `صقل ${resolveText(configSkill.name)}`,
+            currentLevel: currentLevel,
+            nextLevel: nextLevel,
+            nextStat: nextStat
+        }, [getReturnRow()]);
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getReturnRow()] });
+        await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الحفظ!", embeds: [], components: [getReturnRow()] });
     }
 }
 
@@ -466,9 +489,14 @@ async function handleSynthesis(i, user, guildId, db, state) {
         
         await db.query('COMMIT').catch(()=>{}); 
         
+        // 🌟 شاشة النجاح المدمجة
         const targetInfo = getItemInfo(state.targetItem);
-        const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.name}**`);
-        await i.editReply({ files: [], embeds: [successEmbed], components: [getReturnRow()] });
+        await replyWithCanvas(i, user, 'success_synthesis', {
+            title: 'فرن الدمج السحري',
+            targetMatName: targetInfo.name,
+            targetMatIcon: targetInfo.iconUrl,
+            targetMatRarity: targetInfo.rarity
+        }, [getReturnRow()]);
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
         await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الدمج!", embeds: [], components: [getReturnRow()] });
@@ -581,13 +609,19 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
             if(cacheData) { cacheData.xp += xpReward; cacheData.totalXP += xpReward; await client.setLevel(cacheData); }
         }
         
-        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق **${qtyToSmelt}x** ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
+        // 🌟 شاشة النجاح المدمجة
+        const successData = {
+            title: 'محرقة التفكيك',
+            xpGain: xpReward
+        };
         
         if (isModal) {
-            await i.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
-            await buildSmeltingUI(i, user, guildId, db, state);
+            await replyWithCanvas({
+                replied: false, deferred: false,
+                editReply: async (p) => i.editReply(p) // نمرر دالة الرد حق المودل
+            }, user, 'success_smelting', successData, [getReturnRow()]);
         } else {
-            await i.editReply({ files: [], embeds: [successEmbed], components: [getReturnRow()] });
+            await replyWithCanvas(i, user, 'success_smelting', successData, [getReturnRow()]);
         }
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
