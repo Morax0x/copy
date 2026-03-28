@@ -4,7 +4,6 @@ const feedItems = require('../../json/feed-items.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 const { renderLand } = require('../../handlers/farm-land.js');
 
-// 🚨 نظام ذكي لاكتشاف الأخطاء في ملف المتجر 🚨
 let farmShop;
 let farmShopError = null;
 try {
@@ -13,9 +12,9 @@ try {
     farmShopError = e.message;
     try { 
         farmShop = require('../../handlers/farm-shop.js'); 
-        farmShopError = null; // نجح في المسار الثاني
+        farmShopError = null;
     } catch(e2) {
-        farmShopError = e2.message; // حفظ الخطأ لعرضه للمستخدم
+        farmShopError = e2.message;
         console.error("❌ خطأ في تحميل ملف متجر المزرعة:", e2);
     }
 }
@@ -95,7 +94,6 @@ module.exports = {
         };
 
         const renderFarmAnimals = async (page = 0) => {
-            // 🚀 تسريع جلب البيانات باستخدام Promise.all
             const [maxCapacity, userAnimalsRes] = await Promise.all([
                 getPlayerCapacity(client, userId, guildId),
                 db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "quantity" DESC`, [userId, guildId])
@@ -370,7 +368,6 @@ module.exports = {
                             const feedId = animal.feed_id;
                             const maxHungerMs = (animal.max_hunger_days || 3) * DAY_MS;
                             
-                            // 🚀 تسريع: تشغيل كل استعلامات الداتا بيز للإطعام بشكل متوازي
                             const [sampleRes, countRowRes, invRowRes] = await Promise.all([
                                 db.query(`SELECT "lastFedTimestamp" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 LIMIT 1`, [userId, guildId, animalId]).catch(()=>db.query(`SELECT lastfedtimestamp FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 LIMIT 1`, [userId, guildId, animalId]).catch(()=>({rows:[]}))),
                                 db.query(`SELECT SUM("quantity") as total FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, animalId]).catch(()=>db.query(`SELECT SUM(quantity) as total FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3`, [userId, guildId, animalId]).catch(()=>({rows:[]}))),
@@ -394,13 +391,11 @@ module.exports = {
                                 return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
                             
-                            // 🚀 تسريع: تحديث الداتا بيز للمخزن والمزرعة مع بعض
                             await Promise.all([
                                 db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [totalAnimals, userId, guildId, feedId]).catch(() => db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [totalAnimals, userId, guildId, feedId]).catch(()=>{})),
                                 db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "userID" = $2 AND "guildID" = $3 AND "animalID" = $4`, [Date.now(), userId, guildId, animalId]).catch(() => db.query(`UPDATE user_farm SET lastfedtimestamp = $1 WHERE userid = $2 AND guildid = $3 AND animalid = $4`, [Date.now(), userId, guildId, animalId]).catch(()=>{}))
                             ]);
                             
-                            // 🌟 الرد صار عام (مو مخفي)
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!` }).catch(() => {});
                             
                             const data = await renderFeedStore();
