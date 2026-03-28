@@ -79,7 +79,7 @@ async function generateGlobalShopBoard(allItems) {
 
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 22px "Cairo", sans-serif';
-        const priceText = item.price > 0 ? `${item.price.toLocaleString()} مورا` : 'متغير / مجاني';
+        const priceText = item.price > 0 ? `${item.price.toLocaleString()} مورا` : '-';
         ctx.fillText(priceText, x + (boxSize / 2), y + 220);
     }
 
