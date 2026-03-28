@@ -2,20 +2,21 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const fs = require('fs');
 const path = require('path');
 
-// 1. تحميل الإعدادات بأمان
+// 1. تحميل الإعدادات بأمان من الجذر الرئيسي
 let marketConfig = [];
 try {
     const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
     if (fs.existsSync(marketConfigPath)) marketConfig = require(marketConfigPath);
-    else marketConfig = require('../../json/market-items.json');
+    else marketConfig = require('../../json/market-items.json'); // مسار احتياطي
 } catch (e) {
     console.error("⚠️ [Market] تحذير: لم يتم العثور على ملف market-items.json");
 }
 
-// 2. استدعاء الرسام بأمان (حل مشكلة Circular Dependency كلياً)
+// 2. استدعاء الرسام بأمان (من الجذر الرئيسي لتفادي أخطاء المسارات)
 let marketGen;
 try {
-    marketGen = require('../../generators/market-generator.js');
+    const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
+    marketGen = require(generatorPath);
 } catch (e) {
     console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
 }
@@ -75,8 +76,8 @@ function cleanEmojiFromName(name) {
 }
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
-    if (!marketGen || !marketGen.drawMarketGrid) {
-        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح!");
+    if (!marketGen || typeof marketGen.drawMarketGrid !== 'function') {
+        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح! تأكد من وجود الملف في generators/market-generator.js");
     }
 
     const startIndex = pageIndex * ITEMS_PER_PAGE;
@@ -227,7 +228,6 @@ module.exports = {
             let timeRemaining = getUpdateTimeRemaining();
 
             console.log("➡️ [Market] جاري بناء الصورة المرئية للمقاسات...");
-            // 🎨 استدعاء لوحة الرسم
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
             console.log("➡️ [Market] الصورة جاهزة، جاري الإرسال...");
