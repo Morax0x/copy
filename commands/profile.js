@@ -27,7 +27,6 @@ catch (e) {
 }
 
 const TARGET_OWNER_ID = "1145327691772481577";
-const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
 const ITEMS_PER_PAGE = 15;
@@ -160,62 +159,6 @@ module.exports = {
 
                 const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
 
-                if (currentView === 'inventory' && invCategory === 'market') {
-                    let portfolio = [];
-                    let dbMarketRes = { rows: [] };
-                    try {
-                        const [portRes, marketRes] = await Promise.all([
-                            db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
-                            db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
-                        ]);
-                        portfolio = portRes?.rows || [];
-                        dbMarketRes = marketRes || { rows: [] };
-                    } catch(e) {}
-
-                    const market = new Map(marketConfig.map(item => [item.id, item]));
-                    let dbMarketPrices = new Map((dbMarketRes?.rows || []).map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
-
-                    let validItems = [];
-                    let totalValue = 0;
-
-                    for (const item of portfolio) {
-                        const itemID = item.itemID || item.itemid;
-                        const marketItem = market.get(itemID);
-                        if (!marketItem) continue;
-
-                        let currentPrice = dbMarketPrices.has(itemID) ? dbMarketPrices.get(itemID) : marketItem.price;
-                        const quantity = Number(row.quantity) || 0;
-                        if (quantity <= 0) continue;
-
-                        const itemTotalValue = currentPrice * quantity;
-                        totalValue += itemTotalValue;
-
-                        let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
-                        const info = resolveItemInfoLocal(itemID);
-                        
-                        validItems.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
-                    }
-
-                    const totalPages = Math.max(1, Math.ceil(validItems.length / 9)); 
-                    const slice = validItems.slice((invPage-1)*9, invPage*9);
-
-                    let buffer;
-                    if (generatePortfolioCard) {
-                        buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
-                    } else {
-                        return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
-                    }
-
-                    const row1 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
-                    );
-
-                    return { content: '', files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], components: [row1] };
-                }
-
-                // درع الحماية لاستخراج بيانات اللاعب
                 let repPoints = 0, rankInfo = getRepRankInfo(0);
                 let arabicRaceName = "بشري", weaponData = null, weaponName = "بدون سلاح";
 
@@ -347,45 +290,102 @@ module.exports = {
                     }
 
                     let items = [];
-                    try {
-                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
-                        items = (invQuery?.rows || []).map(row => {
-                            const info = resolveItemInfoLocal(row.itemID || row.itemid);
-                            return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
-                        }).filter(i => i.category === invCategory);
-                    } catch(e) {}
-                    
-                    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-                    const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+                    let totalValue = 0;
 
-                    const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+                    // 🔥 قسم الممتلكات (Market Portfolio) 🔥
+                    if (invCategory === 'market') {
+                        let portfolio = [];
+                        let dbMarketRes = { rows: [] };
+                        try {
+                            const [portRes, marketRes] = await Promise.all([
+                                db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
+                                db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
+                            ]);
+                            portfolio = portRes?.rows || [];
+                            dbMarketRes = marketRes || { rows: [] };
+                        } catch(e) {}
 
-                    const row1 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
-                    );
-                    const row2 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
-                    );
-                    const row3 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
-                    );
-                    const row4 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
-                    );
+                        const market = new Map(marketConfig.map(item => [item.id, item]));
+                        let dbMarketPrices = new Map((dbMarketRes?.rows || []).map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
 
-                    return { 
-                        content: '', 
-                        files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
-                        components: [row1, row2, row3, row4] 
-                    };
+                        for (const row of portfolio) {
+                            const itemID = row.itemID || row.itemid;
+                            const marketItem = market.get(itemID);
+                            if (!marketItem) continue;
+
+                            let currentPrice = dbMarketPrices.has(itemID) ? dbMarketPrices.get(itemID) : marketItem.price;
+                            const quantity = Number(row.quantity) || 0;
+                            if (quantity <= 0) continue;
+
+                            const itemTotalValue = currentPrice * quantity;
+                            totalValue += itemTotalValue;
+
+                            let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
+                            const info = resolveItemInfoLocal(itemID);
+                            
+                            items.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
+                        }
+
+                        const totalPages = Math.max(1, Math.ceil(items.length / 9)); 
+                        const slice = items.slice((invPage-1)*9, invPage*9);
+
+                        let buffer;
+                        if (generatePortfolioCard) {
+                            buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
+                        } else {
+                            return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
+                        }
+
+                        const row1 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                        );
+
+                        return { content: '', files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], components: [row1] };
+                    } 
+                    // 🔥 باقي أقسام الحقيبة العادية 🔥
+                    else {
+                        try {
+                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                            items = (invQuery?.rows || []).map(row => {
+                                const info = resolveItemInfoLocal(row.itemID || row.itemid);
+                                return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
+                            }).filter(i => i.category === invCategory);
+                        } catch(e) {}
+                        
+                        const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+
+                        const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+
+                        const row1 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
+                        );
+                        const row2 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
+                            new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
+                        );
+                        const row3 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
+                        );
+                        const row4 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                        );
+
+                        return { 
+                            content: '', 
+                            files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
+                            components: [row1, row2, row3, row4] 
+                        };
+                    }
                 }
             };
 
@@ -575,9 +575,9 @@ module.exports = {
                                 db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
                                 db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
                             ]);
-                            const portfolio = portfolioRes.rows;
+                            const portfolio = portfolioRes?.rows || [];
                             const market = new Map(marketConfig.map(item => [item.id, item]));
-                            let dbMarketPrices = new Map(dbMarketRes.rows.map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
+                            let dbMarketPrices = new Map((dbMarketRes?.rows || []).map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
 
                             for (const row of portfolio) {
                                 const itemID = row.itemID || row.itemid;
