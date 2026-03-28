@@ -1,4 +1,4 @@
-const { EmbedBuilder, Colors } = require("discord.js");
+const { EmbedBuilder, Colors, MessageFlags } = require("discord.js");
 const fs = require('fs');
 const path = require('path');
 
@@ -85,49 +85,36 @@ async function updateMarketPrices(db) {
 
 async function _handleMarketTransaction(i, client, db, isBuy) {
     try {
-        // 🔥 الرد العام (ظاهر للجميع) يمنع التعليق
-        if (!i.deferred && !i.replied) await i.deferReply({ ephemeral: false }); 
-    } catch(e) {}
-    
-    try {
         const quantityString = i.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         
         if (isNaN(quantity) || quantity <= 0) {
-            await i.editReply('❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.');
-            return false; // إعادة false لمنع تحديث الشاشة
+            return await i.reply({ content: '❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.', flags: [MessageFlags.Ephemeral] });
         }
 
         const assetId = i.customId.replace(isBuy ? 'buy_modal_' : 'sell_modal_', '');
         
-        let itemRes;
-        try { itemRes = await db.query(`SELECT * FROM market_items WHERE "id" = $1`, [assetId]); }
-        catch(e) { itemRes = await db.query(`SELECT * FROM market_items WHERE id = $1`, [assetId]).catch(()=>({rows:[]})); }
+        // 🚀 تسريع: طلب بيانات المستخدم والعنصر في نفس الوقت!
+        const [itemRes, dbUserRes, pfItemRes] = await Promise.all([
+            db.query(`SELECT * FROM market_items WHERE "id" = $1`, [assetId]).catch(() => db.query(`SELECT * FROM market_items WHERE id = $1`, [assetId]).catch(()=>({rows:[]}))),
+            db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(() => db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}))),
+            db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, assetId]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [i.user.id, i.guild.id, assetId]).catch(()=>({rows:[]})))
+        ]);
         
         const item = itemRes.rows[0];
         if (!item) {
-            await i.editReply('❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.');
-            return false;
+            return await i.reply({ content: '❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.', flags: [MessageFlags.Ephemeral] });
         }
 
-        let dbUserRes;
-        try { dbUserRes = await db.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]); }
-        catch(e) { dbUserRes = await db.query(`SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]})); }
-        
         let dbUser = dbUserRes.rows[0];
-        if (!dbUser) {
+        if (!dbUser && isBuy) {
             try { await db.query(`INSERT INTO levels ("user", "guild", "mora", "bank", "level", "xp", "totalXP") VALUES ($1, $2, 0, 0, 1, 0, 0)`, [i.user.id, i.guild.id]); }
             catch(e) { await db.query(`INSERT INTO levels (userid, guildid, mora, bank, level, xp, totalxp) VALUES ($1, $2, 0, 0, 1, 0, 0)`, [i.user.id, i.guild.id]).catch(()=>{}); }
-            dbUser = { mora: 0, bank: 0 };
+            dbUser = { mora: 0 };
         }
         
-        let userMora = Number(dbUser.mora) || 0;
-        
-        let pfItemRes;
-        try { pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, item.id]); }
-        catch(e) { pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [i.user.id, i.guild.id, item.id]).catch(()=>({rows:[]})); }
+        let userMora = Number(dbUser?.mora || dbUser?.Mora) || 0;
         let pfItem = pfItemRes.rows[0];
-        
         const cleanItemNameStr = cleanItemName(item.name); 
 
         if (isBuy) {
@@ -135,9 +122,11 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             const totalCost = Math.floor(avgPrice * quantity);
             
             if (userMora < totalCost) {
-                await i.editReply(`❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`);
-                return false;
+                return await i.reply({ content: `❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
             }
+
+            // 🚀 الرد الفوري للعملية الناجحة (عام وموجه للمستخدم)
+            await i.deferReply({ ephemeral: false }).catch(()=>{});
             
             let exactNewMora;
             try {
@@ -149,14 +138,13 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 
                 if (!updateRes || !updateRes.rows || updateRes.rows.length === 0) {
                     await db.query("ROLLBACK").catch(()=>{});
-                    await i.editReply(`❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`);
-                    return false;
+                    return await i.editReply(`❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`);
                 }
                 exactNewMora = updateRes.rows[0].mora;
 
                 if (pfItem) {
-                    try { await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id]); }
-                    catch(e) { await db.query(`UPDATE user_portfolio SET quantity = quantity + $1 WHERE id = $2`, [quantity, pfItem.id]); }
+                    try { await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [quantity, pfItem.id || pfItem.ID]); }
+                    catch(e) { await db.query(`UPDATE user_portfolio SET quantity = quantity + $1 WHERE id = $2`, [quantity, pfItem.id || pfItem.ID]); }
                 } else {
                     try { await db.query(`INSERT INTO user_portfolio ("guildID", "userID", "itemID", "quantity", "purchasePrice") VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]); }
                     catch(e) { await db.query(`INSERT INTO user_portfolio (guildid, userid, itemid, quantity, purchaseprice) VALUES ($1, $2, $3, $4, $5)`, [i.guild.id, i.user.id, item.id, quantity, avgPrice]); }
@@ -180,33 +168,35 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
             
             await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
-            return true; // العملية ناجحة
+            return true;
 
         } else {
             const userQty = pfItem ? Number(pfItem.quantity || pfItem.Quantity) : 0;
             if (userQty < quantity) {
-                await i.editReply(`❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`);
-                return false;
+                return await i.reply({ content: `❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`, flags: [MessageFlags.Ephemeral] });
             }
             
             const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice || item.price), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
+
+            // 🚀 الرد الفوري للعملية الناجحة (عام)
+            await i.deferReply({ ephemeral: false }).catch(()=>{});
             
             let exactNewMora;
             try {
                 await db.query("BEGIN").catch(()=>{});
                 
                 if (userQty - quantity > 0) {
-                    try { await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, pfItem.id]); }
-                    catch(e) { await db.query(`UPDATE user_portfolio SET quantity = quantity - $1 WHERE id = $2`, [quantity, pfItem.id]); }
+                    try { await db.query(`UPDATE user_portfolio SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, pfItem.id || pfItem.ID]); }
+                    catch(e) { await db.query(`UPDATE user_portfolio SET quantity = quantity - $1 WHERE id = $2`, [quantity, pfItem.id || pfItem.ID]); }
                 } else {
-                    try { await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id]); }
-                    catch(e) { await db.query(`DELETE FROM user_portfolio WHERE id = $1`, [pfItem.id]); }
+                    try { await db.query(`DELETE FROM user_portfolio WHERE "id" = $1`, [pfItem.id || pfItem.ID]); }
+                    catch(e) { await db.query(`DELETE FROM user_portfolio WHERE id = $1`, [pfItem.id || pfItem.ID]); }
                 }
 
                 let updateRes;
-                try { updateRes = await db.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"`, [totalGain, i.user.id, i.guild.id]); }
-                catch(e) { updateRes = await db.query(`UPDATE levels SET mora = CAST(mora AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3 RETURNING mora`, [totalGain, i.user.id, i.guild.id]); }
+                try { updateRes = await db.query(`UPDATE levels SET "mora" = CAST(COALESCE("mora", '0') AS BIGINT) + $1 WHERE "user" = $2 AND "guild" = $3 RETURNING "mora"`, [totalGain, i.user.id, i.guild.id]); }
+                catch(e) { updateRes = await db.query(`UPDATE levels SET mora = CAST(COALESCE(mora, '0') AS BIGINT) + $1 WHERE userid = $2 AND guildid = $3 RETURNING mora`, [totalGain, i.user.id, i.guild.id]); }
                 
                 exactNewMora = updateRes.rows[0].mora;
                 
@@ -228,12 +218,16 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
 
             await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
-            return true; // العملية ناجحة
+            return true;
         }
 
     } catch (e) { 
         console.error("[MARKET FATAL ERROR]:", e); 
-        await i.editReply("❌ حدث خطأ غير متوقع أثناء معالجة الطلب في قاعدة البيانات.").catch(()=>{}); 
+        if (i.deferred || i.replied) {
+            await i.editReply("❌ حدث خطأ غير متوقع أثناء معالجة الطلب في قاعدة البيانات.").catch(()=>{}); 
+        } else {
+            await i.reply({ content: "❌ حدث خطأ غير متوقع أثناء معالجة الطلب في قاعدة البيانات.", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
+        }
         return false;
     }
 }
