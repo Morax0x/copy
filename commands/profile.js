@@ -1,27 +1,20 @@
 const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
-const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 
-let generateInventoryCard, generateMainHub, generateItemDetailsCard, generateSkillsCard;
+let generateInventoryCard, generateMainHub, generateItemDetailsCard, generateSkillsCard, generatePortfolioCard;
 try {
-    ({ generateInventoryCard, generateMainHub, generateItemDetailsCard } = require('../generators/inventory-generator.js'));
+    ({ generateInventoryCard, generateMainHub, generateItemDetailsCard, generatePortfolioCard } = require('../generators/inventory-generator.js'));
     ({ generateSkillsCard } = require('../generators/skills-card-generator.js'));
 } catch (e) {
-    generateInventoryCard = null; generateMainHub = null; generateItemDetailsCard = null; generateSkillsCard = null;
+    generateInventoryCard = null; generateMainHub = null; generateItemDetailsCard = null; generateSkillsCard = null; generatePortfolioCard = null;
 }
 
 const weaponsConfig = require('../json/weapons-config.json');
 const skillsConfig = require('../json/skills-config.json');
-const upgradeMats = require('../json/upgrade-materials.json');
-const potionItems = require('../json/potions.json');
 
 let marketConfig = [];
 try { marketConfig = require('../json/market-items.json'); } catch(e) {}
-
-let fishData = [], farmItems = [];
-try { fishData = require('../json/fish.json'); } catch(e) {}
-try { farmItems = require('../json/seeds.json').concat(require('../json/feed-items.json')); } catch(e) {}
 
 let calculateRequiredXP;
 try { ({ calculateRequiredXP } = require('../handlers/handler-utils.js')); } 
@@ -33,7 +26,6 @@ catch (e) {
 }
 
 const TARGET_OWNER_ID = "1145327691772481577";
-const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
 const ITEMS_PER_PAGE = 15;
@@ -152,17 +144,18 @@ module.exports = {
                 }
 
                 const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
-                const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                const repPoints = repRes.rows[0]?.rep_points || 0;
-                const rankInfo = getRepRankInfo(repPoints);
-
-                const userRaceData = await getUserRace(targetMember, db);
-                const raceNameRaw = userRaceData?.raceName || null;
-                const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
-                const weaponData = await getWeaponData(db, targetMember);
-                const weaponName = weaponData ? weaponData.name : "بدون سلاح";
 
                 if (currentView === 'profile') {
+                    const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
+                    const repPoints = repRes.rows[0]?.rep_points || 0;
+                    const rankInfo = getRepRankInfo(repPoints);
+
+                    const userRaceData = await getUserRace(targetMember, db);
+                    const raceNameRaw = userRaceData?.raceName || null;
+                    const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
+                    const weaponData = await getWeaponData(db, targetMember);
+                    const weaponName = weaponData ? weaponData.name : "بدون سلاح";
+
                     const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
                     const streakData = streakRes.rows[0] || {};
                     const xpBuff = await calculateBuffMultiplier(targetMember, db);
@@ -200,6 +193,11 @@ module.exports = {
 
                     const totalSkillPages = Math.max(1, Math.ceil(allSkills.length / SKILLS_PER_PAGE));
                     const slice = allSkills.slice(skillPage * SKILLS_PER_PAGE, (skillPage + 1) * SKILLS_PER_PAGE);
+
+                    const userRaceData = await getUserRace(targetMember, db);
+                    const raceNameRaw = userRaceData?.raceName || null;
+                    const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
+                    const weaponData = await getWeaponData(db, targetMember);
 
                     const cardData = {
                         user: targetUser, avatarUrl: targetUser.displayAvatarURL({ extension: 'png', size: 256 }),
@@ -256,7 +254,6 @@ module.exports = {
 
                     let items = [];
                     let totalValue = 0;
-                    let portfolioTextLines = [];
 
                     if (invCategory === 'market') {
                         const [portfolioRes, dbMarketRes] = await Promise.all([
@@ -283,63 +280,69 @@ module.exports = {
                             let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
                             const info = resolveItemInfoLocal(itemID);
                             
-                            items.push({ ...info, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
+                            items.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
                         }
+
+                        const totalPages = Math.max(1, Math.ceil(items.length / 9)); 
+                        const slice = items.slice((invPage-1)*9, invPage*9);
+
+                        let buffer;
+                        if (generatePortfolioCard) {
+                            buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
+                        } else {
+                            return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
+                        }
+
+                        const row1 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                        );
+
+                        return { 
+                            content: '', 
+                            files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], 
+                            components: [row1] 
+                        };
                     } else {
                         const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
                         items = invQuery.rows.map(row => {
                             const info = resolveItemInfoLocal(row.itemID || row.itemid);
                             return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                         }).filter(i => i.category === invCategory);
+                        
+                        const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+
+                        const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+
+                        const row1 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
+                        );
+                        const row2 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
+                            new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
+                        );
+                        const row3 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
+                        );
+                        const row4 = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                        );
+
+                        return { 
+                            content: '', 
+                            files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
+                            components: [row1, row2, row3, row4] 
+                        };
                     }
-
-                    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-                    const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
-
-                    let finalContentText = '';
-
-                    if (invCategory === 'market') {
-                        if (items.length === 0) {
-                            finalContentText = "💼 محفظتك الاستثمارية فارغة حالياً. استخدم `/market` لشراء الأصول.";
-                        } else {
-                            portfolioTextLines.push(`**💼 قيمة الأصول الكلية:** \`${totalValue.toLocaleString()}\` ${EMOJI_MORA}\n`);
-                            for (const vItem of slice) {
-                                portfolioTextLines.push(`**✶ ${vItem.name}** | العدد: \`${vItem.quantity.toLocaleString()}\` | القيمة الإجمالية: \`${vItem.itemTotalValue.toLocaleString()}\` ${EMOJI_MORA}`);
-                                portfolioTextLines.push(`> ✦ السعر الحالي: \`${vItem.currentPrice.toLocaleString()}\` ${EMOJI_MORA} ${vItem.purchasePrice > 0 ? `| ✦ سعر الشراء: \`${vItem.purchasePrice.toLocaleString()}\` ${EMOJI_MORA}` : ''}`);
-                            }
-                            finalContentText = portfolioTextLines.join('\n');
-                        }
-                    }
-
-                    const categoryTitleToDraw = invCategory === 'market' ? 'الممتلكات' : invCategory;
-                    const buffer = await generateInventoryCard(cleanName, categoryTitleToDraw, slice, invPage, totalPages, selectedIndex);
-
-                    const row1 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
-                    );
-                    const row2 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
-                    );
-                    const row3 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
-                    );
-                    const row4 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
-                    );
-
-                    return { 
-                        content: finalContentText, 
-                        files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
-                        components: [row1, row2, row3, row4] 
-                    };
                 }
             };
 
@@ -493,7 +496,7 @@ module.exports = {
                 if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
-                else if (id.startsWith('v_port_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'market'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
+                else if (id.startsWith('v_port_')) { await i.deferUpdate(); currentView = 'portfolio'; activeItemDetails = null; }
                 
                 else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
                 else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'موارد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
@@ -523,36 +526,11 @@ module.exports = {
                     else if (moveType === 'd2') { selectedIndex = ((row + 2) % 3) * 5 + col; }
                     else if (moveType === 'u2') { selectedIndex = ((row - 2 + 3) % 3) * 5 + col; }
                     else if (moveType === 'ok') {
-                        let items = [];
-                        if (invCategory === 'market') {
-                            const [portfolioRes, dbMarketRes] = await Promise.all([
-                                db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
-                                db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
-                            ]);
-                            const portfolio = portfolioRes.rows;
-                            const market = new Map(marketConfig.map(item => [item.id, item]));
-                            let dbMarketPrices = new Map(dbMarketRes.rows.map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
-
-                            for (const row of portfolio) {
-                                const itemID = row.itemID || row.itemid;
-                                const marketItem = market.get(itemID);
-                                if (!marketItem) continue;
-                                let currentPrice = dbMarketPrices.has(itemID) ? dbMarketPrices.get(itemID) : marketItem.price;
-                                const quantity = Number(row.quantity) || 0;
-                                if (quantity <= 0) continue;
-                                let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
-                                const info = resolveItemInfoLocal(itemID);
-                                
-                                info.description = `${info.description || ''}\n\n📊 السعر الحالي: ${currentPrice.toLocaleString()} ${EMOJI_MORA}\n💰 سعر الشراء: ${purchasePrice.toLocaleString()} ${EMOJI_MORA}\n💎 القيمة الإجمالية: ${(currentPrice * quantity).toLocaleString()} ${EMOJI_MORA}`;
-                                items.push({ ...info, quantity, id: itemID });
-                            }
-                        } else {
-                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                            items = invQuery.rows.map(row => {
-                                const info = resolveItemInfoLocal(row.itemID || row.itemid);
-                                return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
-                            }).filter(it => it.category === invCategory);
-                        }
+                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
+                        const items = invQuery.rows.map(row => {
+                            const info = resolveItemInfoLocal(row.itemID || row.itemid);
+                            return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
+                        }).filter(it => it.category === invCategory);
 
                         const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
                         
