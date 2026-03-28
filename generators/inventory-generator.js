@@ -510,7 +510,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = rarityColor;
                 ctx.shadowBlur = 30;
-                ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
+                ctx.fillText('📦', x + slotSize / 2, y + slotSize / 2 - 15);
                 ctx.shadowBlur = 0;
             }
             
@@ -844,7 +844,7 @@ async function generateItemDetailsCard(userDisplayName, item) {
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🌟 دالة رسم الممتلكات (الأسهم والعقارات) 🌟
+// 🌟 دالة رسم الممتلكات (الأسهم والعقارات) بالتنسيق العربي الفخم 🌟
 async function generatePortfolioCard(userDisplayName, items, page, totalPages, totalValue) {
     const width = 1200; 
     const height = 900; 
@@ -889,9 +889,9 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
 
     const cols = 3;
     const rows = 3;
-    const cardW = 340;
-    const cardH = 210;
-    const gapX = 50;
+    const cardW = 350;
+    const cardH = 220;
+    const gapX = 45;
     const gapY = 30;
     const startX = (width - ((cols * cardW) + ((cols - 1) * gapX))) / 2;
     const startY = 170; 
@@ -913,43 +913,76 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
 
         ctx.fillStyle = 'rgba(15, 20, 30, 0.95)';
         ctx.beginPath(); roundRect(ctx, x, y, cardW, cardH, 15); ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
+        drawOrnateFrame(ctx, x, y, cardW, cardH, 'rgba(255, 215, 0, 0.4)');
 
-        const cleanName = item.name.replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim();
+        const cleanName = item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim();
+
+        const imgSize = 70;
+        const imgX = x + cardW - imgSize - 15;
+        const imgY = y + 15;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.beginPath(); roundRect(ctx, imgX, imgY, imgSize, imgSize, 10); ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        if (item.imgPath) {
+            const img = await getCachedImage(item.imgPath);
+            if (img) {
+                const padding = 10; 
+                const drawSize = imgSize - (padding * 2);
+                ctx.save();
+                ctx.beginPath();
+                roundRect(ctx, imgX, imgY, imgSize, imgSize, 10);
+                ctx.clip();
+                ctx.drawImage(img, imgX + padding, imgY + padding, drawSize, drawSize);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#fff';
+                ctx.font = '30px "Emoji", "Arial"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('📈', imgX + imgSize/2, imgY + imgSize/2);
+            }
+        }
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 24px "Bein"';
-        ctx.textAlign = 'center';
-        ctx.fillText(cleanName, x + cardW/2, y + 35);
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.beginPath(); ctx.moveTo(x + 20, y + 60); ctx.lineTo(x + cardW - 20, y + 60); ctx.stroke();
-
         ctx.textAlign = 'right';
-        ctx.font = '22px "Bein"';
-        const textX = x + cardW - 20;
-        const valX = x + 20;
-        let textY = y + 90;
-        const spacing = 35;
+        ctx.textBaseline = 'middle';
+        drawAutoScaledText(ctx, cleanName, imgX - 15, imgY + imgSize/2, cardW - imgSize - 45, 26, 14);
 
-        ctx.fillStyle = '#A8B8D0'; ctx.fillText('الكمية:', textX, textY);
-        ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF'; ctx.fillText(item.quantity.toLocaleString(), valX, textY);
-        
-        textY += spacing;
-        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('سعر الشراء:', textX, textY);
-        ctx.textAlign = 'left'; ctx.fillStyle = '#FFD700'; ctx.fillText(item.purchasePrice.toLocaleString(), valX, textY);
+        const sepY = imgY + imgSize + 15;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.beginPath(); ctx.moveTo(x + 15, sepY); ctx.lineTo(x + cardW - 15, sepY); ctx.stroke();
 
-        textY += spacing;
-        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('السعر الحالي:', textX, textY);
-        ctx.textAlign = 'left'; ctx.fillStyle = '#00FF88'; ctx.fillText(item.currentPrice.toLocaleString(), valX, textY);
+        let textY = sepY + 25;
+        const spacing = 28;
+        const textRightX = x + cardW - 20;
+        const textLeftX = x + 20;
 
-        textY += spacing;
         const profit = (item.currentPrice - item.purchasePrice) * item.quantity;
         const isProfit = profit >= 0;
         const profitStr = isProfit ? `+${profit.toLocaleString()}` : profit.toLocaleString();
-        
-        ctx.textAlign = 'right'; ctx.fillStyle = '#A8B8D0'; ctx.fillText('الربح / الخسارة:', textX, textY);
-        ctx.textAlign = 'left'; ctx.fillStyle = isProfit ? '#00FF88' : '#FF4444'; ctx.fillText(profitStr, valX, textY);
+
+        const rowsData = [
+            { label: 'الكمية:', val: item.quantity.toLocaleString(), color: '#FFFFFF' },
+            { label: 'سعر الشراء:', val: item.purchasePrice.toLocaleString(), color: '#FFD700' },
+            { label: 'السعر الحالي:', val: item.currentPrice.toLocaleString(), color: '#00FF88' },
+            { label: 'الأرباح:', val: profitStr, color: isProfit ? '#00FF88' : '#FF4444' }
+        ];
+
+        for (const r of rowsData) {
+            ctx.font = '20px "Bein"';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#A8B8D0';
+            ctx.fillText(r.label, textRightX, textY);
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = r.color;
+            ctx.fillText(r.val, textLeftX, textY);
+
+            textY += spacing;
+        }
     }
 
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
