@@ -590,7 +590,7 @@ async function handleShopModal(i, client, db) {
 }
 
 async function handleShopInteractions(i, client, db) {
-    if (i.customId === 'shop_open_menu' || i.customId.startsWith('shop_cat_') || i.customId.startsWith('shop_nav_')) {
+    if (i.customId === 'shop_open_menu' || i.customId.startsWith('shop_cat_')) {
         if (!i.deferred && !i.replied) {
             if (i.customId === 'shop_open_menu') {
                 await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -609,48 +609,32 @@ async function handleShopInteractions(i, client, db) {
         }
 
         let targetCategory = 'general';
-        let targetIndex = 0;
-
         if (i.customId.startsWith('shop_cat_')) {
             targetCategory = i.customId.replace('shop_cat_', '');
-        } else if (i.customId.startsWith('shop_nav_')) {
-            const parts = i.customId.split('_');
-            targetIndex = parseInt(parts[3]);
-            targetCategory = parts[4];
         }
 
         const categoryItems = shopItems.filter(item => item.category === targetCategory);
         if (categoryItems.length === 0) return i.editReply({ content: "❌ لا توجد عناصر في هذا القسم." });
-        
-        if (i.customId.startsWith('shop_nav_prev_')) {
-            targetIndex = (targetIndex - 1 + categoryItems.length) % categoryItems.length;
-        } else if (i.customId.startsWith('shop_nav_next_')) {
-            targetIndex = (targetIndex + 1) % categoryItems.length;
-        }
-
-        const currentItem = categoryItems[targetIndex];
 
         let categoryNameAr = 'السوق العام';
         if (targetCategory === 'profession') categoryNameAr = 'المهن والحرف';
         if (targetCategory === 'premium') categoryNameAr = 'الخدمات المميزة';
 
         if (!generateShopImage) return i.editReply({ content: "❌ نظام الرسم غير متوفر." });
-        const imageBuffer = await generateShopImage(i.user, userData, currentItem, categoryNameAr);
+        const imageBuffer = await generateShopImage(i.user, userData, categoryItems, categoryNameAr);
 
-        const navRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`shop_nav_prev_${targetIndex}_${targetCategory}`)
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`buy_item_${currentItem.id}`)
-                .setLabel(`شراء (${currentItem.price})`)
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🛒'),
-            new ButtonBuilder()
-                .setCustomId(`shop_nav_next_${targetIndex}_${targetCategory}`)
-                .setEmoji('➡️')
-                .setStyle(ButtonStyle.Secondary)
+        const buyOptions = categoryItems.map(item => ({
+            label: item.name,
+            description: `السعر: ${item.price} مورا | ${item.description.substring(0, 50)}`,
+            value: `buy_item_${item.id}`,
+            emoji: item.emoji || '📦'
+        }));
+
+        const selectMenuRow = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('shop_buy_select')
+                .setPlaceholder('🛒 اختر عنصراً لشرائه من هذه الصفحة...')
+                .addOptions(buyOptions)
         );
 
         const categoryRow = new ActionRowBuilder().addComponents(
@@ -674,10 +658,17 @@ async function handleShopInteractions(i, client, db) {
         const replyData = {
             content: `**مرحباً بك في متجر الإمبراطورية** يا <@${userId}>`,
             files: [{ attachment: imageBuffer, name: 'empire_shop.png' }],
-            components: [navRow, categoryRow]
+            components: [selectMenuRow, categoryRow]
         };
 
         return await i.editReply(replyData);
+    }
+
+    if (i.isStringSelectMenu() && i.customId === 'shop_buy_select') {
+        const fakeInteraction = Object.assign(Object.create(Object.getPrototypeOf(i)), i);
+        fakeInteraction.customId = i.values[0];
+        await _handleShopButton(fakeInteraction, client, db);
+        return;
     }
 
     if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
