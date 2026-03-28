@@ -42,7 +42,6 @@ const CUSTOM_XP_RATE = 5;
 const MAX_POTION_LIMIT = 999;
 const MAX_FARM_LIMIT = 1000;
 
-// دالة آمنة للتواصل مع قاعدة البيانات بناءً على هيكل جداولك
 async function executeDB(db, query, params = []) {
     try {
         return await db.query(query, params);
@@ -681,7 +680,7 @@ async function handleShopModal(i, client, db) {
             }
 
             const successEmbed = new EmbedBuilder()
-                .setTitle('✅ تمت عملية الشراء بنجاح')
+                .setTitle('✅ تمت عملية التبادل بنجاح')
                 .setColor(Colors.Green)
                 .setDescription(`📦 **العنصر:** ${amountToBuy.toLocaleString()} إكس بي (XP)\n💰 **التكلفة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}\n*(التحويل: 1 إكس بي = ${CUSTOM_XP_RATE} مورا)*`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
@@ -701,12 +700,18 @@ async function handleShopInteractions(i, client, db) {
         if (rawId === 'fishing_gear_menu') return await _handleFishingMenu(i, client, db);
         if (rawId === 'potions_menu') return await _handlePotionSelect(i, client, db);
         if (rawId === 'exchange_xp') {
-             const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle(`تبادل الخبرة (1 XP = ${CUSTOM_XP_RATE} Mora)`);
-             xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية (اكتب All للكل)').setStyle(TextInputStyle.Short).setRequired(true)));
-             return await i.showModal(xpModal);
+             const btn = new ButtonBuilder().setCustomId('open_xp_modal').setLabel('🪙 بدء التبادل').setStyle(ButtonStyle.Primary);
+             const embed = new EmbedBuilder().setTitle('تبديل الخبرة').setDescription(`السعر: ${CUSTOM_XP_RATE} مورا = 1 إكس بي (XP)`).setColor(Colors.Blue).setImage(BANNER_URL);
+             return await i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btn)], flags: MessageFlags.Ephemeral });
         }
 
         return await sendItemDetailsEmbed(i, rawId, 'general');
+    }
+
+    if (i.isButton() && i.customId === 'open_xp_modal') {
+         const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle(`تبادل الخبرة (1 XP = ${CUSTOM_XP_RATE} Mora)`);
+         xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية (اكتب All للكل)').setStyle(TextInputStyle.Short).setRequired(true)));
+         return await i.showModal(xpModal);
     }
 
     if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
@@ -731,6 +736,9 @@ async function handleShopInteractions(i, client, db) {
         const baitId = i.customId.replace('buy_confirm_bait_', '');
         return await _handleBaitBuy(i, client, db, baitId);
     }
+    
+    if (i.isButton() && i.customId === 'upgrade_rod') await _handleRodSelect(i, client, db);
+    if (i.isButton() && i.customId === 'upgrade_boat') await _handleBoatSelect(i, client, db);
 
     if (i.isButton() && i.customId.startsWith('buy_item_')) {
         const boughtItemId = i.customId.replace('buy_item_', ''); 
