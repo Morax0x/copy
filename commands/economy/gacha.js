@@ -14,11 +14,11 @@ const PULL_PRICE = 1000;
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
 const FLAVOR_TEXTS = [
-    "قدم المورا للسماء ودع النجوم ترسم لك مسارا جديدا",
+    "قدم المورا ودع النجوم ترسم لك مسارا جديدا",
     "بين يديك مفتاح الابعاد اكسر الختم لترى اي اسطورة ستستجيب",
     "النجوم تنتظر من يوقظها ادفع المورا وابدا طقوس الاستدعاء",
     "مقابل المورا قد تبتسم لك الاقدار او تدير لك ظهرها جرب حظك",
-    "اكسر قيود الزمن واستحضر قوى الاجداد المنسية الى قبضتك",
+    "اكسر قيود الزمن واستحضر القوة المنسية الى قبضتك",
     "خلف هذا الختم ترقد كنوز الامبراطورية افتحه واصنع مجدك",
     "ايقظ التحف النادرة من سباتها الابدي المورا هي الثمن",
     "طريق العظمة محفوف بالمخاطر والمكافات اكشف غنيمتك",
@@ -119,9 +119,8 @@ function performPull(pityData, userRace, ownedSkills) {
 }
 
 module.exports = {
-    data: new SlashCommandBuilder().setName('صندوق').setDescription('افتح صناديق السحر للحصول على مهارات وكتب وخامات تطوير'),
+    data: new SlashCommandBuilder().setName('صندوق').setDescription('صناديق سحرية تستدعي الارتيفاكت لتطوير عتادك'),
     name: 'صندوق',
-    // 🔥 الاختصارات اللي طلبتها بدون حذف الاختصارات الأخرى وبدون "سحب" 🔥
     aliases: ['gacha', 'صناديق', 'صندوق', 'غاتشا', 'قاتشا', 'pull'],
     category: 'RPG',
 
@@ -256,7 +255,6 @@ module.exports = {
 
             const row = new ActionRowBuilder();
             
-            // 🔥 نظام الأزرار الذكية الذي طلبته 🔥
             if (totalChests >= 1) {
                 row.addComponents(new ButtonBuilder().setCustomId('open_chest_1').setLabel('فتح 1').setEmoji('🎁').setStyle(ButtonStyle.Primary));
             }
@@ -272,6 +270,7 @@ module.exports = {
             await targetMsg.edit({ embeds: [], components: [row], files }).catch(()=>{});
         };
 
+        // 🔥 نظام التسريع الصاروخي للـ PULLS (التجميع والتنفيذ دفعة واحدة) 🔥
         const executePulls = async (pullCount, isBuying, cost) => {
             if (isBuying) {
                 userMora -= cost;
@@ -299,7 +298,12 @@ module.exports = {
             const rarityOrder = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
             let bestResult = null;
 
+            // متغيرات التجميع
+            const itemsToAdd = {};
+            const skillsToAdd = [];
+
             await db.query('BEGIN').catch(()=>{});
+            
             for (let k = 0; k < pullCount; k++) {
                 const { item, rarity } = performPull(pityData, userRace, ownedSkills);
                 
@@ -310,17 +314,33 @@ module.exports = {
 
                 if (item.type === 'skill') {
                     ownedSkills.push(item.id);
-                    await db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, item.id]).catch(()=>{}));
+                    skillsToAdd.push(item.id);
                 } else {
-                    let existingItemRes = await db.query(`SELECT "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, item.id]).catch(()=> db.query(`SELECT id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, item.id]).catch(()=>({rows:[]})));
-                    if (existingItemRes?.rows?.[0]) {
-                        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" + 1 WHERE "id" = $1`, [existingItemRes.rows[0].id]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity + 1 WHERE id = $1`, [existingItemRes.rows[0].id || existingItemRes.rows[0].ID]).catch(()=>{}));
-                    } else {
-                        await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, 1)`, [guildId, user.id, item.id]).catch(()=> db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, 1)`, [guildId, user.id, item.id]).catch(()=>{}));
-                    }
+                    if (!itemsToAdd[item.id]) itemsToAdd[item.id] = 0;
+                    itemsToAdd[item.id]++;
                 }
                 results.push({ item, rarity });
             }
+
+            // تنفيذ التحديثات بقاعدة البيانات بشكل متوازي (Parallel) لسرعة البرق!
+            const dbPromises = [];
+
+            for (const skillId of skillsToAdd) {
+                dbPromises.push(db.query(`INSERT INTO user_skills ("userID", "guildID", "skillID", "skillLevel") VALUES ($1, $2, $3, 1)`, [user.id, guildId, skillId]).catch(() => db.query(`INSERT INTO user_skills (userid, guildid, skillid, skilllevel) VALUES ($1, $2, $3, 1)`, [user.id, guildId, skillId]).catch(()=>{})));
+            }
+
+            for (const [itemId, qty] of Object.entries(itemsToAdd)) {
+                dbPromises.push((async () => {
+                    let existingItemRes = await db.query(`SELECT "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, itemId]).catch(()=> db.query(`SELECT id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, itemId]).catch(()=>({rows:[]})));
+                    if (existingItemRes?.rows?.[0]) {
+                        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" + $1 WHERE "id" = $2`, [qty, existingItemRes.rows[0].id]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity + $1 WHERE id = $2`, [qty, existingItemRes.rows[0].id || existingItemRes.rows[0].ID]).catch(()=>{}));
+                    } else {
+                        await db.query(`INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4)`, [guildId, user.id, itemId, qty]).catch(()=> db.query(`INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4)`, [guildId, user.id, itemId, qty]).catch(()=>{}));
+                    }
+                })());
+            }
+
+            await Promise.all(dbPromises);
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
@@ -379,7 +399,9 @@ module.exports = {
             let meteorFiles = [new AttachmentBuilder(meteorUrl, { name: meteorFileName })];
             
             await initialMsg.edit({ files: meteorFiles, components: [], embeds: [] }).catch(()=>{});
-            await new Promise(r => setTimeout(r, 1200));
+            
+            // 🔥 تقليل وقت الانتظار لزيادة الحماس والسرعة (700 ملي ثانية فقط بدلاً من 1200) 🔥
+            await new Promise(r => setTimeout(r, 700));
 
             if (pullCount > 10) {
                 let files = [];
