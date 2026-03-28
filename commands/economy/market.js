@@ -1,8 +1,7 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const fs = require('fs');
 const path = require('path');
 
-// 1. تحميل الإعدادات بأمان
 let marketConfig = [];
 try {
     const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
@@ -11,7 +10,6 @@ try {
     console.error("⚠️ [Market] تحذير: لم يتم العثور على ملف market-items.json");
 }
 
-// 2. استدعاء الرسام 
 let marketGen;
 try {
     const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
@@ -19,19 +17,6 @@ try {
 } catch (e) {
     console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
 }
-
-const EMOJI_MORA = '<:mora:1435647151349698621>';
-const EMOJI_ASSET_SMALL = {
-    'APPLE': '<:aapple:1435884007484293161>',
-    'ANDROID': '<:android:1435885726519656578>',
-    'TESLA': '<:tesla:1437395355170771016>',
-    'GOLD': '<:gold:1437395402474127382>',
-    'LAND': '🏞️',
-    'BITCOIN': '<:ss:1437395376738013244>',
-    'SPACEX': '🚀',
-    'SILVER': '<:pngimg:1437395419544944713>',
-    'ART': '<:atr:1437395490168639550>',
-};
 
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 9;
@@ -47,36 +32,23 @@ function getUpdateTimeRemaining() {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function getItemChangeEmoji(changePercent) {
-    if (changePercent > 0.01) return '<:upward:1435880367805431850>';
-    if (changePercent < -0.01) return '<:downward:1435880484046372914>';
-    return '<:neutral:1435880568158945292>';
-}
-
-function cleanEmojiFromName(name) {
-    if (!name) return '';
-    return name.replace(/<a?:.+?:\d+>/g, '').trim();
-}
-
-// 🔥 تم إضافة معامل userAvatarUrl لتمرير صورة صاحب الأمر للرسام 🔥
-async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvatarUrl) {
+// 🖼️ بناء اللوحة الرئيسية
+async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
     if (!marketGen || typeof marketGen.drawMarketGrid !== 'function') {
-        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح! تأكد أنك لم تضع كود الأمر داخل ملف الرسام.");
+        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح!");
     }
 
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    // استدعاء الرسام مع تمرير صورة المستخدم
-    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages, userAvatarUrl);
+    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
     const selectOptions = itemsOnPage.map(item => ({
-        label: `${cleanEmojiFromName(item.name)}`,
-        description: `السعر الحالي: ${Number(item.currentPrice || item.currentprice || item.price).toLocaleString()} مورا`,
-        value: item.id,
-        emoji: EMOJI_ASSET_SMALL[item.id] || '📈'
+        label: item.name.trim(),
+        description: `السعر: ${Number(item.currentPrice || item.currentprice || item.price).toLocaleString()}`,
+        value: item.id
     }));
 
     const selectMenuRow = new ActionRowBuilder().addComponents(
@@ -99,7 +71,8 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
     return { attachment, components: actionRows };
 }
 
-async function buildDetailView(item, userId, guildId, sql) {
+// 🖼️ بناء صورة التفاصيل (بدل الإمبد القديم)
+async function buildDetailViewImage(item, userId, guildId, sql) {
     let userPortfolio;
     try {
         const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
@@ -111,36 +84,22 @@ async function buildDetailView(item, userId, guildId, sql) {
         } catch(err) {}
     }
     const userQuantity = userPortfolio ? Number(userPortfolio.quantity || userPortfolio.Quantity || 0) : 0;
-    
     const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
     const currentPrice = Number(item.currentPrice || item.currentprice || item.price || 0);
     
-    const changeEmoji = getItemChangeEmoji(changePercent);
-    const price = currentPrice.toLocaleString();
-    const cleanName = cleanEmojiFromName(item.name);
-
-    const detailEmbed = new EmbedBuilder()
-        .setTitle(`📈 تفاصيل: ${cleanName} (${item.id})`)
-        .setColor(changePercent > 0.01 ? Colors.Green : (changePercent < -0.01 ? Colors.Red : Colors.Grey))
-        .setDescription(item.description || 'لا يوجد وصف')
-        .addFields(
-            { name: 'السعر الحالي', value: `${price} ${EMOJI_MORA}`, inline: true },
-            { name: 'تغير الفترة الأخيرة', value: `${changeEmoji} ${(changePercent * 100).toFixed(2)}%`, inline: true },
-            { name: 'في محفظتك الاستثمارية', value: `**${userQuantity.toLocaleString()}** وحدة`, inline: true }
-        )
-        .setTimestamp();
-
-    if (item.image) {
-        detailEmbed.setThumbnail(item.image);
-    }
+    // استدعاء رسمة البطاقة التفصيلية
+    const imageBuffer = await marketGen.drawMarketDetail(item, userQuantity, currentPrice, changePercent);
+    const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setLabel('◀️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setLabel('▶️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger).setDisabled(userQuantity === 0),
         new ButtonBuilder().setCustomId('market_back_to_grid').setLabel('العودة للوحة').setStyle(ButtonStyle.Primary)
     );
 
-    return { embed: detailEmbed, components: [actionRow] };
+    return { attachment, components: [actionRow] };
 }
 
 module.exports = {
@@ -205,21 +164,18 @@ module.exports = {
             }
 
             if (allItems.length === 0) {
-                const embed = new EmbedBuilder().setTitle('📈 سوق الاستثمار').setDescription("السوق فارغ تماماً حالياً.").setColor(Colors.Red);
-                return reply({ embeds: [embed] });
+                return reply({ content: "السوق فارغ تماماً حالياً." });
             }
 
             let currentPage = 0;
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
-            
-            // 🔥 جلب رابط الأفتار الخاص بالمستخدم بصيغة png عشان الكانفاس يقرأه صح 🔥
-            const avatarUrl = user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 });
 
-            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
+            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
             let msg;
-            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمارات يا <@${user.id}> 📊**` };
+            // ❌ أزلنا أي نص من الرد ليكون عبارة عن صورة خالصة فقط
+            const initPayload = { files: [attachment], components: components, content: '' };
             
             if (isSlash) {
                 msg = await interaction.editReply(initPayload);
@@ -241,15 +197,31 @@ module.exports = {
                                 else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
 
                                 timeRemaining = getUpdateTimeRemaining();
-                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
-                                await i.editReply({ files: [newPage.attachment], components: newPage.components, embeds: [] });
+                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                                await i.editReply({ files: [newPage.attachment], components: newPage.components, content: '' });
                             }
+                        } else if (i.customId.startsWith('market_prev_detail_') || i.customId.startsWith('market_next_detail_')) {
+                            try { await i.deferUpdate(); } catch (e) {}
+                            
+                            const currentItemID = i.customId.split('_')[3];
+                            let currentItemIndex = allItems.findIndex(it => it.id === currentItemID);
+
+                            if (i.customId.startsWith('market_next_detail_')) {
+                                currentItemIndex = (currentItemIndex + 1) % allItems.length;
+                            } else if (i.customId.startsWith('market_prev_detail_')) {
+                                currentItemIndex = (currentItemIndex - 1 + allItems.length) % allItems.length;
+                            }
+
+                            const item = allItems[currentItemIndex];
+                            const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
+                            await i.editReply({ files: [detailImage], components: detailComponents, content: '' });
+
                         } else if (i.customId === 'market_back_to_grid') {
                             try { await i.deferUpdate(); } catch (e) {}
                             currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
-                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
-                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في بورصة الإمبراطورية يا <@${i.user.id}> 📊**` });
+                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                            await i.editReply({ files: [gridAttachment], components: gridComponents, content: '' });
 
                         } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
                             const isBuy = i.customId.startsWith('buy_asset_');
@@ -281,8 +253,8 @@ module.exports = {
                         const item = allItems.find(it => it.id === selectedID);
                         if (!item) return;
                         
-                        const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
-                        await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
+                        const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
+                        await i.editReply({ files: [detailImage], components: detailComponents, embeds: [], content: '' });
                     }
                 } catch (error) {}
             });
