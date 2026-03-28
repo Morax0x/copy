@@ -4,26 +4,36 @@ const fs = require('fs');
 
 const imageAssetsDir = path.join(process.cwd(), 'empress-assets', 'images', 'market');
 
-// 🔥 نظام الكاش السريع
+// 🔥 نظام الكاش الخارق (RAM Preload) للسرعة القصوى
 const ASSETS_CACHE = new Map();
 let trendImages = { up: null, down: null, neutral: null };
 
 async function preloadGlobalAssets() {
     try {
         if (!fs.existsSync(imageAssetsDir)) return;
+        
+        // 1. تحميل أسهم الاتجاه
         trendImages.up = await loadImage(path.join(imageAssetsDir, 'up_trend.png')).catch(()=>{});
         trendImages.down = await loadImage(path.join(imageAssetsDir, 'down_trend.png')).catch(()=>{});
         trendImages.neutral = await loadImage(path.join(imageAssetsDir, 'neutral_trend.png')).catch(()=>{});
+
+        // 2. تحميل كافة لوغوهات السوق في الـ RAM للسرعة الفورية
+        const knownAssets = ['apple', 'android', 'tesla', 'gold', 'land', 'bitcoin', 'spacex', 'silver', 'art'];
+        for (const asset of knownAssets) {
+            const imgPath = path.join(imageAssetsDir, `${asset}.png`);
+            if (fs.existsSync(imgPath)) {
+                ASSETS_CACHE.set(asset.toUpperCase(), await loadImage(imgPath).catch(()=>{}));
+            }
+        }
+        console.log("✅ [Market Preload]: تم تحميل كافة أصول السوق في الذاكرة بنجاح! 🚀");
     } catch (e) { console.error("[Market Preload Error]:", e.message); }
 }
 
+// دالة جلب الصور (تأخذها من الذاكرة فوراً بدون أي تأخير)
 async function getAssetImage(item) {
     if (ASSETS_CACHE.has(item.id)) return ASSETS_CACHE.get(item.id);
-    const imgPath = path.join(imageAssetsDir, `${item.id.toLowerCase()}.png`);
-    if (fs.existsSync(imgPath)) {
-        const img = await loadImage(imgPath).catch(()=>{});
-        if (img) { ASSETS_CACHE.set(item.id, img); return img; }
-    }
+    
+    // كحماية إضافية لو كان هناك سهم جديد لم يتم تحميله
     if (item.image) {
         const img = await loadImage(item.image).catch(()=>{});
         if (img) { ASSETS_CACHE.set(item.id, img); return img; }
@@ -31,26 +41,31 @@ async function getAssetImage(item) {
     return null;
 }
 
+async function drawUserAvatar(ctx, url, x, y, size) {
+    try {
+        const avatarImg = await loadImage(url);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(avatarImg, x, y, size, size);
+        ctx.restore();
+        
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    } catch (e) { }
+}
+
 function formatPriceText(price) {
     if (isNaN(price)) return '0';
     return Number(price).toLocaleString();
-}
-
-function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
-    if (typeof radius === 'undefined') radius = 5;
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
 }
 
 function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
@@ -108,7 +123,7 @@ function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
 }
 
 // 🎨 1. رسم اللوحة الرئيسية (الجريد)
-exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages) {
+exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages, userAvatarUrl) {
     const CANVAS_WIDTH = 1280;
     const CANVAS_HEIGHT = 960;
     const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -147,7 +162,11 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.textAlign = "left";
     ctx.font = `bold 24px ${FONT_FAMILY}`;
     ctx.fillStyle = '#00ffff'; 
-    ctx.fillText(`التحديث القادم: ${timeRemaining}`, 50, 62);
+    ctx.fillText(`التحديث القادم: ${timeRemaining}`, 160, 62);
+
+    if (userAvatarUrl) {
+        await drawUserAvatar(ctx, userAvatarUrl, 50, 10, 80);
+    }
 
     const CARD_WIDTH = 370;
     const CARD_HEIGHT = 230;
@@ -188,7 +207,9 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         }
 
         ctx.textAlign = "left";
-        const cleanName = item.name.trim();
+        // تنظيف مضاعف لضمان عدم ظهور أي إيموجي (Discord emojis OR generic emojis)
+        const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
+        
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 24px ${FONT_FAMILY}`;
         ctx.fillText(cleanName, x + 125, y + 50);
@@ -223,7 +244,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     return canvas.toBuffer();
 };
 
-// 🎨 2. رسم بطاقة التفاصيل (عند اختيار سهم)
+// 🎨 2. رسم بطاقة التفاصيل
 exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, currentPrice, changePercent) {
     const CANVAS_WIDTH = 900;
     const CANVAS_HEIGHT = 450;
@@ -238,41 +259,34 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     const glowColor = isUp ? 'rgba(0, 255, 136, 0.6)' : (isDown ? 'rgba(255, 0, 85, 0.6)' : 'rgba(0, 204, 255, 0.6)');
     const borderColor = isUp ? 'rgba(0, 255, 136, 0.8)' : (isDown ? 'rgba(255, 0, 85, 0.8)' : 'rgba(0, 204, 255, 0.8)');
 
-    // الخلفية الأساسية
     const bgGradient = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     bgGradient.addColorStop(0, '#04070d'); 
     bgGradient.addColorStop(1, '#0a1224'); 
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // الكرت الفخم
     drawSciFiPanel(ctx, 20, 20, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 40, borderColor, glowColor);
 
-    // اللوغو العملاق في اليسار
     const assetImg = await getAssetImage(item);
     if (assetImg) {
         ctx.globalAlpha = 0.1;
-        ctx.drawImage(assetImg, 50, 50, 350, 350); // لوغو ضخم ومخفي بالخلفية
+        ctx.drawImage(assetImg, 50, 50, 350, 350); 
         ctx.globalAlpha = 1.0;
-        
         ctx.shadowColor = glowColor; ctx.shadowBlur = 25;
-        ctx.drawImage(assetImg, 50, 100, 200, 200); // اللوغو الواضح
+        ctx.drawImage(assetImg, 50, 100, 200, 200); 
         ctx.shadowBlur = 0;
     }
 
-    // اسم الأصل وتفاصيله
     ctx.textAlign = "left";
-    const cleanName = item.name.trim();
+    const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 48px ${FONT_FAMILY}`;
     ctx.fillText(cleanName, 300, 100);
 
-    // الوصف
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = `22px ${FONT_FAMILY}`;
     ctx.fillText(item.description || 'أصل استثماري في بورصة الإمبراطورية.', 300, 140);
 
-    // مربع السعر الحالي
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     roundRect(ctx, 300, 170, 250, 90, 10, true);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -282,7 +296,6 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     ctx.font = `bold 38px ${FONT_FAMILY}`;
     ctx.fillText(`${formatPriceText(currentPrice)}`, 320, 245);
 
-    // مربع التغير
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     roundRect(ctx, 570, 170, 250, 90, 10, true);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -299,7 +312,6 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
         ctx.drawImage(trendImg, 750, 185, 60, 60);
     }
 
-    // مربع المحفظة الشخصية بالأسفل
     ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
     roundRect(ctx, 300, 280, 520, 80, 10, true);
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
@@ -312,4 +324,5 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     return canvas.toBuffer();
 };
 
+// بدء تحميل الصور فوراً مع إقلاع البوت
 preloadGlobalAssets();
