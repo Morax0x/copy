@@ -34,7 +34,6 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// 🌟 قاموس الندرة لترجمة مستويات العناصر للعربية
 const RARITY_ARABIC = {
     'Common': 'شائع',
     'Uncommon': 'غير شائع',
@@ -47,7 +46,6 @@ function translateRarity(rarity) {
     return RARITY_ARABIC[rarity] || rarity;
 }
 
-// 🛡️ حماية الاستخراج وفك كائنات اللغات
 function resolveText(val) {
     if (val == null) return '';
     if (typeof val === 'object') return val.ar || val.en || val.name || JSON.stringify(val);
@@ -107,13 +105,11 @@ const getReturnRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
 );
 
-// 🎨 تحديث قوي لدالة الرد عشان تمنع تعليق الصور (Caching Bug) وتزيل أي إيمبد قديم بالكامل
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     try {
         if (generateForgeUI) {
             const buffer = await generateForgeUI(user, view, data);
             if (buffer) {
-                // إضافة ختم زمني عشان ديسكورد ما يكيّش الصورة القديمة ويطلع لك مساحة فاضية
                 const filename = `forge_${Date.now()}.png`; 
                 const attachment = new AttachmentBuilder(buffer, { name: filename });
                 
@@ -129,7 +125,6 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
-    // Fallback آمن جداً
     try {
         if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components, embeds: [] }).catch(()=>{});
         return await i.editReply({ content: null, components, embeds: [], files: [] }).catch(()=>{});
@@ -178,6 +173,7 @@ module.exports = {
 
             try {
                 if (i.customId === 'forge_return_main') {
+                    // تصفير الخيارات عند العودة للقائمة الرئيسية لمنع التعليق!
                     synthesisState = { sacrificeItem: null, targetItem: null };
                     smeltState = { item: null };
                     await buildMainUI(i, user, guildId, db, false);
@@ -203,14 +199,31 @@ module.exports = {
                 else if (i.isButton()) {
                     if (i.customId === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db);
                     else if (i.customId === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db);
-                    else if (i.customId === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, synthesisState); }
-                    else if (i.customId === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, smeltState); }
+                    else if (i.customId === 'forge_synthesis') { 
+                        synthesisState = { sacrificeItem: null, targetItem: null }; 
+                        await buildSynthesisUI(i, user, guildId, db, synthesisState); 
+                    }
+                    else if (i.customId === 'forge_smelting') { 
+                        smeltState = { item: null }; 
+                        await buildSmeltingUI(i, user, guildId, db, smeltState); 
+                    }
                     
                     else if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db);
                     else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, i.customId.replace('forge_upgrade_skill_', ''));
-                    else if (i.customId === 'forge_execute_synth') await handleSynthesis(i, user, guildId, db, synthesisState);
-                    else if (i.customId === 'forge_execute_smelt_1') await handleSmelting(i, user, guildId, db, smeltState, client, 1);
-                    else if (i.customId.startsWith('forge_smelt_multi_')) await handleSmeltingMultiModal(i, user, guildId, db, smeltState, client);
+                    else if (i.customId === 'forge_execute_synth') {
+                        await handleSynthesis(i, user, guildId, db, synthesisState);
+                        // تفريغ بعد الدمج الناجح
+                        synthesisState = { sacrificeItem: null, targetItem: null };
+                    }
+                    else if (i.customId === 'forge_execute_smelt_1') {
+                        await handleSmelting(i, user, guildId, db, smeltState, client, 1);
+                        // تفريغ بعد الصهر الناجح
+                        smeltState = { item: null };
+                    }
+                    else if (i.customId.startsWith('forge_smelt_multi_')) {
+                        await handleSmeltingMultiModal(i, user, guildId, db, smeltState, client);
+                        // التفريغ يتم داخل دالة المودال بعد الاستجابة
+                    }
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
@@ -286,7 +299,6 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
         await db.query(`UPDATE user_weapons SET "weaponLevel" = "weaponLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [user.id, guildId, wData.raceName || wData.racename]).catch(()=> db.query(`UPDATE user_weapons SET weaponlevel = weaponlevel + 1 WHERE userid = $1 AND guildid = $2 AND racename = $3`, [user.id, guildId, wData.raceName || wData.racename]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        // 🌟 شاشة النجاح المدمجة في الكانفاس (بدون إيمبد)
         const nextLevel = currentLevel + 1;
         const nextStat = `${weaponConfig.base_damage + (weaponConfig.damage_increment * nextLevel)} DMG`;
 
@@ -381,7 +393,6 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
         await db.query(`UPDATE user_skills SET "skillLevel" = "skillLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "skillID" = $3`, [user.id, guildId, skillId]).catch(()=> db.query(`UPDATE user_skills SET skilllevel = skilllevel + 1 WHERE userid = $1 AND guildid = $2 AND skillid = $3`, [user.id, guildId, skillId]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        // 🌟 شاشة النجاح المدمجة
         const nextLevel = currentLevel + 1;
         const statSymbol = configSkill.stat_type === '%' ? '%' : '';
         const nextStat = `${configSkill.base_value + (configSkill.value_increment * nextLevel)}${statSymbol}`;
@@ -507,7 +518,6 @@ async function handleSynthesis(i, user, guildId, db, state) {
         
         await db.query('COMMIT').catch(()=>{}); 
         
-        // 🌟 شاشة النجاح المدمجة
         const targetInfo = getItemInfo(state.targetItem);
         await replyWithCanvas(i, user, 'success_synthesis', {
             title: 'فرن الدمج السحري',
@@ -627,7 +637,6 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
             if(cacheData) { cacheData.xp += xpReward; cacheData.totalXP += xpReward; await client.setLevel(cacheData); }
         }
         
-        // 🌟 شاشة النجاح المدمجة
         const successData = {
             title: 'محرقة التفكيك',
             xpGain: xpReward
@@ -638,6 +647,8 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
                 replied: false, deferred: false,
                 editReply: async (p) => i.editReply(p) 
             }, user, 'success_smelting', successData, [getReturnRow()]);
+            // تفريغ الحالة بعد الصهر المتعدد الناجح
+            state.item = null;
         } else {
             await replyWithCanvas(i, user, 'success_smelting', successData, [getReturnRow()]);
         }
