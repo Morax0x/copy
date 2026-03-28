@@ -175,19 +175,36 @@ module.exports = {
             );
         };
 
-        const initialRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-        let initialFiles = [];
-        
-        if (generateGachaHub) {
-            const hubBuffer = await generateGachaHub(user, userMora, initialRandomText, chestCount);
-            if (hubBuffer) initialFiles.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_hub.png' }));
+        // زر الرجوع للقائمة الرئيسية
+        const getReturnButton = () => {
+            return new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('gacha_return_hub').setLabel('رجوع').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
+            );
+        };
+
+        const generateAndSendHub = async (targetMsg) => {
+            await fetchUserData();
+            const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
+            let files = [];
+            if (generateGachaHub) {
+                try {
+                    const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText, chestCount);
+                    if (hubBuffer) files.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_hub.png' }));
+                } catch(e){}
+            }
+            if (targetMsg) {
+                await targetMsg.edit({ components: [getPullButtons(userMora)], files }).catch(()=>{});
+            } else {
+                return { components: [getPullButtons(userMora)], files };
+            }
         }
 
-        const initialMsg = await reply({ components: [getPullButtons(userMora)], files: initialFiles }).catch(()=>{});
+        const initialPayload = await generateAndSendHub();
+        const initialMsg = await reply(initialPayload).catch(()=>{});
         if (!initialMsg) return;
         
         const channelCollector = (isSlash ? interactionOrMessage.channel : interactionOrMessage.channel).createMessageComponentCollector({
-            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10', 'gacha_inventory'].includes(i.customId),
+            filter: i => i.user.id === user.id && ['gacha_1', 'gacha_10', 'gacha_inventory', 'gacha_return_hub'].includes(i.customId),
             time: 300000 
         });
 
@@ -203,18 +220,17 @@ module.exports = {
 
             try { await i.deferUpdate(); } catch (err) { return; }
 
+            if (i.customId === 'gacha_return_hub') {
+                await generateAndSendHub(initialMsg);
+                return;
+            }
+
             await fetchUserData();
             const isTen = i.customId === 'gacha_10';
             const cost = isTen ? PULL_PRICE * 10 : PULL_PRICE;
             if (userMora < cost) return i.followUp({ content: "لا تملك المورا الكافية", flags: [MessageFlags.Ephemeral] }).catch(()=>{});
 
-            await i.editReply({ components: [] }).catch(()=>{});
-
-            let summonFiles = [new AttachmentBuilder('https://i.postimg.cc/T1b1xJ2R/magic-summon.gif', { name: 'summon_magic.gif' })];
-            const pullMsg = await i.followUp({ files: summonFiles, fetchReply: true }).catch(()=>{});
-            
-            if(!pullMsg) return;
-
+            // 🔥 إزالة التعطيل وانتظار الأنيميشن، الانتقال مباشرة للسحب السريع
             userMora -= cost;
             await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, user.id, guildId]).catch(() => db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [cost, user.id, guildId]).catch(()=>{}));
 
@@ -245,26 +261,16 @@ module.exports = {
             await db.query(`UPDATE user_gacha_pity SET "epic_pity" = $1, "legendary_pity" = $2 WHERE "userID" = $3 AND "guildID" = $4`, [pityData.epic_pity, pityData.legendary_pity, user.id, guildId]).catch(()=>{});
             await db.query('COMMIT').catch(()=>{});
 
+            // إرسال صورة النيزك مباشرة
             const prefix = isTen ? 'ten_' : 'single_';
             const meteorFileName = `${prefix}${bestResult.rarity}.png`;
             const meteorUrl = `${R2_URL}/images/gacha/${meteorFileName}`;
             let meteorFiles = [new AttachmentBuilder(meteorUrl, { name: meteorFileName })];
             
-            await pullMsg.edit({ files: meteorFiles }).catch(()=>{});
-            await new Promise(r => setTimeout(r, 2000));
-
-            const buildSilentSummary = async () => {
-                await fetchUserData(); 
-                let files = [];
-                const summaryRandomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-                if (generateGachaHub) {
-                    try {
-                        const hubBuffer = await generateGachaHub(user, userMora, summaryRandomText, chestCount);
-                        if (hubBuffer) files.push(new AttachmentBuilder(hubBuffer, { name: 'gacha_summary.png' }));
-                    } catch(e){}
-                }
-                return { components: [getPullButtons(userMora)], files };
-            };
+            await initialMsg.edit({ files: meteorFiles, components: [] }).catch(()=>{});
+            
+            // انتظار بسيط جداً قبل عرض النتيجة
+            await new Promise(r => setTimeout(r, 1200));
 
             if (isTen) {
                 let currentIndex = 0;
@@ -272,7 +278,6 @@ module.exports = {
                 const getPagePayload = async (idx) => {
                     const res = results[idx];
                     let files = [];
-                    
                     if (generateGachaCard && res.item.imgPath) {
                         try {
                             const buffer = await generateGachaCard(res.item, res.rarity);
@@ -288,9 +293,9 @@ module.exports = {
                     return { components: [row], files };
                 };
 
-                await pullMsg.edit(await getPagePayload(0)).catch(()=>{});
+                await initialMsg.edit(await getPagePayload(0)).catch(()=>{});
 
-                const pageCollector = pullMsg.createMessageComponentCollector({
+                const pageCollector = initialMsg.createMessageComponentCollector({
                     filter: btn => btn.user.id === user.id && ['gacha_next', 'gacha_skip'].includes(btn.customId),
                     time: 120000 
                 });
@@ -303,16 +308,25 @@ module.exports = {
                     } else if (btn.customId === 'gacha_next') {
                         currentIndex++;
                         if (currentIndex >= 10) pageCollector.stop('finished');
-                        else await pullMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
+                        else await initialMsg.edit(await getPagePayload(currentIndex)).catch(()=>{});
                     }
                 });
 
+                // عند الانتهاء من التصفح أو התخطي، يظهر زر العودة للقائمة بدلاً من صورة القائمة فوراً
                 pageCollector.on('end', async () => {
-                    await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
+                    await initialMsg.edit({ components: [getReturnButton()] }).catch(()=>{});
                 });
 
             } else {
-                await pullMsg.edit(await buildSilentSummary()).catch(()=>{});
+                let files = [];
+                if (generateGachaCard && bestResult && bestResult.item.imgPath) {
+                    try {
+                        const buffer = await generateGachaCard(bestResult.item, bestResult.rarity);
+                        if (buffer) files.push(new AttachmentBuilder(buffer, { name: 'gacha_best.png' }));
+                    } catch(e){}
+                }
+                // في السحب الفردي نظهر النتيجة مع زر العودة للرئيسية
+                await initialMsg.edit({ components: [getReturnButton()], files }).catch(()=>{});
             }
         });
     }
