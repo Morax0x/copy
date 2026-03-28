@@ -1,7 +1,6 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// تسجيل الخط العربي بقوة
 try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
@@ -49,7 +48,6 @@ function resolveText(val) {
     return String(val);
 }
 
-// 🏹 سهم فانتزي متطور
 function drawFantasyArrow(ctx, x, y, width, color) {
     ctx.save();
     ctx.translate(x, y);
@@ -104,7 +102,6 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(safeText, x, y);
 }
 
-// 📦 إطار العناصر
 function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quantity = null) {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
@@ -143,9 +140,6 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quan
     }
 }
 
-// ==========================================
-// 👑 الدالة الأساسية لتوليد الصور
-// ==========================================
 async function generateForgeUI(userObj, view, data) {
     const width = 1200;
     const height = 675; 
@@ -155,14 +149,12 @@ async function generateForgeUI(userObj, view, data) {
     let activeView = view.replace('success_', '');
     const isSuccess = view.startsWith('success_');
     
-    // 🚨 تصحيح الخلل: منع تحويل شاشات النجاح إلى صفحات رئيسية
     if (!isSuccess) {
         if (activeView === 'main' && data.title?.includes('أكاديمية')) activeView = 'skill_home';
         if (activeView === 'synthesis' && !data.sacMatName) activeView = 'synthesis_home';
         if (activeView === 'smelting' && !data.sacMatName) activeView = 'smelting_home';
     }
 
-    // 1. تحديد الروابط لصور الخلفيات والشعارات حسب القسم
     let bgUrl, emblemUrl, sparkColor, accentColor;
     
     if (activeView === 'weapon') {
@@ -187,7 +179,6 @@ async function generateForgeUI(userObj, view, data) {
         sparkColor = '#00AAFF'; accentColor = '#3498DB';
     }
 
-    // تحميل الصور
     const [bgImage, emblemImg, avatarImage, reqMatImg, targetMatImg] = await Promise.all([
         getCachedImage(bgUrl),
         emblemUrl ? getCachedImage(emblemUrl) : null,
@@ -196,7 +187,6 @@ async function generateForgeUI(userObj, view, data) {
         data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
     ]);
 
-    // 2. رسم الخلفية المرفوعة
     ctx.fillStyle = '#050608';
     ctx.fillRect(0, 0, width, height);
     if (bgImage) {
@@ -211,7 +201,6 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillRect(0, 0, width, height);
     }
 
-    // تأثير الجسيمات
     ctx.fillStyle = sparkColor;
     ctx.beginPath();
     const pCount = activeView.includes('smelting') || activeView === 'weapon' ? 120 : 80;
@@ -224,7 +213,6 @@ async function generateForgeUI(userObj, view, data) {
     }
     ctx.fill(); ctx.globalAlpha = 1.0;
 
-    // 3. الشريط العلوي
     const headerH = 100;
     ctx.fillStyle = 'rgba(5, 8, 12, 0.9)';
     ctx.fillRect(0, 0, width, headerH);
@@ -236,7 +224,6 @@ async function generateForgeUI(userObj, view, data) {
     ctx.fillStyle = goldGrad;
     ctx.fillRect(0, headerH - 3, width, 3);
 
-    // الأفتار والاسم
     const avatarSize = 70;
     const avatarX = 50 + avatarSize/2;
     const avatarY = headerH / 2;
@@ -255,7 +242,6 @@ async function generateForgeUI(userObj, view, data) {
     drawAutoScaledArabicText(ctx, userObj.displayName || userObj.username, avatarX + 50, avatarY, 250, 26, 14);
     ctx.shadowBlur = 0;
 
-    // المورا
     ctx.fillStyle = 'rgba(15, 20, 25, 0.9)';
     ctx.beginPath(); roundRect(ctx, width - 280, 25, 240, 50, 15); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
@@ -264,14 +250,12 @@ async function generateForgeUI(userObj, view, data) {
     drawAutoScaledText(ctx, (data.mora || 0).toLocaleString(), width - 80, 50, 160, 24, 12);
     ctx.font = '24px "Arial"'; ctx.fillText('🪙', width - 45, 50);
 
-    // عنوان الصفحة المركزي
     ctx.textAlign = 'center'; ctx.fillStyle = '#F1C40F';
     ctx.font = 'bold 45px "Bein"';
     ctx.shadowColor = '#F1C40F'; ctx.shadowBlur = 15;
     ctx.fillText(resolveText(data.title || 'المجمع الإمبراطوري'), width / 2, 160);
     ctx.shadowBlur = 0;
 
-    // 4. اللوحة الرئيسية (Panel)
     const panelY = 210;
     const panelW = 1100;
     const panelH = 430;
@@ -281,9 +265,6 @@ async function generateForgeUI(userObj, view, data) {
     ctx.beginPath(); roundRect(ctx, panelX, panelY, panelW, panelH, 25); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'; ctx.stroke();
 
-    // =========================================================
-    // 🌟 شاشات النجاح (لا توجد أخطاء الشاشة الفارغة بعد اليوم)
-    // =========================================================
     if (isSuccess) {
         ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 50px "Bein"';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -320,11 +301,7 @@ async function generateForgeUI(userObj, view, data) {
         return canvas.toBuffer('image/png');
     }
 
-    // =========================================================
-    // 🏠 الصفحات الرئيسية المخصصة للأقسام
-    // =========================================================
     if (activeView === 'main' || activeView.endsWith('_home')) {
-        
         if (emblemImg) {
             ctx.save();
             ctx.shadowColor = accentColor;
@@ -371,9 +348,6 @@ async function generateForgeUI(userObj, view, data) {
         }
     }
 
-    // =========================================================
-    // ⚔️ شاشات (تطوير السلاح / صقل المهارة)
-    // =========================================================
     else if (activeView === 'weapon' || activeView === 'skill') {
         const isWeapon = activeView === 'weapon';
         const midX = panelX + 550; 
@@ -389,7 +363,6 @@ async function generateForgeUI(userObj, view, data) {
         const arrowX = panelX + 210; 
         const newX = panelX + 370;  
 
-        // 1. المستوى
         ctx.save(); ctx.globalAlpha = 0.4;
         ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 40px "Arial"'; ctx.textAlign = 'left';
         ctx.fillText(`Lv.${data.currentLevel}`, oldX, statsY_Level);
@@ -403,7 +376,6 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillText(`Lv.${data.nextLevel}`, newX, statsY_Level);
         ctx.restore();
 
-        // 2. القيمة 
         ctx.save(); ctx.globalAlpha = 0.4;
         ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 34px "Arial"'; ctx.textAlign = 'left';
         drawAutoScaledText(ctx, data.currentStat, oldX, statsY_Value, 110, 34, 14);
@@ -417,14 +389,12 @@ async function generateForgeUI(userObj, view, data) {
         drawAutoScaledText(ctx, data.nextStat, newX, statsY_Value, 150, 38, 14);
         ctx.restore();
 
-        // خط عمودي 
         const lineGrad = ctx.createLinearGradient(0, panelY + 40, 0, panelY + panelH - 40);
         lineGrad.addColorStop(0, 'rgba(255,215,0,0)');
         lineGrad.addColorStop(0.5, 'rgba(255,215,0,0.3)');
         lineGrad.addColorStop(1, 'rgba(255,215,0,0)');
         ctx.fillStyle = lineGrad; ctx.fillRect(midX - 1, panelY + 40, 3, panelH - 80);
 
-        // القسم الأيسر
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#FFD700'; ctx.font = 'bold 34px "Bein"';
         ctx.fillText('المتطلبات', panelX + 825, panelY + 60);
@@ -443,9 +413,6 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillText(`الكمية المتوفرة: ${data.userMatCount} / ${data.reqMatCount}`, panelX + 825, panelY + 395);
     }
     
-    // =========================================================
-    // 🔄 شاشة (فرن الدمج)
-    // =========================================================
     else if (activeView === 'synthesis') {
         const itemSize = 180;
         const leftItemX = panelX + 160;
@@ -480,9 +447,6 @@ async function generateForgeUI(userObj, view, data) {
         }
     }
     
-    // =========================================================
-    // 🔥 شاشة (المصهر)
-    // =========================================================
     else if (activeView === 'smelting') {
         const itemSize = 200;
         const leftItemX = panelX + 180;
