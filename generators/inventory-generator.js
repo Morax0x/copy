@@ -403,10 +403,10 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
         ctx.strokeStyle = '#B968FF'; ctx.lineWidth = 3; ctx.stroke();
         ctx.shadowColor = '#B968FF'; ctx.shadowBlur = 20;
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 40px "Bein"'; 
+        ctx.font = 'bold 40px "Bein", "Emoji"'; 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
+        ctx.fillText('❌ هذا القسم فارغ تماماً', width / 2, emptyBoxY + emptyBoxH / 2);
         ctx.shadowBlur = 0;
         return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
     }
@@ -510,7 +510,7 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = rarityColor;
                 ctx.shadowBlur = 30;
-                ctx.fillText('📦', x + slotSize / 2, y + slotSize / 2 - 15);
+                ctx.fillText(item.emoji || '📦', x + slotSize / 2, y + slotSize / 2 - 15);
                 ctx.shadowBlur = 0;
             }
             
@@ -844,26 +844,48 @@ async function generateItemDetailsCard(userDisplayName, item) {
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🌟 دالة رسم الممتلكات (الأسهم والعقارات) بالتنسيق العربي الفخم 🌟
+// 🌟 دالة رسم الممتلكات المحدثة 🌟
 async function generatePortfolioCard(userDisplayName, items, page, totalPages, totalValue) {
     const width = 1200; 
     const height = 900; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
     
-    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
-    bgGrad.addColorStop(0, '#111827'); 
-    bgGrad.addColorStop(1, '#030712');
+    // خلفية راقية بستايل التداول والشاشات
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+    bgGrad.addColorStop(0, '#0f172a'); 
+    bgGrad.addColorStop(1, '#020617'); 
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
+
+    // إضافة شبكة خفيفة (Grid) لتعطي طابع الأسواق
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < width; i += 40) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+    }
+    for (let i = 0; i < height; i += 40) {
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(width, i); ctx.stroke();
+    }
+
+    // جزيئات خفيفة في الخلفية
+    ctx.fillStyle = '#FFFFFF';
+    for(let i=0; i<100; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pSize = Math.random() * 2;
+        ctx.globalAlpha = Math.random() * 0.3 + 0.1;
+        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
     
     const headerH = 140;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, width, headerH);
     
     const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
     goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
-    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.9)');
     goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
     ctx.fillStyle = goldGrad;
     ctx.fillRect(0, headerH - 3, width, 3);
@@ -911,24 +933,24 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
         const y = startY + row * (cardH + gapY);
         const item = items[i];
 
-        ctx.fillStyle = 'rgba(15, 20, 30, 0.95)';
+        ctx.fillStyle = 'rgba(15, 20, 30, 0.85)';
         ctx.beginPath(); roundRect(ctx, x, y, cardW, cardH, 15); ctx.fill();
-        drawOrnateFrame(ctx, x, y, cardW, cardH, 'rgba(255, 215, 0, 0.4)');
+        drawOrnateFrame(ctx, x, y, cardW, cardH, 'rgba(255, 215, 0, 0.5)');
 
         const cleanName = item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim();
 
-        const imgSize = 70;
+        const imgSize = 65; 
         const imgX = x + cardW - imgSize - 15;
-        const imgY = y + 15;
+        const imgY = y + 12; 
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.beginPath(); roundRect(ctx, imgX, imgY, imgSize, imgSize, 10); ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
 
         if (item.imgPath) {
             const img = await getCachedImage(item.imgPath);
             if (img) {
-                const padding = 10; 
+                const padding = 8; 
                 const drawSize = imgSize - (padding * 2);
                 ctx.save();
                 ctx.beginPath();
@@ -938,7 +960,7 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
                 ctx.restore();
             } else {
                 ctx.fillStyle = '#fff';
-                ctx.font = '30px "Emoji", "Arial"';
+                ctx.font = '28px "Emoji", "Arial"';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('📈', imgX + imgSize/2, imgY + imgSize/2);
@@ -948,14 +970,14 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        drawAutoScaledText(ctx, cleanName, imgX - 15, imgY + imgSize/2, cardW - imgSize - 45, 26, 14);
+        drawAutoScaledText(ctx, cleanName, imgX - 15, imgY + imgSize/2, cardW - imgSize - 45, 24, 14);
 
-        const sepY = imgY + imgSize + 15;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        const sepY = imgY + imgSize + 12; 
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.beginPath(); ctx.moveTo(x + 15, sepY); ctx.lineTo(x + cardW - 15, sepY); ctx.stroke();
 
-        let textY = sepY + 25;
-        const spacing = 28;
+        let textY = sepY + 22; 
+        const spacing = 26; 
         const textRightX = x + cardW - 20;
         const textLeftX = x + 20;
 
@@ -964,10 +986,10 @@ async function generatePortfolioCard(userDisplayName, items, page, totalPages, t
         const profitStr = isProfit ? `+${profit.toLocaleString()}` : profit.toLocaleString();
 
         const rowsData = [
-            { label: 'الكمية:', val: item.quantity.toLocaleString(), color: '#FFFFFF' },
-            { label: 'سعر الشراء:', val: item.purchasePrice.toLocaleString(), color: '#FFD700' },
-            { label: 'السعر الحالي:', val: item.currentPrice.toLocaleString(), color: '#00FF88' },
-            { label: 'الأرباح:', val: profitStr, color: isProfit ? '#00FF88' : '#FF4444' }
+            { label: 'الكمية', val: item.quantity.toLocaleString(), color: '#FFFFFF' }, 
+            { label: 'سعر الشراء', val: item.purchasePrice.toLocaleString(), color: '#FFD700' }, 
+            { label: 'السعر الحالي', val: item.currentPrice.toLocaleString(), color: '#00FF88' }, 
+            { label: 'الأرباح', val: profitStr, color: isProfit ? '#00FF88' : '#FF4444' } 
         ];
 
         for (const r of rowsData) {
