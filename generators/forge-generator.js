@@ -1,7 +1,7 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// تسجيل الخط العربي
+// تسجيل الخط العربي (تأكد من وجود الخط في مسار fonts)
 try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
@@ -11,6 +11,7 @@ try {
 const imageCache = new Map();
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
+// ألوان الندرة (Rarity Colors) للإطارات والتأثيرات
 const RARITY_COLORS = {
     'Common': '#B0BEC5',
     'Uncommon': '#2ECC71',
@@ -43,72 +44,55 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-// 🛡️ حماية النصوص من مشكلة الـ Object {}
-function resolveText(val) {
-    if (val == null) return '';
-    if (typeof val === 'object') return val.ar || val.en || val.name || JSON.stringify(val);
-    return String(val);
-}
-
-// دالة متطورة لرسم سهم فانتزي مرسوم رسم بين الإحصائيات
-function drawFantasyArrow(ctx, x, y, width, height, color) {
+// 🪄 دالة رسم السهم الفانتزي المضيء
+function drawFantasyArrow(ctx, x, y, width, color) {
     ctx.save();
     ctx.translate(x, y);
     
-    const grad = ctx.createLinearGradient(0, 0, width, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.2)');
-    grad.addColorStop(0.5, color);
-    grad.addColorStop(1, 'rgba(255,255,255,0.8)');
-    
-    ctx.fillStyle = grad;
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 2;
+    ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-
-    // رسم جسم السهم
+    ctx.shadowBlur = 15;
+    
+    // رسم مسار السهم بشكل احترافي
     ctx.beginPath();
-    ctx.moveTo(0, height * 0.4);
-    ctx.lineTo(width * 0.6, height * 0.4);
-    ctx.lineTo(width * 0.6, 0);
-    ctx.lineTo(width, height * 0.5); // الرأس
-    ctx.lineTo(width * 0.6, height);
-    ctx.lineTo(width * 0.6, height * 0.6);
-    ctx.lineTo(0, height * 0.6);
+    ctx.moveTo(0, -6);
+    ctx.lineTo(width - 25, -6);
+    ctx.lineTo(width - 25, -18);
+    ctx.lineTo(width, 0); // رأس السهم
+    ctx.lineTo(width - 25, 18);
+    ctx.lineTo(width - 25, 6);
+    ctx.lineTo(0, 6);
     ctx.closePath();
     
     ctx.fill();
-    ctx.stroke();
-    
     ctx.restore();
 }
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
-    const safeText = resolveText(text);
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Arial"`;
-    while (ctx.measureText(safeText).width > maxWidth && currentFontSize > minFontSize) {
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
         ctx.font = `bold ${currentFontSize}px "Arial"`;
     }
-    ctx.fillText(safeText, x, y);
+    ctx.fillText(text, x, y);
 }
 
 function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
-    const safeText = resolveText(text);
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
-    while (ctx.measureText(safeText).width > maxWidth && currentFontSize > minFontSize) {
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
         ctx.font = `bold ${currentFontSize}px "Bein"`;
     }
-    ctx.fillText(safeText, x, y);
+    ctx.fillText(text, x, y);
 }
 
+// رسم إطار العنصر مع لمعان الندرة بشكل فخم
 function drawItemBox(ctx, x, y, size, img, rarity = 'Common') {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
-    ctx.fillStyle = 'rgba(10, 15, 20, 0.95)';
+    ctx.fillStyle = 'rgba(8, 12, 18, 0.95)';
     ctx.beginPath(); roundRect(ctx, x, y, size, size, 20); ctx.fill();
 
     ctx.shadowColor = color;
@@ -116,87 +100,85 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common') {
     ctx.lineWidth = 4;
     ctx.strokeStyle = color;
     ctx.stroke();
-    ctx.shadowBlur = 0; 
+    ctx.shadowBlur = 0;
 
     if (img) {
         ctx.drawImage(img, x + 15, y + 15, size - 30, size - 30);
     } else {
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
         ctx.font = 'bold 50px "Arial"';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('❓', x + size/2, y + size/2);
     }
 }
 
-// دالة الرسم الأساسية 🔥
+// 👑 دالة الرسم الأساسية للمجمع الإمبراطوري
 async function generateForgeUI(userObj, view, data) {
     const width = 1200;
     const height = 675; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // 1. تحديد ثيم الألوان بناءً على القسم
-    let themeColor1, themeColor2, sparkColor, particleType;
-    if (view === 'weapon') {
-        themeColor1 = 'rgba(220, 50, 0, 0.6)';
-        themeColor2 = 'rgba(15, 0, 0, 0.98)';
-        sparkColor = '#FFDD00';
-        particleType = 'fire';
-    } else if (view === 'skill' || view === 'synthesis') {
-        themeColor1 = 'rgba(130, 0, 255, 0.5)'; 
-        themeColor2 = 'rgba(10, 0, 20, 0.98)';
-        sparkColor = '#A0EEFF';
-        particleType = 'magic';
-    } else if (view === 'smelting') {
-        themeColor1 = 'rgba(255, 0, 0, 0.6)'; 
-        themeColor2 = 'rgba(20, 0, 0, 0.98)';
-        sparkColor = '#FFFFFF';
-        particleType = 'heat';
+    // 1. تحديد ثيم الألوان والبارتكلز حسب القسم
+    let themeColor1, themeColor2, sparkColor, isSuccess = view.startsWith('success');
+    let activeView = view.replace('success_', ''); // عشان نعرف الثيم حتى لو نجاح
+
+    if (activeView === 'weapon') {
+        themeColor1 = 'rgba(220, 50, 10, 0.5)';
+        themeColor2 = 'rgba(20, 5, 5, 0.95)';
+        sparkColor = '#FF8800';
+    } else if (activeView === 'skill') {
+        themeColor1 = 'rgba(100, 30, 220, 0.5)';
+        themeColor2 = 'rgba(15, 5, 25, 0.95)';
+        sparkColor = '#DDAAFF';
+    } else if (activeView === 'synthesis') {
+        themeColor1 = 'rgba(30, 200, 100, 0.4)';
+        themeColor2 = 'rgba(5, 20, 10, 0.95)';
+        sparkColor = '#88FFAA';
+    } else if (activeView === 'smelting') {
+        themeColor1 = 'rgba(255, 20, 0, 0.6)';
+        themeColor2 = 'rgba(25, 0, 0, 0.98)';
+        sparkColor = '#FFAA55';
     } else {
-        themeColor1 = 'rgba(0, 150, 255, 0.4)'; 
-        themeColor2 = 'rgba(5, 10, 25, 0.98)';
-        sparkColor = '#FFFFFF';
-        particleType = 'normal';
+        themeColor1 = 'rgba(0, 120, 200, 0.4)';
+        themeColor2 = 'rgba(5, 10, 20, 0.95)';
+        sparkColor = '#00AAFF';
     }
 
-    ctx.fillStyle = '#020305';
+    ctx.fillStyle = '#050608';
     ctx.fillRect(0, 0, width, height);
 
-    const bgGrad = ctx.createRadialGradient(width/2, height/2, 50, width/2, height/2, 1000);
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 50, width/2, height/2, 900);
     bgGrad.addColorStop(0, themeColor1);
     bgGrad.addColorStop(1, themeColor2);
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 3. رسم تأثير الجسيمات المتطايرة
+    // تأثير الجزيئات المتطايرة
     ctx.fillStyle = sparkColor;
     ctx.beginPath();
-    const particleCount = particleType === 'fire' ? 100 : 70;
-    for(let i=0; i<particleCount; i++) {
+    for(let i=0; i<80; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
-        let pSize = Math.random() * 3;
-        if (particleType === 'fire') pSize = Math.random() * 4;
-        ctx.globalAlpha = Math.random() * 0.6 + 0.1;
+        const pSize = Math.random() * 3;
+        ctx.globalAlpha = Math.random() * 0.8 + 0.2;
         ctx.moveTo(px, py);
         ctx.arc(px, py, pSize, 0, Math.PI*2);
     }
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // 4. الشريط العلوي
-    const headerH = 110;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    // 2. الشريط العلوي
+    const headerH = 100;
+    ctx.fillStyle = 'rgba(5, 7, 10, 0.8)';
     ctx.fillRect(0, 0, width, headerH);
     
     const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
-    goldGrad.addColorStop(0, 'rgba(200, 150, 0, 0)');
-    goldGrad.addColorStop(0.1, 'rgba(255, 215, 0, 1)');
-    goldGrad.addColorStop(0.5, 'rgba(255, 255, 200, 1)');
-    goldGrad.addColorStop(0.9, 'rgba(255, 215, 0, 1)');
-    goldGrad.addColorStop(1, 'rgba(200, 150, 0, 0)');
+    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.9)');
+    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
     ctx.fillStyle = goldGrad;
-    ctx.fillRect(0, headerH - 4, width, 4);
+    ctx.fillRect(0, headerH - 3, width, 3);
 
     const [avatarImage, reqMatImg, targetMatImg] = await Promise.all([
         loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null),
@@ -204,7 +186,8 @@ async function generateForgeUI(userObj, view, data) {
         data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
     ]);
 
-    const avatarSize = 80;
+    // الأفتار والاسم
+    const avatarSize = 75;
     const avatarX = 60 + avatarSize/2;
     const avatarY = headerH / 2;
 
@@ -214,207 +197,244 @@ async function generateForgeUI(userObj, view, data) {
     ctx.restore();
     
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
-    ctx.lineWidth = 4; ctx.strokeStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 10; ctx.stroke();
-    ctx.shadowBlur = 0;
+    ctx.lineWidth = 3; ctx.strokeStyle = '#FFD700'; ctx.stroke();
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFFFFF';
-    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 6;
     let dName = userObj.displayName || userObj.username;
-    drawAutoScaledArabicText(ctx, dName, avatarX + 60, avatarY, 300, 28, 16);
+    drawAutoScaledArabicText(ctx, dName, avatarX + 50, avatarY, 250, 26, 14);
     ctx.shadowBlur = 0;
 
-    ctx.fillStyle = 'rgba(20, 25, 30, 0.9)';
-    ctx.beginPath(); roundRect(ctx, width - 300, 30, 260, 55, 18); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; ctx.stroke();
+    // المورا
+    ctx.fillStyle = 'rgba(15, 20, 25, 0.85)';
+    ctx.beginPath(); roundRect(ctx, width - 280, 25, 240, 50, 15); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
     
     ctx.textAlign = 'right'; ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 28px "Arial"';
-    drawAutoScaledText(ctx, (data.mora || 0).toLocaleString(), width - 85, 57, 180, 28, 14);
-    ctx.font = '28px "Arial"'; ctx.fillText('🪙', width - 50, 57);
+    drawAutoScaledText(ctx, (data.mora || 0).toLocaleString(), width - 80, 50, 160, 24, 12);
+    ctx.font = '24px "Arial"'; ctx.fillText('🪙', width - 45, 50);
 
+    // عنوان الصفحة (Title)
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 55px "Bein"';
-    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20;
-    ctx.fillText(resolveText(data.title || 'المجمع الإمبراطوري'), width / 2, 180);
+    ctx.fillStyle = '#F1C40F';
+    ctx.font = 'bold 50px "Bein"';
+    ctx.shadowColor = '#F1C40F'; ctx.shadowBlur = 15;
+    ctx.fillText(data.title || 'المجمع الإمبراطوري للتطوير', width / 2, 170);
     ctx.shadowBlur = 0;
 
-    // 5. اللوحة الرئيسية 
-    const panelY = 240;
-    const panelW = 1100;
-    const panelH = 410;
+    // 3. اللوحة الرئيسية (Main Panel)
+    const panelY = 220;
+    const panelW = 1050;
+    const panelH = 400;
     const panelX = (width - panelW) / 2;
 
-    ctx.fillStyle = 'rgba(5, 7, 10, 0.92)';
-    ctx.beginPath(); roundRect(ctx, panelX, panelY, panelW, panelH, 30); ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = goldGrad; ctx.stroke(); 
+    ctx.fillStyle = 'rgba(10, 12, 15, 0.85)';
+    ctx.beginPath(); roundRect(ctx, panelX, panelY, panelW, panelH, 25); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; ctx.stroke();
 
     ctx.textAlign = 'center';
 
+    // =========================================================
+    // 🌟 شاشات النجاااااح (Success) اللي تغنينا عن الإيمبد! 🌟
+    // =========================================================
+    if (isSuccess) {
+        ctx.fillStyle = '#2ECC71';
+        ctx.font = 'bold 45px "Bein"';
+        ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 15;
+        
+        let successMsg = "";
+        if (activeView === 'weapon') successMsg = "✨ تمت عملية صقل السلاح بنجاح! ✨";
+        else if (activeView === 'skill') successMsg = "✨ تم استيعاب حكمة المهارة بنجاح! ✨";
+        else if (activeView === 'synthesis') successMsg = "🔄 تمت عملية دمج العناصر بنجاح! 🔄";
+        else if (activeView === 'smelting') successMsg = "🔥 تم صهر العناصر وتفكيكها بنجاح! 🔥";
+
+        ctx.fillText(successMsg, width/2, panelY + 90);
+        ctx.shadowBlur = 0;
+
+        if (activeView === 'weapon' || activeView === 'skill') {
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 50px "Arial"';
+            ctx.fillText(`المستوى الجديد: Lv.${data.nextLevel}`, width/2, panelY + 220);
+            ctx.fillStyle = activeView === 'weapon' ? '#E74C3C' : '#9B59B6';
+            ctx.font = 'bold 45px "Arial"';
+            ctx.fillText(data.nextStat, width/2, panelY + 300);
+        }
+        else if (activeView === 'synthesis') {
+            drawItemBox(ctx, width/2 - 90, panelY + 140, 180, targetMatImg, data.targetMatRarity);
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 30px "Bein"';
+            ctx.fillText(`حصلت على: ${data.targetMatName}`, width/2, panelY + 360);
+        }
+        else if (activeView === 'smelting') {
+            ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 90px "Arial"';
+            ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 20;
+            ctx.fillText(`+${data.xpGain} XP`, width/2, panelY + 220);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#E0E0E0'; ctx.font = 'bold 30px "Bein"';
+            ctx.fillText('تمت إضافتها إلى خبرتك الشخصية', width/2, panelY + 310);
+        }
+        return canvas.toBuffer('image/png');
+    }
+
+    // =========================================================
+    // شاشة (الرئيسية)
+    // =========================================================
     if (view === 'main') {
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 42px "Bein"';
-        ctx.fillText('مرحباً بك في مجمع التطوير الإمبراطوري', width/2, panelY + 160);
-        
-        ctx.font = 'bold 28px "Bein"';
-        ctx.fillStyle = '#BBBBBB';
-        ctx.fillText('الرجاء تحديد القسم المطلوب زيارته باستخدام الأزرار أدناه', width/2, panelY + 230);
+        ctx.font = 'bold 36px "Bein"';
+        ctx.fillText('أهلاً بك.. اختر القسم الذي تود زيارته', width/2, panelY + 180);
+        ctx.font = 'bold 24px "Bein"';
+        ctx.fillStyle = '#AAAAAA';
+        ctx.fillText('قم باستخدام الأزرار السفلية للتنقل بين غرف المجمع', width/2, panelY + 250);
     } 
     
-    // شاشات المقارنة (القديم شفاف -> السهم -> الجديد ساطع)
+    // =========================================================
+    // شاشات (تطوير السلاح / صقل المهارة)
+    // =========================================================
     else if (view === 'weapon' || view === 'skill') {
         const isWeapon = view === 'weapon';
         const accentColor = isWeapon ? '#E74C3C' : '#9B59B6';
         
-        ctx.fillStyle = '#FFD700';
-        ctx.font = 'bold 36px "Bein"';
-        ctx.fillText(isWeapon ? 'تطوير القوة القتالية' : 'تركيز الطاقة السحرية', panelX + 270, panelY + 60);
+        ctx.fillStyle = '#FFD700'; ctx.font = 'bold 36px "Bein"';
+        ctx.fillText(isWeapon ? 'التطوير القادم' : 'الصقل القادم', panelX + 270, panelY + 60);
 
         const statsY_Level = panelY + 160;
-        const statsY_Value = panelY + 270;
-        const compX_Start = panelX + 100;
-        const compX_Arrow = panelX + 220;
-        const compX_End = panelX + 370;
+        const statsY_Value = panelY + 280;
+        const compX_Old = panelX + 110;
+        const compX_Arrow = panelX + 230;
+        const compX_New = panelX + 390;
 
-        // 1. المستوى (القديم شفاف)
-        ctx.save();
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 45px "Arial"'; ctx.textAlign = 'left';
-        ctx.fillText(`Lv.${data.currentLevel}`, compX_Start, statsY_Level);
+        // --- المستوى ---
+        ctx.save(); ctx.globalAlpha = 0.4; // شفاف للقديم
+        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 40px "Arial"'; ctx.textAlign = 'left';
+        ctx.fillText(`Lv.${data.currentLevel}`, compX_Old, statsY_Level);
         ctx.restore();
 
-        // السهم الفخممم
-        drawFantasyArrow(ctx, compX_Arrow, statsY_Level - 20, 130, 40, '#FFD700');
+        drawFantasyArrow(ctx, compX_Arrow, statsY_Level, 130, '#FFD700'); // السهم الفانتزي
 
-        // المستوى الجديد المضيء
-        ctx.save();
-        ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 50px "Arial"'; ctx.textAlign = 'left';
+        ctx.save(); // الجديد ساطع ومضيء
+        ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 45px "Arial"'; ctx.textAlign = 'left';
         ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 15;
-        ctx.fillText(`Lv.${data.nextLevel}`, compX_End, statsY_Level);
+        ctx.fillText(`Lv.${data.nextLevel}`, compX_New, statsY_Level);
         ctx.restore();
 
-        // 2. القيمة (Stat) القديمة الشفافة
-        ctx.save();
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 40px "Arial"'; ctx.textAlign = 'left';
-        ctx.fillText(resolveText(data.currentStat), compX_Start, statsY_Value);
+        // --- القيمة (Stat) ---
+        ctx.save(); ctx.globalAlpha = 0.4;
+        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 36px "Arial"'; ctx.textAlign = 'left';
+        ctx.fillText(data.currentStat, compX_Old, statsY_Value);
         ctx.restore();
 
-        drawFantasyArrow(ctx, compX_Arrow, statsY_Value - 20, 130, 40, accentColor);
+        drawFantasyArrow(ctx, compX_Arrow, statsY_Value, 130, accentColor);
 
-        // القيمة الجديدة
         ctx.save();
-        ctx.fillStyle = accentColor; ctx.font = 'bold 45px "Arial"'; ctx.textAlign = 'left';
+        ctx.fillStyle = accentColor; ctx.font = 'bold 42px "Arial"'; ctx.textAlign = 'left';
         ctx.shadowColor = accentColor; ctx.shadowBlur = 15;
-        ctx.fillText(resolveText(data.nextStat), compX_End, statsY_Value);
+        ctx.fillText(data.nextStat, compX_New, statsY_Value);
         ctx.restore();
 
+        // خط عمودي فاصل
+        const lineGrad = ctx.createLinearGradient(0, panelY + 30, 0, panelY + panelH - 30);
+        lineGrad.addColorStop(0, 'rgba(255,255,255,0)');
+        lineGrad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+        lineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = lineGrad; ctx.fillRect(panelX + 540, panelY + 30, 3, panelH - 60);
 
-        const lineGrad = ctx.createLinearGradient(0, panelY + 40, 0, panelY + panelH - 40);
-        lineGrad.addColorStop(0, 'rgba(255,215,0,0)');
-        lineGrad.addColorStop(0.5, goldGrad);
-        lineGrad.addColorStop(1, 'rgba(255,215,0,0)');
-        ctx.fillStyle = lineGrad;
-        ctx.fillRect(panelX + 550, panelY + 40, 4, panelH - 80);
-
-        // الموارد
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 36px "Bein"';
-        ctx.fillText('الموارد المطلوبة للمستوى التالي', panelX + 820, panelY + 60);
+        // --- المتطلبات ---
+        ctx.textAlign = 'center'; ctx.fillStyle = '#FFD700'; ctx.font = 'bold 36px "Bein"';
+        ctx.fillText('المتطلبات', panelX + 800, panelY + 60);
 
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.beginPath(); roundRect(ctx, panelX + 660, panelY + 100, 320, 60, 15); ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.stroke();
-
-        const moraStatusColor = data.mora >= data.reqMora ? '#2ECC71' : '#E74C3C';
-        ctx.fillStyle = moraStatusColor; ctx.font = 'bold 32px "Arial"';
-        ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 820, panelY + 140);
-
-        drawItemBox(ctx, panelX + 725, panelY + 185, 190, reqMatImg, data.reqMatRarity || 'Rare');
+        ctx.beginPath(); roundRect(ctx, panelX + 640, panelY + 100, 320, 60, 15); ctx.fill();
         
-        const matStatusColor = data.userMatCount >= data.reqMatCount ? '#2ECC71' : '#E74C3C';
-        ctx.fillStyle = matStatusColor; ctx.font = 'bold 30px "Arial"';
-        ctx.fillText(`${data.userMatCount} / ${data.reqMatCount}`, panelX + 820, panelY + 395);
+        const moraColor = data.mora >= data.reqMora ? '#2ECC71' : '#E74C3C';
+        ctx.fillStyle = moraColor; ctx.font = 'bold 28px "Arial"';
+        ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 800, panelY + 140);
 
-        ctx.fillStyle = '#DDDDDD'; ctx.font = 'bold 24px "Bein"';
-        drawAutoScaledArabicText(ctx, data.reqMatName, panelX + 820, panelY + 425, 280, 24, 14);
+        drawItemBox(ctx, panelX + 710, panelY + 180, 180, reqMatImg, data.reqMatRarity || 'Rare');
+        
+        const matColor = data.userMatCount >= data.reqMatCount ? '#2ECC71' : '#E74C3C';
+        ctx.fillStyle = matColor; ctx.font = 'bold 28px "Arial"';
+        ctx.fillText(`تمتلك: ${data.userMatCount} / ${data.reqMatCount}`, panelX + 800, panelY + 390);
     }
     
-    // فرن الدمج
+    // =========================================================
+    // شاشة (فرن الدمج)
+    // =========================================================
     else if (view === 'synthesis') {
         if (!data.sacMatName) {
-            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"';
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 36px "Bein"';
             ctx.fillText('برجاء تحديد العنصر المراد التضحية به', width/2, panelY + 170);
-            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 30px "Bein"';
+            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 26px "Bein"';
             ctx.fillText('(تتطلب العملية 4 وحدات من نفس العنصر)', width/2, panelY + 230);
         } else {
-            const itemSize = 200;
-            const leftItemX = panelX + 120;
-            const rightItemX = panelX + panelW - 320;
-            const itemY = panelY + 70;
+            const itemSize = 180;
+            const leftItemX = panelX + 150;
+            const rightItemX = panelX + panelW - 330;
+            const itemY = panelY + 80;
 
+            // التضحية
             drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Rare');
-            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 36px "Bein"'; ctx.shadowColor = '#E74C3C'; ctx.shadowBlur = 10;
+            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 32px "Bein"';
             ctx.fillText(`4x تضحية`, leftItemX + itemSize/2, itemY + itemSize + 40);
-            ctx.shadowBlur = 0; ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 26px "Bein"';
-            drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 80, 240, 26, 14);
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px "Bein"';
+            drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 80, 220, 24, 12);
 
-            drawFantasyArrow(ctx, width/2 - 65, panelY + 140, 130, 50, '#F1C40F');
+            // السهم الفانتزي
+            drawFantasyArrow(ctx, width/2 - 60, panelY + 160, 120, '#F1C40F');
 
+            // النتيجة
             if (data.targetMatName) {
                 drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare');
-                ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 36px "Bein"'; ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 10;
+                ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 32px "Bein"';
                 ctx.fillText(`النتيجة 1x`, rightItemX + itemSize/2, itemY + itemSize + 40);
-                ctx.shadowBlur = 0; ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 26px "Bein"';
-                drawAutoScaledArabicText(ctx, data.targetMatName, rightItemX + itemSize/2, itemY + itemSize + 80, 240, 26, 14);
+                ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px "Bein"';
+                drawAutoScaledArabicText(ctx, data.targetMatName, rightItemX + itemSize/2, itemY + itemSize + 80, 220, 24, 12);
                 
-                const feeStatusColor = data.mora >= data.fee ? '#2ECC71' : '#E74C3C';
-                ctx.fillStyle = feeStatusColor; ctx.font = 'bold 30px "Bein"';
-                ctx.fillText(`رسوم العملية: ${data.fee.toLocaleString()} 🪙`, width/2, panelY + 360);
+                ctx.fillStyle = data.mora >= data.fee ? '#2ECC71' : '#E74C3C';
+                ctx.font = 'bold 28px "Bein"';
+                ctx.fillText(`رسوم الحداد: ${data.fee.toLocaleString()} 🪙`, width/2, panelY + 360);
             } else {
                 ctx.fillStyle = 'rgba(255,255,255,0.05)';
                 ctx.beginPath(); roundRect(ctx, rightItemX, itemY, itemSize, itemSize, 20); ctx.fill();
-                ctx.fillStyle = '#777777'; ctx.font = 'bold 32px "Bein"';
-                ctx.fillText('في انتظار\nتحديد الهدف...', rightItemX + itemSize/2, itemY + itemSize/2);
+                ctx.fillStyle = '#777777'; ctx.font = 'bold 28px "Bein"';
+                ctx.fillText('في انتظار\nالهدف...', rightItemX + itemSize/2, itemY + itemSize/2);
             }
         }
     }
     
-    // المصهر
+    // =========================================================
+    // شاشة (محرقة التفكيك الصهر)
+    // =========================================================
     else if (view === 'smelting') {
         if (!data.sacMatName) {
-            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"';
-            ctx.fillText('حدد المورد المراد صهره وتفكيكه', width/2, panelY + 170);
-            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 28px "Bein"';
-            ctx.fillText('سيتم حرق العنصر نهائياً وتحويله لخبرة XP', width/2, panelY + 230);
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 38px "Bein"';
+            ctx.fillText('حدد العنصر الذي تود تفكيكه في المحرقة', width/2, panelY + 170);
+            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('سيتم الحرق نهائياً وتحويله لخبرة XP', width/2, panelY + 230);
         } else {
-            const itemSize = 220;
-            const leftItemX = panelX + 150;
+            const itemSize = 200;
+            const leftItemX = panelX + 180;
             const itemY = panelY + 80;
 
             drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Uncommon');
-            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 34px "Bein"';
-            drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 50, 280, 34, 16);
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 30px "Bein"';
+            drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 50, 260, 30, 14);
 
-            drawFantasyArrow(ctx, width/2 - 75, panelY + 160, 150, 60, '#FF4400');
+            drawFantasyArrow(ctx, width/2 - 60, panelY + 170, 120, '#FF4400');
 
-            const xpBoxWidth = 350;
-            const xpBoxHeight = 160;
-            const xpBoxX = panelX + panelW - 500;
-            const xpBoxY = panelY + 110;
+            const xpBoxW = 320, xpBoxH = 140;
+            const xpBoxX = panelX + panelW - 480, xpBoxY = panelY + 110;
 
             ctx.fillStyle = 'rgba(46, 204, 113, 0.1)';
-            ctx.beginPath(); roundRect(ctx, xpBoxX, xpBoxY, xpBoxWidth, xpBoxHeight, 20); ctx.fill();
-            ctx.lineWidth = 3; ctx.strokeStyle = '#2ECC71'; ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 15; ctx.stroke();
-            ctx.shadowBlur = 0;
+            ctx.beginPath(); roundRect(ctx, xpBoxX, xpBoxY, xpBoxW, xpBoxH, 20); ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = '#2ECC71'; ctx.stroke();
 
-            ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 80px "Arial"';
-            ctx.fillText(`+${data.xpGain}`, xpBoxX + xpBoxWidth/2, xpBoxY + xpBoxHeight/2 + 10);
+            ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 60px "Arial"';
+            ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 10;
+            ctx.fillText(`+${data.xpGain} XP`, xpBoxX + xpBoxW/2, xpBoxY + xpBoxH/2 + 15);
+            ctx.shadowBlur = 0;
             
-            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 28px "Bein"';
-            ctx.fillText('خبرة فورية مكتسبة', xpBoxX + xpBoxWidth/2, xpBoxY + xpBoxHeight + 50);
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('خبرة فورية', xpBoxX + xpBoxW/2, xpBoxY + xpBoxH + 40);
         }
     }
 
