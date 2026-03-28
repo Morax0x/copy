@@ -178,7 +178,6 @@ module.exports = {
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
             
             let msg;
-            // 🔥 مسح الإمبدات القديمة والمرفقات 🔥
             const initPayload = { files: [attachment], attachments: [], components: components, content: '' };
             
             if (isSlash) {
@@ -250,7 +249,6 @@ module.exports = {
                         }
                     }
 
-                    // 🔥 هنا كان الخطأ الصامت الذي لا يظهر بسبب دمج المرفقات 🔥
                     else if (i.isStringSelectMenu() && i.customId === 'market_select_item') {
                         try { await i.deferUpdate(); } catch (e) {}
                         try {
@@ -260,7 +258,6 @@ module.exports = {
                             if (!item) return;
                             
                             const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
-                            // 👈 السر هنا: attachments: [] تمسح الصورة القديمة عشان تركب الجديدة
                             await i.editReply({ files: [detailImage], attachments: [], components: detailComponents, embeds: [], content: '' });
                         } catch (err) {
                             console.error("❌ خطأ أثناء توليد بطاقة تفاصيل السوق:", err);
