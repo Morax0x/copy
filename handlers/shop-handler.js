@@ -225,9 +225,9 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         .setAuthor({ name: interaction.user.username, iconURL: interaction.user.displayAvatarURL() });
 
     if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة.", components: [] }).catch(()=>{});
+        await interaction.editReply({ content: "✅ تم تجهيز الطلب.", components: [] }).catch(()=>{});
     } else {
-        await interaction.reply({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة.", flags: MessageFlags.Ephemeral }).catch(()=>{});
+        await interaction.reply({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
     await interaction.channel.send({ content: `<@${interaction.user.id}>`, embeds: [successEmbed] }).catch(()=>{});
@@ -342,7 +342,7 @@ async function _handleReplaceGuard(i, client, db) {
             .setDescription(`📦 **العنصر:** حارس شخصي\n💰 **التكلفة:** ${item.price.toLocaleString()} ${EMOJI_MORA}`)
             .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-        await i.followUp({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة.", flags: MessageFlags.Ephemeral });
+        await i.followUp({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral });
         await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
         sendShopLog(client, guildId, i.member, "حارس شخصي (تجديد)", item.price, "شراء");
     } catch (error) { console.error(error); }
@@ -392,7 +392,7 @@ async function _handleReplaceBuffButton(i, client, db) {
             .setDescription(`📦 **العنصر:** ${item.name} (استبدال)\n💰 **التكلفة:** ${item.price.toLocaleString()} ${EMOJI_MORA}`)
             .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-        await i.followUp({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة.", flags: MessageFlags.Ephemeral });
+        await i.followUp({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral });
         await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
         sendShopLog(client, guildId, i.member, item.name, item.price, "استبدال/شراء");
         
@@ -496,7 +496,7 @@ async function _handleBaitBuy(i, client, db) {
         .setDescription(`📦 **العنصر:** حزمة (${qty} حبات) من ${bait.name}\n💰 **التكلفة:** ${cost.toLocaleString()} ${EMOJI_MORA}`)
         .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-    await i.editReply({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة." });
+    await i.editReply({ content: "✅ تم تجهيز الطلب." });
     await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
     sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
@@ -548,38 +548,10 @@ async function handleShopModal(i, client, db) {
                 .setDescription(`📦 **العنصر:** ${amountToBuy.toLocaleString()} XP\n💰 **التكلفة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-            await i.editReply({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة." });
+            await i.editReply({ content: "✅ تم تجهيز الطلب." });
             await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
             sendShopLog(client, guildId, i.member, `شراء ${amountToBuy} XP`, totalCost, "تبديل");
         } catch (e) { console.error(e); }
-        return true;
-    }
-
-    if (i.customId === 'shop_buy_reply_modal') {
-        const trigger = i.fields.getTextInputValue('reply_trigger').trim();
-        const response = i.fields.getTextInputValue('reply_response').trim();
-        const price = 10000;
-        await i.deferReply({ flags: MessageFlags.Ephemeral });
-        let userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]})));
-        const userData = userDataRes.rows[0];
-        if (!userData || Number(userData.mora || userData.mora) < price) return i.editReply(`❌ رصيدك غير كافي.`);
-        let existingRes = await db.query(`SELECT 1 FROM auto_responses WHERE "guildID" = $1 AND "trigger" = $2`, [i.guild.id, trigger]).catch(()=> db.query(`SELECT 1 FROM auto_responses WHERE guildid = $1 AND trigger = $2`, [i.guild.id, trigger]).catch(()=>({rows:[]})));
-        if (existingRes.rows.length > 0) return i.editReply(`❌ هذا الرد موجود مسبقاً.`);
-        try {
-            await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [price, i.user.id, i.guild.id]).catch(()=> db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [price, i.user.id, i.guild.id]).catch(()=>{}));
-            const expiresAt = Date.now() + (3 * 24 * 60 * 60 * 1000);
-            await db.query(`INSERT INTO auto_responses ("guildID", "trigger", "response", "matchType", "cooldown", "createdBy", "expiresAt") VALUES ($1, $2, $3, 'exact', 600, $4, $5)`, [i.guild.id, trigger, response, i.user.id, expiresAt]).catch(()=> db.query(`INSERT INTO auto_responses (guildid, trigger, response, matchtype, cooldown, createdby, expiresat) VALUES ($1, $2, $3, 'exact', 600, $4, $5)`, [i.guild.id, trigger, response, i.user.id, expiresAt]).catch(()=>{}));
-            
-            const successEmbed = new EmbedBuilder()
-                .setTitle('✅ تمت عملية الشراء بنجاح')
-                .setColor(Colors.Green)
-                .setDescription(`📦 **العنصر:** رد تلقائي (${trigger})\n💰 **التكلفة:** ${price.toLocaleString()} ${EMOJI_MORA}`)
-                .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
-
-            await i.editReply({ content: "✅ تم تجهيز الطلب وإرسال الفاتورة." });
-            await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
-            sendShopLog(client, i.guild.id, i.member, `رد تلقائي: ${trigger}`, price, "شراء");
-        } catch (e) { console.error(e); await i.editReply(`❌ حدث خطأ.`); }
         return true;
     }
     return false;
@@ -624,15 +596,6 @@ async function handleShopInteractions(i, client, db) {
              const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
              xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية (اكتب All للكل)').setStyle(TextInputStyle.Short).setRequired(true)));
              return await i.showModal(xpModal);
-        }
-        
-        if (boughtItemId === 'item_temp_reply') {
-            const modal = new ModalBuilder().setCustomId('shop_buy_reply_modal').setTitle('شراء رد تلقائي (3 أيام)');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reply_trigger').setLabel("الكلمة (Trigger)").setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reply_response').setLabel("الرد (Response)").setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            return await i.showModal(modal);
         }
 
         await _handleShopButton(i, client, db);
