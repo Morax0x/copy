@@ -11,10 +11,11 @@ let trendImages = { up: null, down: null, neutral: null };
 async function preloadGlobalAssets() {
     try {
         if (!fs.existsSync(imageAssetsDir)) return;
-        // تحميل صور الأسهم الحقيقية (Trends) التي أرفقتها
+        // تحميل صور الأسهم الحقيقية (Trends) التي أرفقتها (Up/Down/Neutral)
         trendImages.up = await loadImage(path.join(imageAssetsDir, 'up_trend.png')).catch(()=>{});
         trendImages.down = await loadImage(path.join(imageAssetsDir, 'down_trend.png')).catch(()=>{});
         trendImages.neutral = await loadImage(path.join(imageAssetsDir, 'neutral_trend.png')).catch(()=>{});
+        console.log("✅ [Market Preload]: تم تحميل صور اتجاهات الأسهم المصممة.");
     } catch (e) { console.error("[Market Preload Error]:", e.message); }
 }
 
@@ -95,6 +96,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.fillStyle = 'rgba(8, 12, 22, 0.9)';
     ctx.fill();
 
+    // تأثير التوهج النيون للحدود، مرتبط بلون حالة السهم
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = 15;
     ctx.lineWidth = 2;
@@ -102,7 +104,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.stroke();
     ctx.shadowBlur = 0; 
     
-    // خط ديكور جانبي
+    // خط ديكور جانبي متوهج
     ctx.beginPath();
     ctx.moveTo(x + 5, y + cut + 10);
     ctx.lineTo(x + 5, y + height - 10);
@@ -137,7 +139,7 @@ function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
     ctx.shadowBlur = 0;
 }
 
-// 🔥🔥 GOD MODE GRID GENERATOR v3 - الشغل الثقيل 🔥🔥
+// 🔥🔥 GOD MODE GRID GENERATOR v3.1 - دمج الأسهم المصممة وتكبير اللوغوهات 🔥🔥
 exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages, userAvatarUrl) {
     const CANVAS_WIDTH = 1280;
     const CANVAS_HEIGHT = 960;
@@ -176,7 +178,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.textAlign = "right";
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 42px ${FONT_FAMILY}`;
-    ctx.fillText('سوق الاستثمارات', CANVAS_WIDTH - 50, 65);
+    ctx.fillText('سوق الاستثمارات الإمبراطوري', CANVAS_WIDTH - 50, 65);
 
     ctx.textAlign = "left";
     ctx.font = `bold 24px ${FONT_FAMILY}`;
@@ -211,24 +213,18 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         const glowColor = isUp ? 'rgba(0, 255, 136, 0.6)' : (isDown ? 'rgba(255, 0, 85, 0.6)' : 'rgba(0, 204, 255, 0.6)');
         const borderColor = isUp ? 'rgba(0, 255, 136, 0.8)' : (isDown ? 'rgba(255, 0, 85, 0.8)' : 'rgba(0, 204, 255, 0.8)');
 
+        // رسم الكرت المستقبلي بلون التوهج المناسب للحالة
         drawSciFiPanel(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, borderColor, glowColor);
 
-        // رسم المخطط البياني
+        // رسم المخطط البياني في الأسفل
         drawSparkline(ctx, x + 20, y + Math.floor(CARD_HEIGHT * 0.7), CARD_WIDTH - 40, 50, isUp, isDown, mainColor);
 
-        // صورة اللوغو (تم تكبيرها بشكل ضخم صدق - 110x110)
+        // 🖼️ صورة اللوغو: تم تكبيرها بشكل ضخم (120x120) لتكون مسيطرة وواضحة جداً
         const assetImg = await getAssetImage(item);
         if (assetImg) {
-            ctx.shadowColor = glowColor; ctx.shadowBlur = 15;
-            // رسم اللوغو بحجم كبير في زاوية الكرت
-            ctx.drawImage(assetImg, x + 15, y + 15, 110, 110);
+            ctx.shadowColor = glowColor; ctx.shadowBlur = 15; // توهج نيون حول اللوغو
+            ctx.drawImage(assetImg, x + 15, y + 20, 120, 120);
             ctx.shadowBlur = 0;
-        }
-
-        // صورة اتجاه السهم (Trend) من ملفاتك
-        const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
-        if (trendImg) {
-            ctx.drawImage(trendImg, x + CARD_WIDTH - 100, y + 15, 85, 85);
         }
 
         // --- النصوص الهولوغرامية ---
@@ -237,27 +233,35 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         
         // اسم السهم كاملاً
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 26px ${FONT_FAMILY}`;
-        // الإزاحة استناداً لحجم اللوغو الجديد
-        ctx.fillText(cleanName, x + 135, y + 50);
+        ctx.font = `bold 28px ${FONT_FAMILY}`;
+        // الإزاحة استناداً لحجم اللوغو الجديد العملاق
+        ctx.fillText(cleanName, x + 145, y + 60);
         
-        // شارة النسبة المئوية (Badge)
+        // 📊 شارة النسبة المئوية (Badge) الاحترافية المدمجة مع السهم المصمم
         ctx.fillStyle = isUp ? 'rgba(0, 255, 136, 0.15)' : (isDown ? 'rgba(255, 0, 85, 0.15)' : 'rgba(0, 204, 255, 0.15)');
-        ctx.beginPath(); ctx.roundRect(x + 135, y + 65, 110, 35, 5); ctx.fill();
+        roundRect(ctx, x + 145, y + 75, 200, 45, 8, true); // شارة عريضة لتشمل النسبة والسهم
         ctx.strokeStyle = mainColor; ctx.lineWidth = 1; ctx.stroke();
         
+        // رسم النسبة المئوية
         ctx.fillStyle = mainColor;
-        ctx.font = `bold 20px ${FONT_FAMILY}`;
+        ctx.font = `bold 22px ${FONT_FAMILY}`;
         const sign = changePercent > 0 ? '+' : '';
-        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 145, y + 90);
+        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 155, y + 107);
 
-        // السعر
+        // 🏹 رسم صورة اتجاه السهم (Trend) الحقيقية التي أرفقتها في المكان المناسب داخل الشارة
+        const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
+        if (trendImg) {
+            // رسم السهم بحجم مناسب بجانب النسبة المئوية داخل الشارة
+            ctx.drawImage(trendImg, x + 255, y + 80, 80, 80); 
+        }
+
+        //السعر متوهج في المنتصف
         ctx.textAlign = "center";
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 38px ${FONT_FAMILY}`;
+        ctx.font = `bold 42px ${FONT_FAMILY}`;
         ctx.shadowColor = mainColor;
         ctx.shadowBlur = 10;
-        ctx.fillText(`${formatPriceText(currentPrice)}`, x + CARD_WIDTH / 2, y + 155);
+        ctx.fillText(`${formatPriceText(currentPrice)}`, x + CARD_WIDTH / 2, y + 165);
         ctx.shadowBlur = 0;
     }
 
@@ -274,7 +278,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     return canvas.toBuffer();
 };
 
-// 🎨 2. رسم بطاقة التفاصيل
+// 🎨 2. رسم بطاقة التفاصيل (تمت المحافظة عليها كما هي)
 exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, currentPrice, changePercent) {
     const CANVAS_WIDTH = 900;
     const CANVAS_HEIGHT = 450;
@@ -337,6 +341,7 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     ctx.font = `bold 38px ${FONT_FAMILY}`;
     ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, 590, 245);
 
+    // الأسهم المصممة تظهر هنا أيضاً في بطاقة التفاصيل
     const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
     if (trendImg) {
         ctx.drawImage(trendImg, 750, 185, 60, 60);
