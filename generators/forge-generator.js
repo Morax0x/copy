@@ -32,6 +32,18 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
+// الدالة اللي نسيناها لتصغير الأرقام والكلمات الإنجليزية 😅
+function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px "Arial"`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px "Arial"`;
+    }
+    ctx.fillText(text, x, y);
+}
+
+// لتصغير الكلمات العربية
 function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
