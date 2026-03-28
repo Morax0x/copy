@@ -62,15 +62,22 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(text, x, y);
 }
 
-// 1. الشاشة الرئيسية (الصندوق)
+// 1. الشاشة الرئيسية (الصندوق) - نسخة محسنة السرعة 🚀
 async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0) {
     const width = 1200;
     const height = 675; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
+    // 🔥 تحميل الصورتين في نفس الوقت (Parallel) لتسريع العملية للضعف 🔥
     const chestUrl = `${R2_URL}/images/gacha/main_chest.png`;
-    const chestImg = await getCachedImage(chestUrl);
+    const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
+    
+    const [chestImg, avatarImage] = await Promise.all([
+        getCachedImage(chestUrl),
+        loadImage(avatarUrl).catch(() => null)
+    ]);
+
     if (chestImg) {
         ctx.drawImage(chestImg, 0, 0, width, height);
     } else {
@@ -85,13 +92,16 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.fillRect(0, 0, width, height);
 
     ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
     for(let i=0; i<80; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
         const pSize = Math.random() * 2.5;
         ctx.globalAlpha = Math.random() * 0.4 + 0.1;
-        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, pSize, 0, Math.PI*2);
     }
+    ctx.fill();
     ctx.globalAlpha = 1.0;
 
     const headerH = 110;
@@ -111,11 +121,7 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
 
     ctx.save();
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
-    try {
-        const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
-        const avatarImage = await loadImage(avatarUrl);
-        ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
-    } catch (e) {}
+    if (avatarImage) ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
     ctx.restore();
     
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
@@ -197,12 +203,21 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     return canvas.toBuffer('image/png');
 }
 
-// 2. شاشة المخزن (المربعات)
+// 2. شاشة المخزن (المربعات) - نسخة محسنة السرعة 🚀
 async function generateGachaInventory(userObj, freeChests, paidChests) {
     const width = 1200;
     const height = 675; 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
+
+    // 🔥 تحميل الصور بالتوازي للتسريع 🔥
+    const chestUrl = `${R2_URL}/images/gacha/chest.png`;
+    const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
+
+    const [chestImg, avatarImage] = await Promise.all([
+        getCachedImage(chestUrl),
+        loadImage(avatarUrl).catch(() => null)
+    ]);
 
     ctx.fillStyle = '#0f1420';
     ctx.fillRect(0, 0, width, height);
@@ -214,13 +229,16 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
     ctx.fillRect(0, 0, width, height);
 
     ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
     for(let i=0; i<80; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
         const pSize = Math.random() * 2.5;
         ctx.globalAlpha = Math.random() * 0.4 + 0.1;
-        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, pSize, 0, Math.PI*2);
     }
+    ctx.fill();
     ctx.globalAlpha = 1.0;
 
     const headerH = 110;
@@ -240,11 +258,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
 
     ctx.save();
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2); ctx.clip();
-    try {
-        const avatarUrl = userObj.displayAvatarURL({ extension: 'png', size: 256 });
-        const avatarImage = await loadImage(avatarUrl);
-        ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
-    } catch (e) {}
+    if (avatarImage) ctx.drawImage(avatarImage, avatarX - avatarSize/2, avatarY - avatarSize/2, avatarSize, avatarSize);
     ctx.restore();
     
     ctx.beginPath(); ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
@@ -270,10 +284,6 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
     const totalW = (boxW * 2) + gap;
     const startX = (width - totalW) / 2;
 
-    // 🔥 تعديل الصورة إلى chest.png بناءً على طلبك 🔥
-    const chestUrl = `${R2_URL}/images/gacha/chest.png`;
-    const chestImg = await getCachedImage(chestUrl);
-
     // المربع الأول: المجاني
     const freeX = startX;
     ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
@@ -284,7 +294,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
 
     ctx.fillStyle = '#2ECC71';
     ctx.font = 'bold 30px "Bein"';
-    ctx.fillText('المجانية', freeX + boxW/2, startY + 260); // 🔥 تغيير النص
+    ctx.fillText('المجانية', freeX + boxW/2, startY + 260); 
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 40px "Arial"';
     ctx.fillText(freeChests.toString(), freeX + boxW/2, startY + 310);
@@ -299,7 +309,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
 
     ctx.fillStyle = '#F1C40F';
     ctx.font = 'bold 30px "Bein"';
-    ctx.fillText('صناديقك', paidX + boxW/2, startY + 260); // 🔥 تغيير النص
+    ctx.fillText('صناديقك', paidX + boxW/2, startY + 260); 
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 40px "Arial"';
     ctx.fillText(paidChests.toString(), paidX + boxW/2, startY + 310);
