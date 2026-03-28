@@ -1,23 +1,18 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
-
-// 🔥 تم تعديل المسار ليكون ديناميكياً ولتجنب خطأ Cannot find module 🔥
 const path = require('path');
+const fs = require('fs');
+
+// 🔥 حل مشكلة المسار (Cannot find module) بشكل ديناميكي 🔥
 const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
 let marketConfig = [];
 try {
-    marketConfig = require(marketConfigPath);
+    if (fs.existsSync(marketConfigPath)) {
+        marketConfig = require(marketConfigPath);
+    } else {
+        console.error(`⚠️ [Market] لا يمكن العثور على ملف market-items.json في المسار: ${marketConfigPath}`);
+    }
 } catch (e) {
-    console.error("⚠️ فشل في تحميل market-items.json:", e.message);
-}
-
-// 🔥 حماية استدعاء مكتبة الرسم 🔥
-let drawMarketGrid = null;
-try {
-    const generator = require('../../generators/market-generator.js');
-    drawMarketGrid = generator.drawMarketGrid;
-} catch (e) {
-    console.error("⚠️ [تحذير]: فشل في تحميل مكتبة رسم السوق. تأكد من تثبيت canvas (npm install canvas)");
-    console.error(e.message);
+    console.error("⚠️ [Market] خطأ في قراءة ملف سوق الاستثمار:", e.message);
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -76,8 +71,12 @@ function cleanEmojiFromName(name) {
 }
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
+    // 🔥 الاستدعاء الذكي (Lazy Loading) لحل مشكلة Circular Dependency كلياً 🔥
+    const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
+    const { drawMarketGrid } = require(generatorPath);
+
     if (!drawMarketGrid) {
-        throw new Error("مكتبة الرسم Canvas غير محملة، يرجى مراجعة الكونسول.");
+        throw new Error("مكتبة الرسم Canvas غير محملة أو هناك خطأ في ملف market-generator.js");
     }
 
     const startIndex = pageIndex * ITEMS_PER_PAGE;
@@ -136,16 +135,15 @@ async function buildDetailView(item, userId, guildId, sql) {
     const cleanName = cleanEmojiFromName(item.name);
 
     const detailEmbed = new EmbedBuilder()
-        .setTitle(`📈 تفاصيل التداول: ${cleanName} (${item.id})`)
+        .setTitle(`📈 تفاصيل: ${cleanName} (${item.id})`)
         .setColor(changePercent > 0.01 ? Colors.Green : (changePercent < -0.01 ? Colors.Red : Colors.Grey))
-        .setDescription(item.description || 'لا يوجد وصف لهذا الأصل.')
+        .setDescription(item.description || 'لا يوجد وصف')
         .addFields(
             { name: 'السعر الحالي', value: `${price} ${EMOJI_MORA}`, inline: true },
             { name: 'تغير الفترة الأخيرة', value: `${changeEmoji} ${(changePercent * 100).toFixed(2)}%`, inline: true },
             { name: 'في محفظتك الاستثمارية', value: `**${userQuantity.toLocaleString()}** وحدة`, inline: true }
         )
-        .setTimestamp()
-        .setFooter({ text: 'إمبراطورية العملات الرقمية والاستثمار' });
+        .setTimestamp();
 
     const itemImage = EMOJI_ASSET_IMAGES[item.id];
     if (itemImage) {
@@ -164,12 +162,12 @@ async function buildDetailView(item, userId, guildId, sql) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('سوق')
-        .setDescription('يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي واحترافي.'),
+        .setDescription('يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.'),
 
     name: 'market',
     aliases: ['سوق', 'استثمار', 'اسعار', 'بورصة'],
     category: "Economy",
-    description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي واحترافي.',
+    description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.',
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -231,7 +229,7 @@ module.exports = {
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
             let msg;
-            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في بورصة الإمبراطورية يا <@${user.id}> 📊**` };
+            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
             
             if (isSlash) {
                 msg = await interaction.editReply(initPayload);
@@ -264,7 +262,7 @@ module.exports = {
                             currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
                             const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في بورصة الإمبراطورية يا <@${i.user.id}> 📊**` });
+                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في سوق الاستثمار يا <@${i.user.id}> 📊**` });
 
                         } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
                             const isBuy = i.customId.startsWith('buy_asset_');
@@ -295,6 +293,7 @@ module.exports = {
                         const selectedID = i.values[0];
                         const item = allItems.find(it => it.id === selectedID);
                         if (!item) return;
+                        
                         const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
                         await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
                     }
@@ -309,7 +308,7 @@ module.exports = {
 
         } catch (globalError) {
             console.error("Market Execute Error:", globalError);
-            return reply({ content: `❌ **حدث خطأ غير متوقع:**\n\`${globalError.message}\`\nتأكد من تنصيب مكتبة \`canvas\`.` });
+            return reply({ content: `❌ **حدث خطأ غير متوقع:**\n\`${globalError.message}\`` });
         }
     }
 };
