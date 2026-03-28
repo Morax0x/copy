@@ -69,16 +69,24 @@ function getItemInfo(itemId) {
     return null;
 }
 
-async function replyWithCanvas(i, user, view, data, components) {
+// تعديل الدالة لترد مباشرة إذا كانت أول مرة، أو تُعدّل إذا كان استجابة لتفاعل
+async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     if (generateForgeUI) {
         const buffer = await generateForgeUI(user, view, data);
         if (buffer) {
             const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
-            return await i.editReply({ embeds: [], components, files: [attachment] }).catch(()=>{});
+            if (isInitial && !i.replied && !i.deferred) {
+                return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
+            } else {
+                return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
+            }
         }
     }
     // Fallback in case generator fails
-    return await i.editReply({ content: "⏳ جاري تحميل الواجهة...", components }).catch(()=>{});
+    if (isInitial && !i.replied && !i.deferred) {
+        return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
+    }
+    return await i.editReply({ content: null, components }).catch(()=>{});
 }
 
 module.exports = {
@@ -94,6 +102,7 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guildId = interactionOrMessage.guild.id;
 
+        // لا نسوي defer هنا عشان نرد مباشرة بالصورة
         if (isSlash) await interactionOrMessage.deferReply();
 
         let userDataRes = await db.query(`SELECT "mora", "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora, level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
@@ -102,15 +111,20 @@ module.exports = {
 
         const menuRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder().setCustomId(`forge_menu_main`).setPlaceholder('اختر القسم المطلوب...').addOptions([
-                { label: 'ورشة الحدادة (الأسلحة)', value: 'weapon', emoji: '⚒️', description: 'استخدم الخامات لترقية سلاحك العرقي' },
-                { label: 'أكاديمية السحر (المهارات)', value: 'skill_menu', emoji: '📜', description: 'استخدم المخطوطات لصقل مهاراتك' },
-                { label: 'فرن الدمج (استبدال العناصر)', value: 'synthesis', emoji: '🔄', description: 'ادمج 4 عناصر لتحصل على عنصر من اختيارك' },
-                { label: 'محرقة التفكيك (صهر للخبرة)', value: 'smelting', emoji: '🔥', description: 'احرق العناصر الزائدة مقابل XP' }
+                { label: 'ورشة الحدادة', value: 'forge_weapon', emoji: '⚒️', description: 'استخدم الخامات لترقية سلاحك العرقي' },
+                { label: 'أكاديمية السحر', value: 'forge_skill_menu', emoji: '📜', description: 'استخدم المخطوطات لصقل مهاراتك' },
+                { label: 'فرن الدمج', value: 'forge_synthesis', emoji: '🔄', description: 'ادمج 4 عناصر لتحصل على عنصر من اختيارك' },
+                { label: 'محرقة التفكيك', value: 'forge_smelting', emoji: '🔥', description: 'احرق العناصر الزائدة مقابل XP' }
             ])
         );
 
-        let replyObj = await (isSlash ? interactionOrMessage.editReply({ content: "⏳ جاري تحضير المجمع..." }) : interactionOrMessage.reply({ content: "⏳ جاري تحضير المجمع..." }));
-        await replyWithCanvas(isSlash ? interactionOrMessage : { editReply: (p) => replyObj.edit(p) }, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [menuRow]);
+        // رد مباشر بالكانفاس كأول رسالة
+        let replyObj = await replyWithCanvas(interactionOrMessage, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [menuRow], !isSlash);
+
+        // إذا كان تفاعل slash نحتاج نجيب رسالة الرد لربطها بالكوليكتر
+        if (isSlash && !replyObj) replyObj = await interactionOrMessage.fetchReply();
+
+        if (!replyObj) return;
 
         const filter = i => i.user.id === user.id && i.customId.startsWith('forge_');
         const collector = replyObj.createMessageComponentCollector({ filter, time: 300000 });
@@ -123,10 +137,10 @@ module.exports = {
 
             if (i.customId === 'forge_menu_main') {
                 const choice = i.values[0];
-                if (choice === 'weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
-                else if (choice === 'skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
-                else if (choice === 'synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
-                else if (choice === 'smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
+                if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
+                else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
+                else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
+                else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
             } 
             else if (i.customId === 'forge_skill_select') {
                 await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
