@@ -19,14 +19,17 @@ const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 let handleFarmInteractions;
-let handleFarmShopModal; // تعريف الدالة الجديدة
+let handleFarmShopModal; 
+let farmShop; // إضافة لاستدعاء متجر المزرعة الجديد
 try {
     const farmModule = require('./handlers/farm-handler.js');
     handleFarmInteractions = farmModule.handleFarmInteractions || farmModule._handleFarmTransaction;
     
-    const farmShopModule = require('./handlers/shop_system/farm-shop.js');
-    handleFarmShopModal = farmShopModule.handleFarmShopModal;
-} catch (e) {}
+    farmShop = require('./handlers/shop_system/farm-shop.js');
+    handleFarmShopModal = farmShop.handleFarmShopModal;
+} catch (e) {
+    console.error("Failed to load Farm modules:", e.message);
+}
 
 const ms = require('ms');
 
@@ -81,7 +84,6 @@ module.exports = (client, db, antiRolesCache) => {
             }
         }
 
-        // 🔥 تمت إضافة isUserSelectMenu لمنع تعليق التفاعل في زر إعطاء بالانفنتوري 🔥
         if (i.isButton() || i.isStringSelectMenu() || i.isModalSubmit() || i.isUserSelectMenu()) {
             processingInteractions.add(i.user.id);
             setTimeout(() => processingInteractions.delete(i.user.id), 3000);
@@ -141,7 +143,6 @@ module.exports = (client, db, antiRolesCache) => {
             if (i.isButton() || i.isStringSelectMenu() || i.isUserSelectMenu()) {
                 const id = i.customId;
 
-                // إعطاء فرصة للكوليكتر الموجود بملف البروفايل يشتغل بدون مقاطعة هنا
                 if (id.startsWith('trade_target_')) return;
 
                 if (id.startsWith('sugg_')) {
@@ -212,6 +213,20 @@ module.exports = (client, db, antiRolesCache) => {
                     return;
                 }
 
+                // 🌟 إصلاح أزرار متجر المزرعة وتوجيهها للملف الصحيح! 🌟
+                if (id.startsWith('shop_cat_') || id.startsWith('farm_') || id.startsWith('buy_btn_farm|') || id.startsWith('sell_btn_farm|')) {
+                    if (farmShop && farmShop.handleShopInteraction) {
+                        // توجيه ذكي للمتجر الجديد
+                        await farmShop.handleShopInteraction(i, client, db, i.user, i.guild, {}, () => new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId('farm_shop_back').setLabel('رجوع للأقسام').setStyle(ButtonStyle.Secondary)
+                        ));
+                    } else if (id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') {
+                        // دعم للأوامر القديمة في حالة لم يكن الملف الجديد متاحاً
+                        if (handleFarmInteractions) await handleFarmInteractions(i, client, db);
+                    }
+                    return;
+                }
+
                 if (id.startsWith('bid_')) { 
                     await handleAuctionSystem(i); 
                 } else if (id.startsWith('giveaway_')) {
@@ -220,12 +235,8 @@ module.exports = (client, db, antiRolesCache) => {
                     await handleCustomRoleInteraction(i, client, db);
                 } else if (id.startsWith('boss_')) {
                     await handleBossInteraction(i, client, db);
-                } else if ((id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') && handleFarmInteractions) {
-                    await handleFarmInteractions(i, client, db);
                 } else if (id.startsWith('land_')) {
                     await handleLandInteractions(i, client, db);
-                } else if (id.startsWith('farm_') || id.startsWith('shop_cat_')) {
-                    return;
                 } else if (id.startsWith('streak_panel_')) {
                     await handleStreakPanel(i, client, db);
                 } else if (id.startsWith('rr_')) {
@@ -240,24 +251,22 @@ module.exports = (client, db, antiRolesCache) => {
                     await handlePvpInteraction(i, client, db);
                 } else if (
                     id === 'shop_open_menu' ||
-                    (id.startsWith('buy_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_')) ||
+                    (id.startsWith('buy_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_') && !id.includes('asset_')) ||
                     (id.startsWith('upgrade_')) ||
                     id.startsWith('shop_') ||
                     id.startsWith('replace_') || id === 'cancel_purchase' || id === 'open_xp_modal' ||
                     id === 'max_level' || id === 'max_rod' || id === 'max_boat' || id === 'max_dungeon' ||
                     id === 'cast_rod' || id.startsWith('pull_rod') ||
-                    (id.startsWith('sell_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_')) ||
+                    (id.startsWith('sell_') && !id.includes('_animal_') && !id.includes('_seed_') && !id.includes('_feed_') && !id.includes('asset_')) ||
                     id.startsWith('mem_') ||
                     id === 'replace_guard' || id === 'confirm_dungeon_upgrade' ||
                     id === 'shop_select_item' || id === 'shop_skill_select_menu' ||
                     id === 'fishing_gear_sub_menu' || id === 'shop_buy_bait_menu' ||
                     id === 'shop_buy_potion_menu'
                 ) {
-                    if (!id.startsWith('buy_asset_') && !id.startsWith('sell_asset_')) {
-                        if (id === 'shop_select_item') await handleShopSelectMenu(i, client, db);
-                        else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, db);
-                        else await handleShopInteractions(i, client, db);
-                    }
+                    if (id === 'shop_select_item') await handleShopSelectMenu(i, client, db);
+                    else if (id === 'shop_skill_select_menu') await handleSkillSelectMenu(i, client, db);
+                    else await handleShopInteractions(i, client, db);
                 } else if (id === 'g_builder_content' || id === 'g_builder_visuals' || id === 'g_builder_send' || id === 'g_enter' || id === 'g_enter_drop') {
                     await handleGiveawayBuilderButtons(i, client, db);
                 }
@@ -266,7 +275,6 @@ module.exports = (client, db, antiRolesCache) => {
 
             if (i.isModalSubmit()) {
                 
-                // استقبال مودل شراء المزرعة الجديد
                 if (i.customId.startsWith('farm_buy_modal|')) {
                     if (handleFarmShopModal) {
                         const handled = await handleFarmShopModal(i, client, db);
@@ -330,7 +338,7 @@ module.exports = (client, db, antiRolesCache) => {
                     await handleLandInteractions(i, client, db);
                 } else if (i.customId.startsWith('buy_modal_') || i.customId.startsWith('sell_modal_')) {
                     await handleMarketInteraction(i, client, db);
-                } else if (await handleShopModal(i, client, db)) {
+                } else if (handleShopModal && await handleShopModal(i, client, db)) {
 
                 } else if (i.customId.startsWith('customrole_modal_')) {
                     await handleCustomRoleInteraction(i, client, db);
