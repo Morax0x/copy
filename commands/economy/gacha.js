@@ -121,7 +121,7 @@ function performPull(pityData, userRace, ownedSkills) {
 module.exports = {
     data: new SlashCommandBuilder().setName('صندوق').setDescription('افتح صناديق السحر للحصول على مهارات وكتب وخامات تطوير'),
     name: 'صندوق',
-    aliases: ['gacha', 'صناديق', 'سحب', 'pull'],
+    aliases: ['gacha', 'صناديق', 'قاتشا', 'pull'],
     category: 'RPG',
 
     async execute(interactionOrMessage) {
