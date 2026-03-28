@@ -156,11 +156,8 @@ async function handlePurchaseWithCoupons(interaction, itemData, quantity, totalP
 }
 
 async function processFinalPurchase(interaction, itemData, quantity, finalPrice, discountUsed, couponType, client, db, callbackType, couponIdToDelete = null) {
-    let userDataRes = await executeDB(db, `SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [interaction.user.id, interaction.guild.id]).catch(()=>({rows:[]}));
-    let userData = userDataRes?.rows?.[0];
-    
+    let userData = await client.getLevel(interaction.user.id, interaction.guild.id);
     if (!userData) {
-        await executeDB(db, `INSERT INTO levels ("user", "guild", "mora", "bank", "xp", "totalXP", "level") VALUES ($1, $2, 0, 0, 0, 0, 1)`, [interaction.user.id, interaction.guild.id]).catch(()=>{});
         userData = { user: interaction.user.id, guild: interaction.guild.id, level: 1, mora: 0, bank: 0, xp: 0, totalXP: 0 };
     }
       
@@ -184,7 +181,14 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         } 
     }
 
-    await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [finalPrice, interaction.user.id, interaction.guild.id]);
+    // 💰 خصم المورا وتحديث بيانات اللاعب الأساسية
+    userData.mora = Number(userData.mora) - finalPrice;
+    userData.shop_purchases = (Number(userData.shop_purchases) || 0) + 1;
+    if (callbackType === 'item' && itemData.id === 'personal_guard_1d') {
+        userData.hasGuard = Math.min((Number(userData.hasGuard) || 0) + 3, 6);
+        userData.guardExpires = 0;
+    }
+    await client.setLevel(userData);
       
     try {
         if (couponType === 'boss' && couponIdToDelete) {
@@ -200,10 +204,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         }
 
         if (callbackType === 'item') {
-            if (itemData.id === 'personal_guard_1d') { 
-                await executeDB(db, `UPDATE levels SET "hasGuard" = LEAST(COALESCE("hasGuard", 0) + 3, 6), "guardExpires" = 0 WHERE "user" = $1 AND "guild" = $2`, [interaction.user.id, interaction.guild.id]);
-            }
-            else if (itemData.category === 'potions' || itemData.id.startsWith('potion_')) { 
+            if (itemData.category === 'potions' || itemData.id.startsWith('potion_')) { 
                 if(ensureInventoryTable) await ensureInventoryTable(db); 
                 let invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [interaction.user.id, interaction.guild.id, itemData.id]).catch(()=>({rows:[]}));
                 if (invCheckRes?.rows?.[0]) {
@@ -307,11 +308,11 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
                 else await executeDB(db, `INSERT INTO user_buffs ("guildID", "userID", "buffPercent", "expiresAt", "buffType", "multiplier") VALUES ($1, $2, $3, $4, 'mora', $5)`, [interaction.guild.id, interaction.user.id, -5, expiresAt, -0.05]);
             }
         } 
-
-        await executeDB(db, `UPDATE levels SET "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $1 AND "guild" = $2`, [interaction.user.id, interaction.guild.id]).catch(()=>{});
         
     } catch (e) {
-        await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [finalPrice, interaction.user.id, interaction.guild.id]).catch(()=>{});
+        // إذا فشل حفظ المشتريات، نُعيد الأموال للّاعب فوراً كإجراء أمني
+        userData.mora = Number(userData.mora) + finalPrice;
+        await client.setLevel(userData);
         return await safeReply({ content: `❌ **حدث خطأ برمجي داخلي!**\nتم إرجاع **${finalPrice.toLocaleString()}** مورا لحسابك لتجنب ضياعها.\n(${e.message})` });
     }
     
@@ -337,8 +338,7 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
 
 async function _handleRodUpgrade(i, client, db) {
     await i.deferUpdate();
-    let userDataRes = await executeDB(db, `SELECT "mora", "bank", "rodLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
-    let userData = userDataRes?.rows?.[0];
+    let userData = await client.getLevel(i.user.id, i.guild.id);
     if (!userData) return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
 
     const currentLevel = Number(userData.rodLevel) || 1;
@@ -354,7 +354,10 @@ async function _handleRodUpgrade(i, client, db) {
         return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
     }
 
-    await executeDB(db, `UPDATE levels SET "rodLevel" = $1, "mora" = "mora" - $2 WHERE "user" = $3 AND "guild" = $4`, [nextLevel, nextRod.price, i.user.id, i.guild.id]);
+    // الدفع والترقية المباشرة
+    userData.mora = Number(userData.mora) - nextRod.price;
+    userData.rodLevel = nextLevel;
+    await client.setLevel(userData);
 
     const embed = new EmbedBuilder()
         .setTitle('✅ تمت الترقية بنجاح!')
@@ -368,8 +371,7 @@ async function _handleRodUpgrade(i, client, db) {
 
 async function _handleBoatUpgrade(i, client, db) {
     await i.deferUpdate();
-    let userDataRes = await executeDB(db, `SELECT "mora", "bank", "boatLevel" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
-    let userData = userDataRes?.rows?.[0];
+    let userData = await client.getLevel(i.user.id, i.guild.id);
     if (!userData) return i.followUp({ content: '❌ لا توجد بيانات مسجلة لك.', flags: MessageFlags.Ephemeral });
 
     const currentLevel = Number(userData.boatLevel) || 1;
@@ -385,7 +387,10 @@ async function _handleBoatUpgrade(i, client, db) {
         return i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
     }
 
-    await executeDB(db, `UPDATE levels SET "boatLevel" = $1, "mora" = "mora" - $2 WHERE "user" = $3 AND "guild" = $4`, [nextLevel, nextBoat.price, i.user.id, i.guild.id]);
+    // الدفع والترقية
+    userData.mora = Number(userData.mora) - nextBoat.price;
+    userData.boatLevel = nextLevel;
+    await client.setLevel(userData);
 
     const embed = new EmbedBuilder()
         .setTitle('✅ تمت الترقية بنجاح!')
@@ -406,8 +411,7 @@ async function _handleShopButton(i, client, db, explicitItemId = null) {
         let item = shopItems.find(it => it.id === boughtItemId) || finalPotionItems.find(it => it.id === boughtItemId);
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         
-        let userDataRes = await executeDB(db, `SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=>({rows:[]}));
-        let userData = userDataRes?.rows?.[0];
+        let userData = await client.getLevel(userId, guildId); 
         if (!userData) userData = { mora: 0, bank: 0 };
           
         const NON_DISCOUNTABLE = ['xp_buff_1d_3', 'xp_buff_1d_7', 'xp_buff_2d_10'];
@@ -480,8 +484,8 @@ async function _handleReplaceGuard(i, client, db) {
         const userId = i.user.id; 
         const guildId = i.guild.id; 
         const item = shopItems.find(it => it.id === 'personal_guard_1d');
-        let userDataRes = await executeDB(db, `SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=>({rows:[]}));
-        let userData = userDataRes?.rows?.[0];
+        
+        let userData = await client.getLevel(userId, guildId);
         if (!userData) userData = { mora: 0, bank: 0, hasGuard: 0 };
         
         if (Number(userData.hasGuard || 0) >= 6) {
@@ -495,7 +499,10 @@ async function _handleReplaceGuard(i, client, db) {
             return await i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
         }
         
-        await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1, "hasGuard" = LEAST(COALESCE("hasGuard", 0) + 3, 6), "guardExpires" = 0 WHERE "user" = $2 AND "guild" = $3`, [item.price, userId, guildId]);
+        userData.mora = Number(userData.mora) - item.price;
+        userData.hasGuard = Math.min((Number(userData.hasGuard) || 0) + 3, 6);
+        userData.guardExpires = 0;
+        await client.setLevel(userData);
         
         const successEmbed = new EmbedBuilder()
             .setTitle('✅ تمت عملية التجديد بنجاح')
@@ -518,8 +525,7 @@ async function _handleReplaceBuffButton(i, client, db) {
         
         if (!item) return await i.followUp({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         
-        let userDataRes = await executeDB(db, `SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=>({rows:[]}));
-        let userData = userDataRes?.rows?.[0];
+        let userData = await client.getLevel(userId, guildId);
         if (!userData) userData = { mora: 0, bank: 0 };
         
         if (Number(userData.mora) < item.price) {
@@ -529,7 +535,9 @@ async function _handleReplaceBuffButton(i, client, db) {
             return await i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
         }
         
-        await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [item.price, userId, guildId]);
+        userData.mora = Number(userData.mora) - item.price;
+        await client.setLevel(userData);
+        
         await executeDB(db, `DELETE FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'xp'`, [userId, guildId]).catch(()=>{});
         
         let expiresAt, multiplier, buffPercent;
@@ -542,8 +550,6 @@ async function _handleReplaceBuffButton(i, client, db) {
         if (multiplier > 0) {
             await executeDB(db, `INSERT INTO user_buffs ("userID", "guildID", "buffType", "multiplier", "expiresAt", "buffPercent") VALUES ($1, $2, $3, $4, $5, $6)`, [userId, guildId, 'xp', multiplier, expiresAt, buffPercent]).catch(()=>{});
         }
-
-        await executeDB(db, `UPDATE levels SET "shop_purchases" = COALESCE("shop_purchases", 0) + 1 WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=>{});
         
         const successEmbed = new EmbedBuilder()
             .setTitle('✅ تمت عملية الشراء بنجاح')
@@ -666,8 +672,7 @@ async function _handleBaitBuy(i, client, db, baitId) {
     const unitPrice = Math.round(bait.price / 5);
     const cost = unitPrice * qty; 
     
-    let userDataRes = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
-    let userData = userDataRes?.rows?.[0];
+    let userData = await client.getLevel(i.user.id, i.guild.id);
     if (!userData) return i.editReply('❌ لا توجد لك بيانات في النظام.');
 
     if (Number(userData.mora) < cost) {
@@ -677,7 +682,8 @@ async function _handleBaitBuy(i, client, db, baitId) {
         return i.editReply(msg);
     }
     
-    await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [cost, i.user.id, i.guild.id]);
+    userData.mora = Number(userData.mora) - cost;
+    await client.setLevel(userData);
     
     try { 
         let invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, baitId]).catch(()=>({rows:[]}));
@@ -689,7 +695,8 @@ async function _handleBaitBuy(i, client, db, baitId) {
             await executeDB(db, `INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4)`, [i.guild.id, i.user.id, baitId, qty]);
         }
     } catch(e) { 
-        await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [cost, i.user.id, i.guild.id]);
+        userData.mora = Number(userData.mora) + cost;
+        await client.setLevel(userData);
         return i.editReply('❌ حدث خطأ أثناء إضافة العنصر لمخزنك. تم استرجاع أموالك.');
     }
     
@@ -713,8 +720,7 @@ async function handleShopModal(i, client, db) {
             let userLoanRes = await executeDB(db, `SELECT 1 FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [userId, guildId]).catch(()=>({rows:[]}));
             if (userLoanRes?.rows?.length > 0) return await i.editReply({ content: `❌ لا يمكنك تبادل الخبرة بينما عليك قرض في البنك.` });
             
-            let userDataRes = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=>({rows:[]}));
-            let userData = userDataRes?.rows?.[0];
+            let userData = await client.getLevel(userId, guildId);
             if (!userData) return await i.editReply({ content: `❌ لا توجد لك بيانات في النظام.` });
             
             const userMora = Number(userData.mora) || 0;
@@ -735,12 +741,16 @@ async function handleShopModal(i, client, db) {
                 return await i.editReply({ content: msg });
             }
             
-            await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalCost, userId, guildId]);
+            // خصم المورا وحفظها فوراً قبل إضافة הـ XP
+            userData.mora = userMora - totalCost;
+            await client.setLevel(userData);
             
             if (addXPAndCheckLevel) {
                 await addXPAndCheckLevel(client, i.member, db, amountToBuy, 0, false).catch(()=>{});
             } else {
-                await executeDB(db, `UPDATE levels SET "xp" = "xp" + $1, "totalXP" = "totalXP" + $1 WHERE "user" = $2 AND "guild" = $3`, [amountToBuy, userId, guildId]);
+                userData.xp = (Number(userData.xp) || 0) + amountToBuy;
+                userData.totalXP = (Number(userData.totalXP) || 0) + amountToBuy;
+                await client.setLevel(userData);
             }
 
             const successEmbed = new EmbedBuilder()
