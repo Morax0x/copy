@@ -12,7 +12,7 @@ let itemLore = {};
 try { itemLore = require('../json/item-descriptions.json'); } catch (e) {}
 
 const upgradeMats = require('../json/upgrade-materials.json');
-const weaponsConfig = require('../json/weapons-config.json'); // عشان نجيب اسم السلاح الحقيقي
+const weaponsConfig = require('../json/weapons-config.json'); 
 let skillsConfig = []; try { skillsConfig = require('../json/skills-config.json'); } catch(e) {}
 
 let fishData = { fishItems: [], baits: [], rods: [], boats: [] };
@@ -56,7 +56,6 @@ const ID_TO_IMAGE = {
     'book_race_1': 'race_book_stone.png', 'book_race_2': 'race_book_ancestor.png', 'book_race_3': 'race_book_secrets.png', 'book_race_4': 'race_book_covenant.png', 'book_race_5': 'race_book_pact.png'
 };
 
-// 🔥 إضافة خيار fullImage للتحكم بحجم الصورة (كامل المربع أو مبعد) 🔥
 function addItemToDict(id, name, emoji, category, rarity, imgPath, fullImage = false) {
     if (!id) return;
     const cleanId = String(id).trim();
@@ -73,7 +72,6 @@ function addItemToDict(id, name, emoji, category, rarity, imgPath, fullImage = f
 }
 
 function buildItemDictionary() {
-    // 1. الموارد والكتب (مفرغة = padding)
     if (upgradeMats && upgradeMats.weapon_materials) {
         for (const race of upgradeMats.weapon_materials) {
             for (const mat of race.materials) {
@@ -90,7 +88,6 @@ function buildItemDictionary() {
         }
     }
     
-    // 2. الصيد (صور كاملة = fullImage)
     if (fishData && fishData.fishItems) {
         for (const fish of fishData.fishItems) {
             addItemToDict(fish.id, fish.name, fish.emoji, 'صيد', fish.rarity > 3 ? 'Epic' : 'Common', `images/fish/${fish.id}.png`, true);
@@ -102,7 +99,6 @@ function buildItemDictionary() {
         }
     }
     
-    // 3. المزرعة (صور كاملة = fullImage)
     if (farmSeeds && farmSeeds.length > 0) {
         for (const seed of farmSeeds) {
             addItemToDict(seed.id, seed.name, seed.emoji, 'مزرعة', 'Common', `images/farm/seeds/${seed.id}.png`, true);
@@ -114,22 +110,20 @@ function buildItemDictionary() {
         }
     }
     
-    // 4. الجرعات (في قسم أخرى، مفرغة = padding)
     if (potionItems && potionItems.length > 0) {
         for (const pot of potionItems) {
             addItemToDict(pot.id, pot.name, pot.emoji, 'أخرى', 'Rare', `images/potions/${pot.id}.png`, false);
         }
     }
     
-    // 5. السوق (في قسم أخرى، صور كاملة = fullImage)
+    // 🔥 تفعيل السوق: جعل الصور تملأ المربع (fullImage = true) وفي قسم منفصل 🔥
     if (marketItems && marketItems.length > 0) {
         for (const market of marketItems) {
-            addItemToDict(market.id, market.name, '📈', 'أخرى', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`, true);
+            addItemToDict(market.id, market.name, '📈', 'market', 'Epic', `images/market/${String(market.id).toLowerCase()}.png`, true);
         }
     }
 }
 
-// تنفيذ البناء لتسريع الرسومات
 buildItemDictionary();
 
 async function getCachedImage(imageUrl) {
@@ -162,7 +156,7 @@ function resolveItemInfo(itemId) {
 
 async function getInventoryCategories(db, userId, guildId) {
     let inventory = [];
-    const categories = { 'موارد': [], 'صيد': [], 'مزرعة': [], 'أخرى': [] };
+    const categories = { 'موارد': [], 'صيد': [], 'مزرعة': [], 'market': [], 'أخرى': [] }; // أضفنا قسم الممتلكات (market)
     
     try {
         const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
@@ -188,7 +182,6 @@ async function getInventoryCategories(db, userId, guildId) {
         }
     }
 
-    // استخراج السنارات والقوارب ووضعها في قسم الصيد (بصور كاملة المربع)
     try {
         let userData = null;
         try {
@@ -373,7 +366,12 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     ctx.font = '26px "Bein"';
     ctx.shadowBlur = 0;
     ctx.letterSpacing = "3px";
-    ctx.fillText(`⟪ ${categoryTitle} ⟫`, width / 2, 110);
+    
+    // 🌟 الترجمة العربية للأقسام 🌟
+    let displayTitle = categoryTitle;
+    if (categoryTitle === 'market') displayTitle = 'ممتلكات (عقارات وأسهم)';
+
+    ctx.fillText(`⟪ ${displayTitle} ⟫`, width / 2, 110);
     ctx.textAlign = 'right';
     ctx.font = 'bold 18px "Bein"';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -497,7 +495,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
             if (item.imgPath) {
                 const img = await getCachedImage(item.imgPath);
                 if (img) {
-                    // 🔥 هنا السحر: إذا كان fullImage صحيح يملأ المربع، وإذا لا يسوي padding 🔥
                     if (item.fullImage) {
                         ctx.save();
                         ctx.beginPath();
@@ -544,7 +541,6 @@ async function generateInventoryCard(userDisplayName, categoryTitle, items, page
     return canvas.toBuffer('image/png', { compressionLevel: 1, filters: canvas.PNG_FILTER_NONE });
 }
 
-// 🔥 تحديث الخيمة لتقرأ السلاح الحقيقي بالاسم الكامل مع اللفل بدلاً من اسم العرق! 🔥
 async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
     let userObj, displayName, moraBalance, finalRank = 'D', finalRace = 'مواطن', finalWeapon = 'قبضة اليد';
 
@@ -578,7 +574,6 @@ async function generateMainHub(arg1, arg2, arg3, arg4, arg5, arg6) {
             finalRace = userRace ? (RACE_TRANSLATIONS[userRace.raceName] || userRace.raceName) : "مواطن";
         } catch(e) {}
 
-        // 🔥 استخراج اسم السلاح الحقيقي من الـ weaponsConfig 🔥
         try {
             const wRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "weaponLevel" DESC LIMIT 1`, [userId, guildId]);
             if (wRes.rows.length > 0) {
@@ -772,7 +767,6 @@ async function generateItemDetailsCard(userDisplayName, item) {
     if (item.imgPath) {
         const img = await getCachedImage(item.imgPath);
         if (img) {
-            // 🔥 هنا السحر: يفرق بين الصور المفرغة والصور الكاملة 🔥
             if (item.fullImage) {
                 ctx.save();
                 ctx.beginPath();
@@ -850,7 +844,12 @@ async function generateItemDetailsCard(userDisplayName, item) {
     ctx.fillStyle = '#A8B8D0';
     ctx.font = '24px "Bein", "Emoji"';
     
-    const description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
+    // 🔥 تخصيص رسالة الوصف في حال كان العنصر من السوق (يعرض سعر الشراء الحالي)
+    let description = item.description || "عنصر غامض لا يُعرف عنه الكثير.. قد يكون له استخدام سري في الإمبراطورية!";
+    if (item.category === 'market') {
+        description = `📊 **أصل استثماري من السوق**\nهذا الأصل يحفظ قيمة ثروتك ويتغير سعره مع تقلبات السوق العظمى.\n\n💰 السعر الذي تم الشراء به: **${(item.purchasePrice || 'غير محدد')}** 🪙`;
+    }
+
     const lines = wrapText(ctx, description, descBoxW - 40);
     
     for (let j = 0; j < lines.length; j++) {
