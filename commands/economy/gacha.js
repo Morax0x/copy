@@ -121,7 +121,8 @@ function performPull(pityData, userRace, ownedSkills) {
 module.exports = {
     data: new SlashCommandBuilder().setName('صندوق').setDescription('افتح صناديق السحر للحصول على مهارات وكتب وخامات تطوير'),
     name: 'صندوق',
-    aliases: ['gacha', 'صناديق', 'قاتشا', 'pull'],
+    // 🔥 الاختصارات اللي طلبتها بدون حذف الاختصارات الأخرى وبدون "سحب" 🔥
+    aliases: ['gacha', 'صناديق', 'صندوق', 'غاتشا', 'قاتشا', 'pull'],
     category: 'RPG',
 
     async execute(interactionOrMessage) {
@@ -218,7 +219,7 @@ module.exports = {
 
         const getReturnButton = () => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('gacha_return_hub').setLabel('الرئيسية').setEmoji('↩️').setStyle(ButtonStyle.Success)
+                new ButtonBuilder().setCustomId('gacha_return_hub').setLabel('الرئيسية').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
             );
         };
 
@@ -243,7 +244,6 @@ module.exports = {
             await fetchUserData();
             let files = [];
             
-            // هنا بيستدعي الصورة حق المربعات اللي سويناها قبل!
             if (global.generateGachaInventory || (typeof require !== 'undefined')) {
                 try {
                     const { generateGachaInventory } = require('../../generators/gacha-generator.js');
@@ -254,12 +254,20 @@ module.exports = {
                 } catch(e){}
             }
 
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_chest_1').setLabel('فتح 1').setEmoji('🎁').setStyle(ButtonStyle.Primary).setDisabled(totalChests < 1),
-                new ButtonBuilder().setCustomId('open_chest_10').setLabel('فتح 10').setEmoji('🌟').setStyle(ButtonStyle.Success).setDisabled(totalChests < 10),
-                new ButtonBuilder().setCustomId('open_chest_all').setLabel('فتح الكل').setEmoji('🔥').setStyle(ButtonStyle.Danger).setDisabled(totalChests < 2),
-                new ButtonBuilder().setCustomId('gacha_return_hub').setLabel('رجوع').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
-            );
+            const row = new ActionRowBuilder();
+            
+            // 🔥 نظام الأزرار الذكية الذي طلبته 🔥
+            if (totalChests >= 1) {
+                row.addComponents(new ButtonBuilder().setCustomId('open_chest_1').setLabel('فتح 1').setEmoji('🎁').setStyle(ButtonStyle.Primary));
+            }
+            if (totalChests >= 10) {
+                row.addComponents(new ButtonBuilder().setCustomId('open_chest_10').setLabel('فتح 10').setEmoji('🌟').setStyle(ButtonStyle.Success));
+            }
+            if (totalChests > 1) {
+                row.addComponents(new ButtonBuilder().setCustomId('open_chest_all').setLabel('فتح الكل').setEmoji('🔥').setStyle(ButtonStyle.Danger));
+            }
+            
+            row.addComponents(new ButtonBuilder().setCustomId('gacha_return_hub').setLabel('رجوع').setEmoji('↩️').setStyle(ButtonStyle.Secondary));
             
             await targetMsg.edit({ embeds: [], components: [row], files }).catch(()=>{});
         };
