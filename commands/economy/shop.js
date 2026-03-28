@@ -28,7 +28,7 @@ module.exports = {
             client = interaction.client;
             member = interaction.member;
             channel = interaction.channel;
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         } else {
             message = interactionOrMessage;
             guild = message.guild;
@@ -39,12 +39,11 @@ module.exports = {
 
         const replyEphemeral = async (payload) => {
             if (typeof payload === 'string') payload = { content: payload };
-            payload.ephemeral = true;
+            payload.flags = MessageFlags.Ephemeral;
 
             if (isSlash) {
                 return interaction.editReply(payload);
             } else {
-                payload.flags = MessageFlags.Ephemeral;
                 return message.reply(payload);
             }
         };
@@ -111,11 +110,11 @@ module.exports = {
             if (isSlash) {
                 await interaction.editReply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.' });
             } else {
-                await message.reply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.'});
+                await message.reply({ content: '✅ تم نشر لوحة المتجر وحفظها كمتجر رسمي لهذا السيرفر.', flags: MessageFlags.Ephemeral });
             }
 
         } catch (err) {
-            console.error(e);
+            console.error(err);
             await replyEphemeral({ content: '⚠️ تم نشر المتجر، ولكن حدث خطأ أثناء حفظه كمتجر رسمي للسيرفر.' });
         }
     }
