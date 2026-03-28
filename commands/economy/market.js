@@ -15,7 +15,7 @@ try {
     const generatorPath = path.join(process.cwd(), 'generators', 'market-generator.js');
     marketGen = require(generatorPath);
 } catch (e) {
-    console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
+    console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js");
 }
 
 let marketHandler;
@@ -23,7 +23,7 @@ try {
     const handlerPath = path.join(process.cwd(), 'handlers', 'market-handler.js');
     marketHandler = require(handlerPath);
 } catch (e) {
-    console.error("⚠️ [Market] تحذير: فشل في تحميل market-handler.js", e.message);
+    console.error("⚠️ [Market] تحذير: فشل في تحميل market-handler.js");
 }
 
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
@@ -267,7 +267,7 @@ module.exports = {
                             modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
                             await i.showModal(modal);
 
-                            // 🔥 معالجة الاستجابة وحل الكراش الصامت 🔥
+                            // 🔥 معالجة الاستجابة وحل الكراش (رد مباشر للجميع) 🔥
                             try {
                                 const submitted = await i.awaitModalSubmit({
                                     filter: x => x.user.id === i.user.id && x.customId === modal.data.custom_id,
@@ -275,7 +275,7 @@ module.exports = {
                                 });
                                 
                                 if (marketHandler && typeof marketHandler._handleMarketTransaction === 'function') {
-                                    // الهاندلر راح يرد برسالة عامة للمستخدم (فاتورة)
+                                    // المودل يستلم الاستجابة بالرد المباشر غير المخفي
                                     const isSuccess = await marketHandler._handleMarketTransaction(submitted, client, sql, isBuy);
                                     
                                     if (isSuccess) {
@@ -284,10 +284,10 @@ module.exports = {
                                         await i.message.edit({ files: [detailImage], attachments: [], components: detailComponents, content: '' }).catch(()=>{});
                                     }
                                 } else {
-                                    await submitted.reply({ content: '❌ نظام التداول (الهاندلر) غير متصل حالياً.', ephemeral: true });
+                                    await submitted.reply({ content: '❌ نظام التداول (الهاندلر) غير متصل حالياً.' });
                                 }
                             } catch (err) {
-                                // المستخدم ألغى المودال أو انتهى الوقت
+                                // المستخدم ألغى المودال أو انتهى الوقت (يتم تجاهله بصمت)
                             }
                         }
                     }
