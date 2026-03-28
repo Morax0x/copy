@@ -5,105 +5,85 @@ try {
     GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/cairo-Pandaify'), 'Cairo');
 } catch (e) {}
 
-async function generateShopImage(user, userData, allItems) {
+async function generateGlobalShopBoard(allItems) {
     const columns = 3;
-    const boxW = 280;
-    const boxH = 320;
-    const gapX = 30;
-    const gapY = 30;
+    const boxSize = 260;
+    const gapX = 40;
+    const gapY = 40;
     const startX = 50;
-    const startY = 160;
+    const startY = 180;
 
     const rows = Math.ceil(allItems.length / columns);
     const canvasWidth = 1000;
-    const canvasHeight = startY + (rows * (boxH + gapY)) + 30;
+    const canvasHeight = startY + (rows * (boxSize + gapY)) + 50;
 
     const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#14141E';
+    ctx.fillStyle = '#0F0F16';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = '#1E1E2C';
+    const gradient = ctx.createLinearGradient(0, 0, 0, 150);
+    gradient.addColorStop(0, '#1E1E2C');
+    gradient.addColorStop(1, '#14141E');
+    
+    ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.roundRect(30, 20, 940, 110, 15);
+    ctx.roundRect(30, 20, 940, 120, 20);
     ctx.fill();
 
-    try {
-        const avatarUrl = user.displayAvatarURL({ extension: 'png', size: 128 });
-        const avatar = await loadImage(avatarUrl);
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(85, 75, 45, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(avatar, 40, 30, 90, 90);
-        ctx.restore();
-    } catch (e) {}
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 30px "Cairo", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(user.username, 150, 65);
-
-    ctx.font = '24px "Cairo", sans-serif';
     ctx.fillStyle = '#FFD700';
-    ctx.fillText(`الكاش: ${userData.mora || 0}`, 150, 105);
-    
-    ctx.fillStyle = '#4CAF50';
-    ctx.fillText(`البنك: ${userData.bank || 0}`, 400, 105);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 45px "Cairo", sans-serif';
+    ctx.fillText('متجر الإمبراطورية الرسمي', canvasWidth / 2, 80);
 
     ctx.fillStyle = '#A8A8B3';
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 32px "Cairo", sans-serif';
-    ctx.fillText(`متجر الإمبراطورية الشامل`, 940, 85);
+    ctx.font = '22px "Cairo", sans-serif';
+    ctx.fillText('اختر العنصر الذي تود شراءه من القائمة بالأسفل', canvasWidth / 2, 120);
 
     for (let i = 0; i < allItems.length; i++) {
         const item = allItems[i];
         const row = Math.floor(i / columns);
         const col = i % columns;
         
-        const x = startX + (col * (boxW + gapX));
-        const y = startY + (row * (boxH + gapY));
+        const x = startX + (col * (boxSize + gapX));
+        const y = startY + (row * (boxSize + gapY));
 
-        ctx.fillStyle = '#222233';
+        ctx.fillStyle = '#1A1A24';
         ctx.beginPath();
-        ctx.roundRect(x, y, boxW, boxH, 20);
+        ctx.roundRect(x, y, boxSize, boxSize, 25);
         ctx.fill();
 
-        ctx.strokeStyle = '#33334A';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#2A2A3E';
+        ctx.lineWidth = 3;
         ctx.stroke();
 
         try {
             if (item.image) {
                 const itemImage = await loadImage(item.image);
-                ctx.drawImage(itemImage, x + 65, y + 20, 150, 150);
+                ctx.drawImage(itemImage, x + 70, y + 25, 120, 120);
             } else {
                 throw new Error("No image");
             }
         } catch (e) {
-            ctx.fillStyle = '#2A2A3E';
+            ctx.fillStyle = '#252533';
             ctx.beginPath();
-            ctx.roundRect(x + 65, y + 20, 150, 150, 15);
+            ctx.roundRect(x + 70, y + 25, 120, 120, 15);
             ctx.fill();
         }
 
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'center';
         ctx.font = 'bold 24px "Cairo", sans-serif';
-        ctx.fillText(item.name, x + (boxW / 2), y + 210);
+        ctx.fillText(item.name, x + (boxSize / 2), y + 180);
 
         ctx.fillStyle = '#FFD700';
         ctx.font = 'bold 22px "Cairo", sans-serif';
-        ctx.fillText(`${item.price} مورا`, x + (boxW / 2), y + 250);
-
-        ctx.fillStyle = '#4CAF50';
-        ctx.font = '18px "Cairo", sans-serif';
-        ctx.fillText(`🛒 متوفر`, x + (boxW / 2), y + 290);
+        const priceText = item.price > 0 ? `${item.price.toLocaleString()} مورا` : 'متغير / مجاني';
+        ctx.fillText(priceText, x + (boxSize / 2), y + 220);
     }
 
     return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateShopImage };
+module.exports = { generateGlobalShopBoard };
