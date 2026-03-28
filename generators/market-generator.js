@@ -1,301 +1,176 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Colors, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
+const { createCanvas, loadImage } = require("canvas");
+const path = require("path");
 const fs = require('fs');
-const path = require('path');
 
-// استدعاء ملف الكونفج بشكل آمن
-const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
-let marketConfig = [];
-if (fs.existsSync(marketConfigPath)) {
-    marketConfig = require(marketConfigPath);
+const imageAssetsDir = path.join(process.cwd(), 'empress-assets', 'images', 'market');
+
+// الكاش للصور
+const ASSETS_CACHE = new Map();
+let trendImages = { up: null, down: null, neutral: null };
+
+async function preloadGlobalAssets() {
+    try {
+        if (!fs.existsSync(imageAssetsDir)) return;
+        trendImages.up = await loadImage(path.join(imageAssetsDir, 'up_trend.png')).catch(()=>{});
+        trendImages.down = await loadImage(path.join(imageAssetsDir, 'down_trend.png')).catch(()=>{});
+        trendImages.neutral = await loadImage(path.join(imageAssetsDir, 'neutral_trend.png')).catch(()=>{});
+    } catch (e) { console.error("[Market Preload Error]:", e.message); }
 }
 
-// 🔥 استدعاء مكتبة الرسم بشكل نظيف ومباشر 🔥
-const { drawMarketGrid } = require('../../generators/market-generator.js'); 
-
-const EMOJI_MORA = '<:mora:1435647151349698621>';
-
-const EMOJI_ASSET_SMALL = {
-    'APPLE': '<:aapple:1435884007484293161>',
-    'ANDROID': '<:android:1435885726519656578>',
-    'TESLA': '<:tesla:1437395355170771016>',
-    'GOLD': '<:gold:1437395402474127382>',
-    'LAND': '🏞️',
-    'BITCOIN': '<:ss:1437395376738013244>',
-    'SPACEX': '🚀',
-    'SILVER': '<:pngimg:1437395419544944713>',
-    'ART': '<:atr:1437395490168639550>',
-};
-
-const EMOJI_ASSET_IMAGES = {
-    'TESLA': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/tesla.png',
-    'APPLE': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/apple.png',
-    'GOLD': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/gold.png',
-    'SPACEX': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/spacex.png',
-    'ANDROID': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/android.png',
-    'SILVER': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/silver.png',
-    'LAND': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/land.png',
-    'BITCOIN': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/bitcoin.png',
-    'ART': 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/art.png',
-};
-
-const EMOJI_UP = '<:upward:1435880367805431850>';
-const EMOJI_DOWN = '<:downward:1435880484046372914>';
-const EMOJI_NEUTRAL = '<:neutral:1435880568158945292>';
-
-const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
-const ITEMS_PER_PAGE = 9;
-
-function getUpdateTimeRemaining() {
-    const now = Date.now();
-    const timeSinceStart = now % UPDATE_INTERVAL_MS;
-    const remainingTime = UPDATE_INTERVAL_MS - timeSinceStart;
-    const totalSeconds = Math.floor(remainingTime / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+async function getAssetImage(item) {
+    if (ASSETS_CACHE.has(item.id)) return ASSETS_CACHE.get(item.id);
+    
+    // محاولة جلب الصورة المحلية أولاً
+    const imgPath = path.join(imageAssetsDir, `${item.id.toLowerCase()}.png`);
+    if (fs.existsSync(imgPath)) {
+        const img = await loadImage(imgPath).catch(()=>{});
+        if (img) { ASSETS_CACHE.set(item.id, img); return img; }
+    }
+    
+    // إذا لم تتوفر الصورة المحلية، نجلبها من الرابط في الجيسون
+    if (item.image) {
+        const img = await loadImage(item.image).catch(()=>{});
+        if (img) { ASSETS_CACHE.set(item.id, img); return img; }
+    }
+    
+    return null;
 }
 
-function getItemChangeEmoji(changePercent) {
-    if (changePercent > 0.01) return EMOJI_UP;
-    if (changePercent < -0.01) return EMOJI_DOWN;
-    return EMOJI_NEUTRAL;
+function formatPriceText(price) {
+    if (isNaN(price)) return '0 Mora';
+    return Number(price).toLocaleString();
 }
 
-function cleanEmojiFromName(name) {
-    if (!name) return '';
-    return name.replace(/<a?:.+?:\d+>/g, '').trim();
+function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    if (typeof radius === 'undefined') radius = 5;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
 }
 
-async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
-    const startIndex = pageIndex * ITEMS_PER_PAGE;
-    const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-    const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
+exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages) {
+    const CANVAS_WIDTH = 1200;
+    const CANVAS_HEIGHT = 900;
+    const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+    const ctx = canvas.getContext("2d");
+    const FONT_FAMILY = '"Arial", sans-serif';
 
-    const imageBuffer = await drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
-    const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
+    // Background
+    const bgGradient = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    bgGradient.addColorStop(0, '#0a0f1e'); 
+    bgGradient.addColorStop(1, '#020408'); 
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    ctx.strokeStyle = 'rgba(0, 162, 255, 0.03)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < CANVAS_WIDTH; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_HEIGHT); ctx.stroke(); }
+    for (let y = 0; y < CANVAS_HEIGHT; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_WIDTH, y); ctx.stroke(); }
 
-    const selectOptions = itemsOnPage.map(item => ({
-        label: `${cleanEmojiFromName(item.name)}`,
-        description: `السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()} مورا`,
-        value: item.id,
-        emoji: EMOJI_ASSET_SMALL[item.id] || '📈'
-    }));
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, 90);
+    ctx.strokeStyle = 'rgba(0, 162, 255, 0.1)';
+    ctx.beginPath(); ctx.moveTo(0, 90); ctx.lineTo(CANVAS_WIDTH, 90); ctx.stroke();
 
-    const selectMenuRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId('market_select_item')
-            .setPlaceholder('🔻 اختر الأصل لعرض التفاصيل والتداول...')
-            .addOptions(selectOptions)
-    );
+    ctx.textAlign = "right";
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold 35px ${FONT_FAMILY}`;
+    ctx.fillText('✥ سوق الاستثمار الإمبراطوري ✥', CANVAS_WIDTH - 40, 55);
 
-    const actionRows = [selectMenuRow];
+    ctx.textAlign = "left";
+    ctx.font = `24px ${FONT_FAMILY}`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText(`🕒 التحديث القادم خلال: ${timeRemaining}`, 40, 55);
+
+    const CARD_WIDTH = 360;
+    const CARD_HEIGHT = 220;
+    const GAP_X = 30;
+    const GAP_Y = 30;
+    const START_X = 40;
+    const START_Y = 130;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        const x = START_X + col * (CARD_WIDTH + GAP_X);
+        const y = START_Y + row * (CARD_HEIGHT + GAP_Y);
+
+        const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
+        const currentPrice = Number(item.currentPrice || item.currentprice || item.price || 0);
+        const isUp = changePercent > 0.01;
+        const isDown = changePercent < -0.01;
+
+        const mainColor = isUp ? '#1ddb2a' : (isDown ? '#db1d2a' : '#888888');
+        const glowColor = isUp ? 'rgba(29, 219, 42, 0.1)' : (isDown ? 'rgba(219, 29, 42, 0.1)' : 'rgba(136, 136, 136, 0.05)');
+
+        ctx.fillStyle = 'rgba(20, 30, 50, 0.7)';
+        roundRect(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, 20, true);
+        
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 20;
+        ctx.strokeStyle = `rgba(${isUp ? '29, 219, 42' : (isDown ? '219, 29, 42' : '136, 136, 136')}, 0.2)`;
+        ctx.lineWidth = 2;
+        roundRect(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, 20, false, true);
+        ctx.shadowBlur = 0; 
+
+        const assetImg = await getAssetImage(item);
+        if (assetImg) {
+            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10;
+            ctx.drawImage(assetImg, x + 25, y + 25, 70, 70);
+            ctx.shadowBlur = 0;
+        }
+
+        const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
+        if (trendImg) {
+            ctx.drawImage(trendImg, x + CARD_WIDTH - 95, y + 25, 70, 70);
+        }
+
+        ctx.textAlign = "right";
+        const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').trim();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold 28px ${FONT_FAMILY}`;
+        ctx.fillText(cleanName.split(' ')[0], x + CARD_WIDTH - 25, y + 130);
+
+        ctx.fillStyle = mainColor;
+        ctx.font = `22px ${FONT_FAMILY}`;
+        const sign = changePercent > 0 ? '+' : '';
+        ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + CARD_WIDTH - 25, y + 160);
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        roundRect(ctx, x + 15, y + CARD_HEIGHT - 65, CARD_WIDTH - 30, 50, 10, true);
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.font = `18px ${FONT_FAMILY}`;
+        ctx.fillText('السعر الحالي', x + 30, y + CARD_HEIGHT - 35);
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = mainColor;
+        ctx.font = `bold 26px ${FONT_FAMILY}`;
+        ctx.fillText(`${formatPriceText(currentPrice)} Mora`, x + CARD_WIDTH - 30, y + CARD_HEIGHT - 33);
+    }
 
     if (totalPages > 1) {
-        const navRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('market_prev').setLabel('السابق ◀️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
-            new ButtonBuilder().setCustomId('market_next').setLabel('▶️ التالي').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
-        );
-        actionRows.push(navRow);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.01)';
+        ctx.fillRect(0, CANVAS_HEIGHT - 60, CANVAS_WIDTH, 60);
+        ctx.textAlign = "center";
+        ctx.font = `20px ${FONT_FAMILY}`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillText(`صفحة ${currentPage + 1} من ${totalPages}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 22);
     }
 
-    return { attachment, components: actionRows };
-}
-
-async function buildDetailView(item, userId, guildId, sql) {
-    let userPortfolio;
-    try {
-        const userPortfolioRes = await sql.query(`SELECT "quantity" FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]);
-        userPortfolio = userPortfolioRes.rows ? userPortfolioRes.rows[0] : (Array.isArray(userPortfolioRes) ? userPortfolioRes[0] : null);
-    } catch (e) {
-        try {
-            const userPortfolioRes = sql.prepare("SELECT quantity FROM user_portfolio WHERE userID = ? AND guildID = ? AND itemID = ?").get(userId, guildId, item.id);
-            userPortfolio = userPortfolioRes;
-        } catch(err) {}
-    }
-    const userQuantity = userPortfolio ? Number(userPortfolio.quantity || userPortfolio.Quantity || 0) : 0;
-    
-    const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
-    const currentPrice = Number(item.currentPrice || item.currentprice || 0);
-    
-    const changeEmoji = getItemChangeEmoji(changePercent);
-    const price = currentPrice.toLocaleString();
-    const cleanName = cleanEmojiFromName(item.name);
-
-    const detailEmbed = new EmbedBuilder()
-        .setTitle(`📈 تفاصيل: ${cleanName} (${item.id})`)
-        .setColor(changePercent > 0.01 ? Colors.Green : (changePercent < -0.01 ? Colors.Red : Colors.Grey))
-        .setDescription(item.description || 'لا يوجد وصف')
-        .addFields(
-            { name: 'السعر الحالي', value: `${price} ${EMOJI_MORA}`, inline: true },
-            { name: 'تغير الفترة الأخيرة', value: `${changeEmoji} ${(changePercent * 100).toFixed(2)}%`, inline: true },
-            { name: 'في محفظتك الاستثمارية', value: `**${userQuantity.toLocaleString()}** وحدة`, inline: true }
-        )
-        .setTimestamp();
-
-    const itemImage = EMOJI_ASSET_IMAGES[item.id];
-    if (itemImage) {
-        detailEmbed.setThumbnail(itemImage);
-    }
-
-    const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger).setDisabled(userQuantity === 0),
-        new ButtonBuilder().setCustomId('market_back_to_grid').setLabel('العودة للوحة').setStyle(ButtonStyle.Primary)
-    );
-
-    return { embed: detailEmbed, components: [actionRow] };
-}
-
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('سوق')
-        .setDescription('يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.'),
-
-    name: 'market',
-    aliases: ['سوق', 'استثمار', 'اسعار', 'بورصة'],
-    category: "Economy",
-    description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.',
-
-    async execute(interactionOrMessage, args) {
-        const isSlash = !!interactionOrMessage.isChatInputCommand;
-        let interaction, message, client, sql, user, guild;
-
-        if (isSlash) {
-            interaction = interactionOrMessage;
-            client = interaction.client;
-            sql = client.sql;
-            user = interaction.user;
-            guild = interaction.guild;
-            
-            try {
-                if (!interaction.deferred && !interaction.replied) {
-                    await interaction.deferReply();
-                }
-            } catch (e) {}
-
-        } else {
-            message = interactionOrMessage;
-            client = message.client;
-            sql = client.sql;
-            user = message.author;
-            guild = message.guild;
-        }
-
-        const reply = async (payload) => {
-            if (isSlash) return await interaction.editReply(payload).catch(()=>{});
-            else return await message.channel.send(payload).catch(()=>{});
-        };
-
-        try {
-            let dbItems = [];
-            try {
-                const dbItemsRes = await sql.query("SELECT * FROM market_items");
-                dbItems = dbItemsRes.rows ? dbItemsRes.rows : (Array.isArray(dbItemsRes) ? dbItemsRes : []);
-            } catch (dbErr) {
-                try {
-                    dbItems = sql.prepare("SELECT * FROM market_items").all();
-                } catch(sqliteErr) {
-                    console.error("Market DB Error:", dbErr.message, sqliteErr.message);
-                    return reply({ content: "❌ عذراً، لا يمكن الاتصال بقاعدة بيانات السوق حالياً." });
-                }
-            }
-
-            const validItemIds = new Set(marketConfig.map(i => i.id));
-            const allItems = dbItems.filter(item => validItemIds.has(item.id));
-
-            if (allItems.length === 0) {
-                const embed = new EmbedBuilder().setTitle('📈 سوق الاستثمار').setDescription("السوق فارغ تماماً حالياً.").setColor(Colors.Red);
-                return reply({ embeds: [embed] });
-            }
-
-            let currentPage = 0;
-            let currentItemIndex = 0;
-            let currentView = 'grid'; 
-            let timeRemaining = getUpdateTimeRemaining();
-
-            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-            
-            let msg;
-            const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
-            
-            if (isSlash) {
-                msg = await interaction.editReply(initPayload);
-            } else {
-                msg = await message.channel.send(initPayload);
-            }
-
-            const filter = i => i.user.id === user.id;
-            const collector = msg.createMessageComponentCollector({
-                time: 300000,
-                filter,
-            });
-
-            collector.on('collect', async i => {
-                try {
-                    if (i.isButton()) {
-                        if (i.customId === 'market_prev' || i.customId === 'market_next') {
-                            try { await i.deferUpdate(); } catch (e) {}
-
-                            if (currentView === 'grid') {
-                                if (i.customId === 'market_next') currentPage = Math.min(Math.ceil(allItems.length / ITEMS_PER_PAGE) - 1, currentPage + 1);
-                                else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
-
-                                timeRemaining = getUpdateTimeRemaining();
-                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                                await i.editReply({ files: [newPage.attachment], components: newPage.components, embeds: [] });
-                            }
-                        } else if (i.customId === 'market_back_to_grid') {
-                            try { await i.deferUpdate(); } catch (e) {}
-                            currentView = 'grid';
-                            timeRemaining = getUpdateTimeRemaining();
-                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
-                            await i.editReply({ files: [gridAttachment], components: gridComponents, embeds: [], content: `**مرحباً بك في بورصة الإمبراطورية يا <@${i.user.id}> 📊**` });
-
-                        } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
-                            const isBuy = i.customId.startsWith('buy_asset_');
-                            const assetId = i.customId.replace(isBuy ? 'buy_asset_' : 'sell_asset_', '');
-                            const item = allItems.find(it => it.id === assetId);
-
-                            if (!item) return;
-
-                            const modal = new ModalBuilder()
-                                .setCustomId(`${isBuy ? 'buy_modal_' : 'sell_modal_'}${assetId}`)
-                                .setTitle("أدخل الكمية");
-
-                            const quantityInput = new TextInputBuilder()
-                                .setCustomId('quantity_input')
-                                .setLabel(isBuy ? "الكمية التي تريد شراءها" : "الكمية التي تريد بيعها")
-                                .setStyle(TextInputStyle.Short)
-                                .setPlaceholder(`السعر الحالي: ${Number(item.currentPrice || item.currentprice).toLocaleString()}`)
-                                .setRequired(true);
-
-                            modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
-                            await i.showModal(modal);
-                        }
-                    }
-
-                    else if (i.isStringSelectMenu() && i.customId === 'market_select_item') {
-                        try { await i.deferUpdate(); } catch (e) {}
-                        currentView = 'detail';
-                        const selectedID = i.values[0];
-                        currentItemIndex = allItems.findIndex(it => it.id === selectedID);
-                        const item = allItems[currentItemIndex];
-                        const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
-                        await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
-                    }
-                } catch (error) {
-                    console.error("خطأ في جامع السوق:", error);
-                }
-            });
-
-            collector.on('end', () => {
-                if(msg && msg.editable) msg.edit({ components: [] }).catch(() => null);
-            });
-
-        } catch (globalError) {
-            console.error("Market Execute Error:", globalError);
-            return reply({ content: `❌ **حدث خطأ غير متوقع:**\n\`${globalError.message}\`` });
-        }
-    }
+    return canvas.toBuffer();
 };
+
+preloadGlobalAssets();
