@@ -18,7 +18,6 @@ try {
     console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
 }
 
-// 🔥 استدعاء الهاندلر لمعالجة عمليات البيع والشراء 🔥
 let marketHandler;
 try {
     const handlerPath = path.join(process.cwd(), 'handlers', 'market-handler.js');
@@ -30,10 +29,9 @@ try {
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 9;
 
-// 🔥 الإيموجيات المخصصة للأزرار
-const EMOJI_RIGHT = '1439164491072929915'; // السهم اليمين (السابق)
-const EMOJI_LEFT = '1439164494759723029';  // السهم اليسار (التالي)
-const EMOJI_BACK = '↩️'; // سهم العودة
+const EMOJI_RIGHT = '1439164491072929915'; 
+const EMOJI_LEFT = '1439164494759723029';  
+const EMOJI_BACK = '↩️'; 
 
 function getUpdateTimeRemaining() {
     const now = Date.now();
@@ -78,7 +76,6 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
 
     const actionRows = [selectMenuRow];
 
-    // 🔥 ترتيب الأزرار: اليسار باليسار (التالي) واليمين باليمين (السابق) 🔥
     if (totalPages > 1) {
         const navRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1),
@@ -109,22 +106,17 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
-        // 🔥 ترتيب الأسهم: اليسار باليسار واليمين باليمين 🔥
         new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
-        
-        // زر الشراء
         new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success)
     );
 
-    // زر البيع الذكي: يظهر فقط إذا كان المستخدم يملك أسهماً
     if (userQuantity > 0) {
         actionRow.addComponents(
             new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger)
         );
     }
 
-    // زر العودة للوحة الرئيسية
     actionRow.addComponents(
         new ButtonBuilder().setCustomId('market_back_to_grid').setEmoji(EMOJI_BACK).setStyle(ButtonStyle.Primary)
     );
@@ -261,7 +253,6 @@ module.exports = {
 
                             if (!item) return;
 
-                            // 1. إنشاء وإظهار المودال للمستخدم
                             const modal = new ModalBuilder()
                                 .setCustomId(`${isBuy ? 'buy_modal_' : 'sell_modal_'}${assetId}`)
                                 .setTitle("أدخل الكمية");
@@ -276,24 +267,27 @@ module.exports = {
                             modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
                             await i.showModal(modal);
 
-                            // 🔥 2. انتظار إجابة المستخدم ومعالجتها عبر marketHandler 🔥
+                            // 🔥 معالجة الاستجابة وحل الكراش الصامت 🔥
                             try {
                                 const submitted = await i.awaitModalSubmit({
                                     filter: x => x.user.id === i.user.id && x.customId === modal.data.custom_id,
-                                    time: 60000 // ينتظر دقيقة واحدة للرد
+                                    time: 60000 
                                 });
                                 
                                 if (marketHandler && typeof marketHandler._handleMarketTransaction === 'function') {
-                                    await marketHandler._handleMarketTransaction(submitted, client, sql, isBuy);
+                                    // الهاندلر راح يرد برسالة عامة للمستخدم (فاتورة)
+                                    const isSuccess = await marketHandler._handleMarketTransaction(submitted, client, sql, isBuy);
                                     
-                                    // تحديث زر البيع والشاشة بعد العملية بنجاح!
-                                    const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
-                                    await i.editReply({ files: [detailImage], attachments: [], components: detailComponents, content: '' });
+                                    if (isSuccess) {
+                                        // تحديث الصورة الأصلية للوحة بـ i.message.edit لمنع الانهيار!
+                                        const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
+                                        await i.message.edit({ files: [detailImage], attachments: [], components: detailComponents, content: '' }).catch(()=>{});
+                                    }
                                 } else {
                                     await submitted.reply({ content: '❌ نظام التداول (الهاندلر) غير متصل حالياً.', ephemeral: true });
                                 }
                             } catch (err) {
-                                // يتجاهل الخطأ إذا انتهى الوقت ولم يكتب المستخدم شيئاً
+                                // المستخدم ألغى المودال أو انتهى الوقت
                             }
                         }
                     }
