@@ -49,7 +49,7 @@ function resolveText(val) {
     return String(val);
 }
 
-// 🏹 سهم فانتزي متطور (مقاسات ثابتة ومحسوبة)
+// 🏹 سهم فانتزي متطور
 function drawFantasyArrow(ctx, x, y, width, color) {
     ctx.save();
     ctx.translate(x, y);
@@ -104,11 +104,10 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(safeText, x, y);
 }
 
-// 📦 إطار العناصر (محمي من تداخل النصوص)
+// 📦 إطار العناصر
 function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quantity = null) {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
-    // صندوق العنصر
     ctx.fillStyle = 'rgba(12, 16, 24, 0.95)';
     ctx.beginPath(); roundRect(ctx, x, y, size, size, 20); ctx.fill();
 
@@ -128,7 +127,6 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quan
         ctx.fillText('❓', x + size/2, y + size/2);
     }
 
-    // رقم الكمية (فوق الزاوية اليمنى)
     if (quantity !== null) {
         ctx.fillStyle = color;
         ctx.beginPath(); roundRect(ctx, x + size - 50, y - 15, 65, 35, 10); ctx.fill();
@@ -138,32 +136,11 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quan
         ctx.fillText(`x${quantity}`, x + size - 17, y + 2);
     }
 
-    // اسم العنصر (تحت الصندوق بمسافة آمنة)
     if (label) {
         ctx.fillStyle = '#E0E0E0';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         drawAutoScaledArabicText(ctx, label, x + size/2, y + size + 15, size + 80, 24, 12);
     }
-}
-
-// 🌟 رسم شعار الأقسام (للصفحات الرئيسية)
-function drawSectionEmblem(ctx, x, y, emoji, color) {
-    ctx.save();
-    ctx.translate(x, y);
-
-    ctx.beginPath(); ctx.arc(0, 0, 80, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(10, 15, 20, 0.9)'; ctx.fill();
-    ctx.lineWidth = 5; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 40; ctx.stroke();
-    
-    ctx.beginPath(); ctx.arc(0, 0, 60, 0, Math.PI * 2);
-    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    ctx.font = '70px "Arial"';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(emoji, 0, 5);
-
-    ctx.restore();
 }
 
 // ==========================================
@@ -182,43 +159,63 @@ async function generateForgeUI(userObj, view, data) {
     if (activeView === 'synthesis' && !data.sacMatName) activeView = 'synthesis_home';
     if (activeView === 'smelting' && !data.sacMatName) activeView = 'smelting_home';
 
-    // 1. الألوان والتأثيرات
-    let theme = { bg1: '', bg2: '', spark: '', type: 'magic', accent: '' };
+    // 1. تحديد الروابط لصور الخلفيات والشعارات حسب القسم
+    let bgUrl, emblemUrl, sparkColor, accentColor;
     
     if (activeView === 'weapon') {
-        theme = { bg1: 'rgba(220, 50, 10, 0.5)', bg2: 'rgba(20, 5, 5, 0.98)', spark: '#FF8800', type: 'fire', accent: '#E74C3C' };
+        bgUrl = 'images/forge/bg_forge.png';
+        emblemUrl = 'images/forge/emblem_forge.png';
+        sparkColor = '#FF8800'; accentColor = '#E74C3C';
     } else if (activeView.includes('skill')) {
-        theme = { bg1: 'rgba(80, 20, 200, 0.6)', bg2: 'rgba(10, 5, 20, 0.98)', spark: '#DDAAFF', type: 'magic', accent: '#9B59B6' };
+        bgUrl = 'images/forge/bg_academy.png';
+        emblemUrl = 'images/forge/emblem_magic.png';
+        sparkColor = '#DDAAFF'; accentColor = '#9B59B6';
     } else if (activeView.includes('synthesis')) {
-        theme = { bg1: 'rgba(20, 180, 80, 0.5)', bg2: 'rgba(5, 20, 10, 0.98)', spark: '#55FF88', type: 'magic', accent: '#2ECC71' };
+        bgUrl = 'images/forge/bg_synthesis.png';
+        emblemUrl = 'images/forge/emblem_synthesis.png'; // اختياري لو عندك
+        sparkColor = '#55FF88'; accentColor = '#2ECC71';
     } else if (activeView.includes('smelting')) {
-        theme = { bg1: 'rgba(255, 10, 0, 0.5)', bg2: 'rgba(25, 0, 0, 0.98)', spark: '#FF4400', type: 'fire', accent: '#FF4400' };
+        bgUrl = 'images/forge/bg_smelting.png';
+        emblemUrl = 'images/forge/emblem_smelt.png'; // اختياري
+        sparkColor = '#FF4400'; accentColor = '#FF4400';
     } else { 
-        theme = { bg1: 'rgba(0, 100, 200, 0.4)', bg2: 'rgba(5, 10, 20, 0.98)', spark: '#00AAFF', type: 'magic', accent: '#3498DB' };
+        bgUrl = 'images/forge/bg_main_hub.png';
+        sparkColor = '#00AAFF'; accentColor = '#3498DB';
     }
 
-    ctx.fillStyle = '#030406';
-    ctx.fillRect(0, 0, width, height);
+    // تحميل الصور (الخلفية، الشعار، الأفتار، الموارد)
+    const [bgImage, emblemImg, avatarImage, reqMatImg, targetMatImg] = await Promise.all([
+        getCachedImage(bgUrl),
+        emblemUrl ? getCachedImage(emblemUrl) : null,
+        loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null),
+        data.reqMatIcon ? getCachedImage(data.reqMatIcon) : null,
+        data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
+    ]);
 
-    const bgGrad = ctx.createRadialGradient(width/2, height/2, 50, width/2, height/2, 900);
-    bgGrad.addColorStop(0, theme.bg1);
-    bgGrad.addColorStop(1, theme.bg2);
-    ctx.fillStyle = bgGrad;
+    // 2. رسم الخلفية المرفوعة
+    ctx.fillStyle = '#050608';
     ctx.fillRect(0, 0, width, height);
+    if (bgImage) {
+        ctx.drawImage(bgImage, 0, 0, width, height);
+        // فلتر تظليل بسيط عشان النصوص تبرز
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, width, height);
+    }
 
-    ctx.fillStyle = theme.spark;
+    // تأثير الجسيمات (عشان نعطي حياة للصورة الثابتة)
+    ctx.fillStyle = sparkColor;
     ctx.beginPath();
-    const pCount = theme.type === 'fire' ? 120 : 80;
+    const pCount = activeView.includes('smelting') || activeView === 'weapon' ? 120 : 80;
     for(let i=0; i<pCount; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
-        const pSize = Math.random() * (theme.type === 'fire' ? 4 : 2.5);
+        const pSize = Math.random() * 3;
         ctx.globalAlpha = Math.random() * 0.7 + 0.1;
         ctx.moveTo(px, py); ctx.arc(px, py, pSize, 0, Math.PI*2);
     }
     ctx.fill(); ctx.globalAlpha = 1.0;
 
-    // 2. الشريط العلوي
+    // 3. الشريط العلوي
     const headerH = 100;
     ctx.fillStyle = 'rgba(5, 8, 12, 0.9)';
     ctx.fillRect(0, 0, width, headerH);
@@ -230,12 +227,7 @@ async function generateForgeUI(userObj, view, data) {
     ctx.fillStyle = goldGrad;
     ctx.fillRect(0, headerH - 3, width, 3);
 
-    const [avatarImage, reqMatImg, targetMatImg] = await Promise.all([
-        loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null),
-        data.reqMatIcon ? getCachedImage(data.reqMatIcon) : null,
-        data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
-    ]);
-
+    // الأفتار والاسم
     const avatarSize = 70;
     const avatarX = 50 + avatarSize/2;
     const avatarY = headerH / 2;
@@ -254,6 +246,7 @@ async function generateForgeUI(userObj, view, data) {
     drawAutoScaledArabicText(ctx, userObj.displayName || userObj.username, avatarX + 50, avatarY, 250, 26, 14);
     ctx.shadowBlur = 0;
 
+    // المورا
     ctx.fillStyle = 'rgba(15, 20, 25, 0.9)';
     ctx.beginPath(); roundRect(ctx, width - 280, 25, 240, 50, 15); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
@@ -262,19 +255,20 @@ async function generateForgeUI(userObj, view, data) {
     drawAutoScaledText(ctx, (data.mora || 0).toLocaleString(), width - 80, 50, 160, 24, 12);
     ctx.font = '24px "Arial"'; ctx.fillText('🪙', width - 45, 50);
 
+    // عنوان الصفحة المركزي
     ctx.textAlign = 'center'; ctx.fillStyle = '#F1C40F';
     ctx.font = 'bold 45px "Bein"';
     ctx.shadowColor = '#F1C40F'; ctx.shadowBlur = 15;
     ctx.fillText(resolveText(data.title || 'المجمع الإمبراطوري'), width / 2, 160);
     ctx.shadowBlur = 0;
 
-    // 3. اللوحة الرئيسية (Panel)
+    // 4. اللوحة الرئيسية (Panel) بشفافية عشان تبين الخلفية 
     const panelY = 210;
     const panelW = 1100;
     const panelH = 430;
     const panelX = (width - panelW) / 2;
 
-    ctx.fillStyle = 'rgba(8, 12, 16, 0.88)';
+    ctx.fillStyle = 'rgba(8, 12, 16, 0.80)'; // الشفافية زادت هنا
     ctx.beginPath(); roundRect(ctx, panelX, panelY, panelW, panelH, 25); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'; ctx.stroke();
 
@@ -298,7 +292,7 @@ async function generateForgeUI(userObj, view, data) {
         if (activeView === 'weapon' || activeView === 'skill') {
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 50px "Arial"';
             ctx.fillText(`المستوى الجديد: Lv.${data.nextLevel}`, width/2, panelY + 200);
-            ctx.fillStyle = theme.accent; ctx.font = 'bold 45px "Arial"';
+            ctx.fillStyle = accentColor; ctx.font = 'bold 45px "Arial"';
             ctx.fillText(resolveText(data.nextStat), width/2, panelY + 280);
         }
         else if (activeView === 'synthesis') {
@@ -320,33 +314,49 @@ async function generateForgeUI(userObj, view, data) {
     // =========================================================
     // 🏠 الصفحات الرئيسية المخصصة للأقسام
     // =========================================================
-    if (activeView === 'main') {
-        drawSectionEmblem(ctx, width/2, panelY + 130, '🏛️', theme.accent);
+    if (activeView === 'main' || activeView.endsWith('_home')) {
+        
+        // رسم الشعار المرفوع إذا توفر، أو الشعار القديم
+        if (emblemImg) {
+            ctx.drawImage(emblemImg, width/2 - 70, panelY + 60, 140, 140);
+        } else {
+            let emoji = '🏛️';
+            if(activeView === 'skill_home') emoji = '🔮';
+            else if(activeView === 'synthesis_home') emoji = '⚗️';
+            else if(activeView === 'smelting_home') emoji = '🌋';
+            
+            ctx.save();
+            ctx.translate(width/2, panelY + 130);
+            ctx.beginPath(); ctx.arc(0, 0, 80, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(10, 15, 20, 0.9)'; ctx.fill();
+            ctx.lineWidth = 5; ctx.strokeStyle = accentColor; ctx.shadowColor = accentColor; ctx.shadowBlur = 40; ctx.stroke();
+            ctx.font = '70px "Arial"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.shadowBlur = 0;
+            ctx.fillText(emoji, 0, 5);
+            ctx.restore();
+        }
+
         ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('مرحباً بك في المجمع الإمبراطوري', width/2, panelY + 270);
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
-        ctx.fillText('الرجاء اختيار القسم الذي تود زيارته من الأزرار بالأسفل', width/2, panelY + 330);
-    }
-    else if (activeView === 'skill_home') {
-        drawSectionEmblem(ctx, width/2, panelY + 130, '🔮', theme.accent);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('أكاديمية السحر السري', width/2, panelY + 270);
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
-        ctx.fillText('الرفوف مليئة بالمخطوطات... اختر المهارة المراد صقلها من القائمة', width/2, panelY + 330);
-    }
-    else if (activeView === 'synthesis_home') {
-        drawSectionEmblem(ctx, width/2, panelY + 130, '⚗️', theme.accent);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('فرن الدمج الكيميائي', width/2, panelY + 270);
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
-        ctx.fillText('قانون التبادل: ضع 4 عناصر متطابقة لاستخلاص عنصر جديد', width/2, panelY + 330);
-    }
-    else if (activeView === 'smelting_home') {
-        drawSectionEmblem(ctx, width/2, panelY + 130, '🌋', theme.accent);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 42px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('محرقة التفكيك العظمى', width/2, panelY + 270);
-        ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
-        ctx.fillText('ألقِ بعتادك الزائد في النار المشتعلة لتحصل على خبرة خالصة', width/2, panelY + 330);
+        
+        if (activeView === 'main') {
+            ctx.fillText('مرحباً بك في المجمع الإمبراطوري', width/2, panelY + 270);
+            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('الرجاء اختيار القسم الذي تود زيارته من الأزرار بالأسفل', width/2, panelY + 330);
+        }
+        else if (activeView === 'skill_home') {
+            ctx.fillText('أكاديمية السحر السري', width/2, panelY + 270);
+            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('الرفوف مليئة بالمخطوطات... اختر المهارة المراد صقلها من القائمة', width/2, panelY + 330);
+        }
+        else if (activeView === 'synthesis_home') {
+            ctx.fillText('فرن الدمج الكيميائي', width/2, panelY + 270);
+            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('قانون التبادل: ضع 4 عناصر متطابقة لاستخلاص عنصر جديد', width/2, panelY + 330);
+        }
+        else if (activeView === 'smelting_home') {
+            ctx.fillText('محرقة التفكيك العظمى', width/2, panelY + 270);
+            ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
+            ctx.fillText('ألقِ بعتادك الزائد في النار المشتعلة لتحصل على خبرة خالصة', width/2, panelY + 330);
+        }
     }
 
     // =========================================================
@@ -388,11 +398,11 @@ async function generateForgeUI(userObj, view, data) {
         drawAutoScaledText(ctx, data.currentStat, oldX, statsY_Value, 110, 34, 14);
         ctx.restore();
 
-        drawFantasyArrow(ctx, arrowX, statsY_Value, 130, theme.accent);
+        drawFantasyArrow(ctx, arrowX, statsY_Value, 130, accentColor);
 
         ctx.save();
-        ctx.fillStyle = theme.accent; ctx.font = 'bold 38px "Arial"'; ctx.textAlign = 'left';
-        ctx.shadowColor = theme.accent; ctx.shadowBlur = 15;
+        ctx.fillStyle = accentColor; ctx.font = 'bold 38px "Arial"'; ctx.textAlign = 'left';
+        ctx.shadowColor = accentColor; ctx.shadowBlur = 15;
         drawAutoScaledText(ctx, data.nextStat, newX, statsY_Value, 150, 38, 14);
         ctx.restore();
 
@@ -414,9 +424,11 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillStyle = moraColor; ctx.font = 'bold 30px "Arial"';
         ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 825, panelY + 130);
 
-        // تعديل مكان المورد وتصحيح التداخل 
+        // المورد 
+        ctx.textBaseline = 'alphabetic';
         drawItemBox(ctx, panelX + 740, panelY + 180, 170, reqMatImg, data.reqMatRarity || 'Rare', data.reqMatName);
         
+        // كمية المورد
         const matColor = data.userMatCount >= data.reqMatCount ? '#2ECC71' : '#E74C3C';
         ctx.fillStyle = matColor; ctx.font = 'bold 26px "Arial"';
         ctx.fillText(`الكمية المتوفرة: ${data.userMatCount} / ${data.reqMatCount}`, panelX + 825, panelY + 395);
@@ -429,19 +441,17 @@ async function generateForgeUI(userObj, view, data) {
         const itemSize = 180;
         const leftItemX = panelX + 160;
         const rightItemX = panelX + panelW - 340;
-        const itemY = panelY + 110; // نزلناها عشان العناوين تاخذ راحتها
+        const itemY = panelY + 110; 
 
-        // عنوان الصندوق الأيسر
+        // الصندوق الأيسر
         ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 30px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('عنصر الدمج (4x)', leftItemX + itemSize/2, itemY - 15);
-        
-        // صندوق الدمج
         drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Rare', data.sacMatName, 4);
         
-        // السهم الفانتزي
-        drawFantasyArrow(ctx, width/2 - 70, panelY + 190, 140, '#F1C40F');
+        // السهم הפانتزي
+        drawFantasyArrow(ctx, width/2 - 70, panelY + 180, 140, '#F1C40F');
 
-        // صندوق النتيجة
+        // الصندوق الأيمن
         if (data.targetMatName) {
             ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 30px "Bein"'; ctx.textBaseline = 'bottom';
             ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 15);
@@ -458,7 +468,6 @@ async function generateForgeUI(userObj, view, data) {
             ctx.fillStyle = 'rgba(255,255,255,0.05)';
             ctx.beginPath(); roundRect(ctx, rightItemX, itemY, itemSize, itemSize, 20); ctx.fill();
             
-            // حل مشكلة النزول لسطر جديد في الكانفاس
             ctx.fillStyle = '#777777'; ctx.font = 'bold 26px "Bein"'; ctx.textBaseline = 'middle';
             ctx.fillText('بانتظار تحديد', rightItemX + itemSize/2, itemY + itemSize/2 - 15);
             ctx.fillText('العنصر المطلوب', rightItemX + itemSize/2, itemY + itemSize/2 + 20);
@@ -471,7 +480,7 @@ async function generateForgeUI(userObj, view, data) {
     else if (activeView === 'smelting') {
         const itemSize = 200;
         const leftItemX = panelX + 180;
-        const itemY = panelY + 120; // مساحة فوق كافية للعنوان
+        const itemY = panelY + 120; 
 
         ctx.fillStyle = '#FF4400'; ctx.font = 'bold 32px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('العنصر المراد صهره', leftItemX + itemSize/2, itemY - 15);
