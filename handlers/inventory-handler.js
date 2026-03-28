@@ -88,24 +88,33 @@ function resolveItemInfo(itemId) {
 
 async function getInventoryCategories(db, userId, guildId) {
     let inventory = [];
+    let portfolio = [];
     
-    // 🔥 تم تعديل الاستعلام ليتوافق مع PostgreSQL بدلاً من SQLite لمنع انهيار البوت 🔥
+    // 🚀 جلب بيانات المخزن العادي ومحفظة الاستثمارات بالتوازي لسرعة خارقة 🚀
     try {
-        const res = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]);
-        inventory = res.rows;
+        const [invRes, portRes] = await Promise.all([
+            db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]),
+            db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId])
+        ]);
+        inventory = invRes.rows;
+        portfolio = portRes.rows;
     } catch(e) {
         try {
-            const res = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]);
-            inventory = res.rows;
+            const [invRes, portRes] = await Promise.all([
+                db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]),
+                db.query(`SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2`, [userId, guildId])
+            ]);
+            inventory = invRes.rows;
+            portfolio = portRes.rows;
         } catch(err) {
-            console.error("❌ Inventory Fetch Error:", err);
+            console.error("❌ Inventory/Portfolio Fetch Error:", err);
             return { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
         }
     }
 
-    // إضافة الأقسام الجديدة للمخزن
     const categories = { materials: [], fishing: [], farming: [], potions: [], market: [], others: [] };
     
+    // 📦 فرز عناصر المخزن العادي
     for (const row of inventory) {
         const itemId = row.itemID || row.itemid;
         const quantity = Number(row.quantity) || 0;
@@ -114,12 +123,25 @@ async function getInventoryCategories(db, userId, guildId) {
         
         const itemInfo = resolveItemInfo(itemId);
         
-        // فرز العنصر في القسم المناسب
         if (categories[itemInfo.category]) {
             categories[itemInfo.category].push({ ...itemInfo, quantity, id: itemId });
         } else {
             categories.others.push({ ...itemInfo, quantity, id: itemId });
         }
+    }
+
+    // 💼 فرز عناصر المحفظة الاستثمارية (السوق/الممتلكات)
+    for (const row of portfolio) {
+        const itemId = row.itemID || row.itemid;
+        const quantity = Number(row.quantity) || 0;
+        const purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
+
+        if (quantity <= 0) continue;
+
+        const itemInfo = resolveItemInfo(itemId);
+        
+        // دمجها بقسم السوق ليتم عرضها في الحقيبة
+        categories.market.push({ ...itemInfo, quantity, id: itemId, purchasePrice });
     }
     
     return categories;
