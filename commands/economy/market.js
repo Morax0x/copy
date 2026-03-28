@@ -2,18 +2,25 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const fs = require('fs');
 const path = require('path');
 
-// استدعاء ملف الكونفج بشكل آمن
-const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
+// 1. تحميل الإعدادات بأمان
 let marketConfig = [];
-if (fs.existsSync(marketConfigPath)) {
-    marketConfig = require(marketConfigPath);
+try {
+    const marketConfigPath = path.join(process.cwd(), 'json', 'market-items.json');
+    if (fs.existsSync(marketConfigPath)) marketConfig = require(marketConfigPath);
+    else marketConfig = require('../../json/market-items.json');
+} catch (e) {
+    console.error("⚠️ [Market] تحذير: لم يتم العثور على ملف market-items.json");
 }
 
-// 🔥 استدعاء مكتبة الرسم بشكل نظيف ومباشر 🔥
-const { drawMarketGrid } = require('../../generators/market-generator.js'); 
+// 2. استدعاء الرسام بأمان (حل مشكلة Circular Dependency كلياً)
+let marketGen;
+try {
+    marketGen = require('../../generators/market-generator.js');
+} catch (e) {
+    console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
+}
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-
 const EMOJI_ASSET_SMALL = {
     'APPLE': '<:aapple:1435884007484293161>',
     'ANDROID': '<:android:1435885726519656578>',
@@ -68,11 +75,15 @@ function cleanEmojiFromName(name) {
 }
 
 async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
+    if (!marketGen || !marketGen.drawMarketGrid) {
+        throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح!");
+    }
+
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    const imageBuffer = await drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
+    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
     const selectOptions = itemsOnPage.map(item => ({
@@ -158,6 +169,7 @@ module.exports = {
     description: 'يعرض لوحة أسعار الأسهم والعقارات الحالية بشكل مرئي.',
 
     async execute(interactionOrMessage, args) {
+        console.log("➡️ [Market] تم تشغيل أمر السوق!");
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         let interaction, message, client, sql, user, guild;
 
@@ -167,13 +179,12 @@ module.exports = {
             sql = client.sql;
             user = interaction.user;
             guild = interaction.guild;
-            
             try {
                 if (!interaction.deferred && !interaction.replied) {
                     await interaction.deferReply();
+                    console.log("➡️ [Market] تم عمل Defer بنجاح");
                 }
-            } catch (e) {}
-
+            } catch (e) { console.error("⚠️ [Market] Defer Error:", e.message); }
         } else {
             message = interactionOrMessage;
             client = message.client;
@@ -188,6 +199,7 @@ module.exports = {
         };
 
         try {
+            console.log("➡️ [Market] جاري جلب البيانات من الداتابيز...");
             let dbItems = [];
             try {
                 const dbItemsRes = await sql.query("SELECT * FROM market_items");
@@ -196,11 +208,12 @@ module.exports = {
                 try {
                     dbItems = sql.prepare("SELECT * FROM market_items").all();
                 } catch(sqliteErr) {
-                    console.error("Market DB Error:", dbErr.message, sqliteErr.message);
+                    console.error("Market DB Error:", sqliteErr.message);
                     return reply({ content: "❌ عذراً، لا يمكن الاتصال بقاعدة بيانات السوق حالياً." });
                 }
             }
 
+            console.log(`➡️ [Market] تم جلب ${dbItems.length} أصل من الداتابيز.`);
             const validItemIds = new Set(marketConfig.map(i => i.id));
             const allItems = dbItems.filter(item => validItemIds.has(item.id));
 
@@ -210,12 +223,14 @@ module.exports = {
             }
 
             let currentPage = 0;
-            let currentItemIndex = 0;
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
 
+            console.log("➡️ [Market] جاري بناء الصورة المرئية للمقاسات...");
+            // 🎨 استدعاء لوحة الرسم
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
             
+            console.log("➡️ [Market] الصورة جاهزة، جاري الإرسال...");
             let msg;
             const initPayload = { files: [attachment], components: components, content: `**مرحباً بك في سوق الاستثمار يا <@${user.id}> 📊**` };
             
@@ -224,6 +239,7 @@ module.exports = {
             } else {
                 msg = await message.channel.send(initPayload);
             }
+            console.log("✅ [Market] تم إرسال رسالة السوق بنجاح!");
 
             const filter = i => i.user.id === user.id;
             const collector = msg.createMessageComponentCollector({
@@ -279,8 +295,9 @@ module.exports = {
                         try { await i.deferUpdate(); } catch (e) {}
                         currentView = 'detail';
                         const selectedID = i.values[0];
-                        currentItemIndex = allItems.findIndex(it => it.id === selectedID);
-                        const item = allItems[currentItemIndex];
+                        const item = allItems.find(it => it.id === selectedID);
+                        if (!item) return;
+                        
                         const { embed: detailEmbed, components: detailComponents } = await buildDetailView(item, i.user.id, i.guild.id, sql); 
                         await i.editReply({ embeds: [detailEmbed], components: detailComponents, files: [], content: '' });
                     }
