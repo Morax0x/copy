@@ -32,8 +32,13 @@ function getUpdateTimeRemaining() {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// 🖼️ بناء اللوحة الرئيسية
-async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
+// دالة لتنظيف الإيموجيات من المنيو المنسدل
+function cleanNameForMenu(name) {
+    if (!name) return '';
+    return name.replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
+}
+
+async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvatarUrl) {
     if (!marketGen || typeof marketGen.drawMarketGrid !== 'function') {
         throw new Error("مكتبة الرسم Canvas غير محملة بشكل صحيح!");
     }
@@ -42,11 +47,11 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
     const itemsOnPage = allItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
 
-    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages);
+    const imageBuffer = await marketGen.drawMarketGrid(allItems, timeRemaining, pageIndex, totalPages, userAvatarUrl);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_board.png' });
 
     const selectOptions = itemsOnPage.map(item => ({
-        label: item.name.trim(),
+        label: cleanNameForMenu(item.name),
         description: `السعر: ${Number(item.currentPrice || item.currentprice || item.price).toLocaleString()}`,
         value: item.id
     }));
@@ -71,7 +76,6 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining) {
     return { attachment, components: actionRows };
 }
 
-// 🖼️ بناء صورة التفاصيل (بدل الإمبد القديم)
 async function buildDetailViewImage(item, userId, guildId, sql) {
     let userPortfolio;
     try {
@@ -87,7 +91,6 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const changePercent = Number(item.lastChangePercent || item.lastchangepercent || 0);
     const currentPrice = Number(item.currentPrice || item.currentprice || item.price || 0);
     
-    // استدعاء رسمة البطاقة التفصيلية
     const imageBuffer = await marketGen.drawMarketDetail(item, userQuantity, currentPrice, changePercent);
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
@@ -157,9 +160,10 @@ module.exports = {
             if (allItems.length === 0) {
                 allItems = marketConfig;
             } else {
+                // 🔥 الأولوية المطلقة لبيانات JSON النظيفة، تمسح أي اسم قديم أو إيموجي بالداتابيز
                 allItems = allItems.map(dbItem => {
                     const configData = marketConfig.find(c => c.id === dbItem.id);
-                    return { ...configData, ...dbItem };
+                    return { ...dbItem, ...configData }; // configData overwrite dbItem!
                 });
             }
 
@@ -170,11 +174,13 @@ module.exports = {
             let currentPage = 0;
             let currentView = 'grid'; 
             let timeRemaining = getUpdateTimeRemaining();
+            
+            const avatarUrl = user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 });
 
-            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+            const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
             
             let msg;
-            // ❌ أزلنا أي نص من الرد ليكون عبارة عن صورة خالصة فقط
+            // إزالة أي نصوص للرد بصورة صافية فقط
             const initPayload = { files: [attachment], components: components, content: '' };
             
             if (isSlash) {
@@ -197,7 +203,7 @@ module.exports = {
                                 else if (i.customId === 'market_prev') currentPage = Math.max(0, currentPage - 1);
 
                                 timeRemaining = getUpdateTimeRemaining();
-                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                                const newPage = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
                                 await i.editReply({ files: [newPage.attachment], components: newPage.components, content: '' });
                             }
                         } else if (i.customId.startsWith('market_prev_detail_') || i.customId.startsWith('market_next_detail_')) {
@@ -220,7 +226,7 @@ module.exports = {
                             try { await i.deferUpdate(); } catch (e) {}
                             currentView = 'grid';
                             timeRemaining = getUpdateTimeRemaining();
-                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining);
+                            const { attachment: gridAttachment, components: gridComponents } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
                             await i.editReply({ files: [gridAttachment], components: gridComponents, content: '' });
 
                         } else if (i.customId.startsWith('buy_asset_') || i.customId.startsWith('sell_asset_')) {
