@@ -1,138 +1,105 @@
-async function handleShopInteractions(i, client, db) {
-    if (i.customId === 'shop_open_menu' || i.customId.startsWith('shop_cat_') || i.customId.startsWith('shop_nav_')) {
-        if (!i.deferred && !i.replied) {
-            if (i.customId === 'shop_open_menu') {
-                await i.deferReply({ flags: MessageFlags.Ephemeral });
-            } else {
-                await i.deferUpdate();
-            }
-        }
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const path = require('path');
 
-        const userId = i.user.id;
-        const guildId = i.guild.id;
+try {
+    GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/cairo-Pandaify'), 'Cairo');
+} catch (e) {}
 
-        let userData = await client.getLevel(userId, guildId);
-        if (!userData) {
-            let dbRes = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [userId, guildId]).catch(()=> db.query(`SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})));
-            userData = dbRes.rows[0] || { level: 0, mora: 0, bank: 0 };
-        }
+async function generateShopImage(user, userData, categoryItems, categoryName) {
+    const columns = 3;
+    const boxW = 280;
+    const boxH = 300;
+    const gapX = 30;
+    const gapY = 30;
+    const startX = 30;
+    const startY = 160;
 
-        let targetCategory = 'general';
-        let targetIndex = 0;
+    const rows = Math.ceil(categoryItems.length / columns);
+    const canvasHeight = Math.max(500, startY + (rows * (boxH + gapY)) + 20);
+    const canvasWidth = 960;
 
-        if (i.customId.startsWith('shop_cat_')) {
-            targetCategory = i.customId.replace('shop_cat_', '');
-        } else if (i.customId.startsWith('shop_nav_')) {
-            const parts = i.customId.split('_');
-            targetIndex = parseInt(parts[3]);
-            targetCategory = parts[4];
-        }
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = canvas.getContext('2d');
 
-        const categoryItems = shopItems.filter(item => item.category === targetCategory);
-        
-        if (i.customId.startsWith('shop_nav_prev_')) {
-            targetIndex = (targetIndex - 1 + categoryItems.length) % categoryItems.length;
-        } else if (i.customId.startsWith('shop_nav_next_')) {
-            targetIndex = (targetIndex + 1) % categoryItems.length;
-        }
+    ctx.fillStyle = '#14141E';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const currentItem = categoryItems[targetIndex];
+    ctx.fillStyle = '#1E1E2C';
+    ctx.beginPath();
+    ctx.roundRect(20, 20, 920, 110, 15);
+    ctx.fill();
 
-        let categoryNameAr = 'السوق العام';
-        if (targetCategory === 'profession') categoryNameAr = 'المهن والحرف';
-        if (targetCategory === 'premium') categoryNameAr = 'الخدمات المميزة';
+    try {
+        const avatarUrl = user.displayAvatarURL({ extension: 'png', size: 128 });
+        const avatar = await loadImage(avatarUrl);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(75, 75, 45, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(avatar, 30, 30, 90, 90);
+        ctx.restore();
+    } catch (e) {}
 
-        let generateShopImage;
-        try {
-            generateShopImage = require('../../generators/shop-generator.js').generateShopImage;
-        } catch (e) {
-            try {
-                 generateShopImage = require('../generators/shop-generator.js').generateShopImage;
-            } catch(e2) {
-                 return i.editReply({ content: "❌ لا يمكن العثور على نظام الرسم." });
-            }
-        }
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 30px "Cairo", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(user.username, 140, 65);
 
-        const imageBuffer = await generateShopImage(i.user, userData, currentItem, categoryNameAr);
-
-        const navRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`shop_nav_prev_${targetIndex}_${targetCategory}`)
-                .setEmoji('⬅️')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId(`buy_item_${currentItem.id}`)
-                .setLabel(`شراء (${currentItem.price})`)
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🛒'),
-            new ButtonBuilder()
-                .setCustomId(`shop_nav_next_${targetIndex}_${targetCategory}`)
-                .setEmoji('➡️')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        const categoryRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('shop_cat_general')
-                .setLabel('السوق العام')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'general'),
-            new ButtonBuilder()
-                .setCustomId('shop_cat_profession')
-                .setLabel('المهن والحرف')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'profession'),
-            new ButtonBuilder()
-                .setCustomId('shop_cat_premium')
-                .setLabel('الخدمات المميزة')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(targetCategory === 'premium')
-        );
-
-        const replyData = {
-            content: `**مرحباً بك في متجر الإمبراطورية** يا <@${userId}>`,
-            files: [{ attachment: imageBuffer, name: 'empire_shop.png' }],
-            components: [navRow, categoryRow]
-        };
-
-        return await i.editReply(replyData);
-    }
-
-    if (i.isStringSelectMenu() && i.customId === 'fishing_gear_sub_menu') {
-        const val = i.values[0];
-        if (val === 'gear_rods') await _handleRodSelect(i, client, db);
-        else if (val === 'gear_boats') await _handleBoatSelect(i, client, db);
-        else if (val === 'gear_baits') await _handleBaitSelect(i, client, db);
-        return;
-    }
-
-    if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
-        const potionId = i.values[0].replace('buy_item_', '');
-        const paginationEmbed = buildPaginatedItemEmbed(potionId);
-        if (paginationEmbed) return await i.reply({ ...paginationEmbed, flags: MessageFlags.Ephemeral });
-        else return await i.reply({ content: "❌ خطأ في تحميل بيانات الجرعة.", flags: MessageFlags.Ephemeral });
-    }
-
-    if (i.customId === 'upgrade_rod') await _handleRodUpgrade(i, client, db);
-    else if (i.customId === 'upgrade_boat') await _handleBoatUpgrade(i, client, db);
-    else if (i.isStringSelectMenu() && i.customId === 'shop_buy_bait_menu') await _handleBaitBuy(i, client, db);
-    else if (i.customId.startsWith('buy_item_')) await _handleShopButton(i, client, db);
-    else if (i.customId.startsWith('replace_buff_')) await _handleReplaceBuffButton(i, client, db);
-    else if (i.customId === 'cancel_purchase') { await i.deferUpdate(); await i.editReply({ content: 'تم الإلغاء.', components: [], embeds: [] }); }
-    else if (i.customId === 'open_xp_modal') { 
-        const xpModal = new ModalBuilder().setCustomId('exchange_xp_modal').setTitle('شراء خبرة');
-        xpModal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('xp_amount_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true)));
-        await i.showModal(xpModal);
-    }
-    else if (i.customId === 'replace_guard') { await _handleReplaceGuard(i, client, db); }
+    ctx.font = '22px "Cairo", sans-serif';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(`الكاش: ${userData.mora || 0}`, 140, 105);
     
-    else if (i.customId.startsWith('buy_market_') || i.customId.startsWith('sell_market_') || i.customId.startsWith('buy_animal_') || i.customId.startsWith('sell_animal_')) {
-        const action = i.customId.split('_')[0]; 
-        const modalId = action === 'buy' ? (i.customId.includes('market') ? 'buy_modal_' : 'buy_animal_') : (i.customId.includes('market') ? 'sell_modal_' : 'sell_animal_');
-        const suffix = i.customId.split('_').slice(2).join('_'); 
-        const modal = new ModalBuilder().setCustomId(modalId + suffix).setTitle(action === 'buy' ? 'شراء' : 'بيع');
-        const input = new TextInputBuilder().setCustomId('quantity_input').setLabel('الكمية').setStyle(TextInputStyle.Short).setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        await i.showModal(modal);
+    ctx.fillStyle = '#4CAF50';
+    ctx.fillText(`البنك: ${userData.bank || 0}`, 380, 105);
+
+    ctx.fillStyle = '#A8A8B3';
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 26px "Cairo", sans-serif';
+    ctx.fillText(`قسم: ${categoryName}`, 910, 85);
+
+    for (let i = 0; i < categoryItems.length; i++) {
+        const item = categoryItems[i];
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        
+        const x = startX + (col * (boxW + gapX));
+        const y = startY + (row * (boxH + gapY));
+
+        ctx.fillStyle = '#222233';
+        ctx.beginPath();
+        ctx.roundRect(x, y, boxW, boxH, 20);
+        ctx.fill();
+
+        ctx.strokeStyle = '#33334A';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        try {
+            const itemImage = await loadImage(item.image);
+            ctx.drawImage(itemImage, x + 65, y + 20, 150, 150);
+        } catch (e) {
+            ctx.fillStyle = '#2A2A3E';
+            ctx.beginPath();
+            ctx.roundRect(x + 65, y + 20, 150, 150, 15);
+            ctx.fill();
+        }
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 24px "Cairo", sans-serif';
+        ctx.fillText(item.name, x + (boxW / 2), y + 210);
+
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 22px "Cairo", sans-serif';
+        ctx.fillText(`${item.price} مورا`, x + (boxW / 2), y + 250);
+
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = '16px "Cairo", sans-serif';
+        ctx.fillText(`🛒 متوفر`, x + (boxW / 2), y + 280);
     }
+
+    return canvas.toBuffer('image/png');
 }
+
+module.exports = { generateShopImage };
