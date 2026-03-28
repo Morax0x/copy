@@ -89,7 +89,8 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         
         if (isNaN(quantity) || quantity <= 0) {
-            return await i.reply({ content: '❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.', flags: [MessageFlags.Ephemeral] });
+            await i.reply({ content: '❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.', flags: [MessageFlags.Ephemeral] });
+            return false;
         }
 
         const assetId = i.customId.replace(isBuy ? 'buy_modal_' : 'sell_modal_', '');
@@ -103,7 +104,8 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         
         const item = itemRes.rows[0];
         if (!item) {
-            return await i.reply({ content: '❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.', flags: [MessageFlags.Ephemeral] });
+            await i.reply({ content: '❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.', flags: [MessageFlags.Ephemeral] });
+            return false;
         }
 
         let dbUser = dbUserRes.rows[0];
@@ -122,12 +124,10 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             const totalCost = Math.floor(avgPrice * quantity);
             
             if (userMora < totalCost) {
-                return await i.reply({ content: `❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
+                await i.reply({ content: `❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`, flags: [MessageFlags.Ephemeral] });
+                return false;
             }
 
-            // 🚀 الرد الفوري للعملية الناجحة (عام وموجه للمستخدم)
-            await i.deferReply({ ephemeral: false }).catch(()=>{});
-            
             let exactNewMora;
             try {
                 await db.query("BEGIN").catch(()=>{});
@@ -138,7 +138,8 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 
                 if (!updateRes || !updateRes.rows || updateRes.rows.length === 0) {
                     await db.query("ROLLBACK").catch(()=>{});
-                    return await i.editReply(`❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`);
+                    await i.reply({ content: `❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`, flags: [MessageFlags.Ephemeral] });
+                    return false;
                 }
                 exactNewMora = updateRes.rows[0].mora;
 
@@ -167,21 +168,20 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 الأسهم المشتراة: **${quantity.toLocaleString()}** سهم من **${cleanItemNameStr}**\n💵 التكلفة الإجمالية: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`)
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
             
-            await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            // 🔥 هنا يتم الرد على المودال برسالة عامة في الشات
+            await i.reply({ content: `<@${i.user.id}>`, embeds: [embed] }).catch(()=>{});
             return true;
 
         } else {
             const userQty = pfItem ? Number(pfItem.quantity || pfItem.Quantity) : 0;
             if (userQty < quantity) {
-                return await i.reply({ content: `❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`, flags: [MessageFlags.Ephemeral] });
+                await i.reply({ content: `❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`, flags: [MessageFlags.Ephemeral] });
+                return false;
             }
             
             const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice || item.price), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
 
-            // 🚀 الرد الفوري للعملية الناجحة (عام)
-            await i.deferReply({ ephemeral: false }).catch(()=>{});
-            
             let exactNewMora;
             try {
                 await db.query("BEGIN").catch(()=>{});
@@ -217,7 +217,8 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 الأسهم المباعة: **${quantity.toLocaleString()}** سهم من **${cleanItemNameStr}**\n💰 الأرباح المستلمة: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`)
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
 
-            await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            // 🔥 الرد المباشر
+            await i.reply({ content: `<@${i.user.id}>`, embeds: [embed] }).catch(()=>{});
             return true;
         }
 
