@@ -18,6 +18,15 @@ try {
     console.error("⚠️ [Market] تحذير: فشل في تحميل market-generator.js", e.message);
 }
 
+// 🔥 استدعاء الهاندلر لمعالجة عمليات البيع والشراء 🔥
+let marketHandler;
+try {
+    const handlerPath = path.join(process.cwd(), 'handlers', 'market-handler.js');
+    marketHandler = require(handlerPath);
+} catch (e) {
+    console.error("⚠️ [Market] تحذير: فشل في تحميل market-handler.js", e.message);
+}
+
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 9;
 
@@ -69,13 +78,10 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
 
     const actionRows = [selectMenuRow];
 
-    // 🔥 تعديل الترتيب: اليمين (السابق) أولاً، ثم اليسار (التالي)
-    // في ديسكورد، الأزرار ترتب من اليسار لليمين. لذا لإظهار السهم الأيمن في جهة اليمين، نضعه ثانياً.
+    // 🔥 ترتيب الأزرار: اليسار باليسار (التالي) واليمين باليمين (السابق) 🔥
     if (totalPages > 1) {
         const navRow = new ActionRowBuilder().addComponents(
-             // الزر الأول (يظهر يساراً): سهم اليسار (التالي)
             new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1),
-            // الزر الثاني (يظهر يميناً): سهم اليمين (السابق)
             new ButtonBuilder().setCustomId('market_prev').setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0)
         );
         actionRows.push(navRow);
@@ -103,7 +109,7 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
-        // 🔥 ترتيب الأسهم: اليسار (التالي) أولاً، ثم اليمين (السابق) ثانياً
+        // 🔥 ترتيب الأسهم: اليسار باليسار واليمين باليمين 🔥
         new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
         
@@ -200,7 +206,6 @@ module.exports = {
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
             
             let msg;
-            // 🔥 مسح الإمبدات القديمة والمرفقات 🔥
             const initPayload = { files: [attachment], attachments: [], components: components, content: '' };
             
             if (isSlash) {
@@ -256,6 +261,7 @@ module.exports = {
 
                             if (!item) return;
 
+                            // 1. إنشاء وإظهار المودال للمستخدم
                             const modal = new ModalBuilder()
                                 .setCustomId(`${isBuy ? 'buy_modal_' : 'sell_modal_'}${assetId}`)
                                 .setTitle("أدخل الكمية");
@@ -269,6 +275,26 @@ module.exports = {
 
                             modal.addComponents(new ActionRowBuilder().addComponents(quantityInput));
                             await i.showModal(modal);
+
+                            // 🔥 2. انتظار إجابة المستخدم ومعالجتها عبر marketHandler 🔥
+                            try {
+                                const submitted = await i.awaitModalSubmit({
+                                    filter: x => x.user.id === i.user.id && x.customId === modal.data.custom_id,
+                                    time: 60000 // ينتظر دقيقة واحدة للرد
+                                });
+                                
+                                if (marketHandler && typeof marketHandler._handleMarketTransaction === 'function') {
+                                    await marketHandler._handleMarketTransaction(submitted, client, sql, isBuy);
+                                    
+                                    // تحديث زر البيع والشاشة بعد العملية بنجاح!
+                                    const { attachment: detailImage, components: detailComponents } = await buildDetailViewImage(item, i.user.id, i.guild.id, sql); 
+                                    await i.editReply({ files: [detailImage], attachments: [], components: detailComponents, content: '' });
+                                } else {
+                                    await submitted.reply({ content: '❌ نظام التداول (الهاندلر) غير متصل حالياً.', ephemeral: true });
+                                }
+                            } catch (err) {
+                                // يتجاهل الخطأ إذا انتهى الوقت ولم يكتب المستخدم شيئاً
+                            }
                         }
                     }
 
