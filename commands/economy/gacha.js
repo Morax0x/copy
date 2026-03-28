@@ -62,7 +62,7 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(text, x, y);
 }
 
-// 1. الشاشة الرئيسية
+// 1. الشاشة الرئيسية (الصندوق)
 async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0) {
     const width = 1200;
     const height = 675; 
@@ -179,13 +179,14 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein"';
-    ctx.fillText("عشر صناديق = 10000", width/2 - 130, pricePanelY + 35);
+    // الأسعار بدون اختصارات
+    ctx.fillText("10 صناديق = 10000 🪙", width/2 - 130, pricePanelY + 35);
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("صندوق = 1000", width/2 + 130, pricePanelY + 35);
+    ctx.fillText("صندوق = 1000 🪙", width/2 + 130, pricePanelY + 35);
 
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 26px "Bein"';
@@ -197,7 +198,7 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     return canvas.toBuffer('image/png');
 }
 
-// 2. شاشة المخزن (المربعات) اللي طلبتها 🔥
+// 2. شاشة المخزن (المربعات)
 async function generateGachaInventory(userObj, freeChests, paidChests) {
     const width = 1200;
     const height = 675; 
@@ -421,4 +422,4 @@ async function generateGachaCard(item, rarity) {
     return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateGachaCard, generateGachaHub, generateGachaInventory }; // تم إضافة الدالة الجديدة هنا للتصدير
+module.exports = { generateGachaCard, generateGachaHub, generateGachaInventory };
