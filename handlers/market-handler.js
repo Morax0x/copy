@@ -2,7 +2,6 @@ const { EmbedBuilder, Colors } = require("discord.js");
 const fs = require('fs');
 const path = require('path');
 
-// 1. تحميل الإعدادات بأمان
 let marketItemsConfig = [];
 try {
     const configPath = path.join(process.cwd(), 'json', 'market-items.json');
@@ -22,15 +21,11 @@ try {
     }
 } catch (e) {}
 
-const MARKET_VOLATILITY = 0.05; 
-
-// دالة لتنظيف الاسم في الفاتورة (خالي من الإيموجيات)
 function cleanItemName(name) {
     if (!name) return 'أصل استثماري';
     return name.replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
 }
 
-// حساب الانزلاق السعري (Slippage) بناءً على الكمية
 function calculateSlippage(basePrice, quantity, isBuy) {
     const slippageFactor = 0.0001; 
     const impact = quantity * slippageFactor;
@@ -38,7 +33,6 @@ function calculateSlippage(basePrice, quantity, isBuy) {
     return Math.max(Math.floor(avgPrice), 1);
 }
 
-// 🔥 تحديث الأسعار الديناميكي 🔥
 async function updateMarketPrices(db) {
     if (!db) return;
     try {
@@ -89,17 +83,20 @@ async function updateMarketPrices(db) {
     }
 }
 
-// 🔥 المعالج الذكي لعمليات البيع والشراء 🔥
 async function _handleMarketTransaction(i, client, db, isBuy) {
     try {
-        if (!i.deferred && !i.replied) await i.deferReply({ ephemeral: true }); 
+        // 🔥 الرد العام (ظاهر للجميع) يمنع التعليق
+        if (!i.deferred && !i.replied) await i.deferReply({ ephemeral: false }); 
     } catch(e) {}
     
     try {
         const quantityString = i.fields.getTextInputValue('quantity_input');
         const quantity = parseInt(quantityString.trim().replace(/,/g, ''));
         
-        if (isNaN(quantity) || quantity <= 0) return await i.editReply('❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.');
+        if (isNaN(quantity) || quantity <= 0) {
+            await i.editReply('❌ الكمية المدخلة غير صالحة. الرجاء إدخال رقم صحيح.');
+            return false; // إعادة false لمنع تحديث الشاشة
+        }
 
         const assetId = i.customId.replace(isBuy ? 'buy_modal_' : 'sell_modal_', '');
         
@@ -108,7 +105,10 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
         catch(e) { itemRes = await db.query(`SELECT * FROM market_items WHERE id = $1`, [assetId]).catch(()=>({rows:[]})); }
         
         const item = itemRes.rows[0];
-        if (!item) return await i.editReply('❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.');
+        if (!item) {
+            await i.editReply('❌ عذراً، هذا الأصل الاستثماري غير موجود في السوق.');
+            return false;
+        }
 
         let dbUserRes;
         try { dbUserRes = await db.query(`SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2`, [i.user.id, i.guild.id]); }
@@ -121,33 +121,36 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
             dbUser = { mora: 0, bank: 0 };
         }
         
-        let userMora = Number(dbUser.mora || dbUser.mora) || 0;
+        let userMora = Number(dbUser.mora) || 0;
         
         let pfItemRes;
         try { pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, item.id]); }
         catch(e) { pfItemRes = await db.query(`SELECT * FROM user_portfolio WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [i.user.id, i.guild.id, item.id]).catch(()=>({rows:[]})); }
         let pfItem = pfItemRes.rows[0];
         
-        const cleanItemNameStr = cleanItemName(item.name); // تنظيف الاسم للفاتورة
+        const cleanItemNameStr = cleanItemName(item.name); 
 
         if (isBuy) {
             const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice || item.price), quantity, true);
             const totalCost = Math.floor(avgPrice * quantity);
             
-            if (userMora < totalCost) return await i.editReply(`❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`);
+            if (userMora < totalCost) {
+                await i.editReply(`❌ **رصيدك غير كافي!**\nتحتاج إلى: **${totalCost.toLocaleString()}** ${EMOJI_MORA}\nرصيدك الحالي: **${userMora.toLocaleString()}** ${EMOJI_MORA}`);
+                return false;
+            }
             
             let exactNewMora;
             try {
                 await db.query("BEGIN").catch(()=>{});
                 
-                // 🔥 تحديث ذري (Atomic) لحماية الرصيد
                 let updateRes;
                 try { updateRes = await db.query(`UPDATE levels SET "mora" = CAST("mora" AS BIGINT) - $1 WHERE "user" = $2 AND "guild" = $3 AND CAST("mora" AS BIGINT) >= $1 RETURNING "mora"`, [totalCost, i.user.id, i.guild.id]); }
                 catch(e) { updateRes = await db.query(`UPDATE levels SET mora = CAST(mora AS BIGINT) - $1 WHERE userid = $2 AND guildid = $3 AND CAST(mora AS BIGINT) >= $1 RETURNING mora`, [totalCost, i.user.id, i.guild.id]); }
                 
                 if (!updateRes || !updateRes.rows || updateRes.rows.length === 0) {
                     await db.query("ROLLBACK").catch(()=>{});
-                    return await i.editReply(`❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`);
+                    await i.editReply(`❌ **رصيدك غير كافي!** تم إلغاء العملية لحماية حسابك.`);
+                    return false;
                 }
                 exactNewMora = updateRes.rows[0].mora;
 
@@ -176,11 +179,15 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 الأسهم المشتراة: **${quantity.toLocaleString()}** سهم من **${cleanItemNameStr}**\n💵 التكلفة الإجمالية: **${totalCost.toLocaleString()}** ${EMOJI_MORA}`)
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
             
-            return await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            return true; // العملية ناجحة
 
         } else {
             const userQty = pfItem ? Number(pfItem.quantity || pfItem.Quantity) : 0;
-            if (userQty < quantity) return await i.editReply(`❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`);
+            if (userQty < quantity) {
+                await i.editReply(`❌ لا تملك هذه الكمية للبيع! (رصيدك الحالي: **${userQty.toLocaleString()}** سهم).`);
+                return false;
+            }
             
             const avgPrice = calculateSlippage(Number(item.currentPrice || item.currentprice || item.price), quantity, false);
             const totalGain = Math.floor(avgPrice * quantity);
@@ -220,12 +227,14 @@ async function _handleMarketTransaction(i, client, db, isBuy) {
                 .setDescription(`📦 الأسهم المباعة: **${quantity.toLocaleString()}** سهم من **${cleanItemNameStr}**\n💰 الأرباح المستلمة: **${totalGain.toLocaleString()}** ${EMOJI_MORA}`)
                 .setFooter({ text: "سوق الاستثمارات الإمبراطوري" });
 
-            return await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            await i.editReply({ content: `<@${i.user.id}>`, embeds: [embed] });
+            return true; // العملية ناجحة
         }
 
     } catch (e) { 
         console.error("[MARKET FATAL ERROR]:", e); 
         await i.editReply("❌ حدث خطأ غير متوقع أثناء معالجة الطلب في قاعدة البيانات.").catch(()=>{}); 
+        return false;
     }
 }
 
