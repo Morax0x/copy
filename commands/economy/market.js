@@ -69,10 +69,13 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
 
     const actionRows = [selectMenuRow];
 
-    // 🔥 تعديل ترتيب الأزرار: اليسار باليسار واليمين باليمين 🔥
+    // 🔥 تعديل الترتيب: اليمين (السابق) أولاً، ثم اليسار (التالي)
+    // في ديسكورد، الأزرار ترتب من اليسار لليمين. لذا لإظهار السهم الأيمن في جهة اليمين، نضعه ثانياً.
     if (totalPages > 1) {
         const navRow = new ActionRowBuilder().addComponents(
+             // الزر الأول (يظهر يساراً): سهم اليسار (التالي)
             new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1),
+            // الزر الثاني (يظهر يميناً): سهم اليمين (السابق)
             new ButtonBuilder().setCustomId('market_prev').setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0)
         );
         actionRows.push(navRow);
@@ -100,7 +103,7 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
-        // 🔥 ترتيب الأسهم: اليسار باليسار واليمين باليمين 🔥
+        // 🔥 ترتيب الأسهم: اليسار (التالي) أولاً، ثم اليمين (السابق) ثانياً
         new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
         
@@ -197,6 +200,7 @@ module.exports = {
             const { attachment, components } = await buildVisualGridView(allItems, currentPage, timeRemaining, avatarUrl);
             
             let msg;
+            // 🔥 مسح الإمبدات القديمة والمرفقات 🔥
             const initPayload = { files: [attachment], attachments: [], components: components, content: '' };
             
             if (isSlash) {
