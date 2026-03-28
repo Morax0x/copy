@@ -1,7 +1,7 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// تسجيل الخط العربي (تأكد من وجود الخط في مسار fonts)
+// تسجيل الخط العربي
 try {
     GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts/bein-ar-normal.ttf'), 'Bein');
 } catch (e) {
@@ -11,7 +11,7 @@ try {
 const imageCache = new Map();
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 
-// ألوان الندرة (Rarity Colors) للإطارات والتأثيرات
+// ألوان الندرة
 const RARITY_COLORS = {
     'Common': '#B0BEC5',
     'Uncommon': '#2ECC71',
@@ -44,6 +44,13 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
+// 🛡️ حماية وتفكيك الكائنات (Objects) للنصوص
+function resolveText(val) {
+    if (val == null) return '';
+    if (typeof val === 'object') return val.ar || val.en || val.name || JSON.stringify(val);
+    return String(val);
+}
+
 // 🪄 دالة رسم السهم الفانتزي المضيء
 function drawFantasyArrow(ctx, x, y, width, color) {
     ctx.save();
@@ -53,7 +60,7 @@ function drawFantasyArrow(ctx, x, y, width, color) {
     ctx.shadowColor = color;
     ctx.shadowBlur = 15;
     
-    // رسم مسار السهم بشكل احترافي
+    // رسم مسار السهم بشكل انسيابي واحترافي
     ctx.beginPath();
     ctx.moveTo(0, -6);
     ctx.lineTo(width - 25, -6);
@@ -69,26 +76,28 @@ function drawFantasyArrow(ctx, x, y, width, color) {
 }
 
 function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    const safeText = resolveText(text);
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Arial"`;
-    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+    while (ctx.measureText(safeText).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
         ctx.font = `bold ${currentFontSize}px "Arial"`;
     }
-    ctx.fillText(text, x, y);
+    ctx.fillText(safeText, x, y);
 }
 
 function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    const safeText = resolveText(text);
     let currentFontSize = maxFontSize;
     ctx.font = `bold ${currentFontSize}px "Bein"`;
-    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+    while (ctx.measureText(safeText).width > maxWidth && currentFontSize > minFontSize) {
         currentFontSize--;
         ctx.font = `bold ${currentFontSize}px "Bein"`;
     }
-    ctx.fillText(text, x, y);
+    ctx.fillText(safeText, x, y);
 }
 
-// رسم إطار العنصر مع لمعان الندرة بشكل فخم
+// 📦 رسم إطار العنصر مع تأثيرات الندرة
 function drawItemBox(ctx, x, y, size, img, rarity = 'Common') {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
@@ -119,30 +128,37 @@ async function generateForgeUI(userObj, view, data) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // 1. تحديد ثيم الألوان والبارتكلز حسب القسم
-    let themeColor1, themeColor2, sparkColor, isSuccess = view.startsWith('success');
-    let activeView = view.replace('success_', ''); // عشان نعرف الثيم حتى لو نجاح
+    // 1. تحديد ثيم الألوان والبارتكلز حسب القسم المختار
+    let themeColor1, themeColor2, sparkColor, particleType;
+    let isSuccess = view.startsWith('success_');
+    let activeView = view.replace('success_', '');
 
     if (activeView === 'weapon') {
         themeColor1 = 'rgba(220, 50, 10, 0.5)';
-        themeColor2 = 'rgba(20, 5, 5, 0.95)';
+        themeColor2 = 'rgba(20, 5, 5, 0.98)';
         sparkColor = '#FF8800';
+        particleType = 'fire';
     } else if (activeView === 'skill') {
         themeColor1 = 'rgba(100, 30, 220, 0.5)';
-        themeColor2 = 'rgba(15, 5, 25, 0.95)';
+        themeColor2 = 'rgba(15, 5, 25, 0.98)';
         sparkColor = '#DDAAFF';
+        particleType = 'magic';
     } else if (activeView === 'synthesis') {
         themeColor1 = 'rgba(30, 200, 100, 0.4)';
-        themeColor2 = 'rgba(5, 20, 10, 0.95)';
+        themeColor2 = 'rgba(5, 20, 10, 0.98)';
         sparkColor = '#88FFAA';
+        particleType = 'magic';
     } else if (activeView === 'smelting') {
         themeColor1 = 'rgba(255, 20, 0, 0.6)';
         themeColor2 = 'rgba(25, 0, 0, 0.98)';
         sparkColor = '#FFAA55';
+        particleType = 'fire';
     } else {
+        // الرئيسية
         themeColor1 = 'rgba(0, 120, 200, 0.4)';
         themeColor2 = 'rgba(5, 10, 20, 0.95)';
         sparkColor = '#00AAFF';
+        particleType = 'magic';
     }
 
     ctx.fillStyle = '#050608';
@@ -154,10 +170,11 @@ async function generateForgeUI(userObj, view, data) {
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // تأثير الجزيئات المتطايرة
+    // 2. تأثير الجزيئات المتطايرة (Particles)
     ctx.fillStyle = sparkColor;
     ctx.beginPath();
-    for(let i=0; i<80; i++) {
+    const particleCount = particleType === 'fire' ? 100 : 60;
+    for(let i=0; i<particleCount; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
         const pSize = Math.random() * 3;
@@ -168,15 +185,17 @@ async function generateForgeUI(userObj, view, data) {
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // 2. الشريط العلوي
+    // 3. الشريط العلوي (Header)
     const headerH = 100;
     ctx.fillStyle = 'rgba(5, 7, 10, 0.8)';
     ctx.fillRect(0, 0, width, headerH);
     
     const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
-    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
-    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.9)');
-    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0, 'rgba(200, 150, 0, 0)');
+    goldGrad.addColorStop(0.1, 'rgba(255, 215, 0, 1)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 255, 200, 1)');
+    goldGrad.addColorStop(0.9, 'rgba(255, 215, 0, 1)');
+    goldGrad.addColorStop(1, 'rgba(200, 150, 0, 0)');
     ctx.fillStyle = goldGrad;
     ctx.fillRect(0, headerH - 3, width, 3);
 
@@ -186,7 +205,7 @@ async function generateForgeUI(userObj, view, data) {
         data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
     ]);
 
-    // الأفتار والاسم
+    // الأفتار واسم اللاعب (يسار)
     const avatarSize = 75;
     const avatarX = 60 + avatarSize/2;
     const avatarY = headerH / 2;
@@ -202,11 +221,10 @@ async function generateForgeUI(userObj, view, data) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 6;
-    let dName = userObj.displayName || userObj.username;
-    drawAutoScaledArabicText(ctx, dName, avatarX + 50, avatarY, 250, 26, 14);
+    drawAutoScaledArabicText(ctx, userObj.displayName || userObj.username, avatarX + 50, avatarY, 250, 26, 14);
     ctx.shadowBlur = 0;
 
-    // المورا
+    // رصيد المورا (يمين)
     ctx.fillStyle = 'rgba(15, 20, 25, 0.85)';
     ctx.beginPath(); roundRect(ctx, width - 280, 25, 240, 50, 15); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; ctx.stroke();
@@ -215,15 +233,15 @@ async function generateForgeUI(userObj, view, data) {
     drawAutoScaledText(ctx, (data.mora || 0).toLocaleString(), width - 80, 50, 160, 24, 12);
     ctx.font = '24px "Arial"'; ctx.fillText('🪙', width - 45, 50);
 
-    // عنوان الصفحة (Title)
+    // عنوان الصفحة المركزي
     ctx.textAlign = 'center';
     ctx.fillStyle = '#F1C40F';
-    ctx.font = 'bold 50px "Bein"';
+    ctx.font = 'bold 45px "Bein"';
     ctx.shadowColor = '#F1C40F'; ctx.shadowBlur = 15;
-    ctx.fillText(data.title || 'المجمع الإمبراطوري للتطوير', width / 2, 170);
+    ctx.fillText(resolveText(data.title || 'المجمع الإمبراطوري للتطوير'), width / 2, 170);
     ctx.shadowBlur = 0;
 
-    // 3. اللوحة الرئيسية (Main Panel)
+    // 4. اللوحة الرئيسية (Main Panel)
     const panelY = 220;
     const panelW = 1050;
     const panelH = 400;
@@ -236,7 +254,7 @@ async function generateForgeUI(userObj, view, data) {
     ctx.textAlign = 'center';
 
     // =========================================================
-    // 🌟 شاشات النجاااااح (Success) اللي تغنينا عن الإيمبد! 🌟
+    // 🌟 شاشات النجاح (Success) 🌟
     // =========================================================
     if (isSuccess) {
         ctx.fillStyle = '#2ECC71';
@@ -257,12 +275,12 @@ async function generateForgeUI(userObj, view, data) {
             ctx.fillText(`المستوى الجديد: Lv.${data.nextLevel}`, width/2, panelY + 220);
             ctx.fillStyle = activeView === 'weapon' ? '#E74C3C' : '#9B59B6';
             ctx.font = 'bold 45px "Arial"';
-            ctx.fillText(data.nextStat, width/2, panelY + 300);
+            ctx.fillText(resolveText(data.nextStat), width/2, panelY + 300);
         }
         else if (activeView === 'synthesis') {
             drawItemBox(ctx, width/2 - 90, panelY + 140, 180, targetMatImg, data.targetMatRarity);
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 30px "Bein"';
-            ctx.fillText(`حصلت على: ${data.targetMatName}`, width/2, panelY + 360);
+            drawAutoScaledArabicText(ctx, `حصلت على: ${resolveText(data.targetMatName)}`, width/2, panelY + 360, 800, 30, 16);
         }
         else if (activeView === 'smelting') {
             ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 90px "Arial"';
@@ -278,70 +296,77 @@ async function generateForgeUI(userObj, view, data) {
     // =========================================================
     // شاشة (الرئيسية)
     // =========================================================
-    if (view === 'main') {
+    if (activeView === 'main') {
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 36px "Bein"';
-        ctx.fillText('أهلاً بك.. اختر القسم الذي تود زيارته', width/2, panelY + 180);
-        ctx.font = 'bold 24px "Bein"';
+        ctx.font = 'bold 40px "Bein"';
+        ctx.fillText('مرحباً بك في مجمع التطوير الإمبراطوري', width/2, panelY + 160);
+        
+        ctx.font = 'bold 26px "Bein"';
         ctx.fillStyle = '#AAAAAA';
-        ctx.fillText('قم باستخدام الأزرار السفلية للتنقل بين غرف المجمع', width/2, panelY + 250);
+        ctx.fillText('الرجاء تحديد القسم المطلوب زيارته باستخدام الأزرار أدناه', width/2, panelY + 230);
     } 
     
     // =========================================================
     // شاشات (تطوير السلاح / صقل المهارة)
     // =========================================================
-    else if (view === 'weapon' || view === 'skill') {
-        const isWeapon = view === 'weapon';
-        const accentColor = isWeapon ? '#E74C3C' : '#9B59B6';
+    else if (activeView === 'weapon' || activeView === 'skill') {
+        const isWeapon = activeView === 'weapon';
+        const accentColor = isWeapon ? '#FF5500' : '#B968FF'; // ألوان فاقعة للمقارنة
         
+        // عنوان القسم الأيمن (الإحصائيات)
         ctx.fillStyle = '#FFD700'; ctx.font = 'bold 36px "Bein"';
         ctx.fillText(isWeapon ? 'التطوير القادم' : 'الصقل القادم', panelX + 270, panelY + 60);
 
+        // إحداثيات المقارنة
         const statsY_Level = panelY + 160;
         const statsY_Value = panelY + 280;
-        const compX_Old = panelX + 110;
-        const compX_Arrow = panelX + 230;
-        const compX_New = panelX + 390;
+        const compX_Old = panelX + 90;   // القديم يسار
+        const compX_Arrow = panelX + 210; // السهم بالنص
+        const compX_New = panelX + 350;  // الجديد يمين
 
-        // --- المستوى ---
-        ctx.save(); ctx.globalAlpha = 0.4; // شفاف للقديم
+        // --- المقارنة: المستوى ---
+        ctx.save();
+        ctx.globalAlpha = 0.4; // 👁️ تأثير الشفافية للرقم القديم
         ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 40px "Arial"'; ctx.textAlign = 'left';
         ctx.fillText(`Lv.${data.currentLevel}`, compX_Old, statsY_Level);
         ctx.restore();
 
-        drawFantasyArrow(ctx, compX_Arrow, statsY_Level, 130, '#FFD700'); // السهم الفانتزي
+        // 🪄 رسم السهم الفانتزي
+        drawFantasyArrow(ctx, compX_Arrow, statsY_Level, 120, accentColor);
 
-        ctx.save(); // الجديد ساطع ومضيء
+        ctx.save();
         ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 45px "Arial"'; ctx.textAlign = 'left';
-        ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 15;
+        ctx.shadowColor = '#2ECC71'; ctx.shadowBlur = 15; // 🌟 وهج للرقم الجديد
         ctx.fillText(`Lv.${data.nextLevel}`, compX_New, statsY_Level);
         ctx.restore();
 
-        // --- القيمة (Stat) ---
-        ctx.save(); ctx.globalAlpha = 0.4;
-        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 36px "Arial"'; ctx.textAlign = 'left';
-        ctx.fillText(data.currentStat, compX_Old, statsY_Value);
+        // --- المقارنة: القيمة (Damage/Skill) ---
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 34px "Arial"'; ctx.textAlign = 'left';
+        ctx.fillText(resolveText(data.currentStat), compX_Old, statsY_Value);
         ctx.restore();
 
-        drawFantasyArrow(ctx, compX_Arrow, statsY_Value, 130, accentColor);
+        drawFantasyArrow(ctx, compX_Arrow, statsY_Value, 120, accentColor);
 
         ctx.save();
-        ctx.fillStyle = accentColor; ctx.font = 'bold 42px "Arial"'; ctx.textAlign = 'left';
+        ctx.fillStyle = accentColor; ctx.font = 'bold 38px "Arial"'; ctx.textAlign = 'left';
         ctx.shadowColor = accentColor; ctx.shadowBlur = 15;
-        ctx.fillText(data.nextStat, compX_New, statsY_Value);
+        ctx.fillText(resolveText(data.nextStat), compX_New, statsY_Value);
         ctx.restore();
 
-        // خط عمودي فاصل
+        // خط عمودي فاصل في المنتصف
         const lineGrad = ctx.createLinearGradient(0, panelY + 30, 0, panelY + panelH - 30);
         lineGrad.addColorStop(0, 'rgba(255,255,255,0)');
         lineGrad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
         lineGrad.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = lineGrad; ctx.fillRect(panelX + 540, panelY + 30, 3, panelH - 60);
 
-        // --- المتطلبات ---
+        // --- القسم الأيسر: المتطلبات ---
         ctx.textAlign = 'center'; ctx.fillStyle = '#FFD700'; ctx.font = 'bold 36px "Bein"';
         ctx.fillText('المتطلبات', panelX + 800, panelY + 60);
 
+        // صندوق المورا
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.beginPath(); roundRect(ctx, panelX + 640, panelY + 100, 320, 60, 15); ctx.fill();
         
@@ -349,19 +374,20 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillStyle = moraColor; ctx.font = 'bold 28px "Arial"';
         ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 800, panelY + 140);
 
+        // رسم المورد المطلوب
         drawItemBox(ctx, panelX + 710, panelY + 180, 180, reqMatImg, data.reqMatRarity || 'Rare');
         
         const matColor = data.userMatCount >= data.reqMatCount ? '#2ECC71' : '#E74C3C';
-        ctx.fillStyle = matColor; ctx.font = 'bold 28px "Arial"';
+        ctx.fillStyle = matColor; ctx.font = 'bold 26px "Arial"';
         ctx.fillText(`تمتلك: ${data.userMatCount} / ${data.reqMatCount}`, panelX + 800, panelY + 390);
     }
     
     // =========================================================
     // شاشة (فرن الدمج)
     // =========================================================
-    else if (view === 'synthesis') {
+    else if (activeView === 'synthesis') {
         if (!data.sacMatName) {
-            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 36px "Bein"';
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 38px "Bein"';
             ctx.fillText('برجاء تحديد العنصر المراد التضحية به', width/2, panelY + 170);
             ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 26px "Bein"';
             ctx.fillText('(تتطلب العملية 4 وحدات من نفس العنصر)', width/2, panelY + 230);
@@ -369,11 +395,11 @@ async function generateForgeUI(userObj, view, data) {
             const itemSize = 180;
             const leftItemX = panelX + 150;
             const rightItemX = panelX + panelW - 330;
-            const itemY = panelY + 80;
+            const itemY = panelY + 70;
 
             // التضحية
             drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Rare');
-            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 32px "Bein"';
+            ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 30px "Bein"';
             ctx.fillText(`4x تضحية`, leftItemX + itemSize/2, itemY + itemSize + 40);
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px "Bein"';
             drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 80, 220, 24, 12);
@@ -384,19 +410,19 @@ async function generateForgeUI(userObj, view, data) {
             // النتيجة
             if (data.targetMatName) {
                 drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare');
-                ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 32px "Bein"';
+                ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 30px "Bein"';
                 ctx.fillText(`النتيجة 1x`, rightItemX + itemSize/2, itemY + itemSize + 40);
                 ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px "Bein"';
                 drawAutoScaledArabicText(ctx, data.targetMatName, rightItemX + itemSize/2, itemY + itemSize + 80, 220, 24, 12);
                 
                 ctx.fillStyle = data.mora >= data.fee ? '#2ECC71' : '#E74C3C';
                 ctx.font = 'bold 28px "Bein"';
-                ctx.fillText(`رسوم الحداد: ${data.fee.toLocaleString()} 🪙`, width/2, panelY + 360);
+                ctx.fillText(`رسوم الدمج: ${data.fee.toLocaleString()} 🪙`, width/2, panelY + 360);
             } else {
                 ctx.fillStyle = 'rgba(255,255,255,0.05)';
                 ctx.beginPath(); roundRect(ctx, rightItemX, itemY, itemSize, itemSize, 20); ctx.fill();
                 ctx.fillStyle = '#777777'; ctx.font = 'bold 28px "Bein"';
-                ctx.fillText('في انتظار\nالهدف...', rightItemX + itemSize/2, itemY + itemSize/2);
+                ctx.fillText('في انتظار\nالهدف...', rightItemX + itemSize/2, itemY + itemSize/2 + 5);
             }
         }
     }
@@ -404,23 +430,26 @@ async function generateForgeUI(userObj, view, data) {
     // =========================================================
     // شاشة (محرقة التفكيك الصهر)
     // =========================================================
-    else if (view === 'smelting') {
+    else if (activeView === 'smelting') {
         if (!data.sacMatName) {
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 38px "Bein"';
             ctx.fillText('حدد العنصر الذي تود تفكيكه في المحرقة', width/2, panelY + 170);
             ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 26px "Bein"';
-            ctx.fillText('سيتم الحرق نهائياً وتحويله لخبرة XP', width/2, panelY + 230);
+            ctx.fillText('سيتم الحرق نهائياً وتحويل العنصر لخبرة (XP)', width/2, panelY + 230);
         } else {
             const itemSize = 200;
             const leftItemX = panelX + 180;
             const itemY = panelY + 80;
 
+            // رسم العنصر
             drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Uncommon');
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 30px "Bein"';
             drawAutoScaledArabicText(ctx, data.sacMatName, leftItemX + itemSize/2, itemY + itemSize + 50, 260, 30, 14);
 
+            // سهم انصهار
             drawFantasyArrow(ctx, width/2 - 60, panelY + 170, 120, '#FF4400');
 
+            // صندوق الـ XP
             const xpBoxW = 320, xpBoxH = 140;
             const xpBoxX = panelX + panelW - 480, xpBoxY = panelY + 110;
 
