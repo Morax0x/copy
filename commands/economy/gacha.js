@@ -18,7 +18,7 @@ const FLAVOR_TEXTS = [
     "بين يديك مفتاح الابعاد اكسر الختم لترى اي اسطورة ستستجيب",
     "النجوم تنتظر من يوقظها ادفع المورا وابدا طقوس الاستدعاء",
     "مقابل المورا قد تبتسم لك الاقدار او تدير لك ظهرها جرب حظك",
-    "اكسر قيود الزمن واستحضر قوى الاجداد المنسية الى قبضتك",
+    "اكسر قيود الزمن واستحضر القوة المنسية الى قبضتك",
     "خلف هذا الختم ترقد كنوز الامبراطورية افتحه واصنع مجدك",
     "ايقظ التحف النادرة من سباتها الابدي المورا هي الثمن",
     "طريق العظمة محفوف بالمخاطر والمكافات اكشف غنيمتك",
@@ -182,7 +182,6 @@ module.exports = {
                 await db.query(`INSERT INTO user_gacha_pity ("userID", "guildID", "last_free_claim") VALUES ($1, $2, '')`, [user.id, guildId]).catch(() => db.query(`INSERT INTO user_gacha_pity (userid, guildid, last_free_claim) VALUES ($1, $2, '')`, [user.id, guildId]).catch(()=>{}));
             }
 
-            // 🔥 نظام التوزيع الذكي للرتب بتوقيت السعودية 🔥
             let dailyLimit = 0;
             if (member.roles.cache.has('1422160802416164885')) dailyLimit = 20;
             else if (member.roles.cache.has('1395674235002945636')) dailyLimit = 10;
@@ -358,16 +357,7 @@ module.exports = {
 
             const { bestResult, results } = await executePulls(pullCount, isBuying, cost);
 
-            const prefix = pullCount > 1 ? 'ten_' : 'single_';
-            const meteorFileName = `${prefix}${bestResult.rarity}.png`;
-            const meteorUrl = `${R2_URL}/images/gacha/${meteorFileName}`;
-            let meteorFiles = [new AttachmentBuilder(meteorUrl, { name: meteorFileName })];
-            
-            await initialMsg.edit({ files: meteorFiles, components: [], embeds: [] }).catch(()=>{});
-            await new Promise(r => setTimeout(r, 1200));
-
             if (pullCount > 10) {
-                // للفتح الجماعي الكبير نظهر أفضل عنصر مع رسالة ملخص
                 let files = [];
                 if (generateGachaCard && bestResult.item.imgPath) {
                     try {
