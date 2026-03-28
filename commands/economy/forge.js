@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const weaponsConfig = require('../../json/weapons-config.json');
 const skillsConfig = require('../../json/skills-config.json');
 const upgradeMats = require('../../json/upgrade-materials.json');
@@ -19,7 +19,6 @@ const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const SMELT_XP_RATES = { 'Common': 10, 'Uncommon': 20, 'Rare': 30, 'Epic': 100, 'Legendary': 1000 };
 const SYNTHESIS_FEE = 5000;
 
-// خرائط الصور والموارد
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
     'mat_human_1': 'human_iron.png', 'mat_human_2': 'human_steel.png', 'mat_human_3': 'human_meteor.png', 'mat_human_4': 'human_seal.png', 'mat_human_5': 'human_crown.png',
@@ -39,13 +38,11 @@ const ID_TO_IMAGE = {
 function getUpgradeRequirement(currentLevel) {
     if (currentLevel >= 30) return null; 
     let tierIndex = 0, matCount = 0, moraCost = 0;
-
     if (currentLevel < 10) { tierIndex = 0; matCount = Math.floor(currentLevel / 2) + 2; moraCost = currentLevel * 1500; }
     else if (currentLevel < 15) { tierIndex = 1; matCount = Math.floor((currentLevel-10) / 2) + 2; moraCost = currentLevel * 3000; }
     else if (currentLevel < 20) { tierIndex = 2; matCount = Math.floor((currentLevel-15) / 2) + 2; moraCost = currentLevel * 6000; }
     else if (currentLevel < 25) { tierIndex = 3; matCount = Math.floor((currentLevel-20) / 2) + 2; moraCost = currentLevel * 12000; }
     else if (currentLevel < 30) { tierIndex = 4; matCount = Math.floor((currentLevel-25) / 2) + 1; moraCost = currentLevel * 25000; }
-
     return { tierIndex, matCount, moraCost };
 }
 
@@ -81,13 +78,16 @@ function aggregateInventory(rows) {
 }
 
 const getMainMenuRow = () => new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحدادة').setEmoji('⚒️').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الأكاديمية').setEmoji('📜').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('forge_synthesis').setLabel('الدمج').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('forge_smelting').setLabel('الصهر').setEmoji('🔥').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الاكادمـيـة').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحـدادة').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('forge_synthesis').setLabel('فـرن الـدمـج').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('forge_smelting').setLabel('المـصـهـر').setStyle(ButtonStyle.Danger)
 );
 
-// 🛡️ نظام الرد المدعم بصائد الأخطاء
+const getReturnRow = () => new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
+);
+
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     try {
         if (generateForgeUI) {
@@ -95,13 +95,9 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
             if (buffer) {
                 const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
                 if (isInitial && !i.replied && !i.deferred) {
-                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(err => {
-                        i.followUp({ content: `❌ مشكلة بالديسكورد أثناء الرد الأولي:\n\`${err.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
-                    });
+                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
                 } else {
-                    return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(err => {
-                        i.followUp({ content: `❌ مشكلة بالديسكورد أثناء تحديث الواجهة:\n\`${err.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
-                    });
+                    return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
                 }
             }
         }
@@ -110,21 +106,22 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         await i.followUp({ content: `❌ خطأ في رسم الصورة:\n\`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
-    // الفولباك
     try {
-        if (isInitial && !i.replied && !i.deferred) {
-            return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
-        }
+        if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
         return await i.editReply({ content: null, components, files: [] }).catch(()=>{});
-    } catch(err) {
-        console.error("Fallback error:", err);
-    }
+    } catch(err) {}
+}
+
+async function buildMainUI(i, user, guildId, db, isInitial = false) {
+    let userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
+    const userMora = Number(userDataRes?.rows?.[0]?.mora || userDataRes?.rows?.[0]?.Mora || 0);
+    return await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [getMainMenuRow()], isInitial);
 }
 
 module.exports = {
-    data: new SlashCommandBuilder().setName('forge').setDescription('الدخول إلى المجمع الإمبراطوري لتطوير الأسلحة وصقل المهارات'),
-    name: 'تطوير',
-    aliases: ['forge', 'حداد', 'صقل', 'دمج', 'صهر'],
+    data: new SlashCommandBuilder().setName('حدادة').setDescription('الدخول إلى المجمع الإمبراطوري لتطوير الأسلحة وصقل المهارات'),
+    name: 'حدادة',
+    aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر'],
     category: 'RPG',
     
     async execute(interactionOrMessage) {
@@ -136,11 +133,10 @@ module.exports = {
 
         if (isSlash) await interactionOrMessage.deferReply();
 
-        let userDataRes = await db.query(`SELECT "mora", "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora, level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
+        let userDataRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
         if (!userDataRes?.rows?.[0]) return isSlash ? interactionOrMessage.editReply("❌ لم يتم العثور على بياناتك.") : interactionOrMessage.reply("❌ لم يتم العثور على بياناتك.");
-        const userMora = Number(userDataRes.rows[0].mora || userDataRes.rows[0].Mora || 0);
 
-        let replyObj = await replyWithCanvas(isSlash ? interactionOrMessage : { editReply: async (p) => interactionOrMessage.reply(p) }, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [getMainMenuRow()], !isSlash);
+        let replyObj = await buildMainUI(isSlash ? interactionOrMessage : { editReply: async (p) => interactionOrMessage.reply(p) }, user, guildId, db, !isSlash);
 
         if (isSlash && !replyObj) replyObj = await interactionOrMessage.fetchReply().catch(()=>{});
         if (!replyObj) return;
@@ -153,11 +149,16 @@ module.exports = {
 
         collector.on('collect', async (i) => {
             try { 
-                if (!i.deferred && !i.replied) await i.deferUpdate(); 
+                if (!i.customId.startsWith('forge_smelt_multi_') && !i.deferred && !i.replied) await i.deferUpdate(); 
             } catch(e) {}
 
             try {
-                if (i.isStringSelectMenu()) {
+                if (i.customId === 'forge_return_main') {
+                    synthesisState = { sacrificeItem: null, targetItem: null };
+                    smeltState = { item: null };
+                    await buildMainUI(i, user, guildId, db, false);
+                }
+                else if (i.isStringSelectMenu()) {
                     if (i.customId === 'forge_skill_select') {
                         await buildSkillUpgradeUI(i, user, guildId, db, i.values[0]);
                     }
@@ -184,11 +185,11 @@ module.exports = {
                     else if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db);
                     else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, i.customId.replace('forge_upgrade_skill_', ''));
                     else if (i.customId === 'forge_execute_synth') await handleSynthesis(i, user, guildId, db, synthesisState);
-                    else if (i.customId === 'forge_execute_smelt') await handleSmelting(i, user, guildId, db, smeltState, client);
+                    else if (i.customId === 'forge_execute_smelt_1') await handleSmelting(i, user, guildId, db, smeltState, client, 1);
+                    else if (i.customId.startsWith('forge_smelt_multi_')) await handleSmeltingMultiModal(i, user, guildId, db, smeltState, client);
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
-                // هذا بيكشف لك الغلط في الشات بشكل مخفي فوراً
                 await i.followUp({ content: `❌ **تم اكتشاف خطأ:**\n\`\`\`js\n${innerError.message}\n\`\`\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
@@ -209,12 +210,12 @@ module.exports = {
 async function buildWeaponForgeUI(i, user, guildId, db) {
     let weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename, weaponlevel FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const wData = weaponRes?.rows?.[0];
-    if (!wData) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي سلاح! احصل على رتبة عرق أولاً.")], components: [getMainMenuRow()] });
+    if (!wData) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي سلاح! احصل على رتبة عرق أولاً.")], components: [getReturnRow()] });
 
     const currentLevel = Number(wData.weaponLevel || wData.weaponlevel);
     const weaponConfig = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
     
-    if (currentLevel >= 30) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ سلاحك وصل للحد الأقصى (Lv.30)!`)], components: [getMainMenuRow()] });
+    if (currentLevel >= 30) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ سلاحك وصل للحد الأقصى (Lv.30)!`)], components: [getReturnRow()] });
 
     const reqs = getUpgradeRequirement(currentLevel);
     const raceMats = upgradeMats.weapon_materials.find(m => m.race === (wData.raceName || wData.racename));
@@ -230,7 +231,10 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
     const currentDmg = weaponConfig.base_damage + (weaponConfig.damage_increment * (currentLevel - 1));
     const nextDmg = weaponConfig.base_damage + (weaponConfig.damage_increment * currentLevel);
 
-    const btnRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`forge_upgrade_weapon`).setLabel('تطوير السلاح 🔨').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade));
+    const btnRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`forge_upgrade_weapon`).setLabel('تـطـويـر السـلاح').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade),
+        getReturnRow().components[0]
+    );
     
     await replyWithCanvas(i, user, 'weapon', {
         mora: userMora, title: `تطوير ${weaponConfig.name}`,
@@ -238,7 +242,7 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
         currentStat: `${currentDmg} DMG`, nextStat: `${nextDmg} DMG`,
         reqMora: reqs.moraCost, reqMatName: requiredMaterial.name, reqMatIcon: requiredMaterial.iconUrl,
         userMatCount, reqMatCount: reqs.matCount
-    }, [btnRow, getMainMenuRow()]);
+    }, [btnRow]);
 }
 
 async function handleWeaponUpgrade(i, user, guildId, db) {
@@ -257,10 +261,10 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
         await db.query(`UPDATE user_weapons SET "weaponLevel" = "weaponLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [user.id, guildId, wData.raceName || wData.racename]).catch(()=> db.query(`UPDATE user_weapons SET weaponlevel = weaponlevel + 1 WHERE userid = $1 AND guildid = $2 AND racename = $3`, [user.id, guildId, wData.raceName || wData.racename]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ نجاح التطوير!`).setColor(Colors.LuminousVividPink).setDescription(`سلاحك الآن في **Lv.${currentLevel + 1}** ⚔️`)], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ نجاح التطوير!`).setColor(Colors.LuminousVividPink).setDescription(`سلاحك الآن في **Lv.${currentLevel + 1}** ⚔️`)], components: [getReturnRow()] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getReturnRow()] });
     }
 }
 
@@ -271,9 +275,8 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
     let skillsRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userSkills = skillsRes?.rows || [];
 
-    if (userSkills.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], components: [getMainMenuRow()] });
+    if (userSkills.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], components: [getReturnRow()] });
 
-    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد للـ SelectMenu 🔥
     const skillOptions = userSkills.map(s => {
         const configSkill = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
         if (!configSkill) return null;
@@ -285,7 +288,7 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getMainMenuRow()]);
+    await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()]);
 }
 
 async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
@@ -294,7 +297,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const currentLevel = Number(sData.skillLevel || sData.skilllevel);
     const configSkill = skillsConfig.find(sc => sc.id === skillId);
     
-    if (currentLevel >= (configSkill.max_level || 30)) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ مهارة **${configSkill.name}** وصلت للحد الأقصى!`)], components: [getMainMenuRow()] });
+    if (currentLevel >= (configSkill.max_level || 30)) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Gold).setDescription(`✨ مهارة **${configSkill.name}** وصلت للحد الأقصى!`)], components: [getReturnRow()] });
 
     const reqs = getUpgradeRequirement(currentLevel);
     const categoryName = skillId.startsWith('race_') ? 'Race_Skills' : 'General_Skills';
@@ -312,7 +315,10 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const currentVal = configSkill.base_value + (configSkill.value_increment * (currentLevel - 1));
     const nextVal = configSkill.base_value + (configSkill.value_increment * currentLevel);
 
-    const btnRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`forge_upgrade_skill_${skillId}`).setLabel('صقل المهارة 📜').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade));
+    const btnRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`forge_upgrade_skill_${skillId}`).setLabel('صقل المهارة 📜').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade),
+        getReturnRow().components[0]
+    );
     
     await replyWithCanvas(i, user, 'skill', {
         mora: userMora, title: `صقل ${configSkill.name}`,
@@ -320,7 +326,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
         currentStat: `${currentVal}${statSymbol}`, nextStat: `${nextVal}${statSymbol}`,
         reqMora: reqs.moraCost, reqMatName: requiredBook.name, reqMatIcon: requiredBook.iconUrl,
         userMatCount: userBookCount, reqMatCount: reqs.matCount
-    }, [btnRow, getMainMenuRow()]);
+    }, [btnRow]);
 }
 
 async function handleSkillUpgrade(i, user, guildId, db, skillId) {
@@ -338,10 +344,10 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
         await db.query(`UPDATE user_skills SET "skillLevel" = "skillLevel" + 1 WHERE "userID" = $1 AND "guildID" = $2 AND "skillID" = $3`, [user.id, guildId, skillId]).catch(()=> db.query(`UPDATE user_skills SET skilllevel = skilllevel + 1 WHERE userid = $1 AND guildid = $2 AND skillid = $3`, [user.id, guildId, skillId]));
         await db.query('COMMIT').catch(()=>{}); 
         
-        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ حكمة جديدة!`).setColor(Colors.LuminousVividPink).setDescription(`المهارة الآن في **Lv.${currentLevel + 1}** 📜`)], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], embeds: [new EmbedBuilder().setTitle(`✨ حكمة جديدة!`).setColor(Colors.LuminousVividPink).setDescription(`المهارة الآن في **Lv.${currentLevel + 1}** 📜`)], components: [getReturnRow()] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], content: "❌ حدث خطأ!", embeds: [], components: [getReturnRow()] });
     }
 }
 
@@ -363,23 +369,22 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         return true;
     });
 
-    if (availableSacrifices.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], components: [getMainMenuRow()] });
+    if (availableSacrifices.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], components: [getReturnRow()] });
 
-    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد 🔥
     const sacrificeOptions = availableSacrifices.map(row => {
         const info = getItemInfo(row.itemID);
         return { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
     }).slice(0, 25);
 
-    const sacrificeRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions));
-    const components = [sacrificeRow, getMainMenuRow()]; 
-    
+    let components = [];
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
-
     let payloadData = { mora: userMora, title: 'فرن الدمج السحري', fee: SYNTHESIS_FEE };
 
-    if (state.sacrificeItem) {
+    // إخفاء القائمة الأولى لو حدد خلاص
+    if (!state.sacrificeItem) {
+        components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions)));
+    } else {
         const sacInfo = getItemInfo(state.sacrificeItem);
         payloadData.sacMatName = sacInfo.name;
         payloadData.reqMatIcon = sacInfo.iconUrl;
@@ -404,18 +409,22 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         targetOptions.forEach(opt => uniqueTargetsMap.set(opt.value, opt));
         const uniqueTargets = Array.from(uniqueTargetsMap.values());
 
-        if (uniqueTargets.length > 0) {
-            components.unshift(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(uniqueTargets.slice(0, 25))));
+        // القائمة الثانية فقط
+        if (!state.targetItem && uniqueTargets.length > 0) {
+            components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(uniqueTargets.slice(0, 25))));
         }
 
         if (state.targetItem) {
             const targetInfo = getItemInfo(state.targetItem);
             payloadData.targetMatName = targetInfo.name;
             payloadData.targetMatIcon = targetInfo.iconUrl;
-            components.unshift(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمج (-5000 مورا)`).setStyle(ButtonStyle.Success).setEmoji('🔨')));
+            components.push(new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمج (-5000 مورا)`).setStyle(ButtonStyle.Success).setEmoji('🔨')
+            ));
         }
     }
 
+    components.push(getReturnRow());
     await replyWithCanvas(i, user, 'synthesis', payloadData, components);
 }
 
@@ -429,8 +438,8 @@ async function handleSynthesis(i, user, guildId, db, state) {
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
 
-    if (sacQty < 4) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 حبات من العنصر المطلوب للتضحية.")], components: [getMainMenuRow()] });
-    if (userMora < SYNTHESIS_FEE) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 5,000 مورا لدفع رسوم الحداد.")], components: [getMainMenuRow()] });
+    if (sacQty < 4) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 حبات من العنصر المطلوب للتضحية.")], components: [getReturnRow()] });
+    if (userMora < SYNTHESIS_FEE) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 5,000 مورا لدفع رسوم الحداد.")], components: [getReturnRow()] });
 
     await db.query('BEGIN').catch(()=>{}); 
     try {
@@ -456,10 +465,10 @@ async function handleSynthesis(i, user, guildId, db, state) {
         
         const targetInfo = getItemInfo(state.targetItem);
         const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.name}**`);
-        await i.editReply({ files: [], embeds: [successEmbed], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], embeds: [successEmbed], components: [getReturnRow()] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الدمج!", embeds: [], components: [getMainMenuRow()] });
+        await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الدمج!", embeds: [], components: [getReturnRow()] });
     }
 }
 
@@ -472,55 +481,98 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
 
     const smeltableItems = inventory.filter(row => getItemInfo(row.itemID) !== null);
 
-    if (smeltableItems.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], components: [getMainMenuRow()] });
+    if (smeltableItems.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], components: [getReturnRow()] });
 
-    // 🔥 تمت إزالة الإيموجيات للحماية من رفض الديسكورد 🔥
-    const smeltOptions = smeltableItems.map(row => {
-        const info = getItemInfo(row.itemID);
-        const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-        return { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
-    }).slice(0, 25);
-
-    const smeltRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions));
-    const components = [smeltRow, getMainMenuRow()];
-    
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
 
     let payloadData = { mora: userMora, title: 'محرقة التفكيك' };
+    let components = [];
 
-    if (state.item) {
+    // إخفاء القائمة المنسدلة عند اختيار عنصر
+    if (!state.item) {
+        const smeltOptions = smeltableItems.map(row => {
+            const info = getItemInfo(row.itemID);
+            const xpGain = SMELT_XP_RATES[info.rarity] || 0;
+            return { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
+        }).slice(0, 25);
+        components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions)));
+    } else {
         const itemInfo = getItemInfo(state.item);
         payloadData.sacMatName = itemInfo.name;
         payloadData.reqMatIcon = itemInfo.iconUrl;
         payloadData.xpGain = SMELT_XP_RATES[itemInfo.rarity] || 10;
-        components.unshift(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('forge_execute_smelt').setLabel(`صهر (حبة واحدة)`).setStyle(ButtonStyle.Danger).setEmoji('🔥')));
+        
+        const rowData = smeltableItems.find(r => r.itemID === state.item);
+        const itemQty = rowData ? rowData.quantity : 0;
+
+        const actionRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('forge_execute_smelt_1').setLabel(`صـهـر`).setStyle(ButtonStyle.Danger)
+        );
+
+        if (itemQty > 1) {
+            actionRow.addComponents(new ButtonBuilder().setCustomId(`forge_smelt_multi_${state.item}`).setLabel(`صـهـر متعـدد`).setStyle(ButtonStyle.Primary));
+        }
+
+        components.push(actionRow);
     }
 
+    components.push(getReturnRow());
     await replyWithCanvas(i, user, 'smelting', payloadData, components);
 }
 
-async function handleSmelting(i, user, guildId, db, state, client) {
-    if (!state.item) return;
+// معالجة النافذة (Modal) حق الصهر المتعدد
+async function handleSmeltingMultiModal(i, user, guildId, db, state, client) {
+    const itemId = i.customId.replace('forge_smelt_multi_', '');
+    const modal = new ModalBuilder().setCustomId(`modal_smelt_${itemId}`).setTitle('محرقة التفكيك - صهر متعدد');
+    const input = new TextInputBuilder().setCustomId('smelt_qty').setLabel('كم حبة تبي تصهر؟').setStyle(TextInputStyle.Short).setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await i.showModal(modal);
+    
+    try {
+        const submit = await i.awaitModalSubmit({ time: 60000, filter: s => s.user.id === user.id });
+        const qtyToSmelt = parseInt(submit.fields.getTextInputValue('smelt_qty'));
+        if (isNaN(qtyToSmelt) || qtyToSmelt <= 0) return submit.reply({ content: '❌ رقم غير صالح.', flags: MessageFlags.Ephemeral });
 
-    let invRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.item]).catch(()=> db.query(`SELECT quantity, id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.item]).catch(()=>({rows:[]})));
+        await handleSmelting(submit, user, guildId, db, state, client, qtyToSmelt, true);
+    } catch(e) {}
+}
+
+async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 1, isModal = false) {
+    // إذا كان من الكوليكتر العادي، العنصر مخزن في state، إذا من الـ Modal نستخرج الـ ID من الـ State أو من الآيدي
+    const itemIdToSmelt = state.item || (isModal ? i.customId.replace('modal_smelt_', '') : null);
+    if (!itemIdToSmelt) return;
+
+    if (isModal) await i.deferUpdate().catch(()=>{});
+
+    let invRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, itemIdToSmelt]).catch(()=> db.query(`SELECT quantity, id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, itemIdToSmelt]).catch(()=>({rows:[]})));
     
     let totalQty = 0;
     if (invRes?.rows) invRes.rows.forEach(r => totalQty += Number(r.quantity || r.Quantity));
 
-    if (totalQty < 1) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك هذا العنصر لصهره.")], components: [getMainMenuRow()] });
+    if (totalQty < qtyToSmelt) {
+        const errEmbed = new EmbedBuilder().setColor(Colors.Red).setDescription(`❌ أنت لا تملك ${qtyToSmelt} حبة من هذا العنصر لصهره.`);
+        return isModal ? i.followUp({ embeds: [errEmbed], flags: MessageFlags.Ephemeral }) : i.editReply({ files: [], embeds: [errEmbed], components: [getReturnRow()] });
+    }
 
-    const itemInfo = getItemInfo(state.item);
-    const xpReward = SMELT_XP_RATES[itemInfo.rarity] || 10;
+    const itemInfo = getItemInfo(itemIdToSmelt);
+    const xpReward = (SMELT_XP_RATES[itemInfo.rarity] || 10) * qtyToSmelt;
 
     await db.query('BEGIN').catch(()=>{}); 
     try {
-        const firstRow = invRes.rows[0];
-        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "id" = $1`, [firstRow.id || firstRow.ID]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`, [firstRow.id || firstRow.ID]));
+        let remainingToDeduct = qtyToSmelt;
+        for (const r of invRes.rows) {
+            if (remainingToDeduct <= 0) break;
+            const q = Number(r.quantity || r.Quantity);
+            const deduct = Math.min(q, remainingToDeduct);
+            await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [deduct, r.id || r.ID]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [deduct, r.id || r.ID]));
+            remainingToDeduct -= deduct;
+        }
+
         await db.query(`DELETE FROM user_inventory WHERE "quantity" <= 0 AND "userID" = $1`, [user.id]).catch(()=> db.query(`DELETE FROM user_inventory WHERE quantity <= 0 AND userid = $1`, [user.id]));
         await db.query('COMMIT').catch(()=>{}); 
 
-        const memberObj = await i.guild.members.fetch(user.id).catch(()=>{});
+        const memberObj = await i.guild?.members?.fetch(user.id).catch(()=>{});
         if (addXPAndCheckLevel && memberObj) {
             await addXPAndCheckLevel(client, memberObj, db, xpReward, 0, false).catch(()=>{});
         } else {
@@ -529,10 +581,18 @@ async function handleSmelting(i, user, guildId, db, state, client) {
             if(cacheData) { cacheData.xp += xpReward; cacheData.totalXP += xpReward; await client.setLevel(cacheData); }
         }
         
-        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
-        await i.editReply({ files: [], embeds: [successEmbed], components: [getMainMenuRow()] });
+        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق **${qtyToSmelt}x** ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
+        
+        if (isModal) {
+            await i.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+            // تحديث الشاشة عشان يعكس الخصم الجديد
+            await buildSmeltingUI(i, user, guildId, db, state);
+        } else {
+            await i.editReply({ files: [], embeds: [successEmbed], components: [getReturnRow()] });
+        }
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await i.editReply({ files: [], content: "❌ حدث خطأ أثناء الصهر!", embeds: [], components: [getMainMenuRow()] });
+        const errEmbed = new EmbedBuilder().setColor(Colors.Red).setDescription("❌ حدث خطأ أثناء الصهر!");
+        isModal ? await i.followUp({ embeds: [errEmbed], flags: MessageFlags.Ephemeral }) : await i.editReply({ files: [], embeds: [errEmbed], components: [getReturnRow()] });
     }
 }
