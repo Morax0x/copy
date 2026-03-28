@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder, MessageFlags } = require('discord.js');
 const weaponsConfig = require('../../json/weapons-config.json');
 const skillsConfig = require('../../json/skills-config.json');
 const upgradeMats = require('../../json/upgrade-materials.json');
@@ -69,24 +69,28 @@ function getItemInfo(itemId) {
     return null;
 }
 
-// تعديل الدالة لترد مباشرة إذا كانت أول مرة، أو تُعدّل إذا كان استجابة لتفاعل
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
-    if (generateForgeUI) {
-        const buffer = await generateForgeUI(user, view, data);
-        if (buffer) {
-            const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
-            if (isInitial && !i.replied && !i.deferred) {
-                return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
-            } else {
-                return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
+    try {
+        if (generateForgeUI) {
+            const buffer = await generateForgeUI(user, view, data);
+            if (buffer) {
+                const attachment = new AttachmentBuilder(buffer, { name: 'forge.png' });
+                if (isInitial && !i.replied && !i.deferred) {
+                    return await i.reply({ embeds: [], components, files: [attachment] }).catch(()=>{});
+                } else {
+                    return await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
+                }
             }
         }
+    } catch (e) {
+        console.error("Canvas Error in Forge:", e);
     }
-    // Fallback in case generator fails
+    
+    // الفولباك الآمن
     if (isInitial && !i.replied && !i.deferred) {
         return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components }).catch(()=>{});
     }
-    return await i.editReply({ content: null, components }).catch(()=>{});
+    return await i.editReply({ content: null, components, files: [] }).catch(()=>{});
 }
 
 module.exports = {
@@ -102,7 +106,6 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guildId = interactionOrMessage.guild.id;
 
-        // لا نسوي defer هنا عشان نرد مباشرة بالصورة
         if (isSlash) await interactionOrMessage.deferReply();
 
         let userDataRes = await db.query(`SELECT "mora", "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora, level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
@@ -118,12 +121,9 @@ module.exports = {
             ])
         );
 
-        // رد مباشر بالكانفاس كأول رسالة
-        let replyObj = await replyWithCanvas(interactionOrMessage, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [menuRow], !isSlash);
+        let replyObj = await replyWithCanvas(isSlash ? interactionOrMessage : { editReply: async (p) => interactionOrMessage.reply(p) }, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [menuRow], !isSlash);
 
-        // إذا كان تفاعل slash نحتاج نجيب رسالة الرد لربطها بالكوليكتر
-        if (isSlash && !replyObj) replyObj = await interactionOrMessage.fetchReply();
-
+        if (isSlash && !replyObj) replyObj = await interactionOrMessage.fetchReply().catch(()=>{});
         if (!replyObj) return;
 
         const filter = i => i.user.id === user.id && i.customId.startsWith('forge_');
@@ -135,34 +135,39 @@ module.exports = {
         collector.on('collect', async (i) => {
             try { await i.deferUpdate(); } catch(e) {}
 
-            if (i.customId === 'forge_menu_main') {
-                const choice = i.values[0];
-                if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
-                else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
-                else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
-                else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
-            } 
-            else if (i.customId === 'forge_skill_select') {
-                await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
-            }
-            else if (i.customId === 'forge_synth_sacrifice') {
-                synthesisState.sacrificeItem = i.values[0];
-                synthesisState.targetItem = null; 
-                await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
-            }
-            else if (i.customId === 'forge_synth_target') {
-                synthesisState.targetItem = i.values[0];
-                await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
-            }
-            else if (i.customId === 'forge_smelt_select') {
-                smeltState.item = i.values[0];
-                await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState);
-            }
-            else if (i.isButton()) {
-                if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db, menuRow);
-                else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, menuRow, i.customId.replace('forge_upgrade_skill_', ''));
-                else if (i.customId === 'forge_execute_synth') await handleSynthesis(i, user, guildId, db, menuRow, synthesisState);
-                else if (i.customId === 'forge_execute_smelt') await handleSmelting(i, user, guildId, db, menuRow, smeltState, client);
+            try {
+                if (i.customId === 'forge_menu_main') {
+                    const choice = i.values[0];
+                    if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
+                    else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
+                    else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
+                    else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
+                } 
+                else if (i.customId === 'forge_skill_select') {
+                    await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
+                }
+                else if (i.customId === 'forge_synth_sacrifice') {
+                    synthesisState.sacrificeItem = i.values[0];
+                    synthesisState.targetItem = null; 
+                    await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
+                }
+                else if (i.customId === 'forge_synth_target') {
+                    synthesisState.targetItem = i.values[0];
+                    await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
+                }
+                else if (i.customId === 'forge_smelt_select') {
+                    smeltState.item = i.values[0];
+                    await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState);
+                }
+                else if (i.isButton()) {
+                    if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db, menuRow);
+                    else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, menuRow, i.customId.replace('forge_upgrade_skill_', ''));
+                    else if (i.customId === 'forge_execute_synth') await handleSynthesis(i, user, guildId, db, menuRow, synthesisState);
+                    else if (i.customId === 'forge_execute_smelt') await handleSmelting(i, user, guildId, db, menuRow, smeltState, client);
+                }
+            } catch (innerError) {
+                console.error("Collector Action Error:", innerError);
+                await i.followUp({ content: "❌ عذراً، حدث خطأ أثناء معالجة طلبك.", flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
 
@@ -190,7 +195,7 @@ async function buildWeaponForgeUI(i, user, guildId, db, menuRow) {
     const requiredMaterial = getItemInfo(raceMats.materials[reqs.tierIndex].id);
 
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, requiredMaterial.id]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, requiredMaterial.id]).catch(()=>({rows:[]})));
-    const userMatCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity) : 0;
+    const userMatCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
 
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
@@ -244,7 +249,10 @@ async function buildAcademyMenuUI(i, user, guildId, db, menuRow) {
 
     const skillOptions = userSkills.map(s => {
         const configSkill = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
-        return configSkill ? { label: configSkill.name, value: configSkill.id, emoji: configSkill.emoji, description: `Lv.${s.skillLevel || s.skilllevel}` } : null;
+        if (!configSkill) return null;
+        const opt = { label: configSkill.name.substring(0, 100), value: configSkill.id, description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
+        if (configSkill.emoji) opt.emoji = configSkill.emoji;
+        return opt;
     }).filter(Boolean);
 
     const skillSelectRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_skill_select').setPlaceholder('اختر المهارة...').addOptions(skillOptions.slice(0, 25)));
@@ -269,7 +277,7 @@ async function buildSkillUpgradeUI(i, user, guildId, db, menuRow, skillId) {
     const requiredBook = getItemInfo(requiredBookRaw.id);
 
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, requiredBook.id]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, requiredBook.id]).catch(()=>({rows:[]})));
-    const userBookCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity) : 0;
+    const userBookCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
 
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
@@ -335,7 +343,9 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
 
     const sacrificeOptions = availableSacrifices.map(row => {
         const info = getItemInfo(row.itemID || row.itemid);
-        return { label: info.name, value: info.id, emoji: info.emoji, description: `تمتلك: ${row.quantity || row.Quantity} | ${info.rarity}` };
+        const opt = { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity || row.Quantity} | ${info.rarity}`.substring(0, 100) };
+        if (info.emoji) opt.emoji = info.emoji;
+        return opt;
     }).slice(0, 25);
 
     const sacrificeRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions));
@@ -355,12 +365,20 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
         const rMats = upgradeMats.weapon_materials.find(m => m.race === userRace);
         if (rMats) {
             const matMatch = rMats.materials.find(m => m.rarity === sacInfo.rarity);
-            if (matMatch && matMatch.id !== sacInfo.id) targetOptions.push({ label: matMatch.name, value: matMatch.id, emoji: matMatch.emoji, description: 'مورد سلاح' });
+            if (matMatch && matMatch.id !== sacInfo.id) {
+                const opt = { label: matMatch.name.substring(0, 100), value: matMatch.id, description: 'مورد سلاح' };
+                if (matMatch.emoji) opt.emoji = matMatch.emoji;
+                targetOptions.push(opt);
+            }
         }
         
         upgradeMats.skill_books.forEach(cat => {
             const bookMatch = cat.books.find(b => b.rarity === sacInfo.rarity);
-            if (bookMatch && bookMatch.id !== sacInfo.id) targetOptions.push({ label: bookMatch.name, value: bookMatch.id, emoji: bookMatch.emoji, description: 'مخطوطة سحر' });
+            if (bookMatch && bookMatch.id !== sacInfo.id) {
+                const opt = { label: bookMatch.name.substring(0, 100), value: bookMatch.id, description: 'مخطوطة سحر' };
+                if (bookMatch.emoji) opt.emoji = bookMatch.emoji;
+                targetOptions.push(opt);
+            }
         });
 
         if (targetOptions.length > 0) {
@@ -403,7 +421,7 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
         await db.query('COMMIT').catch(()=>{}); 
         
         const targetInfo = getItemInfo(state.targetItem);
-        const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.emoji} ${targetInfo.name}**`);
+        const successEmbed = new EmbedBuilder().setTitle(`🔄 عملية دمج ناجحة!`).setColor(Colors.LuminousVividPink).setDescription(`لقد قمت بدمج 4 عناصر وحصلت على:\n✨ **1x ${targetInfo.emoji || ''} ${targetInfo.name}**`);
         await i.editReply({ files: [], embeds: [successEmbed], components: [menuRow] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
@@ -425,7 +443,9 @@ async function buildSmeltingUI(i, user, guildId, db, menuRow, state) {
     const smeltOptions = smeltableItems.map(row => {
         const info = getItemInfo(row.itemID || row.itemid);
         const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-        return { label: info.name, value: info.id, emoji: info.emoji, description: `المخزون: ${row.quantity || row.Quantity} | يعطي: ${xpGain} XP` };
+        const opt = { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity || row.Quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
+        if (info.emoji) opt.emoji = info.emoji;
+        return opt;
     }).slice(0, 25);
 
     const smeltRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions));
@@ -473,7 +493,7 @@ async function handleSmelting(i, user, guildId, db, menuRow, state, client) {
             if(cacheData) { cacheData.xp += xpReward; cacheData.totalXP += xpReward; await client.setLevel(cacheData); }
         }
         
-        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق ${itemInfo.emoji} ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
+        const successEmbed = new EmbedBuilder().setTitle(`🔥 عملية صهر ناجحة!`).setColor(Colors.Orange).setDescription(`تم حرق ${itemInfo.emoji || ''} ${itemInfo.name} بالكامل.\n✨ لقد اكتسبت **+${xpReward} XP**!`);
         await i.editReply({ files: [], embeds: [successEmbed], components: [menuRow] });
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
