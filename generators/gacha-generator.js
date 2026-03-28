@@ -24,7 +24,7 @@ async function getCachedImage(imageUrl) {
 
 const RARITY_INFO = {
     'Common': { text: 'عادي', color: '#B0BEC5', stars: '★' },
-    'Uncommon': { text: 'شائع', color: '#2ECC71', stars: '★★' },
+    'Uncommon': { text: 'غير شائع', color: '#2ECC71', stars: '★★' },
     'Rare': { text: 'نادر', color: '#3498DB', stars: '★★★' },
     'Epic': { text: 'ملحمي', color: '#9B59B6', stars: '★★★★' },
     'Legendary': { text: 'اسطوري', color: '#F1C40F', stars: '★★★★★' }
@@ -134,14 +134,12 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     const chestX = moraX - boxW - 20;
     const boxY = (headerH - boxH) / 2;
 
-    // رسم مربع الصناديق
     ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
     ctx.beginPath(); roundRect(ctx, chestX, boxY, boxW, boxH, 12); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(185, 104, 255, 0.6)'; ctx.stroke();
     
     ctx.textAlign = 'right';
     ctx.fillStyle = '#E0E0E0';
-    // 🔥 ضبط مقاس رقم الصناديق عشان ما يطلع برا المربع
     drawAutoScaledText(ctx, chestCount.toString(), chestX + boxW - 45, boxY + boxH/2 + 2, boxW - 120, 24, 12);
     ctx.font = '24px "Arial"';
     ctx.fillText('📦', chestX + boxW - 10, boxY + boxH/2 + 2);
@@ -151,14 +149,12 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.font = 'bold 18px "Bein"';
     ctx.fillText("صناديقك", chestX + 15, boxY + boxH/2 + 2);
 
-    // رسم مربع المورا
     ctx.fillStyle = 'rgba(20, 25, 30, 0.8)';
     ctx.beginPath(); roundRect(ctx, moraX, boxY, boxW, boxH, 12); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; ctx.stroke();
     
     ctx.textAlign = 'right';
     ctx.fillStyle = '#FFD700';
-    // 🔥 ضبط مقاس المورا عشان لو اللاعب غني ما يطلع برا المربع
     drawAutoScaledText(ctx, moraBalance.toLocaleString(), moraX + boxW - 45, boxY + boxH/2 + 2, boxW - 70, 24, 12);
     ctx.font = '24px "Arial"';
     ctx.fillText('🪙', moraX + boxW - 10, boxY + boxH/2 + 2);
@@ -182,20 +178,18 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein"';
-    // 🔥 تعديل أسعار الشراء بالعربي مثل ما طلبت
-    ctx.fillText("عشر صناديق = 10000", width/2 - 130, pricePanelY + 35);
+    ctx.fillText("10 صناديق = 10K 🪙", width/2 - 130, pricePanelY + 35);
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("صندوق = 1000", width/2 + 130, pricePanelY + 35);
+    ctx.fillText("1 صندوق = 1K 🪙", width/2 + 130, pricePanelY + 35);
 
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 26px "Bein"';
     ctx.shadowColor = '#B968FF'; 
     ctx.shadowBlur = 15;
-    // مسح التشكيل والنقاط تم من مصفوفة الجمل فوق
     ctx.fillText(flavorText, width/2, height - 45);
     ctx.shadowBlur = 0;
 
@@ -279,7 +273,6 @@ async function generateGachaCard(item, rarity) {
     ctx.fillText(rInfo.stars, width / 2, height - 200);
     ctx.shadowBlur = 0;
 
-    // 🔥 تصغير الخط إذا كان الاسم طويل כדי لا يتجاوز الشاشة
     ctx.lineWidth = 10;
     ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
     const textGrad = ctx.createLinearGradient(0, height - 180, 0, height - 100);
