@@ -69,6 +69,18 @@ function getItemInfo(itemId) {
     return null;
 }
 
+// تجميع المخزون لتفادي التكرار (الأخطاء في القوائم المنسدلة)
+function aggregateInventory(rows) {
+    const map = {};
+    for (const r of rows) {
+        const id = r.itemID || r.itemid;
+        const qty = Number(r.quantity || r.Quantity);
+        if (!map[id]) map[id] = 0;
+        map[id] += qty;
+    }
+    return Object.keys(map).map(id => ({ itemID: id, quantity: map[id] }));
+}
+
 async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     try {
         if (generateForgeUI) {
@@ -136,28 +148,30 @@ module.exports = {
             try { await i.deferUpdate(); } catch(e) {}
 
             try {
-                if (i.customId === 'forge_menu_main') {
-                    const choice = i.values[0];
-                    if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
-                    else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
-                    else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
-                    else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
-                } 
-                else if (i.customId === 'forge_skill_select') {
-                    await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
-                }
-                else if (i.customId === 'forge_synth_sacrifice') {
-                    synthesisState.sacrificeItem = i.values[0];
-                    synthesisState.targetItem = null; 
-                    await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
-                }
-                else if (i.customId === 'forge_synth_target') {
-                    synthesisState.targetItem = i.values[0];
-                    await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
-                }
-                else if (i.customId === 'forge_smelt_select') {
-                    smeltState.item = i.values[0];
-                    await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState);
+                if (i.isStringSelectMenu()) {
+                    if (i.customId === 'forge_menu_main') {
+                        const choice = i.values[0];
+                        if (choice === 'forge_weapon') await buildWeaponForgeUI(i, user, guildId, db, menuRow);
+                        else if (choice === 'forge_skill_menu') await buildAcademyMenuUI(i, user, guildId, db, menuRow);
+                        else if (choice === 'forge_synthesis') { synthesisState = { sacrificeItem: null, targetItem: null }; await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState); }
+                        else if (choice === 'forge_smelting') { smeltState = { item: null }; await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState); }
+                    } 
+                    else if (i.customId === 'forge_skill_select') {
+                        await buildSkillUpgradeUI(i, user, guildId, db, menuRow, i.values[0]);
+                    }
+                    else if (i.customId === 'forge_synth_sacrifice') {
+                        synthesisState.sacrificeItem = i.values[0];
+                        synthesisState.targetItem = null; 
+                        await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
+                    }
+                    else if (i.customId === 'forge_synth_target') {
+                        synthesisState.targetItem = i.values[0];
+                        await buildSynthesisUI(i, user, guildId, db, menuRow, synthesisState);
+                    }
+                    else if (i.customId === 'forge_smelt_select') {
+                        smeltState.item = i.values[0];
+                        await buildSmeltingUI(i, user, guildId, db, menuRow, smeltState);
+                    }
                 }
                 else if (i.isButton()) {
                     if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db, menuRow);
@@ -167,7 +181,6 @@ module.exports = {
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
-                await i.followUp({ content: "❌ عذراً، حدث خطأ أثناء معالجة طلبك.", flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
 
@@ -325,15 +338,14 @@ async function handleSkillUpgrade(i, user, guildId, db, menuRow, skillId) {
 // ==========================================
 async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
-    const inventory = invRes?.rows || [];
+    const inventory = aggregateInventory(invRes?.rows || []);
 
     let wRes = await db.query(`SELECT "raceName" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userRace = wRes?.rows?.[0]?.raceName || wRes?.rows?.[0]?.racename;
 
     const availableSacrifices = inventory.filter(row => {
-        const qty = Number(row.quantity || row.Quantity);
-        if (qty < 4) return false;
-        const info = getItemInfo(row.itemID || row.itemid);
+        if (row.quantity < 4) return false;
+        const info = getItemInfo(row.itemID);
         if (!info) return false;
         if (info.type === 'material' && info.race !== userRace) return false;
         return true;
@@ -342,8 +354,8 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
     if (availableSacrifices.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], components: [menuRow] });
 
     const sacrificeOptions = availableSacrifices.map(row => {
-        const info = getItemInfo(row.itemID || row.itemid);
-        const opt = { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity || row.Quantity} | ${info.rarity}`.substring(0, 100) };
+        const info = getItemInfo(row.itemID);
+        const opt = { label: info.name.substring(0, 100), value: info.id, description: `تمتلك: ${row.quantity} | ${info.rarity}`.substring(0, 100) };
         if (info.emoji) opt.emoji = info.emoji;
         return opt;
     }).slice(0, 25);
@@ -381,8 +393,13 @@ async function buildSynthesisUI(i, user, guildId, db, menuRow, state) {
             }
         });
 
-        if (targetOptions.length > 0) {
-            components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(targetOptions.slice(0, 25))));
+        // تنظيف الخيارات من أي تكرار احتياطياً
+        const uniqueTargetsMap = new Map();
+        targetOptions.forEach(opt => uniqueTargetsMap.set(opt.value, opt));
+        const uniqueTargets = Array.from(uniqueTargetsMap.values());
+
+        if (uniqueTargets.length > 0) {
+            components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_target').setPlaceholder('2. اختر العنصر المطلوب...').addOptions(uniqueTargets.slice(0, 25))));
         }
 
         if (state.targetItem) {
@@ -400,7 +417,9 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
     if (!state.sacrificeItem || !state.targetItem) return;
     
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=>({rows:[]})));
-    const sacQty = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
+    // جمع كل الكميات إذا كانت متكررة
+    let sacQty = 0;
+    if (invRes?.rows) invRes.rows.forEach(r => sacQty += Number(r.quantity || r.Quantity));
     
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
@@ -411,7 +430,18 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
     await db.query('BEGIN').catch(()=>{}); 
     try {
         await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [SYNTHESIS_FEE, user.id, guildId]).catch(()=> db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [SYNTHESIS_FEE, user.id, guildId]));
-        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - 4 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - 4 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]));
+        
+        // الخصم
+        let remainingToDeduct = 4;
+        let updateRes = await db.query(`SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]));
+        for (const r of updateRes.rows) {
+            if (remainingToDeduct <= 0) break;
+            const q = Number(r.quantity || r.Quantity);
+            const deduct = Math.min(q, remainingToDeduct);
+            await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [deduct, r.id || r.ID]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [deduct, r.id || r.ID]));
+            remainingToDeduct -= deduct;
+        }
+
         await db.query(`DELETE FROM user_inventory WHERE "quantity" <= 0 AND "userID" = $1`, [user.id]).catch(()=> db.query(`DELETE FROM user_inventory WHERE quantity <= 0 AND userid = $1`, [user.id]));
         
         let targetCheck = await db.query(`SELECT "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.targetItem]).catch(()=> db.query(`SELECT id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.targetItem]).catch(()=>({rows:[]})));
@@ -434,16 +464,16 @@ async function handleSynthesis(i, user, guildId, db, menuRow, state) {
 // ==========================================
 async function buildSmeltingUI(i, user, guildId, db, menuRow, state) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
-    const inventory = invRes?.rows || [];
+    const inventory = aggregateInventory(invRes?.rows || []);
 
-    const smeltableItems = inventory.filter(row => getItemInfo(row.itemID || row.itemid) !== null);
+    const smeltableItems = inventory.filter(row => getItemInfo(row.itemID) !== null);
 
     if (smeltableItems.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], components: [menuRow] });
 
     const smeltOptions = smeltableItems.map(row => {
-        const info = getItemInfo(row.itemID || row.itemid);
+        const info = getItemInfo(row.itemID);
         const xpGain = SMELT_XP_RATES[info.rarity] || 0;
-        const opt = { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity || row.Quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
+        const opt = { label: info.name.substring(0, 100), value: info.id, description: `المخزون: ${row.quantity} | يعطي: ${xpGain} XP`.substring(0, 100) };
         if (info.emoji) opt.emoji = info.emoji;
         return opt;
     }).slice(0, 25);
@@ -470,17 +500,20 @@ async function buildSmeltingUI(i, user, guildId, db, menuRow, state) {
 async function handleSmelting(i, user, guildId, db, menuRow, state, client) {
     if (!state.item) return;
 
-    let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.item]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.item]).catch(()=>({rows:[]})));
-    const qty = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
+    let invRes = await db.query(`SELECT "quantity", "id" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.item]).catch(()=> db.query(`SELECT quantity, id FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.item]).catch(()=>({rows:[]})));
+    
+    let totalQty = 0;
+    if (invRes?.rows) invRes.rows.forEach(r => totalQty += Number(r.quantity || r.Quantity));
 
-    if (qty < 1) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك هذا العنصر لصهره.")], components: [menuRow] });
+    if (totalQty < 1) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك هذا العنصر لصهره.")], components: [menuRow] });
 
     const itemInfo = getItemInfo(state.item);
     const xpReward = SMELT_XP_RATES[itemInfo.rarity] || 10;
 
     await db.query('BEGIN').catch(()=>{}); 
     try {
-        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.item]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.item]));
+        const firstRow = invRes.rows[0];
+        await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - 1 WHERE "id" = $1`, [firstRow.id || firstRow.ID]).catch(()=> db.query(`UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1`, [firstRow.id || firstRow.ID]));
         await db.query(`DELETE FROM user_inventory WHERE "quantity" <= 0 AND "userID" = $1`, [user.id]).catch(()=> db.query(`DELETE FROM user_inventory WHERE quantity <= 0 AND userid = $1`, [user.id]));
         await db.query('COMMIT').catch(()=>{}); 
 
