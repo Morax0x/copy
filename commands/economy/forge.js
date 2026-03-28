@@ -16,7 +16,6 @@ catch (e) { try { ({ addXPAndCheckLevel } = require('./handler-utils.js')); } ca
 
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const SMELT_XP_RATES = { 'Common': 10, 'Uncommon': 20, 'Rare': 30, 'Epic': 100, 'Legendary': 1000 };
-const SYNTHESIS_FEE = 5000;
 
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
@@ -69,7 +68,7 @@ function getItemInfo(itemId) {
         if (mat) {
             const raceFolder = r.race.toLowerCase().replace(' ', '_');
             const imgName = ID_TO_IMAGE[mat.id] || `${mat.id}.png`;
-            return { ...mat, type: 'material', race: r.race, name: resolveText(mat.name), iconUrl: `${R2_URL}/images/materials/${raceFolder}/${imgName}` };
+            return { ...mat, type: 'material', race: r.race, name: resolveText(mat.name), iconUrl: `${R2_URL}/images/materials/${raceFolder}/${imgName}`, rarity: mat.rarity };
         }
     }
     for (const c of upgradeMats.skill_books) {
@@ -77,7 +76,7 @@ function getItemInfo(itemId) {
         if (book) {
             const typeFolder = c.category === 'General_Skills' ? 'general' : 'race';
             const imgName = ID_TO_IMAGE[book.id] || `${book.id}.png`;
-            return { ...book, type: 'book', name: resolveText(book.name), iconUrl: `${R2_URL}/images/materials/${typeFolder}/${imgName}` };
+            return { ...book, type: 'book', name: resolveText(book.name), iconUrl: `${R2_URL}/images/materials/${typeFolder}/${imgName}`, rarity: book.rarity };
         }
     }
     return null;
@@ -173,7 +172,6 @@ module.exports = {
 
             try {
                 if (i.customId === 'forge_return_main') {
-                    // تصفير الخيارات عند العودة للقائمة الرئيسية لمنع التعليق!
                     synthesisState = { sacrificeItem: null, targetItem: null };
                     smeltState = { item: null };
                     await buildMainUI(i, user, guildId, db, false);
@@ -212,17 +210,14 @@ module.exports = {
                     else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, i.customId.replace('forge_upgrade_skill_', ''));
                     else if (i.customId === 'forge_execute_synth') {
                         await handleSynthesis(i, user, guildId, db, synthesisState);
-                        // تفريغ بعد الدمج الناجح
                         synthesisState = { sacrificeItem: null, targetItem: null };
                     }
                     else if (i.customId === 'forge_execute_smelt_1') {
                         await handleSmelting(i, user, guildId, db, smeltState, client, 1);
-                        // تفريغ بعد الصهر الناجح
                         smeltState = { item: null };
                     }
                     else if (i.customId.startsWith('forge_smelt_multi_')) {
                         await handleSmeltingMultiModal(i, user, guildId, db, smeltState, client);
-                        // التفريغ يتم داخل دالة المودال بعد الاستجابة
                     }
                 }
             } catch (innerError) {
@@ -241,9 +236,6 @@ module.exports = {
     }
 };
 
-// ==========================================
-// ⚒️ 1. نظام الحدادة (تطوير الأسلحة)
-// ==========================================
 async function buildWeaponForgeUI(i, user, guildId, db) {
     let weaponRes = await db.query(`SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT racename, weaponlevel FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const wData = weaponRes?.rows?.[0];
@@ -314,9 +306,6 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
     }
 }
 
-// ==========================================
-// 📜 2. أكاديمية السحر (صقل المهارات)
-// ==========================================
 async function buildAcademyMenuUI(i, user, guildId, db) {
     let skillsRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userSkills = skillsRes?.rows || [];
@@ -409,9 +398,6 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
     }
 }
 
-// ==========================================
-// 🔄 3. فرن الدمج (Synthesis)
-// ==========================================
 async function buildSynthesisUI(i, user, guildId, db, state) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const inventory = aggregateInventory(invRes?.rows || []);
@@ -432,7 +418,7 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
     let components = [];
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
-    let payloadData = { mora: userMora, title: 'فرن الدمج السحري', fee: SYNTHESIS_FEE };
+    let payloadData = { mora: userMora, title: 'فرن الدمج السحري' };
 
     if (!state.sacrificeItem) {
         const sacrificeOptions = availableSacrifices.map(row => {
@@ -474,7 +460,7 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
             payloadData.targetMatName = targetInfo.name;
             payloadData.targetMatIcon = targetInfo.iconUrl;
             components.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمج (-5000 مورا)`).setStyle(ButtonStyle.Success).setEmoji('🔨')
+                new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمــج`).setStyle(ButtonStyle.Success).setEmoji('🔨')
             ));
         }
     }
@@ -489,17 +475,11 @@ async function handleSynthesis(i, user, guildId, db, state) {
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=>({rows:[]})));
     let sacQty = 0;
     if (invRes?.rows) invRes.rows.forEach(r => sacQty += Number(r.quantity || r.Quantity));
-    
-    let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
-    const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
 
     if (sacQty < 4) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 حبات من العنصر المطلوب للتضحية.")], components: [getReturnRow()] });
-    if (userMora < SYNTHESIS_FEE) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 5,000 مورا لدفع رسوم الحداد.")], components: [getReturnRow()] });
 
     await db.query('BEGIN').catch(()=>{}); 
     try {
-        await db.query(`UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [SYNTHESIS_FEE, user.id, guildId]).catch(()=> db.query(`UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [SYNTHESIS_FEE, user.id, guildId]));
-        
         let remainingToDeduct = 4;
         let updateRes = await db.query(`SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]));
         for (const r of updateRes.rows) {
@@ -531,9 +511,6 @@ async function handleSynthesis(i, user, guildId, db, state) {
     }
 }
 
-// ==========================================
-// 🔥 4. محرقة التفكيك (Smelting)
-// ==========================================
 async function buildSmeltingUI(i, user, guildId, db, state) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const inventory = aggregateInventory(invRes?.rows || []);
@@ -647,7 +624,6 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
                 replied: false, deferred: false,
                 editReply: async (p) => i.editReply(p) 
             }, user, 'success_smelting', successData, [getReturnRow()]);
-            // تفريغ الحالة بعد الصهر المتعدد الناجح
             state.item = null;
         } else {
             await replyWithCanvas(i, user, 'success_smelting', successData, [getReturnRow()]);
