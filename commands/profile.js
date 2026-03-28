@@ -1,6 +1,7 @@
 const { EmbedBuilder, SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require("discord.js");
 const { calculateBuffMultiplier, calculateMoraBuff } = require("../streak-handler.js");
 const { getUserRace, getWeaponData, cleanDisplayName } = require('../handlers/pvp-core.js'); 
+const { generateAdventurerCard } = require('../generators/adventurer-card-generator.js');
 
 let generateInventoryCard, generateMainHub, generateItemDetailsCard, generateSkillsCard, generatePortfolioCard;
 try {
@@ -26,6 +27,7 @@ catch (e) {
 }
 
 const TARGET_OWNER_ID = "1145327691772481577";
+const EMOJI_MORA = '<:mora:1435647151349698621>';
 const PROFILE_BASE_HP = 100;
 const PROFILE_HP_PER_LEVEL = 4;
 const ITEMS_PER_PAGE = 15;
@@ -60,27 +62,35 @@ function getRepRankInfo(points) {
 }
 
 async function calculateStrongestRank(db, guildID, targetUserID) {
-    if (targetUserID === TARGET_OWNER_ID) return 0;
-    let wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]).catch(()=> db.query(`SELECT userid as "userID", racename as "raceName", weaponlevel as "weaponLevel" FROM user_weapons WHERE guildid = $1 AND userid != $2`, [guildID, TARGET_OWNER_ID]).catch(()=>({rows:[]})));
-    const weapons = wRes.rows;
-    let lvlRes = await db.query(`SELECT "user" as "userID", "level" FROM levels WHERE "guild" = $1`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", level FROM levels WHERE guildid = $1`, [guildID]).catch(()=>({rows:[]})));
-    const levelsMap = new Map(lvlRes.rows.map(r => [r.userID, r.level]));
-    let skillRes = await db.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", SUM(skilllevel) as "totalLevels" FROM user_skills WHERE guildid = $1 GROUP BY userid`, [guildID]).catch(()=>({rows:[]})));
-    const skillsMap = new Map(skillRes.rows.map(r => [r.userID, parseInt(r.totalLevels) || 0]));
-    let stats = [];
-    for (const w of weapons) {
-        const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
-        if(!conf) continue;
-        const wLvl = w.weaponLevel || w.weaponlevel;
-        const dmg = conf.base_damage + (conf.damage_increment * (wLvl - 1));
-        const playerLevel = levelsMap.get(w.userID) || 1;
-        const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
-        const skillLevelsTotal = skillsMap.get(w.userID) || 0;
-        const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
-        stats.push({ userID: w.userID, powerScore });
+    try {
+        if (targetUserID === TARGET_OWNER_ID) return 0;
+        let wRes = await db.query(`SELECT "userID", "raceName", "weaponLevel" FROM user_weapons WHERE "guildID" = $1 AND "userID" != $2`, [guildID, TARGET_OWNER_ID]).catch(()=> db.query(`SELECT userid as "userID", racename as "raceName", weaponlevel as "weaponLevel" FROM user_weapons WHERE guildid = $1 AND userid != $2`, [guildID, TARGET_OWNER_ID]).catch(()=>({rows:[]})));
+        const weapons = wRes?.rows || [];
+        
+        let lvlRes = await db.query(`SELECT "user" as "userID", "level" FROM levels WHERE "guild" = $1`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", level FROM levels WHERE guildid = $1`, [guildID]).catch(()=>({rows:[]})));
+        const levelsMap = new Map((lvlRes?.rows || []).map(r => [r.userID, r.level]));
+        
+        let skillRes = await db.query(`SELECT "userID", SUM("skillLevel") as "totalLevels" FROM user_skills WHERE "guildID" = $1 GROUP BY "userID"`, [guildID]).catch(()=> db.query(`SELECT userid as "userID", SUM(skilllevel) as "totalLevels" FROM user_skills WHERE guildid = $1 GROUP BY userid`, [guildID]).catch(()=>({rows:[]})));
+        const skillsMap = new Map((skillRes?.rows || []).map(r => [r.userID, parseInt(r.totalLevels) || 0]));
+        
+        let stats = [];
+        for (const w of weapons) {
+            const conf = weaponsConfig.find(c => c.race === (w.raceName || w.racename));
+            if(!conf) continue;
+            const wLvl = w.weaponLevel || w.weaponlevel || 1;
+            const dmg = conf.base_damage + (conf.damage_increment * (wLvl - 1));
+            const playerLevel = levelsMap.get(w.userID) || 1;
+            const hp = PROFILE_BASE_HP + (playerLevel * PROFILE_HP_PER_LEVEL);
+            const skillLevelsTotal = skillsMap.get(w.userID) || 0;
+            const powerScore = Math.floor(dmg + (hp * 0.5) + (playerLevel * 10) + (skillLevelsTotal * 20));
+            stats.push({ userID: w.userID, powerScore });
+        }
+        stats.sort((a, b) => b.powerScore - a.powerScore);
+        const index = stats.findIndex(s => s.userID === targetUserID);
+        return index !== -1 ? index + 1 : stats.length + 1; 
+    } catch (e) {
+        return 1;
     }
-    stats.sort((a, b) => b.powerScore - a.powerScore);
-    return stats.findIndex(s => s.userID === targetUserID) + 1; 
 }
 
 module.exports = {
@@ -137,29 +147,115 @@ module.exports = {
             }
 
             const renderView = async () => {
-                let levelData = db.prepare ? db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, guildId) : null;
-                if (!levelData) {
-                    const res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]);
-                    levelData = res.rows[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
-                }
+                let levelData = null;
+                try {
+                    if (db.prepare) {
+                        levelData = db.prepare("SELECT * FROM levels WHERE user = ? AND guild = ?").get(targetUser.id, guildId);
+                    } else {
+                        const res = await db.query(`SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        levelData = res?.rows?.[0];
+                    }
+                } catch(e) {}
+                if (!levelData) levelData = { xp: 0, level: 1, mora: 0, bank: 0 };
 
                 const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
 
-                if (currentView === 'profile') {
-                    const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                    const repPoints = repRes.rows[0]?.rep_points || 0;
-                    const rankInfo = getRepRankInfo(repPoints);
+                if (currentView === 'inventory' && invCategory === 'market') {
+                    let portfolio = [];
+                    let dbMarketRes = { rows: [] };
+                    try {
+                        const [portRes, marketRes] = await Promise.all([
+                            db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
+                            db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
+                        ]);
+                        portfolio = portRes?.rows || [];
+                        dbMarketRes = marketRes || { rows: [] };
+                    } catch(e) {}
 
+                    const market = new Map(marketConfig.map(item => [item.id, item]));
+                    let dbMarketPrices = new Map((dbMarketRes?.rows || []).map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
+
+                    let validItems = [];
+                    let totalValue = 0;
+
+                    for (const item of portfolio) {
+                        const itemID = item.itemID || item.itemid;
+                        const marketItem = market.get(itemID);
+                        if (!marketItem) continue;
+
+                        let currentPrice = dbMarketPrices.has(itemID) ? dbMarketPrices.get(itemID) : marketItem.price;
+                        const quantity = Number(row.quantity) || 0;
+                        if (quantity <= 0) continue;
+
+                        const itemTotalValue = currentPrice * quantity;
+                        totalValue += itemTotalValue;
+
+                        let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
+                        const info = resolveItemInfoLocal(itemID);
+                        
+                        validItems.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
+                    }
+
+                    const totalPages = Math.max(1, Math.ceil(validItems.length / 9)); 
+                    const slice = validItems.slice((invPage-1)*9, invPage*9);
+
+                    let buffer;
+                    if (generatePortfolioCard) {
+                        buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
+                    } else {
+                        return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
+                    }
+
+                    const row1 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                    );
+
+                    return { content: '', files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], components: [row1] };
+                }
+
+                // درع الحماية لاستخراج بيانات اللاعب
+                let repPoints = 0, rankInfo = getRepRankInfo(0);
+                let arabicRaceName = "بشري", weaponData = null, weaponName = "بدون سلاح";
+
+                try {
+                    if (db.prepare) {
+                        const r = db.prepare("SELECT rep_points FROM user_reputation WHERE userID = ? AND guildID = ?").get(targetUser.id, guildId);
+                        if (r) repPoints = r.rep_points;
+                    } else {
+                        const repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        repPoints = repRes?.rows?.[0]?.rep_points || 0;
+                    }
+                    rankInfo = getRepRankInfo(repPoints);
+                } catch(e) {}
+
+                try {
                     const userRaceData = await getUserRace(targetMember, db);
                     const raceNameRaw = userRaceData?.raceName || null;
-                    const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
-                    const weaponData = await getWeaponData(db, targetMember);
-                    const weaponName = weaponData ? weaponData.name : "بدون سلاح";
+                    arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
+                } catch(e) {}
 
-                    const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]);
-                    const streakData = streakRes.rows[0] || {};
-                    const xpBuff = await calculateBuffMultiplier(targetMember, db);
-                    const moraBuff = await calculateMoraBuff(targetMember, db);
+                try {
+                    weaponData = await getWeaponData(db, targetMember);
+                    weaponName = weaponData ? weaponData.name : "بدون سلاح";
+                } catch(e) {}
+
+                if (currentView === 'profile') {
+                    let streakData = {};
+                    try {
+                        if (db.prepare) {
+                            streakData = db.prepare("SELECT * FROM streaks WHERE guildID = ? AND userID = ?").get(guildId, targetUser.id) || {};
+                        } else {
+                            const streakRes = await db.query(`SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}));
+                            streakData = streakRes?.rows?.[0] || {};
+                        }
+                    } catch(e) {}
+
+                    let xpBuff = 1, moraBuff = 1;
+                    try { xpBuff = await calculateBuffMultiplier(targetMember, db); } catch(e) {}
+                    try { moraBuff = await calculateMoraBuff(targetMember, db); } catch(e) {}
+                    
                     const ranks = { level: "0", mora: "0", streak: "0", power: "0" };
                     if (targetUser.id !== TARGET_OWNER_ID) {
                         ranks.power = (await calculateStrongestRank(db, guildId, targetUser.id)).toString();
@@ -177,27 +273,25 @@ module.exports = {
 
                     const buffer = await generateAdventurerCard(profData);
                     const nav = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('حـقـيـبـة').setStyle(ButtonStyle.Primary).setEmoji('💎'), // 🔥 تم تغيير الإيموجي لجوهرة 🔥
+                        new ButtonBuilder().setCustomId(`v_inv_${authorUser.id}`).setLabel('حـقـيـبـة').setStyle(ButtonStyle.Primary).setEmoji('💎'),
                         new ButtonBuilder().setCustomId(`v_com_${authorUser.id}`).setLabel('عـتـاد').setStyle(ButtonStyle.Primary).setEmoji('⚔️')
                     );
                     return { content: '', files: [new AttachmentBuilder(buffer, { name: 'p.png' })], components: [nav] };
                 }
 
                 if (currentView === 'combat') {
-                    const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]);
-                    let allSkills = skillRes.rows.map(s => {
-                        const conf = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
-                        return conf ? { id: conf.id, name: conf.name, level: s.skillLevel, description: conf.description } : null;
-                    }).filter(s => s !== null);
-                    allSkills.sort((a,b) => b.level - a.level);
+                    let allSkills = [];
+                    try {
+                        const skillRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2 AND "skillLevel" > 0`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        allSkills = (skillRes?.rows || []).map(s => {
+                            const conf = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
+                            return conf ? { id: conf.id, name: conf.name, level: s.skillLevel, description: conf.description } : null;
+                        }).filter(s => s !== null);
+                        allSkills.sort((a,b) => b.level - a.level);
+                    } catch(e) {}
 
                     const totalSkillPages = Math.max(1, Math.ceil(allSkills.length / SKILLS_PER_PAGE));
                     const slice = allSkills.slice(skillPage * SKILLS_PER_PAGE, (skillPage + 1) * SKILLS_PER_PAGE);
-
-                    const userRaceData = await getUserRace(targetMember, db);
-                    const raceNameRaw = userRaceData?.raceName || null;
-                    const arabicRaceName = RACE_TRANSLATIONS.get(raceNameRaw) || raceNameRaw || "بشري";
-                    const weaponData = await getWeaponData(db, targetMember);
 
                     const cardData = {
                         user: targetUser, avatarUrl: targetUser.displayAvatarURL({ extension: 'png', size: 256 }),
@@ -218,17 +312,16 @@ module.exports = {
                     if (invCategory === 'main') {
                         const buffer = await generateMainHub(targetMember, db, totalMora);
                         
-                        // 🔥 تحديث الأزرار لتكون 3 فوق و 3 تحت وبألوانك المطلوبة 🔥
                         const row1 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('مـوارد').setStyle(ButtonStyle.Primary).setEmoji('💎'), // Primary (أزرق)
-                            new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صـيد').setStyle(ButtonStyle.Secondary).setEmoji('🎣'), // Secondary (أبيض)
-                            new ButtonBuilder().setCustomId(`c_far_${authorUser.id}`).setLabel('مـزرعـة').setStyle(ButtonStyle.Success).setEmoji('🌾') // Success (أخضر)
+                            new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('مـوارد').setStyle(ButtonStyle.Primary).setEmoji('💎'), 
+                            new ButtonBuilder().setCustomId(`c_fis_${authorUser.id}`).setLabel('صـيد').setStyle(ButtonStyle.Secondary).setEmoji('🎣'), 
+                            new ButtonBuilder().setCustomId(`c_far_${authorUser.id}`).setLabel('مـزرعـة').setStyle(ButtonStyle.Success).setEmoji('🌾') 
                         );
                         
                         const row2 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`v_port_${authorUser.id}`).setLabel('ممـتـلكـات').setStyle(ButtonStyle.Primary).setEmoji('💼'), // Primary (أزرق)
-                            new ButtonBuilder().setCustomId(`c_oth_${authorUser.id}`).setLabel('اخـرى').setStyle(ButtonStyle.Secondary).setEmoji('📦'), // Secondary (أبيض)
-                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setStyle(ButtonStyle.Danger).setEmoji('↩️') // Danger (بدون نص)
+                            new ButtonBuilder().setCustomId(`v_port_${authorUser.id}`).setLabel('ممـتـلكـات').setStyle(ButtonStyle.Primary).setEmoji('💼'), 
+                            new ButtonBuilder().setCustomId(`c_oth_${authorUser.id}`).setLabel('اخـرى').setStyle(ButtonStyle.Secondary).setEmoji('📦'), 
+                            new ButtonBuilder().setCustomId(`v_pro_${authorUser.id}`).setStyle(ButtonStyle.Danger).setEmoji('↩️') 
                         );
 
                         return { content: '', files: [new AttachmentBuilder(buffer, { name: 'h.png' })], components: [row1, row2] };
@@ -254,96 +347,45 @@ module.exports = {
                     }
 
                     let items = [];
-                    let totalValue = 0;
-
-                    if (invCategory === 'market') {
-                        const [portfolioRes, dbMarketRes] = await Promise.all([
-                            db.query(`SELECT * FROM user_portfolio WHERE "guildID" = $1 AND "userID" = $2`, [guildId, targetUser.id]).catch(() => db.query(`SELECT * FROM user_portfolio WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id]).catch(()=>({rows:[]}))),
-                            db.query("SELECT * FROM market_items").catch(()=>({rows:[]}))
-                        ]);
-
-                        const portfolio = portfolioRes.rows;
-                        const market = new Map(marketConfig.map(item => [item.id, item]));
-                        let dbMarketPrices = new Map(dbMarketRes.rows.map(row => [row.id, Number(row.currentPrice || row.currentprice)]));
-
-                        for (const row of portfolio) {
-                            const itemID = row.itemID || row.itemid;
-                            const marketItem = market.get(itemID);
-                            if (!marketItem) continue;
-
-                            let currentPrice = dbMarketPrices.has(itemID) ? dbMarketPrices.get(itemID) : marketItem.price;
-                            const quantity = Number(row.quantity) || 0;
-                            if (quantity <= 0) continue;
-
-                            const itemTotalValue = currentPrice * quantity;
-                            totalValue += itemTotalValue;
-
-                            let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
-                            const info = resolveItemInfoLocal(itemID);
-                            
-                            items.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
-                        }
-
-                        const totalPages = Math.max(1, Math.ceil(items.length / 9)); 
-                        const slice = items.slice((invPage-1)*9, invPage*9);
-
-                        let buffer;
-                        if (generatePortfolioCard) {
-                            buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
-                        } else {
-                            return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
-                        }
-
-                        const row1 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
-                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
-                        );
-
-                        return { 
-                            content: '', 
-                            files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], 
-                            components: [row1] 
-                        };
-                    } else {
-                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                        items = invQuery.rows.map(row => {
+                    try {
+                        const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        items = (invQuery?.rows || []).map(row => {
                             const info = resolveItemInfoLocal(row.itemID || row.itemid);
                             return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                         }).filter(i => i.category === invCategory);
-                        
-                        const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+                    } catch(e) {}
+                    
+                    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+                    const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
 
-                        const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+                    const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
 
-                        const row1 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
-                            new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
-                        );
-                        const row2 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
-                            new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
-                        );
-                        const row3 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
-                            new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
-                            new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
-                        );
-                        const row4 = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
-                            new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
-                            new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
-                        );
+                    const row1 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder().setCustomId(`d_u1_${authorUser.id}`).setEmoji('⬆️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_r2_${authorUser.id}`).setEmoji('⏩').setStyle(ButtonStyle.Secondary)
+                    );
+                    const row2 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_l1_${authorUser.id}`).setEmoji('⬅️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_ok_${authorUser.id}`).setEmoji('💠').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`d_r1_${authorUser.id}`).setEmoji('➡️').setStyle(ButtonStyle.Primary)
+                    );
+                    const row3 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`d_u2_${authorUser.id}`).setEmoji('⏫').setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder().setCustomId(`d_d1_${authorUser.id}`).setEmoji('⬇️').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`d_d2_${authorUser.id}`).setEmoji('⏬').setStyle(ButtonStyle.Secondary)
+                    );
+                    const row4 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`inv_p_${authorUser.id}`).setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(invPage === 1),
+                        new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setEmoji('↩️').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`inv_n_${authorUser.id}`).setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(invPage >= totalPages)
+                    );
 
-                        return { 
-                            content: '', 
-                            files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
-                            components: [row1, row2, row3, row4] 
-                        };
-                    }
+                    return { 
+                        content: '', 
+                        files: [new AttachmentBuilder(buffer, { name: 'i.png' })], 
+                        components: [row1, row2, row3, row4] 
+                    };
                 }
             };
 
@@ -551,8 +593,8 @@ module.exports = {
                                 items.push({ ...info, quantity, id: itemID });
                             }
                         } else {
-                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]);
-                            items = invQuery.rows.map(row => {
+                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                            items = (invQuery?.rows || []).map(row => {
                                 const info = resolveItemInfoLocal(row.itemID || row.itemid);
                                 return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
                             }).filter(it => it.category === invCategory);
