@@ -21,6 +21,11 @@ try {
 const UPDATE_INTERVAL_MS = 1 * 60 * 60 * 1000;
 const ITEMS_PER_PAGE = 9;
 
+// 🔥 الإيموجيات المخصصة للأزرار
+const EMOJI_RIGHT = '1439164491072929915'; // السهم اليمين (السابق)
+const EMOJI_LEFT = '1439164494759723029';  // السهم اليسار (التالي)
+const EMOJI_BACK = '↩️'; // سهم العودة للوحة الرئيسية
+
 function getUpdateTimeRemaining() {
     const now = Date.now();
     const timeSinceStart = now % UPDATE_INTERVAL_MS;
@@ -64,10 +69,11 @@ async function buildVisualGridView(allItems, pageIndex, timeRemaining, userAvata
 
     const actionRows = [selectMenuRow];
 
+    // أزرار التنقل بالأسهم المخصصة
     if (totalPages > 1) {
         const navRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('market_prev').setLabel('السابق ◀️').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
-            new ButtonBuilder().setCustomId('market_next').setLabel('▶️ التالي').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
+            new ButtonBuilder().setCustomId('market_prev').setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
+            new ButtonBuilder().setCustomId('market_next').setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
         );
         actionRows.push(navRow);
     }
@@ -94,11 +100,24 @@ async function buildDetailViewImage(item, userId, guildId, sql) {
     const attachment = new AttachmentBuilder(imageBuffer, { name: 'market_detail.png' });
 
     const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setLabel('◀️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setLabel('▶️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger).setDisabled(userQuantity === 0),
-        new ButtonBuilder().setCustomId('market_back_to_grid').setLabel('العودة للوحة').setStyle(ButtonStyle.Primary)
+        // أسهم التنقل المخصصة
+        new ButtonBuilder().setCustomId(`market_prev_detail_${item.id}`).setEmoji(EMOJI_RIGHT).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`market_next_detail_${item.id}`).setEmoji(EMOJI_LEFT).setStyle(ButtonStyle.Secondary),
+        
+        // زر الشراء
+        new ButtonBuilder().setCustomId(`buy_asset_${item.id}`).setLabel('شراء 🛒').setStyle(ButtonStyle.Success)
+    );
+
+    // 🔥 زر البيع الذكي: يظهر فقط إذا كان المستخدم يملك أسهماً 🔥
+    if (userQuantity > 0) {
+        actionRow.addComponents(
+            new ButtonBuilder().setCustomId(`sell_asset_${item.id}`).setLabel(`بيع 💰`).setStyle(ButtonStyle.Danger)
+        );
+    }
+
+    // زر العودة (سهم فقط)
+    actionRow.addComponents(
+        new ButtonBuilder().setCustomId('market_back_to_grid').setEmoji(EMOJI_BACK).setStyle(ButtonStyle.Primary)
     );
 
     return { attachment, components: [actionRow] };
