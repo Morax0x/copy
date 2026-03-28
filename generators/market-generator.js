@@ -1,10 +1,10 @@
 const { createCanvas, loadImage } = require("canvas");
 
-// 🔥 نظام الكاش السريع (RAM Preload) من الروابط مباشرة 🔥
+// 🔥 نظام الكاش السريع (RAM Preload) من الروابط مباشرة للسرعة القصوى 🔥
 const ASSETS_CACHE = new Map();
 let trendImages = { up: null, down: null, neutral: null };
 
-// دالة ذكية لجلب الصور من الرابط (تجرب مسار الصور، وإذا ما نفع تجرب المسار الرئيسي)
+// دالة جلب الصور من الرابط (السريع والبديل) لضمان التحميل
 async function fetchCloudImage(filename) {
     try {
         return await loadImage(`https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/market/${filename}`);
@@ -18,17 +18,17 @@ async function fetchCloudImage(filename) {
     }
 }
 
-// دالة تحميل صور الأسهم للرام عند إقلاع البوت
+// تحميل صور الأسهم المصممة للرام عند إقلاع الملف لضمان السرعة
 async function preloadGlobalAssets() {
     try {
         trendImages.up = await fetchCloudImage('up_trend.png');
         trendImages.down = await fetchCloudImage('down_trend.png');
         trendImages.neutral = await fetchCloudImage('neutral_trend.png');
-        console.log("✅ [Market Preload]: تم تحميل صور أسهم الاتجاهات من الروابط بنجاح!");
+        console.log("✅ [Market Preload]: تم تحميل صور أسهم الاتجاهات المصممة في الذاكرة.");
     } catch (e) { console.error("[Market Preload Error]:", e.message); }
 }
 
-// دالة جلب لوغوهات الأصول
+// دالة جلب لوغوهات الأصول (عملاقة)
 async function getAssetImage(item) {
     if (ASSETS_CACHE.has(item.id)) return ASSETS_CACHE.get(item.id);
     
@@ -41,7 +41,7 @@ async function getAssetImage(item) {
         } catch (e) { }
     }
     
-    // إذا لم يكن هناك رابط بالجيسون، حاول جلبها بنفس الاسم من الكلاود
+    // محاولة جلبها باسم الآيدي من الكلاود
     const img = await fetchCloudImage(`${item.id.toLowerCase()}.png`);
     if (img) ASSETS_CACHE.set(item.id, img);
     return img;
@@ -97,6 +97,7 @@ function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
     if (stroke) ctx.stroke();
 }
 
+// 🔷 دالة رسم الكروت المستقبلية (Sci-Fi Panel)
 function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     const cut = 25; 
     ctx.beginPath();
@@ -118,6 +119,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.stroke();
     ctx.shadowBlur = 0; 
     
+    // خط ديكور جانبي مضيء
     ctx.beginPath();
     ctx.moveTo(x + 5, y + cut + 10);
     ctx.lineTo(x + 5, y + height - 10);
@@ -126,6 +128,7 @@ function drawSciFiPanel(ctx, x, y, width, height, borderColor, glowColor) {
     ctx.stroke();
 }
 
+// 📈 دالة رسم "مخطط بياني" هولوغرامي مصغر أسفل الكرت
 function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
     ctx.beginPath();
     let currentY = isUp ? y + height : (isDown ? y : y + height / 2);
@@ -151,7 +154,7 @@ function drawSparkline(ctx, x, y, width, height, isUp, isDown, color) {
     ctx.shadowBlur = 0;
 }
 
-// 🎨 1. رسم اللوحة الرئيسية
+// 🔥🔥 GOD MODE GRID GENERATOR v4.0 - الترتيب الاحترافي النهائي والأسهم بالزاوية 🔥🔥
 exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, currentPage, totalPages, userAvatarUrl) {
     const CANVAS_WIDTH = 1280;
     const CANVAS_HEIGHT = 960;
@@ -159,7 +162,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     const ctx = canvas.getContext("2d");
     const FONT_FAMILY = '"Arial", sans-serif';
 
-    // 🔥 تأمين الأسهم (لو ما تحملت بالإقلاع لأي سبب، بيحملها هنا فوراً)
+    // 🔥 تأمين الأسهم للرام (لو ما تحملت بالإقلاع لأي سبب، بيحملها هنا فوراً)
     if (!trendImages.up) trendImages.up = await fetchCloudImage('up_trend.png');
     if (!trendImages.down) trendImages.down = await fetchCloudImage('down_trend.png');
     if (!trendImages.neutral) trendImages.neutral = await fetchCloudImage('neutral_trend.png');
@@ -172,6 +175,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
+    // شبكة نقاط هولوغرامية بالخلفية
     ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
     for (let x = 20; x < CANVAS_WIDTH; x += 40) {
         for (let y = 20; y < CANVAS_HEIGHT; y += 40) {
@@ -183,6 +187,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
     ctx.fillRect(0, 0, CANVAS_WIDTH, 100);
     
+    // خط نيون علوي
     ctx.shadowColor = '#00ffff';
     ctx.shadowBlur = 15;
     ctx.strokeStyle = '#00ffff';
@@ -193,7 +198,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     ctx.textAlign = "right";
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 42px ${FONT_FAMILY}`;
-    ctx.fillText('سوق الاستثمارات', CANVAS_WIDTH - 50, 65);
+    ctx.fillText('سوق الاستثمارات الإمبراطوري', CANVAS_WIDTH - 50, 65);
 
     ctx.textAlign = "left";
     ctx.font = `bold 24px ${FONT_FAMILY}`;
@@ -204,7 +209,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         await drawUserAvatar(ctx, userAvatarUrl, 50, 10, 80);
     }
 
-    // 3️⃣ رسم الكروت
+    // 3️⃣ رسم الكروت (The Sci-Fi Panels)
     const CARD_WIDTH = 370;
     const CARD_HEIGHT = 230;
     const GAP_X = 35;
@@ -231,23 +236,25 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         drawSciFiPanel(ctx, x, y, CARD_WIDTH, CARD_HEIGHT, borderColor, glowColor);
         drawSparkline(ctx, x + 20, y + Math.floor(CARD_HEIGHT * 0.7), CARD_WIDTH - 40, 50, isUp, isDown, mainColor);
 
-        // 🖼️ اللوغو: كبير ومسيطر
+        // 🖼️ اللوغو (عملاق في اليسار - 120x120)
         const assetImg = await getAssetImage(item);
         if (assetImg) {
             ctx.shadowColor = glowColor; ctx.shadowBlur = 15;
-            ctx.drawImage(assetImg, x + 15, y + 20, 110, 110);
+            ctx.drawImage(assetImg, x + 15, y + 20, 120, 120);
             ctx.shadowBlur = 0;
         }
 
-        // --- النصوص والبيانات ---
+        // --- النصوص والبيانات الهولوغرامية ---
         ctx.textAlign = "left";
         const cleanName = (item.name || "").replace(/<a?:.+?:\d+>/g, '').replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿]/gu, '').trim();
         
+        // اسم السهم كاملاً (مو بس كلمة)
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 28px ${FONT_FAMILY}`;
+        // الإزاحة لليسار لضمان عدم التداخل مع إطار الأسهم بالزاوية
         ctx.fillText(cleanName, x + 135, y + 55);
         
-        // شارة النسبة
+        // شارة النسبة (Badge)
         ctx.fillStyle = isUp ? 'rgba(0, 255, 136, 0.15)' : (isDown ? 'rgba(255, 0, 85, 0.15)' : 'rgba(0, 204, 255, 0.15)');
         roundRect(ctx, x + 135, y + 65, 100, 35, 5, true);
         ctx.strokeStyle = mainColor; ctx.lineWidth = 1; ctx.stroke();
@@ -257,13 +264,27 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
         const sign = changePercent > 0 ? '+' : '';
         ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, x + 145, y + 88);
 
-        // 🏹 السهم الخاص بك: تم وضعه بشكل أنيق ومصغر يمين النسبة
+        // 🔥🏹 مربع داخل مربع الأسهم (في الزاوية اليمين) 🔥🏹
+        // مربع الخلفية الصغير بالزاوية
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        roundRect(ctx, x + CARD_WIDTH - 95, y + 15, 80, 80, 10, true, false);
+
+        // الإطار النيون المتوهج للمربع بالزاوية
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = mainColor; // يتوهج بلون حالة السهم
+        ctx.lineWidth = 2;
+        roundRect(ctx, x + CARD_WIDTH - 95, y + 15, 80, 80, 10, false, true);
+        ctx.shadowBlur = 0; // إيقاف الظل
+
+        // رسم صورة السهم المصممة داخل الإطار المخصص بالزاوية ومراعات مقاسها
         const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
         if (trendImg) {
-            ctx.drawImage(trendImg, x + 245, y + 50, 60, 60); 
+            // رسم السهم داخل المربع ومراعاة المقاس (70x70) عشان يكون فيه فراغ أنيق
+            ctx.drawImage(trendImg, x + CARD_WIDTH - 90, y + 20, 70, 70); 
         }
 
-        // السعر
+        // السعر متوهج في المنتصف
         ctx.textAlign = "center";
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 42px ${FONT_FAMILY}`;
@@ -285,7 +306,7 @@ exports.drawMarketGrid = async function drawMarketGrid(items, timeRemaining, cur
     return canvas.toBuffer();
 };
 
-// 🎨 2. رسم بطاقة التفاصيل (عند الاختيار من المنيو)
+// 🎨 2. رسم بطاقة التفاصيل (تم تسريعها أيضاً)
 exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, currentPrice, changePercent) {
     const CANVAS_WIDTH = 900;
     const CANVAS_HEIGHT = 450;
@@ -307,6 +328,11 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     drawSciFiPanel(ctx, 20, 20, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 40, borderColor, glowColor);
+
+    // التأكد من تحميل صور الأسهم
+    if (!trendImages.up) trendImages.up = await fetchCloudImage('up_trend.png');
+    if (!trendImages.down) trendImages.down = await fetchCloudImage('down_trend.png');
+    if (!trendImages.neutral) trendImages.neutral = await fetchCloudImage('neutral_trend.png');
 
     const assetImg = await getAssetImage(item);
     if (assetImg) {
@@ -348,7 +374,7 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     ctx.font = `bold 38px ${FONT_FAMILY}`;
     ctx.fillText(`${sign}${(changePercent * 100).toFixed(2)}%`, 590, 245);
 
-    // الأسهم في التفاصيل
+    // الأسهم في التفاصيل تظهر هنا أيضاً
     const trendImg = isUp ? trendImages.up : (isDown ? trendImages.down : trendImages.neutral);
     if (trendImg) {
         ctx.drawImage(trendImg, 750, 185, 60, 60);
@@ -361,10 +387,10 @@ exports.drawMarketDetail = async function drawMarketDetail(item, userQuantity, c
     
     ctx.fillStyle = '#00ffff';
     ctx.font = `bold 26px ${FONT_FAMILY}`;
-    ctx.fillText(`الرصيد المملوك في المحفظة: ${userQuantity.toLocaleString()} وحدة`, 320, 330);
+    // 🔥 تغيير كلمة "وحدة" إلى "سهم" 🔥
+    ctx.fillText(`الرصيد المملوك في المحفظة: ${userQuantity.toLocaleString()} سهم`, 320, 330);
 
     return canvas.toBuffer();
 };
 
-// شحن الأسهم في الكاش عند إقلاع الملف لضمان السرعة
 preloadGlobalAssets();
