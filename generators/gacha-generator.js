@@ -62,6 +62,7 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(text, x, y);
 }
 
+// 1. الشاشة الرئيسية (الصندوق)
 async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0) {
     const width = 1200;
     const height = 675; 
@@ -178,13 +179,13 @@ async function generateGachaHub(userObj, moraBalance, flavorText, chestCount = 0
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 22px "Bein"';
-    ctx.fillText("10 صناديق = 10K 🪙", width/2 - 130, pricePanelY + 35);
+    ctx.fillText("عشر صناديق = 10000", width/2 - 130, pricePanelY + 35);
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.fillRect(width/2 - 1, pricePanelY + 10, 2, 40);
     
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText("1 صندوق = 1K 🪙", width/2 + 130, pricePanelY + 35);
+    ctx.fillText("صندوق = 1000", width/2 + 130, pricePanelY + 35);
 
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 26px "Bein"';
@@ -269,7 +270,8 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
     const totalW = (boxW * 2) + gap;
     const startX = (width - totalW) / 2;
 
-    const chestUrl = `${R2_URL}/images/gacha/main_chest.png`;
+    // 🔥 تعديل الصورة إلى chest.png بناءً على طلبك 🔥
+    const chestUrl = `${R2_URL}/images/gacha/chest.png`;
     const chestImg = await getCachedImage(chestUrl);
 
     // المربع الأول: المجاني
@@ -282,7 +284,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
 
     ctx.fillStyle = '#2ECC71';
     ctx.font = 'bold 30px "Bein"';
-    ctx.fillText('صناديق مجانية', freeX + boxW/2, startY + 260);
+    ctx.fillText('المجانية', freeX + boxW/2, startY + 260); // 🔥 تغيير النص
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 40px "Arial"';
     ctx.fillText(freeChests.toString(), freeX + boxW/2, startY + 310);
@@ -297,7 +299,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
 
     ctx.fillStyle = '#F1C40F';
     ctx.font = 'bold 30px "Bein"';
-    ctx.fillText('صناديق مدفوعة', paidX + boxW/2, startY + 260);
+    ctx.fillText('صناديقك', paidX + boxW/2, startY + 260); // 🔥 تغيير النص
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 40px "Arial"';
     ctx.fillText(paidChests.toString(), paidX + boxW/2, startY + 310);
@@ -309,6 +311,7 @@ async function generateGachaInventory(userObj, freeChests, paidChests) {
     return canvas.toBuffer('image/png');
 }
 
+// 3. شاشة العنصر المستخرج
 async function generateGachaCard(item, rarity) {
     const width = 800;
     const height = 800;
