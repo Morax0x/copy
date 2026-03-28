@@ -20,15 +20,26 @@ const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 let handleFarmInteractions;
 let handleFarmShopModal; 
-let farmShop; // إضافة لاستدعاء متجر المزرعة الجديد
+let farmShop; 
+
+// 🌟 فصلنا الفحص عشان إذا خرب ملف ما يخرب الثاني! 🌟
 try {
     const farmModule = require('./handlers/farm-handler.js');
     handleFarmInteractions = farmModule.handleFarmInteractions || farmModule._handleFarmTransaction;
-    
+} catch (e) {
+    console.error("ℹ️ Farm Handler not found or has an error.");
+}
+
+try {
     farmShop = require('./handlers/shop_system/farm-shop.js');
     handleFarmShopModal = farmShop.handleFarmShopModal;
 } catch (e) {
-    console.error("Failed to load Farm modules:", e.message);
+    try {
+        farmShop = require('./handlers/farm-shop.js');
+        handleFarmShopModal = farmShop.handleFarmShopModal;
+    } catch (e2) {
+        console.error("ℹ️ Farm Shop module error (Check JSON paths inside it).");
+    }
 }
 
 const ms = require('ms');
@@ -213,15 +224,12 @@ module.exports = (client, db, antiRolesCache) => {
                     return;
                 }
 
-                // 🌟 إصلاح أزرار متجر المزرعة وتوجيهها للملف الصحيح! 🌟
                 if (id.startsWith('shop_cat_') || id.startsWith('farm_') || id.startsWith('buy_btn_farm|') || id.startsWith('sell_btn_farm|')) {
                     if (farmShop && farmShop.handleShopInteraction) {
-                        // توجيه ذكي للمتجر الجديد
                         await farmShop.handleShopInteraction(i, client, db, i.user, i.guild, {}, () => new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId('farm_shop_back').setLabel('رجوع للأقسام').setStyle(ButtonStyle.Secondary)
                         ));
                     } else if (id === 'farm_collect' || id === 'farm_buy_menu' || id === 'farm_shop_select') {
-                        // دعم للأوامر القديمة في حالة لم يكن الملف الجديد متاحاً
                         if (handleFarmInteractions) await handleFarmInteractions(i, client, db);
                     }
                     return;
@@ -275,11 +283,12 @@ module.exports = (client, db, antiRolesCache) => {
 
             if (i.isModalSubmit()) {
                 
-                if (i.customId.startsWith('farm_buy_modal|')) {
+                // 🌟 إصلاح المودال للبيع والشراء 🌟
+                if (i.customId.startsWith('farm_buy_modal|') || i.customId.startsWith('farm_sell_modal|')) {
                     if (handleFarmShopModal) {
-                        const handled = await handleFarmShopModal(i, client, db);
-                        if (handled) return;
+                        await handleFarmShopModal(i, client, db);
                     }
+                    return;
                 }
 
                 if (i.customId.startsWith('sugg_modal_reply_')) {
