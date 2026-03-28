@@ -19,9 +19,13 @@ const marketConfig = require('./json/market-items.json');
 const EMOJI_MORA = '<:mora:1435647151349698621>';
 
 let handleFarmInteractions;
+let handleFarmShopModal; // تعريف الدالة الجديدة
 try {
     const farmModule = require('./handlers/farm-handler.js');
     handleFarmInteractions = farmModule.handleFarmInteractions || farmModule._handleFarmTransaction;
+    
+    const farmShopModule = require('./handlers/shop_system/farm-shop.js');
+    handleFarmShopModal = farmShopModule.handleFarmShopModal;
 } catch (e) {}
 
 const ms = require('ms');
@@ -262,6 +266,14 @@ module.exports = (client, db, antiRolesCache) => {
 
             if (i.isModalSubmit()) {
                 
+                // استقبال مودل شراء المزرعة الجديد
+                if (i.customId.startsWith('farm_buy_modal|')) {
+                    if (handleFarmShopModal) {
+                        const handled = await handleFarmShopModal(i, client, db);
+                        if (handled) return;
+                    }
+                }
+
                 if (i.customId.startsWith('sugg_modal_reply_')) {
                     if (handleSuggestionModals) await handleSuggestionModals(i, client, db);
                     return;
