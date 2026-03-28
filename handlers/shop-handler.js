@@ -27,6 +27,17 @@ const {
 } = utils;
 
 const shopItems = require('../json/shop-items.json');
+
+let loadedPotionItems = [];
+try { loadedPotionItems = require('../json/potions.json'); } catch(e) {}
+const finalPotionItems = potionItems.length > 0 ? potionItems : loadedPotionItems;
+
+let fishingConfig = {};
+try { fishingConfig = require('../json/fishing-config.json'); } catch(e){}
+const finalBaits = baitsConfig.length > 0 ? baitsConfig : (fishingConfig.baits || []);
+const finalRods = rodsConfig.length > 0 ? rodsConfig : (fishingConfig.rods || []);
+const finalBoats = boatsConfig.length > 0 ? boatsConfig : (fishingConfig.boats || []);
+
 const CUSTOM_XP_RATE = 5; 
 const MAX_POTION_LIMIT = 999;
 
@@ -225,13 +236,12 @@ async function processFinalPurchase(interaction, itemData, quantity, finalPrice,
         .setAuthor({ name: interaction.user.username, iconURL: interaction.user.displayAvatarURL() });
 
     if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: "✅ تم تجهيز الطلب.", components: [] }).catch(()=>{});
+        await interaction.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral }).catch(()=>{});
     } else {
-        await interaction.reply({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral }).catch(()=>{});
+        await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     
-    await interaction.channel.send({ content: `<@${interaction.user.id}>`, embeds: [successEmbed] }).catch(()=>{});
-    sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
+    if(sendShopLog) sendShopLog(client, interaction.guild.id, interaction.member, itemData.name || "Unknown", finalPrice, `شراء ${discountUsed > 0 ? '(مع كوبون)' : ''}`);
 }
 
 async function _handleShopButton(i, client, db, explicitItemId = null) {
@@ -240,7 +250,7 @@ async function _handleShopButton(i, client, db, explicitItemId = null) {
         const guildId = i.guild.id; 
         const boughtItemId = explicitItemId || i.customId.replace('buy_item_', ''); 
           
-        let item = shopItems.find(it => it.id === boughtItemId) || potionItems.find(it => it.id === boughtItemId);
+        let item = shopItems.find(it => it.id === boughtItemId) || finalPotionItems.find(it => it.id === boughtItemId);
         if (!item) return await i.reply({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         
         let userData = await client.getLevel(userId, guildId); 
@@ -320,14 +330,14 @@ async function _handleReplaceGuard(i, client, db) {
         if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
         
         if (Number(userData.hasGuard || 0) >= 3) {
-            return await i.followUp({ content: `🚫 لديك بالفعل **${userData.hasGuard}** محاولات من الحارس الشخصي (الحد الأقصى 3).`, components: [], embeds: [], flags: MessageFlags.Ephemeral });
+            return await i.followUp({ content: `🚫 لديك بالفعل **${userData.hasGuard}** محاولات من الحارس الشخصي (الحد الأقصى 3).`, flags: MessageFlags.Ephemeral });
         }
 
         if (Number(userData.mora) < item.price) {
             const userBank = Number(userData.bank) || 0;
             let msg = `❌ رصيدك غير كافي! تحتاج إلى **${item.price.toLocaleString()}** ${EMOJI_MORA}`;
             if (userBank >= item.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا.`;
-            return await i.followUp({ content: msg, components: [], embeds: [], flags: MessageFlags.Ephemeral });
+            return await i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
         }
         
         userData.mora = Number(userData.mora) - item.price; 
@@ -342,9 +352,8 @@ async function _handleReplaceGuard(i, client, db) {
             .setDescription(`📦 **العنصر:** حارس شخصي\n💰 **التكلفة:** ${item.price.toLocaleString()} ${EMOJI_MORA}`)
             .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-        await i.followUp({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral });
-        await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
-        sendShopLog(client, guildId, i.member, "حارس شخصي (تجديد)", item.price, "شراء");
+        await i.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+        if(sendShopLog) sendShopLog(client, guildId, i.member, "حارس شخصي (تجديد)", item.price, "شراء");
     } catch (error) { console.error(error); }
 }
 
@@ -356,7 +365,7 @@ async function _handleReplaceBuffButton(i, client, db) {
         const newItemId = i.customId.replace('replace_buff_', '');
         const item = shopItems.find(it => it.id === newItemId);
         
-        if (!item) return await i.followUp({ content: '❌ هذا العنصر غير موجود!', components: [], embeds: [], flags: MessageFlags.Ephemeral });
+        if (!item) return await i.followUp({ content: '❌ هذا العنصر غير موجود!', flags: MessageFlags.Ephemeral });
         
         let userData = await client.getLevel(userId, guildId); 
         if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
@@ -365,7 +374,7 @@ async function _handleReplaceBuffButton(i, client, db) {
             const userBank = Number(userData.bank) || 0;
             let msg = `❌ رصيدك غير كافي! تحتاج إلى **${item.price.toLocaleString()}** ${EMOJI_MORA}`;
             if (userBank >= item.price) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا.`;
-            return await i.followUp({ content: msg, components: [], embeds: [], flags: MessageFlags.Ephemeral });
+            return await i.followUp({ content: msg, flags: MessageFlags.Ephemeral });
         }
         
         userData.mora = Number(userData.mora) - item.price;
@@ -392,9 +401,8 @@ async function _handleReplaceBuffButton(i, client, db) {
             .setDescription(`📦 **العنصر:** ${item.name} (استبدال)\n💰 **التكلفة:** ${item.price.toLocaleString()} ${EMOJI_MORA}`)
             .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-        await i.followUp({ content: "✅ تم تجهيز الطلب.", flags: MessageFlags.Ephemeral });
-        await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
-        sendShopLog(client, guildId, i.member, item.name, item.price, "استبدال/شراء");
+        await i.followUp({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+        if(sendShopLog) sendShopLog(client, guildId, i.member, item.name, item.price, "استبدال/شراء");
         
     } catch (error) { console.error(error); }
 }
@@ -403,14 +411,14 @@ async function _handlePotionSelect(i, client, db) {
     if(i.replied || i.deferred) await i.followUp({ content: "جاري التحميل...", flags: MessageFlags.Ephemeral });
     else await i.deferReply({ flags: MessageFlags.Ephemeral });
       
-    if (potionItems.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
+    if (finalPotionItems.length === 0) return i.editReply({ content: "❌ لا توجد جرعات متاحة حالياً." });
 
-    const potionOptions = potionItems.slice(0, 25).map(p => {
+    const potionOptions = finalPotionItems.slice(0, 25).map(p => {
         return { label: p.name, description: `${p.price.toLocaleString()} مورا | ${p.description.substring(0, 50)}`, value: `buy_item_${p.id}`, emoji: p.emoji };
     });
 
     const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shop_buy_potion_menu').setPlaceholder('اختر الجرعة لشرائها...').addOptions(potionOptions));
-    const embed = new EmbedBuilder().setTitle('🧪 متجر الجرعات السحرية').setDescription('اختر الجرعة التي تريد شراءها من القائمة بالأسفل.').setColor(Colors.Purple).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('potions_menu'));
+    const embed = new EmbedBuilder().setTitle('🧪 متجر الجرعات السحرية').setDescription('اختر الجرعة التي تريد شراءها من القائمة بالأسفل.').setColor(Colors.Purple).setImage(BANNER_URL);
 
     await i.editReply({ embeds: [embed], components: [row] });
 }
@@ -430,10 +438,12 @@ async function _handleRodSelect(i, client, db) {
     let userData = userDataRes.rows[0];
     const currentLevel = userData ? (Number(userData.rodLevel || userData.rodlevel) || 1) : 1;
     const nextLevel = currentLevel + 1;
-    const currentRod = rodsConfig.find(r => r.level === currentLevel) || rodsConfig[0];
-    const nextRod = rodsConfig.find(r => r.level === nextLevel);
+    const currentRod = finalRods.find(r => r.level === currentLevel) || finalRods[0];
+    const nextRod = finalRods.find(r => r.level === nextLevel);
     
-    const embed = new EmbedBuilder().setTitle(`🎣 سنارة الصيد`).setDescription(`**السنارة الحالية:** ${currentRod.name}`).setColor(Colors.Aqua).setImage(BANNER_URL).setThumbnail(THUMBNAILS.get('upgrade_rod'))
+    if(!currentRod) return i.editReply("❌ بيانات السنارات غير متوفرة.");
+
+    const embed = new EmbedBuilder().setTitle(`🎣 سنارة الصيد`).setDescription(`**السنارة الحالية:** ${currentRod.name}`).setColor(Colors.Aqua).setImage(BANNER_URL)
         .addFields({ name: 'المستوى الحالي', value: `Lv. ${currentLevel}`, inline: true }, { name: 'أقصى صيد', value: `${currentRod.max_fish} سمكات`, inline: true }, { name: 'الحظ', value: `+${currentRod.luck_bonus}%`, inline: true });
     
     const row = new ActionRowBuilder();
@@ -453,9 +463,11 @@ async function _handleBoatSelect(i, client, db) {
     let userData = userDataRes.rows[0];
     const currentLevel = userData ? (Number(userData.boatLevel || userData.boatlevel) || 1) : 1;
     const nextLevel = currentLevel + 1;
-    const currentBoat = boatsConfig.find(b => b.level === currentLevel) || boatsConfig[0];
-    const nextBoat = boatsConfig.find(b => b.level === nextLevel);
+    const currentBoat = finalBoats.find(b => b.level === currentLevel) || finalBoats[0];
+    const nextBoat = finalBoats.find(b => b.level === nextLevel);
     
+    if(!currentBoat) return i.editReply("❌ بيانات القوارب غير متوفرة.");
+
     const embed = new EmbedBuilder().setTitle(`🚤 قـوارب الـصـيـد`).setDescription(`**القارب الحالي:** ${currentBoat.name}`).setColor(Colors.Blue).setImage(BANNER_URL);
     const row = new ActionRowBuilder();
     if (!nextBoat) {
@@ -468,10 +480,35 @@ async function _handleBoatSelect(i, client, db) {
     await i.editReply({ embeds: [embed], components: [row] });
 }
 
+async function _handleBaitSelect(i, client, db) {
+    if(i.replied || i.deferred) await i.editReply({ content: "جاري التحميل..." }); 
+    else await i.deferReply({ flags: MessageFlags.Ephemeral });
+    
+    if (finalBaits.length === 0) return i.editReply({ content: "❌ لا توجد طعوم في المتجر حالياً." });
+    
+    const baitOptions = finalBaits.map(b => ({
+        label: b.name,
+        description: `${b.price} مورا | حزمة (5 حبات)`,
+        value: `buy_bait_${b.id}`,
+        emoji: '🪱'
+    }));
+    
+    const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('shop_buy_bait_menu')
+            .setPlaceholder('اختر الطعم لشرائه...')
+            .addOptions(baitOptions)
+    );
+    
+    const embed = new EmbedBuilder().setTitle('🪱 متجر الطعوم').setDescription('اختر الطعم الذي تود شراءه من القائمة السفلية (يتم بيع الطعوم كحزم، كل حزمة تحتوي على 5 طعوم).').setColor(Colors.Orange);
+    await i.editReply({ content: null, embeds: [embed], components: [row] });
+}
+
 async function _handleBaitBuy(i, client, db) {
     if(!i.deferred && !i.replied) await i.deferReply({ flags: MessageFlags.Ephemeral });
     const baitId = i.values[0].replace('buy_bait_', '');
-    const bait = baitsConfig.find(b => b.id === baitId);
+    const bait = finalBaits.find(b => b.id === baitId);
+    if (!bait) return i.editReply({ content: '❌ هذا العنصر غير موجود!' });
     
     const qty = 5; 
     const unitPrice = Math.round(bait.price / 5);
@@ -496,9 +533,8 @@ async function _handleBaitBuy(i, client, db) {
         .setDescription(`📦 **العنصر:** حزمة (${qty} حبات) من ${bait.name}\n💰 **التكلفة:** ${cost.toLocaleString()} ${EMOJI_MORA}`)
         .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-    await i.editReply({ content: "✅ تم تجهيز الطلب." });
-    await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
-    sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
+    await i.editReply({ content: null, embeds: [successEmbed] });
+    if(sendShopLog) sendShopLog(client, i.guild.id, i.member, `حزمة طعم: ${bait.name} (x${qty})`, cost, "شراء");
 }
 
 async function handleShopModal(i, client, db) {
@@ -509,7 +545,7 @@ async function handleShopModal(i, client, db) {
             const guildId = i.guild.id;
             
             let userLoanRes = await db.query(`SELECT 1 FROM user_loans WHERE "userID" = $1 AND "guildID" = $2 AND "remainingAmount" > 0`, [userId, guildId]).catch(()=> db.query(`SELECT 1 FROM user_loans WHERE userid = $1 AND guildid = $2 AND remainingamount > 0`, [userId, guildId]).catch(()=>({rows:[]})));
-            if (userLoanRes.rows.length > 0) return await i.editReply({ content: `❌ عليك قرض.` });
+            if (userLoanRes.rows.length > 0) return await i.editReply({ content: `❌ لا يمكنك الشراء بينما عليك قرض في البنك.` });
             
             let userData = await client.getLevel(userId, guildId); 
             if (!userData) userData = { ...client.defaultData, user: userId, guild: guildId };
@@ -527,8 +563,8 @@ async function handleShopModal(i, client, db) {
             
             if (userMora < totalCost) {
                 const userBank = Number(userData.bank) || 0;
-                let msg = `❌ رصيدك غير كافي.`;
-                if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا.`;
+                let msg = `❌ رصيدك غير كافي. تحتاج إلى **${totalCost.toLocaleString()}** مورا.`;
+                if (userBank >= totalCost) msg += `\n💡 لديك في البنك **${userBank.toLocaleString()}** مورا، قم بسحبها أولاً.`;
                 return await i.editReply({ content: msg });
             }
             
@@ -545,12 +581,11 @@ async function handleShopModal(i, client, db) {
             const successEmbed = new EmbedBuilder()
                 .setTitle('✅ تمت عملية الشراء بنجاح')
                 .setColor(Colors.Green)
-                .setDescription(`📦 **العنصر:** ${amountToBuy.toLocaleString()} XP\n💰 **التكلفة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
+                .setDescription(`📦 **العنصر:** ${amountToBuy.toLocaleString()} إكس بي (XP)\n💰 **التكلفة:** ${totalCost.toLocaleString()} ${EMOJI_MORA}`)
                 .setAuthor({ name: i.user.username, iconURL: i.user.displayAvatarURL() });
 
-            await i.editReply({ content: "✅ تم تجهيز الطلب." });
-            await i.channel.send({ content: `<@${i.user.id}>`, embeds: [successEmbed] });
-            sendShopLog(client, guildId, i.member, `شراء ${amountToBuy} XP`, totalCost, "تبديل");
+            await i.editReply({ content: null, embeds: [successEmbed] });
+            if(sendShopLog) sendShopLog(client, guildId, i.member, `شراء ${amountToBuy} XP`, totalCost, "تبديل");
         } catch (e) { console.error(e); }
         return true;
     }
@@ -584,7 +619,7 @@ async function handleShopInteractions(i, client, db) {
 
     if (i.isStringSelectMenu() && i.customId === 'shop_buy_potion_menu') {
         const potionId = i.values[0].replace('buy_item_', '');
-        const item = potionItems.find(it => it.id === potionId);
+        const item = finalPotionItems.find(it => it.id === potionId);
         if (!item) return await i.reply({ content: "❌ خطأ في تحميل بيانات الجرعة.", flags: MessageFlags.Ephemeral });
         await _handleShopButton(i, client, db, potionId);
         return;
