@@ -5,18 +5,18 @@ try {
     GlobalFonts.registerFromPath(path.join(__dirname, '../fonts/cairo-Pandaify'), 'Cairo');
 } catch (e) {}
 
-async function generateShopImage(user, userData, categoryItems, categoryName) {
+async function generateShopImage(user, userData, allItems) {
     const columns = 3;
     const boxW = 280;
-    const boxH = 300;
+    const boxH = 320;
     const gapX = 30;
     const gapY = 30;
-    const startX = 30;
+    const startX = 50;
     const startY = 160;
 
-    const rows = Math.ceil(categoryItems.length / columns);
-    const canvasHeight = Math.max(500, startY + (rows * (boxH + gapY)) + 20);
-    const canvasWidth = 960;
+    const rows = Math.ceil(allItems.length / columns);
+    const canvasWidth = 1000;
+    const canvasHeight = startY + (rows * (boxH + gapY)) + 30;
 
     const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
@@ -26,7 +26,7 @@ async function generateShopImage(user, userData, categoryItems, categoryName) {
 
     ctx.fillStyle = '#1E1E2C';
     ctx.beginPath();
-    ctx.roundRect(20, 20, 920, 110, 15);
+    ctx.roundRect(30, 20, 940, 110, 15);
     ctx.fill();
 
     try {
@@ -34,32 +34,32 @@ async function generateShopImage(user, userData, categoryItems, categoryName) {
         const avatar = await loadImage(avatarUrl);
         ctx.save();
         ctx.beginPath();
-        ctx.arc(75, 75, 45, 0, Math.PI * 2);
+        ctx.arc(85, 75, 45, 0, Math.PI * 2);
         ctx.closePath();
         ctx.clip();
-        ctx.drawImage(avatar, 30, 30, 90, 90);
+        ctx.drawImage(avatar, 40, 30, 90, 90);
         ctx.restore();
     } catch (e) {}
 
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 30px "Cairo", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(user.username, 140, 65);
+    ctx.fillText(user.username, 150, 65);
 
-    ctx.font = '22px "Cairo", sans-serif';
+    ctx.font = '24px "Cairo", sans-serif';
     ctx.fillStyle = '#FFD700';
-    ctx.fillText(`الكاش: ${userData.mora || 0}`, 140, 105);
+    ctx.fillText(`الكاش: ${userData.mora || 0}`, 150, 105);
     
     ctx.fillStyle = '#4CAF50';
-    ctx.fillText(`البنك: ${userData.bank || 0}`, 380, 105);
+    ctx.fillText(`البنك: ${userData.bank || 0}`, 400, 105);
 
     ctx.fillStyle = '#A8A8B3';
     ctx.textAlign = 'right';
-    ctx.font = 'bold 26px "Cairo", sans-serif';
-    ctx.fillText(`قسم: ${categoryName}`, 910, 85);
+    ctx.font = 'bold 32px "Cairo", sans-serif';
+    ctx.fillText(`متجر الإمبراطورية الشامل`, 940, 85);
 
-    for (let i = 0; i < categoryItems.length; i++) {
-        const item = categoryItems[i];
+    for (let i = 0; i < allItems.length; i++) {
+        const item = allItems[i];
         const row = Math.floor(i / columns);
         const col = i % columns;
         
@@ -76,8 +76,12 @@ async function generateShopImage(user, userData, categoryItems, categoryName) {
         ctx.stroke();
 
         try {
-            const itemImage = await loadImage(item.image);
-            ctx.drawImage(itemImage, x + 65, y + 20, 150, 150);
+            if (item.image) {
+                const itemImage = await loadImage(item.image);
+                ctx.drawImage(itemImage, x + 65, y + 20, 150, 150);
+            } else {
+                throw new Error("No image");
+            }
         } catch (e) {
             ctx.fillStyle = '#2A2A3E';
             ctx.beginPath();
@@ -95,8 +99,8 @@ async function generateShopImage(user, userData, categoryItems, categoryName) {
         ctx.fillText(`${item.price} مورا`, x + (boxW / 2), y + 250);
 
         ctx.fillStyle = '#4CAF50';
-        ctx.font = '16px "Cairo", sans-serif';
-        ctx.fillText(`🛒 متوفر`, x + (boxW / 2), y + 280);
+        ctx.font = '18px "Cairo", sans-serif';
+        ctx.fillText(`🛒 متوفر`, x + (boxW / 2), y + 290);
     }
 
     return canvas.toBuffer('image/png');
