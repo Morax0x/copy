@@ -49,6 +49,46 @@ const safeQuery = async (db, qPg, qLite, params) => {
     catch(e) { return await db.query(qLite, params).catch(()=>({rows:[]})); }
 };
 
+// 🔥 دالة حساب الضرر للعرض في الكانفاس (نفس دالة المعارك لضمان التطابق) 🔥
+function getWeaponDisplayDamage(weaponConfig, level) {
+    if (!weaponConfig || level < 1) return 15;
+    const base = weaponConfig.base_damage;
+    const inc = weaponConfig.damage_increment;
+
+    if (level <= 15) {
+        return Math.floor(base + (inc * (level - 1)));
+    } else {
+        const damageAt15 = base + (inc * 14);
+        const targetDamageAt30 = 800;
+        const levelsRemaining = 15; 
+        const dynamicIncrement = (targetDamageAt30 - damageAt15) / levelsRemaining;
+        let finalDamage = damageAt15 + (dynamicIncrement * (level - 15));
+        if (level >= 30) return targetDamageAt30;
+        return Math.floor(finalDamage);
+    }
+}
+
+// 🔥 دالة حساب قوة المهارات للعرض في الكانفاس 🔥
+function getSkillDisplayValue(skillConfig, currentLevel) {
+    if (!skillConfig) return 0;
+    const level = Math.max(1, currentLevel || 1);
+    const base = skillConfig.base_value;
+    const inc = skillConfig.value_increment;
+    const isPercentage = skillConfig.stat_type === '%' || skillConfig.id.includes('heal') || skillConfig.id.includes('shield');
+
+    if (level <= 15) {
+        return base + (inc * (level - 1));
+    } else {
+        const valueAt15 = base + (inc * 14);
+        const targetValueAt30 = isPercentage ? 50 : 200; 
+        const levelsRemaining = 15;
+        const dynamicIncrement = (targetValueAt30 - valueAt15) / levelsRemaining;
+        let finalValue = valueAt15 + (dynamicIncrement * (level - 15));
+        if (level >= 30) return targetValueAt30;
+        return Math.floor(finalValue);
+    }
+}
+
 function getUpgradeRequirements(currentLevel, isSkill = false) {
     if (currentLevel >= 30) return null;
     let reqs = [], moraCost = 0;
@@ -132,7 +172,7 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
                 const filename = `forge_${Date.now()}.png`; 
                 const attachment = new AttachmentBuilder(buffer, { name: filename });
                 
-                if (i.deferred || i.replied || typeof i.editReply === 'function') {
+                if (typeof i.editReply === 'function') {
                     returnMessage = await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
                 } else if (typeof i.reply === 'function') {
                     returnMessage = await i.reply({ content: null, embeds: [], components, files: [attachment], fetchReply: true }).catch(()=>{});
@@ -142,7 +182,6 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
         }
     } catch (e) {
         console.error("Canvas Error in Forge:", e);
-        if (i.deferred || i.replied) await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
     return i;
 }
@@ -163,13 +202,18 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         const client = interactionOrMessage.client;
         const db = client.sql;
-        const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author || interactionOrMessage.user;
-        const guildId = interactionOrMessage.guild.id;
+        
+        let user = null;
+        if (isSlash) user = interactionOrMessage.user;
+        else if (interactionOrMessage.author) user = interactionOrMessage.author;
+        else if (interactionOrMessage.user) user = interactionOrMessage.user;
+        
+        const guildId = interactionOrMessage.guild?.id || interactionOrMessage.guildId;
 
         let sentMsg = null;
-        if (isSlash) {
-            await interactionOrMessage.deferReply();
-        } else if (!interactionOrMessage.preselectedItem) {
+        if (isSlash && !interactionOrMessage.preselectedItem) {
+            await interactionOrMessage.deferReply().catch(()=>{});
+        } else if (!isSlash && !interactionOrMessage.preselectedItem && interactionOrMessage.channel) {
             interactionOrMessage.channel.sendTyping().catch(()=>{});
         }
 
@@ -177,15 +221,24 @@ module.exports = {
             replied: interactionOrMessage.preselectedItem ? true : false, 
             deferred: interactionOrMessage.preselectedItem ? true : false,
             reply: async (p) => { 
-                if(interactionOrMessage.reply) return await interactionOrMessage.reply(p);
-                else { p.fetchReply = true; sentMsg = await interactionOrMessage.channel.send(p); return sentMsg; }
+                if (interactionOrMessage.reply && typeof interactionOrMessage.reply === 'function') {
+                    return await interactionOrMessage.reply(p).catch(()=>{});
+                } else {
+                    p.fetchReply = true; 
+                    sentMsg = await interactionOrMessage.channel?.send(p).catch(()=>{}); 
+                    return sentMsg; 
+                }
             },
             editReply: async (p) => { 
-                if(interactionOrMessage.editReply) return await interactionOrMessage.editReply(p);
-                else if(sentMsg) return await sentMsg.edit(p); 
-                else return await interactionOrMessage.channel.send(p); 
+                if (interactionOrMessage.editReply && typeof interactionOrMessage.editReply === 'function') {
+                    return await interactionOrMessage.editReply(p).catch(()=>{});
+                } else if (sentMsg) {
+                    return await sentMsg.edit(p).catch(()=>{}); 
+                } else {
+                    return await interactionOrMessage.channel?.send(p).catch(()=>{}); 
+                }
             },
-            followUp: async (p) => interactionOrMessage.channel.send(p)
+            followUp: async (p) => interactionOrMessage.channel?.send(p).catch(()=>{})
         };
 
         let commandTrigger = "";
@@ -198,7 +251,6 @@ module.exports = {
         let synthesisState = { sacrificeItem: null, targetItem: null };
         let smeltState = { item: null };
 
-        // 🔥 استقبال العنصر المحدد مسبقاً من البروفايل 🔥
         if (interactionOrMessage.preselectedItem) {
             if (interactionOrMessage.preselectedAction === 'smelt') {
                 smeltState.item = interactionOrMessage.preselectedItem;
@@ -210,7 +262,7 @@ module.exports = {
         }
 
         let userDataRes = await safeQuery(db, `SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]);
-        if (!userDataRes?.rows?.[0]) return fakeInteraction.editReply({ content: "❌ لم يتم العثور على بياناتك." });
+        if (!userDataRes?.rows?.[0]) return fakeInteraction.editReply({ content: "❌ لم يتم العثور على بياناتك." }).catch(()=>{});
 
         let replyObj;
 
@@ -285,7 +337,6 @@ module.exports = {
                 }
             } catch (innerError) {
                 console.error("Collector Action Error:", innerError);
-                await i.followUp({ content: `❌ **خطأ برمجي:**\n\`${innerError.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
             }
         });
 
@@ -345,8 +396,9 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
     const hasAllMats = detailedReqs.every(r => r.userCount >= r.count);
     const canUpgrade = userMora >= reqs.moraCost && hasAllMats;
 
-    const currentDmg = weaponConfig.base_damage + (weaponConfig.damage_increment * (currentLevel - 1));
-    const nextDmg = weaponConfig.base_damage + (weaponConfig.damage_increment * currentLevel);
+    // 🔥 استخدام الدالة الجديدة لعرض الضرر المتوازن بدلاً من المعادلة الخطية 🔥
+    const currentDmg = getWeaponDisplayDamage(weaponConfig, currentLevel);
+    const nextDmg = getWeaponDisplayDamage(weaponConfig, currentLevel + 1);
 
     const btnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`forge_upgrade_weapon`).setLabel('تـطـويـر السـلاح').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade),
@@ -392,7 +444,8 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
         await db.query('COMMIT').catch(()=>{}); 
         
         const nextLevel = currentLevel + 1;
-        const nextStat = `${weaponConfig.base_damage + (weaponConfig.damage_increment * nextLevel)} DMG`;
+        // 🔥 استخدام الدالة الجديدة هنا أيضاً 🔥
+        const nextStat = `${getWeaponDisplayDamage(weaponConfig, nextLevel)} DMG`;
 
         await replyWithCanvas(i, user, 'success_weapon', {
             title: `تطوير ${resolveText(weaponConfig.name)}`,
@@ -482,8 +535,9 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const canUpgrade = userMora >= reqs.moraCost && hasAllMats;
 
     const statSymbol = configSkill.stat_type === '%' ? '%' : '';
-    const currentVal = configSkill.base_value + (configSkill.value_increment * (currentLevel - 1));
-    const nextVal = configSkill.base_value + (configSkill.value_increment * currentLevel);
+    // 🔥 استخدام الدالة الجديدة لقوة المهارة 🔥
+    const currentVal = getSkillDisplayValue(configSkill, currentLevel);
+    const nextVal = getSkillDisplayValue(configSkill, currentLevel + 1);
 
     const btnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`forge_upgrade_skill_${skillId}`).setLabel('صقل المهارة 📜').setStyle(canUpgrade ? ButtonStyle.Success : ButtonStyle.Secondary).setDisabled(!canUpgrade),
@@ -537,7 +591,8 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
         
         const nextLevel = currentLevel + 1;
         const statSymbol = configSkill.stat_type === '%' ? '%' : '';
-        const nextStat = `${configSkill.base_value + (configSkill.value_increment * nextLevel)}${statSymbol}`;
+        // 🔥 استخدام الدالة الجديدة هنا أيضاً 🔥
+        const nextStat = `${getSkillDisplayValue(configSkill, nextLevel)}${statSymbol}`;
 
         await replyWithCanvas(i, user, 'success_skill', {
             title: `صقل ${resolveText(configSkill.name)}`,
