@@ -35,6 +35,27 @@ async function getCachedImage(imageUrl) {
     } catch (e) { return null; }
 }
 
+const loadJsonSafe = (fileName) => {
+    try {
+        const filePath = path.join(process.cwd(), 'json', fileName);
+        if (fs.existsSync(filePath)) return require(filePath);
+    } catch(e) {}
+    return [];
+};
+
+setTimeout(async () => {
+    const allItems = [
+        ...loadJsonSafe('farm-animals.json'),
+        ...loadJsonSafe('seeds.json'),
+        ...loadJsonSafe('feed-items.json')
+    ];
+    for (const item of allItems) {
+        const itemDict = resolveItemInfoLocal(item.id);
+        const url = item.image || itemDict.imgPath;
+        if (url) await getCachedImage(url);
+    }
+}, 1000);
+
 function getRarityAndColor(price) {
     if (price >= 10000) return { rarity: 'Legendary', color: '#FFD700' };
     if (price >= 4000) return { rarity: 'Epic', color: '#B968FF' };
@@ -170,7 +191,7 @@ exports.drawFarmAnimalsGrid = async function(targetUser, animals, page, totalPag
     ctx.font = `bold 40px ${FONT_MAIN}`;
     ctx.shadowColor = '#FFD700';
     ctx.shadowBlur = 15;
-    ctx.fillText(`حظيرة السعيدة`, width - 40, 50);
+    ctx.fillText(`الحظيرة`, width - 40, 50);
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = '#FFFFFF';
@@ -193,6 +214,13 @@ exports.drawFarmAnimalsGrid = async function(targetUser, animals, page, totalPag
     const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
     const startY = 170;
 
+    const preloadedImages = await Promise.all(animals.map(async animal => {
+        const itemDict = resolveItemInfoLocal(animal.id);
+        const imgUrl = animal.image || itemDict.imgPath;
+        if (imgUrl) return await getCachedImage(imgUrl);
+        return null;
+    }));
+
     for (let i = 0; i < animals.length; i++) {
         const animal = animals[i];
         const col = i % cols;
@@ -214,20 +242,16 @@ exports.drawFarmAnimalsGrid = async function(targetUser, animals, page, totalPag
         const iconContainerX = x + slotW - iconContainerSize - 15;
         const iconContainerY = y + 20;
 
-        const itemDict = resolveItemInfoLocal(animal.id);
-        const imgUrl = animal.image || itemDict.imgPath;
+        const img = preloadedImages[i];
         let imgDrawn = false;
         
-        if (imgUrl) {
-            const img = await getCachedImage(imgUrl);
-            if (img) {
-                ctx.save();
-                ctx.shadowColor = color;
-                ctx.shadowBlur = 30;
-                ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
-                ctx.restore();
-                imgDrawn = true;
-            }
+        if (img) {
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 30;
+            ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
+            ctx.restore();
+            imgDrawn = true;
         }
         
         if (!imgDrawn) {
