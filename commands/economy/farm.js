@@ -1,4 +1,4 @@
-const { EmbedBuilder, Colors, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, MessageFlags } = require("discord.js");
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, MessageFlags, AttachmentBuilder } = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
 const feedItems = require('../../json/feed-items.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
@@ -17,6 +17,18 @@ try {
         farmShopError = e2.message;
         console.error("❌ خطأ في تحميل ملف متجر المزرعة:", e2);
     }
+}
+
+// 🌟 مكتبات الرسم الخاصة بالمزرعة (سأفترض أنك ستنشئها، وإن لم تكن موجودة، لن ينهار الكود)
+let drawFarmAnimalsGrid, drawFarmFeedStore;
+try {
+    const farmGens = require('../../generators/farm-generator.js');
+    drawFarmAnimalsGrid = farmGens.drawFarmAnimalsGrid;
+    drawFarmFeedStore = farmGens.drawFarmFeedStore;
+} catch (e) {
+    // Fallback: دوال بسيطة تعيد رسالة خطأ إذا لم تقم ببناء ملف الرسم بعد
+    drawFarmAnimalsGrid = async () => null; 
+    drawFarmFeedStore = async () => null;
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -46,7 +58,7 @@ module.exports = {
     name: 'farm',
     aliases: ['مزرعتي', 'حيواناتي', 'mf', 'مزرعة', 'مزرعه', 'متجر_مزرعة', 'سوق_المزرعة'],
     category: "Economy",
-    description: 'إدارة المزرعة المتكاملة.',
+    description: 'إدارة المزرعة المتكاملة بصور ديناميكية.',
     
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -79,6 +91,29 @@ module.exports = {
         const isOwner = user.id === userId; 
         const now = Date.now();
 
+        // 🔥 نظام الاختصارات المتتابعة (Chained Shortcuts) 🔥
+        let startTab = 'land';
+        let commandTrigger = "";
+        let subCommand = "";
+
+        if (!isSlash) {
+            const words = interactionOrMessage.content.trim().split(/ +/);
+            commandTrigger = words[0].toLowerCase().replace(/^[^\w\s\u0600-\u06FF]/, ''); 
+            if (words.length > 1) {
+                subCommand = words[1].toLowerCase(); 
+            }
+        }
+
+        if (['مزرعتي', 'مزرعة', 'مزرعه', 'mf'].includes(commandTrigger)) {
+            if (['حيوانات', 'حظيرة', 'animals'].includes(subCommand)) startTab = 'animals';
+            else if (['مخزن', 'أعلاف', 'اعلاف', 'feed'].includes(subCommand)) startTab = 'feed';
+            else if (['متجر', 'سوق', 'shop'].includes(subCommand)) startTab = 'shop';
+        } else if (['متجر_مزرعة', 'سوق_المزرعة'].includes(commandTrigger)) {
+            startTab = 'shop';
+        } else if (['حيواناتي'].includes(commandTrigger)) {
+            startTab = 'animals';
+        }
+
         let animalsPage = 0;
         let shopState = {}; 
 
@@ -102,14 +137,9 @@ module.exports = {
             
             const userAnimals = userAnimalsRes.rows;
 
-            const baseEmbed = new EmbedBuilder()
-                .setColor("Random")
-                .setAuthor({ name: `🐄 حظيرة ${targetUser.username}`, iconURL: targetUser.displayAvatarURL() })
-                .setImage('https://i.postimg.cc/65VKKCdP/dp2kuk914o9y_gif_1731_560.gif');
-
             if (!userAnimals || userAnimals.length === 0) {
-                baseEmbed.setDescription(`📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **الحظيرة فارغة**\nتوجّه إلى المتجر 🛒 لشراء حيواناتك الأولى.`);
-                return { embed: baseEmbed, actionRow: null };
+                // إذا كان الملف غير موجود، ارجع رسالة نصية كبديل طارئ
+                if(!drawFarmAnimalsGrid) return { content: `📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **الحظيرة فارغة**\nتوجّه إلى المتجر 🛒 لشراء حيواناتك الأولى.`, files: [], actionRow: null };
             }
 
             let totalFarmIncome = 0;
@@ -136,18 +166,20 @@ module.exports = {
                 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
                 
                 let hungerStatusText = "";
+                let isHungry = false;
                 
                 if (timeLeftMs > TWELVE_HOURS_MS) {
                     totalFarmIncome += (animalData.income_per_day * qty);
                 }
 
-                const timestampSeconds = Math.floor(fullUntil / 1000);
                 if (timeLeftMs > TWELVE_HOURS_MS) {
-                    hungerStatusText = `🟢 شبعـان: <t:${timestampSeconds}:R>`;
+                    hungerStatusText = `شبعان`;
                 } else if (timeLeftMs > 0) {
-                    hungerStatusText = `🔴 جـائـع - بـدون دخـل ينفد <t:${timestampSeconds}:R>`;
+                    hungerStatusText = `جائع (بلا دخل)`;
+                    isHungry = true;
                 } else {
-                    hungerStatusText = `🔴 جـائـع تمـاماً - بـدون دخـل (0%)`;
+                    hungerStatusText = `يتضور جوعاً!`;
+                    isHungry = true;
                 }
 
                 if (animalsMap.has(animalData.id)) {
@@ -159,13 +191,13 @@ module.exports = {
                     animalsMap.set(animalData.id, {
                         ...animalData, quantity: qty, 
                         income: (timeLeftMs > TWELVE_HOURS_MS) ? (animalData.income_per_day * qty) : 0,
-                        hungerText: hungerStatusText, age: ageDays, lifeRemaining: lifeRemaining
+                        hungerText: hungerStatusText, isHungry: isHungry, age: ageDays, lifeRemaining: lifeRemaining
                     });
                 }
             }
 
             const processedAnimals = Array.from(animalsMap.values());
-            const totalPages = Math.ceil(processedAnimals.length / ITEMS_PER_PAGE);
+            const totalPages = Math.max(1, Math.ceil(processedAnimals.length / ITEMS_PER_PAGE));
             
             if (page < 0) page = 0;
             if (page >= totalPages && totalPages > 0) page = totalPages - 1;
@@ -174,22 +206,18 @@ module.exports = {
             const end = start + ITEMS_PER_PAGE;
             const currentItems = processedAnimals.slice(start, end);
 
-            let header = currentCapacityUsed >= maxCapacity 
-                ? `🚫 **الحظيرة ممتلئة!**\n✶ السعة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n💡 ارفع مستواك لزيادة السعة القصوى.\n\n`
-                : `📦 **إحصائيات السعة:**\n✶ المساحة المستخدمة: [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n`;
+            // 🌟 رسم صورة الحيوانات 🌟
+            let files = [];
+            if (drawFarmAnimalsGrid) {
+                const buffer = await drawFarmAnimalsGrid(targetUser, currentItems, page, totalPages, maxCapacity, currentCapacityUsed, totalFarmIncome);
+                if(buffer) files.push(new AttachmentBuilder(buffer, { name: 'farm_animals.png' }));
+            }
 
-            const desc = currentItems.map(item => 
-                `**✥ ${item.name} ${item.emoji}**\n` +
-                `✶ الـعـدد: \`${item.quantity.toLocaleString()}\`\n` +
-                `✶ الـدخـل اليومي: \`${item.income.toLocaleString()}\` ${EMOJI_MORA} ${item.income === 0 ? ' (متوقف بسبب الجوع)' : ''}\n` +
-                `✥ حالـة الجـوع: ${item.hungerText}\n` +
-                `✥ اقـدم حـيـوان عمـره: \`${item.age}\` يوم - متبقي \`${item.lifeRemaining}\``
-            ).join('\n\n');
+            // Fallback Text if image generation fails or isn't built yet
+            let fallbackContent = files.length > 0 ? '' : `📦 **السعة:** [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n` + 
+                currentItems.map(item => `**✥ ${item.name} ${item.emoji}**\n✶ العدد: \`${item.quantity}\`\n✶ الدخل: \`${item.income}\` ${EMOJI_MORA}\n✥ الحالة: ${item.hungerText}`).join('\n\n');
 
-            baseEmbed.setDescription(header + (desc || "لا يوجد حيوانات في هذه الصفحة."));
-            baseEmbed.setFooter({ text: `صفحة ${page + 1}/${totalPages} • إجمالي الدخل اليومي: ${totalFarmIncome.toLocaleString()}`, iconURL: targetUser.displayAvatarURL() });
-
-            return { embed: baseEmbed, actionRow: getAnimalsPaginationRow(page, totalPages) };
+            return { content: fallbackContent, files, actionRow: getAnimalsPaginationRow(page, totalPages) };
         };
 
         const renderFeedStore = async () => {
@@ -212,25 +240,29 @@ module.exports = {
                 }
             });
 
-            const embed = new EmbedBuilder()
-                .setTitle('✥ مـخـزن الاعلاف')
-                .setColor('#D48950')
-                .setImage('https://i.postimg.cc/qB6RDR0f/1000166519.gif');
-
             let actionRow = null;
+            let files = [];
+            let fallbackContent = '';
 
             if (feedInventory.length === 0) {
-                embed.setDescription("🚫 **المخزن فارغ!**\nتوجّه إلى المتجر 🛒 لشراء الأعلاف وإطعام حيواناتك.");
+                fallbackContent = "🚫 **المخزن فارغ!**\nتوجّه إلى المتجر 🛒 لشراء الأعلاف وإطعام حيواناتك.";
+                if(drawFarmFeedStore) {
+                    const buffer = await drawFarmFeedStore(targetUser, []);
+                    if(buffer) { files.push(new AttachmentBuilder(buffer, { name: 'feed_store.png' })); fallbackContent = ''; }
+                }
             } else {
-                const list = feedInventory.map(f => 
-                    `✶ ${f.emoji} **${f.name}** : \`${f.qty}\` ⬅️ لـ **${f.animalName}** ${f.animalEmoji}`
-                ).join('\n\n');
-                embed.setDescription(list);
+                if (drawFarmFeedStore) {
+                    const buffer = await drawFarmFeedStore(targetUser, feedInventory);
+                    if(buffer) files.push(new AttachmentBuilder(buffer, { name: 'feed_store.png' }));
+                } else {
+                    fallbackContent = feedInventory.map(f => `✶ ${f.emoji} **${f.name}** : \`${f.qty}\` ⬅️ لـ **${f.animalName}** ${f.animalEmoji}`).join('\n\n');
+                }
+
                 actionRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('btn_feed_animal').setLabel('اطعـام').setStyle(ButtonStyle.Success).setEmoji('🥄')
                 );
             }
-            return { embed, actionRow };
+            return { content: fallbackContent, files, actionRow };
         };
 
         const mockInteraction = { 
@@ -240,14 +272,32 @@ module.exports = {
             id: message ? message.id : interaction.id 
         };
 
-        const landData = await renderLand(mockInteraction, client, db);
-        const initialComponents = [...(landData.components || []), getNavRow('land')];
+        // 🔥 معالجة التوجيه الأول حسب الاختصار المتتابع 🔥
+        let initialData = {};
+        if (startTab === 'animals') {
+            initialData = await renderFarmAnimals(0);
+        } else if (startTab === 'feed') {
+            initialData = await renderFeedStore();
+        } else if (startTab === 'shop') {
+            if (farmShop && (farmShop.buildMainMenu || farmShop.getShopMenu)) {
+                const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu;
+                initialData = await menuFn(user, client, db);
+                initialData.actionRow = null; // سيتم إضافة أزرار المتجر في الدالة
+            } else {
+                initialData = { content: "متجر المزرعة قيد الصيانة." };
+            }
+        } else {
+            initialData = await renderLand(mockInteraction, client, db);
+        }
+
+        const navRow = getNavRow(startTab);
+        const finalComponents = initialData.components ? [...initialData.components, navRow] : (initialData.actionRow ? [initialData.actionRow, navRow] : [navRow]);
 
         const msg = await reply({ 
-            embeds: landData.embeds || [], 
-            components: initialComponents,
-            files: landData.files, 
-            content: landData.content || '',
+            embeds: initialData.embeds || [], 
+            components: finalComponents,
+            files: initialData.files || [], 
+            content: initialData.content || '',
             fetchReply: true 
         });
 
@@ -269,7 +319,7 @@ module.exports = {
                         embeds: [], 
                         content: newLandData.content || '',
                         components: [...(newLandData.components || []), getNavRow('land')], 
-                        files: newLandData.files,
+                        files: newLandData.files || [],
                         attachments: [] 
                     }).catch(() => {});
                 }
@@ -277,45 +327,40 @@ module.exports = {
                     await i.deferUpdate().catch(() => {});
                     const data = await renderFarmAnimals(animalsPage);
                     const components = data.actionRow ? [data.actionRow, getNavRow('animals')] : [getNavRow('animals')];
-                    await i.editReply({ embeds: [data.embed], components: components, files: [], attachments: [], content: '' }).catch(() => {});
+                    await i.editReply({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'nav_feed') {
                     await i.deferUpdate().catch(() => {});
                     const data = await renderFeedStore();
                     const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
-                    await i.editReply({ embeds: [data.embed], components: components, files: [], attachments: [], content: '' }).catch(() => {});
+                    await i.editReply({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'nav_shop') {
                     if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
                     
                     if (!farmShop) {
                         return await i.followUp({ 
-                            content: `❌ **حدث خطأ في ملف المتجر يمنعه من العمل!**\n\`${farmShopError || 'الملف مفقود'}\`\n\n*(الرجاء إبلاغ الإدارة بهذا الخطأ لإصلاحه)*`, 
+                            content: `❌ **حدث خطأ في ملف المتجر يمنعه من العمل!**\n\`${farmShopError || 'الملف مفقود'}\``, 
                             flags: [MessageFlags.Ephemeral] 
                         }).catch(() => {});
                     }
 
                     try {
-                        const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu || farmShop.generateMainMenu;
-                        
+                        const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu;
                         if (menuFn) {
                             const data = await menuFn(user, client, db);
-                            const embeds = data.embeds || (data.embed ? [data.embed] : []);
                             const components = data.components || (data.actionRow ? [data.actionRow] : []);
-                            
                             components.push(getNavRow('shop'));
 
                             await i.editReply({ 
-                                embeds: embeds, 
+                                embeds: [], 
                                 components: components, 
                                 files: data.files || [], 
                                 attachments: [], 
                                 content: data.content || '' 
                             }).catch(() => {});
-                        } else if (farmShop.handleShopInteraction) {
-                            await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
                         } else {
-                            await i.followUp({ content: '❌ المتجر متوفر كملف لكن دالة الفتح (`buildMainMenu`) غير موجودة فيه!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                            await i.followUp({ content: '❌ المتجر متوفر كملف لكن دالة الفتح غير موجودة فيه!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
                         }
                     } catch (err) {
                         console.error(err);
@@ -333,7 +378,7 @@ module.exports = {
                     else animalsPage++;
                     const data = await renderFarmAnimals(animalsPage);
                     const components = data.actionRow ? [data.actionRow, getNavRow('animals')] : [getNavRow('animals')];
-                    await i.editReply({ embeds: [data.embed], components: components }).catch(() => {});
+                    await i.editReply({ embeds: [], components: components, files: data.files || [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'btn_feed_animal') {
                     if (!isOwner) return await i.reply({ content: '🚫 لا يمكنك إطعام حيوانات ليست ملكك!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
@@ -398,9 +443,10 @@ module.exports = {
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!` }).catch(() => {});
                             
+                            // 🔥 تحديث الصورة بعد الإطعام 🔥
                             const data = await renderFeedStore();
                             const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
-                            await msg.edit({ embeds: [data.embed], components: components, files: [], attachments: [] }).catch(() => {});
+                            await msg.edit({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                         }
                     });
                 }
