@@ -102,15 +102,12 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(safeText, x, y);
 }
 
-// 🔥 دالة رسم الصناديق مع الإطارات الشفافة وتصحيح المسافات 🔥
 function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, reqCount = null, userCount = null) {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
-    // خلفية الصندوق
     ctx.fillStyle = 'rgba(12, 16, 24, 0.95)';
     ctx.beginPath(); roundRect(ctx, x, y, size, size, 20); ctx.fill();
 
-    // إضاءة وحواف الصندوق
     ctx.shadowColor = color;
     ctx.shadowBlur = 20;
     ctx.lineWidth = 4;
@@ -118,7 +115,6 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, reqC
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // رسم صورة العنصر بمسافة آمنة
     if (img) {
         const padding = 15;
         const innerSize = size - (padding * 2);
@@ -130,24 +126,20 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, reqC
         ctx.fillText('❓', x + size/2, y + size/2);
     }
 
-    // رسم مربع عداد الكميات المطلوبة والمتوفرة
     if (reqCount !== null) {
         const hasEnough = userCount >= reqCount;
         const boxColor = hasEnough ? '#2ECC71' : '#E74C3C';
         
         ctx.fillStyle = boxColor;
-        // تم تكبيره قليلاً ليكون مقروء بشكل أفضل
-        ctx.beginPath(); roundRect(ctx, x + size/2 - 45, y - 25, 90, 45, 12); ctx.fill();
-        
+        ctx.beginPath(); roundRect(ctx, x + size/2 - 45, y - 20, 90, 40, 12); ctx.fill();
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 22px "Arial"';
+        ctx.font = 'bold 20px "Arial"';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(`${userCount}/${reqCount}`, x + size/2, y - 2);
+        ctx.fillText(`${userCount}/${reqCount}`, x + size/2, y);
     }
 
-    // رسم اسم العنصر داخل إطار شفاف بالأسفل
     if (label) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'; // إطار زجاجي أسود داكن للنص
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'; 
         ctx.beginPath(); roundRect(ctx, x - 10, y + size + 10, size + 20, 36, 12); ctx.fill();
         
         ctx.fillStyle = '#E0E0E0';
@@ -317,7 +309,6 @@ async function generateForgeUI(userObj, view, data) {
         else if (activeView === 'synthesis') {
             drawItemBox(ctx, width/2 - 90, panelY + 140, 180, targetMatImg, data.targetMatRarity);
             
-            // إضافة خلفية شفافة لنص "حصلت على"
             ctx.fillStyle = 'rgba(0,0,0,0.6)';
             ctx.beginPath(); roundRect(ctx, width/2 - 200, panelY + 360, 400, 45, 15); ctx.fill();
 
@@ -433,7 +424,6 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillStyle = '#FFD700'; ctx.font = 'bold 34px "Bein"';
         ctx.fillText('المتطلبات', panelX + 800, panelY + 60);
 
-        // صندوق المورا (توسيع الصندوق قليلاً)
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.beginPath(); roundRect(ctx, panelX + 610, panelY + 95, 380, 55, 15); ctx.fill();
         const moraColor = data.mora >= data.reqMora ? '#2ECC71' : '#E74C3C';
@@ -441,8 +431,6 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 800, panelY + 122);
 
         ctx.textBaseline = 'alphabetic';
-        
-        // تعديل مكان العناصر لتجنب التداخل
         const reqItemY = panelY + 200;
 
         if (data.detailedReqs && data.detailedReqs.length > 1) {
@@ -466,26 +454,27 @@ async function generateForgeUI(userObj, view, data) {
         const itemSize = 180;
         const leftItemX = panelX + 160;
         const rightItemX = panelX + panelW - 340;
-        const itemY = panelY + 130; 
+        // نزلت العناصر عشان نفضي مساحة للعناوين
+        const itemY = panelY + 150; 
 
         // إطار شفاف فوق الكلمة "عنصر الدمج"
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.beginPath(); roundRect(ctx, leftItemX - 20, itemY - 60, itemSize + 40, 45, 12); ctx.fill();
+        ctx.beginPath(); roundRect(ctx, leftItemX - 20, itemY - 70, itemSize + 40, 45, 12); ctx.fill();
 
         ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 28px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('عنصر الدمج (4x)', leftItemX + itemSize/2, itemY - 37);
+        ctx.fillText('عنصر الدمج (4x)', leftItemX + itemSize/2, itemY - 45);
         
         drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Rare', data.sacMatName, 4, 4); 
         
-        drawFantasyArrow(ctx, width/2 - 70, panelY + 200, 140, '#F1C40F');
+        drawFantasyArrow(ctx, width/2 - 70, panelY + 220, 140, '#F1C40F');
 
         if (data.targetMatName) {
             // إطار شفاف فوق الكلمة "النتيجة"
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.beginPath(); roundRect(ctx, rightItemX - 20, itemY - 60, itemSize + 40, 45, 12); ctx.fill();
+            ctx.beginPath(); roundRect(ctx, rightItemX - 20, itemY - 70, itemSize + 40, 45, 12); ctx.fill();
 
             ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 28px "Bein"'; ctx.textBaseline = 'middle';
-            ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 37);
+            ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 45);
 
             drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare', data.targetMatName, null, null); 
             
@@ -497,10 +486,10 @@ async function generateForgeUI(userObj, view, data) {
             ctx.fillText(`رسوم الدمج: ${data.fee?.toLocaleString()} 🪙`, width/2, panelY + 382);
         } else {
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.beginPath(); roundRect(ctx, rightItemX - 20, itemY - 60, itemSize + 40, 45, 12); ctx.fill();
+            ctx.beginPath(); roundRect(ctx, rightItemX - 20, itemY - 70, itemSize + 40, 45, 12); ctx.fill();
 
             ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 28px "Bein"'; ctx.textBaseline = 'middle';
-            ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 37);
+            ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 45);
 
             ctx.fillStyle = 'rgba(255,255,255,0.05)';
             ctx.beginPath(); roundRect(ctx, rightItemX, itemY, itemSize, itemSize, 20); ctx.fill();
@@ -514,21 +503,22 @@ async function generateForgeUI(userObj, view, data) {
     else if (activeView === 'smelting') {
         const itemSize = 200;
         const leftItemX = panelX + 180;
-        const itemY = panelY + 130; 
+        // نزلت العنصر عشان العناوين
+        const itemY = panelY + 150; 
 
         // إطار شفاف فوق الكلمة "العنصر المراد صهره"
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.beginPath(); roundRect(ctx, leftItemX - 20, itemY - 60, itemSize + 40, 45, 12); ctx.fill();
+        ctx.beginPath(); roundRect(ctx, leftItemX - 20, itemY - 70, itemSize + 40, 45, 12); ctx.fill();
 
         ctx.fillStyle = '#FF4400'; ctx.font = 'bold 28px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('العنصر المراد صهره', leftItemX + itemSize/2, itemY - 37);
+        ctx.fillText('العنصر المراد صهره', leftItemX + itemSize/2, itemY - 45);
 
         drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Uncommon', data.sacMatName, null, null);
         
-        drawFantasyArrow(ctx, width/2 - 75, panelY + 220, 150, '#FF3300');
+        drawFantasyArrow(ctx, width/2 - 75, panelY + 230, 150, '#FF3300');
 
         const xpBoxW = 340, xpBoxH = 160;
-        const xpBoxX = panelX + panelW - 480, xpBoxY = panelY + 140;
+        const xpBoxX = panelX + panelW - 480, xpBoxY = panelY + 150;
 
         ctx.fillStyle = 'rgba(46, 204, 113, 0.1)';
         ctx.beginPath(); roundRect(ctx, xpBoxX, xpBoxY, xpBoxW, xpBoxH, 20); ctx.fill();
