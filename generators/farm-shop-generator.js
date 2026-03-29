@@ -177,14 +177,23 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
         ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 40, 60);
     }
 
-    const cols = 4;
+    // 🔥 التقسيم الذكي حسب الفئة 🔥
+    const isSeeds = category === 'seeds';
+    const cols = isSeeds ? 4 : 3;
     const rows = 3;
-    const slotW = 290;
+    const slotW = isSeeds ? 290 : 380;
     const slotH = 220;
-    const gapX = 30;
+    const gapX = isSeeds ? 30 : 50;
     const gapY = 25;
     const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
     const startY = 150;
+
+    // 🔥 التحميل المتوازي (صاروخي) للصور قبل الرسم 🔥
+    const preloadedImages = await Promise.all(items.map(async item => {
+        const itemDict = resolveItemInfoLocal(item.id);
+        const imgUrl = item.image || itemDict.imgPath;
+        return await getCachedImage(imgUrl);
+    }));
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -202,13 +211,11 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
         aura.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = aura;
         ctx.fillRect(x, y, slotW, slotH);
-
-        const itemDict = resolveItemInfoLocal(item.id);
-        const imgUrl = item.image || itemDict.imgPath;
         
-        const iconContainerSize = 80;
+        // الأيقونات بحجم أكبر للحيوانات والأعلاف
+        const iconContainerSize = isSeeds ? 80 : 100;
         const iconContainerX = x + slotW - iconContainerSize - 15;
-        const iconContainerY = y + 15;
+        const iconContainerY = y + (isSeeds ? 15 : 20);
 
         if (category === 'seeds' || category === 'feed') {
             drawOrnateFrame(ctx, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize, color);
@@ -219,29 +226,28 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
             ctx.fillRect(iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
         }
 
+        const img = preloadedImages[i];
         let imgDrawn = false;
-        if (imgUrl) {
-            const img = await getCachedImage(imgUrl);
-            if (img) {
-                ctx.save();
-                if (category === 'seeds' || category === 'feed') {
-                    ctx.beginPath();
-                    roundRect(ctx, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4, 10);
-                    ctx.clip();
-                    ctx.drawImage(img, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4);
-                } else {
-                    ctx.shadowColor = color;
-                    ctx.shadowBlur = 30;
-                    ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
-                }
-                ctx.restore();
-                imgDrawn = true;
+        
+        if (img) {
+            ctx.save();
+            if (category === 'seeds' || category === 'feed') {
+                ctx.beginPath();
+                roundRect(ctx, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4, 10);
+                ctx.clip();
+                ctx.drawImage(img, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4);
+            } else {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 30;
+                ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
             }
+            ctx.restore();
+            imgDrawn = true;
         }
         
         if (!imgDrawn) {
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = `55px ${FONT_EMOJI}`;
+            ctx.font = `${isSeeds ? 55 : 65}px ${FONT_EMOJI}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.shadowColor = color;
@@ -260,21 +266,21 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
 
         ctx.textAlign = 'right';
         ctx.fillStyle = '#FFD700';
-        ctx.font = `bold 20px ${FONT_MAIN}`;
-        ctx.fillText(`${item.price.toLocaleString()} مورا`, iconContainerX - 15, y + 45);
+        ctx.font = `bold 22px ${FONT_MAIN}`;
+        ctx.fillText(`${item.price.toLocaleString()} مورا`, iconContainerX - 15, y + 50);
 
         ctx.fillStyle = '#A8B8D0';
-        ctx.font = `16px ${FONT_MAIN}`;
+        ctx.font = `18px ${FONT_MAIN}`;
         
         if (category === 'animals') {
-            ctx.fillText(`الدخل: ${item.income_per_day}`, iconContainerX - 15, y + 70);
-            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, iconContainerX - 15, y + 90);
+            ctx.fillText(`الدخل: ${item.income_per_day}`, iconContainerX - 15, y + 80);
+            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, iconContainerX - 15, y + 105);
         } else if (category === 'seeds') {
-            ctx.fillText(`سعر البيع: ${item.sell_price}`, iconContainerX - 15, y + 70);
-            ctx.fillText(`النمو: ${item.growth_time_hours}س`, iconContainerX - 15, y + 90);
+            ctx.fillText(`البيع: ${item.sell_price}`, iconContainerX - 15, y + 80);
+            ctx.fillText(`النمو: ${item.growth_time_hours}س`, iconContainerX - 15, y + 105);
         } else {
             const desc = item.description ? item.description.substring(0, 20) + '...' : 'علف مخصص.';
-            ctx.fillText(desc, iconContainerX - 15, y + 70);
+            ctx.fillText(desc, iconContainerX - 15, y + 80);
         }
     }
 
