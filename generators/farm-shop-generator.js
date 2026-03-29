@@ -91,6 +91,24 @@ function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize 
     ctx.fillText(text, x, y);
 }
 
+function wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    let lines = [];
+    let currentLine = words[0];
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth) {
+            currentLine += " " + word;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    lines.push(currentLine);
+    return lines;
+}
+
 function roundRect(ctx, x, y, width, height, radius) {
     if (width < 2 * radius) radius = width / 2;
     if (height < 2 * radius) radius = height / 2;
@@ -103,8 +121,8 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-exports.drawFarmShopGrid = async function(items, category, page, totalPages, maxCap, currCap) {
-    const width = 1200;
+exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
+    const width = 1350;
     const height = 900;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
@@ -116,7 +134,7 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
     ctx.fillRect(0, 0, width, height);
 
     ctx.fillStyle = '#FFFFFF';
-    for(let i=0; i<150; i++) {
+    for(let i=0; i<200; i++) {
         const px = Math.random() * width;
         const py = Math.random() * height;
         const pSize = Math.random() * 2.5;
@@ -125,7 +143,7 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
     }
     ctx.globalAlpha = 1.0;
 
-    const headerH = 140;
+    const headerH = 120;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(0, 0, width, headerH);
     
@@ -142,36 +160,31 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFD700'; 
-    ctx.font = `bold 55px ${FONT_MAIN}`;
+    ctx.font = `bold 50px ${FONT_MAIN}`;
     ctx.shadowColor = '#FFD700';
     ctx.shadowBlur = 25;
-    ctx.fillText(`✦ المتجر الزراعي ✦`, width / 2, 60);
+    ctx.fillText(`✦ المتجر الزراعي ✦`, width / 2, 50);
 
     ctx.fillStyle = '#E0E0E0';
-    ctx.font = `26px ${FONT_MAIN}`;
+    ctx.font = `24px ${FONT_MAIN}`;
     ctx.shadowBlur = 0;
     ctx.letterSpacing = "3px";
-    ctx.fillText(`⟪ ${catName} ⟫`, width / 2, 110);
-
-    ctx.textAlign = 'right';
-    ctx.font = `bold 18px ${FONT_MAIN}`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(`[ ${page + 1} / ${totalPages} ]`, width - 30, 70);
+    ctx.fillText(`⟪ ${catName} ⟫`, width / 2, 95);
 
     if (category === 'animals') {
         ctx.textAlign = 'left';
         ctx.fillStyle = currCap >= maxCap ? '#FF4444' : '#00FF88';
-        ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 30, 70);
+        ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 40, 60);
     }
 
-    const cols = 3;
+    const cols = 4;
     const rows = 3;
-    const slotW = 340;
+    const slotW = 290;
     const slotH = 220;
-    const gapX = 40;
-    const gapY = 30;
+    const gapX = 30;
+    const gapY = 25;
     const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
-    const startY = 170;
+    const startY = 150;
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -193,9 +206,9 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         const itemDict = resolveItemInfoLocal(item.id);
         const imgUrl = item.image || itemDict.imgPath;
         
-        const iconContainerSize = 100;
-        const iconContainerX = x + slotW - iconContainerSize - 20;
-        const iconContainerY = y + 20;
+        const iconContainerSize = 80;
+        const iconContainerX = x + slotW - iconContainerSize - 15;
+        const iconContainerY = y + 15;
 
         if (category === 'seeds' || category === 'feed') {
             drawOrnateFrame(ctx, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize, color);
@@ -219,7 +232,7 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
                 } else {
                     ctx.shadowColor = color;
                     ctx.shadowBlur = 30;
-                    ctx.drawImage(img, iconContainerX + 10, iconContainerY + 10, iconContainerSize - 20, iconContainerSize - 20);
+                    ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
                 }
                 ctx.restore();
                 imgDrawn = true;
@@ -228,7 +241,7 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         
         if (!imgDrawn) {
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = `75px ${FONT_EMOJI}`;
+            ctx.font = `55px ${FONT_EMOJI}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.shadowColor = color;
@@ -237,31 +250,31 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
             ctx.shadowBlur = 0;
         }
 
-        const ribbonH = 40;
+        const ribbonH = 35;
         const ribbonY = iconContainerY + iconContainerSize + 15;
         drawRibbon(ctx, x + 15, ribbonY, slotW - 30, ribbonH, color);
         
         ctx.textAlign = 'center';
         ctx.fillStyle = '#FFFFFF';
-        drawAutoScaledText(ctx, item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), x + slotW / 2, ribbonY + ribbonH / 2, slotW - 50, 20, 12);
+        drawAutoScaledText(ctx, item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), x + slotW / 2, ribbonY + ribbonH / 2, slotW - 40, 18, 10);
 
         ctx.textAlign = 'right';
         ctx.fillStyle = '#FFD700';
-        ctx.font = `bold 24px ${FONT_MAIN}`;
-        ctx.fillText(`${item.price.toLocaleString()} مورا`, iconContainerX - 15, y + 50);
+        ctx.font = `bold 20px ${FONT_MAIN}`;
+        ctx.fillText(`${item.price.toLocaleString()} مورا`, iconContainerX - 15, y + 45);
 
         ctx.fillStyle = '#A8B8D0';
-        ctx.font = `18px ${FONT_MAIN}`;
+        ctx.font = `16px ${FONT_MAIN}`;
         
         if (category === 'animals') {
-            ctx.fillText(`الدخل: ${item.income_per_day}`, iconContainerX - 15, y + 80);
-            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, iconContainerX - 15, y + 105);
+            ctx.fillText(`الدخل: ${item.income_per_day}`, iconContainerX - 15, y + 70);
+            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, iconContainerX - 15, y + 90);
         } else if (category === 'seeds') {
-            ctx.fillText(`سعر البيع: ${item.sell_price}`, iconContainerX - 15, y + 80);
-            ctx.fillText(`النمو: ${item.growth_time_hours}س`, iconContainerX - 15, y + 105);
+            ctx.fillText(`سعر البيع: ${item.sell_price}`, iconContainerX - 15, y + 70);
+            ctx.fillText(`النمو: ${item.growth_time_hours}س`, iconContainerX - 15, y + 90);
         } else {
             const desc = item.description ? item.description.substring(0, 20) + '...' : 'علف مخصص.';
-            ctx.fillText(desc, iconContainerX - 15, y + 80);
+            ctx.fillText(desc, iconContainerX - 15, y + 70);
         }
     }
 
@@ -407,18 +420,13 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
         details.push(item.description || 'علف صحي لضمان نمو ودخل ممتاز.');
     }
 
-    let words = details.join(' ').split(' ');
-    let line = '';
+    let lines = wrapText(ctx, details.join(' '), descBoxW - 40);
     let currentY = descBoxY + 40;
-    for(let w of words) {
-        let testLine = line + w + ' ';
-        if(ctx.measureText(testLine).width > descBoxW - 40) {
-            ctx.fillText(line, textX - 20, currentY);
-            line = w + ' ';
-            currentY += 40;
-        } else { line = testLine; }
+    
+    for (let j = 0; j < lines.length; j++) {
+        ctx.fillText(lines[j], textX - 20, currentY);
+        currentY += 40;
     }
-    ctx.fillText(line, textX - 20, currentY);
 
     return canvas.toBuffer('image/png');
 };
