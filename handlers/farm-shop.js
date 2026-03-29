@@ -248,8 +248,10 @@ async function handleFarmShopModal(i, client, db) {
             let currentMora = Number(moraRes?.rows?.[0]?.mora || moraRes?.rows?.[0]?.Mora || 0);
             let currentBank = Number(moraRes?.rows?.[0]?.bank || moraRes?.rows?.[0]?.Bank || 0);
 
-            if ((currentMora + currentBank) < totalPrice) {
-                return await i.editReply(`❌ رصيدك (الكاش + البنك) غير كافي! تحتاج إجمالي **${totalPrice.toLocaleString()}** مورا.`);
+            if (currentMora < totalPrice) {
+                let errorMsg = `❌ **عذراً، لا تملك كاش كافي!**\nتحتاج إلى **${totalPrice.toLocaleString()}** ${EMOJI_MORA}.`;
+                if (currentBank >= totalPrice) errorMsg += `\n\n💡 **تلميح:** لديك **${currentBank.toLocaleString()}** في البنك. قم بسحبها أولاً.`;
+                return await i.editReply(errorMsg);
             }
 
             if (category === 'animals') {
@@ -280,18 +282,13 @@ async function handleFarmShopModal(i, client, db) {
                 }
             }
 
-            if (currentMora >= totalPrice) {
-                currentMora -= totalPrice;
-            } else {
-                let remainder = totalPrice - currentMora;
-                currentMora = 0;
-                currentBank -= remainder;
-            }
-
+            await executeDB(db, 'BEGIN').catch(()=>{});
             try {
-                await executeDB(db, `UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "user" = $3 AND "guild" = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
-            } catch(e) {
-                await executeDB(db, `UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
+                try { await executeDB(db, `UPDATE levels SET "mora" = "mora" - $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrice, i.user.id, i.guild.id]); }
+                catch(e) { await executeDB(db, `UPDATE levels SET mora = mora - $1 WHERE userid = $2 AND guildid = $3`, [totalPrice, i.user.id, i.guild.id]); }
+            } catch (deductError) {
+                await executeDB(db, 'ROLLBACK').catch(()=>{});
+                return await i.editReply('❌ حدث خطأ داخلي أثناء خصم الرصيد.');
             }
 
             try {
@@ -321,77 +318,90 @@ async function handleFarmShopModal(i, client, db) {
                     }
                 }
             } catch (insertError) {
-                try { await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrice, i.user.id, i.guild.id]); }
-                catch(e) { await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalPrice, i.user.id, i.guild.id]); }
+                await executeDB(db, 'ROLLBACK').catch(()=>{});
                 return await i.editReply('❌ حدث خطأ داخلي أثناء تسليم العنصر، تم إرجاع أموالك.');
             }
 
-            await i.editReply(`✅ اشتريت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالتكلفة: ${totalPrice.toLocaleString()} مورا`);
+            await executeDB(db, 'COMMIT').catch(()=>{});
+            await i.editReply(`✅ اشتريت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالتكلفة: ${totalPrice.toLocaleString()} ${EMOJI_MORA}`);
 
         } else if (action === 'sell') {
             const sellPrice = Math.floor(itemData.price * 0.5); 
             const totalGain = sellPrice * quantity;
 
-            if (category === 'animals') {
-                let farmRes;
-                try { farmRes = await executeDB(db, `SELECT "id", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, itemData.id]); }
-                catch(e) { farmRes = await executeDB(db, `SELECT id, quantity FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 ORDER BY purchasetimestamp ASC`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]})); }
-                
-                let totalOwned = 0;
-                farmRes.rows.forEach(row => totalOwned += Number(row.quantity || row.Quantity || 0));
-                
-                if (totalOwned < quantity) {
-                    return await i.editReply(`❌ لا تملك هذه الكمية للبيع! (تمتلك ${totalOwned})`);
-                }
-
-                let remainingToSell = quantity;
-                for (const row of farmRes.rows) {
-                    if (remainingToSell <= 0) break;
-                    const qtyInRow = Number(row.quantity || row.Quantity || 0);
-                    const sellFromRow = Math.min(qtyInRow, remainingToSell);
-                    remainingToSell -= sellFromRow;
-
-                    if (qtyInRow === sellFromRow) {
-                        try { await executeDB(db, `DELETE FROM user_farm WHERE "id" = $1`, [row.id || row.ID]); }
-                        catch(e) { await executeDB(db, `DELETE FROM user_farm WHERE id = $1`, [row.id || row.ID]); }
-                    } else {
-                        try { await executeDB(db, `UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id || row.ID]); }
-                        catch(e) { await executeDB(db, `UPDATE user_farm SET quantity = quantity - $1 WHERE id = $2`, [sellFromRow, row.id || row.ID]); }
-                    }
-                }
-            } else {
-                let invCheckRes;
-                try { invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]); }
-                catch(e) { invCheckRes = await executeDB(db, `SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]})); }
-                
-                let currQty = invCheckRes?.rows?.[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity || 0) : 0;
-                
-                if (currQty < quantity) {
-                    return await i.editReply(`❌ لا تملك هذه الكمية للبيع!`);
-                }
-
-                if (currQty === quantity) {
-                    try { await executeDB(db, `DELETE FROM user_inventory WHERE "id" = $1`, [invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
-                    catch(e) { await executeDB(db, `DELETE FROM user_inventory WHERE id = $1`, [invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
-                } else {
-                    try { await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
-                    catch(e) { await executeDB(db, `UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
-                }
-            }
+            await executeDB(db, 'BEGIN').catch(()=>{});
 
             try {
-                try { await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]); }
-                catch(e) { await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]); }
-            } catch (moneyError) {
-                return await i.editReply('❌ حدث خطأ داخلي أثناء إضافة الأموال.');
+                if (category === 'animals') {
+                    let farmRes;
+                    try { farmRes = await executeDB(db, `SELECT "id", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, itemData.id]); }
+                    catch(e) { farmRes = await executeDB(db, `SELECT id, quantity FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 ORDER BY purchasetimestamp ASC`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]})); }
+                    
+                    let totalOwned = 0;
+                    farmRes.rows.forEach(row => totalOwned += Number(row.quantity || row.Quantity || 0));
+                    
+                    if (totalOwned < quantity) {
+                        await executeDB(db, 'ROLLBACK').catch(()=>{});
+                        return await i.editReply(`❌ لا تملك هذه الكمية للبيع! (تمتلك ${totalOwned})`);
+                    }
+
+                    let remainingToSell = quantity;
+                    for (const row of farmRes.rows) {
+                        if (remainingToSell <= 0) break;
+                        const qtyInRow = Number(row.quantity || row.Quantity || 0);
+                        const sellFromRow = Math.min(qtyInRow, remainingToSell);
+                        remainingToSell -= sellFromRow;
+
+                        if (qtyInRow === sellFromRow) {
+                            try { await executeDB(db, `DELETE FROM user_farm WHERE "id" = $1`, [row.id || row.ID]); }
+                            catch(e) { await executeDB(db, `DELETE FROM user_farm WHERE id = $1`, [row.id || row.ID]); }
+                        } else {
+                            try { await executeDB(db, `UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id || row.ID]); }
+                            catch(e) { await executeDB(db, `UPDATE user_farm SET quantity = quantity - $1 WHERE id = $2`, [sellFromRow, row.id || row.ID]); }
+                        }
+                    }
+                } else {
+                    let invCheckRes;
+                    try { invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]); }
+                    catch(e) { invCheckRes = await executeDB(db, `SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]})); }
+                    
+                    let currQty = invCheckRes?.rows?.[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity || 0) : 0;
+                    
+                    if (currQty < quantity) {
+                        await executeDB(db, 'ROLLBACK').catch(()=>{});
+                        return await i.editReply(`❌ لا تملك هذه الكمية للبيع!`);
+                    }
+
+                    if (currQty === quantity) {
+                        try { await executeDB(db, `DELETE FROM user_inventory WHERE "id" = $1`, [invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
+                        catch(e) { await executeDB(db, `DELETE FROM user_inventory WHERE id = $1`, [invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
+                    } else {
+                        try { await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
+                        catch(e) { await executeDB(db, `UPDATE user_inventory SET quantity = quantity - $1 WHERE id = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]); }
+                    }
+                }
+
+                try {
+                    try { await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]); }
+                    catch(e) { await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]); }
+                } catch (moneyError) {
+                    await executeDB(db, 'ROLLBACK').catch(()=>{});
+                    return await i.editReply('❌ حدث خطأ داخلي أثناء إضافة الأموال.');
+                }
+                
+                await executeDB(db, 'COMMIT').catch(()=>{});
+                
+                const sellEmbed = new EmbedBuilder()
+                    .setTitle('📈 عملية بيع زراعية')
+                    .setColor(Colors.Blue)
+                    .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`);
+                
+                await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
+
+            } catch (sellError) {
+                await executeDB(db, 'ROLLBACK').catch(()=>{});
+                return await i.editReply('❌ حدث خطأ داخلي أثناء إزالة العنصر، لم يتم البيع.');
             }
-            
-            const sellEmbed = new EmbedBuilder()
-                .setTitle('📈 عملية بيع زراعية')
-                .setColor(Colors.Blue)
-                .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} مورا (نصف السعر)`);
-            
-            await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
         }
 
         if (i.message) {
