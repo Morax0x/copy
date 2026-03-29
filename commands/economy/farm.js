@@ -15,18 +15,15 @@ try {
         farmShopError = null;
     } catch(e2) {
         farmShopError = e2.message;
-        console.error("❌ خطأ في تحميل ملف متجر المزرعة:", e2);
     }
 }
 
-// 🌟 مكتبات الرسم الخاصة بالمزرعة (سأفترض أنك ستنشئها، وإن لم تكن موجودة، لن ينهار الكود)
 let drawFarmAnimalsGrid, drawFarmFeedStore;
 try {
     const farmGens = require('../../generators/farm-generator.js');
     drawFarmAnimalsGrid = farmGens.drawFarmAnimalsGrid;
     drawFarmFeedStore = farmGens.drawFarmFeedStore;
 } catch (e) {
-    // Fallback: دوال بسيطة تعيد رسالة خطأ إذا لم تقم ببناء ملف الرسم بعد
     drawFarmAnimalsGrid = async () => null; 
     drawFarmFeedStore = async () => null;
 }
@@ -91,7 +88,6 @@ module.exports = {
         const isOwner = user.id === userId; 
         const now = Date.now();
 
-        // 🔥 نظام الاختصارات المتتابعة (Chained Shortcuts) 🔥
         let startTab = 'land';
         let commandTrigger = "";
         let subCommand = "";
@@ -138,7 +134,6 @@ module.exports = {
             const userAnimals = userAnimalsRes.rows;
 
             if (!userAnimals || userAnimals.length === 0) {
-                // إذا كان الملف غير موجود، ارجع رسالة نصية كبديل طارئ
                 if(!drawFarmAnimalsGrid) return { content: `📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **الحظيرة فارغة**\nتوجّه إلى المتجر 🛒 لشراء حيواناتك الأولى.`, files: [], actionRow: null };
             }
 
@@ -170,9 +165,6 @@ module.exports = {
                 
                 if (timeLeftMs > TWELVE_HOURS_MS) {
                     totalFarmIncome += (animalData.income_per_day * qty);
-                }
-
-                if (timeLeftMs > TWELVE_HOURS_MS) {
                     hungerStatusText = `شبعان`;
                 } else if (timeLeftMs > 0) {
                     hungerStatusText = `جائع (بلا دخل)`;
@@ -206,14 +198,12 @@ module.exports = {
             const end = start + ITEMS_PER_PAGE;
             const currentItems = processedAnimals.slice(start, end);
 
-            // 🌟 رسم صورة الحيوانات 🌟
             let files = [];
             if (drawFarmAnimalsGrid) {
                 const buffer = await drawFarmAnimalsGrid(targetUser, currentItems, page, totalPages, maxCapacity, currentCapacityUsed, totalFarmIncome);
                 if(buffer) files.push(new AttachmentBuilder(buffer, { name: 'farm_animals.png' }));
             }
 
-            // Fallback Text if image generation fails or isn't built yet
             let fallbackContent = files.length > 0 ? '' : `📦 **السعة:** [ \`${currentCapacityUsed}\` / \`${maxCapacity}\` ]\n\n` + 
                 currentItems.map(item => `**✥ ${item.name} ${item.emoji}**\n✶ العدد: \`${item.quantity}\`\n✶ الدخل: \`${item.income}\` ${EMOJI_MORA}\n✥ الحالة: ${item.hungerText}`).join('\n\n');
 
@@ -272,26 +262,30 @@ module.exports = {
             id: message ? message.id : interaction.id 
         };
 
-        // 🔥 معالجة التوجيه الأول حسب الاختصار المتتابع 🔥
         let initialData = {};
         if (startTab === 'animals') {
             initialData = await renderFarmAnimals(0);
         } else if (startTab === 'feed') {
             initialData = await renderFeedStore();
         } else if (startTab === 'shop') {
-            if (farmShop && (farmShop.buildMainMenu || farmShop.getShopMenu)) {
-                const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu;
-                initialData = await menuFn(user, client, db);
-                initialData.actionRow = null; // سيتم إضافة أزرار المتجر في الدالة
+            if (farmShop && farmShop.getShopMenu) {
+                user.guildId = guild.id;
+                initialData = await farmShop.getShopMenu(user, client, db);
+                initialData.actionRow = null; 
             } else {
-                initialData = { content: "متجر المزرعة قيد الصيانة." };
+                initialData = { content: "❌ متجر المزرعة قيد الصيانة." };
             }
         } else {
             initialData = await renderLand(mockInteraction, client, db);
         }
 
-        const navRow = getNavRow(startTab);
-        const finalComponents = initialData.components ? [...initialData.components, navRow] : (initialData.actionRow ? [initialData.actionRow, navRow] : [navRow]);
+        let finalComponents = [];
+        if (startTab !== 'shop') {
+            const navRow = getNavRow(startTab);
+            finalComponents = initialData.components ? [...initialData.components, navRow] : (initialData.actionRow ? [initialData.actionRow, navRow] : [navRow]);
+        } else {
+            finalComponents = initialData.components || [];
+        }
 
         const msg = await reply({ 
             embeds: initialData.embeds || [], 
@@ -338,38 +332,30 @@ module.exports = {
                 else if (i.customId === 'nav_shop') {
                     if (!i.deferred && !i.replied) await i.deferUpdate().catch(() => {});
                     
-                    if (!farmShop) {
+                    if (!farmShop || !farmShop.getShopMenu) {
                         return await i.followUp({ 
-                            content: `❌ **حدث خطأ في ملف المتجر يمنعه من العمل!**\n\`${farmShopError || 'الملف مفقود'}\``, 
+                            content: `❌ **حدث خطأ في ملف المتجر يمنعه من العمل!**\n\`${farmShopError || 'الملف أو الدالة مفقودة'}\``, 
                             flags: [MessageFlags.Ephemeral] 
                         }).catch(() => {});
                     }
 
                     try {
-                        const menuFn = farmShop.buildMainMenu || farmShop.getShopMenu;
-                        if (menuFn) {
-                            const data = await menuFn(user, client, db);
-                            const components = data.components || (data.actionRow ? [data.actionRow] : []);
-                            components.push(getNavRow('shop'));
-
-                            await i.editReply({ 
-                                embeds: [], 
-                                components: components, 
-                                files: data.files || [], 
-                                attachments: [], 
-                                content: data.content || '' 
-                            }).catch(() => {});
-                        } else {
-                            await i.followUp({ content: '❌ المتجر متوفر كملف لكن دالة الفتح غير موجودة فيه!', flags: [MessageFlags.Ephemeral] }).catch(() => {});
-                        }
+                        user.guildId = guild.id;
+                        const data = await farmShop.getShopMenu(user, client, db);
+                        await i.editReply({ 
+                            embeds: [], 
+                            components: data.components || [], 
+                            files: data.files || [], 
+                            attachments: [], 
+                            content: data.content || '' 
+                        }).catch(() => {});
                     } catch (err) {
-                        console.error(err);
                         await i.followUp({ content: `❌ **خطأ برمجي أثناء فتح المتجر:**\n\`${err.message}\``, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                     }
                 }
-                else if (farmShop && (i.customId === 'shop_cat_select' || i.customId.startsWith('shop_cat_') || i.customId === 'farm_select_item' || i.customId.startsWith('buy_btn_farm|') || i.customId.startsWith('farm_shop_'))) {
+                else if (farmShop && (i.customId === 'shop_cat_select' || i.customId.startsWith('shop_cat_') || i.customId === 'farm_select_item' || i.customId === 'farm_shop_back' || i.customId.startsWith('buy_btn_farm|') || i.customId.startsWith('sell_btn_farm|'))) {
                     if (farmShop.handleShopInteraction) {
-                        await farmShop.handleShopInteraction(i, client, db, user, guild, shopState, getNavRow);
+                        await farmShop.handleShopInteraction(i, client, db, user, guild, shopState);
                     }
                 }
                 else if (i.customId === 'farm_prev' || i.customId === 'farm_next') {
@@ -443,7 +429,6 @@ module.exports = {
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!` }).catch(() => {});
                             
-                            // 🔥 تحديث الصورة بعد الإطعام 🔥
                             const data = await renderFeedStore();
                             const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
                             await msg.edit({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
