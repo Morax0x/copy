@@ -1,13 +1,12 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
-const fs = require('fs');
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
 const path = require('path');
+const fs = require('fs');
 
-// 🔥 نظام جلب الملفات الذكي والمحصن ضد أخطاء المسارات 🔥
 const loadJson = (fileName) => {
     try {
         const filePath = path.join(process.cwd(), 'json', fileName);
         if (fs.existsSync(filePath)) return require(filePath);
-    } catch(e) { console.error(`❌ فشل تحميل ${fileName}`); }
+    } catch(e) {}
     return [];
 };
 
@@ -15,13 +14,11 @@ const farmAnimals = loadJson('farm-animals.json');
 const seedsData = loadJson('seeds.json'); 
 const feedItems = loadJson('feed-items.json');
 
-let drawFarmShopHub, drawFarmShopGrid, drawFarmShopDetail;
+let drawFarmShopGrid, drawFarmShopDetail;
 try {
     const genPath = path.join(process.cwd(), 'generators', 'farm-shop-generator.js');
-    ({ drawFarmShopHub, drawFarmShopGrid, drawFarmShopDetail } = require(genPath));
+    ({ drawFarmShopGrid, drawFarmShopDetail } = require(genPath));
 } catch (e) {
-    console.error("⚠️ لم يتم العثور على ملف farm-shop-generator.js، تأكد من إنشاءه.");
-    drawFarmShopHub = async () => null;
     drawFarmShopGrid = async () => null;
     drawFarmShopDetail = async () => null;
 }
@@ -35,76 +32,79 @@ try {
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const LEFT_EMOJI = '<:left:1439164494759723029>';
-const RIGHT_EMOJI = '<:right:1439164491072929915>';
 const ITEMS_PER_PAGE = 9; 
 const MAX_FARM_LIMIT = 1000;
 
 async function executeDB(db, query, params = []) {
     try { return await db.query(query, params); } 
-    catch (e) { console.error(`[DB Error]: ${e.message}`); throw e; }
+    catch (e) { throw e; }
 }
 
-async function buildMainMenu(user, client, db) {
-    let mora = 0;
-    try {
-        const res = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "user" = $1`, [user.id]).catch(()=>({rows:[]}));
-        if(res.rows[0]) mora = Number(res.rows[0].mora || 0) + Number(res.rows[0].bank || 0);
-    } catch(e) {}
+async function buildShopGrid(user, client, db, category, pageIndex) {
+    let itemsList = [];
+    if (category === 'animals') itemsList = farmAnimals;
+    else if (category === 'seeds') itemsList = seedsData;
+    else if (category === 'feed') itemsList = feedItems;
 
-    const buffer = await drawFarmShopHub(user, mora);
-    const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop_hub.png' }) : null;
+    let currentCap = 0, maxCap = 0;
+    if (category === 'animals') {
+        const [userFarmRes, capRes] = await Promise.all([
+            executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, user.guildId || '']).catch(()=>({rows:[]})),
+            getPlayerCapacity(client, user.id, user.guildId || '')
+        ]);
+        maxCap = capRes;
+        for (const row of userFarmRes.rows) {
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+        }
+    }
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('قسم الحيوانات').setStyle(ButtonStyle.Danger).setEmoji('🐄'),
-        new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('قسم البذور').setStyle(ButtonStyle.Primary).setEmoji('🌱'),
-        new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('قسم الأعلاف').setStyle(ButtonStyle.Success).setEmoji('🌾')
-    );
-
-    const payload = { content: '', components: [row] };
-    if (attachment) payload.files = [attachment];
-    else payload.content = "🎨 جاري العمل على تصميم المتجر، قريباً...";
-
-    return payload;
-}
-
-async function buildGridView(itemsList, pageIndex, currentCap, maxCap, category) {
     const startIndex = pageIndex * ITEMS_PER_PAGE;
     const itemsOnPage = itemsList.slice(startIndex, startIndex + ITEMS_PER_PAGE);
     const totalPages = Math.max(1, Math.ceil(itemsList.length / ITEMS_PER_PAGE));
 
     const buffer = await drawFarmShopGrid(itemsOnPage, category, pageIndex, totalPages, maxCap, currentCap);
-    const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop_grid.png' }) : null;
+    const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop.png' }) : null;
+
+    const categoryRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(category === 'animals' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🐄'),
+        new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('بذور').setStyle(category === 'seeds' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌱'),
+        new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(category === 'feed' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌾')
+    );
 
     const selectOptions = itemsOnPage.map(item => ({
         label: item.name,
         description: `السعر: ${item.price} مورا`,
         value: `farm_select_item|${category}|${item.id}`,
-        emoji: item.emoji
+        emoji: item.emoji || '📦'
     }));
 
     const selectMenuRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('farm_select_item')
-            .setPlaceholder('🔻 اختر عنصراً للتفاصيل الشراء/البيع...')
+            .setPlaceholder('🔻 حدد عنصراً للشراء أو البيع...')
             .addOptions(selectOptions)
     );
 
-    const navRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_back_main').setLabel('الرئيسية').setStyle(ButtonStyle.Danger).setEmoji('🏠')
-    );
-    
+    const paginationRow = new ActionRowBuilder();
     if (totalPages > 1) {
-        navRow.addComponents(
-            new ButtonBuilder().setCustomId('farm_page_prev').setEmoji(LEFT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
-            new ButtonBuilder().setCustomId('farm_page_next').setEmoji(RIGHT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
+        paginationRow.addComponents(
+            new ButtonBuilder().setCustomId('farm_page_prev').setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
+            new ButtonBuilder().setCustomId('farm_page_next').setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
         );
     }
 
-    const payload = { content: '', components: [selectMenuRow, navRow] };
+    const components = [categoryRow, selectMenuRow];
+    if (paginationRow.components.length > 0) components.push(paginationRow);
+
+    const payload = { content: '', components: components, embeds: [] };
     if (attachment) payload.files = [attachment];
 
     return payload;
+}
+
+async function getShopMenu(user, client, db) {
+    return await buildShopGrid(user, client, db, 'animals', 0);
 }
 
 async function buildDetailView(item, userId, guildId, db, category, client) {
@@ -139,7 +139,7 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
     const actionRow1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`buy_btn_farm|${category}|${item.id}`)
-            .setLabel(isFull ? 'ممتلئ / السعة لا تكفي' : 'شراء 🛒')
+            .setLabel(isFull ? 'الحد الأقصى للسعة' : 'شراء 🛒')
             .setStyle(isFull ? ButtonStyle.Secondary : ButtonStyle.Success)
             .setDisabled(isFull), 
             
@@ -151,10 +151,10 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
     );
 
     const actionRow2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_back_to_grid').setLabel('العودة للقائمة').setStyle(ButtonStyle.Primary).setEmoji('↩️')
+        new ButtonBuilder().setCustomId('farm_back_to_grid').setLabel('العودة للمتجر').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
     );
 
-    const payload = { content: '', components: [actionRow1, actionRow2] };
+    const payload = { content: '', components: [actionRow1, actionRow2], embeds: [] };
     if (attachment) payload.files = [attachment];
 
     return payload;
@@ -167,32 +167,8 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         shopState.currentCategory = category;
         shopState.currentPage = 0;
 
-        let itemsList = [];
-        if (category === 'animals') itemsList = farmAnimals;
-        else if (category === 'seeds') itemsList = seedsData;
-        else if (category === 'feed') itemsList = feedItems;
-        shopState.currentItemsList = itemsList;
-
-        let currentCap = 0, maxCap = 0;
-        if (category === 'animals') {
-            const [userFarmRes, capRes] = await Promise.all([
-                executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]).catch(()=>({rows:[]})),
-                getPlayerCapacity(client, user.id, guild.id)
-            ]);
-            maxCap = capRes;
-            for (const row of userFarmRes.rows) {
-                const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-                if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
-            }
-        }
-
-        const data = await buildGridView(itemsList, 0, currentCap, maxCap, category);
-        return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
-    }
-
-    if (i.customId === 'farm_back_main') {
-        await i.deferUpdate().catch(()=>{});
-        const data = await buildMainMenu(user, client, db);
+        user.guildId = guild.id; 
+        const data = await buildShopGrid(user, client, db, category, 0);
         return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
     }
 
@@ -201,20 +177,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         if (i.customId === 'farm_page_prev' && shopState.currentPage > 0) shopState.currentPage--;
         else if (i.customId === 'farm_page_next') shopState.currentPage++;
 
-        let currentCap = 0, maxCap = 0;
-        if (shopState.currentCategory === 'animals') {
-            const [userFarmRes, capRes] = await Promise.all([
-                executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]).catch(()=>({rows:[]})),
-                getPlayerCapacity(client, user.id, guild.id)
-            ]);
-            maxCap = capRes;
-            for (const row of userFarmRes.rows) {
-                const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-                if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
-            }
-        }
-
-        const data = await buildGridView(shopState.currentItemsList, shopState.currentPage, currentCap, maxCap, shopState.currentCategory);
+        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals', shopState.currentPage);
         return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
     }
 
@@ -238,20 +201,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
 
     if (i.customId === 'farm_back_to_grid') {
         await i.deferUpdate().catch(()=>{});
-        let currentCap = 0, maxCap = 0;
-        if (shopState.currentCategory === 'animals') {
-            const [userFarmRes, capRes] = await Promise.all([
-                executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guild.id]).catch(()=>({rows:[]})),
-                getPlayerCapacity(client, user.id, guild.id)
-            ]);
-            maxCap = capRes;
-            for (const row of userFarmRes.rows) {
-                const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-                if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
-            }
-        }
-
-        const data = await buildGridView(shopState.currentItemsList, shopState.currentPage || 0, currentCap, maxCap, shopState.currentCategory);
+        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals', shopState.currentPage || 0);
         return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
     }
 
@@ -413,13 +363,13 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
         return true;
 
     } catch (e) {
-        console.error(e);
         return false;
     }
 }
 
 module.exports = {
-    buildMainMenu,
+    getShopMenu, 
+    buildMainMenu: getShopMenu, 
     handleShopInteraction,
     handleFarmShopModal
 };
