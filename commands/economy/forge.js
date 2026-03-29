@@ -16,6 +16,7 @@ catch (e) { try { ({ addXPAndCheckLevel } = require('./handler-utils.js')); } ca
 
 const R2_URL = 'https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev';
 const SMELT_XP_RATES = { 'Common': 10, 'Uncommon': 20, 'Rare': 30, 'Epic': 100, 'Legendary': 1000 };
+const SYNTHESIS_FEE = 999;
 
 const ID_TO_IMAGE = {
     'mat_dragon_1': 'dragon_ash.png', 'mat_dragon_2': 'dragon_scale.png', 'mat_dragon_3': 'dragon_claw.png', 'mat_dragon_4': 'dragon_heart.png', 'mat_dragon_5': 'dragon_core.png',
@@ -51,7 +52,6 @@ function resolveText(val) {
     return String(val);
 }
 
-// 🔥 النظام الرياضي الجديد والمعقد لتطوير الأسلحة والمهارات 🔥
 function getUpgradeRequirements(currentLevel, isSkill = false) {
     if (currentLevel >= 30) return null;
 
@@ -85,6 +85,7 @@ function getUpgradeRequirements(currentLevel, isSkill = false) {
 }
 
 function getItemInfo(itemId) {
+    if(!itemId) return null;
     for (const r of upgradeMats.weapon_materials) {
         const mat = r.materials.find(m => m.id === itemId);
         if (mat) {
@@ -126,8 +127,8 @@ const getReturnRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
 );
 
-// 🔥 إضافة دعم الرسائل التوضيحية (Embeds) تحت الكانفاس اختياري، لكن الآن أصبح [] بالكامل 🔥
 async function replyWithCanvas(i, user, view, data, components, customEmbeds = [], isInitial = false) {
+    let returnMessage = null;
     try {
         if (generateForgeUI) {
             const buffer = await generateForgeUI(user, view, data);
@@ -135,10 +136,12 @@ async function replyWithCanvas(i, user, view, data, components, customEmbeds = [
                 const filename = `forge_${Date.now()}.png`; 
                 const attachment = new AttachmentBuilder(buffer, { name: filename });
                 
-                if (isInitial && !i.replied && !i.deferred) {
-                    return await i.reply({ content: null, embeds: customEmbeds, components, files: [attachment] }).catch(()=>{});
+                if (isInitial && typeof i.reply === 'function' && !i.replied && !i.deferred) {
+                    returnMessage = await i.reply({ content: null, embeds: customEmbeds, components, files: [attachment], fetchReply: true }).catch(()=>{});
+                    return returnMessage || i; 
                 } else {
-                    return await i.editReply({ content: null, embeds: customEmbeds, components, files: [attachment] }).catch(()=>{});
+                    returnMessage = await i.editReply({ content: null, embeds: customEmbeds, components, files: [attachment] }).catch(()=>{});
+                    return returnMessage || i;
                 }
             }
         }
@@ -148,9 +151,14 @@ async function replyWithCanvas(i, user, view, data, components, customEmbeds = [
     }
     
     try {
-        if (isInitial && !i.replied && !i.deferred) return await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components, embeds: customEmbeds }).catch(()=>{});
-        return await i.editReply({ content: null, components, embeds: customEmbeds, files: [] }).catch(()=>{});
+        if (isInitial && typeof i.reply === 'function' && !i.replied && !i.deferred) {
+            returnMessage = await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components, embeds: customEmbeds, fetchReply: true }).catch(()=>{});
+        } else {
+            returnMessage = await i.editReply({ content: null, components, embeds: customEmbeds, files: [] }).catch(()=>{});
+        }
     } catch(err) {}
+    
+    return returnMessage || i;
 }
 
 async function buildMainUI(i, user, guildId, db, isInitial = false) {
@@ -162,7 +170,7 @@ async function buildMainUI(i, user, guildId, db, isInitial = false) {
 module.exports = {
     data: new SlashCommandBuilder().setName('حدادة').setDescription('الدخول إلى المجمع الإمبراطوري لتطوير الأسلحة وصقل المهارات'),
     name: 'حدادة',
-    aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر'],
+    aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر', 'حداده'],
     category: 'Economy',
     
     async execute(interactionOrMessage) {
@@ -172,21 +180,54 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guildId = interactionOrMessage.guild.id;
 
-        if (isSlash) await interactionOrMessage.deferReply();
+        // 🔥 استخراج اسم الأمر أو الاختصار (يشتغل حتى بالكازينو بدون بريفكس) 🔥
+        let commandTrigger = "";
+        if (!isSlash) {
+            commandTrigger = interactionOrMessage.content.trim().split(/ +/)[0].toLowerCase().replace(/^[^\w\s\u0600-\u06FF]/, ''); 
+        } else {
+            commandTrigger = interactionOrMessage.commandName;
+        }
 
         let userDataRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
-        if (!userDataRes?.rows?.[0]) return isSlash ? interactionOrMessage.editReply("❌ لم يتم العثور على بياناتك.") : interactionOrMessage.reply("❌ لم يتم العثور على بياناتك.");
-
-        let replyObj = await buildMainUI(isSlash ? interactionOrMessage : { editReply: async (p) => interactionOrMessage.reply(p) }, user, guildId, db, !isSlash);
-
-        if (isSlash && !replyObj) replyObj = await interactionOrMessage.fetchReply().catch(()=>{});
-        if (!replyObj) return;
-
-        const filter = i => i.user.id === user.id && i.customId.startsWith('forge_');
-        const collector = replyObj.createMessageComponentCollector({ filter, time: 300000 });
+        if (!userDataRes?.rows?.[0]) {
+            return isSlash ? interactionOrMessage.reply("❌ لم يتم العثور على بياناتك.") : interactionOrMessage.channel.send("❌ لم يتم العثور على بياناتك.");
+        }
 
         let synthesisState = { sacrificeItem: null, targetItem: null };
         let smeltState = { item: null };
+        
+        let sentMsg = null;
+        const fakeInteraction = isSlash ? interactionOrMessage : {
+            replied: false, deferred: false,
+            reply: async (p) => { p.fetchReply = true; sentMsg = await interactionOrMessage.reply(p); return sentMsg; },
+            editReply: async (p) => { if(sentMsg) return await sentMsg.edit(p); else return await interactionOrMessage.reply(p); },
+            followUp: async (p) => interactionOrMessage.channel.send(p)
+        };
+
+        if (isSlash) await fakeInteraction.deferReply();
+
+        let replyObj;
+
+        // 🔥 التوجيه الذكي المباشر من الكلمات 🔥
+        if (commandTrigger.includes('صقل') || commandTrigger === 'ms') {
+            replyObj = await buildAcademyMenuUI(fakeInteraction, user, guildId, db, !isSlash);
+        } else if (commandTrigger.includes('دمج')) {
+            replyObj = await buildSynthesisUI(fakeInteraction, user, guildId, db, synthesisState, !isSlash);
+        } else if (commandTrigger.includes('صهر')) {
+            replyObj = await buildSmeltingUI(fakeInteraction, user, guildId, db, smeltState, !isSlash);
+        } else {
+            // حدادة، حداده، تطوير، forge
+            replyObj = await buildMainUI(fakeInteraction, user, guildId, db, !isSlash);
+        }
+
+        if (isSlash && !replyObj?.createMessageComponentCollector) {
+            replyObj = await interactionOrMessage.fetchReply().catch(()=>{});
+        }
+        
+        if (!replyObj || !replyObj.createMessageComponentCollector) return;
+
+        const filter = i => i.user.id === user.id && i.customId.startsWith('forge_');
+        const collector = replyObj.createMessageComponentCollector({ filter, time: 300000 });
 
         collector.on('collect', async (i) => {
             try { 
@@ -285,23 +326,17 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    // 🔥 تجهيز البيانات التفصيلية للكانفاس 🔥
     for (let r of reqs.materials) {
         let matId = raceMats.materials[r.tier].id;
         let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, matId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, matId]).catch(()=>({rows:[]})));
         const userMatCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
         
         let matInfo = getItemInfo(matId);
-        
         if (userMatCount < r.count) hasAllMats = false;
         
         detailedReqs.push({ 
-            id: matId, 
-            count: r.count, 
-            userCount: userMatCount,
-            name: matInfo.name,
-            rarity: matInfo.rarity,
-            iconUrl: matInfo.iconUrl
+            id: matId, count: r.count, userCount: userMatCount,
+            name: matInfo.name, rarity: matInfo.rarity, iconUrl: matInfo.iconUrl
         });
     }
 
@@ -314,16 +349,11 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
         getReturnRow().components[0]
     );
     
-    // تمرير مصفوفة فارغة للإيمبد [] والاعتماد الكلي على detailedReqs في الكانفاس 🎨
-    await replyWithCanvas(i, user, 'weapon', {
-        mora: userMora, 
-        title: `تطوير ${resolveText(weaponConfig.name)}`,
-        currentLevel, 
-        nextLevel: currentLevel + 1,
-        currentStat: `${currentDmg} DMG`, 
-        nextStat: `${nextDmg} DMG`,
-        reqMora: reqs.moraCost, 
-        detailedReqs: detailedReqs 
+    return await replyWithCanvas(i, user, 'weapon', {
+        mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`,
+        currentLevel, nextLevel: currentLevel + 1,
+        currentStat: `${currentDmg} DMG`, nextStat: `${nextDmg} DMG`,
+        reqMora: reqs.moraCost, detailedReqs: detailedReqs 
     }, [btnRow], []);
 }
 
@@ -370,11 +400,11 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
 }
 
 // ------------------- المهارات -------------------
-async function buildAcademyMenuUI(i, user, guildId, db) {
+async function buildAcademyMenuUI(i, user, guildId, db, isInitial = false) {
     let skillsRes = await db.query(`SELECT * FROM user_skills WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT * FROM user_skills WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userSkills = skillsRes?.rows || [];
 
-    if (userSkills.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], components: [getReturnRow()] });
+    if (userSkills.length === 0) return replyWithCanvas(i, user, 'main', { title: 'أكاديمية السحر السري' }, [getReturnRow()], [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ أنت لا تملك أي مهارات لتصقلها!")], isInitial);
 
     const skillOptions = userSkills.map(s => {
         const configSkill = skillsConfig.find(sc => sc.id === (s.skillID || s.skillid));
@@ -382,14 +412,14 @@ async function buildAcademyMenuUI(i, user, guildId, db) {
         return { label: resolveText(configSkill.name).substring(0, 100), value: configSkill.id.substring(0, 100), description: `Lv.${s.skillLevel || s.skilllevel}`.substring(0, 100) };
     }).filter(Boolean);
 
-    if(skillOptions.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا يمكن جلب بيانات المهارات حالياً.")], components: [getReturnRow()] });
+    if(skillOptions.length === 0) return replyWithCanvas(i, user, 'main', { title: 'أكاديمية السحر السري' }, [getReturnRow()], [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا يمكن جلب بيانات المهارات حالياً.")], isInitial);
 
     const skillSelectRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_skill_select').setPlaceholder('اختر المهارة...').addOptions(skillOptions.slice(0, 25)));
     
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    await replyWithCanvas(i, user, 'skill_home', { mora: userMora, title: 'أكاديمية السحر' }, [skillSelectRow, getReturnRow()], []);
+    return await replyWithCanvas(i, user, 'skill_home', { mora: userMora, title: 'أكاديمية السحر السري' }, [skillSelectRow, getReturnRow()], [], isInitial);
 }
 
 async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
@@ -420,23 +450,17 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     let userMoraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
 
-    // 🔥 تجهيز البيانات التفصيلية للكانفاس 🔥
     for (let r of reqs.materials) {
         let itemId = r.type === 'book' ? bookCat.books[r.tier].id : raceMats.materials[r.tier].id;
         let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, itemId]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, itemId]).catch(()=>({rows:[]})));
         const userMatCount = invRes?.rows?.[0] ? Number(invRes.rows[0].quantity || invRes.rows[0].Quantity) : 0;
         
         let matInfo = getItemInfo(itemId);
-        
         if (userMatCount < r.count) hasAllMats = false;
         
         detailedReqs.push({ 
-            id: itemId, 
-            count: r.count, 
-            userCount: userMatCount,
-            name: matInfo.name,
-            rarity: matInfo.rarity,
-            iconUrl: matInfo.iconUrl
+            id: itemId, count: r.count, userCount: userMatCount,
+            name: matInfo.name, rarity: matInfo.rarity, iconUrl: matInfo.iconUrl
         });
     }
 
@@ -450,16 +474,11 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
         getReturnRow().components[0]
     );
     
-    // تمرير مصفوفة فارغة للإيمبد [] والاعتماد الكلي على detailedReqs في الكانفاس 🎨
     await replyWithCanvas(i, user, 'skill', {
-        mora: userMora, 
-        title: `صقل ${resolveText(configSkill.name)}`,
-        currentLevel, 
-        nextLevel: currentLevel + 1,
-        currentStat: `${currentVal}${statSymbol}`, 
-        nextStat: `${nextVal}${statSymbol}`,
-        reqMora: reqs.moraCost, 
-        detailedReqs: detailedReqs
+        mora: userMora, title: `صقل ${resolveText(configSkill.name)}`,
+        currentLevel, nextLevel: currentLevel + 1,
+        currentStat: `${currentVal}${statSymbol}`, nextStat: `${nextVal}${statSymbol}`,
+        reqMora: reqs.moraCost, detailedReqs: detailedReqs
     }, [btnRow], []);
 }
 
@@ -514,8 +533,8 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
     }
 }
 
-// ------------------- باقي الوظائف (كما هي) -------------------
-async function buildSynthesisUI(i, user, guildId, db, state) {
+// ------------------- الدمج (Synthesis) -------------------
+async function buildSynthesisUI(i, user, guildId, db, state, isInitial = false) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const inventory = aggregateInventory(invRes?.rows || []);
 
@@ -530,12 +549,13 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         return true;
     });
 
-    if (availableSacrifices.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], components: [getReturnRow()] });
+    if (availableSacrifices.length === 0) return replyWithCanvas(i, user, 'main', { title: 'فرن الدمج الكيميائي' }, [getReturnRow()], [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك 4 عناصر متشابهة من مواد عرقك أو مخطوطات السحر لدمجها.")], isInitial);
 
     let components = [];
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
-    let payloadData = { mora: userMora, title: 'فرن الدمج السحري' };
+    
+    let payloadData = { mora: userMora, title: 'فرن الدمج السحري', fee: SYNTHESIS_FEE };
 
     if (!state.sacrificeItem) {
         const sacrificeOptions = availableSacrifices.map(row => {
@@ -545,6 +565,8 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_synth_sacrifice').setPlaceholder('1. اختر العنصر الذي ستضحي به (سيخصم 4)').addOptions(sacrificeOptions)));
     } else {
         const sacInfo = getItemInfo(state.sacrificeItem);
+        if(!sacInfo) { state.sacrificeItem = null; return buildSynthesisUI(i, user, guildId, db, state, isInitial); } // حماية ضد الأخطاء
+
         payloadData.sacMatName = sacInfo.name;
         payloadData.reqMatIcon = sacInfo.iconUrl;
 
@@ -574,21 +596,32 @@ async function buildSynthesisUI(i, user, guildId, db, state) {
 
         if (state.targetItem) {
             const targetInfo = getItemInfo(state.targetItem);
-            payloadData.targetMatName = targetInfo.name;
-            payloadData.targetMatIcon = targetInfo.iconUrl;
-            components.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمــج`).setStyle(ButtonStyle.Success).setEmoji('🔨')
-            ));
+            if(targetInfo) {
+                payloadData.targetMatName = targetInfo.name;
+                payloadData.targetMatIcon = targetInfo.iconUrl;
+                
+                const btnStyle = userMora >= SYNTHESIS_FEE ? ButtonStyle.Success : ButtonStyle.Secondary;
+                components.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('forge_execute_synth').setLabel(`دمــج`).setStyle(btnStyle).setEmoji('🔨').setDisabled(userMora < SYNTHESIS_FEE)
+                ));
+            }
         }
     }
 
     components.push(getReturnRow());
-    await replyWithCanvas(i, user, 'synthesis', payloadData, components, []);
+    return await replyWithCanvas(i, user, 'synthesis', payloadData, components, [], isInitial);
 }
 
 async function handleSynthesis(i, user, guildId, db, state) {
     if (!state.sacrificeItem || !state.targetItem) return;
     
+    let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=>({rows:[]}));
+    const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora || moraRes.rows[0].Mora) : 0;
+    
+    if (userMora < SYNTHESIS_FEE) {
+        return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription(`❌ لا تملك المورا الكافية للدمج (المطلوب: ${SYNTHESIS_FEE} 🪙).`)], components: [getReturnRow()] });
+    }
+
     let invRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=>({rows:[]})));
     let sacQty = 0;
     if (invRes?.rows) invRes.rows.forEach(r => sacQty += Number(r.quantity || r.Quantity));
@@ -597,6 +630,8 @@ async function handleSynthesis(i, user, guildId, db, state) {
 
     await db.query('BEGIN').catch(()=>{}); 
     try {
+        await db.query(`UPDATE levels SET "mora" = GREATEST(CAST("mora" AS INTEGER) - $1, 0) WHERE "user" = $2 AND "guild" = $3`, [SYNTHESIS_FEE, user.id, guildId]).catch(()=> db.query(`UPDATE levels SET mora = MAX(CAST(mora AS INTEGER) - $1, 0) WHERE userid = $2 AND guildid = $3`, [SYNTHESIS_FEE, user.id, guildId]));
+
         let remainingToDeduct = 4;
         let updateRes = await db.query(`SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [user.id, guildId, state.sacrificeItem]).catch(()=> db.query(`SELECT id, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]));
         for (const r of updateRes.rows) {
@@ -628,13 +663,14 @@ async function handleSynthesis(i, user, guildId, db, state) {
     }
 }
 
-async function buildSmeltingUI(i, user, guildId, db, state) {
+// ------------------- الصهر (Smelting) -------------------
+async function buildSmeltingUI(i, user, guildId, db, state, isInitial = false) {
     let invRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const inventory = aggregateInventory(invRes?.rows || []);
 
     const smeltableItems = inventory.filter(row => getItemInfo(row.itemID) !== null);
 
-    if (smeltableItems.length === 0) return i.editReply({ files: [], embeds: [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], components: [getReturnRow()] });
+    if (smeltableItems.length === 0) return replyWithCanvas(i, user, 'main', { title: 'محرقة التفكيك العظمى' }, [getReturnRow()], [new EmbedBuilder().setColor(Colors.Red).setDescription("❌ لا تملك عناصر قابلة للصهر.")], isInitial);
 
     let moraRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora) : 0;
@@ -651,6 +687,8 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
         components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('forge_smelt_select').setPlaceholder('اختر العنصر الذي تريد صهره...').addOptions(smeltOptions)));
     } else {
         const itemInfo = getItemInfo(state.item);
+        if(!itemInfo) { state.item = null; return buildSmeltingUI(i, user, guildId, db, state, isInitial); }
+
         payloadData.sacMatName = itemInfo.name;
         payloadData.reqMatIcon = itemInfo.iconUrl;
         payloadData.xpGain = SMELT_XP_RATES[itemInfo.rarity] || 10;
@@ -670,7 +708,7 @@ async function buildSmeltingUI(i, user, guildId, db, state) {
     }
 
     components.push(getReturnRow());
-    await replyWithCanvas(i, user, 'smelting', payloadData, components, []);
+    return await replyWithCanvas(i, user, 'smelting', payloadData, components, [], isInitial);
 }
 
 async function handleSmeltingMultiModal(i, user, guildId, db, state, client) {
