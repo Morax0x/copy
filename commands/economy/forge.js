@@ -116,12 +116,17 @@ function aggregateInventory(rows) {
     return Object.keys(map).map(id => ({ itemID: id, quantity: map[id] }));
 }
 
-const getMainMenuRow = () => new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الاكادمـيـة').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحـدادة').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('forge_synthesis').setLabel('فـرن الـدمـج').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('forge_smelting').setLabel('المـصـهـر').setStyle(ButtonStyle.Danger)
-);
+// 🔥 التعديل هنا: ترتيب الأزرار في صفين 🔥
+const getMainMenuRows = () => [
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('forge_weapon').setLabel('الحـدادة').setStyle(ButtonStyle.Secondary).setEmoji('⚒️'),
+        new ButtonBuilder().setCustomId('forge_skill_menu').setLabel('الاكادمـيـة').setStyle(ButtonStyle.Primary).setEmoji('🔮')
+    ),
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('forge_synthesis').setLabel('فـرن الـدمـج').setStyle(ButtonStyle.Success).setEmoji('⚗️'),
+        new ButtonBuilder().setCustomId('forge_smelting').setLabel('المـصـهـر').setStyle(ButtonStyle.Danger).setEmoji('🌋')
+    )
+];
 
 const getReturnRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
@@ -164,7 +169,8 @@ async function replyWithCanvas(i, user, view, data, components, customEmbeds = [
 async function buildMainUI(i, user, guildId, db, isInitial = false) {
     let userDataRes = await db.query(`SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
     const userMora = Number(userDataRes?.rows?.[0]?.mora || userDataRes?.rows?.[0]?.Mora || 0);
-    return await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, [getMainMenuRow()], [], isInitial);
+    // 🔥 تمرير getMainMenuRows كـ مصفوفة 🔥
+    return await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, getMainMenuRows(), [], isInitial);
 }
 
 module.exports = {
@@ -292,9 +298,9 @@ module.exports = {
 
         collector.on('end', () => {
             try { 
-                const disabledRow = getMainMenuRow();
-                disabledRow.components.forEach(c => c.setDisabled(true)); 
-                replyObj.edit({ components: [disabledRow] }).catch(()=>{}); 
+                const disabledRows = getMainMenuRows();
+                disabledRows.forEach(row => row.components.forEach(c => c.setDisabled(true))); 
+                replyObj.edit({ components: disabledRows }).catch(()=>{}); 
             } catch(e) {}
         });
     }
