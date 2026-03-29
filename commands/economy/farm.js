@@ -125,16 +125,15 @@ module.exports = {
         };
 
         const renderFarmAnimals = async (page = 0) => {
-            const [maxCapacity, userAnimalsRes] = await Promise.all([
-                getPlayerCapacity(client, userId, guildId),
-                db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "quantity" DESC`, [userId, guildId])
-                  .catch(() => db.query(`SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2 ORDER BY quantity DESC`, [userId, guildId]).catch(()=>({rows:[]})))
-            ]);
+            let maxCapacity = await getPlayerCapacity(client, userId, guildId);
+            let userFarmRes;
+            try { userFarmRes = await db.query(`SELECT "animalID", "quantity", "purchaseTimestamp", "lastFedTimestamp" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 ORDER BY "quantity" DESC`, [userId, guildId]); }
+            catch(e) { userFarmRes = await db.query(`SELECT animalid, quantity, purchasetimestamp, lastfedtimestamp FROM user_farm WHERE userid = $1 AND guildid = $2 ORDER BY quantity DESC`, [userId, guildId]).catch(()=>({rows:[]})); }
             
-            const userAnimals = userAnimalsRes.rows;
+            const userAnimals = userFarmRes.rows;
 
             if (!userAnimals || userAnimals.length === 0) {
-                if(!drawFarmAnimalsGrid) return { content: `📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **الحظيرة فارغة**\nتوجّه إلى المتجر 🛒 لشراء حيواناتك الأولى.`, files: [], actionRow: null };
+                return { content: `📦 **السعة:** [ \`0\` / \`${maxCapacity}\` ]\n\n🍂 **الحظيرة فارغة**\nتوجّه إلى المتجر 🛒 لشراء حيواناتك الأولى.`, files: [], actionRow: null };
             }
 
             let totalFarmIncome = 0;
@@ -399,11 +398,16 @@ module.exports = {
                             const feedId = animal.feed_id;
                             const maxHungerMs = (animal.max_hunger_days || 3) * DAY_MS;
                             
-                            const [sampleRes, countRowRes, invRowRes] = await Promise.all([
-                                db.query(`SELECT "lastFedTimestamp" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 LIMIT 1`, [userId, guildId, animalId]).catch(()=>db.query(`SELECT lastfedtimestamp FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 LIMIT 1`, [userId, guildId, animalId]).catch(()=>({rows:[]}))),
-                                db.query(`SELECT SUM("quantity") as total FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, animalId]).catch(()=>db.query(`SELECT SUM(quantity) as total FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3`, [userId, guildId, animalId]).catch(()=>({rows:[]}))),
-                                db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, feedId]).catch(()=>db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, feedId]).catch(()=>({rows:[]})))
-                            ]);
+                            let sampleRes, countRowRes, invRowRes;
+                            try {
+                                sampleRes = await db.query(`SELECT "lastFedTimestamp" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 LIMIT 1`, [userId, guildId, animalId]);
+                                countRowRes = await db.query(`SELECT SUM("quantity") as total FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3`, [userId, guildId, animalId]);
+                                invRowRes = await db.query(`SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, feedId]);
+                            } catch(e) {
+                                sampleRes = await db.query(`SELECT lastfedtimestamp FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3 LIMIT 1`, [userId, guildId, animalId]).catch(()=>({rows:[]}));
+                                countRowRes = await db.query(`SELECT SUM(quantity) as total FROM user_farm WHERE userid = $1 AND guildid = $2 AND animalid = $3`, [userId, guildId, animalId]).catch(()=>({rows:[]}));
+                                invRowRes = await db.query(`SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userId, guildId, feedId]).catch(()=>({rows:[]}));
+                            }
                             
                             const sample = sampleRes.rows[0];
                             if (sample && (sample.lastFedTimestamp || sample.lastfedtimestamp)) {
@@ -422,10 +426,13 @@ module.exports = {
                                 return subI.reply({ content: `❌ **علف غير كافي!**\nتحتاج **${totalAnimals}** وحدة لإطعام القطيع بالكامل.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
                             }
                             
-                            await Promise.all([
-                                db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [totalAnimals, userId, guildId, feedId]).catch(() => db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [totalAnimals, userId, guildId, feedId]).catch(()=>{})),
-                                db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "userID" = $2 AND "guildID" = $3 AND "animalID" = $4`, [Date.now(), userId, guildId, animalId]).catch(() => db.query(`UPDATE user_farm SET lastfedtimestamp = $1 WHERE userid = $2 AND guildid = $3 AND animalid = $4`, [Date.now(), userId, guildId, animalId]).catch(()=>{}))
-                            ]);
+                            try {
+                                await db.query(`UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "userID" = $2 AND "guildID" = $3 AND "itemID" = $4`, [totalAnimals, userId, guildId, feedId]);
+                                await db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "userID" = $2 AND "guildID" = $3 AND "animalID" = $4`, [Date.now(), userId, guildId, animalId]);
+                            } catch(e) {
+                                await db.query(`UPDATE user_inventory SET quantity = quantity - $1 WHERE userid = $2 AND guildid = $3 AND itemid = $4`, [totalAnimals, userId, guildId, feedId]).catch(()=>{});
+                                await db.query(`UPDATE user_farm SET lastfedtimestamp = $1 WHERE userid = $2 AND guildid = $3 AND animalid = $4`, [Date.now(), userId, guildId, animalId]).catch(()=>{});
+                            }
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!` }).catch(() => {});
                             
