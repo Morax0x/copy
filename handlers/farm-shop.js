@@ -1,4 +1,4 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder, EmbedBuilder, Colors } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -32,7 +32,6 @@ try {
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
-const ITEMS_PER_PAGE = 9; 
 const MAX_FARM_LIMIT = 1000;
 
 async function executeDB(db, query, params = []) {
@@ -40,7 +39,7 @@ async function executeDB(db, query, params = []) {
     catch (e) { throw e; }
 }
 
-async function buildShopGrid(user, client, db, category, pageIndex) {
+async function buildShopGrid(user, client, db, category) {
     let itemsList = [];
     if (category === 'animals') itemsList = farmAnimals;
     else if (category === 'seeds') itemsList = seedsData;
@@ -59,20 +58,17 @@ async function buildShopGrid(user, client, db, category, pageIndex) {
         }
     }
 
-    const startIndex = pageIndex * ITEMS_PER_PAGE;
-    const itemsOnPage = itemsList.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-    const totalPages = Math.max(1, Math.ceil(itemsList.length / ITEMS_PER_PAGE));
-
-    const buffer = await drawFarmShopGrid(itemsOnPage, category, pageIndex, totalPages, maxCap, currentCap);
+    const buffer = await drawFarmShopGrid(itemsList, category, maxCap, currentCap);
     const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop.png' }) : null;
 
     const categoryRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(category === 'animals' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🐄'),
         new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('بذور').setStyle(category === 'seeds' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌱'),
         new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(category === 'feed' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌾')
     );
 
-    const selectOptions = itemsOnPage.map(item => ({
+    const selectOptions = itemsList.map(item => ({
         label: item.name,
         description: `السعر: ${item.price} مورا`,
         value: `farm_select_item|${category}|${item.id}`,
@@ -86,25 +82,14 @@ async function buildShopGrid(user, client, db, category, pageIndex) {
             .addOptions(selectOptions)
     );
 
-    const paginationRow = new ActionRowBuilder();
-    if (totalPages > 1) {
-        paginationRow.addComponents(
-            new ButtonBuilder().setCustomId('farm_page_prev').setEmoji('<:left:1439164494759723029>').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === 0),
-            new ButtonBuilder().setCustomId('farm_page_next').setEmoji('<:right:1439164491072929915>').setStyle(ButtonStyle.Secondary).setDisabled(pageIndex === totalPages - 1)
-        );
-    }
-
-    const components = [categoryRow, selectMenuRow];
-    if (paginationRow.components.length > 0) components.push(paginationRow);
-
-    const payload = { content: '', components: components, embeds: [] };
+    const payload = { content: '', components: [categoryRow, selectMenuRow], embeds: [] };
     if (attachment) payload.files = [attachment];
 
     return payload;
 }
 
 async function getShopMenu(user, client, db) {
-    return await buildShopGrid(user, client, db, 'animals', 0);
+    return await buildShopGrid(user, client, db, 'animals');
 }
 
 async function buildDetailView(item, userId, guildId, db, category, client) {
@@ -151,7 +136,7 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
     );
 
     const actionRow2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_back_to_grid').setLabel('العودة للمتجر').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+        new ButtonBuilder().setCustomId('farm_shop_back').setLabel('العودة للمتجر').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
     );
 
     const payload = { content: '', components: [actionRow1, actionRow2], embeds: [] };
@@ -165,20 +150,10 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         await i.deferUpdate().catch(()=>{});
         const category = i.customId.replace('shop_cat_', '');
         shopState.currentCategory = category;
-        shopState.currentPage = 0;
 
         user.guildId = guild.id; 
-        const data = await buildShopGrid(user, client, db, category, 0);
-        return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
-    }
-
-    if (i.customId === 'farm_page_prev' || i.customId === 'farm_page_next') {
-        await i.deferUpdate().catch(()=>{});
-        if (i.customId === 'farm_page_prev' && shopState.currentPage > 0) shopState.currentPage--;
-        else if (i.customId === 'farm_page_next') shopState.currentPage++;
-
-        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals', shopState.currentPage);
-        return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
+        const data = await buildShopGrid(user, client, db, category);
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
     }
 
     if (i.isStringSelectMenu() && i.customId === 'farm_select_item') {
@@ -196,13 +171,13 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
         shopState.currentCategory = category;
 
         const data = await buildDetailView(item, user.id, guild.id, db, category, client);
-        return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
     }
 
-    if (i.customId === 'farm_back_to_grid') {
+    if (i.customId === 'farm_shop_back') {
         await i.deferUpdate().catch(()=>{});
-        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals', shopState.currentPage || 0);
-        return await i.editReply({ files: data.files || [], embeds: [], components: [...data.components, getNavRow('shop')], content: data.content }).catch(()=>{});
+        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals');
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
     }
 
     if (i.isButton() && (i.customId.startsWith('buy_btn_farm|') || i.customId.startsWith('sell_btn_farm|'))) {
@@ -350,14 +325,18 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
             }
 
             await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]).catch(()=> executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]).catch(()=>{}));
-            await i.editReply(`📈 بعت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالربح: ${totalGain.toLocaleString()} ${EMOJI_MORA}`);
+            
+            const sellEmbed = new EmbedBuilder()
+                .setTitle('📈 عملية بيع زراعية')
+                .setColor(Colors.Blue)
+                .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`);
+            
+            await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
         }
 
         if (i.message) {
             buildDetailView(itemData, i.user.id, i.guild.id, db, category, client).then(newData => {
-                const finalComponents = newData.components || [];
-                if (getNavRow) finalComponents.push(getNavRow('shop'));
-                i.message.edit({ files: newData.files || [], components: finalComponents, embeds: [], content: newData.content || '' }).catch(()=>{});
+                i.message.edit({ files: newData.files || [], components: newData.components, embeds: [], content: newData.content || '' }).catch(()=>{});
             });
         }
         return true;
