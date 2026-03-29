@@ -115,8 +115,11 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, reqC
     ctx.stroke();
     ctx.shadowBlur = 0;
 
+    // 🔥 تصليح الأبعاد داخل المربع لمنع التشويه 🔥
     if (img) {
-        ctx.drawImage(img, x + 15, y + 15, size - 30, size - 30);
+        const padding = 15;
+        const innerSize = size - (padding * 2);
+        ctx.drawImage(img, x + padding, y + padding, innerSize, innerSize);
     } else {
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
         ctx.font = 'bold 50px "Arial"';
@@ -182,22 +185,26 @@ async function generateForgeUI(userObj, view, data) {
         sparkColor = '#00AAFF'; accentColor = '#3498DB';
     }
 
-    // 🌟 استخراج الصور المتعددة للتطوير 🌟
-    let reqMatImg1 = null, reqMatImg2 = null;
-    if (data.detailedReqs && data.detailedReqs.length > 0) {
-        reqMatImg1 = await getCachedImage(data.detailedReqs[0].iconUrl);
-        if (data.detailedReqs.length > 1) {
-            reqMatImg2 = await getCachedImage(data.detailedReqs[1].iconUrl);
+    // 🌟 جلب الصور بشكل آمن لعدم تداخل الأنظمة 🌟
+    let reqMatImg1 = null, reqMatImg2 = null, targetMatImg = null;
+    
+    if (activeView === 'weapon' || activeView === 'skill') {
+        if (data.detailedReqs && data.detailedReqs.length > 0) {
+            reqMatImg1 = await getCachedImage(data.detailedReqs[0].iconUrl);
+            if (data.detailedReqs.length > 1) {
+                reqMatImg2 = await getCachedImage(data.detailedReqs[1].iconUrl);
+            }
         }
-    } else if (data.reqMatIcon) {
-        reqMatImg1 = await getCachedImage(data.reqMatIcon);
+    } 
+    else if (activeView === 'synthesis' || activeView === 'smelting') {
+        if (data.reqMatIcon) reqMatImg1 = await getCachedImage(data.reqMatIcon);
+        if (data.targetMatIcon) targetMatImg = await getCachedImage(data.targetMatIcon);
     }
 
-    const [bgImage, emblemImg, avatarImage, targetMatImg] = await Promise.all([
+    const [bgImage, emblemImg, avatarImage] = await Promise.all([
         getCachedImage(bgUrl),
         emblemUrl ? getCachedImage(emblemUrl) : null,
-        loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null),
-        data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
+        loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null)
     ]);
 
     ctx.fillStyle = '#050608';
@@ -420,24 +427,19 @@ async function generateForgeUI(userObj, view, data) {
 
         ctx.textBaseline = 'alphabetic';
         
-        // 🔥 نظام العرض المتعدد للموارد 🔥
         if (data.detailedReqs && data.detailedReqs.length > 1) {
             const req1 = data.detailedReqs[0];
             const req2 = data.detailedReqs[1];
             
-            // المربع الأول
             drawItemBox(ctx, panelX + 600, panelY + 180, 140, reqMatImg1, req1.rarity || 'Rare', req1.name, req1.count, req1.userCount);
             
-            // علامة + بالنص
             ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 50px "Arial"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText('+', panelX + 800, panelY + 250);
 
-            // المربع الثاني
             drawItemBox(ctx, panelX + 860, panelY + 180, 140, reqMatImg2, req2.rarity || 'Rare', req2.name, req2.count, req2.userCount);
 
         } else {
-            // المربع الفردي (لو كان متطلب واحد فقط)
-            const req = data.detailedReqs ? data.detailedReqs[0] : { name: data.reqMatName, rarity: data.reqMatRarity, count: data.reqMatCount, userCount: data.userMatCount };
+            const req = data.detailedReqs ? data.detailedReqs[0] : { name: "مورد", rarity: "Common", count: 0, userCount: 0 };
             drawItemBox(ctx, panelX + 715, panelY + 180, 170, reqMatImg1, req.rarity || 'Rare', req.name, req.count, req.userCount);
         }
     }
@@ -450,7 +452,7 @@ async function generateForgeUI(userObj, view, data) {
 
         ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 30px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('عنصر الدمج (4x)', leftItemX + itemSize/2, itemY - 15);
-        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Rare', data.sacMatName, 4, 4); // نعطي 4 كقيمة وهمية لليوزر عشان تطلع بالاخضر لو اختارها
+        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Rare', data.sacMatName, 4, 4); 
         
         drawFantasyArrow(ctx, width/2 - 70, panelY + 180, 140, '#F1C40F');
 
@@ -458,11 +460,11 @@ async function generateForgeUI(userObj, view, data) {
             ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 30px "Bein"'; ctx.textBaseline = 'bottom';
             ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 15);
 
-            drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare', data.targetMatName, null, null); // مانبي صندوق كميات للنتيجة
+            drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare', data.targetMatName, null, null); 
             
             ctx.fillStyle = data.mora >= data.fee ? '#2ECC71' : '#E74C3C';
             ctx.font = 'bold 28px "Bein"'; ctx.textBaseline = 'middle';
-            ctx.fillText(`رسوم التفكيك والدمج: ${data.fee.toLocaleString()} 🪙`, width/2, panelY + 380);
+            ctx.fillText(`رسوم التفكيك والدمج: ${data.fee?.toLocaleString()} 🪙`, width/2, panelY + 380);
         } else {
             ctx.fillStyle = '#AAAAAA'; ctx.font = 'bold 30px "Bein"'; ctx.textBaseline = 'bottom';
             ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 15);
