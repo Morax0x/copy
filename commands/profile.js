@@ -17,6 +17,12 @@ const skillsConfig = require('../json/skills-config.json');
 let marketConfig = [];
 try { marketConfig = require('../json/market-items.json'); } catch(e) {}
 
+let validBaitIDs = ['worm', 'cricket', 'shrimp', 'squid', 'magic'];
+try {
+    const fishingConf = require('../json/fishing-config.json');
+    if (fishingConf.baits) validBaitIDs = fishingConf.baits.map(b => b.id);
+} catch(e) {}
+
 let calculateRequiredXP;
 try { ({ calculateRequiredXP } = require('../handlers/handler-utils.js')); } 
 catch (e) {
@@ -100,6 +106,7 @@ module.exports = {
 
     name: 'profile',
     aliases: ['p', 'بروفايل', 'بطاقة', 'كارد', 'card', 'inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة', 'مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي', 'محفظتي', 'استثماراتي', 'ممتلكات', 'portfolio'], 
+    category: "Economy", 
 
     async execute(interactionOrMessage, args) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
@@ -134,8 +141,12 @@ module.exports = {
             let selectedIndex = 0; 
             let activeItemDetails = null; 
 
-            const commandTrigger = !isSlash ? interactionOrMessage.content.slice(1).trim().split(/ +/)[0].toLowerCase() : "";
-            
+            let commandTrigger = "";
+            if (!isSlash) {
+                const firstWord = interactionOrMessage.content.trim().split(/ +/)[0].toLowerCase();
+                commandTrigger = firstWord.replace(/^[^\w\s\u0600-\u06FF]/, ''); 
+            }
+
             if (['inv', 'inventory', 'شنطة', 'اغراض', 'حقيبة'].includes(commandTrigger)) {
                 currentView = 'inventory'; invCategory = 'main';
             } else if (['مهاراتي', 'skills', 'ms', 'عتاد', 'قدراتي'].includes(commandTrigger)) {
@@ -144,6 +155,58 @@ module.exports = {
                 currentView = 'inventory'; 
                 invCategory = 'market';
             }
+
+            const getNormalInventoryItems = async (cat) => {
+                let fetchedItems = [];
+                try {
+                    const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                    let tempItems = [];
+
+                    for (const row of (invQuery?.rows || [])) {
+                        const itemId = row.itemID || row.itemid;
+
+                        // 🔥 الإبادة التامة للأسماك: إذا كان الآيدي يبدأ بـ fish_ نتجاهله تماماً! 🔥
+                        if (itemId.startsWith('fish_')) continue;
+
+                        let info = resolveItemInfoLocal(itemId);
+                        info = { ...info }; 
+                        
+                        if (info.category === 'materials') info.category = 'موارد';
+                        else if (info.category === 'fishing' || info.category === 'fishing_gear') info.category = 'صيد';
+                        else if (info.category === 'farming') info.category = 'مزرعة';
+                        else if (info.category === 'potions' || info.category === 'others') info.category = 'أخرى';
+
+                        if (info.category === 'صيد') {
+                            const isBait = validBaitIDs.includes(itemId);
+                            const isRod = itemId.startsWith('rod_') || itemId === 'current_rod';
+                            const isBoat = itemId.startsWith('boat_') || itemId === 'current_boat';
+                            
+                            if (!isBait && !isRod && !isBoat) {
+                                info.category = 'أخرى'; 
+                            }
+                        }
+
+                        tempItems.push({ ...info, quantity: row.quantity, id: itemId });
+                    }
+
+                    if (cat === 'صيد') {
+                        let fishRes = await db.query(`SELECT * FROM user_fishing WHERE "userID" = $1 AND "guildID" = $2 LIMIT 1`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        if(!fishRes?.rows?.[0]) fishRes = await db.query(`SELECT * FROM user_fishing WHERE userid = $1 AND guildid = $2 LIMIT 1`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
+                        
+                        const fishingStats = fishRes?.rows?.[0];
+                        if (fishingStats) {
+                            const cRod = fishingStats.currentRod || fishingStats.currentrod;
+                            const cBoat = fishingStats.currentBoat || fishingStats.currentboat;
+                            
+                            // إضافة القارب والسنارة إذا كانوا موجودين
+                            if (cRod) tempItems.unshift({ id: 'current_rod', name: `سنارة ${cRod}`, emoji: '🎣', category: 'صيد', rarity: 'Rare', quantity: 1, imgPath: `https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/fish/fishing/${cRod.toLowerCase()}.png` });
+                            if (cBoat) tempItems.unshift({ id: 'current_boat', name: `قارب ${cBoat}`, emoji: '🚤', category: 'صيد', rarity: 'Epic', quantity: 1, imgPath: `https://pub-d042f26f54cd4b60889caff0b496a614.r2.dev/images/fish/ships/${cBoat.toLowerCase()}.png` });
+                        }
+                    }
+                    fetchedItems = tempItems.filter(it => it.category === cat);
+                } catch(e) { console.error(e); }
+                return fetchedItems;
+            };
 
             const renderView = async () => {
                 let levelData = null;
@@ -253,7 +316,8 @@ module.exports = {
 
                 if (currentView === 'inventory') {
                     if (invCategory === 'main') {
-                        const buffer = await generateMainHub(targetMember, db, totalMora);
+                        const displayMora = (targetUser.id === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) ? "???" : totalMora.toLocaleString();
+                        const buffer = await generateMainHub(targetMember, db, displayMora);
                         
                         const row1 = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`c_mat_${authorUser.id}`).setLabel('مـوارد').setStyle(ButtonStyle.Primary).setEmoji('💎'), 
@@ -278,21 +342,16 @@ module.exports = {
                             new ButtonBuilder().setCustomId(`d_back_${authorUser.id}`).setLabel('العـودة').setStyle(ButtonStyle.Danger).setEmoji('↩️')
                         );
                         
-                        if (targetUser.id === authorUser.id) {
+                        if (targetUser.id === authorUser.id && !['current_rod', 'current_boat'].includes(activeItemDetails.id)) {
                             btnRow.addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('إعـطـاء').setStyle(ButtonStyle.Primary).setEmoji('🎁'));
                         }
 
-                        return {
-                            content: '',
-                            files: [new AttachmentBuilder(buffer, { name: 'item.png' })],
-                            components: [btnRow]
-                        };
+                        return { content: '', files: [new AttachmentBuilder(buffer, { name: 'item.png' })], components: [btnRow] };
                     }
 
                     let items = [];
                     let totalValue = 0;
 
-                    // 🔥 قسم الممتلكات (Market Portfolio) 🔥
                     if (invCategory === 'market') {
                         let portfolio = [];
                         let dbMarketRes = { rows: [] };
@@ -323,17 +382,31 @@ module.exports = {
                             let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
                             const info = resolveItemInfoLocal(itemID);
                             
+                            info.description = `${info.description || ''}\n\n📊 السعر الحالي: ${currentPrice.toLocaleString()} 🪙\n💰 سعر الشراء: ${purchasePrice.toLocaleString()} 🪙\n💎 القيمة الإجمالية: ${(currentPrice * quantity).toLocaleString()} 🪙`;
                             items.push({ ...info, name: marketItem.name, quantity, id: itemID, purchasePrice, currentPrice, itemTotalValue });
                         }
 
                         const totalPages = Math.max(1, Math.ceil(items.length / 9)); 
                         const slice = items.slice((invPage-1)*9, invPage*9);
 
+                        if (slice.length > 0 && selectedIndex >= slice.length) {
+                            selectedIndex = slice.length - 1;
+                        } else if (slice.length === 0) {
+                            selectedIndex = 0;
+                        }
+
                         let buffer;
                         if (generatePortfolioCard) {
                             buffer = await generatePortfolioCard(cleanName, slice, invPage, totalPages, totalValue);
                         } else {
                             return { content: "❌ عذراً، مكتبة الرسم غير متاحة للممتلكات.", components: [] };
+                        }
+
+                        if (items.length === 0) {
+                            const rowBack = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العودة للرئيسية').setEmoji('↩️').setStyle(ButtonStyle.Danger)
+                            );
+                            return { content: '', files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], components: [rowBack] };
                         }
 
                         const row1 = new ActionRowBuilder().addComponents(
@@ -344,20 +417,26 @@ module.exports = {
 
                         return { content: '', files: [new AttachmentBuilder(buffer, { name: 'portfolio.png' })], components: [row1] };
                     } 
-                    // 🔥 باقي أقسام الحقيبة العادية 🔥
                     else {
-                        try {
-                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
-                            items = (invQuery?.rows || []).map(row => {
-                                const info = resolveItemInfoLocal(row.itemID || row.itemid);
-                                return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
-                            }).filter(i => i.category === invCategory);
-                        } catch(e) {}
-                        
+                        items = await getNormalInventoryItems(invCategory);
+
                         const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
                         const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
 
+                        if (slice.length > 0 && selectedIndex >= slice.length) {
+                            selectedIndex = slice.length - 1;
+                        } else if (slice.length === 0) {
+                            selectedIndex = 0;
+                        }
+
                         const buffer = await generateInventoryCard(cleanName, invCategory, slice, invPage, totalPages, selectedIndex);
+
+                        if (items.length === 0) {
+                            const rowBack = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder().setCustomId(`cat_main_${authorUser.id}`).setLabel('العودة للرئيسية').setEmoji('↩️').setStyle(ButtonStyle.Danger)
+                            );
+                            return { content: '', files: [new AttachmentBuilder(buffer, { name: 'i.png' })], components: [rowBack] };
+                        }
 
                         const row1 = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`d_l2_${authorUser.id}`).setEmoji('⏪').setStyle(ButtonStyle.Secondary),
@@ -390,6 +469,7 @@ module.exports = {
             };
 
             const msg = await reply(await renderView());
+            
             const collector = msg.createMessageComponentCollector({ filter: i => true, time: 300000 });
 
             collector.on('collect', async (i) => {
@@ -472,7 +552,7 @@ module.exports = {
                                 new ButtonBuilder().setCustomId(`trade_dec_${tradeId}`).setLabel('رفض ❌').setStyle(ButtonStyle.Danger)
                             );
 
-                            const tradeMsgObj = await modalSubmit.followUp({ content: `⚖️ **عـقـد تـجـاري**\nمرحباً <@${targetID}>!\nيعرض عليك <@${authorUser.id}>:\n**استلام:** ${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}\n**دفع:** ${price.toLocaleString()} ${EMOJI_MORA}`, components: [tradeButtons] });
+                            const tradeMsgObj = await modalSubmit.followUp({ content: `⚖️ **عـقـد تـجـاري**\nمرحباً <@${targetID}>!\nيعرض عليك <@${authorUser.id}>:\n**استلام:** ${qty}x ${activeItemDetails.emoji} ${activeItemDetails.name}\n**دفع:** ${price.toLocaleString()} 🪙`, components: [tradeButtons] });
 
                             const tradeFilter = btn => btn.user.id === targetID && btn.customId.includes(tradeId);
                             const tradeCollector = tradeMsgObj.createMessageComponentCollector({ filter: tradeFilter, time: 60000 });
@@ -512,7 +592,7 @@ module.exports = {
                                     await db.query('COMMIT').catch(()=>{});
 
                                     tradeCollector.stop('accepted');
-                                    await tradeMsgObj.edit({ content: `✅ **تمت الصفقة بنجاح!**\nاشترى <@${targetID}> ${qty}x ${activeItemDetails.name} مقابل ${price.toLocaleString()} ${EMOJI_MORA} من <@${authorUser.id}>.`, components: [] });
+                                    await tradeMsgObj.edit({ content: `✅ **تمت الصفقة بنجاح!**\nاشترى <@${targetID}> ${qty}x ${activeItemDetails.name} مقابل ${price.toLocaleString()} 🪙 من <@${authorUser.id}>.`, components: [] });
 
                                     activeItemDetails.quantity -= qty;
                                     if(activeItemDetails.quantity <= 0) activeItemDetails = null;
@@ -536,17 +616,20 @@ module.exports = {
                     return i.reply({ content: '❌ لا يمكنك التحكم في حقيبة غيرك!', flags: [MessageFlags.Ephemeral] });
                 }
 
-                if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
+                if (id.startsWith('c_') || id.startsWith('v_port_')) {
+                    await i.deferUpdate();
+                    if (id.startsWith('c_mat_')) { currentView = 'inventory'; invCategory = 'موارد'; }
+                    else if (id.startsWith('c_fis_')) { currentView = 'inventory'; invCategory = 'صيد'; }
+                    else if (id.startsWith('c_far_')) { currentView = 'inventory'; invCategory = 'مزرعة'; }
+                    else if (id.startsWith('c_oth_')) { currentView = 'inventory'; invCategory = 'أخرى'; }
+                    else if (id.startsWith('v_port_')) { currentView = 'inventory'; invCategory = 'market'; }
+                    
+                    invPage = 1; selectedIndex = 0; activeItemDetails = null;
+                }
+                else if (id.startsWith('v_inv_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'main'; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_com_')) { await i.deferUpdate(); currentView = 'combat'; skillPage = 0; activeItemDetails = null; }
                 else if (id.startsWith('v_pro_')) { await i.deferUpdate(); currentView = 'profile'; activeItemDetails = null; }
-                else if (id.startsWith('v_port_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'market'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                
                 else if (id.startsWith('cat_main_')) { await i.deferUpdate(); invCategory = 'main'; activeItemDetails = null; }
-                else if (id.startsWith('c_mat_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'موارد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_fis_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'صيد'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_far_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'مزرعة'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                else if (id.startsWith('c_oth_')) { await i.deferUpdate(); currentView = 'inventory'; invCategory = 'أخرى'; invPage = 1; selectedIndex = 0; activeItemDetails = null; }
-                
                 else if (id.startsWith('inv_n_')) { await i.deferUpdate(); invPage++; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('inv_p_')) { await i.deferUpdate(); invPage--; selectedIndex = 0; activeItemDetails = null; }
                 else if (id.startsWith('sk_n_')) { await i.deferUpdate(); skillPage++; }
@@ -589,18 +672,15 @@ module.exports = {
                                 let purchasePrice = Number(row.purchasePrice || row.purchaseprice) || 0;
                                 const info = resolveItemInfoLocal(itemID);
                                 
-                                info.description = `${info.description || ''}\n\n📊 السعر الحالي: ${currentPrice.toLocaleString()} ${EMOJI_MORA}\n💰 سعر الشراء: ${purchasePrice.toLocaleString()} ${EMOJI_MORA}\n💎 القيمة الإجمالية: ${(currentPrice * quantity).toLocaleString()} ${EMOJI_MORA}`;
+                                info.description = `${info.description || ''}\n\n📊 السعر الحالي: ${currentPrice.toLocaleString()} 🪙\n💰 سعر الشراء: ${purchasePrice.toLocaleString()} 🪙\n💎 القيمة الإجمالية: ${(currentPrice * quantity).toLocaleString()} 🪙`;
                                 items.push({ ...info, quantity, id: itemID });
                             }
                         } else {
-                            const invQuery = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [targetUser.id, guildId]).catch(()=>({rows:[]}));
-                            items = (invQuery?.rows || []).map(row => {
-                                const info = resolveItemInfoLocal(row.itemID || row.itemid);
-                                return { ...info, quantity: row.quantity, id: row.itemID || row.itemid };
-                            }).filter(it => it.category === invCategory);
+                            items = await getNormalInventoryItems(invCategory);
                         }
 
-                        const slice = items.slice((invPage-1)*ITEMS_PER_PAGE, invPage*ITEMS_PER_PAGE);
+                        const perPage = invCategory === 'market' ? 9 : ITEMS_PER_PAGE;
+                        const slice = items.slice((invPage-1)*perPage, invPage*perPage);
                         
                         if (slice[selectedIndex]) {
                             activeItemDetails = slice[selectedIndex];
@@ -611,6 +691,12 @@ module.exports = {
                 }
                 
                 await msg.edit(await renderView());
+            });
+
+            collector.on('end', () => {
+                if(msg && msg.editable) {
+                    msg.edit({ components: [] }).catch(() => null);
+                }
             });
 
         } catch (error) {
