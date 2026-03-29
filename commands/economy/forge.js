@@ -44,7 +44,6 @@ function resolveText(val) {
     return String(val);
 }
 
-// 🔥 دالة سحرية تسرع الطلبات من قاعدة البيانات للضعف بدون تعليق 🔥
 const safeQuery = async (db, qPg, qLite, params) => {
     try { return await db.query(qPg, params); } 
     catch(e) { return await db.query(qLite, params).catch(()=>({rows:[]})); }
@@ -52,10 +51,7 @@ const safeQuery = async (db, qPg, qLite, params) => {
 
 function getUpgradeRequirements(currentLevel, isSkill = false) {
     if (currentLevel >= 30) return null;
-
-    let reqs = [];
-    let moraCost = 0;
-
+    let reqs = [], moraCost = 0;
     const currentTier = Math.floor((currentLevel - 1) / 5); 
     const primaryTier = Math.min(currentTier, 4);
 
@@ -71,14 +67,12 @@ function getUpgradeRequirements(currentLevel, isSkill = false) {
 
     let finalReqs = [];
     for (let r of reqs) {
-        if (!isSkill) {
-            finalReqs.push({ type: 'material', tier: r.tier, count: r.count });
-        } else {
+        if (!isSkill) finalReqs.push({ type: 'material', tier: r.tier, count: r.count });
+        else {
             finalReqs.push({ type: 'book', tier: r.tier, count: r.count });
             finalReqs.push({ type: 'material', tier: r.tier, count: Math.max(1, Math.floor(r.count * 0.6)) });
         }
     }
-
     return { moraCost, materials: finalReqs };
 }
 
@@ -129,8 +123,7 @@ const getReturnRow = () => new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('forge_return_main').setEmoji('↩️').setStyle(ButtonStyle.Secondary)
 );
 
-// 🔥 الإيمبدز اختفت من هنا وتم إزالة أي رسائل تحميل مزعجة 🔥
-async function replyWithCanvas(i, user, view, data, components, customEmbeds = [], isInitial = false) {
+async function replyWithCanvas(i, user, view, data, components, isInitial = false) {
     let returnMessage = null;
     try {
         if (generateForgeUI) {
@@ -139,26 +132,25 @@ async function replyWithCanvas(i, user, view, data, components, customEmbeds = [
                 const filename = `forge_${Date.now()}.png`; 
                 const attachment = new AttachmentBuilder(buffer, { name: filename });
                 
-                if (isInitial && typeof i.reply === 'function' && !i.replied && !i.deferred) {
-                    returnMessage = await i.reply({ content: null, embeds: customEmbeds, components, files: [attachment], fetchReply: true }).catch(()=>{});
-                    return returnMessage || i; 
-                } else {
-                    returnMessage = await i.editReply({ content: null, embeds: customEmbeds, components, files: [attachment] }).catch(()=>{});
-                    return returnMessage || i;
+                if (i.deferred || i.replied || typeof i.editReply === 'function') {
+                    returnMessage = await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
+                } else if (typeof i.reply === 'function') {
+                    returnMessage = await i.reply({ content: null, embeds: [], components, files: [attachment], fetchReply: true }).catch(()=>{});
                 }
+                return returnMessage || i; 
             }
         }
     } catch (e) {
         console.error("Canvas Error in Forge:", e);
-        await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+        if (i.deferred || i.replied) await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
-    return returnMessage || i;
+    return i;
 }
 
 async function buildMainUI(i, user, guildId, db, isInitial = false) {
     let userDataRes = await safeQuery(db, `SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]);
     const userMora = Number(userDataRes?.rows?.[0]?.mora || userDataRes?.rows?.[0]?.Mora || 0);
-    return await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, getMainMenuRows(), [], isInitial);
+    return await replyWithCanvas(i, user, 'main', { mora: userMora, title: 'المجمع الإمبراطوري للتطوير' }, getMainMenuRows(), isInitial);
 }
 
 module.exports = {
@@ -171,47 +163,65 @@ module.exports = {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
         const client = interactionOrMessage.client;
         const db = client.sql;
-        const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
+        const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author || interactionOrMessage.user;
         const guildId = interactionOrMessage.guild.id;
 
-        // 🔥 إظهار "يكتب..." للسرعة وعدم إظهار أي نصوص تحميل مزعجة 🔥
         let sentMsg = null;
         if (isSlash) {
             await interactionOrMessage.deferReply();
-        } else {
+        } else if (!interactionOrMessage.preselectedItem) {
             interactionOrMessage.channel.sendTyping().catch(()=>{});
         }
 
         const fakeInteraction = isSlash ? interactionOrMessage : {
-            replied: false, deferred: false,
-            reply: async (p) => { p.fetchReply = true; sentMsg = await interactionOrMessage.reply(p); fakeInteraction.replied = true; return sentMsg; },
-            editReply: async (p) => { if(sentMsg) return await sentMsg.edit(p); else return await interactionOrMessage.reply(p); },
+            replied: interactionOrMessage.preselectedItem ? true : false, 
+            deferred: interactionOrMessage.preselectedItem ? true : false,
+            reply: async (p) => { 
+                if(interactionOrMessage.reply) return await interactionOrMessage.reply(p);
+                else { p.fetchReply = true; sentMsg = await interactionOrMessage.channel.send(p); return sentMsg; }
+            },
+            editReply: async (p) => { 
+                if(interactionOrMessage.editReply) return await interactionOrMessage.editReply(p);
+                else if(sentMsg) return await sentMsg.edit(p); 
+                else return await interactionOrMessage.channel.send(p); 
+            },
             followUp: async (p) => interactionOrMessage.channel.send(p)
         };
 
         let commandTrigger = "";
-        if (!isSlash) {
+        if (!isSlash && interactionOrMessage.content) {
             commandTrigger = interactionOrMessage.content.trim().split(/ +/)[0].toLowerCase().replace(/^[^\w\s\u0600-\u06FF]/, ''); 
-        } else {
+        } else if (isSlash) {
             commandTrigger = interactionOrMessage.commandName;
+        }
+
+        let synthesisState = { sacrificeItem: null, targetItem: null };
+        let smeltState = { item: null };
+
+        // 🔥 استقبال العنصر المحدد مسبقاً من البروفايل 🔥
+        if (interactionOrMessage.preselectedItem) {
+            if (interactionOrMessage.preselectedAction === 'smelt') {
+                smeltState.item = interactionOrMessage.preselectedItem;
+                commandTrigger = 'صهر';
+            } else if (interactionOrMessage.preselectedAction === 'synth') {
+                synthesisState.sacrificeItem = interactionOrMessage.preselectedItem;
+                commandTrigger = 'دمج';
+            }
         }
 
         let userDataRes = await safeQuery(db, `SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]);
         if (!userDataRes?.rows?.[0]) return fakeInteraction.editReply({ content: "❌ لم يتم العثور على بياناتك." });
 
-        let synthesisState = { sacrificeItem: null, targetItem: null };
-        let smeltState = { item: null };
         let replyObj;
 
-        // 🔥 التوجيه السريع جداً للمستخدمين 🔥
         if (commandTrigger.includes('صقل') || commandTrigger.includes('اكاديمية') || commandTrigger === 'ms') {
-            replyObj = await buildAcademyMenuUI(fakeInteraction, user, guildId, db, !isSlash);
+            replyObj = await buildAcademyMenuUI(fakeInteraction, user, guildId, db, !isSlash && !interactionOrMessage.preselectedItem);
         } else if (commandTrigger.includes('دمج')) {
-            replyObj = await buildSynthesisUI(fakeInteraction, user, guildId, db, synthesisState, !isSlash);
+            replyObj = await buildSynthesisUI(fakeInteraction, user, guildId, db, synthesisState, !isSlash && !interactionOrMessage.preselectedItem);
         } else if (commandTrigger.includes('صهر')) {
-            replyObj = await buildSmeltingUI(fakeInteraction, user, guildId, db, smeltState, !isSlash);
+            replyObj = await buildSmeltingUI(fakeInteraction, user, guildId, db, smeltState, !isSlash && !interactionOrMessage.preselectedItem);
         } else {
-            replyObj = await buildMainUI(fakeInteraction, user, guildId, db, !isSlash);
+            replyObj = await buildMainUI(fakeInteraction, user, guildId, db, !isSlash && !interactionOrMessage.preselectedItem);
         }
 
         if (isSlash && !replyObj?.createMessageComponentCollector) {
@@ -259,7 +269,6 @@ module.exports = {
                         smeltState = { item: null }; 
                         await buildSmeltingUI(i, user, guildId, db, smeltState); 
                     }
-                    
                     else if (i.customId === 'forge_upgrade_weapon') await handleWeaponUpgrade(i, user, guildId, db);
                     else if (i.customId.startsWith('forge_upgrade_skill_')) await handleSkillUpgrade(i, user, guildId, db, i.customId.replace('forge_upgrade_skill_', ''));
                     else if (i.customId === 'forge_execute_synth') {
@@ -292,7 +301,6 @@ module.exports = {
 
 // ------------------- السلاح -------------------
 async function buildWeaponForgeUI(i, user, guildId, db) {
-    // 🔥 جلب البيانات المتوازي 🚀 🔥
     const [userMoraRes, weaponRes, lvlRes] = await Promise.all([
         safeQuery(db, `SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]),
         safeQuery(db, `SELECT "raceName", "weaponLevel" FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2`, `SELECT racename, weaponlevel FROM user_weapons WHERE userid = $1 AND guildid = $2`, [user.id, guildId]),
@@ -303,25 +311,24 @@ async function buildWeaponForgeUI(i, user, guildId, db) {
     const wData = weaponRes?.rows?.[0];
     
     if (!wData) {
-        return await replyWithCanvas(i, user, 'weapon', { mora: userMora, title: 'الحدادة', hasError: true, errorMsg: 'أنت لا تملك أي سلاح! احصل على رتبة عرق أولاً.' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'weapon_error', { mora: userMora, title: 'الحدادة', hasError: true, errorMsg: 'أنت لا تملك أي سلاح! احصل على رتبة عرق أولاً.' }, [getReturnRow()]);
     }
 
     const currentLevel = Number(wData.weaponLevel || wData.weaponlevel);
     const weaponConfig = weaponsConfig.find(w => w.race === (wData.raceName || wData.racename));
     
     if (currentLevel >= 30) {
-        return await replyWithCanvas(i, user, 'weapon', { mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`, hasError: true, errorMsg: '✨ سلاحك وصل للحد الأقصى (Lv.30)!' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'weapon_error', { mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`, hasError: true, errorMsg: '✨ سلاحك وصل للحد الأقصى (Lv.30)!' }, [getReturnRow()]);
     }
 
     const playerServerLevel = Number(lvlRes?.rows?.[0]?.level || lvlRes?.rows?.[0]?.Level || 1);
     if (currentLevel >= 15 && playerServerLevel < 30) {
-        return await replyWithCanvas(i, user, 'weapon', { mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`, hasError: true, errorMsg: 'قفل المستوى: يجب أن تصل إلى المستوى 30 في السيرفر لتتمكن من تطوير عتادك فوق المستوى 15.' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'weapon_error', { mora: userMora, title: `تطوير ${resolveText(weaponConfig.name)}`, hasError: true, errorMsg: 'قفل المستوى: يجب أن تصل إلى المستوى 30 في السيرفر لتتمكن من تطوير عتادك فوق المستوى 15.' }, [getReturnRow()]);
     }
 
     const reqs = getUpgradeRequirements(currentLevel, false);
     const raceMats = upgradeMats.weapon_materials.find(m => m.race === (wData.raceName || wData.racename));
     
-    // 🔥 جلب بيانات الموارد بسرعة هائلة 🔥
     const matPromises = reqs.materials.map(async (r) => {
         let matId = raceMats.materials[r.tier].id;
         let invRes = await safeQuery(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, `SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, matId]);
@@ -397,7 +404,7 @@ async function handleWeaponUpgrade(i, user, guildId, db) {
         await db.query('ROLLBACK').catch(()=>{});
         let userMoraRes = await safeQuery(db, `SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]);
         const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
-        await replyWithCanvas(i, user, 'weapon', { mora: userMora, title: 'الحدادة', hasError: true, errorMsg: 'حدث خطأ أثناء الحفظ!' }, [getReturnRow()]);
+        await replyWithCanvas(i, user, 'weapon_error', { mora: userMora, title: 'الحدادة', hasError: true, errorMsg: 'حدث خطأ أثناء الحفظ!' }, [getReturnRow()]);
     }
 }
 
@@ -443,12 +450,12 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const configSkill = skillsConfig.find(sc => sc.id === skillId);
     
     if (currentLevel >= (configSkill.max_level || 30)) {
-        return await replyWithCanvas(i, user, 'skill', { mora: userMora, title: `صقل ${resolveText(configSkill.name)}`, hasError: true, errorMsg: '✨ المهارة وصلت للحد الأقصى!' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'skill_error', { mora: userMora, title: `صقل ${resolveText(configSkill.name)}`, hasError: true, errorMsg: '✨ المهارة وصلت للحد الأقصى!' }, [getReturnRow()]);
     }
 
     const playerServerLevel = Number(lvlRes?.rows?.[0]?.level || lvlRes?.rows?.[0]?.Level || 1);
     if (currentLevel >= 15 && playerServerLevel < 30) {
-        return await replyWithCanvas(i, user, 'skill', { mora: userMora, title: `صقل ${resolveText(configSkill.name)}`, hasError: true, errorMsg: 'قفل المستوى: يجب أن تصل إلى المستوى 30 في السيرفر لتتمكن من صقل المهارات فوق المستوى 15.' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'skill_error', { mora: userMora, title: `صقل ${resolveText(configSkill.name)}`, hasError: true, errorMsg: 'قفل المستوى: يجب أن تصل إلى المستوى 30 في السيرفر لتتمكن من صقل المهارات فوق المستوى 15.' }, [getReturnRow()]);
     }
 
     const reqs = getUpgradeRequirements(currentLevel, true);
@@ -458,7 +465,6 @@ async function buildSkillUpgradeUI(i, user, guildId, db, skillId) {
     const userRace = wRes?.rows?.[0]?.raceName || wRes?.rows?.[0]?.racename;
     const raceMats = upgradeMats.weapon_materials.find(m => m.race === userRace);
 
-    // 🔥 جلب بيانات الموارد بسرعة هائلة 🔥
     const matPromises = reqs.materials.map(async (r) => {
         let itemId = r.type === 'book' ? bookCat.books[r.tier].id : raceMats.materials[r.tier].id;
         let invRes = await safeQuery(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, `SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, itemId]);
@@ -543,7 +549,7 @@ async function handleSkillUpgrade(i, user, guildId, db, skillId) {
         await db.query('ROLLBACK').catch(()=>{});
         let userMoraRes = await safeQuery(db, `SELECT "mora" FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT mora FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]);
         const userMora = userMoraRes?.rows?.[0] ? Number(userMoraRes.rows[0].mora) : 0;
-        await replyWithCanvas(i, user, 'skill', { mora: userMora, title: 'أكاديمية السحر', hasError: true, errorMsg: 'حدث خطأ أثناء الحفظ!' }, [getReturnRow()]);
+        await replyWithCanvas(i, user, 'skill_error', { mora: userMora, title: 'أكاديمية السحر', hasError: true, errorMsg: 'حدث خطأ أثناء الحفظ!' }, [getReturnRow()]);
     }
 }
 
@@ -636,7 +642,7 @@ async function handleSynthesis(i, user, guildId, db, state) {
     const userMora = moraRes?.rows?.[0] ? Number(moraRes.rows[0].mora || moraRes.rows[0].Mora) : 0;
     
     if (userMora < SYNTHESIS_FEE) {
-        return await replyWithCanvas(i, user, 'synthesis', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: `لا تملك المورا الكافية للدمج (المطلوب: ${SYNTHESIS_FEE} 🪙).` }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'synthesis_error', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: `لا تملك المورا الكافية للدمج (المطلوب: ${SYNTHESIS_FEE} 🪙).` }, [getReturnRow()]);
     }
 
     let invRes = await safeQuery(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, `SELECT quantity FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [user.id, guildId, state.sacrificeItem]);
@@ -644,7 +650,7 @@ async function handleSynthesis(i, user, guildId, db, state) {
     if (invRes?.rows) invRes.rows.forEach(r => sacQty += Number(r.quantity || r.Quantity));
 
     if (sacQty < 4) {
-        return await replyWithCanvas(i, user, 'synthesis', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: 'لا تملك 4 حبات من العنصر المطلوب للتضحية.' }, [getReturnRow()]);
+        return await replyWithCanvas(i, user, 'synthesis_error', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: 'لا تملك 4 حبات من العنصر المطلوب للتضحية.' }, [getReturnRow()]);
     }
 
     await db.query('BEGIN').catch(()=>{}); 
@@ -678,7 +684,7 @@ async function handleSynthesis(i, user, guildId, db, state) {
         }, [getReturnRow()]);
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        await replyWithCanvas(i, user, 'synthesis', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: 'حدث خطأ أثناء الدمج!' }, [getReturnRow()]);
+        await replyWithCanvas(i, user, 'synthesis_error', { mora: userMora, title: 'فرن الدمج السحري', hasError: true, errorMsg: 'حدث خطأ أثناء الدمج!' }, [getReturnRow()]);
     }
 }
 
@@ -769,10 +775,10 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
             await replyWithCanvas({
                 replied: false, deferred: false,
                 editReply: async (p) => i.editReply(p) 
-            }, user, 'smelting', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: `لا تملك ${qtyToSmelt} حبة من هذا العنصر لصهره.` }, [getReturnRow()]);
+            }, user, 'smelting_error', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: `لا تملك ${qtyToSmelt} حبة من هذا العنصر لصهره.` }, [getReturnRow()]);
             return;
         } else {
-            return await replyWithCanvas(i, user, 'smelting', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: `لا تملك ${qtyToSmelt} حبة من هذا العنصر لصهره.` }, [getReturnRow()]);
+            return await replyWithCanvas(i, user, 'smelting_error', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: `لا تملك ${qtyToSmelt} حبة من هذا العنصر لصهره.` }, [getReturnRow()]);
         }
     }
 
@@ -818,6 +824,6 @@ async function handleSmelting(i, user, guildId, db, state, client, qtyToSmelt = 
         }
     } catch (err) {
         await db.query('ROLLBACK').catch(()=>{});
-        isModal ? await i.followUp({ content: "❌ حدث خطأ أثناء الصهر!", flags: MessageFlags.Ephemeral }) : await replyWithCanvas(i, user, 'smelting', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: 'حدث خطأ أثناء الصهر!' }, [getReturnRow()]);
+        isModal ? await i.followUp({ content: "❌ حدث خطأ أثناء الصهر!", flags: MessageFlags.Ephemeral }) : await replyWithCanvas(i, user, 'smelting_error', { mora: userMora, title: 'محرقة التفكيك', hasError: true, errorMsg: 'حدث خطأ أثناء الصهر!' }, [getReturnRow()]);
     }
 }
