@@ -1,4 +1,4 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder, EmbedBuilder, Colors } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -152,7 +152,7 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
     return payload;
 }
 
-async function handleShopInteraction(i, client, db, user, guild, shopState, getNavRow) {
+async function handleShopInteraction(i, client, db, user, guild, shopState) {
     if (i.customId.startsWith('shop_cat_')) {
         await i.deferUpdate().catch(()=>{});
         const category = i.customId.replace('shop_cat_', '');
@@ -215,7 +215,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState, getN
     }
 }
 
-async function handleFarmShopModal(i, client, db, getNavRow) {
+async function handleFarmShopModal(i, client, db) {
     if (!i.customId.startsWith('farm_buy_modal|') && !i.customId.startsWith('farm_sell_modal|')) return false;
 
     try {
@@ -239,6 +239,21 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
 
         if (action === 'buy') {
             const totalPrice = itemData.price * quantity;
+
+            let moraRes;
+            try {
+                moraRes = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2 FOR UPDATE`, [i.user.id, i.guild.id]);
+            } catch(e) {
+                moraRes = await executeDB(db, `SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
+            }
+
+            let currentMora = Number(moraRes?.rows?.[0]?.mora || moraRes?.rows?.[0]?.Mora || 0);
+            let currentBank = Number(moraRes?.rows?.[0]?.bank || moraRes?.rows?.[0]?.Bank || 0);
+
+            if ((currentMora + currentBank) < totalPrice) {
+                await executeDB(db, 'ROLLBACK').catch(()=>{});
+                return await i.editReply(`❌ رصيدك (الكاش + البنك) غير كافي! تحتاج إجمالي **${totalPrice.toLocaleString()}** مورا.`);
+            }
 
             if (category === 'animals') {
                 const [farmRes, cap] = await Promise.all([
@@ -266,25 +281,18 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
                 }
             }
 
-            const checkFundsSql = `
-                UPDATE levels 
-                SET mora = GREATEST(0, mora - $1),
-                    bank = CASE WHEN mora < $1 THEN bank - ($1 - mora) ELSE bank END
-                WHERE "user" = $2 AND "guild" = $3 
-                AND (mora + bank) >= $1
-                RETURNING mora, bank;
-            `;
-            let fundRes;
-            try {
-                fundRes = await executeDB(db, checkFundsSql, [totalPrice, i.user.id, i.guild.id]);
-            } catch(e) { 
-                const fallbackSql = `UPDATE levels SET mora = GREATEST(0, mora - $1), bank = CASE WHEN mora < $1 THEN bank - ($1 - mora) ELSE bank END WHERE userid = $2 AND guildid = $3 AND (mora + bank) >= $1 RETURNING mora, bank;`;
-                fundRes = await executeDB(db, fallbackSql, [totalPrice, i.user.id, i.guild.id]).catch(()=>({rows:[]})); 
+            if (currentMora >= totalPrice) {
+                currentMora -= totalPrice;
+            } else {
+                let remainder = totalPrice - currentMora;
+                currentMora = 0;
+                currentBank -= remainder;
             }
 
-            if (!fundRes?.rows?.length) {
-                await executeDB(db, 'ROLLBACK').catch(()=>{});
-                return await i.editReply(`❌ رصيدك (الكاش + البنك) غير كافي! تحتاج إجمالي **${totalPrice.toLocaleString()}** ${EMOJI_MORA}.`);
+            try {
+                await executeDB(db, `UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "user" = $3 AND "guild" = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
+            } catch(e) {
+                await executeDB(db, `UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
             }
 
             try {
@@ -305,7 +313,7 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
             }
 
             await executeDB(db, 'COMMIT').catch(()=>{});
-            await i.editReply(`✅ اشتريت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالتكلفة: ${totalPrice.toLocaleString()} ${EMOJI_MORA}`);
+            await i.editReply(`✅ اشتريت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالتكلفة: ${totalPrice.toLocaleString()} مورا`);
 
         } else if (action === 'sell') {
             const sellPrice = Math.floor(itemData.price * 0.5); 
@@ -350,35 +358,28 @@ async function handleFarmShopModal(i, client, db, getNavRow) {
                         await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]);
                     }
                 }
+
+                try {
+                    await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]).catch(async () => {
+                        await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]);
+                    });
+                } catch (moneyError) {
+                    await executeDB(db, 'ROLLBACK').catch(()=>{});
+                    return await i.editReply('❌ حدث خطأ داخلي أثناء إضافة الأموال، تم التراجع عن العملية.');
+                }
+                
+                await executeDB(db, 'COMMIT').catch(()=>{});
+                await i.editReply(`📈 بعت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالربح: ${totalGain.toLocaleString()} مورا (نصف السعر)`);
+
             } catch (sellError) {
                 await executeDB(db, 'ROLLBACK').catch(()=>{});
-                return await i.editReply('❌ حدث خطأ داخلي أثناء إزالة العنصر من حقيبتك، لم يتم البيع.');
+                return await i.editReply('❌ حدث خطأ داخلي أثناء إزالة العنصر، لم يتم البيع.');
             }
-
-            try {
-                await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]).catch(async () => {
-                    await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]);
-                });
-            } catch (moneyError) {
-                await executeDB(db, 'ROLLBACK').catch(()=>{});
-                return await i.editReply('❌ حدث خطأ داخلي أثناء إضافة الأموال، تم التراجع عن العملية.');
-            }
-
-            await executeDB(db, 'COMMIT').catch(()=>{});
-
-            const sellEmbed = new EmbedBuilder()
-                .setTitle('📈 عملية بيع زراعية')
-                .setColor(Colors.Blue)
-                .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`);
-            
-            await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
         }
 
         if (i.message) {
             buildDetailView(itemData, i.user.id, i.guild.id, db, category, client).then(newData => {
-                const finalComponents = newData.components || [];
-                if (getNavRow) finalComponents.push(getNavRow('shop'));
-                i.message.edit({ files: newData.files || [], components: finalComponents, embeds: [], content: newData.content || '' }).catch(()=>{});
+                i.message.edit({ files: newData.files || [], components: newData.components, embeds: [], content: newData.content || '' }).catch(()=>{});
             });
         }
         return true;
