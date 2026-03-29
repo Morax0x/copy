@@ -55,11 +55,13 @@ try {
     };
 }
 
+// 🔥 دالة لتسريع قواعد البيانات 🔥
 const safeQuery = async (db, qPg, qLite, params) => {
     try { return await db.query(qPg, params); } 
     catch(e) { return await db.query(qLite, params).catch(()=>({rows:[]})); }
 };
 
+// 🔥 فحص ذكي لمعرفة إذا العنصر قابل للصهر والدمج 🔥
 const upgradeMats = require('../json/upgrade-materials.json');
 function isSmeltable(itemId) {
     if (!itemId) return false;
@@ -252,7 +254,7 @@ module.exports = {
                             ranks.mora = (moraR?.rows?.[0]?.rank || 1).toString();
                             ranks.streak = (strkR?.rows?.[0]?.rank || 1).toString();
                             ranks.power = (await calculateStrongestRank(db, guildId, targetUser.id)).toString();
-                        } catch (e) {}
+                        } catch (e) { console.error("Ranks fetch error", e); }
                     }
 
                     const profData = {
@@ -333,8 +335,10 @@ module.exports = {
                         if (targetUser.id === authorUser.id && !['current_rod', 'current_boat'].includes(activeItemDetails.id)) {
                             btnRow.addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('إعـطـاء').setStyle(ButtonStyle.Primary).setEmoji('🎁'));
                             
+                            // 🔥 الأزرار الذكية للصهر والدمج 🔥
                             if (isSmeltable(activeItemDetails.id)) {
                                 btnRow.addComponents(new ButtonBuilder().setCustomId(`route_smelt_${activeItemDetails.id}`).setLabel('صـهـر').setStyle(ButtonStyle.Danger).setEmoji('🌋'));
+                                
                                 if (activeItemDetails.quantity >= 4) {
                                     btnRow.addComponents(new ButtonBuilder().setCustomId(`route_synth_${activeItemDetails.id}`).setLabel('دمـج').setStyle(ButtonStyle.Success).setEmoji('⚗️'));
                                 }
@@ -470,28 +474,28 @@ module.exports = {
             collector.on('collect', async (i) => {
                 const id = i.customId;
 
-                // 🔥 التوجيه السريع جداً للحدادة (صهر و دمج) من الحقيبة 🔥
+                // 🔥 النقل السلس والمضمون للحدادة 🔥
                 if (id.startsWith('route_smelt_') || id.startsWith('route_synth_')) {
                     if (i.user.id !== authorUser.id) return i.reply({ content: '❌ هذا ليس بروفايلك!', flags: [MessageFlags.Ephemeral] });
                     
                     const isSmelt = id.startsWith('route_smelt_');
                     const itemIdToRoute = id.replace(isSmelt ? 'route_smelt_' : 'route_synth_', '');
                     
-                    await i.deferUpdate();
+                    await i.deferUpdate().catch(()=>{});
                     
-                    const forgeCmd = client.commands.find(c => c.name === 'حدادة' || c.aliases?.includes('forge'));
+                    const forgeCmd = client.commands.get('حدادة') || client.commands.find(c => c.name === 'حدادة' || (c.aliases && c.aliases.includes('forge')));
                     if (forgeCmd) {
-                        collector.stop('routed_to_forge'); // نوقف الكوليكتر عشان يمنع سباق التعديل
+                        collector.stop('routed_to_forge'); 
                         
                         const fakeInt = {
                             isChatInputCommand: false,
                             content: `-${isSmelt ? 'صهر' : 'دمج'}`, 
                             commandName: isSmelt ? 'صهر' : 'دمج',
-                            author: user,
-                            user: user,
-                            member: interactionOrMessage.member || interactionOrMessage.guild?.members.cache.get(user.id),
+                            author: authorUser,  // 🔥 تم إصلاح المتغير المفقود هنا
+                            user: authorUser,    // 🔥 تم إصلاح المتغير المفقود هنا
+                            member: interactionOrMessage.member || guild?.members.cache.get(authorUser.id),
                             channel: i.channel,
-                            guild: i.guild,
+                            guild: guild,
                             client: client,
                             reply: async (p) => await i.editReply(p).catch(console.error),
                             editReply: async (p) => await i.editReply(p).catch(console.error), 
@@ -725,7 +729,7 @@ module.exports = {
                 await msg.edit(await renderView());
             });
 
-            // 🔥 منع تفريغ الأزرار لو كان السبب هو الذهاب للحدادة 🔥
+            // 🔥 منع تفريغ الأزرار لو كان السبب هو الذهاب للحدادة لضمان استمرار الواجهة 🔥
             collector.on('end', (collected, reason) => {
                 if (reason === 'routed_to_forge') return; 
                 if(msg && msg.editable) {
@@ -735,7 +739,6 @@ module.exports = {
 
         } catch (error) {
             console.error(error);
-            return reply({ content: "❌ حدث خطأ أثناء تحميل البيانات." });
         }
     }
 };
