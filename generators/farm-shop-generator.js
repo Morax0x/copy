@@ -1,232 +1,408 @@
-const { createCanvas, loadImage, registerFont } = require('canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs = require('fs');
 
-// استدعاء قاموس الأغراض من الحقيبة لجلب روابط الصور بشكل آلي
+try {
+    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts', 'bein-ar-normal.ttf'), 'Bein');
+    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts', 'NotoEmoj.ttf'), 'Emoji');
+} catch (e) {}
+
+const FONT_MAIN = '"Bein", "Arial", sans-serif';
+const FONT_EMOJI = '"Emoji", "Arial", sans-serif';
+
+const imageCache = new Map();
+
 let resolveItemInfoLocal;
 try {
     const invGen = require('./inventory-generator.js');
     resolveItemInfoLocal = invGen.resolveItemInfo;
 } catch (e) {
-    console.error("⚠️ لم يتم العثور على inventory-generator.js، الصور قد لا تعمل.");
     resolveItemInfoLocal = (id) => ({ imgPath: null });
 }
 
-try {
-    const fontsDir = path.join(process.cwd(), 'fonts');
-    if (!fs.existsSync(fontsDir)) fs.mkdirSync(fontsDir);
-    registerFont(path.join(fontsDir, 'NotoEmoj.ttf'), { family: 'NotoEmoji' });
-} catch (e) {}
-
-const FONT_MAIN = '"Arial", sans-serif'; 
-const FONT_EMOJI = '"NotoEmoji", "Arial", sans-serif'; 
-
-const COLOR_BG = '#1a1a1d';
-const COLOR_CARD = '#27272a';
-const COLOR_GOLD = '#d4af37';
-const COLOR_TEXT = '#f8fafc';
-const COLOR_SUB = '#94a3b8';
-
-function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
+async function getCachedImage(imageUrl) {
+    if (!imageUrl || !imageUrl.startsWith('http')) return null;
+    const encodedUrl = encodeURI(imageUrl);
+    if (imageCache.has(encodedUrl)) return imageCache.get(encodedUrl);
+    try {
+        const img = await loadImage(encodedUrl);
+        imageCache.set(encodedUrl, img);
+        return img;
+    } catch (e) { return null; }
 }
 
-async function safeLoadImage(url) {
-    if (!url || !url.startsWith('http')) return null;
-    try { return await loadImage(url); } catch (e) { return null; }
+function getRarityAndColor(price) {
+    if (price >= 10000) return { rarity: 'Legendary', color: '#FFD700' };
+    if (price >= 4000) return { rarity: 'Epic', color: '#B968FF' };
+    if (price >= 1500) return { rarity: 'Rare', color: '#00C3FF' };
+    if (price >= 800) return { rarity: 'Uncommon', color: '#2ECC71' };
+    return { rarity: 'Common', color: '#A8B8D0' };
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+    if (width < 2 * radius) radius = width / 2;
+    if (height < 2 * radius) radius = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    ctx.closePath();
+}
+
+function drawOrnateFrame(ctx, x, y, w, h, color) {
+    const bgGrad = ctx.createLinearGradient(x, y, x, y + h);
+    bgGrad.addColorStop(0, 'rgba(15, 20, 30, 0.9)');
+    bgGrad.addColorStop(1, 'rgba(5, 10, 15, 0.95)');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(x, y, w, h);
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+    
+    const cl = 20; 
+    ctx.lineWidth = 3;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(x, y + cl); ctx.lineTo(x, y); ctx.lineTo(x + cl, y);
+    ctx.moveTo(x + w - cl, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + cl);
+    ctx.moveTo(x + w, y + h - cl); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - cl, y + h);
+    ctx.moveTo(x + cl, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - cl);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+function drawRibbon(ctx, x, y, w, h, color) {
+    const ext = 10;
+    ctx.fillStyle = 'rgba(5, 5, 8, 0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - ext, y);
+    ctx.lineTo(x + w + ext, y);
+    ctx.lineTo(x + w + ext - 8, y + h / 2);
+    ctx.lineTo(x + w + ext, y + h);
+    ctx.lineTo(x - ext, y + h);
+    ctx.lineTo(x - ext + 8, y + h / 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+}
+
+function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize = 10) {
+    let currentFontSize = maxFontSize;
+    ctx.font = `bold ${currentFontSize}px ${FONT_MAIN}`;
+    while (ctx.measureText(text).width > maxWidth && currentFontSize > minFontSize) {
+        currentFontSize--;
+        ctx.font = `bold ${currentFontSize}px ${FONT_MAIN}`;
+    }
+    ctx.fillText(text, x, y);
+}
+
+function wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    let lines = [];
+    let currentLine = words[0];
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth) {
+            currentLine += " " + word;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    lines.push(currentLine);
+    return lines;
 }
 
 exports.drawFarmShopGrid = async function(items, category, page, totalPages, maxCap, currCap) {
-    const canvas = createCanvas(1200, 800);
+    const width = 1200;
+    const height = 900;
+    const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = COLOR_BG;
-    ctx.fillRect(0, 0, 1200, 800);
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 900);
+    bgGrad.addColorStop(0, '#1a1025');
+    bgGrad.addColorStop(1, '#050508');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = '#111113';
-    ctx.fillRect(0, 0, 1200, 80);
-    ctx.strokeStyle = COLOR_GOLD;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(0, 80); ctx.lineTo(1200, 80); ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    for(let i=0; i<150; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const pSize = Math.random() * 2.5;
+        ctx.globalAlpha = Math.random() * 0.5 + 0.1;
+        ctx.beginPath(); ctx.arc(px, py, pSize, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
 
-    const catName = category === 'animals' ? 'قسم الحيوانات والمواشي' : (category === 'seeds' ? 'قسم البذور والمحاصيل' : 'قسم الأعلاف والغذاء');
+    const headerH = 140;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, headerH);
     
-    ctx.fillStyle = COLOR_GOLD;
-    ctx.font = `bold 40px ${FONT_MAIN}`;
+    const goldGrad = ctx.createLinearGradient(0, 0, width, 0);
+    goldGrad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+    goldGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.8)');
+    goldGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, headerH - 3, width, 3);
+    ctx.fillRect(0, 3, width, 1);
+
+    const catName = category === 'animals' ? 'قسم الحيوانات' : (category === 'seeds' ? 'قسم البذور' : 'قسم الأعلاف');
+    
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFD700'; 
+    ctx.font = `bold 55px ${FONT_MAIN}`;
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 25;
+    ctx.fillText(`✦ المتجر الزراعي ✦`, width / 2, 60);
+
+    ctx.fillStyle = '#E0E0E0';
+    ctx.font = `26px ${FONT_MAIN}`;
+    ctx.shadowBlur = 0;
+    ctx.letterSpacing = "3px";
+    ctx.fillText(`⟪ ${catName} ⟫`, width / 2, 110);
+
     ctx.textAlign = 'right';
-    ctx.fillText(`🛒 المتجر الزراعي | ${catName}`, 1150, 55);
+    ctx.font = `bold 18px ${FONT_MAIN}`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText(`[ ${page + 1} / ${totalPages} ]`, width - 30, 70);
 
     if (category === 'animals') {
-        ctx.fillStyle = currCap >= maxCap ? '#ef4444' : COLOR_SUB;
-        ctx.font = `bold 24px ${FONT_MAIN}`;
         ctx.textAlign = 'left';
-        ctx.fillText(`مساحة الحظيرة: ${currCap} / ${maxCap}`, 50, 50);
+        ctx.fillStyle = currCap >= maxCap ? '#FF4444' : '#00FF88';
+        ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 30, 70);
     }
 
-    const CARD_W = 360;
-    const CARD_H = 200;
-    const START_X = 50;
-    const START_Y = 110;
-    const GAP_X = 35;
-    const GAP_Y = 30;
+    const cols = 3;
+    const rows = 3;
+    const slotW = 340;
+    const slotH = 220;
+    const gapX = 40;
+    const gapY = 30;
+    const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
+    const startY = 170;
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const row = Math.floor(i / 3);
-        const col = i % 3;
-        const x = START_X + col * (CARD_W + GAP_X);
-        const y = START_Y + row * (CARD_H + GAP_Y);
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = startX + col * (slotW + gapX);
+        const y = startY + row * (slotH + gapY);
 
-        ctx.fillStyle = COLOR_CARD;
-        drawRoundedRect(ctx, x, y, CARD_W, CARD_H, 12, true, false);
-        ctx.strokeStyle = '#3f3f46';
-        ctx.lineWidth = 2;
-        drawRoundedRect(ctx, x, y, CARD_W, CARD_H, 12, false, true);
+        const { rarity, color } = getRarityAndColor(item.price);
 
-        ctx.fillStyle = COLOR_GOLD;
-        drawRoundedRect(ctx, x + CARD_W - 8, y, 8, CARD_H, 6, true, false);
+        drawOrnateFrame(ctx, x, y, slotW, slotH, color);
 
-        const imgX = x + CARD_W - 110;
-        const imgY = y + 20;
+        const aura = ctx.createRadialGradient(x + slotW/2, y + slotH/2, 10, x + slotW/2, y + slotH/2, slotW/1.2);
+        aura.addColorStop(0, `${color}25`); 
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = aura;
+        ctx.fillRect(x, y, slotW, slotH);
+
+        const itemDict = resolveItemInfoLocal(item.id);
+        const imgUrl = item.image || itemDict.imgPath;
         
-        // 🔥 جلب مسار الصورة من القاموس بناءً على ID العنصر 🔥
-        const itemDictionaryInfo = resolveItemInfoLocal(item.id);
-        const targetImageURL = item.image || itemDictionaryInfo.imgPath;
+        const imgSize = 90;
+        const imgX = x + slotW - imgSize - 20;
+        const imgY = y + 20;
 
-        if (targetImageURL) {
-            const img = await safeLoadImage(targetImageURL);
-            if (img) ctx.drawImage(img, imgX, imgY, 80, 80);
-            else { ctx.fillStyle=COLOR_TEXT; ctx.font = `60px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+40, imgY+60); }
-        } else {
-            ctx.fillStyle=COLOR_TEXT; ctx.font = `60px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+40, imgY+60);
+        let imgDrawn = false;
+        if (imgUrl) {
+            const img = await getCachedImage(imgUrl);
+            if (img) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 30;
+                ctx.drawImage(img, imgX, imgY, imgSize, imgSize);
+                ctx.shadowBlur = 0;
+                imgDrawn = true;
+            }
+        }
+        
+        if (!imgDrawn) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = `65px ${FONT_EMOJI}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 30;
+            ctx.fillText(item.emoji || '📦', imgX + imgSize / 2, imgY + imgSize / 2);
+            ctx.shadowBlur = 0;
         }
 
+        const ribbonH = 40;
+        const ribbonY = imgY + imgSize + 15;
+        drawRibbon(ctx, x + 15, ribbonY, slotW - 30, ribbonH, color);
+        
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+        drawAutoScaledText(ctx, item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), x + slotW / 2, ribbonY + ribbonH / 2, slotW - 50, 20, 12);
+
         ctx.textAlign = 'right';
-        ctx.fillStyle = COLOR_TEXT;
-        ctx.font = `bold 28px ${FONT_MAIN}`;
-        ctx.fillText(item.name, imgX - 15, y + 45);
-
-        ctx.fillStyle = COLOR_GOLD;
+        ctx.fillStyle = '#FFD700';
         ctx.font = `bold 24px ${FONT_MAIN}`;
-        ctx.fillText(`${item.price.toLocaleString()} مورا`, imgX - 15, y + 85);
+        ctx.fillText(`${item.price.toLocaleString()} مورا`, imgX - 15, y + 50);
 
-        ctx.strokeStyle = '#3f3f46';
-        ctx.beginPath(); ctx.moveTo(x + 20, y + 115); ctx.lineTo(CARD_W + x - 20, y + 115); ctx.stroke();
-
-        ctx.fillStyle = COLOR_SUB;
-        ctx.font = `20px ${FONT_MAIN}`;
+        ctx.fillStyle = '#A8B8D0';
+        ctx.font = `18px ${FONT_MAIN}`;
+        
         if (category === 'animals') {
-            ctx.fillText(`الدخل: ${item.income_per_day} م/يوم`, x + CARD_W - 25, y + 150);
-            ctx.fillText(`العمر: ${item.lifespan_days} يوم | مساحة: ${item.size}`, x + CARD_W - 25, y + 180);
+            ctx.fillText(`الدخل: ${item.income_per_day}`, imgX - 15, y + 80);
+            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, imgX - 15, y + 105);
         } else if (category === 'seeds') {
-            ctx.fillText(`سعر البيع: ${item.sell_price} مورا`, x + CARD_W - 25, y + 150);
-            ctx.fillText(`النمو: ${item.growth_time_hours} ساعة`, x + CARD_W - 25, y + 180);
+            ctx.fillText(`سعر البيع: ${item.sell_price}`, imgX - 15, y + 80);
+            ctx.fillText(`النمو: ${item.growth_time_hours}س`, imgX - 15, y + 105);
         } else {
-            const desc = item.description ? item.description.substring(0, 32) + '...' : 'علف مخصص للحيوانات.';
-            ctx.fillText(desc, x + CARD_W - 25, y + 150);
+            const desc = item.description ? item.description.substring(0, 20) + '...' : 'علف مخصص.';
+            ctx.fillText(desc, imgX - 15, y + 80);
         }
     }
 
-    ctx.fillStyle = COLOR_SUB;
-    ctx.textAlign = 'center';
-    ctx.font = `bold 22px ${FONT_MAIN}`;
-    ctx.fillText(`الصفحة ${page + 1} من ${totalPages}`, 600, 780);
-
-    return canvas.toBuffer();
+    return canvas.toBuffer('image/png');
 };
 
 exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, currCap) {
-    const canvas = createCanvas(900, 450);
+    const width = 1000;
+    const height = 600;
+    const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = COLOR_BG;
-    ctx.fillRect(0, 0, 900, 450);
+    const { rarity, color } = getRarityAndColor(item.price);
 
-    ctx.fillStyle = COLOR_CARD;
-    drawRoundedRect(ctx, 20, 20, 860, 410, 15, true, false);
-    ctx.strokeStyle = COLOR_GOLD;
-    ctx.lineWidth = 2;
-    drawRoundedRect(ctx, 20, 20, 860, 410, 15, false, true);
+    const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 800);
+    bgGrad.addColorStop(0, '#151520');
+    bgGrad.addColorStop(1, '#05050A');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
 
-    const imgX = 620;
-    const imgY = 60;
-    ctx.fillStyle = '#1f1f22';
-    drawRoundedRect(ctx, imgX, imgY, 220, 220, 15, true, false);
+    const auraGrad = ctx.createRadialGradient(300, height/2, 50, 300, height/2, 400);
+    auraGrad.addColorStop(0, `${color}40`);
+    auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = auraGrad;
+    ctx.fillRect(0, 0, width, height);
 
-    // 🔥 جلب مسار الصورة من القاموس بناءً على ID العنصر 🔥
-    const itemDictionaryInfo = resolveItemInfoLocal(item.id);
-    const targetImageURL = item.image || itemDictionaryInfo.imgPath;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(15, 15, width - 30, height - 30);
 
-    if (targetImageURL) {
-        const img = await safeLoadImage(targetImageURL);
-        if (img) ctx.drawImage(img, imgX + 10, imgY + 10, 200, 200);
-        else { ctx.fillStyle=COLOR_TEXT; ctx.font = `120px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+110, imgY+150); }
-    } else {
-        ctx.fillStyle=COLOR_TEXT; ctx.font = `120px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+110, imgY+150);
+    const imgSize = 350;
+    const imgX = 100;
+    const imgY = (height - imgSize) / 2;
+
+    drawOrnateFrame(ctx, imgX, imgY, imgSize, imgSize, color);
+    
+    const innerAura = ctx.createRadialGradient(imgX + imgSize/2, imgY + imgSize/2, 10, imgX + imgSize/2, imgY + imgSize/2, imgSize/1.5);
+    innerAura.addColorStop(0, `${color}80`);
+    innerAura.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = innerAura;
+    ctx.fillRect(imgX, imgY, imgSize, imgSize);
+
+    const itemDict = resolveItemInfoLocal(item.id);
+    const imgUrl = item.image || itemDict.imgPath;
+
+    let imgDrawn = false;
+    if (imgUrl) {
+        const img = await getCachedImage(imgUrl);
+        if (img) {
+            const padding = 40;
+            const finalImgSize = imgSize - (padding * 2);
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 60;
+            ctx.drawImage(img, imgX + padding, imgY + padding - 20, finalImgSize, finalImgSize);
+            ctx.shadowBlur = 0;
+            imgDrawn = true;
+        }
     }
+
+    if (!imgDrawn) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `150px ${FONT_EMOJI}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 50;
+        ctx.fillText(item.emoji || '📦', imgX + imgSize / 2, imgY + imgSize / 2 - 20);
+        ctx.shadowBlur = 0;
+    }
+
+    const textX = width - 80;
+    let textY = 120;
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = COLOR_TEXT;
-    ctx.font = `bold 55px ${FONT_MAIN}`;
-    ctx.fillText(item.name, 580, 100);
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = color;
+    ctx.font = `bold 60px ${FONT_MAIN}`;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 15;
+    ctx.fillText(item.name.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim(), textX, textY);
+    ctx.shadowBlur = 0;
 
-    ctx.fillStyle = COLOR_GOLD;
-    ctx.font = `bold 35px ${FONT_MAIN}`;
-    ctx.fillText(`${item.price.toLocaleString()} مورا`, 580, 160);
+    textY += 90;
 
-    ctx.fillStyle = COLOR_SUB;
+    ctx.beginPath();
+    ctx.moveTo(textX, textY);
+    ctx.lineTo(imgX + imgSize + 50, textY);
+    const lineGrad = ctx.createLinearGradient(textX, textY, imgX + imgSize + 50, textY);
+    lineGrad.addColorStop(0, color);
+    lineGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.strokeStyle = lineGrad;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    textY += 30;
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font = `35px ${FONT_MAIN}`;
+    ctx.fillText(`السعر:  ${item.price.toLocaleString()} مورا`, textX, textY);
+    textY += 60;
+    
+    ctx.fillStyle = '#00FF88';
+    if (category === 'animals') {
+        ctx.fillText(`الـسـعـة المـتـاحـة:  ${maxCap - currCap}`, textX, textY);
+    } else {
+        ctx.fillText(`الـمـخـزون الـحـالـي:  ${userQty.toLocaleString()}`, textX, textY);
+    }
+    textY += 60;
+
+    const descBoxX = imgX + imgSize + 50;
+    const descBoxY = textY;
+    const descBoxW = textX - descBoxX;
+    const descBoxH = height - textY - 60;
+
+    ctx.fillStyle = 'rgba(15, 20, 30, 0.7)';
+    ctx.beginPath(); roundRect(ctx, descBoxX, descBoxY, descBoxW, descBoxH, 15); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.fillStyle = '#A8B8D0';
     ctx.font = `24px ${FONT_MAIN}`;
-    const startY = 220;
-    const gapY = 40;
-
+    
+    let details = [];
     if (category === 'animals') {
-        ctx.fillText(`💰 الدخل المتوقع: ${item.income_per_day} مورا يومياً`, 580, startY);
-        ctx.fillText(`⏳ العمر الافتراضي: ${item.lifespan_days} يوم`, 580, startY + gapY);
-        ctx.fillText(`📦 المساحة المطلوبة: ${item.size} وحدة حظيرة`, 580, startY + gapY * 2);
+        details.push(`💰 الدخل: ${item.income_per_day} مورا/يوم`);
+        details.push(`⏳ العمر: ${item.lifespan_days} يوم`);
+        details.push(`📦 الحجم: ${item.size} وحدة`);
     } else if (category === 'seeds') {
-        ctx.fillText(`💰 العائد بعد الزراعة: ${item.sell_price} مورا`, 580, startY);
-        ctx.fillText(`⏳ وقت النضج: ${item.growth_time_hours} ساعة`, 580, startY + gapY);
-        ctx.fillText(`🍂 يذبل بعد: ${item.wither_time_hours} ساعة من النضج`, 580, startY + gapY * 2);
+        details.push(`💰 البيع: ${item.sell_price} مورا`);
+        details.push(`⏳ النمو: ${item.growth_time_hours} ساعة`);
+        details.push(`✨ الخبرة: +${item.xp_reward} XP`);
     } else {
-        const desc = item.description || 'علف صحي لضمان نمو ودخل ممتاز.';
-        const words = desc.split(' ');
-        let line = '';
-        let currentY = startY;
-        for(let w of words) {
-            let testLine = line + w + ' ';
-            if(ctx.measureText(testLine).width > 500) {
-                ctx.fillText(line, 580, currentY);
-                line = w + ' ';
-                currentY += gapY;
-            } else { line = testLine; }
-        }
-        ctx.fillText(line, 580, currentY);
+        details.push(item.description || 'علف صحي لضمان نمو ودخل ممتاز.');
     }
 
-    ctx.fillStyle = '#111113';
-    drawRoundedRect(ctx, 40, 350, 820, 60, 10, true, false);
-    
-    ctx.fillStyle = COLOR_TEXT;
-    ctx.font = `bold 22px ${FONT_MAIN}`;
-    ctx.textAlign = 'center';
-    
-    if (category === 'animals') {
-        ctx.fillText(`📊 المساحة المتبقية في حظيرتك: ${maxCap - currCap} | تمتلك حالياً: ${userQty} من هذا النوع`, 450, 388);
-    } else {
-        ctx.fillText(`📊 الكمية المتوفرة لديك في المخزن: ${userQty}`, 450, 388);
+    for (let j = 0; j < details.length; j++) {
+        ctx.fillText(details[j], textX - 20, descBoxY + 20 + (j * 40));
     }
 
-    return canvas.toBuffer();
+    return canvas.toBuffer('image/png');
 };
