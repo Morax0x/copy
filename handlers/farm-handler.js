@@ -1,4 +1,4 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder, EmbedBuilder, Colors } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -61,10 +61,7 @@ async function buildShopGrid(user, client, db, category) {
     const buffer = await drawFarmShopGrid(itemsList, category, maxCap, currentCap);
     const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop.png' }) : null;
 
-    // 🔥 نظام إخفاء الزر النشط 🔥
-    const categoryRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger)
-    );
+    const categoryRow = new ActionRowBuilder();
 
     if (category !== 'animals') {
         categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐄'));
@@ -75,6 +72,8 @@ async function buildShopGrid(user, client, db, category) {
     if (category !== 'feed') {
         categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(ButtonStyle.Secondary).setEmoji('🌾'));
     }
+
+    categoryRow.addComponents(new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger));
 
     const selectOptions = itemsList.map(item => ({
         label: item.name,
@@ -153,7 +152,7 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
     return payload;
 }
 
-async function handleShopInteraction(i, client, db, user, guild, shopState) {
+async function handleShopInteraction(i, client, db, user, guild, shopState, getNavRow) {
     if (i.customId.startsWith('shop_cat_')) {
         await i.deferUpdate().catch(()=>{});
         const category = i.customId.replace('shop_cat_', '');
@@ -216,7 +215,7 @@ async function handleShopInteraction(i, client, db, user, guild, shopState) {
     }
 }
 
-async function handleFarmShopModal(i, client, db) {
+async function handleFarmShopModal(i, client, db, getNavRow) {
     if (!i.customId.startsWith('farm_buy_modal|') && !i.customId.startsWith('farm_sell_modal|')) return false;
 
     try {
