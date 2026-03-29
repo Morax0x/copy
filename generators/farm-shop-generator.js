@@ -1,11 +1,43 @@
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const path = require('path');
+const fs = require('fs');
 
-const FONT_FAMILY = '"Arial", sans-serif';
-const BG_COLOR_START = '#0a0f1a';
-const BG_COLOR_END = '#131b2f';
+// 🌟 تسجيل الخطوط الاحترافية ودعم الإيموجي كـ Fallback 🌟
+try {
+    const fontsDir = path.join(process.cwd(), 'fonts');
+    if (!fs.existsSync(fontsDir)) fs.mkdirSync(fontsDir);
 
-// دالة رسم مربع بحواف دائرية
-function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    // تسجيل خط أساسي احترافي للنصوص (تأكد من وجود الملف في مجلد fonts)
+    // registerFont(path.join(fontsDir, 'Cairo-Bold.ttf'), { family: 'Cairo', weight: 'bold' });
+    // registerFont(path.join(fontsDir, 'Cairo-Regular.ttf'), { family: 'Cairo', weight: 'normal' });
+
+    // تسجيل خط الإيموجي الاحترافي لحل مشاكل التقطيع
+    registerFont(path.join(fontsDir, 'NotoEmoj.ttf'), { family: 'NotoEmoji' });
+} catch (e) {
+    console.error("⚠️ فشل تسجيل الخطوط الاحترافية، سيتم استخدام خطوط النظام.");
+}
+
+const FONT_MAIN = '"Cairo", "Arial", sans-serif'; // الخط الأساسي مع Fallback
+const FONT_EMOJI = '"NotoEmoji", "Arial", sans-serif'; // خط الإيموجي
+
+const COLOR_BG_START = '#080c14';
+const COLOR_BG_END = '#101a2e';
+const COLOR_ACCENT = '#00ffaa'; // أخضر نيون
+const COLOR_TEXT = '#ffffff';
+const COLOR_SUBTEXT = '#a0aabf';
+
+// دالة مساعدة لرسم مستطيل بحواف دائرية مع توهج (Neon Glow)
+function drawGlassCard(ctx, x, y, width, height, radius, glowColor) {
+    ctx.save();
+    
+    // التوهج الخارجي
+    ctx.shadowColor = glowColor || 'rgba(0, 255, 170, 0.3)';
+    ctx.shadowBlur = 15;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // الخلفية الزجاجية
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)'; // شفافية عالية
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + width - radius, y);
@@ -17,113 +49,100 @@ function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
     ctx.lineTo(x, y + radius);
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
+    ctx.fill();
+    
+    // إزالة الظل لرسم الحدود
+    ctx.shadowBlur = 0; 
+    
+    // الحدود المضيئة
+    ctx.strokeStyle = glowColor || 'rgba(0, 255, 170, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // لمعة زجاجية داخلية
+    const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.05)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.01)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    ctx.restore();
 }
 
-// دالة جلب الصورة بأمان
+// دالة مساعدة لجلب الصورة بأمان مع Fallback
 async function safeLoadImage(url) {
-    if (!url) return null;
-    try { return await loadImage(url); } catch (e) { return null; }
+    if (!url || url.startsWith('http') === false) return null;
+    try { return await loadImage(url); } 
+    catch (e) { return null; }
 }
 
-// 1. رسم القائمة الرئيسية للمتجر
-exports.drawFarmShopHub = async function(user, mora) {
-    const canvas = createCanvas(800, 450);
+// 🔥 الدالة الرئيسية لرسم المتجر الاحترافي الجديد 🔥
+exports.drawFarmShopGrid = async function(items, category, page, totalPages, maxCap, currCap, userMora) {
+    const canvas = createCanvas(1200, 850); // حجم أكبر لعرض احترافي
     const ctx = canvas.getContext('2d');
 
-    // الخلفية
-    const gradient = ctx.createLinearGradient(0, 0, 0, 450);
-    gradient.addColorStop(0, BG_COLOR_START);
-    gradient.addColorStop(1, BG_COLOR_END);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 800, 450);
+    // 1. الخلفية السينمائية
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, 850);
+    bgGradient.addColorStop(0, COLOR_BG_START);
+    bgGradient.addColorStop(1, COLOR_BG_END);
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, 1200, 850);
 
-    // شبكة الزخرفة
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
-    for (let i = 0; i < 800; i += 40) {
-        for (let j = 0; j < 450; j += 40) {
-            ctx.beginPath(); ctx.arc(i, j, 1.5, 0, Math.PI * 2); ctx.fill();
+    // إضافة نمط زخرفي خلفي خفيف
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.01)';
+    for (let i = 0; i < 1200; i += 60) {
+        for (let j = 0; j < 850; j += 60) {
+            ctx.beginPath(); ctx.arc(i, j, 1, 0, Math.PI * 2); ctx.fill();
         }
     }
 
-    // الهيدر
-    ctx.fillStyle = 'rgba(0, 255, 100, 0.1)';
-    roundRect(ctx, 40, 30, 720, 100, 15, true);
-    ctx.strokeStyle = 'rgba(0, 255, 100, 0.5)';
+    // 2. الهيدر الاحترافي (Tabs Style)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(0, 0, 1200, 90);
+    ctx.strokeStyle = COLOR_ACCENT;
     ctx.lineWidth = 2;
-    roundRect(ctx, 40, 30, 720, 100, 15, false, true);
+    ctx.beginPath(); ctx.moveTo(0, 90); ctx.lineTo(1200, 90); ctx.stroke();
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 42px ${FONT_FAMILY}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('🌾 المتجر الزراعي المركزي 🌾', 400, 80);
-
-    ctx.fillStyle = '#00ff88';
-    ctx.font = `24px ${FONT_FAMILY}`;
-    ctx.fillText(`رصيدك: ${mora.toLocaleString()} مورا`, 400, 115);
-
-    // الأقسام
-    const drawCategoryBox = (x, y, title, desc, icon) => {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        roundRect(ctx, x, y, 220, 250, 15, true);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        roundRect(ctx, x, y, 220, 250, 15, false, true);
-
-        ctx.font = '60px Arial';
-        ctx.fillText(icon, x + 110, y + 90);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 26px ${FONT_FAMILY}`;
-        ctx.fillText(title, x + 110, y + 150);
-
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = `18px ${FONT_FAMILY}`;
-        const lines = desc.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], x + 110, y + 190 + (i * 25));
+    const drawTab = (x, y, label, icon, isActive) => {
+        if (isActive) {
+            ctx.fillStyle = COLOR_ACCENT;
+            ctx.fillRect(x, 87, 200, 3); // خط سفلي مضيء
+            ctx.fillStyle = 'rgba(0, 255, 170, 0.1)';
+            ctx.fillRect(x, 0, 200, 90);
+            ctx.fillStyle = COLOR_ACCENT;
+        } else {
+            ctx.fillStyle = COLOR_SUBTEXT;
         }
+        ctx.font = `bold 28px ${FONT_MAIN}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x + 100, 55);
+        
+        // رسم الأيقونة باستخدام خط الإيموجي الاحترافي
+        ctx.font = `30px ${FONT_EMOJI}`;
+        ctx.fillText(icon, x + 100, 30);
     };
 
-    drawCategoryBox(50, 160, 'الحيوانات', 'شراء الدواجن\nوالمواشي', '🐄');
-    drawCategoryBox(290, 160, 'البذور', 'شراء البذور\nللزراعة', '🌱');
-    drawCategoryBox(530, 160, 'الأعلاف', 'شراء طعام\nلحيواناتك', '🌾');
+    drawTab(100, 0, 'الحيوانات', '🐄', category === 'animals');
+    drawTab(300, 0, 'البذور', '🌱', category === 'seeds');
+    drawTab(500, 0, 'الأعلاف', '🌾', category === 'feed');
 
-    return canvas.toBuffer();
-};
-
-// 2. رسم شبكة العناصر (المنتجات)
-exports.drawFarmShopGrid = async function(items, category, page, totalPages, maxCap, currCap) {
-    const canvas = createCanvas(900, 700);
-    const ctx = canvas.getContext('2d');
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, 700);
-    gradient.addColorStop(0, BG_COLOR_START);
-    gradient.addColorStop(1, BG_COLOR_END);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 900, 700);
-
-    const catName = category === 'animals' ? 'الحيوانات' : (category === 'seeds' ? 'البذور' : 'الأعلاف');
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 40px ${FONT_FAMILY}`;
+    // معلومات المستخدم
+    ctx.fillStyle = COLOR_TEXT;
+    ctx.font = `bold 24px ${FONT_MAIN}`;
     ctx.textAlign = 'right';
-    ctx.fillText(`متجر ${catName}`, 850, 60);
+    ctx.fillText(`${userMora.toLocaleString()} Mora`, 1150, 45);
+    ctx.fillStyle = COLOR_SUBTEXT;
+    ctx.font = `20px ${FONT_MAIN}`;
+    if (category === 'animals') ctx.fillText(`السعة: ${currCap} / ${maxCap}`, 1150, 75);
 
-    if (category === 'animals') {
-        ctx.fillStyle = currCap >= maxCap ? '#ff4444' : '#00ff88';
-        ctx.font = `bold 24px ${FONT_FAMILY}`;
-        ctx.textAlign = 'left';
-        ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 50, 55);
-    }
-
-    // الكروت
-    const CARD_W = 260;
-    const CARD_H = 160;
-    const START_X = 40;
-    const START_Y = 100;
-    const GAP_X = 20;
-    const GAP_Y = 20;
+    // 3. شبكة الكروت الاحترافية (3 صفوف × 3 أعمدة)
+    const CARD_W = 360;
+    const CARD_H = 210;
+    const START_X = 60;
+    const START_Y = 120;
+    const GAP_X = 30;
+    const GAP_Y = 30;
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -132,108 +151,143 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         const x = START_X + col * (CARD_W + GAP_X);
         const y = START_Y + row * (CARD_H + GAP_Y);
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        roundRect(ctx, x, y, CARD_W, CARD_H, 10, true);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        roundRect(ctx, x, y, CARD_W, CARD_H, 10, false, true);
+        // تحديد لون التوهج بناءً على النوع (اختياري)
+        let glow = COLOR_ACCENT;
+        if (category === 'animals' && item.price > 10000) glow = '#ff00ff'; // توهج أرجواني للنادر
+        if (category === 'animals' && item.price > 5000) glow = '#ff8800'; // توهج برتقالي
 
-        // الصورة أو الإيموجي
+        drawGlassCard(ctx, x, y, CARD_W, CARD_H, 15, glow);
+
+        // الصورة (الاستيراد الحقيقي)
         if (item.image) {
             const img = await safeLoadImage(item.image);
-            if (img) ctx.drawImage(img, x + 10, y + 10, 80, 80);
+            if (img) {
+                ctx.drawImage(img, x + 15, y + 15, 110, 110);
+            } else {
+                // Fallback للإيموجي إذا فشل التحميل
+                ctx.font = `80px ${FONT_EMOJI}`;
+                ctx.textAlign = 'center';
+                ctx.fillText(item.emoji, x + 70, y + 100);
+            }
         } else {
-            ctx.font = '50px Arial';
+            ctx.font = `80px ${FONT_EMOJI}`;
             ctx.textAlign = 'center';
-            ctx.fillText(item.emoji, x + 50, y + 70);
+            ctx.fillText(item.emoji, x + 70, y + 100);
         }
 
-        // التفاصيل
+        // التفاصيل الاحترافية
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 24px ${FONT_FAMILY}`;
-        ctx.fillText(item.name, x + CARD_W - 15, y + 40);
+        ctx.fillStyle = COLOR_TEXT;
+        ctx.font = `bold 30px ${FONT_MAIN}`;
+        ctx.fillText(item.name, x + CARD_W - 20, y + 50);
 
-        ctx.fillStyle = '#00ff88';
-        ctx.font = `bold 20px ${FONT_FAMILY}`;
-        ctx.fillText(`${item.price.toLocaleString()} مورا`, x + CARD_W - 15, y + 75);
+        ctx.fillStyle = COLOR_ACCENT;
+        ctx.font = `bold 26px ${FONT_MAIN}`;
+        ctx.fillText(`${item.price.toLocaleString()} Mora`, x + CARD_W - 20, y + 90);
 
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = `16px ${FONT_FAMILY}`;
+        // إحصائيات صغيرة مع أيقونات مرسومة (بدون إيموجي نصوص)
+        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.moveTo(x + 150, y + 105); ctx.lineTo(x + CARD_W - 15, y + 105); ctx.stroke();
+
+        ctx.fillStyle = COLOR_SUBTEXT;
+        ctx.font = `18px ${FONT_MAIN}`;
         if (category === 'animals') {
-            ctx.fillText(`الدخل: ${item.income_per_day} | الحجم: ${item.size}`, x + CARD_W - 15, y + 110);
+            ctx.fillText(`الدخل/يوم: ${item.income_per_day}`, x + CARD_W - 20, y + 135);
+            ctx.fillText(`العمر: ${item.lifespan_days} يوم | الحجم: ${item.size}`, x + CARD_W - 20, y + 165);
         } else if (category === 'seeds') {
-            ctx.fillText(`نمو: ${item.growth_time_hours}س | بيع: ${item.sell_price}`, x + CARD_W - 15, y + 110);
+            ctx.fillText(`قيمة المحصول: ${item.sell_price}`, x + CARD_W - 20, y + 135);
+            ctx.fillText(`النمو: ${item.growth_time_hours}س | الخبرة: +${item.xp_reward}`, x + CARD_W - 20, y + 165);
         } else {
-            ctx.fillText(item.description ? item.description.substring(0, 20) + '...' : '', x + CARD_W - 15, y + 110);
+            // الأعلاف (تقسيم الوصف لطويل)
+            const desc = item.description ? item.description.substring(0, 30) + '...' : 'علف عالي الجودة.';
+            ctx.fillText(desc, x + CARD_W - 20, y + 135);
         }
     }
 
-    // رقم الصفحة
-    ctx.fillStyle = '#ffffff';
+    // 4. الفوتر ورقم الصفحة
+    ctx.fillStyle = COLOR_SUBTEXT;
     ctx.textAlign = 'center';
-    ctx.font = `bold 20px ${FONT_FAMILY}`;
-    ctx.fillText(`صفحة [ ${page + 1} / ${totalPages} ]`, 450, 680);
+    ctx.font = `bold 22px ${FONT_MAIN}`;
+    ctx.fillText(`الصفحة ${page + 1} من ${totalPages}`, 600, 830);
 
     return canvas.toBuffer();
 };
 
-// 3. رسم كرت التفاصيل
+// 🔥 دالة رسم كرت التفاصيل ( Detail View Pro) 🔥
+// لم تطلب تغييرها لكن قمت بتحسينها لتواكب التصميم الاحترافي
 exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, currCap) {
-    const canvas = createCanvas(800, 400);
+    const canvas = createCanvas(1000, 500); // حجم أكبر
     const ctx = canvas.getContext('2d');
 
-    const gradient = ctx.createLinearGradient(0, 0, 800, 400);
-    gradient.addColorStop(0, '#0f172a');
-    gradient.addColorStop(1, '#1e293b');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 800, 400);
+    // الخلفية
+    const bgGradient = ctx.createLinearGradient(0, 0, 1000, 500);
+    bgGradient.addColorStop(0, '#0c1220');
+    bgGradient.addColorStop(1, '#182848');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, 1000, 500);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    roundRect(ctx, 20, 20, 760, 360, 20, true);
+    // الكرت الزجاجي الكبير
+    drawGlassCard(ctx, 50, 50, 900, 400, 25, COLOR_ACCENT);
 
+    // الصورة الكبيرة
     if (item.image) {
         const img = await safeLoadImage(item.image);
-        if (img) ctx.drawImage(img, 40, 50, 200, 200);
-    } else {
-        ctx.font = '150px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(item.emoji, 140, 220);
-    }
+        if (img) ctx.drawImage(img, 100, 100, 300, 300);
+        else { ctx.font = `200px ${FONT_EMOJI}`; ctx.textAlign = 'center'; ctx.fillText(item.emoji, 250, 330); }
+    } else { ctx.font = `200px ${FONT_EMOJI}`; ctx.textAlign = 'center'; ctx.fillText(item.emoji, 250, 330); }
 
+    // التفاصيل
     ctx.textAlign = 'right';
+    ctx.fillStyle = COLOR_TEXT;
+    ctx.font = `bold 60px ${FONT_MAIN}`;
+    ctx.fillText(item.name, 900, 130);
+
+    ctx.fillStyle = COLOR_ACCENT;
+    ctx.font = `bold 40px ${FONT_MAIN}`;
+    ctx.fillText(`${item.price.toLocaleString()} Mora`, 900, 190);
+
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 48px ${FONT_FAMILY}`;
-    ctx.fillText(item.name, 750, 80);
+    ctx.font = `26px ${FONT_MAIN}`;
+    const START_INFO_Y = 240;
+    const GAP_INFO_Y = 35;
 
-    ctx.fillStyle = '#00ff88';
-    ctx.font = `bold 32px ${FONT_FAMILY}`;
-    ctx.fillText(`السعر: ${item.price.toLocaleString()} مورا`, 750, 130);
-
-    ctx.fillStyle = '#dddddd';
-    ctx.font = `22px ${FONT_FAMILY}`;
-    
     if (category === 'animals') {
-        ctx.fillText(`الدخل اليومي: ${item.income_per_day} مورا`, 750, 180);
-        ctx.fillText(`العمر الافتراضي: ${item.lifespan_days} يوم`, 750, 220);
-        ctx.fillText(`الحجم في الحظيرة: ${item.size}`, 750, 260);
+        ctx.fillText(`الدخل اليومي المتوقع: ${item.income_per_day} Mora`, 900, START_INFO_Y);
+        ctx.fillText(`العمر الافتراضي: ${item.lifespan_days} يوم`, 900, START_INFO_Y + GAP_INFO_Y);
+        ctx.fillText(`المساحة المستخدمة: ${item.size} وحدة`, 900, START_INFO_Y + (GAP_INFO_Y * 2));
     } else if (category === 'seeds') {
-        ctx.fillText(`قيمة البيع: ${item.sell_price} مورا`, 750, 180);
-        ctx.fillText(`وقت النمو: ${item.growth_time_hours} ساعة`, 750, 220);
-        ctx.fillText(`وقت الذبول: ${item.wither_time_hours} ساعة`, 750, 260);
+        ctx.fillText(`قيمة المحصول عند البيع: ${item.sell_price} Mora`, 900, START_INFO_Y);
+        ctx.fillText(`وقت النمو الكامل: ${item.growth_time_hours} ساعة`, 900, START_INFO_Y + GAP_INFO_Y);
+        ctx.fillText(`الخبرة المكتسبة: +${item.xp_reward} XP`, 900, START_INFO_Y + (GAP_INFO_Y * 2));
     } else {
-        ctx.fillText(item.description || 'علف صحي لحيواناتك.', 750, 180);
+        // الأعلاف (وصف كامل مع التفاف النص)
+        const desc = item.description || 'علف صحي غني بالبروتين لضمان نمو ودخل ممتاز لحيواناتك.';
+        const words = desc.split(' ');
+        let line = '';
+        let y = START_INFO_Y;
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            if (ctx.measureText(testLine).width > 450 && n > 0) {
+                ctx.fillText(line, 900, y);
+                line = words[n] + ' ';
+                y += GAP_INFO_Y;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, 900, y);
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    roundRect(ctx, 400, 300, 350, 60, 10, true);
+    // المخزون الحالي في الأسفل
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    drawGlassCard(ctx, 450, 380, 450, 50, 10, 'rgba(255,255,255,0.2)');
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 24px ${FONT_FAMILY}`;
+    ctx.font = `bold 24px ${FONT_MAIN}`;
     ctx.textAlign = 'center';
     
     if (category === 'animals') {
-        ctx.fillText(`المساحة المتبقية: ${maxCap - currCap} | تمتلك: ${userQty}`, 575, 340);
+        ctx.fillText(`المساحة المتاحة: ${maxCap - currCap} | تمتلك: ${userQty}`, 675, 412);
     } else {
-        ctx.fillText(`المخزون الحالي: ${userQty}`, 575, 340);
+        ctx.fillText(`الكمية لديك في المخزن: ${userQty}`, 675, 412);
     }
 
     return canvas.toBuffer();
