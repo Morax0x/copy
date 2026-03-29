@@ -61,12 +61,19 @@ async function buildShopGrid(user, client, db, category) {
     const buffer = await drawFarmShopGrid(itemsList, category, maxCap, currentCap);
     const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop.png' }) : null;
 
-    const categoryRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(category === 'animals' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🐄'),
-        new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('بذور').setStyle(category === 'seeds' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌱'),
-        new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(category === 'feed' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌾')
-    );
+    const categoryRow = new ActionRowBuilder();
+
+    if (category !== 'animals') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐄'));
+    }
+    if (category !== 'seeds') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('بذور').setStyle(ButtonStyle.Secondary).setEmoji('🌱'));
+    }
+    if (category !== 'feed') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(ButtonStyle.Secondary).setEmoji('🌾'));
+    }
+
+    categoryRow.addComponents(new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger));
 
     const selectOptions = itemsList.map(item => ({
         label: item.name,
