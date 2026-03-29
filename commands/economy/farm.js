@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, MessageFlags, AttachmentBuilder } = require("discord.js");
 const farmAnimals = require('../../json/farm-animals.json');
 const feedItems = require('../../json/feed-items.json');
+const seedsData = require('../../json/seeds.json');
 const { getPlayerCapacity } = require('../../utils/farmUtils.js');
 const { renderLand } = require('../../handlers/farm-land.js');
 
@@ -18,14 +19,22 @@ try {
     }
 }
 
-let drawFarmAnimalsGrid, drawFarmFeedStore;
+let drawFarmAnimalsGrid;
 try {
     const farmGens = require('../../generators/farm-generator.js');
     drawFarmAnimalsGrid = farmGens.drawFarmAnimalsGrid;
-    drawFarmFeedStore = farmGens.drawFarmFeedStore;
 } catch (e) {
     drawFarmAnimalsGrid = async () => null; 
-    drawFarmFeedStore = async () => null;
+}
+
+let generateInventoryCard, resolveItemInfoLocal;
+try {
+    const invGen = require('../../generators/inventory-generator.js');
+    generateInventoryCard = invGen.generateInventoryCard;
+    resolveItemInfoLocal = invGen.resolveItemInfo;
+} catch (e) {
+    generateInventoryCard = async () => null;
+    resolveItemInfoLocal = (id) => ({ name: id, emoji: '📦', rarity: 'Common' });
 }
 
 const EMOJI_MORA = '<:mora:1435647151349698621>';
@@ -33,6 +42,11 @@ const LEFT_EMOJI = '<:left:1439164494759723029>';
 const RIGHT_EMOJI = '<:right:1439164491072929915>';
 const ITEMS_PER_PAGE = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function cleanEmojis(text) {
+    if (!text) return '';
+    return text.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FADF}\u{1F004}-\u{1F0CF}\u{2B00}-\u{2BFF}₿🪙]/gu, '').trim();
+}
 
 const getNavRow = (activeTab) => {
     const row = new ActionRowBuilder();
@@ -111,6 +125,7 @@ module.exports = {
         }
 
         let animalsPage = 0;
+        let feedPage = 0;
         let shopState = {}; 
 
         const getAnimalsPaginationRow = (page, totalPages) => {
@@ -209,49 +224,61 @@ module.exports = {
             return { content: fallbackContent, files, actionRow: getAnimalsPaginationRow(page, totalPages) };
         };
 
-        const renderFeedStore = async () => {
+        const renderFeedStore = async (page = 0) => {
             let inventoryRes;
-            try { inventoryRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
-            catch(e) { inventoryRes = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
+            try { inventoryRes = await db.query(`SELECT "itemID", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
+            catch(e) { inventoryRes = await db.query(`SELECT itemid, quantity FROM user_inventory WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
             
             const inventory = inventoryRes.rows;
-            const feedInventory = [];
+            const farmItems = [];
+            let hasFeed = false;
 
-            feedItems.forEach(feed => {
-                const itemInInv = inventory.find(i => String(i.itemID || i.itemid) === String(feed.id));
-                if (itemInInv && Number(itemInInv.quantity) > 0) {
-                    const targetAnimal = farmAnimals.find(a => String(a.feed_id) === String(feed.id));
-                    feedInventory.push({ 
-                        ...feed, qty: Number(itemInInv.quantity),
-                        animalName: targetAnimal ? targetAnimal.name : 'مجهول',
-                        animalEmoji: targetAnimal ? targetAnimal.emoji : '❓'
-                    });
+            for (const row of inventory) {
+                const itemId = row.itemID || row.itemid;
+                const qty = Number(row.quantity || row.Quantity) || 0;
+                if (qty <= 0) continue;
+
+                const isFeed = feedItems.some(f => String(f.id) === String(itemId));
+                const isSeed = seedsData.some(s => String(s.id) === String(itemId));
+
+                if (isFeed || isSeed) {
+                    if (isFeed) hasFeed = true;
+                    let info = resolveItemInfoLocal(itemId);
+                    farmItems.push({ ...info, quantity: qty, id: itemId });
                 }
-            });
+            }
 
-            let actionRow = null;
+            const totalPages = Math.max(1, Math.ceil(farmItems.length / 15));
+            if (page < 0) page = 0;
+            if (page >= totalPages && totalPages > 0) page = totalPages - 1;
+
+            const slice = farmItems.slice(page * 15, (page + 1) * 15);
+
             let files = [];
             let fallbackContent = '';
 
-            if (feedInventory.length === 0) {
-                fallbackContent = "🚫 **المخزن فارغ!**\nتوجّه إلى المتجر 🛒 لشراء الأعلاف وإطعام حيواناتك.";
-                if(drawFarmFeedStore) {
-                    const buffer = await drawFarmFeedStore(targetUser, []);
-                    if(buffer) { files.push(new AttachmentBuilder(buffer, { name: 'feed_store.png' })); fallbackContent = ''; }
-                }
+            if (generateInventoryCard) {
+                const cleanUser = cleanEmojis(targetUser.username);
+                const buffer = await generateInventoryCard(cleanUser, 'المخزن الزراعي', slice, page + 1, totalPages, -1);
+                if (buffer) files.push(new AttachmentBuilder(buffer, { name: 'farm_inv.png' }));
             } else {
-                if (drawFarmFeedStore) {
-                    const buffer = await drawFarmFeedStore(targetUser, feedInventory);
-                    if(buffer) files.push(new AttachmentBuilder(buffer, { name: 'feed_store.png' }));
-                } else {
-                    fallbackContent = feedInventory.map(f => `✶ ${f.emoji} **${f.name}** : \`${f.qty}\` ⬅️ لـ **${f.animalName}** ${f.animalEmoji}`).join('\n\n');
-                }
+                if (slice.length === 0) fallbackContent = "🚫 **المخزن فارغ!**";
+                else fallbackContent = slice.map(f => `✶ ${f.emoji} **${f.name}** : \`${f.quantity}\``).join('\n');
+            }
 
-                actionRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('btn_feed_animal').setLabel('اطعـام').setStyle(ButtonStyle.Success).setEmoji('🥄')
+            const actionRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_feed_animal').setLabel('اطعـام القطيع').setStyle(ButtonStyle.Success).setEmoji('🥄').setDisabled(!hasFeed)
+            );
+
+            let paginationRow = null;
+            if (totalPages > 1) {
+                paginationRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('feed_prev').setEmoji(LEFT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                    new ButtonBuilder().setCustomId('feed_next').setEmoji(RIGHT_EMOJI).setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages - 1)
                 );
             }
-            return { content: fallbackContent, files, actionRow };
+
+            return { content: fallbackContent, files, actionRow, paginationRow };
         };
 
         const mockInteraction = { 
@@ -265,7 +292,7 @@ module.exports = {
         if (startTab === 'animals') {
             initialData = await renderFarmAnimals(0);
         } else if (startTab === 'feed') {
-            initialData = await renderFeedStore();
+            initialData = await renderFeedStore(0);
         } else if (startTab === 'shop') {
             if (farmShop && farmShop.getShopMenu) {
                 user.guildId = guild.id;
@@ -280,8 +307,9 @@ module.exports = {
 
         let finalComponents = [];
         if (startTab !== 'shop') {
-            const navRow = getNavRow(startTab);
-            finalComponents = initialData.components ? [...initialData.components, navRow] : (initialData.actionRow ? [initialData.actionRow, navRow] : [navRow]);
+            if (initialData.actionRow) finalComponents.push(initialData.actionRow);
+            if (initialData.paginationRow) finalComponents.push(initialData.paginationRow);
+            finalComponents.push(getNavRow(startTab));
         } else {
             finalComponents = initialData.components || [];
         }
@@ -318,14 +346,21 @@ module.exports = {
                 }
                 else if (i.customId === 'nav_animals') {
                     await i.deferUpdate().catch(() => {});
+                    animalsPage = 0;
                     const data = await renderFarmAnimals(animalsPage);
-                    const components = data.actionRow ? [data.actionRow, getNavRow('animals')] : [getNavRow('animals')];
+                    const components = [];
+                    if (data.actionRow) components.push(data.actionRow);
+                    components.push(getNavRow('animals'));
                     await i.editReply({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'nav_feed') {
                     await i.deferUpdate().catch(() => {});
-                    const data = await renderFeedStore();
-                    const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
+                    feedPage = 0;
+                    const data = await renderFeedStore(feedPage);
+                    const components = [];
+                    if (data.actionRow) components.push(data.actionRow);
+                    if (data.paginationRow) components.push(data.paginationRow);
+                    components.push(getNavRow('feed'));
                     await i.editReply({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'nav_shop') {
@@ -362,7 +397,20 @@ module.exports = {
                     if (i.customId === 'farm_prev') animalsPage--;
                     else animalsPage++;
                     const data = await renderFarmAnimals(animalsPage);
-                    const components = data.actionRow ? [data.actionRow, getNavRow('animals')] : [getNavRow('animals')];
+                    const components = [];
+                    if (data.actionRow) components.push(data.actionRow);
+                    components.push(getNavRow('animals'));
+                    await i.editReply({ embeds: [], components: components, files: data.files || [], content: data.content || '' }).catch(() => {});
+                }
+                else if (i.customId === 'feed_prev' || i.customId === 'feed_next') {
+                    await i.deferUpdate().catch(() => {});
+                    if (i.customId === 'feed_prev') feedPage--;
+                    else feedPage++;
+                    const data = await renderFeedStore(feedPage);
+                    const components = [];
+                    if (data.actionRow) components.push(data.actionRow);
+                    if (data.paginationRow) components.push(data.paginationRow);
+                    components.push(getNavRow('feed'));
                     await i.editReply({ embeds: [], components: components, files: data.files || [], content: data.content || '' }).catch(() => {});
                 }
                 else if (i.customId === 'btn_feed_animal') {
@@ -382,7 +430,7 @@ module.exports = {
                         options.push({ label: `إطعام ${animal.name}`, description: `يتطلب ${feedItems.find(f=>String(f.id)===String(animal.feed_id))?.name}`, value: animal.id, emoji: animal.emoji });
                     }
 
-                    if (options.length === 0) return await i.reply({ content: '❌ لا تملك حيوانات.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+                    if (options.length === 0) return await i.reply({ content: '❌ لا تملك حيوانات لإطعامها.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
 
                     const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('menu_feed_animal').setPlaceholder('اختر الحيوان...').addOptions(options));
                     const response = await i.reply({ content: '🥄 **الإطعام:**', components: [row], flags: [MessageFlags.Ephemeral], fetchReply: true }).catch(() => {});
@@ -436,8 +484,12 @@ module.exports = {
                             
                             await subI.reply({ content: `✅ تم إطعام ${totalAnimals} **${animal.name}** بنجاح وتجديد طاقته!` }).catch(() => {});
                             
-                            const data = await renderFeedStore();
-                            const components = data.actionRow ? [data.actionRow, getNavRow('feed')] : [getNavRow('feed')];
+                            const data = await renderFeedStore(feedPage);
+                            const components = [];
+                            if (data.actionRow) components.push(data.actionRow);
+                            if (data.paginationRow) components.push(data.paginationRow);
+                            components.push(getNavRow('feed'));
+                            
                             await msg.edit({ embeds: [], components: components, files: data.files || [], attachments: [], content: data.content || '' }).catch(() => {});
                         }
                     });
