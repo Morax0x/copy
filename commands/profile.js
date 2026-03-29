@@ -55,13 +55,11 @@ try {
     };
 }
 
-// 🔥 دالة لتسريع قواعد البيانات 🔥
 const safeQuery = async (db, qPg, qLite, params) => {
     try { return await db.query(qPg, params); } 
     catch(e) { return await db.query(qLite, params).catch(()=>({rows:[]})); }
 };
 
-// 🔥 فحص ذكي لمعرفة إذا العنصر قابل للصهر والدمج في الحدادة 🔥
 const upgradeMats = require('../json/upgrade-materials.json');
 function isSmeltable(itemId) {
     if (!itemId) return false;
@@ -219,7 +217,6 @@ module.exports = {
             };
 
             const renderView = async () => {
-                // 🔥 جلب البيانات بشكل متوازي وسريع جداً 🔥
                 const [lvlRes, repRes, raceRes, wpnRes, streakRes] = await Promise.all([
                     safeQuery(db, `SELECT * FROM levels WHERE "user" = $1 AND "guild" = $2`, `SELECT * FROM levels WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]),
                     safeQuery(db, `SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, `SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [targetUser.id, guildId]),
@@ -228,7 +225,7 @@ module.exports = {
                     safeQuery(db, `SELECT * FROM streaks WHERE "guildID" = $1 AND "userID" = $2`, `SELECT * FROM streaks WHERE guildid = $1 AND userid = $2`, [guildId, targetUser.id])
                 ]);
 
-                const levelData = lvlRes?.rows?.[0] || { xp: 0, level: 1, mora: 0, bank: 0 };
+                const levelData = lvlRes?.rows?.[0] || { xp: 0, level: 1, mora: 0, bank: 0, totalXP: 0 };
                 const totalMora = Number(levelData.mora || 0) + Number(levelData.bank || 0);
                 const repPoints = repRes?.rows?.[0]?.rep_points || 0;
                 const rankInfo = getRepRankInfo(repPoints);
@@ -243,9 +240,20 @@ module.exports = {
                     try { xpBuff = await calculateBuffMultiplier(targetMember, db); } catch(e) {}
                     try { moraBuff = await calculateMoraBuff(targetMember, db); } catch(e) {}
                     
-                    const ranks = { level: "0", mora: "0", streak: "0", power: "0" };
+                    // 🔥 إصلاح وجلب التصنيفات الحقيقية من الداتا بيز 🔥
+                    let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
                     if (targetUser.id !== TARGET_OWNER_ID) {
-                        ranks.power = (await calculateStrongestRank(db, guildId, targetUser.id)).toString();
+                        try {
+                            const [lvlR, moraR, strkR] = await Promise.all([
+                                safeQuery(db, `SELECT COUNT(*) + 1 as rank FROM levels WHERE "guild" = $1 AND "totalXP" > $2`, `SELECT COUNT(*) + 1 as rank FROM levels WHERE guildid = $1 AND totalxp > $2`, [guildId, levelData.totalXP || levelData.totalxp || 0]),
+                                safeQuery(db, `SELECT COUNT(*) + 1 as rank FROM levels WHERE "guild" = $1 AND "mora" > $2`, `SELECT COUNT(*) + 1 as rank FROM levels WHERE guildid = $1 AND mora > $2`, [guildId, totalMora]),
+                                safeQuery(db, `SELECT COUNT(*) + 1 as rank FROM streaks WHERE "guildID" = $1 AND "streakCount" > $2`, `SELECT COUNT(*) + 1 as rank FROM streaks WHERE guildid = $1 AND streakcount > $2`, [guildId, streakData.streakCount || streakData.streakcount || 0])
+                            ]);
+                            ranks.level = (lvlR?.rows?.[0]?.rank || 1).toString();
+                            ranks.mora = (moraR?.rows?.[0]?.rank || 1).toString();
+                            ranks.streak = (strkR?.rows?.[0]?.rank || 1).toString();
+                            ranks.power = (await calculateStrongestRank(db, guildId, targetUser.id)).toString();
+                        } catch (e) { console.error("Ranks fetch error", e); }
                     }
 
                     const profData = {
@@ -253,7 +261,7 @@ module.exports = {
                         level: levelData.level, currentXP: Number(levelData.xp), requiredXP: calculateRequiredXP(levelData.level),
                         mora: (targetUser.id === TARGET_OWNER_ID && authorUser.id !== TARGET_OWNER_ID) ? "???" : totalMora.toLocaleString(),
                         raceName: arabicRaceName, weaponName, weaponDmg: wpnRes?.currentDamage || 0,
-                        maxHp: PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL), streakCount: streakData.streakCount || 0,
+                        maxHp: PROFILE_BASE_HP + (levelData.level * PROFILE_HP_PER_LEVEL), streakCount: streakData.streakCount || streakData.streakcount || 0,
                         xpBuff: Math.floor((xpBuff - 1) * 100), moraBuff: Math.floor((moraBuff - 1) * 100),
                         shields: Number(streakData.hasItemShield || 0) + (streakData.hasGracePeriod === 1 ? 1 : 0), ranks
                     };
@@ -326,10 +334,8 @@ module.exports = {
                         if (targetUser.id === authorUser.id && !['current_rod', 'current_boat'].includes(activeItemDetails.id)) {
                             btnRow.addComponents(new ButtonBuilder().setCustomId(`trade_init_${authorUser.id}`).setLabel('إعـطـاء').setStyle(ButtonStyle.Primary).setEmoji('🎁'));
                             
-                            // 🔥 الأزرار الذكية للصهر والدمج 🔥
                             if (isSmeltable(activeItemDetails.id)) {
                                 btnRow.addComponents(new ButtonBuilder().setCustomId(`route_smelt_${activeItemDetails.id}`).setLabel('صـهـر').setStyle(ButtonStyle.Danger).setEmoji('🌋'));
-                                
                                 if (activeItemDetails.quantity >= 4) {
                                     btnRow.addComponents(new ButtonBuilder().setCustomId(`route_synth_${activeItemDetails.id}`).setLabel('دمـج').setStyle(ButtonStyle.Success).setEmoji('⚗️'));
                                 }
@@ -478,7 +484,6 @@ module.exports = {
                     if (forgeCmd) {
                         collector.stop('routed_to_forge');
                         
-                        // تصميم رسالة وهمية آمنة كأن اللاعب كتب الأمر للحدادة
                         const fakeInt = {
                             isChatInputCommand: false,
                             content: `-${isSmelt ? 'صهر' : 'دمج'}`, 
@@ -489,7 +494,8 @@ module.exports = {
                             channel: i.channel,
                             guild: i.guild,
                             client: client,
-                            reply: async (p) => { p.fetchReply = true; return await i.followUp(p); },
+                            // بما إن الزر مضغوط وتم عمل deferUpdate نستخدم editReply بدال followUp عشان يبدل الصورة بسلاسة
+                            reply: async (p) => { return await i.editReply(p); },
                             editReply: async (p) => { return await i.editReply(p); }, 
                             deferReply: async () => {},
                             fetchReply: async () => i.message,
