@@ -240,7 +240,6 @@ module.exports = {
                     try { xpBuff = await calculateBuffMultiplier(targetMember, db); } catch(e) {}
                     try { moraBuff = await calculateMoraBuff(targetMember, db); } catch(e) {}
                     
-                    // 🔥 إصلاح وجلب التصنيفات الحقيقية من الداتا بيز 🔥
                     let ranks = { level: "0", mora: "0", streak: "0", power: "0" };
                     if (targetUser.id !== TARGET_OWNER_ID) {
                         try {
@@ -253,7 +252,7 @@ module.exports = {
                             ranks.mora = (moraR?.rows?.[0]?.rank || 1).toString();
                             ranks.streak = (strkR?.rows?.[0]?.rank || 1).toString();
                             ranks.power = (await calculateStrongestRank(db, guildId, targetUser.id)).toString();
-                        } catch (e) { console.error("Ranks fetch error", e); }
+                        } catch (e) {}
                     }
 
                     const profData = {
@@ -482,7 +481,7 @@ module.exports = {
                     
                     const forgeCmd = client.commands.find(c => c.name === 'حدادة' || c.aliases?.includes('forge'));
                     if (forgeCmd) {
-                        collector.stop('routed_to_forge');
+                        collector.stop('routed_to_forge'); // نوقف الكوليكتر عشان يمنع سباق التعديل
                         
                         const fakeInt = {
                             isChatInputCommand: false,
@@ -494,9 +493,8 @@ module.exports = {
                             channel: i.channel,
                             guild: i.guild,
                             client: client,
-                            // بما إن الزر مضغوط وتم عمل deferUpdate نستخدم editReply بدال followUp عشان يبدل الصورة بسلاسة
-                            reply: async (p) => { return await i.editReply(p); },
-                            editReply: async (p) => { return await i.editReply(p); }, 
+                            reply: async (p) => await i.editReply(p).catch(console.error),
+                            editReply: async (p) => await i.editReply(p).catch(console.error), 
                             deferReply: async () => {},
                             fetchReply: async () => i.message,
                             preselectedItem: itemIdToRoute,
@@ -727,7 +725,9 @@ module.exports = {
                 await msg.edit(await renderView());
             });
 
-            collector.on('end', () => {
+            // 🔥 منع تفريغ الأزرار لو كان السبب هو الذهاب للحدادة 🔥
+            collector.on('end', (collected, reason) => {
+                if (reason === 'routed_to_forge') return; 
                 if(msg && msg.editable) {
                     msg.edit({ components: [] }).catch(() => null);
                 }
