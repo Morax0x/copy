@@ -69,8 +69,25 @@ async function getWeaponData(db, member) {
     const res = await db.query(`SELECT * FROM user_weapons WHERE "userID" = $1 AND "guildID" = $2 AND "raceName" = $3`, [member.id, member.guild.id, raceName]);
     let userWeapon = res.rows[0];
     if (!userWeapon || Number(userWeapon.weaponLevel || userWeapon.weaponlevel) <= 0) return null;
-    const damage = weaponConfig.base_damage + (weaponConfig.damage_increment * (Number(userWeapon.weaponLevel || userWeapon.weaponlevel) - 1));
-    return { ...weaponConfig, currentDamage: damage, currentLevel: Number(userWeapon.weaponLevel || userWeapon.weaponlevel) };
+    
+    // 🔥 الحساب المتوازن للسلاح كما في weapon-calculator 🔥
+    const level = Number(userWeapon.weaponLevel || userWeapon.weaponlevel);
+    const base = weaponConfig.base_damage;
+    const inc = weaponConfig.damage_increment;
+    let damage = 15;
+
+    if (level <= 15) {
+        damage = Math.floor(base + (inc * (level - 1)));
+    } else {
+        const damageAt15 = base + (inc * 14);
+        const targetDamageAt30 = 800;
+        const levelsRemaining = 15; 
+        const dynamicIncrement = (targetDamageAt30 - damageAt15) / levelsRemaining;
+        let finalDamage = damageAt15 + (dynamicIncrement * (level - 15));
+        damage = level >= 30 ? targetDamageAt30 : Math.floor(finalDamage);
+    }
+
+    return { ...weaponConfig, currentDamage: damage, currentLevel: level };
 }
 
 async function getAllSkillData(db, member) {
@@ -207,6 +224,21 @@ function buildBattleEmbed(battleState, skillSelectionMode = false, skillPage = 0
     return { embeds: [embed], components: [mainButtons] };
 }
 
+// 🔥 دالة لحساب مضاعف المهارة بناءً على الصحوة المتأخرة للـ PvP 🔥
+function getBalancedPvPMultiplier(baseMultiplier, currentLevel) {
+    if (currentLevel <= 15) return baseMultiplier;
+    
+    const targetMultiplierAt30 = 1.5; 
+    const levelsRemaining = 15;
+    const diff = targetMultiplierAt30 - baseMultiplier;
+    const incrementPerLevel = diff / levelsRemaining;
+    
+    const finalMulti = baseMultiplier + (incrementPerLevel * (currentLevel - 15));
+    
+    if (currentLevel >= 30) return targetMultiplierAt30;
+    return finalMulti;
+}
+
 function applySkillEffect(battleState, attackerId, skill) {
     const cooldownDuration = skill.id.startsWith('race_') ? 5 : 3;
     if (!battleState.skillCooldowns[attackerId]) battleState.skillCooldowns[attackerId] = {};
@@ -245,7 +277,8 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'Spirit_RNG': {
-            const spiritDmg = Math.floor(baseAtk * 1.3);
+            const multi = getBalancedPvPMultiplier(1.3, skillLevel);
+            const spiritDmg = Math.floor(baseAtk * multi);
             defender.hp -= spiritDmg;
             const roll = Math.random() * 100;
             let effectMsg = "";
@@ -267,7 +300,8 @@ function applySkillEffect(battleState, attackerId, skill) {
             const burnDmgFixed = 50 + (skillLevel * 25);
             defender.effects.burn = burnDmgFixed;
             defender.effects.burn_turns = 3;
-            const dmg = Math.floor(baseAtk * 1.4); 
+            const multi = getBalancedPvPMultiplier(1.4, skillLevel);
+            const dmg = Math.floor(baseAtk * multi); 
             defender.hp -= dmg;
             return `🐲 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أحرق خصمه! (${dmg} ضرر + حرق ${burnDmgFixed})`;
         }
@@ -279,7 +313,12 @@ function applySkillEffect(battleState, attackerId, skill) {
             attacker.effects.stun = false; attacker.effects.stun_turns = 0;
             attacker.effects.confusion = false; attacker.effects.confusion_turns = 0;
             attacker.effects.blind = 0; attacker.effects.blind_turns = 0;
-            const shieldVal = Math.floor(attacker.maxHp * 0.25);
+            
+            let shieldPercent = 0.25;
+            if(skillLevel > 15) shieldPercent += ((0.35 - 0.25) / 15) * (skillLevel - 15);
+            if(skillLevel >= 30) shieldPercent = 0.35;
+            
+            const shieldVal = Math.floor(attacker.maxHp * shieldPercent);
             attacker.effects.shield += shieldVal;
             attacker.effects.buff = 0.2;
             attacker.effects.buff_turns = 2;
@@ -289,9 +328,15 @@ function applySkillEffect(battleState, attackerId, skill) {
         case 'Scale_MissingHP_Heal': {
             const missingHpPercent = (attacker.maxHp - attacker.hp) / attacker.maxHp;
             const extraDmg = Math.floor(baseAtk * missingHpPercent * 2);
-            const dmg = Math.floor(baseAtk * 1.2) + extraDmg;
+            const multi = getBalancedPvPMultiplier(1.2, skillLevel);
+            const dmg = Math.floor(baseAtk * multi) + extraDmg;
             defender.hp -= dmg;
-            const healVal = Math.floor(attacker.maxHp * 0.15);
+            
+            let healPercent = 0.15;
+            if(skillLevel > 15) healPercent += ((0.25 - 0.15) / 15) * (skillLevel - 15);
+            if(skillLevel >= 30) healPercent = 0.25;
+            
+            const healVal = Math.floor(attacker.maxHp * healPercent);
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + healVal);
             return `⚖️ **${attacker.isMonster ? attacker.name : attacker.member.displayName}** عاقب خصمه بضرر متصاعد (${dmg}) وشفى نفسه!`;
         }
@@ -299,13 +344,15 @@ function applySkillEffect(battleState, attackerId, skill) {
         case 'Sacrifice_Crit': {
             const selfDmg = Math.floor(attacker.maxHp * 0.10);
             attacker.hp -= selfDmg;
-            const dmg = Math.floor(baseAtk * 2.0);
+            const multi = getBalancedPvPMultiplier(2.0, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             defender.hp -= dmg;
             return `👹 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضحى بدمه لتوجيه ضربة مدمرة (${dmg})!`;
         }
 
         case 'Stun_Vulnerable': {
-            const dmg = Math.floor(baseAtk * 1.1);
+            const multi = getBalancedPvPMultiplier(1.1, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             defender.hp -= dmg;
             defender.effects.stun = true; defender.effects.stun_turns = 1;
             defender.effects.weaken = 0.5; defender.effects.weaken_turns = 2;
@@ -313,14 +360,16 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'Confusion': {
-            const dmg = Math.floor(baseAtk * 1.2);
+            const multi = getBalancedPvPMultiplier(1.2, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             defender.hp -= dmg;
             defender.effects.confusion = true; defender.effects.confusion_turns = 2;
             return `😵 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** أربك خصمه بلعنة الجنون!`;
         }
 
         case 'Lifesteal_Overheal': { 
-            const dmg = Math.floor(baseAtk * 1.45); 
+            const multi = getBalancedPvPMultiplier(1.45, skillLevel);
+            const dmg = Math.floor(baseAtk * multi); 
             defender.hp -= dmg;
 
             const bleedDmg = 50 + (skillLevel * 25);
@@ -344,7 +393,8 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'Chaos_RNG': {
-            const dmg = Math.floor(baseAtk * 1.2);
+            const multi = getBalancedPvPMultiplier(1.2, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             defender.hp -= dmg;
             const randomEffect = Math.random();
             let effectMsg = "";
@@ -362,21 +412,27 @@ function applySkillEffect(battleState, attackerId, skill) {
             return `🌀 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** سبب فوضى (${effectMsg})!`;
         }
 
-        case 'Dmg_Evasion': {
-            const dmg = Math.floor(baseAtk * 1.3);
+        case 'Dmg_Evasion': { 
+            const multi = getBalancedPvPMultiplier(1.3, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             defender.hp -= dmg;
             attacker.effects.evasion = 1; attacker.effects.evasion_turns = 1;
             return `👻 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** ضرب واختفى (مراوغة تامة)!`;
         }
 
         case 'Reflect_Tank': {
-            attacker.effects.shield += Math.floor(attacker.maxHp * 0.2);
+            let shieldPercent = 0.2;
+            if(skillLevel > 15) shieldPercent += ((0.3 - 0.2) / 15) * (skillLevel - 15);
+            if(skillLevel >= 30) shieldPercent = 0.3;
+            
+            attacker.effects.shield += Math.floor(attacker.maxHp * shieldPercent);
             attacker.effects.rebound_active = 0.4; attacker.effects.rebound_turns = 2;
             return `🔨 **${attacker.isMonster ? attacker.name : attacker.member.displayName}** تحصن بالجبل (دفاع وعكس ضرر)!`;
         }
 
         case 'Execute_Heal': { 
-            const dmg = Math.floor(baseAtk * 1.6);
+            const multi = getBalancedPvPMultiplier(1.6, skillLevel);
+            const dmg = Math.floor(baseAtk * multi);
             
             const ghoulPoison = 50 + (skillLevel * 25);
             defender.effects.poison = ghoulPoison;
@@ -392,7 +448,8 @@ function applySkillEffect(battleState, attackerId, skill) {
         }
 
         case 'Poison_Blade': { 
-            const directDmg = Math.floor(baseAtk * 1.2); 
+            const multi = getBalancedPvPMultiplier(1.2, skillLevel);
+            const directDmg = Math.floor(baseAtk * multi); 
             defender.hp -= directDmg;
             
             const poisonDmg = 50 + (skillLevel * 25); 
@@ -582,7 +639,6 @@ async function endBattle(battleState, winnerId, db, reason = "win", buffCalculat
 
             const client = battleState.message.client;
             
-            // 🔥 استخدام دالة التلفيل الصامتة لبطولات الوحوش (لا ترسل تهنئة، تعطي XP فقط) 🔥
             if (addXPAndCheckLevel) {
                 await addXPAndCheckLevel(client, winner.member, db, rewardXP, rewardMora, false).catch(()=>{});
             } else {
