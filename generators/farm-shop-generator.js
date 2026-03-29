@@ -2,6 +2,16 @@ const { createCanvas, loadImage, registerFont } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 
+// استدعاء قاموس الأغراض من الحقيبة لجلب روابط الصور بشكل آلي
+let resolveItemInfoLocal;
+try {
+    const invGen = require('./inventory-generator.js');
+    resolveItemInfoLocal = invGen.resolveItemInfo;
+} catch (e) {
+    console.error("⚠️ لم يتم العثور على inventory-generator.js، الصور قد لا تعمل.");
+    resolveItemInfoLocal = (id) => ({ imgPath: null });
+}
+
 try {
     const fontsDir = path.join(process.cwd(), 'fonts');
     if (!fs.existsSync(fontsDir)) fs.mkdirSync(fontsDir);
@@ -90,8 +100,13 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
 
         const imgX = x + CARD_W - 110;
         const imgY = y + 20;
-        if (item.image) {
-            const img = await safeLoadImage(item.image);
+        
+        // 🔥 جلب مسار الصورة من القاموس بناءً على ID العنصر 🔥
+        const itemDictionaryInfo = resolveItemInfoLocal(item.id);
+        const targetImageURL = item.image || itemDictionaryInfo.imgPath;
+
+        if (targetImageURL) {
+            const img = await safeLoadImage(targetImageURL);
             if (img) ctx.drawImage(img, imgX, imgY, 80, 80);
             else { ctx.fillStyle=COLOR_TEXT; ctx.font = `60px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+40, imgY+60); }
         } else {
@@ -150,8 +165,12 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
     ctx.fillStyle = '#1f1f22';
     drawRoundedRect(ctx, imgX, imgY, 220, 220, 15, true, false);
 
-    if (item.image) {
-        const img = await safeLoadImage(item.image);
+    // 🔥 جلب مسار الصورة من القاموس بناءً على ID العنصر 🔥
+    const itemDictionaryInfo = resolveItemInfoLocal(item.id);
+    const targetImageURL = item.image || itemDictionaryInfo.imgPath;
+
+    if (targetImageURL) {
+        const img = await safeLoadImage(targetImageURL);
         if (img) ctx.drawImage(img, imgX + 10, imgY + 10, 200, 200);
         else { ctx.fillStyle=COLOR_TEXT; ctx.font = `120px ${FONT_EMOJI}`; ctx.textAlign='center'; ctx.fillText(item.emoji, imgX+110, imgY+150); }
     } else {
@@ -173,13 +192,13 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
     const gapY = 40;
 
     if (category === 'animals') {
-        ctx.fillText(`الدخل المتوقع: ${item.income_per_day} مورا يومياً`, 580, startY);
-        ctx.fillText(`العمر الافتراضي: ${item.lifespan_days} يوم`, 580, startY + gapY);
-        ctx.fillText(`المساحة المطلوبة: ${item.size} وحدة حظيرة`, 580, startY + gapY * 2);
+        ctx.fillText(`💰 الدخل المتوقع: ${item.income_per_day} مورا يومياً`, 580, startY);
+        ctx.fillText(`⏳ العمر الافتراضي: ${item.lifespan_days} يوم`, 580, startY + gapY);
+        ctx.fillText(`📦 المساحة المطلوبة: ${item.size} وحدة حظيرة`, 580, startY + gapY * 2);
     } else if (category === 'seeds') {
-        ctx.fillText(`العائد بعد الزراعة: ${item.sell_price} مورا`, 580, startY);
-        ctx.fillText(`وقت النضج: ${item.growth_time_hours} ساعة`, 580, startY + gapY);
-        ctx.fillText(`يذبل بعد: ${item.wither_time_hours} ساعة من النضج`, 580, startY + gapY * 2);
+        ctx.fillText(`💰 العائد بعد الزراعة: ${item.sell_price} مورا`, 580, startY);
+        ctx.fillText(`⏳ وقت النضج: ${item.growth_time_hours} ساعة`, 580, startY + gapY);
+        ctx.fillText(`🍂 يذبل بعد: ${item.wither_time_hours} ساعة من النضج`, 580, startY + gapY * 2);
     } else {
         const desc = item.description || 'علف صحي لضمان نمو ودخل ممتاز.';
         const words = desc.split(' ');
@@ -204,9 +223,9 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
     ctx.textAlign = 'center';
     
     if (category === 'animals') {
-        ctx.fillText(`المساحة المتبقية في حظيرتك: ${maxCap - currCap} | تمتلك حالياً: ${userQty}`, 450, 388);
+        ctx.fillText(`📊 المساحة المتبقية في حظيرتك: ${maxCap - currCap} | تمتلك حالياً: ${userQty} من هذا النوع`, 450, 388);
     } else {
-        ctx.fillText(`الكمية المتوفرة لديك في المخزن: ${userQty}`, 450, 388);
+        ctx.fillText(`📊 الكمية المتوفرة لديك في المخزن: ${userQty}`, 450, 388);
     }
 
     return canvas.toBuffer();
