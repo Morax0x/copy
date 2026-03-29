@@ -102,7 +102,7 @@ function drawAutoScaledArabicText(ctx, text, x, y, maxWidth, maxFontSize, minFon
     ctx.fillText(safeText, x, y);
 }
 
-function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quantity = null) {
+function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, reqCount = null, userCount = null) {
     const color = RARITY_COLORS[rarity] || RARITY_COLORS['Common'];
     
     ctx.fillStyle = 'rgba(12, 16, 24, 0.95)';
@@ -124,19 +124,22 @@ function drawItemBox(ctx, x, y, size, img, rarity = 'Common', label = null, quan
         ctx.fillText('❓', x + size/2, y + size/2);
     }
 
-    if (quantity !== null) {
-        ctx.fillStyle = color;
-        ctx.beginPath(); roundRect(ctx, x + size - 50, y - 15, 65, 35, 10); ctx.fill();
-        ctx.fillStyle = '#111';
-        ctx.font = 'bold 22px "Arial"';
+    if (reqCount !== null) {
+        const hasEnough = userCount >= reqCount;
+        const boxColor = hasEnough ? '#2ECC71' : '#E74C3C';
+        
+        ctx.fillStyle = boxColor;
+        ctx.beginPath(); roundRect(ctx, x + size/2 - 40, y - 20, 80, 40, 10); ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px "Arial"';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(`x${quantity}`, x + size - 17, y + 2);
+        ctx.fillText(`${userCount}/${reqCount}`, x + size/2, y);
     }
 
     if (label) {
         ctx.fillStyle = '#E0E0E0';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        drawAutoScaledArabicText(ctx, label, x + size/2, y + size + 15, size + 80, 24, 12);
+        drawAutoScaledArabicText(ctx, label, x + size/2, y + size + 15, size + 40, 22, 12);
     }
 }
 
@@ -179,11 +182,21 @@ async function generateForgeUI(userObj, view, data) {
         sparkColor = '#00AAFF'; accentColor = '#3498DB';
     }
 
-    const [bgImage, emblemImg, avatarImage, reqMatImg, targetMatImg] = await Promise.all([
+    // 🌟 استخراج الصور المتعددة للتطوير 🌟
+    let reqMatImg1 = null, reqMatImg2 = null;
+    if (data.detailedReqs && data.detailedReqs.length > 0) {
+        reqMatImg1 = await getCachedImage(data.detailedReqs[0].iconUrl);
+        if (data.detailedReqs.length > 1) {
+            reqMatImg2 = await getCachedImage(data.detailedReqs[1].iconUrl);
+        }
+    } else if (data.reqMatIcon) {
+        reqMatImg1 = await getCachedImage(data.reqMatIcon);
+    }
+
+    const [bgImage, emblemImg, avatarImage, targetMatImg] = await Promise.all([
         getCachedImage(bgUrl),
         emblemUrl ? getCachedImage(emblemUrl) : null,
         loadImage(userObj.displayAvatarURL({ extension: 'png', size: 256 })).catch(() => null),
-        data.reqMatIcon ? getCachedImage(data.reqMatIcon) : null,
         data.targetMatIcon ? getCachedImage(data.targetMatIcon) : null
     ]);
 
@@ -350,18 +363,18 @@ async function generateForgeUI(userObj, view, data) {
 
     else if (activeView === 'weapon' || activeView === 'skill') {
         const isWeapon = activeView === 'weapon';
-        const midX = panelX + 550; 
+        const midX = panelX + 500; 
 
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#FFD700'; ctx.font = 'bold 34px "Bein"';
-        ctx.fillText(isWeapon ? 'التطوير القادم' : 'الصقل القادم', panelX + 275, panelY + 60);
+        ctx.fillText(isWeapon ? 'التطوير القادم' : 'الصقل القادم', panelX + 250, panelY + 60);
 
         const statsY_Level = panelY + 170;
         const statsY_Value = panelY + 300;
         
-        const oldX = panelX + 90;   
-        const arrowX = panelX + 210; 
-        const newX = panelX + 370;  
+        const oldX = panelX + 60;   
+        const arrowX = panelX + 180; 
+        const newX = panelX + 340;  
 
         ctx.save(); ctx.globalAlpha = 0.4;
         ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 40px "Arial"'; ctx.textAlign = 'left';
@@ -397,20 +410,36 @@ async function generateForgeUI(userObj, view, data) {
 
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillStyle = '#FFD700'; ctx.font = 'bold 34px "Bein"';
-        ctx.fillText('المتطلبات', panelX + 825, panelY + 60);
+        ctx.fillText('المتطلبات', panelX + 800, panelY + 60);
 
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.beginPath(); roundRect(ctx, panelX + 665, panelY + 100, 320, 60, 15); ctx.fill();
+        ctx.beginPath(); roundRect(ctx, panelX + 640, panelY + 100, 320, 60, 15); ctx.fill();
         const moraColor = data.mora >= data.reqMora ? '#2ECC71' : '#E74C3C';
         ctx.fillStyle = moraColor; ctx.font = 'bold 30px "Arial"';
-        ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 825, panelY + 130);
+        ctx.fillText(`${data.mora.toLocaleString()} / ${data.reqMora.toLocaleString()} 🪙`, panelX + 800, panelY + 130);
 
         ctx.textBaseline = 'alphabetic';
-        drawItemBox(ctx, panelX + 740, panelY + 180, 170, reqMatImg, data.reqMatRarity || 'Rare', data.reqMatName);
         
-        const matColor = data.userMatCount >= data.reqMatCount ? '#2ECC71' : '#E74C3C';
-        ctx.fillStyle = matColor; ctx.font = 'bold 26px "Arial"';
-        ctx.fillText(`الكمية المتوفرة: ${data.userMatCount} / ${data.reqMatCount}`, panelX + 825, panelY + 395);
+        // 🔥 نظام العرض المتعدد للموارد 🔥
+        if (data.detailedReqs && data.detailedReqs.length > 1) {
+            const req1 = data.detailedReqs[0];
+            const req2 = data.detailedReqs[1];
+            
+            // المربع الأول
+            drawItemBox(ctx, panelX + 600, panelY + 180, 140, reqMatImg1, req1.rarity || 'Rare', req1.name, req1.count, req1.userCount);
+            
+            // علامة + بالنص
+            ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 50px "Arial"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('+', panelX + 800, panelY + 250);
+
+            // المربع الثاني
+            drawItemBox(ctx, panelX + 860, panelY + 180, 140, reqMatImg2, req2.rarity || 'Rare', req2.name, req2.count, req2.userCount);
+
+        } else {
+            // المربع الفردي (لو كان متطلب واحد فقط)
+            const req = data.detailedReqs ? data.detailedReqs[0] : { name: data.reqMatName, rarity: data.reqMatRarity, count: data.reqMatCount, userCount: data.userMatCount };
+            drawItemBox(ctx, panelX + 715, panelY + 180, 170, reqMatImg1, req.rarity || 'Rare', req.name, req.count, req.userCount);
+        }
     }
     
     else if (activeView === 'synthesis') {
@@ -421,7 +450,7 @@ async function generateForgeUI(userObj, view, data) {
 
         ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 30px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('عنصر الدمج (4x)', leftItemX + itemSize/2, itemY - 15);
-        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Rare', data.sacMatName, 4);
+        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Rare', data.sacMatName, 4, 4); // نعطي 4 كقيمة وهمية لليوزر عشان تطلع بالاخضر لو اختارها
         
         drawFantasyArrow(ctx, width/2 - 70, panelY + 180, 140, '#F1C40F');
 
@@ -429,7 +458,7 @@ async function generateForgeUI(userObj, view, data) {
             ctx.fillStyle = '#2ECC71'; ctx.font = 'bold 30px "Bein"'; ctx.textBaseline = 'bottom';
             ctx.fillText('النتيجة (1x)', rightItemX + itemSize/2, itemY - 15);
 
-            drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare', data.targetMatName, 1);
+            drawItemBox(ctx, rightItemX, itemY, itemSize, targetMatImg, data.targetMatRarity || 'Rare', data.targetMatName, null, null); // مانبي صندوق كميات للنتيجة
             
             ctx.fillStyle = data.mora >= data.fee ? '#2ECC71' : '#E74C3C';
             ctx.font = 'bold 28px "Bein"'; ctx.textBaseline = 'middle';
@@ -455,7 +484,7 @@ async function generateForgeUI(userObj, view, data) {
         ctx.fillStyle = '#FF4400'; ctx.font = 'bold 32px "Bein"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('العنصر المراد صهره', leftItemX + itemSize/2, itemY - 15);
 
-        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg, data.sacMatRarity || 'Uncommon', data.sacMatName, 1);
+        drawItemBox(ctx, leftItemX, itemY, itemSize, reqMatImg1, data.sacMatRarity || 'Uncommon', data.sacMatName, null, null);
         
         drawFantasyArrow(ctx, width/2 - 75, panelY + 210, 150, '#FF3300');
 
