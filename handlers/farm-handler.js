@@ -1,310 +1,362 @@
-const { EmbedBuilder, Colors } = require("discord.js");
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
+const path = require('path');
+const fs = require('fs');
 
-let farmAnimals, seedsData, feedItems;
-try {
-    farmAnimals = require('../../json/farm-animals.json'); 
-    seedsData = require('../../json/seeds.json'); 
-    feedItems = require('../../json/feed-items.json');
-} catch(e) {
-    farmAnimals = require('../json/farm-animals.json'); 
-    seedsData = require('../json/seeds.json'); 
-    feedItems = require('../json/feed-items.json');
-}
+const loadJson = (fileName) => {
+    try {
+        const filePath = path.join(process.cwd(), 'json', fileName);
+        if (fs.existsSync(filePath)) return require(filePath);
+    } catch(e) {}
+    return [];
+};
 
-let updateGuildStat, addXPAndCheckLevel;
+const farmAnimals = loadJson('farm-animals.json'); 
+const seedsData = loadJson('seeds.json'); 
+const feedItems = loadJson('feed-items.json');
+
+let drawFarmShopGrid, drawFarmShopDetail;
 try {
-    ({ updateGuildStat } = require('./guild-board-handler.js'));
-    ({ addXPAndCheckLevel } = require('./handler-utils.js'));
+    const genPath = path.join(process.cwd(), 'generators', 'farm-shop-generator.js');
+    ({ drawFarmShopGrid, drawFarmShopDetail } = require(genPath));
 } catch (e) {
-    try {
-        ({ addXPAndCheckLevel } = require('../handlers/handler-utils.js'));
-    } catch(e2) {}
+    drawFarmShopGrid = async () => null;
+    drawFarmShopDetail = async () => null;
 }
 
-async function getGrowthMultiplier(db, userId, guildId) {
-    try {
-        let repRes;
-        try { repRes = await db.query(`SELECT "rep_points" FROM user_reputation WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]); }
-        catch(e) { repRes = await db.query(`SELECT rep_points FROM user_reputation WHERE userid = $1 AND guildid = $2`, [userId, guildId]).catch(()=>({rows:[]})); }
-        const points = repRes.rows[0]?.rep_points || 0;
-        if (points >= 1000) return 0.80; 
-        if (points >= 500)  return 0.85; 
-        if (points >= 250)  return 0.90; 
-        if (points >= 100)  return 0.95; 
-        if (points >= 50)   return 0.97; 
-        return 1.0;
-    } catch(e) { return 1.0; }
+let getPlayerCapacity;
+try { 
+    const utilsPath = path.join(process.cwd(), 'utils', 'farmUtils.js');
+    ({ getPlayerCapacity } = require(utilsPath)); 
+} catch (e) { 
+    getPlayerCapacity = async () => 10; 
 }
 
-async function checkFarmIncome(client, db) {
-    if (!db) return;
+const EMOJI_MORA = '<:mora:1435647151349698621>';
+const MAX_FARM_LIMIT = 1000;
 
-    const now = Date.now();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-    const TWELVE_HOURS = 12 * 60 * 60 * 1000; 
+async function executeDB(db, query, params = []) {
+    try { return await db.query(query, params); } 
+    catch (e) { throw e; }
+}
 
-    try {
-        await db.query(`CREATE TABLE IF NOT EXISTS farm_last_payout ("id" TEXT PRIMARY KEY, "lastPayoutDate" BIGINT)`);
-        await db.query(`CREATE TABLE IF NOT EXISTS farm_daily_log ("id" BIGSERIAL PRIMARY KEY, "userID" TEXT, "guildID" TEXT, "actionType" TEXT, "itemName" TEXT, "count" BIGINT, "timestamp" BIGINT)`);
-    } catch (e) {
-        console.error("Error creating farm tables:", e);
-    }
+async function buildShopGrid(user, client, db, category) {
+    let itemsList = [];
+    if (category === 'animals') itemsList = farmAnimals;
+    else if (category === 'seeds') itemsList = seedsData;
+    else if (category === 'feed') itemsList = feedItems;
 
-    let farmOwnersRes;
-    try {
-        farmOwnersRes = await db.query(`SELECT DISTINCT "userID", "guildID" FROM user_farm UNION SELECT DISTINCT "userID", "guildID" FROM user_lands`);
-    } catch(e) {
-        farmOwnersRes = await db.query(`SELECT DISTINCT userid as "userID", guildid as "guildID" FROM user_farm UNION SELECT DISTINCT userid as "userID", guildid as "guildID" FROM user_lands`).catch(()=>({rows:[]}));
-    }
-    
-    const farmOwners = farmOwnersRes.rows;
-    if (!farmOwners || !farmOwners.length) return;
-    
-    for (const owner of farmOwners) {
-        try {
-            const userID = owner.userID || owner.userid;
-            const guildID = owner.guildID || owner.guildid;
-            
-            if (!userID || !guildID) continue;
-
-            const payoutID = `${userID}-${guildID}`;
-            
-            // 🚀 تسريع جلب البيانات: دمج طلبات وقت التوزيع وبف العامل في طلب متوازي واحد!
-            const [lastPayoutDataRes, workerBuffRes, growthMultiplier] = await Promise.all([
-                db.query(`SELECT "lastPayoutDate" FROM farm_last_payout WHERE "id" = $1`, [payoutID]).catch(() => db.query(`SELECT lastpayoutdate FROM farm_last_payout WHERE id = $1`, [payoutID]).catch(()=>({rows:[]}))),
-                db.query(`SELECT * FROM user_buffs WHERE "userID" = $1 AND "guildID" = $2 AND "buffType" = 'farm_worker' AND "expiresAt" > $3`, [userID, guildID, now]).catch(() => db.query(`SELECT * FROM user_buffs WHERE userid = $1 AND guildid = $2 AND bufftype = 'farm_worker' AND expiresat > $3`, [userID, guildID, now]).catch(()=>({rows:[]}))),
-                getGrowthMultiplier(db, userID, guildID)
-            ]);
-            
-            const lastPayoutData = lastPayoutDataRes.rows[0];
-            const payoutTime = lastPayoutData ? (Number(lastPayoutData.lastPayoutDate || lastPayoutData.lastpayoutdate) || 0) : 0;
-            const isDailyPayoutDue = (now - payoutTime) >= ONE_DAY;
-            const hasWorker = workerBuffRes.rows.length > 0;
-
-            // 1. نظام الحصاد المستمر للعامل
-            if (hasWorker) {
-                let plantedPlotsRes;
-                try { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE "userID" = $1 AND "guildID" = $2 AND "status" = 'planted'`, [userID, guildID]); }
-                catch(e) { plantedPlotsRes = await db.query(`SELECT * FROM user_lands WHERE userid = $1 AND guildid = $2 AND status = 'planted'`, [userID, guildID]).catch(()=>({rows:[]})); }
-                
-                const plantedPlots = plantedPlotsRes.rows;
-                
-                if (plantedPlots.length > 0) {
-                    const harvestUpdates = [];
-                    let totalExtraMora = 0;
-                    let totalExtraXp = 0;
-                    
-                    for (const plot of plantedPlots) {
-                        const seedId = plot.seedID || plot.seedid;
-                        const seed = seedsData.find(s => String(s.id) === String(seedId));
-                        if (!seed) continue;
-
-                        const growthMs = (seed.growth_time_hours * 3600000) * growthMultiplier;
-                        const plantTime = Number(plot.plantTime || plot.planttime) || now;
-                        const age = now - plantTime;
-
-                        if (age >= growthMs) {
-                            harvestUpdates.push(
-                                db.query(`UPDATE user_lands SET "status" = 'empty', "seedID" = NULL, "plantTime" = NULL WHERE "userID" = $1 AND "guildID" = $2 AND "plotID" = $3`, [userID, guildID, plot.plotID || plot.plotid]).catch(() => db.query(`UPDATE user_lands SET status = 'empty', seedid = NULL, planttime = NULL WHERE userid = $1 AND guildid = $2 AND plotid = $3`, [userID, guildID, plot.plotID || plot.plotid]).catch(()=>{}))
-                            );
-                            
-                            totalExtraMora += Number(seed.sell_price) || 0;
-                            totalExtraXp += Number(seed.xp_reward) || 0;
-                            
-                            if (updateGuildStat) updateGuildStat(client, guildID, userID, 'crops_harvested', seed.sell_price);
-
-                            harvestUpdates.push(
-                                db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'harvest', seed.name, 1, now]).catch(() => db.query(`INSERT INTO farm_daily_log (userid, guildid, actiontype, itemname, count, timestamp) VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'harvest', seed.name, 1, now]).catch(()=>{}))
-                            );
-                        }
-                    }
-
-                    // 🚀 تنفيذ كل عمليات الحصاد في وقت واحد
-                    if (harvestUpdates.length > 0) {
-                        await Promise.all(harvestUpdates);
-                        
-                        try {
-                            const guildObj = client.guilds.cache.get(guildID);
-                            const memberObj = guildObj ? await guildObj.members.fetch(userID).catch(()=>null) : null;
-                            if (memberObj && addXPAndCheckLevel) {
-                                await addXPAndCheckLevel(client, memberObj, db, totalExtraXp, totalExtraMora, false).catch(()=>{});
-                            } else {
-                                await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1, "xp" = COALESCE(CAST("xp" AS BIGINT), 0) + $2, "totalXP" = COALESCE(CAST("totalXP" AS BIGINT), 0) + $2 WHERE "user" = $3 AND "guild" = $4`, [totalExtraMora, totalExtraXp, userID, guildID]).catch(()=>{});
-                            }
-                        } catch(e) {}
-                    }
-                }
-            }
-
-            // 2. معالجة الحيوانات (الموت، الجوع، الإطعام التلقائي، والدخل اليومي)
-            let userFarmRes;
-            try { userFarmRes = await db.query(`SELECT * FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
-            catch(e) { userFarmRes = await db.query(`SELECT * FROM user_farm WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
-            const userFarm = userFarmRes.rows;
-            
-            let dailyAnimalIncome = 0;
-            let currentAnimalsCount = 0;
-            let hungryAnimalsCount = 0;
-            let oldDeaths = [];
-            let outOfStock = false;
-            const animalUpdates = [];
-
-            for (const row of userFarm) {
-                const animalId = row.animalID || row.animalid;
-                const animal = farmAnimals.find(a => String(a.id) === String(animalId));
-                if (!animal) continue; 
-
-                const qty = Number(row.quantity) || 1;
-                const purchaseTimestamp = Number(row.purchaseTimestamp || row.purchasetimestamp) || now; 
-                const ageInMs = now - purchaseTimestamp;
-                const lifespanInMs = animal.lifespan_days * ONE_DAY;
-
-                // نظام الموت الطبيعي
-                if (ageInMs >= lifespanInMs) {
-                    animalUpdates.push(
-                        db.query(`DELETE FROM user_farm WHERE "id" = $1`, [row.id || row.ID]).catch(() => db.query(`DELETE FROM user_farm WHERE id = $1`, [row.id || row.ID]).catch(()=>{})),
-                        db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'death_old', animal.name, qty, now]).catch(() => db.query(`INSERT INTO farm_daily_log (userid, guildid, actiontype, itemname, count, timestamp) VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'death_old', animal.name, qty, now]).catch(()=>{}))
-                    );
-                    if (!oldDeaths.includes(animal.name)) oldDeaths.push(animal.name);
-                    continue; 
-                }
-
-                currentAnimalsCount += qty;
-                const maxHungerMs = (animal.max_hunger_days || 3) * ONE_DAY; 
-                let lastFed = Number(row.lastFedTimestamp || row.lastfedtimestamp) || now;
-                let fullUntil = lastFed + maxHungerMs; 
-                let timeLeft = fullUntil - now; 
-                const feedThreshold = Math.max(14 * 60 * 60 * 1000, maxHungerMs * 0.25);
-
-                // إطعام العامل التلقائي
-                if (hasWorker && timeLeft <= feedThreshold) {
-                    let invDataRes;
-                    try { invDataRes = await db.query(`SELECT * FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userID, guildID, animal.feed_id]); }
-                    catch(e) { invDataRes = await db.query(`SELECT * FROM user_inventory WHERE userid = $1 AND guildid = $2 AND itemid = $3`, [userID, guildID, animal.feed_id]).catch(()=>({rows:[]})); }
-                    const invData = invDataRes.rows[0];
-                    
-                    if (invData && Number(invData.quantity || invData.Quantity) >= qty) {
-                        const newQty = Number(invData.quantity || invData.Quantity) - qty;
-                        if(newQty > 0) {
-                            animalUpdates.push(db.query(`UPDATE user_inventory SET "quantity" = $1 WHERE "id" = $2`, [newQty, invData.id || invData.ID]).catch(() => db.query(`UPDATE user_inventory SET quantity = $1 WHERE id = $2`, [newQty, invData.id || invData.ID]).catch(()=>{})));
-                        } else {
-                            animalUpdates.push(db.query(`DELETE FROM user_inventory WHERE "id" = $1`, [invData.id || invData.ID]).catch(() => db.query(`DELETE FROM user_inventory WHERE id = $1`, [invData.id || invData.ID]).catch(()=>{})));
-                        }
-                        
-                        animalUpdates.push(
-                            db.query(`UPDATE user_farm SET "lastFedTimestamp" = $1 WHERE "id" = $2`, [now, row.id || row.ID]).catch(() => db.query(`UPDATE user_farm SET lastfedtimestamp = $1 WHERE id = $2`, [now, row.id || row.ID]).catch(()=>{})),
-                            db.query(`INSERT INTO farm_daily_log ("userID", "guildID", "actionType", "itemName", "count", "timestamp") VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'feed', animal.name, qty, now]).catch(() => db.query(`INSERT INTO farm_daily_log (userid, guildid, actiontype, itemname, count, timestamp) VALUES ($1, $2, $3, $4, $5, $6)`, [userID, guildID, 'feed', animal.name, qty, now]).catch(()=>{}))
-                        );
-                        
-                        lastFed = now;
-                        timeLeft = maxHungerMs;
-                    } else {
-                        outOfStock = true;
-                    }
-                }
-
-                // حساب الدخل اليومي
-                if (isDailyPayoutDue) {
-                    if (timeLeft > TWELVE_HOURS) {
-                        dailyAnimalIncome += (Number(animal.income_per_day) * qty);
-                    } else {
-                        hungryAnimalsCount += qty; 
-                    }
-                }
-            } 
-
-            // 🚀 تنفيذ كل عمليات الحيوانات (الموت والإطعام) في وقت واحد
-            if (animalUpdates.length > 0) {
-                await Promise.all(animalUpdates);
-            }
-
-            // 3. التقرير والتوزيع
-            if (!isDailyPayoutDue) continue;
-
-            if (dailyAnimalIncome > 0) {
-                try {
-                    const guildObj = client.guilds.cache.get(guildID);
-                    const memberObj = guildObj ? await guildObj.members.fetch(userID).catch(()=>null) : null;
-                    if (memberObj && addXPAndCheckLevel) {
-                        await addXPAndCheckLevel(client, memberObj, db, 0, dailyAnimalIncome, false).catch(()=>{});
-                    } else {
-                        await db.query(`UPDATE levels SET "mora" = COALESCE(CAST("mora" AS BIGINT), 0) + $1 WHERE "user" = $2 AND "guild" = $3`, [dailyAnimalIncome, userID, guildID]).catch(()=>{});
-                    }
-                } catch(e) {}
-            }
-
-            let dailyLogsRes;
-            try { dailyLogsRes = await db.query(`SELECT * FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]); }
-            catch(e) { dailyLogsRes = await db.query(`SELECT * FROM farm_daily_log WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>({rows:[]})); }
-            
-            let harvestedMap = new Map(), fedMap = new Map();
-
-            for (const log of dailyLogsRes.rows) {
-                const logCount = Number(log.count) || 1;
-                const aType = log.actionType || log.actiontype;
-                const iName = log.itemName || log.itemname;
-                if (aType === 'harvest') harvestedMap.set(iName, (harvestedMap.get(iName) || 0) + logCount);
-                else if (aType === 'feed') fedMap.set(iName, (fedMap.get(iName) || 0) + logCount);
-            }
-
-            // 🚀 تسريع تنظيف السجلات
-            await Promise.all([
-                db.query(`DELETE FROM farm_daily_log WHERE "userID" = $1 AND "guildID" = $2`, [userID, guildID]).catch(() => db.query(`DELETE FROM farm_daily_log WHERE userid = $1 AND guildid = $2`, [userID, guildID]).catch(()=>{})),
-                db.query(`INSERT INTO farm_last_payout ("id", "lastPayoutDate") VALUES ($1, $2) ON CONFLICT("id") DO UPDATE SET "lastPayoutDate" = $3`, [payoutID, now, now]).catch(() => db.query(`INSERT INTO farm_last_payout (id, lastpayoutdate) VALUES ($1, $2) ON CONFLICT(id) DO UPDATE SET lastpayoutdate = $3`, [payoutID, now, now]).catch(()=>{}))
-            ]);
-
-            if (dailyAnimalIncome <= 0 && dailyLogsRes.rows.length === 0 && hungryAnimalsCount === 0 && oldDeaths.length === 0) continue;
-
-            const guildObj = client.guilds.cache.get(guildID);
-            if (!guildObj) continue;
-            
-            let settingsRes;
-            try { settingsRes = await db.query(`SELECT "casinoChannelID" FROM settings WHERE "guild" = $1`, [guildID]); }
-            catch(e) { settingsRes = await db.query(`SELECT casinochannelid FROM settings WHERE guild = $1`, [guildID]).catch(()=>({rows:[]})); }
-            const casinoId = settingsRes.rows[0]?.casinochannelid || settingsRes.rows[0]?.casinoChannelID;
-            if (!casinoId) continue;
-            
-            const channel = guildObj.channels.cache.get(casinoId);
-            if (!channel) continue;
-            
-            const member = await guildObj.members.fetch(userID).catch(() => null);
-            if (!member) continue; 
-
-            let description = "";
-            if (hasWorker && (fedMap.size > 0 || harvestedMap.size > 0 || outOfStock)) {
-                description += `**✶تـقـرير عـامل المزرعـة**\n\n`;
-                if (fedMap.size > 0) {
-                    description += `**★ تـم اطعـام:**\n`;
-                    fedMap.forEach((count, name) => description += `- ${name}: ${count}\n`);
-                }
-                if (outOfStock) description += `**★ ⚠️ تنبيه:** مخزون بعض الأعلاف نفد! لم يتم إطعام الجميع.\n\n`;
-                if (harvestedMap.size > 0) {
-                    description += `**★ تـم حصـاد:**\n`;
-                    harvestedMap.forEach((count, name) => description += `- ${name}: ${count}\n`);
-                }
-                description += `────────────────────\n`;
-            }
-
-            description += `✶ حـققـت حيواناتك دخـل يومي بقيمـة: **${dailyAnimalIncome.toLocaleString()}** ${EMOJI_MORA}\n` +
-                           `✶ عـدد الحـيوانات الحية في مزرعتك: **${currentAnimalsCount.toLocaleString()}**`;
-
-            if (hungryAnimalsCount > 0) description += `\n\n⚠️ تنبـيه: **${hungryAnimalsCount}** من حيواناتك جائـعة ولم تحقق دخلاً اليوم.`;
-            if (oldDeaths.length > 0) description += `\n\n💀 مات من الكبر: ${oldDeaths.join('، ')}`;
-
-            const embed = new EmbedBuilder()
-                .setTitle(`❖ تـقرير المـزرعـة اليومي`)
-                .setColor("Random")
-                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                .setImage('https://i.postimg.cc/sD3FWvWT/2755e200-2fc8-45e1-8f3f-785b8e19793d-(1).png')
-                .setDescription(description)
-                .setTimestamp();
-
-            await channel.send({ content: `<@${userID}>`, embeds: [embed] }).catch(() => {});
-
-        } catch (err) {
-            console.error(`[Farm Critical Error] User: ${owner.userID || owner.userid}`, err);
+    let currentCap = 0, maxCap = 0;
+    if (category === 'animals') {
+        const [userFarmRes, capRes] = await Promise.all([
+            executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, user.guildId || '']).catch(()=>({rows:[]})),
+            getPlayerCapacity(client, user.id, user.guildId || '')
+        ]);
+        maxCap = capRes;
+        for (const row of userFarmRes.rows) {
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
         }
     }
+
+    const buffer = await drawFarmShopGrid(itemsList, category, maxCap, currentCap);
+    const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop.png' }) : null;
+
+    // 🔥 نظام إخفاء الزر النشط 🔥
+    const categoryRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('nav_land').setEmoji('↩️').setStyle(ButtonStyle.Danger)
+    );
+
+    if (category !== 'animals') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_animals').setLabel('حيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐄'));
+    }
+    if (category !== 'seeds') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_seeds').setLabel('بذور').setStyle(ButtonStyle.Secondary).setEmoji('🌱'));
+    }
+    if (category !== 'feed') {
+        categoryRow.addComponents(new ButtonBuilder().setCustomId('shop_cat_feed').setLabel('أعلاف').setStyle(ButtonStyle.Secondary).setEmoji('🌾'));
+    }
+
+    const selectOptions = itemsList.map(item => ({
+        label: item.name,
+        description: `السعر: ${item.price} مورا`,
+        value: `farm_select_item|${category}|${item.id}`,
+        emoji: item.emoji || '📦'
+    }));
+
+    const selectMenuRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('farm_select_item')
+            .setPlaceholder('🔻 حدد عنصراً للشراء أو البيع...')
+            .addOptions(selectOptions)
+    );
+
+    const payload = { content: '', components: [categoryRow, selectMenuRow], embeds: [] };
+    if (attachment) payload.files = [attachment];
+
+    return payload;
 }
 
-module.exports = { checkFarmIncome };
+async function getShopMenu(user, client, db) {
+    return await buildShopGrid(user, client, db, 'animals');
+}
+
+async function buildDetailView(item, userId, guildId, db, category, client) {
+    let userQuantity = 0;
+    let isFull = false;
+    let maxCap = 0;
+    let currentCap = 0;
+
+    if (category === 'animals') {
+        const [userFarmRes, cap] = await Promise.all([
+            executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=>({rows:[]})),
+            getPlayerCapacity(client, userId, guildId)
+        ]);
+        maxCap = cap;
+        for (const row of userFarmRes.rows) {
+            if (String(row.animalID || row.animalid) === String(item.id)) {
+                userQuantity += Number(row.quantity || row.Quantity) || 0;
+            }
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+        }
+        isFull = (currentCap + (item.size || 1)) > maxCap;
+    } else {
+        let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
+        userQuantity = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity) : 0;
+        isFull = userQuantity >= MAX_FARM_LIMIT;
+    }
+
+    const buffer = await drawFarmShopDetail(item, category, userQuantity, maxCap, currentCap);
+    const attachment = buffer ? new AttachmentBuilder(buffer, { name: 'farm_shop_detail.png' }) : null;
+
+    const actionRow1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`buy_btn_farm|${category}|${item.id}`)
+            .setLabel(isFull ? 'الحد الأقصى للسعة' : 'شراء 🛒')
+            .setStyle(isFull ? ButtonStyle.Secondary : ButtonStyle.Success)
+            .setDisabled(isFull), 
+            
+        new ButtonBuilder()
+            .setCustomId(`sell_btn_farm|${category}|${item.id}`)
+            .setLabel(`بيع (نصف السعر) 💰`)
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(userQuantity === 0)
+    );
+
+    const actionRow2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('farm_shop_back').setLabel('العودة للمتجر').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+    );
+
+    const payload = { content: '', components: [actionRow1, actionRow2], embeds: [] };
+    if (attachment) payload.files = [attachment];
+
+    return payload;
+}
+
+async function handleShopInteraction(i, client, db, user, guild, shopState) {
+    if (i.customId.startsWith('shop_cat_')) {
+        await i.deferUpdate().catch(()=>{});
+        const category = i.customId.replace('shop_cat_', '');
+        shopState.currentCategory = category;
+
+        user.guildId = guild.id; 
+        const data = await buildShopGrid(user, client, db, category);
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
+    }
+
+    if (i.isStringSelectMenu() && i.customId === 'farm_select_item') {
+        await i.deferUpdate().catch(()=>{});
+        const [_, category, itemId] = i.values[0].split('|');
+        
+        let item = null;
+        if (category === 'animals') item = farmAnimals.find(a => String(a.id) === String(itemId));
+        else if (category === 'seeds') item = seedsData.find(s => String(s.id) === String(itemId));
+        else if (category === 'feed') item = feedItems.find(f => String(f.id) === String(itemId));
+
+        if (!item) return await i.followUp({ content: '❌ العنصر غير موجود.', flags: [MessageFlags.Ephemeral] });
+
+        shopState.currentItem = item;
+        shopState.currentCategory = category;
+
+        const data = await buildDetailView(item, user.id, guild.id, db, category, client);
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
+    }
+
+    if (i.customId === 'farm_shop_back') {
+        await i.deferUpdate().catch(()=>{});
+        const data = await buildShopGrid(user, client, db, shopState.currentCategory || 'animals');
+        return await i.editReply({ files: data.files || [], embeds: [], components: data.components, content: data.content }).catch(()=>{});
+    }
+
+    if (i.isButton() && (i.customId.startsWith('buy_btn_farm|') || i.customId.startsWith('sell_btn_farm|'))) {
+        const action = i.customId.startsWith('buy_') ? 'buy' : 'sell';
+        const [_, category, itemId] = i.customId.split('|');
+        
+        let itemData = null;
+        if (category === 'animals') itemData = farmAnimals.find(a => String(a.id) === String(itemId));
+        else if (category === 'seeds') itemData = seedsData.find(s => String(s.id) === String(itemId));
+        else if (category === 'feed') itemData = feedItems.find(f => String(f.id) === String(itemId));
+
+        if (!itemData) return await i.reply({ content: '❌ العنصر غير موجود!', flags: [MessageFlags.Ephemeral] });
+
+        const modal = new ModalBuilder()
+            .setCustomId(`farm_${action}_modal|${category}|${itemData.id}`)
+            .setTitle(`${action === 'buy' ? 'شراء' : 'بيع'} ${itemData.name}`);
+
+        const labelText = action === 'buy' ? `الكمية (سعر الواحد: ${itemData.price})` : `الكمية المراد بيعها`;
+        const qtyInput = new TextInputBuilder()
+            .setCustomId('quantity_input')
+            .setLabel(labelText)
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('1')
+            .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+        return await i.showModal(modal);
+    }
+}
+
+async function handleFarmShopModal(i, client, db) {
+    if (!i.customId.startsWith('farm_buy_modal|') && !i.customId.startsWith('farm_sell_modal|')) return false;
+
+    try {
+        await i.deferReply({ flags: [MessageFlags.Ephemeral] }); 
+        
+        const action = i.customId.startsWith('farm_buy_') ? 'buy' : 'sell';
+        const [_, category, itemId] = i.customId.split('|');
+        const qtyStr = i.fields.getTextInputValue('quantity_input').trim();
+        const quantity = parseInt(qtyStr);
+
+        if (isNaN(quantity) || quantity <= 0) return await i.editReply('❌ يرجى إدخال كمية صحيحة.');
+
+        let itemData = null;
+        if (category === 'animals') itemData = farmAnimals.find(a => String(a.id) === String(itemId));
+        else if (category === 'seeds') itemData = seedsData.find(s => String(s.id) === String(itemId));
+        else if (category === 'feed') itemData = feedItems.find(f => String(f.id) === String(itemId));
+
+        if (!itemData) return await i.editReply('❌ العنصر غير موجود!');
+
+        if (action === 'buy') {
+            const totalPrice = itemData.price * quantity;
+            
+            const checkFundsSql = `
+                UPDATE levels 
+                SET mora = GREATEST(0, mora - $1),
+                    bank = CASE WHEN mora < $1 THEN bank - ($1 - mora) ELSE bank END
+                WHERE "user" = $2 AND "guild" = $3 
+                AND (mora + bank) >= $1
+                RETURNING mora, bank;
+            `;
+            let fundRes;
+            try { fundRes = await executeDB(db, checkFundsSql, [totalPrice, i.user.id, i.guild.id]); }
+            catch(e) { 
+                const fallbackSql = `UPDATE levels SET mora = GREATEST(0, mora - $1), bank = CASE WHEN mora < $1 THEN bank - ($1 - mora) ELSE bank END WHERE userid = $2 AND guildid = $3 AND (mora + bank) >= $1 RETURNING mora, bank;`;
+                fundRes = await executeDB(db, fallbackSql, [totalPrice, i.user.id, i.guild.id]).catch(()=>({rows:[]})); 
+            }
+
+            if (!fundRes?.rows?.length) {
+                return await i.editReply(`❌ رصيدك (الكاش + البنك) غير كافي! تحتاج إجمالي **${totalPrice.toLocaleString()}** ${EMOJI_MORA}.`);
+            }
+
+            if (category === 'animals') {
+                const [farmRes, cap] = await Promise.all([
+                    executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]})),
+                    getPlayerCapacity(client, i.user.id, i.guild.id)
+                ]);
+                let currentCap = 0;
+                for (const row of farmRes.rows) {
+                    const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
+                    if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+                }
+                const spaceNeeded = quantity * (itemData.size || 1);
+
+                if (currentCap + spaceNeeded > cap) {
+                    await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrice, i.user.id, i.guild.id]).catch(()=>{});
+                    return await i.editReply(`🚫 **مساحة الحظيرة لا تكفي!**\nتحتاج \`${spaceNeeded}\` مساحة، والمتاح لديك \`${cap - currentCap}\` فقط.`);
+                }
+
+                const upsertSql = `INSERT INTO user_farm ("guildID", "userID", "animalID", "purchaseTimestamp", "lastCollected", "quantity", "lastFedTimestamp") VALUES ($1, $2, $3, $4, 0, $5, $4) ON CONFLICT ("guildID", "userID", "animalID") DO UPDATE SET "quantity" = user_farm."quantity" + $5`;
+                try { await executeDB(db, upsertSql, [i.guild.id, i.user.id, itemData.id, Date.now(), quantity]); }
+                catch(e) { await executeDB(db, `INSERT INTO user_farm (guildid, userid, animalid, purchasetimestamp, lastcollected, quantity, lastfedtimestamp) VALUES ($1, $2, $3, $4, 0, $5, $4) ON CONFLICT (guildid, userid, animalid) DO UPDATE SET quantity = user_farm.quantity + $5`, [i.guild.id, i.user.id, itemData.id, Date.now(), quantity]).catch(()=>{}); }
+
+            } else {
+                let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity) : 0;
+                
+                if (currQty + quantity > MAX_FARM_LIMIT) {
+                    await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalPrice, i.user.id, i.guild.id]).catch(()=>{});
+                    return await i.editReply(`🚫 **مخزنك ممتلئ!** الحد الأقصى هو **${MAX_FARM_LIMIT}**.`);
+                }
+
+                const upsertInvSql = `INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`;
+                try { await executeDB(db, upsertInvSql, [i.guild.id, i.user.id, itemData.id, quantity]); }
+                catch(e) { await executeDB(db, `INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT (guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $4`, [i.guild.id, i.user.id, itemData.id, quantity]).catch(()=>{}); }
+            }
+
+            await i.editReply(`✅ اشتريت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالتكلفة: ${totalPrice.toLocaleString()} ${EMOJI_MORA}`);
+
+        } else if (action === 'sell') {
+            const sellPrice = Math.floor(itemData.price * 0.5); 
+            const totalGain = sellPrice * quantity;
+
+            if (category === 'animals') {
+                const farmRes = await executeDB(db, `SELECT "id", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                let totalOwned = 0;
+                farmRes.rows.forEach(row => totalOwned += Number(row.quantity));
+                
+                if (totalOwned < quantity) return await i.editReply(`❌ لا تملك هذه الكمية للبيع! (تمتلك ${totalOwned})`);
+
+                let remainingToSell = quantity;
+                for (const row of farmRes.rows) {
+                    if (remainingToSell <= 0) break;
+                    const qtyInRow = Number(row.quantity);
+                    const sellFromRow = Math.min(qtyInRow, remainingToSell);
+                    remainingToSell -= sellFromRow;
+
+                    if (qtyInRow === sellFromRow) {
+                        await executeDB(db, `DELETE FROM user_farm WHERE "id" = $1`, [row.id]).catch(()=>{});
+                    } else {
+                        await executeDB(db, `UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]).catch(()=>{});
+                    }
+                }
+            } else {
+                let invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity) : 0;
+                
+                if (currQty < quantity) return await i.editReply(`❌ لا تملك هذه الكمية للبيع!`);
+
+                if (currQty === quantity) {
+                    await executeDB(db, `DELETE FROM user_inventory WHERE "id" = $1`, [invCheckRes.rows[0].id]).catch(()=>{});
+                } else {
+                    await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id]).catch(()=>{});
+                }
+            }
+
+            await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]).catch(()=> executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]).catch(()=>{}));
+            
+            const sellEmbed = new EmbedBuilder()
+                .setTitle('📈 عملية بيع زراعية')
+                .setColor(Colors.Blue)
+                .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} ${EMOJI_MORA} (نصف السعر)`);
+            
+            await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
+        }
+
+        if (i.message) {
+            buildDetailView(itemData, i.user.id, i.guild.id, db, category, client).then(newData => {
+                i.message.edit({ files: newData.files || [], components: newData.components, embeds: [], content: newData.content || '' }).catch(()=>{});
+            });
+        }
+        return true;
+
+    } catch (e) {
+        return false;
+    }
+}
+
+module.exports = {
+    getShopMenu, 
+    buildMainMenu: getShopMenu, 
+    handleShopInteraction,
+    handleFarmShopModal
+};
