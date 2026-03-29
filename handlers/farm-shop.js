@@ -1,4 +1,4 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, AttachmentBuilder, EmbedBuilder, Colors } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -48,13 +48,13 @@ async function buildShopGrid(user, client, db, category) {
     let currentCap = 0, maxCap = 0;
     if (category === 'animals') {
         const [userFarmRes, capRes] = await Promise.all([
-            executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [user.id, user.guildId || '']).catch(()=>({rows:[]})),
+            executeDB(db, `SELECT "animalid", "quantity" FROM user_farm WHERE "userid" = $1 AND "guildid" = $2`, [user.id, user.guildId || '']).catch(()=>({rows:[]})),
             getPlayerCapacity(client, user.id, user.guildId || '')
         ]);
         maxCap = capRes;
         for (const row of userFarmRes.rows) {
-            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalid));
+            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity) || 1);
         }
     }
 
@@ -107,21 +107,21 @@ async function buildDetailView(item, userId, guildId, db, category, client) {
 
     if (category === 'animals') {
         const [userFarmRes, cap] = await Promise.all([
-            executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [userId, guildId]).catch(()=>({rows:[]})),
+            executeDB(db, `SELECT "animalid", "quantity" FROM user_farm WHERE "userid" = $1 AND "guildid" = $2`, [userId, guildId]).catch(()=>({rows:[]})),
             getPlayerCapacity(client, userId, guildId)
         ]);
         maxCap = cap;
         for (const row of userFarmRes.rows) {
-            if (String(row.animalID || row.animalid) === String(item.id)) {
-                userQuantity += Number(row.quantity || row.Quantity) || 0;
+            if (String(row.animalid) === String(item.id)) {
+                userQuantity += Number(row.quantity) || 0;
             }
-            const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+            const fa = farmAnimals.find(a => String(a.id) === String(row.animalid));
+            if (fa) currentCap += (fa.size || 1) * (Number(row.quantity) || 1);
         }
         isFull = (currentCap + (item.size || 1)) > maxCap;
     } else {
-        let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
-        userQuantity = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity) : 0;
+        let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userid" = $1 AND "guildid" = $2 AND "itemid" = $3`, [userId, guildId, item.id]).catch(()=>({rows:[]}));
+        userQuantity = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity) : 0;
         isFull = userQuantity >= MAX_FARM_LIMIT;
     }
 
@@ -240,15 +240,10 @@ async function handleFarmShopModal(i, client, db) {
         if (action === 'buy') {
             const totalPrice = itemData.price * quantity;
 
-            let moraRes;
-            try {
-                moraRes = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "user" = $1 AND "guild" = $2 FOR UPDATE`, [i.user.id, i.guild.id]);
-            } catch(e) {
-                moraRes = await executeDB(db, `SELECT mora, bank FROM levels WHERE userid = $1 AND guildid = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
-            }
-
-            let currentMora = Number(moraRes?.rows?.[0]?.mora || moraRes?.rows?.[0]?.Mora || 0);
-            let currentBank = Number(moraRes?.rows?.[0]?.bank || moraRes?.rows?.[0]?.Bank || 0);
+            let moraRes = await executeDB(db, `SELECT "mora", "bank" FROM levels WHERE "userid" = $1 AND "guildid" = $2 FOR UPDATE`, [i.user.id, i.guild.id]).catch(()=>({rows:[]}));
+            
+            let currentMora = Number(moraRes?.rows?.[0]?.mora || 0);
+            let currentBank = Number(moraRes?.rows?.[0]?.bank || 0);
 
             if ((currentMora + currentBank) < totalPrice) {
                 await executeDB(db, 'ROLLBACK').catch(()=>{});
@@ -257,13 +252,13 @@ async function handleFarmShopModal(i, client, db) {
 
             if (category === 'animals') {
                 const [farmRes, cap] = await Promise.all([
-                    executeDB(db, `SELECT "animalID", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]})),
+                    executeDB(db, `SELECT "animalid", "quantity" FROM user_farm WHERE "userid" = $1 AND "guildid" = $2`, [i.user.id, i.guild.id]).catch(()=>({rows:[]})),
                     getPlayerCapacity(client, i.user.id, i.guild.id)
                 ]);
                 let currentCap = 0;
                 for (const row of farmRes.rows) {
-                    const fa = farmAnimals.find(a => String(a.id) === String(row.animalID || row.animalid));
-                    if (fa) currentCap += (fa.size || 1) * (Number(row.quantity || row.Quantity) || 1);
+                    const fa = farmAnimals.find(a => String(a.id) === String(row.animalid));
+                    if (fa) currentCap += (fa.size || 1) * (Number(row.quantity) || 1);
                 }
                 const spaceNeeded = quantity * (itemData.size || 1);
 
@@ -272,8 +267,8 @@ async function handleFarmShopModal(i, client, db) {
                     return await i.editReply(`🚫 **مساحة الحظيرة لا تكفي!**\nتحتاج \`${spaceNeeded}\` مساحة، والمتاح لديك \`${cap - currentCap}\` فقط.`);
                 }
             } else {
-                let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
-                let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity || 0) : 0;
+                let invCheckRes = await executeDB(db, `SELECT "quantity" FROM user_inventory WHERE "userid" = $1 AND "guildid" = $2 AND "itemid" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || 0) : 0;
 
                 if (currQty + quantity > MAX_FARM_LIMIT) {
                     await executeDB(db, 'ROLLBACK').catch(()=>{});
@@ -290,22 +285,19 @@ async function handleFarmShopModal(i, client, db) {
             }
 
             try {
-                await executeDB(db, `UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "user" = $3 AND "guild" = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
+                await executeDB(db, `UPDATE levels SET "mora" = $1, "bank" = $2 WHERE "userid" = $3 AND "guildid" = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
             } catch(e) {
-                await executeDB(db, `UPDATE levels SET mora = $1, bank = $2 WHERE userid = $3 AND guildid = $4`, [currentMora, currentBank, i.user.id, i.guild.id]);
+                await executeDB(db, 'ROLLBACK').catch(()=>{});
+                return await i.editReply('❌ حدث خطأ داخلي أثناء تحديث الرصيد.');
             }
 
             try {
                 if (category === 'animals') {
-                    const upsertSql = `INSERT INTO user_farm ("guildID", "userID", "animalID", "purchaseTimestamp", "lastCollected", "quantity", "lastFedTimestamp") VALUES ($1, $2, $3, $4, 0, $5, $4) ON CONFLICT ("guildID", "userID", "animalID") DO UPDATE SET "quantity" = user_farm."quantity" + $5`;
-                    await executeDB(db, upsertSql, [i.guild.id, i.user.id, itemData.id, Date.now(), quantity]).catch(async () => {
-                        await executeDB(db, `INSERT INTO user_farm (guildid, userid, animalid, purchasetimestamp, lastcollected, quantity, lastfedtimestamp) VALUES ($1, $2, $3, $4, 0, $5, $4) ON CONFLICT (guildid, userid, animalid) DO UPDATE SET quantity = user_farm.quantity + $5`, [i.guild.id, i.user.id, itemData.id, Date.now(), quantity]);
-                    });
+                    const upsertSql = `INSERT INTO user_farm ("guildid", "userid", "animalid", "purchasetimestamp", "lastcollected", "quantity", "lastfedtimestamp") VALUES ($1, $2, $3, $4, 0, $5, $4) ON CONFLICT ("guildid", "userid", "animalid") DO UPDATE SET "quantity" = user_farm."quantity" + $5`;
+                    await executeDB(db, upsertSql, [i.guild.id, i.user.id, itemData.id, Date.now(), quantity]);
                 } else {
-                    const upsertInvSql = `INSERT INTO user_inventory ("guildID", "userID", "itemID", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("guildID", "userID", "itemID") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`;
-                    await executeDB(db, upsertInvSql, [i.guild.id, i.user.id, itemData.id, quantity]).catch(async () => {
-                        await executeDB(db, `INSERT INTO user_inventory (guildid, userid, itemid, quantity) VALUES ($1, $2, $3, $4) ON CONFLICT (guildid, userid, itemid) DO UPDATE SET quantity = user_inventory.quantity + $4`, [i.guild.id, i.user.id, itemData.id, quantity]);
-                    });
+                    const upsertInvSql = `INSERT INTO user_inventory ("guildid", "userid", "itemid", "quantity") VALUES ($1, $2, $3, $4) ON CONFLICT ("guildid", "userid", "itemid") DO UPDATE SET "quantity" = user_inventory."quantity" + $4`;
+                    await executeDB(db, upsertInvSql, [i.guild.id, i.user.id, itemData.id, quantity]);
                 }
             } catch (insertError) {
                 await executeDB(db, 'ROLLBACK').catch(()=>{});
@@ -321,9 +313,9 @@ async function handleFarmShopModal(i, client, db) {
 
             try {
                 if (category === 'animals') {
-                    const farmRes = await executeDB(db, `SELECT "id", "quantity" FROM user_farm WHERE "userID" = $1 AND "guildID" = $2 AND "animalID" = $3 ORDER BY "purchaseTimestamp" ASC`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                    const farmRes = await executeDB(db, `SELECT "id", "quantity" FROM user_farm WHERE "userid" = $1 AND "guildid" = $2 AND "animalid" = $3 ORDER BY "purchasetimestamp" ASC`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
                     let totalOwned = 0;
-                    farmRes.rows.forEach(row => totalOwned += Number(row.quantity || row.Quantity || 0));
+                    farmRes.rows.forEach(row => totalOwned += Number(row.quantity || 0));
                     
                     if (totalOwned < quantity) {
                         await executeDB(db, 'ROLLBACK').catch(()=>{});
@@ -333,19 +325,19 @@ async function handleFarmShopModal(i, client, db) {
                     let remainingToSell = quantity;
                     for (const row of farmRes.rows) {
                         if (remainingToSell <= 0) break;
-                        const qtyInRow = Number(row.quantity || row.Quantity || 0);
+                        const qtyInRow = Number(row.quantity || 0);
                         const sellFromRow = Math.min(qtyInRow, remainingToSell);
                         remainingToSell -= sellFromRow;
 
                         if (qtyInRow === sellFromRow) {
-                            await executeDB(db, `DELETE FROM user_farm WHERE "id" = $1`, [row.id || row.ID]);
+                            await executeDB(db, `DELETE FROM user_farm WHERE "id" = $1`, [row.id]);
                         } else {
-                            await executeDB(db, `UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id || row.ID]);
+                            await executeDB(db, `UPDATE user_farm SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [sellFromRow, row.id]);
                         }
                     }
                 } else {
-                    let invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userID" = $1 AND "guildID" = $2 AND "itemID" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
-                    let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || invCheckRes.rows[0].Quantity || 0) : 0;
+                    let invCheckRes = await executeDB(db, `SELECT "id", "quantity" FROM user_inventory WHERE "userid" = $1 AND "guildid" = $2 AND "itemid" = $3`, [i.user.id, i.guild.id, itemData.id]).catch(()=>({rows:[]}));
+                    let currQty = invCheckRes.rows[0] ? Number(invCheckRes.rows[0].quantity || 0) : 0;
                     
                     if (currQty < quantity) {
                         await executeDB(db, 'ROLLBACK').catch(()=>{});
@@ -353,23 +345,27 @@ async function handleFarmShopModal(i, client, db) {
                     }
 
                     if (currQty === quantity) {
-                        await executeDB(db, `DELETE FROM user_inventory WHERE "id" = $1`, [invCheckRes.rows[0].id || invCheckRes.rows[0].ID]);
+                        await executeDB(db, `DELETE FROM user_inventory WHERE "id" = $1`, [invCheckRes.rows[0].id]);
                     } else {
-                        await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id || invCheckRes.rows[0].ID]);
+                        await executeDB(db, `UPDATE user_inventory SET "quantity" = "quantity" - $1 WHERE "id" = $2`, [quantity, invCheckRes.rows[0].id]);
                     }
                 }
 
                 try {
-                    await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "user" = $2 AND "guild" = $3`, [totalGain, i.user.id, i.guild.id]).catch(async () => {
-                        await executeDB(db, `UPDATE levels SET mora = mora + $1 WHERE userid = $2 AND guildid = $3`, [totalGain, i.user.id, i.guild.id]);
-                    });
+                    await executeDB(db, `UPDATE levels SET "mora" = "mora" + $1 WHERE "userid" = $2 AND "guildid" = $3`, [totalGain, i.user.id, i.guild.id]);
                 } catch (moneyError) {
                     await executeDB(db, 'ROLLBACK').catch(()=>{});
                     return await i.editReply('❌ حدث خطأ داخلي أثناء إضافة الأموال، تم التراجع عن العملية.');
                 }
                 
                 await executeDB(db, 'COMMIT').catch(()=>{});
-                await i.editReply(`📈 بعت **${quantity.toLocaleString()}x ${itemData.name}** بنجاح!\nالربح: ${totalGain.toLocaleString()} مورا (نصف السعر)`);
+                
+                const sellEmbed = new EmbedBuilder()
+                    .setTitle('📈 عملية بيع زراعية')
+                    .setColor(Colors.Blue)
+                    .setDescription(`📦 **الكمية المباعة:** ${quantity.toLocaleString()}x ${itemData.name}\n💰 **الأرباح:** ${totalGain.toLocaleString()} مورا (نصف السعر)`);
+                
+                await i.editReply({ content: `<@${i.user.id}>`, embeds: [sellEmbed] });
 
             } catch (sellError) {
                 await executeDB(db, 'ROLLBACK').catch(()=>{});
