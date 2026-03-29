@@ -157,7 +157,7 @@ async function generateForgeUI(userObj, view, data) {
     let activeView = view.replace('success_', '');
     const isSuccess = view.startsWith('success_');
     
-    if (!isSuccess) {
+    if (!isSuccess && !data.hasError) {
         if (activeView === 'main' && data.title?.includes('أكاديمية')) activeView = 'skill_home';
         if (activeView === 'synthesis' && !data.sacMatName) activeView = 'synthesis_home';
         if (activeView === 'smelting' && !data.sacMatName) activeView = 'smelting_home';
