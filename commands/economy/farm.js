@@ -35,12 +35,12 @@ const ITEMS_PER_PAGE = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const getNavRow = (activeTab) => {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('nav_land').setLabel('أرضي').setStyle(activeTab === 'land' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🏡'),
-        new ButtonBuilder().setCustomId('nav_animals').setLabel('الحيوانات').setStyle(activeTab === 'animals' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🐮'),
-        new ButtonBuilder().setCustomId('nav_feed').setLabel('المخزن').setStyle(activeTab === 'feed' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('🌾'),
-        new ButtonBuilder().setCustomId('nav_shop').setLabel('المتجر').setStyle(activeTab === 'shop' ? ButtonStyle.Success : ButtonStyle.Secondary).setEmoji('🛒')
-    );
+    const row = new ActionRowBuilder();
+    if (activeTab !== 'land') row.addComponents(new ButtonBuilder().setCustomId('nav_land').setLabel('أرضي').setStyle(ButtonStyle.Secondary).setEmoji('🏡'));
+    if (activeTab !== 'animals') row.addComponents(new ButtonBuilder().setCustomId('nav_animals').setLabel('الحيوانات').setStyle(ButtonStyle.Secondary).setEmoji('🐮'));
+    if (activeTab !== 'feed') row.addComponents(new ButtonBuilder().setCustomId('nav_feed').setLabel('المخزن').setStyle(ButtonStyle.Secondary).setEmoji('🌾'));
+    if (activeTab !== 'shop') row.addComponents(new ButtonBuilder().setCustomId('nav_shop').setLabel('المتجر').setStyle(ButtonStyle.Success).setEmoji('🛒'));
+    return row;
 };
 
 module.exports = {
