@@ -35,7 +35,7 @@ const ID_TO_IMAGE = {
 
 const RARITY_ARABIC = {
     'Common': 'شائع',
-    'Uncommon': 'غير شائع',
+    'Uncommon': 'شائع',
     'Rare': 'نادر',
     'Epic': 'ملحمي',
     'Legendary': 'أسطوري'
@@ -163,7 +163,7 @@ module.exports = {
     data: new SlashCommandBuilder().setName('حدادة').setDescription('الدخول إلى المجمع الإمبراطوري لتطوير الأسلحة وصقل المهارات'),
     name: 'حدادة',
     aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر'],
-    category: 'RPG',
+    category: 'Economy',
     
     async execute(interactionOrMessage) {
         const isSlash = !!interactionOrMessage.isChatInputCommand;
