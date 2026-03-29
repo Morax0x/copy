@@ -31,6 +31,27 @@ async function getCachedImage(imageUrl) {
     } catch (e) { return null; }
 }
 
+const loadJsonSafe = (fileName) => {
+    try {
+        const filePath = path.join(process.cwd(), 'json', fileName);
+        if (fs.existsSync(filePath)) return require(filePath);
+    } catch(e) {}
+    return [];
+};
+
+setTimeout(async () => {
+    const allItems = [
+        ...loadJsonSafe('farm-animals.json'),
+        ...loadJsonSafe('seeds.json'),
+        ...loadJsonSafe('feed-items.json')
+    ];
+    for (const item of allItems) {
+        const itemDict = resolveItemInfoLocal(item.id);
+        const url = item.image || itemDict.imgPath;
+        if (url) await getCachedImage(url);
+    }
+}, 1000);
+
 function getRarityAndColor(price) {
     if (price >= 10000) return { rarity: 'Legendary', color: '#FFD700' };
     if (price >= 4000) return { rarity: 'Epic', color: '#B968FF' };
@@ -177,7 +198,6 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
         ctx.fillText(`السعة: [ ${currCap} / ${maxCap} ]`, 40, 60);
     }
 
-    // 🔥 التقسيم الذكي حسب الفئة 🔥
     const isSeeds = category === 'seeds';
     const cols = isSeeds ? 4 : 3;
     const rows = 3;
@@ -187,13 +207,6 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
     const gapY = 25;
     const startX = (width - ((cols * slotW) + ((cols - 1) * gapX))) / 2;
     const startY = 150;
-
-    // 🔥 التحميل المتوازي (صاروخي) للصور قبل الرسم 🔥
-    const preloadedImages = await Promise.all(items.map(async item => {
-        const itemDict = resolveItemInfoLocal(item.id);
-        const imgUrl = item.image || itemDict.imgPath;
-        return await getCachedImage(imgUrl);
-    }));
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -212,7 +225,6 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
         ctx.fillStyle = aura;
         ctx.fillRect(x, y, slotW, slotH);
         
-        // الأيقونات بحجم أكبر للحيوانات والأعلاف
         const iconContainerSize = isSeeds ? 80 : 100;
         const iconContainerX = x + slotW - iconContainerSize - 15;
         const iconContainerY = y + (isSeeds ? 15 : 20);
@@ -226,23 +238,27 @@ exports.drawFarmShopGrid = async function(items, category, maxCap, currCap) {
             ctx.fillRect(iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
         }
 
-        const img = preloadedImages[i];
+        const itemDict = resolveItemInfoLocal(item.id);
+        const imgUrl = item.image || itemDict.imgPath;
         let imgDrawn = false;
         
-        if (img) {
-            ctx.save();
-            if (category === 'seeds' || category === 'feed') {
-                ctx.beginPath();
-                roundRect(ctx, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4, 10);
-                ctx.clip();
-                ctx.drawImage(img, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4);
-            } else {
-                ctx.shadowColor = color;
-                ctx.shadowBlur = 30;
-                ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
+        if (imgUrl) {
+            const img = await getCachedImage(imgUrl);
+            if (img) {
+                ctx.save();
+                if (category === 'seeds' || category === 'feed') {
+                    ctx.beginPath();
+                    roundRect(ctx, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4, 10);
+                    ctx.clip();
+                    ctx.drawImage(img, iconContainerX + 2, iconContainerY + 2, iconContainerSize - 4, iconContainerSize - 4);
+                } else {
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 30;
+                    ctx.drawImage(img, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
+                }
+                ctx.restore();
+                imgDrawn = true;
             }
-            ctx.restore();
-            imgDrawn = true;
         }
         
         if (!imgDrawn) {
