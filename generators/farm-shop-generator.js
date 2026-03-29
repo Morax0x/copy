@@ -39,18 +39,6 @@ function getRarityAndColor(price) {
     return { rarity: 'Common', color: '#A8B8D0' };
 }
 
-function roundRect(ctx, x, y, width, height, radius) {
-    if (width < 2 * radius) radius = width / 2;
-    if (height < 2 * radius) radius = height / 2;
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.arcTo(x + width, y, x + width, y + height, radius);
-    ctx.arcTo(x + width, y + height, x, y + height, radius);
-    ctx.arcTo(x, y + height, x, y, radius);
-    ctx.arcTo(x, y, x + width, y, radius);
-    ctx.closePath();
-}
-
 function drawOrnateFrame(ctx, x, y, w, h, color) {
     const bgGrad = ctx.createLinearGradient(x, y, x, y + h);
     bgGrad.addColorStop(0, 'rgba(15, 20, 30, 0.9)');
@@ -103,22 +91,16 @@ function drawAutoScaledText(ctx, text, x, y, maxWidth, maxFontSize, minFontSize 
     ctx.fillText(text, x, y);
 }
 
-function wrapText(ctx, text, maxWidth) {
-    const words = text.split(' ');
-    let lines = [];
-    let currentLine = words[0];
-    for (let i = 1; i < words.length; i++) {
-        const word = words[i];
-        const width = ctx.measureText(currentLine + " " + word).width;
-        if (width < maxWidth) {
-            currentLine += " " + word;
-        } else {
-            lines.push(currentLine);
-            currentLine = word;
-        }
-    }
-    lines.push(currentLine);
-    return lines;
+function roundRect(ctx, x, y, width, height, radius) {
+    if (width < 2 * radius) radius = width / 2;
+    if (height < 2 * radius) radius = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    ctx.closePath();
 }
 
 exports.drawFarmShopGrid = async function(items, category, page, totalPages, maxCap, currCap) {
@@ -198,7 +180,7 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         const x = startX + col * (slotW + gapX);
         const y = startY + row * (slotH + gapY);
 
-        const { rarity, color } = getRarityAndColor(item.price);
+        const { color } = getRarityAndColor(item.price);
 
         drawOrnateFrame(ctx, x, y, slotW, slotH, color);
 
@@ -211,35 +193,57 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         const itemDict = resolveItemInfoLocal(item.id);
         const imgUrl = item.image || itemDict.imgPath;
         
-        const imgSize = 90;
-        const imgX = x + slotW - imgSize - 20;
-        const imgY = y + 20;
+        // 🔥 تحديد مكان الإطار المزدوج للأيقونة 🔥
+        const iconContainerSize = 100;
+        const iconContainerX = x + slotW - iconContainerSize - 20;
+        const iconContainerY = y + 20;
+
+        // 🔥 تطبيق الإطار المزخرف حول الأيقونة للبذور والأعلاف فقط 🔥
+        if (category === 'seeds' || category === 'feed') {
+            drawOrnateFrame(ctx, iconContainerX, iconContainerY, iconContainerSize, iconContainerSize, color);
+            // إضافة توهج داخلي للإطار
+            const innerAura = ctx.createRadialGradient(iconContainerX + iconContainerSize/2, iconContainerY + iconContainerSize/2, 5, iconContainerX + iconContainerSize/2, iconContainerY + iconContainerSize/2, iconContainerSize/1.5);
+            innerAura.addColorStop(0, `${color}40`); 
+            innerAura.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = innerAura;
+            ctx.fillRect(iconContainerX, iconContainerY, iconContainerSize, iconContainerSize);
+        }
+
+        // تحديد مساحة الرسم الحقيقية للصورة داخل الإطار (أو خارجه للحيوانات)
+        const imgPadding = 10; // حشوة داخل الإطار
+        const actualImgSize = iconContainerSize - (imgPadding * 2);
+        const actualImgX = iconContainerX + imgPadding;
+        const actualImgY = iconContainerY + imgPadding;
 
         let imgDrawn = false;
         if (imgUrl) {
             const img = await getCachedImage(imgUrl);
             if (img) {
+                ctx.save();
                 ctx.shadowColor = color;
                 ctx.shadowBlur = 30;
-                ctx.drawImage(img, imgX, imgY, imgSize, imgSize);
-                ctx.shadowBlur = 0;
+                // رسم الصورة بالحجم الحقيقي المحدد
+                ctx.drawImage(img, actualImgX, actualImgY, actualImgSize, actualImgSize);
+                ctx.restore();
                 imgDrawn = true;
             }
         }
         
         if (!imgDrawn) {
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = `65px ${FONT_EMOJI}`;
+            ctx.font = `75px ${FONT_EMOJI}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.shadowColor = color;
             ctx.shadowBlur = 30;
-            ctx.fillText(item.emoji || '📦', imgX + imgSize / 2, imgY + imgSize / 2);
+            // رسم الإيموجي متوسطاً مساحة الأيقونة
+            ctx.fillText(item.emoji || '📦', iconContainerX + iconContainerSize / 2, iconContainerY + iconContainerSize / 2);
             ctx.shadowBlur = 0;
         }
 
+        // 🔥 تعديل مكان ومساحة الشريط بناءً على الحجم الجديد للأيقونة 🔥
         const ribbonH = 40;
-        const ribbonY = imgY + imgSize + 15;
+        const ribbonY = iconContainerY + iconContainerSize + 15;
         drawRibbon(ctx, x + 15, ribbonY, slotW - 30, ribbonH, color);
         
         ctx.textAlign = 'center';
@@ -249,20 +253,21 @@ exports.drawFarmShopGrid = async function(items, category, page, totalPages, max
         ctx.textAlign = 'right';
         ctx.fillStyle = '#FFD700';
         ctx.font = `bold 24px ${FONT_MAIN}`;
-        ctx.fillText(`${item.price.toLocaleString()} مورا`, imgX - 15, y + 50);
+        // تعديل مكان النص ليتناسب مع الإطار الجديد
+        ctx.fillText(`${item.price.toLocaleString()} مورا`, iconContainerX - 15, y + 50);
 
         ctx.fillStyle = '#A8B8D0';
         ctx.font = `18px ${FONT_MAIN}`;
         
         if (category === 'animals') {
-            ctx.fillText(`الدخل: ${item.income_per_day}`, imgX - 15, y + 80);
-            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, imgX - 15, y + 105);
+            ctx.fillText(`الدخل: ${item.income_per_day}`, iconContainerX - 15, y + 80);
+            ctx.fillText(`العمر: ${item.lifespan_days} يوم | حجم: ${item.size}`, iconContainerX - 15, y + 105);
         } else if (category === 'seeds') {
-            ctx.fillText(`سعر البيع: ${item.sell_price}`, imgX - 15, y + 80);
-            ctx.fillText(`النمو: ${item.growth_time_hours}س`, imgX - 15, y + 105);
+            ctx.fillText(`سعر البيع: ${item.sell_price}`, iconContainerX - 15, y + 80);
+            ctx.fillText(`النمو: ${item.growth_time_hours}س`, iconContainerX - 15, y + 105);
         } else {
             const desc = item.description ? item.description.substring(0, 20) + '...' : 'علف مخصص.';
-            ctx.fillText(desc, imgX - 15, y + 80);
+            ctx.fillText(desc, iconContainerX - 15, y + 80);
         }
     }
 
@@ -275,7 +280,7 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const { rarity, color } = getRarityAndColor(item.price);
+    const { color } = getRarityAndColor(item.price);
 
     const bgGrad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, 800);
     bgGrad.addColorStop(0, '#151520');
@@ -400,8 +405,11 @@ exports.drawFarmShopDetail = async function(item, category, userQty, maxCap, cur
         details.push(item.description || 'علف صحي لضمان نمو ودخل ممتاز.');
     }
 
-    for (let j = 0; j < details.length; j++) {
-        ctx.fillText(details[j], textX - 20, descBoxY + 20 + (j * 40));
+    const words = details.join(' ').split(' ');
+    let lines = wrapText(ctx, details.join(' '), descBoxW - 40);
+
+    for (let j = 0; j < lines.length; j++) {
+        ctx.fillText(lines[j], textX - 20, descBoxY + 20 + (j * 40));
     }
 
     return canvas.toBuffer('image/png');
