@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Colors, AttachmentBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const weaponsConfig = require('../../json/weapons-config.json');
 const skillsConfig = require('../../json/skills-config.json');
 const upgradeMats = require('../../json/upgrade-materials.json');
@@ -128,29 +128,20 @@ async function replyWithCanvas(i, user, view, data, components, isInitial = fals
                 const filename = `forge_${Date.now()}.png`; 
                 const attachment = new AttachmentBuilder(buffer, { name: filename });
                 
-                if (isInitial && typeof i.reply === 'function' && !i.replied && !i.deferred) {
-                    returnMessage = await i.reply({ content: null, embeds: [], components, files: [attachment], fetchReply: true }).catch(()=>{});
-                    return returnMessage || i; 
-                } else {
+                // استخدم Edit إذا كانت مستجابة، أو Reply إذا لا
+                if (i.deferred || i.replied) {
                     returnMessage = await i.editReply({ content: null, embeds: [], components, files: [attachment] }).catch(()=>{});
-                    return returnMessage || i;
+                } else if (typeof i.reply === 'function') {
+                    returnMessage = await i.reply({ content: null, embeds: [], components, files: [attachment], fetchReply: true }).catch(()=>{});
                 }
+                return returnMessage || i; 
             }
         }
     } catch (e) {
         console.error("Canvas Error in Forge:", e);
-        await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
+        if (i.deferred || i.replied) await i.followUp({ content: `❌ خطأ في رسم الصورة: \`${e.message}\``, flags: MessageFlags.Ephemeral }).catch(()=>{});
     }
-    
-    try {
-        if (isInitial && typeof i.reply === 'function' && !i.replied && !i.deferred) {
-            returnMessage = await i.reply({ content: "⏳ النظام يعمل في الخلفية...", components, embeds: [], fetchReply: true }).catch(()=>{});
-        } else {
-            returnMessage = await i.editReply({ content: null, components, embeds: [], files: [] }).catch(()=>{});
-        }
-    } catch(err) {}
-    
-    return returnMessage || i;
+    return i;
 }
 
 async function buildMainUI(i, user, guildId, db, isInitial = false) {
@@ -162,7 +153,7 @@ async function buildMainUI(i, user, guildId, db, isInitial = false) {
 module.exports = {
     data: new SlashCommandBuilder().setName('حدادة').setDescription('الدخول إلى المجمع الإمبراطوري لتطوير الأسلحة وصقل المهارات'),
     name: 'حدادة',
-    aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر', 'حداده'],
+    aliases: ['forge', 'تطوير', 'صقل', 'دمج', 'صهر', 'حداده', 'أكاديمية', 'اكاديمية'],
     category: 'Economy',
     
     async execute(interactionOrMessage) {
@@ -172,6 +163,20 @@ module.exports = {
         const user = isSlash ? interactionOrMessage.user : interactionOrMessage.author;
         const guildId = interactionOrMessage.guild.id;
 
+        // 🔥 رد فوري وصاروخي لتفادي تعليق الديسكورد 🔥
+        let sentMsg = null;
+        if (isSlash) {
+            await interactionOrMessage.deferReply();
+        } else {
+            sentMsg = await interactionOrMessage.reply({ content: "⏳ جاري تحضير واجهة المجمع..." });
+        }
+
+        const fakeInteraction = isSlash ? interactionOrMessage : {
+            replied: true, deferred: true,
+            editReply: async (p) => { if(sentMsg) return await sentMsg.edit(p); },
+            followUp: async (p) => interactionOrMessage.channel.send(p)
+        };
+
         let commandTrigger = "";
         if (!isSlash) {
             commandTrigger = interactionOrMessage.content.trim().split(/ +/)[0].toLowerCase().replace(/^[^\w\s\u0600-\u06FF]/, ''); 
@@ -179,25 +184,15 @@ module.exports = {
             commandTrigger = interactionOrMessage.commandName;
         }
 
+        // 🔥 جلب البيانات بالتوازي لزيادة السرعة 🔥
         let userDataRes = await db.query(`SELECT "level" FROM levels WHERE "user" = $1 AND "guild" = $2`, [user.id, guildId]).catch(()=> db.query(`SELECT level FROM levels WHERE userid = $1 AND guildid = $2`, [user.id, guildId]).catch(()=>({rows:[]})));
-        if (!userDataRes?.rows?.[0]) return isSlash ? interactionOrMessage.reply("❌ لم يتم العثور على بياناتك.") : interactionOrMessage.channel.send("❌ لم يتم العثور على بياناتك.");
+        if (!userDataRes?.rows?.[0]) return fakeInteraction.editReply({ content: "❌ لم يتم العثور على بياناتك." });
 
         let synthesisState = { sacrificeItem: null, targetItem: null };
         let smeltState = { item: null };
-        
-        let sentMsg = null;
-        const fakeInteraction = isSlash ? interactionOrMessage : {
-            replied: false, deferred: false,
-            reply: async (p) => { p.fetchReply = true; sentMsg = await interactionOrMessage.reply(p); return sentMsg; },
-            editReply: async (p) => { if(sentMsg) return await sentMsg.edit(p); else return await interactionOrMessage.reply(p); },
-            followUp: async (p) => interactionOrMessage.channel.send(p)
-        };
-
-        if (isSlash) await fakeInteraction.deferReply();
-
         let replyObj;
 
-        if (commandTrigger.includes('صقل') || commandTrigger === 'ms') {
+        if (commandTrigger.includes('صقل') || commandTrigger.includes('اكاديمية') || commandTrigger === 'ms') {
             replyObj = await buildAcademyMenuUI(fakeInteraction, user, guildId, db, !isSlash);
         } else if (commandTrigger.includes('دمج')) {
             replyObj = await buildSynthesisUI(fakeInteraction, user, guildId, db, synthesisState, !isSlash);
