@@ -3,8 +3,12 @@ const path = require('path');
 const fs = require('fs');
 
 try {
-    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts', 'bein-ar-normal.ttf'), 'Bein');
-    GlobalFonts.registerFromPath(path.join(process.cwd(), 'fonts', 'NotoEmoj.ttf'), 'Emoji');
+    const fontsDir = path.join(process.cwd(), 'fonts');
+    const beinPath = path.join(fontsDir, 'bein-ar-normal.ttf');
+    const emojiPath = path.join(fontsDir, 'NotoEmoj.ttf');
+    
+    if (fs.existsSync(beinPath)) GlobalFonts.registerFromPath(beinPath, 'Bein');
+    if (fs.existsSync(emojiPath)) GlobalFonts.registerFromPath(emojiPath, 'Emoji');
 } catch (e) {}
 
 const FONT_MAIN = '"Bein", "Arial", sans-serif';
